@@ -1,0 +1,10 @@
+const express = require('express');
+const { read } = require('../db');
+const { authRequired } = require('../middleware/auth');
+const router = express.Router();
+router.use(authRequired);
+router.get('/items', (req, res) => res.json(read().catalog_items.filter(x => x.active).sort((a,b)=>a.name.localeCompare(b.name))));
+router.get('/suppliers', (req, res) => res.json(read().suppliers.filter(x => x.active).sort((a,b)=>a.business_name.localeCompare(b.business_name))));
+router.get('/cost-centers', (req, res) => res.json(read().cost_centers.filter(x => x.active).sort((a,b)=>a.code.localeCompare(b.code))));
+router.get('/sub-cost-centers', (req, res) => res.json(read().sub_cost_centers.filter(x => x.active).sort((a,b)=>a.code.localeCompare(b.code))));
+module.exports = router;

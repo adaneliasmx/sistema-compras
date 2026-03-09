@@ -1,0 +1,2 @@
+-- SQLite schema base generado por scripts/init-db.js
+-- Usa: npm run init-db
