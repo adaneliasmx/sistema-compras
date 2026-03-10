@@ -1,5 +1,7 @@
 node_modules/
 .env
-storage/
+storage/*
+!storage/invoices/
+!storage/invoices/.gitkeep
 *.zip
 *.log

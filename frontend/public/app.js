@@ -781,15 +781,18 @@ async function purchasesView() {
       tabContent.innerHTML = pos.length ? pos.map(p => {
         const nextS = STATUS_NEXT[p.status];
         const btnLabel = STATUS_LABEL_BTN[p.status];
-        const canInvoice = p.status === 'Entregado';
+        const canRequestInvoice = p.status === 'Entregado' && !p.invoice_requested;
+        const invoiceRequested = p.invoice_requested;
+        const canManualInvoice = p.status === 'Entregado';
         const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
+        const reqTag = invoiceRequested ? `<span style="font-size:11px;color:#2563eb;margin-left:8px">📧 Factura solicitada al proveedor</span>` : '';
         return `
         <div class="card section" style="margin-bottom:12px" id="po-card-${p.id}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
             <div>
               <b style="font-size:15px">${p.folio}</b>
               <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
-              ${respTag}
+              ${respTag}${reqTag}
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${statusPill(p.status)}
@@ -798,18 +801,23 @@ async function purchasesView() {
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
             ${nextS ? `<button class="btn-primary po-advance-btn" data-id="${p.id}" data-status="${nextS}" style="font-size:12px;padding:5px 12px">${btnLabel}</button>` : ''}
-            ${canInvoice ? `<button class="btn-primary po-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px;background:#16a34a">🧾 Registrar factura</button>` : ''}
+            ${canRequestInvoice ? `<button class="btn-secondary po-req-invoice-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📧 Solicitar factura al proveedor</button>` : ''}
+            ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
           </div>
+          <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
           <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
-            <h4 style="margin:0 0 10px">Registrar factura · ${p.folio}</h4>
+            <h4 style="margin:0 0 4px">Registrar factura manualmente · ${p.folio}</h4>
+            <p class="small muted" style="margin:0 0 10px">Usa esta opción solo si el proveedor no puede registrarla en el sistema.</p>
             <div class="row-3">
               <div><label style="font-size:12px">No. factura *</label><input id="inv-num-${p.id}" placeholder="FACT-001"/></div>
               <div><label style="font-size:12px">Subtotal *</label><input id="inv-sub-${p.id}" type="number" placeholder="0.00"/></div>
               <div><label style="font-size:12px">IVA</label><input id="inv-tax-${p.id}" type="number" placeholder="0.00"/></div>
             </div>
-            <div style="display:flex;gap:12px;margin-top:8px;align-items:center;flex-wrap:wrap">
-              <label style="font-size:12px"><input type="checkbox" id="inv-xml-${p.id}"/> XML adjunto</label>
-              <label style="font-size:12px"><input type="checkbox" id="inv-pdf-${p.id}"/> PDF adjunto</label>
+            <div class="row-2" style="margin-top:8px">
+              <div><label style="font-size:12px">PDF (factura)</label><input type="file" id="inv-pdf-${p.id}" accept=".pdf" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">XML (CFDI)</label><input type="file" id="inv-xml-${p.id}" accept=".xml" style="font-size:12px"/></div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:10px;align-items:center;flex-wrap:wrap">
               <button class="btn-primary inv-save-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px">Guardar factura</button>
               <span id="inv-msg-${p.id}" class="small muted"></span>
             </div>
@@ -828,35 +836,59 @@ async function purchasesView() {
         };
       });
 
-      // Mostrar/ocultar formulario de factura
-      tabContent.querySelectorAll('.po-invoice-btn').forEach(btn => {
+      // Solicitar factura al proveedor
+      tabContent.querySelectorAll('.po-req-invoice-btn').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            btn.disabled = true;
+            const data = await api(`/api/invoices/request/${btn.dataset.id}`, { method: 'POST' });
+            if (data.mailto) window.open(data.mailto, '_blank');
+            const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+            msgEl.textContent = `✅ Solicitud enviada a ${data.supplier_email || 'proveedor'}`;
+            msgEl.style.color = '#16a34a';
+            btn.textContent = '📧 Solicitud enviada';
+          } catch(e) {
+            const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+            msgEl.textContent = e.message; msgEl.style.color = '#dc2626';
+            btn.disabled = false;
+          }
+        };
+      });
+
+      // Mostrar/ocultar formulario manual
+      tabContent.querySelectorAll('.po-manual-invoice-btn').forEach(btn => {
         btn.onclick = () => {
           const form = document.getElementById(`invoice-form-${btn.dataset.id}`);
           form.style.display = form.style.display === 'none' ? 'block' : 'none';
         };
       });
 
-      // Guardar factura inline
+      // Guardar factura manual con archivos
       tabContent.querySelectorAll('.inv-save-btn').forEach(btn => {
         btn.onclick = async () => {
           const id = btn.dataset.id;
           const numEl = document.getElementById(`inv-num-${id}`);
           const subEl = document.getElementById(`inv-sub-${id}`);
           const taxEl = document.getElementById(`inv-tax-${id}`);
+          const pdfEl = document.getElementById(`inv-pdf-${id}`);
+          const xmlEl = document.getElementById(`inv-xml-${id}`);
           const msgEl = document.getElementById(`inv-msg-${id}`);
           try {
             if (!numEl.value) throw new Error('Ingresa el número de factura');
             const sub = Number(subEl.value||0);
             if (!sub) throw new Error('Ingresa subtotal mayor a cero');
             const tax = Number(taxEl.value||0);
-            await api('/api/invoices', { method: 'POST', body: JSON.stringify({
-              purchase_order_id: Number(id),
-              supplier_id: Number(btn.dataset.supplier),
-              invoice_number: numEl.value,
-              subtotal: sub, taxes: tax, total: sub + tax,
-              xml_attached: document.getElementById(`inv-xml-${id}`).checked,
-              pdf_attached: document.getElementById(`inv-pdf-${id}`).checked
-            })});
+            const fd = new FormData();
+            fd.append('purchase_order_id', id);
+            fd.append('supplier_id', btn.dataset.supplier);
+            fd.append('invoice_number', numEl.value);
+            fd.append('subtotal', sub);
+            fd.append('taxes', tax);
+            fd.append('total', sub + tax);
+            if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
+            if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
+            const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+            if (!res.ok) throw new Error((await res.json()).error || 'Error');
             msgEl.textContent = '✅ Factura guardada'; msgEl.style.color = '#16a34a';
             setTimeout(render, 900);
           } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
@@ -920,46 +952,124 @@ async function purchasesView() {
   renderTab('pendientes');
 }
 async function proveedorPOView() {
-  const pos = await api('/api/purchases/purchase-orders');
-  const pending = pos.filter(p => p.status === 'Enviada' || p.status === 'Pendiente');
-  const responded = pos.filter(p => p.status !== 'Enviada' && p.status !== 'Pendiente');
+  const [pos, myInvoices] = await Promise.all([
+    api('/api/purchases/purchase-orders'),
+    api('/api/invoices')
+  ]);
+  const pendingResponse = pos.filter(p => p.status === 'Enviada');
+  const pendingInvoice = pos.filter(p => ['Aceptada','En proceso','Entregado'].includes(p.status));
+  const invoicedPOs = new Set(myInvoices.map(i => i.purchase_order_id));
+  const toInvoice = pendingInvoice.filter(p => !invoicedPOs.has(p.id));
+  const done = pos.filter(p => ['Facturada','Cerrada','Rechazada por proveedor'].includes(p.status));
 
   app.innerHTML = shell(`
-    <div class="card section">
+    <!-- Paso 1: Aceptar/Rechazar POs recibidas -->
+    <div class="card section" style="margin-bottom:12px">
       <div class="module-title">
-        <h3>Órdenes de compra pendientes de respuesta <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${pending.length}</span></h3>
+        <h3>📬 Paso 1 — Órdenes recibidas, pendientes de confirmación
+          <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${pendingResponse.length}</span>
+        </h3>
       </div>
-      ${pending.length === 0 ? '<div class="muted small" style="padding:16px">Sin órdenes pendientes de respuesta.</div>' : `
-      <div class="table-wrap"><table>
-        <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Moneda</th><th>Estatus</th><th>Acción</th></tr></thead>
-        <tbody>${pending.map(po => `<tr>
-          <td><b>${po.po_number||po.id}</b></td>
-          <td>${String(po.created_at||'').slice(0,10)}</td>
-          <td><b>$${Number(po.total||0).toFixed(2)}</b></td>
-          <td>${po.currency||'MXN'}</td>
-          <td>${statusPill(po.status)}</td>
-          <td>
-            <button class="btn-primary" style="font-size:12px;padding:4px 10px" onclick="respondPO(${po.id},'aceptada')">Aceptar</button>
-            <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px" onclick="respondPO(${po.id},'rechazada')">Rechazar</button>
-          </td>
-        </tr>`).join('')}
-        </tbody></table></div>`}
+      ${pendingResponse.length === 0
+        ? '<div class="muted small" style="padding:12px">Sin órdenes pendientes de confirmación.</div>'
+        : pendingResponse.map(po => `
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-bottom:1px solid #f3f4f6">
+          <div>
+            <b>${po.folio}</b>
+            <span class="small muted" style="margin-left:8px">${String(po.created_at||'').slice(0,10)}</span>
+            <span style="margin-left:12px;font-weight:600">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-primary" style="font-size:12px;padding:5px 12px" onclick="respondPO(${po.id},'aceptada')">✅ Aceptar</button>
+            <button class="btn-secondary" style="font-size:12px;padding:5px 12px;color:#dc2626" onclick="respondPO(${po.id},'rechazada')">✖ Rechazar</button>
+          </div>
+        </div>`).join('')}
     </div>
-    <div class="card section" style="margin-top:16px">
-      <div class="module-title"><h3>Historial de respuestas</h3></div>
-      ${responded.length === 0 ? '<div class="muted small" style="padding:16px">Sin historial.</div>' : `
+
+    <!-- Paso 2: Subir factura -->
+    <div class="card section" style="margin-bottom:12px">
+      <div class="module-title">
+        <h3>🧾 Paso 2 — Subir factura de POs aceptadas
+          <span style="background:#3b82f6;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${toInvoice.length}</span>
+        </h3>
+      </div>
+      ${toInvoice.length === 0
+        ? '<div class="muted small" style="padding:12px">Sin facturas pendientes de subir.</div>'
+        : toInvoice.map(po => `
+        <div style="padding:10px;border-bottom:1px solid #f3f4f6">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div>
+              <b>${po.folio}</b>
+              ${statusPill(po.status)}
+              ${po.invoice_requested ? '<span style="font-size:11px;color:#2563eb;margin-left:6px">📧 El comprador solicitó esta factura</span>' : ''}
+            </div>
+            <b>$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</b>
+          </div>
+          <div class="row-3">
+            <div><label style="font-size:12px">No. factura *</label><input id="sinv-num-${po.id}" placeholder="FACT-001"/></div>
+            <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" placeholder="0.00"/></div>
+            <div><label style="font-size:12px">IVA</label><input id="sinv-tax-${po.id}" type="number" placeholder="0.00"/></div>
+          </div>
+          <div class="row-2" style="margin-top:8px">
+            <div><label style="font-size:12px">📄 PDF de la factura</label><input type="file" id="sinv-pdf-${po.id}" accept=".pdf" style="font-size:12px"/></div>
+            <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="sinv-xml-${po.id}" accept=".xml" style="font-size:12px"/></div>
+          </div>
+          <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn-primary sup-inv-save" data-id="${po.id}" data-supplier="${po.supplier_id}" style="font-size:12px;padding:5px 14px">Subir factura</button>
+            <span id="sinv-msg-${po.id}" class="small muted"></span>
+          </div>
+        </div>`).join('')}
+    </div>
+
+    <!-- Historial -->
+    <div class="card section">
+      <h3>📁 Historial</h3>
+      ${done.length === 0 ? '<div class="muted small" style="padding:12px">Sin historial.</div>' : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Estatus</th><th>Nota</th></tr></thead>
-        <tbody>${responded.map(po => `<tr>
-          <td><b>${po.po_number||po.id}</b></td>
+        <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Estatus</th></tr></thead>
+        <tbody>${done.map(po => `<tr>
+          <td><b>${po.folio}</b></td>
           <td>${String(po.created_at||'').slice(0,10)}</td>
-          <td>$${Number(po.total||0).toFixed(2)} ${po.currency||'MXN'}</td>
+          <td>$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td>
           <td>${statusPill(po.status)}</td>
-          <td class="small muted">${po.supplier_note||'-'}</td>
         </tr>`).join('')}
         </tbody></table></div>`}
     </div>
   `, 'cotizaciones');
+
+  // Subir factura desde proveedor
+  document.querySelectorAll('.sup-inv-save').forEach(btn => {
+    btn.onclick = async () => {
+      const id = btn.dataset.id;
+      const numEl = document.getElementById(`sinv-num-${id}`);
+      const subEl = document.getElementById(`sinv-sub-${id}`);
+      const taxEl = document.getElementById(`sinv-tax-${id}`);
+      const pdfEl = document.getElementById(`sinv-pdf-${id}`);
+      const xmlEl = document.getElementById(`sinv-xml-${id}`);
+      const msgEl = document.getElementById(`sinv-msg-${id}`);
+      try {
+        if (!numEl.value) throw new Error('Ingresa el número de factura');
+        const sub = Number(subEl.value||0);
+        if (!sub) throw new Error('Ingresa subtotal mayor a cero');
+        const tax = Number(taxEl.value||0);
+        const fd = new FormData();
+        fd.append('purchase_order_id', id);
+        fd.append('supplier_id', btn.dataset.supplier);
+        fd.append('invoice_number', numEl.value);
+        fd.append('subtotal', sub);
+        fd.append('taxes', tax);
+        fd.append('total', sub + tax);
+        if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
+        if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
+        const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+        if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+        msgEl.textContent = '✅ Factura subida correctamente'; msgEl.style.color = '#16a34a';
+        btn.disabled = true;
+        setTimeout(render, 1200);
+      } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+    };
+  });
+
   bindCommon();
 }
 
@@ -1194,8 +1304,79 @@ async function quotationsView() {
 }
 async function invoicingView() {
   const [pos, invs] = await Promise.all([api('/api/purchases/purchase-orders'), api('/api/invoices')]);
-  app.innerHTML = shell(`<div class="grid grid-2"><div class="card section"><h3>Registrar factura</h3><label>PO</label><select id="invPo"><option value="">Selecciona</option>${pos.map(p => `<option value="${p.id}" data-supplier="${p.supplier_id}">${p.folio} · ${p.supplier_name}</option>`).join('')}</select><div class="row-3"><input id="invNumber" placeholder="No. factura"/><input id="invSubtotal" type="number" placeholder="Subtotal"/><input id="invTaxes" type="number" placeholder="IVA"/></div><div class="row-3"><label><input type="checkbox" id="invXml"/> XML</label><label><input type="checkbox" id="invPdf"/> PDF</label><button class="btn-primary" id="saveInvBtn">Guardar factura</button></div><div id="invMsg" class="small muted"></div></div><div class="card section"><div class="module-title"><h3>Facturas</h3><button class="btn-secondary" id="expInvBtn">Exportar</button></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Total</th><th>Estatus</th></tr></thead><tbody>${invs.map(i => `<tr><td>${i.invoice_number}</td><td>${i.po_folio}</td><td>${i.supplier_name}</td><td>${Number(i.total || 0).toFixed(2)}</td><td>${statusPill(i.status)}</td></tr>`).join('')}</tbody></table></div></div></div>`, 'facturacion');
-  saveInvBtn.onclick = async () => { try { const supplier_id = Number(invPo.selectedOptions[0]?.dataset?.supplier || 0); const subtotal = Number(invSubtotal.value || 0), taxes = Number(invTaxes.value || 0); await api('/api/invoices', { method: 'POST', body: JSON.stringify({ purchase_order_id: Number(invPo.value), supplier_id, invoice_number: invNumber.value, subtotal, taxes, total: subtotal + taxes, xml_attached: invXml.checked, pdf_attached: invPdf.checked }) }); render(); } catch (e) { invMsg.textContent = e.message; } };
+  const invoicedPOIds = new Set(invs.map(i => i.purchase_order_id));
+  const posPendientes = pos.filter(p => !invoicedPOIds.has(p.id) && ['Enviada','Aceptada','En proceso','Entregado'].includes(p.status));
+
+  app.innerHTML = shell(`
+    <div class="grid grid-2">
+      <div class="card section">
+        <h3>Registrar factura <span class="small muted">(respaldo manual)</span></h3>
+        <p class="small muted" style="margin-bottom:10px">El proveedor registra su propia factura desde su sesión. Usa este formulario solo si es necesario.</p>
+        <label>PO (entregadas sin factura)</label>
+        <select id="invPo">
+          <option value="">Selecciona PO</option>
+          ${posPendientes.map(p => `<option value="${p.id}" data-supplier="${p.supplier_id}">${p.folio} · ${p.supplier_name}</option>`).join('')}
+        </select>
+        <div class="row-3" style="margin-top:8px">
+          <div><label>No. factura *</label><input id="invNumber" placeholder="FACT-001"/></div>
+          <div><label>Subtotal *</label><input id="invSubtotal" type="number" placeholder="0.00"/></div>
+          <div><label>IVA</label><input id="invTaxes" type="number" placeholder="0.00"/></div>
+        </div>
+        <div class="row-2" style="margin-top:8px">
+          <div><label style="font-size:12px">📄 PDF</label><input type="file" id="invPdf" accept=".pdf" style="font-size:12px"/></div>
+          <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="invXml" accept=".xml" style="font-size:12px"/></div>
+        </div>
+        <div style="margin-top:10px">
+          <button class="btn-primary" id="saveInvBtn">Guardar factura</button>
+          <div id="invMsg" class="small muted" style="margin-top:6px"></div>
+        </div>
+      </div>
+
+      <div class="card section">
+        <div class="module-title"><h3>Facturas registradas</h3><button class="btn-secondary" id="expInvBtn">Exportar</button></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Total</th><th>Estatus</th><th>Archivos</th></tr></thead>
+          <tbody>${invs.length ? invs.map(i => `<tr>
+            <td><b>${i.invoice_number}</b></td>
+            <td>${i.po_folio}</td>
+            <td>${i.supplier_name}</td>
+            <td>$${Number(i.total||0).toFixed(2)}</td>
+            <td>${statusPill(i.status)}</td>
+            <td>
+              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" style="font-size:12px">📄 PDF</a>` : ''}
+              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" style="font-size:12px;margin-left:6px">📋 XML</a>` : ''}
+              ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
+            </td>
+          </tr>`).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+  `, 'facturacion');
+
+  saveInvBtn.onclick = async () => {
+    try {
+      if (!invPo.value) throw new Error('Selecciona una PO');
+      if (!invNumber.value) throw new Error('Ingresa el número de factura');
+      const sub = Number(invSubtotal.value||0);
+      if (!sub) throw new Error('Ingresa subtotal mayor a cero');
+      const tax = Number(invTaxes.value||0);
+      const supplier_id = Number(invPo.selectedOptions[0]?.dataset?.supplier||0);
+      const fd = new FormData();
+      fd.append('purchase_order_id', invPo.value);
+      fd.append('supplier_id', supplier_id);
+      fd.append('invoice_number', invNumber.value);
+      fd.append('subtotal', sub);
+      fd.append('taxes', tax);
+      fd.append('total', sub + tax);
+      if (invPdf.files[0]) fd.append('pdf', invPdf.files[0]);
+      if (invXml.files[0]) fd.append('xml', invXml.files[0]);
+      const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      invMsg.textContent = '✅ Factura guardada'; invMsg.style.color = '#16a34a';
+      setTimeout(render, 900);
+    } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
+  };
   expInvBtn.onclick = () => downloadCsv('invoices', 'facturas.csv');
   bindCommon();
 }
