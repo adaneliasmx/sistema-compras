@@ -154,7 +154,7 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
     folio: nextPOFolio(db, supplier?.provider_code || 'GEN'),
     supplier_id: supplierId,
     buyer_user_id: buyerUserId,
-    status: 'En proceso',
+    status: 'Enviada',
     currency: currency || lines[0].currency || 'MXN',
     created_at: new Date().toISOString(),
     total_amount: 0,
@@ -181,10 +181,10 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
       status: 'En proceso'
     });
     const oldStatus = line.status;
-    line.status = 'En proceso';
+    line.status = 'Enviada';
     line.purchase_order_id = po.id;
     line.updated_at = new Date().toISOString();
-    addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, purchase_order_id: po.id, old_status: oldStatus, new_status: 'En proceso', changed_by_user_id: buyerUserId, comment: `PO ${po.folio} generada` });
+    addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, purchase_order_id: po.id, old_status: oldStatus, new_status: 'Enviada', changed_by_user_id: buyerUserId, comment: `PO ${po.folio} generada` });
     recalcRequisition(db, line.requisition_id);
   });
   po.total_amount = total;
@@ -285,14 +285,45 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
   res.json({ po, items });
 });
 
+// Proveedor acepta o rechaza la PO
 router.post('/purchase-orders/:id/respond', allowRoles('proveedor', 'admin'), (req, res) => {
   const db = read();
   const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
   if (!po) return res.status(404).json({ error: 'PO no encontrada' });
   if (req.user.supplier_id && po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
-  po.supplier_response = req.body.response || 'Aceptada';
-  po.supplier_comment = req.body.comment || '';
-  po.status = po.supplier_response === 'Rechazada' ? 'Rechazada por proveedor' : po.status;
+  const decision = (req.body.decision || req.body.response || 'aceptada').toLowerCase();
+  po.supplier_response = decision === 'rechazada' ? 'Rechazada' : 'Aceptada';
+  po.supplier_note = req.body.supplier_note || req.body.comment || '';
+  po.status = decision === 'rechazada' ? 'Rechazada por proveedor' : 'Aceptada';
+  po.responded_at = new Date().toISOString();
+  write(db);
+  res.json(po);
+});
+
+// Comprador avanza el status de la PO: Aceptada → En proceso → Entregado
+router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+  const ALLOWED = ['Enviada', 'Aceptada', 'En proceso', 'Entregado'];
+  const newStatus = req.body.status;
+  if (!ALLOWED.includes(newStatus)) return res.status(400).json({ error: `Estatus no válido. Use: ${ALLOWED.join(', ')}` });
+  const oldStatus = po.status;
+  po.status = newStatus;
+  po.updated_at = new Date().toISOString();
+  // Propagar status a los ítems de la PO
+  const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
+  poItems.forEach(poLine => {
+    poLine.status = newStatus;
+    const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+    if (reqItem) {
+      const oldItemStatus = reqItem.status;
+      reqItem.status = newStatus;
+      reqItem.updated_at = new Date().toISOString();
+      addHistory(db, { module: 'purchases', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, purchase_order_id: po.id, old_status: oldItemStatus, new_status: newStatus, changed_by_user_id: req.user.id, comment: `PO ${po.folio}: ${oldStatus} → ${newStatus}` });
+      recalcRequisition(db, reqItem.requisition_id);
+    }
+  });
   write(db);
   res.json(po);
 });

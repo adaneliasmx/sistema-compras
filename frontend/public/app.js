@@ -774,19 +774,94 @@ async function purchasesView() {
 
     } else if (tab === 'pos') {
       poActions.style.display = 'none';
-      tabContent.innerHTML = `
-        <div class="table-wrap"><table>
-          <thead><tr><th>Folio</th><th>Proveedor</th><th>Ítems</th><th>Moneda</th><th>Total</th><th>Estatus</th><th>Respuesta</th></tr></thead>
-          <tbody>${pos.length ? pos.map(p => `<tr>
-            <td><b>${p.folio}</b></td>
-            <td>${p.supplier_name}</td>
-            <td style="text-align:center">${p.items||0}</td>
-            <td>${p.currency||'MXN'}</td>
-            <td><b>$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</b></td>
-            <td>${statusPill(p.status)}</td>
-            <td>${p.supplier_response||'-'}</td>
-          </tr>`).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin órdenes de compra generadas aún</td></tr>'}
-          </tbody></table></div>`;
+      const STATUS_ORDER = ['Enviada','Aceptada','En proceso','Entregado','Facturada','Cerrada','Rechazada por proveedor'];
+      const STATUS_NEXT = { 'Enviada': 'En proceso', 'Aceptada': 'En proceso', 'En proceso': 'Entregado' };
+      const STATUS_LABEL_BTN = { 'Enviada': '▶ Marcar En proceso', 'Aceptada': '▶ Marcar En proceso', 'En proceso': '✅ Marcar Entregado' };
+
+      tabContent.innerHTML = pos.length ? pos.map(p => {
+        const nextS = STATUS_NEXT[p.status];
+        const btnLabel = STATUS_LABEL_BTN[p.status];
+        const canInvoice = p.status === 'Entregado';
+        const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
+        return `
+        <div class="card section" style="margin-bottom:12px" id="po-card-${p.id}">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div>
+              <b style="font-size:15px">${p.folio}</b>
+              <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
+              ${respTag}
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              ${statusPill(p.status)}
+              <b>$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${p.currency||'MXN'}</b>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+            ${nextS ? `<button class="btn-primary po-advance-btn" data-id="${p.id}" data-status="${nextS}" style="font-size:12px;padding:5px 12px">${btnLabel}</button>` : ''}
+            ${canInvoice ? `<button class="btn-primary po-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px;background:#16a34a">🧾 Registrar factura</button>` : ''}
+          </div>
+          <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
+            <h4 style="margin:0 0 10px">Registrar factura · ${p.folio}</h4>
+            <div class="row-3">
+              <div><label style="font-size:12px">No. factura *</label><input id="inv-num-${p.id}" placeholder="FACT-001"/></div>
+              <div><label style="font-size:12px">Subtotal *</label><input id="inv-sub-${p.id}" type="number" placeholder="0.00"/></div>
+              <div><label style="font-size:12px">IVA</label><input id="inv-tax-${p.id}" type="number" placeholder="0.00"/></div>
+            </div>
+            <div style="display:flex;gap:12px;margin-top:8px;align-items:center;flex-wrap:wrap">
+              <label style="font-size:12px"><input type="checkbox" id="inv-xml-${p.id}"/> XML adjunto</label>
+              <label style="font-size:12px"><input type="checkbox" id="inv-pdf-${p.id}"/> PDF adjunto</label>
+              <button class="btn-primary inv-save-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px">Guardar factura</button>
+              <span id="inv-msg-${p.id}" class="small muted"></span>
+            </div>
+          </div>
+        </div>`;
+      }).join('') : '<div class="muted small" style="padding:16px;text-align:center">Sin órdenes de compra generadas aún</div>';
+
+      // Avanzar status
+      tabContent.querySelectorAll('.po-advance-btn').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            btn.disabled = true;
+            await api(`/api/purchases/purchase-orders/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.status }) });
+            render();
+          } catch(e) { alert(e.message); btn.disabled = false; }
+        };
+      });
+
+      // Mostrar/ocultar formulario de factura
+      tabContent.querySelectorAll('.po-invoice-btn').forEach(btn => {
+        btn.onclick = () => {
+          const form = document.getElementById(`invoice-form-${btn.dataset.id}`);
+          form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        };
+      });
+
+      // Guardar factura inline
+      tabContent.querySelectorAll('.inv-save-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const numEl = document.getElementById(`inv-num-${id}`);
+          const subEl = document.getElementById(`inv-sub-${id}`);
+          const taxEl = document.getElementById(`inv-tax-${id}`);
+          const msgEl = document.getElementById(`inv-msg-${id}`);
+          try {
+            if (!numEl.value) throw new Error('Ingresa el número de factura');
+            const sub = Number(subEl.value||0);
+            if (!sub) throw new Error('Ingresa subtotal mayor a cero');
+            const tax = Number(taxEl.value||0);
+            await api('/api/invoices', { method: 'POST', body: JSON.stringify({
+              purchase_order_id: Number(id),
+              supplier_id: Number(btn.dataset.supplier),
+              invoice_number: numEl.value,
+              subtotal: sub, taxes: tax, total: sub + tax,
+              xml_attached: document.getElementById(`inv-xml-${id}`).checked,
+              pdf_attached: document.getElementById(`inv-pdf-${id}`).checked
+            })});
+            msgEl.textContent = '✅ Factura guardada'; msgEl.style.color = '#16a34a';
+            setTimeout(render, 900);
+          } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+        };
+      });
     }
   };
 
@@ -889,7 +964,7 @@ async function proveedorPOView() {
 }
 
 window.respondPO = async (poId, decision) => {
-  const nota = decision === 'rechazada' ? prompt('Motivo de rechazo (opcional):') || '' : '';
+  const nota = decision === 'rechazada' ? (prompt('Motivo de rechazo (opcional):') || '') : '';
   try {
     await api(`/api/purchases/purchase-orders/${poId}/respond`, {
       method: 'POST',
@@ -898,6 +973,7 @@ window.respondPO = async (poId, decision) => {
     render();
   } catch (e) { alert(e.message); }
 };
+
 
 async function quotationsView() {
   // El proveedor no puede acceder a pending-items → vista propia
