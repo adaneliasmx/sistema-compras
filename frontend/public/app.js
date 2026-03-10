@@ -952,9 +952,10 @@ async function purchasesView() {
   renderTab('pendientes');
 }
 async function proveedorPOView() {
-  const [pos, myInvoices] = await Promise.all([
+  const [pos, myInvoices, myPaymentInvs] = await Promise.all([
     api('/api/purchases/purchase-orders'),
-    api('/api/invoices')
+    api('/api/invoices'),
+    api('/api/payments/my-invoices').catch(() => [])
   ]);
   const pendingResponse = pos.filter(p => p.status === 'Enviada');
   const pendingInvoice = pos.filter(p => ['Aceptada','En proceso','Entregado'].includes(p.status));
@@ -1021,9 +1022,68 @@ async function proveedorPOView() {
         </div>`).join('')}
     </div>
 
-    <!-- Historial -->
+    <!-- Seguimiento de pagos -->
+    <div class="card section" style="margin-bottom:12px">
+      <div class="module-title">
+        <h3>💳 Paso 3 — Seguimiento de pagos</h3>
+      </div>
+      ${myPaymentInvs.length === 0
+        ? '<div class="muted small" style="padding:12px">Sin facturas registradas aún.</div>'
+        : myPaymentInvs.map(inv => {
+          const overdue = Number(inv.days_overdue || 0);
+          const overdueStr = inv.days_overdue !== null && inv.days_overdue !== undefined
+            ? (overdue > 0 ? `<span style="color:#dc2626;font-weight:700"> ⚠ ${overdue} días VENCIDO</span>`
+              : overdue === 0 ? `<span style="color:#f59e0b"> Vence hoy</span>`
+              : `<span style="color:#16a34a"> ${Math.abs(overdue)} días restantes</span>`)
+            : '';
+          const payments = (inv.payments || []);
+          const isPaid = inv.status === 'Pagada';
+          return `
+          <div style="padding:12px;border-bottom:1px solid #f3f4f6">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+              <div>
+                <b>${inv.invoice_number}</b>
+                ${inv.urgent ? '<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">URGENTE</span>' : ''}
+                ${statusPill(inv.status)}
+                <div class="small muted">Facturado: ${String(inv.created_at||'').slice(0,10)} ${inv.due_date ? '· Vence: '+inv.due_date : ''} ${overdueStr}</div>
+              </div>
+              <div style="text-align:right">
+                <div><b>$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</b></div>
+                <div class="small muted">Saldo: $${Number(inv.balance||inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;align-items:center">
+              ${!isPaid && !inv.urgent
+                ? `<button class="btn-secondary urgent-btn" data-id="${inv.id}" style="font-size:12px;padding:4px 10px;color:#dc2626;border-color:#dc2626">🔴 Marcar urgente</button>`
+                : ''}
+              ${isPaid
+                ? `<span style="color:#16a34a;font-size:12px;font-weight:600">✅ Pagado</span>`
+                : ''}
+            </div>
+            <div id="urgent-msg-${inv.id}" class="small muted" style="margin-top:4px"></div>
+          </div>`;
+        }).join('')}
+    </div>
+
+    <!-- Comprobantes de pago recibidos -->
+    ${myPaymentInvs.some(i => i.status === 'Pagada') ? `
+    <div class="card section" style="margin-bottom:12px">
+      <h3>🧾 Comprobantes de pago recibidos</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Factura</th><th>Monto pagado</th><th>Fecha pago</th><th>Referencia</th><th>Comprobante</th></tr></thead>
+        <tbody>${myPaymentInvs.filter(i => i.status === 'Pagada').map(inv => `<tr>
+          <td><b>${inv.invoice_number}</b></td>
+          <td>$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+          <td>${String(inv.created_at||'').slice(0,10)}</td>
+          <td>-</td>
+          <td><span class="muted small">Ver en historial</span></td>
+        </tr>`).join('')}
+        </tbody></table></div>
+    </div>` : ''}
+
+    <!-- Historial de POs -->
     <div class="card section">
-      <h3>📁 Historial</h3>
+      <h3>📁 Historial de POs</h3>
       ${done.length === 0 ? '<div class="muted small" style="padding:12px">Sin historial.</div>' : `
       <div class="table-wrap"><table>
         <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Estatus</th></tr></thead>
@@ -1067,6 +1127,23 @@ async function proveedorPOView() {
         btn.disabled = true;
         setTimeout(render, 1200);
       } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+    };
+  });
+
+  // Marcar factura como urgente
+  document.querySelectorAll('.urgent-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const nota = prompt('Motivo urgente (opcional, ej: "Vence mañana"):') || '';
+      try {
+        btn.disabled = true;
+        await api(`/api/payments/invoices/${btn.dataset.id}/urgent`, { method: 'PATCH', body: JSON.stringify({ note: nota }) });
+        const msgEl = document.getElementById(`urgent-msg-${btn.dataset.id}`);
+        if (msgEl) { msgEl.textContent = '🔴 Marcado como urgente — el equipo de pagos será notificado.'; msgEl.style.color = '#dc2626'; }
+        btn.textContent = '🔴 Urgente marcado';
+      } catch(e) {
+        btn.disabled = false;
+        alert(e.message);
+      }
     };
   });
 
@@ -1382,9 +1459,168 @@ async function invoicingView() {
 }
 
 async function paymentsView() {
-  const [pending, payments] = await Promise.all([api('/api/payments/pending-invoices'), api('/api/payments')]);
-  app.innerHTML = shell(`<div class="grid grid-2"><div class="card section"><h3>Registrar pago</h3><label>Factura pendiente</label><select id="payInvoice"><option value="">Selecciona</option>${pending.map(i => `<option value="${i.id}" data-supplier="${i.supplier_id}">${i.invoice_number} · ${i.supplier_name} · saldo ${Number(i.balance || i.total || 0).toFixed(2)}</option>`).join('')}</select><div class="row-3"><input id="payAmount" type="number" placeholder="Monto"/><input id="payRef" placeholder="Referencia"/><input id="payType" placeholder="Tipo" value="Pago"/></div><button class="btn-primary" id="savePayBtn">Guardar pago</button><div id="payMsg" class="small muted"></div></div><div class="card section"><div class="module-title"><h3>Pagos</h3><button class="btn-secondary" id="expPayBtn">Exportar</button></div><div class="table-wrap"><table><thead><tr><th>Factura</th><th>Proveedor</th><th>Monto</th><th>Referencia</th><th>Fecha</th></tr></thead><tbody>${payments.map(p => `<tr><td>${p.invoice_number}</td><td>${p.supplier_name}</td><td>${Number(p.amount || 0).toFixed(2)}</td><td>${p.reference}</td><td>${String(p.created_at).slice(0,10)}</td></tr>`).join('')}</tbody></table></div></div></div>`, 'pagos');
-  savePayBtn.onclick = async () => { try { const supplier_id = Number(payInvoice.selectedOptions[0]?.dataset?.supplier || 0); await api('/api/payments', { method: 'POST', body: JSON.stringify({ invoice_id: Number(payInvoice.value), supplier_id, amount: Number(payAmount.value), reference: payRef.value, payment_type: payType.value }) }); render(); } catch (e) { payMsg.textContent = e.message; } };
+  const [pending, payments] = await Promise.all([
+    api('/api/payments/pending-invoices'),
+    api('/api/payments')
+  ]);
+
+  function overdueTag(inv) {
+    if (inv.days_overdue === null || inv.days_overdue === undefined) return '';
+    if (inv.days_overdue > 0) return `<span style="color:#dc2626;font-weight:700;font-size:12px"> ⚠ ${inv.days_overdue} días vencido</span>`;
+    if (inv.days_overdue === 0) return `<span style="color:#f59e0b;font-size:12px"> Vence hoy</span>`;
+    return `<span style="color:#16a34a;font-size:12px"> ${Math.abs(inv.days_overdue)} días restantes</span>`;
+  }
+
+  app.innerHTML = shell(`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">
+
+      <!-- Panel izquierdo: lista de facturas pendientes -->
+      <div class="card section">
+        <div class="module-title"><h3>Facturas pendientes de pago</h3></div>
+        ${pending.length === 0
+          ? '<div class="muted small" style="padding:16px;text-align:center">✅ Sin facturas pendientes</div>'
+          : pending.map(inv => {
+            const overdue = Number(inv.days_overdue || 0);
+            const rowBg = overdue > 0 ? '#fef2f2' : overdue === 0 ? '#fffbeb' : '';
+            const urgentTag = inv.urgent ? `<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>` : '';
+            return `
+            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${inv.balance||inv.total||0}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}"
+              style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${rowBg};transition:background 0.15s"
+              onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='${rowBg}'">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                <div>
+                  <b>${inv.invoice_number}</b>${urgentTag}
+                  <div class="small muted">${inv.supplier_name} · PO: ${inv.po_folio||'-'}</div>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-weight:700">$${Number(inv.balance||inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                  <div class="small muted">Total $${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                </div>
+              </div>
+              <div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap">
+                <span class="small muted">Factura: ${String(inv.created_at||'').slice(0,10)}</span>
+                ${inv.due_date ? `<span class="small muted">Vence: ${inv.due_date}</span>` : ''}
+                ${overdueTag(inv)}
+                ${inv.urgent_note ? `<span class="small" style="color:#dc2626">Nota urgente: ${inv.urgent_note}</span>` : ''}
+              </div>
+            </div>`;
+          }).join('')}
+      </div>
+
+      <!-- Panel derecho: formulario de pago -->
+      <div class="card section" id="payFormCard">
+        <h3>Registrar pago</h3>
+        <p class="small muted" id="payFormHint">← Selecciona una factura de la lista</p>
+        <div id="payFormBody" style="display:none">
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px;margin-bottom:12px" id="payInvSummary"></div>
+          <div class="row-2" style="margin-bottom:8px">
+            <div><label>Monto a pagar *</label><input id="payAmount" type="number" placeholder="0.00"/></div>
+            <div>
+              <label>Tipo de pago</label>
+              <select id="payType">
+                <option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>SPEI</option><option>Otro</option>
+              </select>
+            </div>
+          </div>
+          <div class="row-2" style="margin-bottom:8px">
+            <div><label>Referencia / No. operación</label><input id="payRef" placeholder="Ej. SPEI-00123456"/></div>
+            <div><label>Fecha de entrega del material</label><input id="payDelivery" type="date"/></div>
+          </div>
+          <div class="row-2" style="margin-bottom:8px">
+            <div><label>Días de crédito</label><input id="payCreditDays" type="number" placeholder="0" min="0"/></div>
+            <div><label>Comentario</label><input id="payComment" placeholder="Opcional"/></div>
+          </div>
+          <div style="margin-bottom:12px">
+            <label>📎 Comprobante de pago (PDF, imagen)</label>
+            <input type="file" id="payProof" accept=".pdf,.jpg,.jpeg,.png,.webp" style="font-size:12px;margin-top:4px;display:block"/>
+            <span class="small muted">Máx. 10 MB · PDF, JPG, PNG, WEBP</span>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn-primary" id="savePayBtn">Guardar pago y notificar</button>
+            <span id="payMsg" class="small muted"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Historial de pagos -->
+    <div class="card section" style="margin-top:16px">
+      <div class="module-title">
+        <h3>Historial de pagos</h3>
+        <button class="btn-secondary" id="expPayBtn">Exportar CSV</button>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Monto</th><th>Tipo</th><th>Referencia</th><th>Fecha</th><th>Comprobante</th></tr></thead>
+        <tbody>${payments.length ? payments.map(p => `<tr>
+          <td>${p.invoice_number}</td>
+          <td>${p.po_folio||'-'}</td>
+          <td>${p.supplier_name}</td>
+          <td><b>$${Number(p.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</b></td>
+          <td>${p.payment_type||'-'}</td>
+          <td>${p.reference||'-'}</td>
+          <td>${String(p.created_at||'').slice(0,10)}</td>
+          <td>${p.proof_path ? `<a href="${p.proof_path}" target="_blank" style="font-size:12px">📎 Ver</a>` : '<span class="muted small">—</span>'}</td>
+        </tr>`).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:16px">Sin pagos registrados</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>
+  `, 'pagos');
+
+  // Seleccionar factura → poblar formulario
+  let selectedInv = null;
+  document.querySelectorAll('.pay-invoice-row').forEach(row => {
+    row.onclick = () => {
+      document.querySelectorAll('.pay-invoice-row').forEach(r => r.style.outline = '');
+      row.style.outline = '2px solid #3b82f6';
+      selectedInv = {
+        id: Number(row.dataset.id),
+        supplier_id: Number(row.dataset.supplier),
+        email: row.dataset.email,
+        number: row.dataset.number,
+        balance: Number(row.dataset.balance),
+        total: Number(row.dataset.total),
+        creditDays: Number(row.dataset.creditdays || 0),
+        delivery: row.dataset.delivery || ''
+      };
+      payFormHint.style.display = 'none';
+      payFormBody.style.display = 'block';
+      payAmount.value = selectedInv.balance.toFixed(2);
+      payCreditDays.value = selectedInv.creditDays || '';
+      payDelivery.value = selectedInv.delivery || '';
+      payInvSummary.innerHTML = `
+        <b>Factura:</b> ${selectedInv.number} &nbsp;|&nbsp;
+        <b>Saldo:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
+        <b>Total factura:</b> $${selectedInv.total.toLocaleString('es-MX',{minimumFractionDigits:2})}
+      `;
+    };
+  });
+
+  // Guardar pago
+  savePayBtn.onclick = async () => {
+    if (!selectedInv) { payMsg.textContent = 'Selecciona una factura primero'; payMsg.style.color = '#dc2626'; return; }
+    try {
+      if (!payAmount.value || Number(payAmount.value) <= 0) throw new Error('Ingresa un monto mayor a cero');
+      if (!payRef.value) throw new Error('Ingresa la referencia de pago');
+      savePayBtn.disabled = true;
+      const fd = new FormData();
+      fd.append('invoice_id', selectedInv.id);
+      fd.append('supplier_id', selectedInv.supplier_id);
+      fd.append('amount', payAmount.value);
+      fd.append('payment_type', payType.value);
+      fd.append('reference', payRef.value);
+      fd.append('comment', payComment.value);
+      fd.append('delivery_date', payDelivery.value);
+      fd.append('credit_days', payCreditDays.value || 0);
+      if (payProof.files[0]) fd.append('proof', payProof.files[0]);
+      const res = await fetch('/api/payments', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+      const data = await res.json();
+      payMsg.textContent = '✅ Pago registrado'; payMsg.style.color = '#16a34a';
+      if (data.mailto && data.supplier_email) window.open(data.mailto, '_blank');
+      setTimeout(render, 1000);
+    } catch(e) { payMsg.textContent = e.message; payMsg.style.color = '#dc2626'; savePayBtn.disabled = false; }
+  };
+
   expPayBtn.onclick = () => downloadCsv('payments', 'pagos.csv');
   bindCommon();
 }

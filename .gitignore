@@ -3,5 +3,7 @@ node_modules/
 storage/*
 !storage/invoices/
 !storage/invoices/.gitkeep
+!storage/payments/
+!storage/payments/.gitkeep
 *.zip
 *.log
