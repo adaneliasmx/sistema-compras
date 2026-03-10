@@ -1,8 +1,8 @@
 {
   "name": "sistema-compras-primera-etapa",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Primera etapa funcional + esqueleto completo del sistema de compras",
+  "description": "Sistema de compras funcional base con catálogos, requisiciones, compras, cotizaciones, facturación, pagos y admin sobre JSON local",
   "main": "backend/src/server.js",
   "scripts": {
     "start": "node backend/src/server.js",
@@ -13,6 +13,7 @@
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.20.0"
   }
 }

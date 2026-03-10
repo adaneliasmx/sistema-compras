@@ -6,14 +6,26 @@ const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
 router.post('/login', (req, res) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body || {};
   const db = read();
-  const user = db.users.find(u => u.email === email && u.active);
+  const user = db.users.find(u => u.email?.toLowerCase() === String(email || '').toLowerCase() && u.active);
   if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
-  const ok = bcrypt.compareSync(password, user.password_hash);
+  const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
   const token = jwt.sign({ sub: user.id, role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
-  res.json({ token, user: { id: user.id, name: user.full_name, email: user.email, role: user.role_code, department: user.department } });
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.full_name,
+      email: user.email,
+      role: user.role_code,
+      department: user.department,
+      supplier_id: user.supplier_id || null,
+      default_cost_center_id: user.default_cost_center_id || null,
+      default_sub_cost_center_id: user.default_sub_cost_center_id || null
+    }
+  });
 });
 
 router.get('/me', authRequired, (req, res) => res.json(req.user));

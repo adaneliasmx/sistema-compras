@@ -1,0 +1,208 @@
+const express = require('express');
+const { read, write, nextId } = require('../db');
+const { authRequired } = require('../middleware/auth');
+const { allowRoles } = require('../middleware/roles');
+const { addHistory, deriveItemStatus, recalcRequisition } = require('../utils/workflow');
+const router = express.Router();
+router.use(authRequired);
+
+router.get('/', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+  const db = read();
+  const rows = db.quotations
+    .filter(q => req.user.supplier_id ? q.supplier_id === req.user.supplier_id : true)
+    .map(q => ({
+      ...q,
+      supplier_name: (db.suppliers.find(s => s.id === q.supplier_id) || {}).business_name || '',
+      item_name: (db.catalog_items.find(i => i.id === q.catalog_item_id) || {}).name || q.official_item_name || '',
+      requisition_folio: (() => {
+        const ri = db.requisition_items.find(i => i.id === q.requisition_item_id);
+        return ri ? (db.requisitions.find(r => r.id === ri.requisition_id) || {}).folio || '' : '';
+      })()
+    }));
+  res.json(rows);
+});
+
+router.get('/by-item/:itemId', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const itemId = Number(req.params.itemId);
+  const quotes = db.quotations
+    .filter(q => q.requisition_item_id === itemId)
+    .map(q => ({
+      ...q,
+      supplier_name: (db.suppliers.find(s => s.id === q.supplier_id) || {}).business_name || '',
+      is_winner: q.is_winner === true
+    }))
+    .sort((a, b) => Number(a.unit_cost || 0) - Number(b.unit_cost || 0));
+  res.json(quotes);
+});
+
+router.post('/', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+  const db = read();
+  const supplierId = req.user.supplier_id || Number(req.body.supplier_id);
+  if (!supplierId) return res.status(400).json({ error: 'Proveedor requerido' });
+
+  if (req.user.role_code === 'proveedor') {
+    const requests = db.quotation_requests || [];
+    const hasRequest = requests.some(r =>
+      r.requisition_item_id === Number(req.body.requisition_item_id) &&
+      r.supplier_id === supplierId
+    );
+    if (!hasRequest) return res.status(403).json({ error: 'No tienes una solicitud de cotización para este ítem' });
+  }
+
+  const row = {
+    id: nextId(db.quotations),
+    requisition_item_id: Number(req.body.requisition_item_id),
+    supplier_id: supplierId,
+    catalog_item_id: req.body.catalog_item_id ? Number(req.body.catalog_item_id) : null,
+    official_item_name: req.body.official_item_name || '',
+    provider_code: req.body.provider_code || '',
+    delivery_days: Number(req.body.delivery_days || 0),
+    quote_number: req.body.quote_number || '',
+    has_credit: !!req.body.has_credit,
+    credit_days: Number(req.body.credit_days || 0),
+    advance_percentage: Number(req.body.advance_percentage || 0),
+    payment_terms: req.body.payment_terms || '',
+    unit_cost: Number(req.body.unit_cost || 0),
+    currency: req.body.currency || 'MXN',
+    is_winner: false,
+    status: 'Cotizada',
+    created_at: new Date().toISOString(),
+    created_by_user_id: req.user.id
+  };
+
+  if (!row.requisition_item_id || !row.supplier_id) {
+    return res.status(400).json({ error: 'Ítem y proveedor requeridos' });
+  }
+
+  db.quotation_requests = db.quotation_requests || [];
+  const qr = db.quotation_requests.find(r =>
+    r.requisition_item_id === row.requisition_item_id && r.supplier_id === supplierId
+  );
+  if (qr) qr.status = 'Recibida';
+
+  db.quotations.push(row);
+
+  const reqItem = db.requisition_items.find(i => i.id === row.requisition_item_id);
+  if (reqItem) {
+    const oldStatus = reqItem.status;
+    reqItem.updated_at = new Date().toISOString();
+    addHistory(db, {
+      module: 'quotations',
+      requisition_id: reqItem.requisition_id,
+      requisition_item_id: reqItem.id,
+      old_status: oldStatus,
+      new_status: reqItem.status,
+      changed_by_user_id: req.user.id,
+      comment: `Cotización registrada por ${(db.suppliers.find(s=>s.id===supplierId)||{}).business_name||supplierId}`
+    });
+    recalcRequisition(db, reqItem.requisition_id);
+  }
+
+  write(db);
+  res.status(201).json(row);
+});
+
+// Seleccionar cotización ganadora
+router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const quoteId = Number(req.params.id);
+  const winner = db.quotations.find(q => q.id === quoteId);
+  if (!winner) return res.status(404).json({ error: 'Cotización no encontrada' });
+
+  db.quotations
+    .filter(q => q.requisition_item_id === winner.requisition_item_id)
+    .forEach(q => { q.is_winner = false; });
+
+  winner.is_winner = true;
+  winner.selected_at = new Date().toISOString();
+  winner.selected_by_user_id = req.user.id;
+
+  const reqItem = db.requisition_items.find(i => i.id === winner.requisition_item_id);
+  if (reqItem) {
+    const oldStatus = reqItem.status;
+    reqItem.supplier_id = winner.supplier_id;
+    reqItem.unit_cost = winner.unit_cost;
+    reqItem.currency = winner.currency || reqItem.currency || 'MXN';
+    if (!reqItem.catalog_item_id && winner.catalog_item_id) reqItem.catalog_item_id = winner.catalog_item_id;
+    reqItem.winning_quote_id = winner.id;
+    reqItem.delivery_days = winner.delivery_days;
+    reqItem.payment_terms = winner.payment_terms;
+
+    const reqRow = db.requisitions.find(r => r.id === reqItem.requisition_id);
+    recalcRequisition(db, reqItem.requisition_id);
+    reqItem.status = deriveItemStatus(db, Number(reqRow?.total_amount || 0), reqItem);
+    reqItem.updated_at = new Date().toISOString();
+
+    addHistory(db, {
+      module: 'quotations',
+      requisition_id: reqItem.requisition_id,
+      requisition_item_id: reqItem.id,
+      old_status: oldStatus,
+      new_status: reqItem.status,
+      changed_by_user_id: req.user.id,
+      comment: `Cotización ganadora: ${(db.suppliers.find(s=>s.id===winner.supplier_id)||{}).business_name||''} · $${winner.unit_cost} · Entrega: ${winner.delivery_days} días`
+    });
+    recalcRequisition(db, reqItem.requisition_id);
+  }
+
+  write(db);
+  res.json({
+    winner,
+    requisition_item: reqItem,
+    message: `Cotización de ${(db.suppliers.find(s=>s.id===winner.supplier_id)||{}).business_name||''} seleccionada como ganadora`
+  });
+});
+
+// Dar de alta ítem a catálogo desde cotización ganadora
+router.post('/:id/register-catalog-from-winner', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const winner = db.quotations.find(q => q.id === Number(req.params.id));
+  if (!winner || !winner.is_winner) return res.status(400).json({ error: 'Solo desde cotización ganadora' });
+
+  const reqItem = db.requisition_items.find(i => i.id === winner.requisition_item_id);
+  if (!reqItem) return res.status(404).json({ error: 'Ítem de requisición no encontrado' });
+  if (!req.body.code || !req.body.name) return res.status(400).json({ error: 'Código y nombre requeridos' });
+
+  const item = {
+    id: nextId(db.catalog_items),
+    code: req.body.code,
+    name: req.body.name,
+    item_type: req.body.item_type || 'uso continuo',
+    unit: req.body.unit || reqItem.unit || 'pza',
+    supplier_id: winner.supplier_id,
+    equivalent_code: req.body.equivalent_code || winner.provider_code || '',
+    unit_price: winner.unit_cost,
+    currency: winner.currency || 'MXN',
+    quote_validity_days: Number(req.body.quote_validity_days || 30),
+    active: true,
+    inventoried: !!req.body.inventoried,
+    cost_center_id: reqItem.cost_center_id || null,
+    sub_cost_center_id: reqItem.sub_cost_center_id || null,
+    created_from_quotation: winner.id
+  };
+
+  db.catalog_items.push(item);
+  reqItem.catalog_item_id = item.id;
+  winner.catalog_item_id = item.id;
+
+  const reqRow = db.requisitions.find(r => r.id === reqItem.requisition_id);
+  const oldStatus = reqItem.status;
+  recalcRequisition(db, reqItem.requisition_id);
+  reqItem.status = deriveItemStatus(db, Number(reqRow?.total_amount || 0), reqItem);
+
+  addHistory(db, {
+    module: 'catalogs',
+    requisition_id: reqItem.requisition_id,
+    requisition_item_id: reqItem.id,
+    old_status: oldStatus,
+    new_status: reqItem.status,
+    changed_by_user_id: req.user.id,
+    comment: `Ítem ${item.code} dado de alta en catálogo desde cotización ganadora`
+  });
+
+  write(db);
+  res.status(201).json({ catalog_item: item, requisition_item: reqItem });
+});
+
+module.exports = router;

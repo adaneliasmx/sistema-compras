@@ -1,42 +1,30 @@
-# Sistema de Compras - Primera etapa
+# Sistema de Compras - Base funcional ampliada
 
-Proyecto entregable con:
-- primera etapa funcional
-- esqueleto completo de módulos
-- rutas visibles desde el inicio
-- módulos pendientes mostrando "En mantenimiento"
-
-## Incluye funcional hoy
+Incluye funcional hoy:
 - login con roles demo
 - dashboard
-- catálogos base de consulta
+- catálogos con altas rápidas
 - captura de requisiciones con múltiples ítems
 - seguimiento y detalle de requisiciones
-- estructura visible para compras, cotizaciones, facturación, pagos, inventarios y admin
+- compras con generación de PO por proveedor
+- cotizaciones básicas
+- facturación básica
+- pagos básicos
+- inventarios básicos
+- administración de usuarios
 
 ## Usuarios demo
 - cliente@demo.com / Demo123*
 - comprador@demo.com / Demo123*
 - admin@demo.com / Demo123*
+- pagos@demo.com / Demo123*
 
 ## Instalación rápida
 1. Instala Node.js 20 o superior.
-2. Abre terminal en esta carpeta.
-3. Ejecuta:
-   npm install
-4. Inicializa la base:
-   npm run init-db
-5. Inicia el sistema:
-   npm start
-6. Abre en navegador:
-   http://localhost:3000
+2. Ejecuta `npm install`
+3. Inicializa la base con `npm run init-db`
+4. Inicia con `npm start`
+5. Abre `http://localhost:3000`
 
-## Estructura
-- frontend/public: HTML, CSS y JS
-- backend/src: servidor Express y rutas API
-- database: base SQLite
-- storage: archivos y adjuntos
-- scripts/init-db.js: crea la base demo
-
-## Nota
-Este entregable está pensado para instalarse fácil, entender la arquitectura y crecer por etapas.
+## Base de datos
+Esta versión usa JSON local en `database/app.json` para facilitar pruebas y despliegue rápido.
