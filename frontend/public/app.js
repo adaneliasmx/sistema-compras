@@ -844,7 +844,65 @@ async function purchasesView() {
   bindCommon();
   renderTab('pendientes');
 }
+async function proveedorPOView() {
+  const pos = await api('/api/purchases/purchase-orders');
+  const pending = pos.filter(p => p.status === 'Enviada' || p.status === 'Pendiente');
+  const responded = pos.filter(p => p.status !== 'Enviada' && p.status !== 'Pendiente');
+
+  app.innerHTML = shell(`
+    <div class="card section">
+      <div class="module-title">
+        <h3>Órdenes de compra pendientes de respuesta <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${pending.length}</span></h3>
+      </div>
+      ${pending.length === 0 ? '<div class="muted small" style="padding:16px">Sin órdenes pendientes de respuesta.</div>' : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Moneda</th><th>Estatus</th><th>Acción</th></tr></thead>
+        <tbody>${pending.map(po => `<tr>
+          <td><b>${po.po_number||po.id}</b></td>
+          <td>${String(po.created_at||'').slice(0,10)}</td>
+          <td><b>$${Number(po.total||0).toFixed(2)}</b></td>
+          <td>${po.currency||'MXN'}</td>
+          <td>${statusPill(po.status)}</td>
+          <td>
+            <button class="btn-primary" style="font-size:12px;padding:4px 10px" onclick="respondPO(${po.id},'aceptada')">Aceptar</button>
+            <button class="btn-secondary" style="font-size:12px;padding:4px 10px;margin-left:4px" onclick="respondPO(${po.id},'rechazada')">Rechazar</button>
+          </td>
+        </tr>`).join('')}
+        </tbody></table></div>`}
+    </div>
+    <div class="card section" style="margin-top:16px">
+      <div class="module-title"><h3>Historial de respuestas</h3></div>
+      ${responded.length === 0 ? '<div class="muted small" style="padding:16px">Sin historial.</div>' : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Folio PO</th><th>Fecha</th><th>Total</th><th>Estatus</th><th>Nota</th></tr></thead>
+        <tbody>${responded.map(po => `<tr>
+          <td><b>${po.po_number||po.id}</b></td>
+          <td>${String(po.created_at||'').slice(0,10)}</td>
+          <td>$${Number(po.total||0).toFixed(2)} ${po.currency||'MXN'}</td>
+          <td>${statusPill(po.status)}</td>
+          <td class="small muted">${po.supplier_note||'-'}</td>
+        </tr>`).join('')}
+        </tbody></table></div>`}
+    </div>
+  `, 'cotizaciones');
+  bindCommon();
+}
+
+window.respondPO = async (poId, decision) => {
+  const nota = decision === 'rechazada' ? prompt('Motivo de rechazo (opcional):') || '' : '';
+  try {
+    await api(`/api/purchases/purchase-orders/${poId}/respond`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, supplier_note: nota })
+    });
+    render();
+  } catch (e) { alert(e.message); }
+};
+
 async function quotationsView() {
+  // El proveedor no puede acceder a pending-items → vista propia
+  if (roleCan('proveedor')) return proveedorPOView();
+
   const [quotes, pending, suppliers] = await Promise.all([
     api('/api/quotations'),
     api('/api/purchases/pending-items'),
