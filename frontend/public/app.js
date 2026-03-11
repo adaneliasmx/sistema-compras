@@ -590,12 +590,12 @@ async function requisitionsView(editId = null) {
   const [items, suppliers, cc, scc, list, units] = await Promise.all([api('/api/catalogs/items'), api('/api/catalogs/suppliers'), api('/api/catalogs/cost-centers'), api('/api/catalogs/sub-cost-centers'), api('/api/requisitions'), api('/api/catalogs/units')]);
   let editing = null;
   if (editId) editing = await api(`/api/requisitions/${editId}`);
-  if (!editing && !state.itemsDraft.length) state.itemsDraft = [{ id: crypto.randomUUID(), quantity: 1, unit: units[0] || 'pza', unit_cost: 0, currency: 'MXN' }];
+  if (!editing && !state.itemsDraft.length) state.itemsDraft = [];
   if (editing) state.itemsDraft = editing.items.map(x => ({ ...x, id: crypto.randomUUID() }));
   const renderList = rows => rows.map(r => `<tr><td>${r.folio}</td><td>${statusPill(r.status)}</td><td>${Number(r.total_amount || 0).toFixed(2)} ${r.currency || ''}</td><td><a href="#/requisiciones/${r.id}">Validar</a></td></tr>`).join('');
   app.innerHTML = shell(`
     <div class="grid grid-2">
-      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div id="itemsDraft"></div><div class="actions"><button class="btn-secondary" id="addItemBtn">Agregar ítem</button><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
+      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:12px"><h4 id="itemEntryTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151">+ Nuevo ítem</h4><div class="row-3"><div><label style="font-size:12px">Ítem catálogo</label><select id="entry-catalog"><option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Nombre manual</label><input id="entry-manual-name" placeholder="Descripción del ítem"/></div><div><label style="font-size:12px">Proveedor</label><select id="entry-supplier"><option value="">Sin proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div></div><div class="row-4" style="margin-top:8px"><div><label style="font-size:12px">Cantidad</label><input id="entry-quantity" type="number" value="1" min="0.01"/></div><div><label style="font-size:12px">Unidad</label><select id="entry-unit">${units.map(u=>`<option>${u}</option>`).join('')}</select></div><div><label style="font-size:12px">Costo unit.</label><input id="entry-cost" type="number" value="0" min="0"/></div><div><label style="font-size:12px">Moneda</label><input id="entry-currency-item" value="MXN" readonly/></div></div><div class="row-2" style="margin-top:8px"><input id="entry-weblink" placeholder="Liga web (opcional)"/><input id="entry-item-comments" placeholder="Comentarios del ítem"/></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" id="addItemBtn">+ Agregar a lista</button><button class="btn-secondary" id="cancelEditItemBtn" style="display:none">✕ Cancelar edición</button></div></div><div id="itemsDraft" style="margin-top:12px"></div><div class="actions"><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
       <div class="card section"><div class="module-title"><h3>Requisiciones</h3><button class="btn-secondary" id="expReqListBtn">Exportar</button></div><div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="reqSearchFolio" placeholder="Buscar folio..." style="flex:1;min-width:100px"/><select id="reqFilterStatus" style="flex:1;min-width:110px"><option value="">Todos los estatus</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div><div class="table-wrap" id="reqListWrap"><table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(list)}</tbody></table></div></div>
     </div>
   `, 'requisiciones');
@@ -618,34 +618,85 @@ async function requisitionsView(editId = null) {
   };
   document.getElementById('reqSearchFolio')?.addEventListener('input', filterReqList);
   document.getElementById('reqFilterStatus')?.addEventListener('change', filterReqList);
+  let currentEditItemId = null;
+  const clearEntryPanel = () => {
+    document.getElementById('entry-catalog').value = '';
+    document.getElementById('entry-manual-name').value = '';
+    document.getElementById('entry-supplier').value = '';
+    document.getElementById('entry-quantity').value = '1';
+    document.getElementById('entry-unit').value = units[0] || 'pza';
+    document.getElementById('entry-cost').value = '0';
+    document.getElementById('entry-weblink').value = '';
+    document.getElementById('entry-item-comments').value = '';
+    itemEntryTitle.textContent = '+ Nuevo ítem';
+    addItemBtn.textContent = '+ Agregar a lista';
+    cancelEditItemBtn.style.display = 'none';
+    currentEditItemId = null;
+  };
+  document.getElementById('entry-catalog').onchange = () => {
+    const cat = items.find(i => i.id === Number(document.getElementById('entry-catalog').value));
+    if (cat) {
+      if (cat.supplier_id) document.getElementById('entry-supplier').value = cat.supplier_id;
+      if (cat.unit) document.getElementById('entry-unit').value = cat.unit;
+      document.getElementById('entry-cost').value = Number(cat.unit_price || 0);
+      document.getElementById('entry-currency-item').value = cat.currency || currency.value || 'MXN';
+      if (cat.cost_center_id) { costCenter.value = cat.cost_center_id; setSubOptions(cat.cost_center_id, cat.sub_cost_center_id || ''); if (cat.sub_cost_center_id) subCostCenter.value = cat.sub_cost_center_id; }
+    }
+  };
   const renderDraft = () => {
-    itemsDraft.innerHTML = state.itemsDraft.map(row => {
-      const rowItems = row.supplier_id
-        ? items.filter(i => !i.supplier_id || Number(i.supplier_id) === Number(row.supplier_id))
-        : items;
-      return `<div class="item-box"><div class="row-3"><div><label>Ítem catálogo ${row.supplier_id ? '<span style="color:#3b82f6;font-size:10px">(filtrado por proveedor)</span>' : ''}</label><select data-k="catalog_item_id" data-id="${row.id}"><option value="">Manual / no catalogado</option>${rowItems.map(i => `<option value="${i.id}" ${Number(row.catalog_item_id)===i.id?'selected':''}>${i.code} · ${i.name}</option>`).join('')}</select></div><div><label>Nombre manual</label><input data-k="manual_item_name" data-id="${row.id}" value="${row.manual_item_name || ''}"/></div><div><label>Proveedor</label><select data-k="supplier_id" data-id="${row.id}"><option value="">Sin proveedor</option>${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}</select></div></div><div class="row-4"><div><label>Cantidad</label><input data-k="quantity" data-id="${row.id}" type="number" value="${row.quantity || 1}"/></div><div><label>Unidad</label><select data-k="unit" data-id="${row.id}">${units.map(u => `<option ${row.unit===u?'selected':''}>${u}</option>`).join('')}</select></div><div><label>Costo</label><input data-k="unit_cost" data-id="${row.id}" type="number" value="${row.unit_cost || 0}"/></div><div><label>Moneda</label><input data-k="currency" data-id="${row.id}" value="${row.currency || currency.value || 'MXN'}" readonly/></div></div><div class="row-2"><input data-k="web_link" data-id="${row.id}" placeholder="Liga web" value="${row.web_link || ''}"/><input data-k="comments" data-id="${row.id}" placeholder="Comentarios" value="${row.comments || ''}"/></div><div class="row-2"><div class="small muted">Centro: ${cc.find(x => x.id === Number(row.cost_center_id || costCenter.value))?.name || '-'} · Subcentro: ${scc.find(x => x.id === Number(row.sub_cost_center_id || subCostCenter.value))?.name || '-'}</div><button class="btn-danger" data-remove="${row.id}">Eliminar</button></div></div>`; }).join('');
-    itemsDraft.querySelectorAll('[data-k]').forEach(el => el.oninput = el.onchange = e => {
-      const id = e.target.dataset.id; const row = state.itemsDraft.find(x => x.id === id); const k = e.target.dataset.k;
-      row[k] = e.target.type === 'number' ? Number(e.target.value || 0) : e.target.value;
-      if (k === 'catalog_item_id') {
-        const cat = items.find(i => i.id === Number(row.catalog_item_id));
-        if (cat) {
-          row.supplier_id = cat.supplier_id || row.supplier_id;
-          row.unit = cat.unit || row.unit;
-          row.unit_cost = Number(cat.unit_price || 0);
-          row.currency = cat.currency || currency.value || 'MXN';
-          if (cat.cost_center_id) { costCenter.value = cat.cost_center_id; setSubOptions(cat.cost_center_id, cat.sub_cost_center_id || ''); if (cat.sub_cost_center_id) subCostCenter.value = cat.sub_cost_center_id; }
-          renderDraft();
-        } else if (!costCenter.value) {
-          alert('Este ítem no está en catálogo. Debes seleccionar un centro de costo para continuar.');
-          costCenter.focus();
-        }
-      }
+    const total = state.itemsDraft.reduce((s, x) => s + (Number(x.quantity||0) * Number(x.unit_cost||0)), 0);
+    itemsDraft.innerHTML = state.itemsDraft.length === 0
+      ? '<p class="small muted" style="padding:12px 0;text-align:center;color:#9ca3af">Sin ítems. Completa el formulario de arriba y haz clic en "+ Agregar a lista".</p>'
+      : `<div class="table-wrap"><table><thead><tr><th>Ítem</th><th>Proveedor</th><th>Cant.</th><th>Unidad</th><th>Costo</th><th>Total</th><th></th></tr></thead><tbody>${state.itemsDraft.map(row => {
+          const itemName = (items.find(i => i.id === Number(row.catalog_item_id)) || {}).name || row.manual_item_name || '-';
+          const supplierName = (suppliers.find(s => s.id === Number(row.supplier_id)) || {}).business_name || '-';
+          const lineTotal = Number(row.quantity||0) * Number(row.unit_cost||0);
+          return `<tr style="${currentEditItemId === row.id ? 'background:#eff6ff' : ''}"><td style="font-size:12px"><b>${escapeHtml(itemName)}</b>${row.web_link ? `<br><a href="${escapeHtml(row.web_link)}" target="_blank" style="font-size:10px;color:#3b82f6">🔗 Liga</a>` : ''}</td><td style="font-size:12px">${escapeHtml(supplierName)}</td><td style="font-size:12px;text-align:right">${row.quantity}</td><td style="font-size:12px">${escapeHtml(row.unit||'-')}</td><td style="font-size:12px;text-align:right">$${Number(row.unit_cost||0).toFixed(2)}</td><td style="font-size:12px;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td><td style="white-space:nowrap"><button class="btn-secondary edit-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger remove-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`;
+        }).join('')}</tbody><tfoot><tr><td colspan="5" style="text-align:right;font-size:12px;font-weight:600;padding:6px 4px">Total estimado:</td><td style="font-size:13px;font-weight:700;color:#1d4ed8;padding:6px 4px">$${total.toFixed(2)}</td><td></td></tr></tfoot></table></div>`;
+    itemsDraft.querySelectorAll('.edit-draft-item').forEach(btn => {
+      btn.onclick = () => {
+        const row = state.itemsDraft.find(x => x.id === btn.dataset.id);
+        if (!row) return;
+        currentEditItemId = row.id;
+        document.getElementById('entry-catalog').value = row.catalog_item_id || '';
+        document.getElementById('entry-manual-name').value = row.manual_item_name || '';
+        document.getElementById('entry-supplier').value = row.supplier_id || '';
+        document.getElementById('entry-quantity').value = row.quantity || 1;
+        document.getElementById('entry-unit').value = row.unit || units[0] || 'pza';
+        document.getElementById('entry-cost').value = row.unit_cost || 0;
+        document.getElementById('entry-currency-item').value = row.currency || currency.value || 'MXN';
+        document.getElementById('entry-weblink').value = row.web_link || '';
+        document.getElementById('entry-item-comments').value = row.comments || '';
+        itemEntryTitle.textContent = '✏ Editando ítem';
+        addItemBtn.textContent = '✔ Actualizar ítem';
+        cancelEditItemBtn.style.display = '';
+        renderDraft();
+        itemEntryTitle.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      };
     });
-    itemsDraft.querySelectorAll('[data-remove]').forEach(btn => btn.onclick = () => { state.itemsDraft = state.itemsDraft.filter(x => x.id !== btn.dataset.remove); renderDraft(); });
+    itemsDraft.querySelectorAll('.remove-draft-item').forEach(btn => {
+      btn.onclick = () => { if (currentEditItemId === btn.dataset.id) clearEntryPanel(); state.itemsDraft = state.itemsDraft.filter(x => x.id !== btn.dataset.id); renderDraft(); };
+    });
   };
   renderDraft();
-  addItemBtn.onclick = () => { state.itemsDraft.push({ id: crypto.randomUUID(), quantity: 1, unit: units[0] || 'pza', unit_cost: 0, currency: currency.value || 'MXN', cost_center_id: Number(costCenter.value||0)||null, sub_cost_center_id: Number(subCostCenter.value||0)||null }); renderDraft(); };
+  addItemBtn.onclick = () => {
+    const catalogId = document.getElementById('entry-catalog').value;
+    const manualName = document.getElementById('entry-manual-name').value.trim();
+    const supplierId = document.getElementById('entry-supplier').value;
+    const qty = Number(document.getElementById('entry-quantity').value || 0);
+    const unit = document.getElementById('entry-unit').value;
+    const unitCost = Number(document.getElementById('entry-cost').value || 0);
+    const entryCur = document.getElementById('entry-currency-item').value || currency.value || 'MXN';
+    const webLink = document.getElementById('entry-weblink').value.trim();
+    const itemComments = document.getElementById('entry-item-comments').value.trim();
+    if (!catalogId && !manualName) { reqMsg.textContent = 'Selecciona un ítem del catálogo o escribe un nombre.'; return; }
+    if (qty <= 0) { reqMsg.textContent = 'La cantidad debe ser mayor a cero.'; return; }
+    reqMsg.textContent = '';
+    const itemData = { catalog_item_id: catalogId ? Number(catalogId) : null, manual_item_name: manualName || null, supplier_id: supplierId ? Number(supplierId) : null, quantity: qty, unit, unit_cost: unitCost, currency: entryCur, web_link: webLink || null, comments: itemComments || null, cost_center_id: Number(costCenter.value||0)||null, sub_cost_center_id: Number(subCostCenter.value||0)||null };
+    if (currentEditItemId) { const idx = state.itemsDraft.findIndex(x => x.id === currentEditItemId); if (idx >= 0) state.itemsDraft[idx] = { ...state.itemsDraft[idx], ...itemData }; } else { state.itemsDraft.push({ id: crypto.randomUUID(), ...itemData }); }
+    clearEntryPanel(); renderDraft();
+  };
+  cancelEditItemBtn.onclick = () => { clearEntryPanel(); renderDraft(); };
   const validateManuals = () => { const hasManualNoCC = state.itemsDraft.some(x => !x.catalog_item_id && !(Number(costCenter.value||0) || Number(x.cost_center_id||0))); if (hasManualNoCC) { reqMsg.textContent = 'Los ítems manuales requieren centro de costo.'; costCenter.focus(); return false; } return true; };
   const buildPayload = (status) => ({ urgency: urgency.value, cost_center_id: Number(costCenter.value || 0) || null, sub_cost_center_id: Number(subCostCenter.value || 0) || null, currency: currency.value, programmed_date: programmedDate.value || null, comments: comments.value, status, items: state.itemsDraft.map(({ id, ...rest }) => ({ ...rest, cost_center_id: rest.cost_center_id || Number(costCenter.value||0) || null, sub_cost_center_id: rest.sub_cost_center_id || Number(subCostCenter.value||0) || null, currency: rest.currency || currency.value })) });
   previewReqBtn.onclick = () => openPrintPreview('Vista requisición', `<h1>${editing?.requisition.folio || 'Vista previa de requisición'}</h1><div class="small">Solicitante: ${escapeHtml(state.user?.name || '')}<br>Departamento: ${escapeHtml(state.user?.department || '')}<br>Urgencia: ${escapeHtml(urgency.value)}<br>Fecha programada: ${escapeHtml(programmedDate.value || '-')}</div><table><thead><tr><th>Ítem</th><th>Proveedor</th><th>Cantidad</th><th>Unidad</th><th>Costo</th><th>Moneda</th></tr></thead><tbody>${state.itemsDraft.map(x => `<tr><td>${escapeHtml((items.find(i => i.id === Number(x.catalog_item_id)) || {}).name || x.manual_item_name || '')}</td><td>${escapeHtml((suppliers.find(s => s.id === Number(x.supplier_id)) || {}).business_name || '-')}</td><td>${x.quantity}</td><td>${escapeHtml(x.unit || '')}</td><td>${Number(x.unit_cost||0).toFixed(2)}</td><td>${escapeHtml(x.currency || currency.value || 'MXN')}</td></tr>`).join('')}</tbody></table>`);
@@ -1232,7 +1283,7 @@ async function purchasesView() {
       const STATUS_NEXT = { 'Enviada': 'En proceso', 'Aceptada': 'En proceso', 'En proceso': 'Entregado' };
       const STATUS_LABEL_BTN = { 'Enviada': '▶ Marcar En proceso', 'Aceptada': '▶ Marcar En proceso', 'En proceso': '✅ Marcar Entregado' };
 
-      tabContent.innerHTML = pos.length ? pos.map(p => {
+      const visiblePos = pos.filter(p => !['Cancelada','Cancelado'].includes(p.status)); tabContent.innerHTML = visiblePos.length ? visiblePos.map(p => {
         const nextS = STATUS_NEXT[p.status];
         const btnLabel = STATUS_LABEL_BTN[p.status];
         const canRequestInvoice = p.status === 'Entregado' && !p.invoice_requested;
@@ -1264,8 +1315,8 @@ async function purchasesView() {
             <p class="small muted" style="margin:0 0 10px">Usa esta opción solo si el proveedor no puede registrarla en el sistema.</p>
             <div class="row-3">
               <div><label style="font-size:12px">No. factura *</label><input id="inv-num-${p.id}" placeholder="FACT-001"/></div>
-              <div><label style="font-size:12px">Subtotal *</label><input id="inv-sub-${p.id}" type="number" placeholder="0.00"/></div>
-              <div><label style="font-size:12px">IVA</label><input id="inv-tax-${p.id}" type="number" placeholder="0.00"/></div>
+              <div><label style="font-size:12px">Subtotal *</label><input id="inv-sub-${p.id}" type="number" value="${Number(p.total_amount||0).toFixed(2)}" oninput="document.getElementById('inv-tax-${p.id}').value=(+this.value*0.16).toFixed(2)"/></div>
+              <div><label style="font-size:12px">IVA (16%)</label><input id="inv-tax-${p.id}" type="number" value="${(Number(p.total_amount||0)*0.16).toFixed(2)}"/></div>
             </div>
             <div class="row-2" style="margin-top:8px">
               <div><label style="font-size:12px">PDF (factura)</label><input type="file" id="inv-pdf-${p.id}" accept=".pdf" style="font-size:12px"/></div>
@@ -1277,7 +1328,7 @@ async function purchasesView() {
             </div>
           </div>
         </div>`;
-      }).join('') : '<div class="muted small" style="padding:16px;text-align:center">Sin órdenes de compra generadas aún</div>';
+      }).join('') : '<div class="muted small" style="padding:16px;text-align:center">Sin órdenes de compra activas</div>';
 
       // Avanzar status
       tabContent.querySelectorAll('.po-advance-btn').forEach(btn => {
@@ -1528,8 +1579,8 @@ async function proveedorPOView() {
           </div>
           <div class="row-3">
             <div><label style="font-size:12px">No. factura *</label><input id="sinv-num-${po.id}" placeholder="FACT-001"/></div>
-            <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" placeholder="0.00"/></div>
-            <div><label style="font-size:12px">IVA</label><input id="sinv-tax-${po.id}" type="number" placeholder="0.00"/></div>
+            <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" value="${Number(po.total_amount||0).toFixed(2)}" oninput="document.getElementById('sinv-tax-${po.id}').value=(+this.value*0.16).toFixed(2)"/></div>
+            <div><label style="font-size:12px">IVA (16%)</label><input id="sinv-tax-${po.id}" type="number" value="${(Number(po.total_amount||0)*0.16).toFixed(2)}"/></div>
           </div>
           <div class="row-2" style="margin-top:8px">
             <div><label style="font-size:12px">📄 PDF de la factura</label><input type="file" id="sinv-pdf-${po.id}" accept=".pdf" style="font-size:12px"/></div>
