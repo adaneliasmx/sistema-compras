@@ -22,6 +22,33 @@ router.get('/', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
   res.json(rows);
 });
 
+// Solicitudes de cotización pendientes para el proveedor logueado
+router.get('/my-requests', allowRoles('proveedor'), (req, res) => {
+  const db = read();
+  const supplierId = req.user.supplier_id;
+  if (!supplierId) return res.status(400).json({ error: 'Sin proveedor asignado al usuario' });
+  const requests = (db.quotation_requests || [])
+    .filter(r => r.supplier_id === supplierId)
+    .map(r => {
+      const item = db.requisition_items.find(i => i.id === r.requisition_item_id);
+      const reqRow = item ? db.requisitions.find(re => re.id === item.requisition_id) : null;
+      const catItem = item?.catalog_item_id ? db.catalog_items.find(c => c.id === item.catalog_item_id) : null;
+      const existingQuote = db.quotations.find(q => q.requisition_item_id === r.requisition_item_id && q.supplier_id === supplierId);
+      return {
+        ...r,
+        item_name: catItem?.name || item?.manual_item_name || '-',
+        item_description: catItem?.description || '',
+        requisition_folio: reqRow?.folio || '-',
+        quantity: item?.quantity || 0,
+        unit: item?.unit || 'pza',
+        currency: item?.currency || 'MXN',
+        has_quote: !!existingQuote,
+        quote_status: existingQuote?.status || null
+      };
+    });
+  res.json(requests);
+});
+
 router.get('/by-item/:itemId', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();
   const itemId = Number(req.params.itemId);

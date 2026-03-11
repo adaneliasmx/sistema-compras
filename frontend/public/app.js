@@ -545,6 +545,7 @@ async function catalogsView() {
       if (supEditId.value) await api(`/api/catalogs/suppliers/${supEditId.value}`, { method: 'PATCH', body: JSON.stringify(payload) });
       else await api('/api/catalogs/suppliers', { method: 'POST', body: JSON.stringify(payload) });
       supMsg.textContent = '✅ Guardado'; supMsg.style.color = '#16a34a';
+      supEditId.value = ''; supName.value = ''; supCode.value = ''; supContact.value = ''; supEmail.value = ''; supPhone.value = ''; supCodeHint.textContent = '';
       setTimeout(render, 800);
     } catch (e) { supMsg.textContent = e.message; supMsg.style.color = '#dc2626'; }
   };
@@ -569,7 +570,7 @@ async function requisitionsView(editId = null) {
   app.innerHTML = shell(`
     <div class="grid grid-2">
       <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div id="itemsDraft"></div><div class="actions"><button class="btn-secondary" id="addItemBtn">Agregar ítem</button><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
-      <div class="card section"><div class="module-title"><h3>Requisiciones</h3><button class="btn-secondary" id="expReqListBtn">Exportar</button></div><div class="table-wrap"><table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(list)}</tbody></table></div></div>
+      <div class="card section"><div class="module-title"><h3>Requisiciones</h3><button class="btn-secondary" id="expReqListBtn">Exportar</button></div><div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="reqSearchFolio" placeholder="Buscar folio..." style="flex:1;min-width:100px"/><select id="reqFilterStatus" style="flex:1;min-width:110px"><option value="">Todos los estatus</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div><div class="table-wrap" id="reqListWrap"><table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(list)}</tbody></table></div></div>
     </div>
   `, 'requisiciones');
   const setSubOptions = (centerId, selectedId='') => { const opts = scc.filter(x => Number(x.cost_center_id) === Number(centerId)); subCostCenter.innerHTML = `<option value="">Selecciona</option>${opts.map(x => `<option value="${x.id}" ${Number(selectedId)===x.id?'selected':''}>${x.code} · ${x.name}</option>`).join('')}`; };
@@ -579,6 +580,18 @@ async function requisitionsView(editId = null) {
   costCenter.onchange = () => setSubOptions(costCenter.value);
   const updateUrgency = () => { const r = suggestedDateRange(urgency.value); urgencyRange.textContent = `Rango sugerido: ${r.label}`; programmedDate.min = r.min; programmedDate.max = r.max; if (!programmedDate.value) programmedDate.value = r.max; };
   urgency.onchange = updateUrgency; updateUrgency();
+  const filterReqList = () => {
+    const folio = (document.getElementById('reqSearchFolio')?.value || '').toLowerCase();
+    const status = document.getElementById('reqFilterStatus')?.value || '';
+    const filtered = list.filter(r =>
+      (!folio || String(r.folio||'').toLowerCase().includes(folio)) &&
+      (!status || r.status === status)
+    );
+    const wrap = document.getElementById('reqListWrap');
+    if (wrap) wrap.innerHTML = `<table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(filtered)}</tbody></table>`;
+  };
+  document.getElementById('reqSearchFolio')?.addEventListener('input', filterReqList);
+  document.getElementById('reqFilterStatus')?.addEventListener('change', filterReqList);
   const renderDraft = () => {
     itemsDraft.innerHTML = state.itemsDraft.map(row => `<div class="item-box"><div class="row-3"><div><label>Ítem catálogo</label><select data-k="catalog_item_id" data-id="${row.id}"><option value="">Manual / no catalogado</option>${items.map(i => `<option value="${i.id}" ${Number(row.catalog_item_id)===i.id?'selected':''}>${i.code} · ${i.name}</option>`).join('')}</select></div><div><label>Nombre manual</label><input data-k="manual_item_name" data-id="${row.id}" value="${row.manual_item_name || ''}"/></div><div><label>Proveedor</label><select data-k="supplier_id" data-id="${row.id}"><option value="">Sin proveedor</option>${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}</select></div></div><div class="row-4"><div><label>Cantidad</label><input data-k="quantity" data-id="${row.id}" type="number" value="${row.quantity || 1}"/></div><div><label>Unidad</label><select data-k="unit" data-id="${row.id}">${units.map(u => `<option ${row.unit===u?'selected':''}>${u}</option>`).join('')}</select></div><div><label>Costo</label><input data-k="unit_cost" data-id="${row.id}" type="number" value="${row.unit_cost || 0}"/></div><div><label>Moneda</label><input data-k="currency" data-id="${row.id}" value="${row.currency || currency.value || 'MXN'}" readonly/></div></div><div class="row-2"><input data-k="web_link" data-id="${row.id}" placeholder="Liga web" value="${row.web_link || ''}"/><input data-k="comments" data-id="${row.id}" placeholder="Comentarios" value="${row.comments || ''}"/></div><div class="row-2"><div class="small muted">Centro: ${cc.find(x => x.id === Number(row.cost_center_id || costCenter.value))?.name || '-'} · Subcentro: ${scc.find(x => x.id === Number(row.sub_cost_center_id || subCostCenter.value))?.name || '-'}</div><button class="btn-danger" data-remove="${row.id}">Eliminar</button></div></div>`).join('');
     itemsDraft.querySelectorAll('[data-k]').forEach(el => el.oninput = el.onchange = e => {
@@ -850,7 +863,7 @@ async function purchasesView() {
     const total = Number(i.quantity || 0) * Number(i.unit_cost || 0);
     const rowBg = i.status === 'Autorizado' ? 'background:#f0fff4' : i.status === 'En proceso' ? 'background:#eff6ff' : i.status === 'Cancelado' ? 'opacity:.5' : '';
     return `<tr style="${rowBg}" data-id="${i.id}">
-      <td>${canSelect && !['Cancelado','En proceso','Cerrado'].includes(i.status) && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
+      <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
       <td><b>${i.item_name}</b>${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}</small>` : ''}</td>
       <td>
@@ -870,7 +883,7 @@ async function purchasesView() {
         ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary save-edit" data-id="${i.id}" style="padding:2px 7px;font-size:11px">💾</button>` : ''}
         ${!i.catalog_item_id && !['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
         ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
-        ${i.status === 'Autorizado' && i.supplier_id && i.unit_cost ? `<button class="btn-primary single-po" data-id="${i.id}" style="padding:2px 7px;font-size:11px">PO</button>` : ''}
+        ${i.status === 'Autorizado' && i.supplier_id && i.unit_cost && !i.purchase_order_id ? `<button class="btn-primary single-po" data-id="${i.id}" style="padding:2px 7px;font-size:11px">PO</button>` : ''}
         ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">✖</button>` : ''}
       </td>
     </tr>`;
@@ -938,9 +951,11 @@ async function purchasesView() {
 
     if (tab === 'pendientes') {
       const authCount = itemsPendientePO.filter(x => x.status === 'Autorizado').length;
+      const waitingAuthCount = itemsPendientePO.filter(x => x.status === 'En autorización').length;
       tabContent.innerHTML = `
         <div style="margin-bottom:8px;font-size:13px">
           ${itemsPendientePO.length} ítem(s) con proveedor y costo · <b>${authCount}</b> autorizado(s)
+          ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización</span>` : ''}
           ${authCount > 0 ? `<button class="btn-secondary" id="selectAllAuth" style="margin-left:10px;padding:2px 8px;font-size:12px">Seleccionar autorizados</button>` : ''}
         </div>
         <div class="table-wrap"><table>${THEAD}<tbody>
@@ -1184,10 +1199,11 @@ async function purchasesView() {
   renderTab('pendientes');
 }
 async function proveedorPOView() {
-  const [pos, myInvoices, myPaymentInvs] = await Promise.all([
+  const [pos, myInvoices, myPaymentInvs, myRequests] = await Promise.all([
     api('/api/purchases/purchase-orders'),
     api('/api/invoices'),
-    api('/api/payments/my-invoices').catch(() => [])
+    api('/api/payments/my-invoices').catch(() => []),
+    api('/api/quotations/my-requests').catch(() => [])
   ]);
   const pendingResponse = pos.filter(p => p.status === 'Enviada');
   const pendingInvoice = pos.filter(p => ['Aceptada','En proceso','Entregado'].includes(p.status));
@@ -1195,7 +1211,66 @@ async function proveedorPOView() {
   const toInvoice = pendingInvoice.filter(p => !invoicedPOs.has(p.id));
   const done = pos.filter(p => ['Facturada','Cerrada','Rechazada por proveedor'].includes(p.status));
 
+  // Solicitudes de cotización pendientes (sin cotización enviada)
+  const pendingQuoteRequests = myRequests.filter(r => !r.has_quote);
+  const sentQuoteRequests = myRequests.filter(r => r.has_quote);
+
   app.innerHTML = shell(`
+    <!-- Paso 0: Cotizaciones solicitadas -->
+    <div class="card section" style="margin-bottom:12px">
+      <div class="module-title">
+        <h3>📩 Cotizaciones solicitadas
+          <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${pendingQuoteRequests.length} pendiente(s)</span>
+        </h3>
+      </div>
+      ${myRequests.length === 0
+        ? '<div class="muted small" style="padding:12px">Sin solicitudes de cotización activas.</div>'
+        : `
+        ${pendingQuoteRequests.length > 0 ? `
+        <div style="margin-bottom:12px">
+          <b class="small" style="color:#d97706">Pendientes de cotizar:</b>
+          ${pendingQuoteRequests.map(r => `
+          <div style="border:1px solid #fed7aa;border-radius:8px;padding:12px;margin-top:8px;background:#fffbeb">
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+              <div>
+                <b>${r.item_name}</b>
+                <span class="small muted" style="margin-left:8px">Req: ${r.requisition_folio}</span>
+                <span class="small muted" style="margin-left:8px">${r.quantity} ${r.unit}</span>
+              </div>
+              <span class="pill" style="background:#f59e0b;color:white;font-size:11px">Pendiente</span>
+            </div>
+            <div class="row-3" style="margin-bottom:8px">
+              <div><label style="font-size:12px">No. cotización</label><input id="qr-num-${r.id}" placeholder="COT-001" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">Costo unitario *</label><input id="qr-cost-${r.id}" type="number" placeholder="0.00" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">Moneda</label><select id="qr-cur-${r.id}" style="font-size:12px"><option ${r.currency==='MXN'?'selected':''}>MXN</option><option ${r.currency==='USD'?'selected':''}>USD</option></select></div>
+            </div>
+            <div class="row-3">
+              <div><label style="font-size:12px">Días de entrega</label><input id="qr-days-${r.id}" type="number" placeholder="0" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">Condiciones de pago</label><input id="qr-terms-${r.id}" placeholder="Ej. 30 días crédito" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">Código del proveedor</label><input id="qr-code-${r.id}" placeholder="SKU interno" style="font-size:12px"/></div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
+              <button class="btn-primary submit-quote-btn" data-reqid="${r.requisition_item_id}" data-id="${r.id}" style="font-size:12px;padding:5px 14px">Enviar cotización</button>
+              <span id="qr-msg-${r.id}" class="small muted"></span>
+            </div>
+          </div>`).join('')}
+        </div>` : ''}
+        ${sentQuoteRequests.length > 0 ? `
+        <div>
+          <b class="small" style="color:#16a34a">Cotizaciones ya enviadas:</b>
+          <div class="table-wrap" style="margin-top:6px"><table>
+            <thead><tr><th>Ítem</th><th>Requisición</th><th>Cant.</th><th>Estatus</th></tr></thead>
+            <tbody>${sentQuoteRequests.map(r => `<tr>
+              <td>${r.item_name}</td>
+              <td style="font-size:12px">${r.requisition_folio}</td>
+              <td>${r.quantity} ${r.unit}</td>
+              <td><span style="color:#16a34a;font-size:12px">✅ Cotización enviada</span></td>
+            </tr>`).join('')}</tbody>
+          </table></div>
+        </div>` : ''}
+        `}
+    </div>
+
     <!-- Paso 1: Aceptar/Rechazar POs recibidas -->
     <div class="card section" style="margin-bottom:12px">
       <div class="module-title">
@@ -1359,6 +1434,41 @@ async function proveedorPOView() {
         btn.disabled = true;
         setTimeout(render, 1200);
       } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+    };
+  });
+
+  // Enviar cotización desde solicitud
+  document.querySelectorAll('.submit-quote-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const rid = btn.dataset.id;
+      const reqItemId = btn.dataset.reqid;
+      const costEl = document.getElementById(`qr-cost-${rid}`);
+      const numEl = document.getElementById(`qr-num-${rid}`);
+      const daysEl = document.getElementById(`qr-days-${rid}`);
+      const termsEl = document.getElementById(`qr-terms-${rid}`);
+      const codeEl = document.getElementById(`qr-code-${rid}`);
+      const curEl = document.getElementById(`qr-cur-${rid}`);
+      const msgEl = document.getElementById(`qr-msg-${rid}`);
+      try {
+        if (!costEl.value || Number(costEl.value) <= 0) throw new Error('Ingresa un costo mayor a cero');
+        btn.disabled = true;
+        await api('/api/quotations', { method: 'POST', body: JSON.stringify({
+          requisition_item_id: Number(reqItemId),
+          unit_cost: Number(costEl.value),
+          quote_number: numEl.value,
+          delivery_days: Number(daysEl.value || 0),
+          payment_terms: termsEl.value,
+          provider_code: codeEl.value,
+          currency: curEl.value || 'MXN'
+        })});
+        msgEl.textContent = '✅ Cotización enviada correctamente';
+        msgEl.style.color = '#16a34a';
+        setTimeout(render, 1000);
+      } catch(e) {
+        btn.disabled = false;
+        msgEl.textContent = e.message;
+        msgEl.style.color = '#dc2626';
+      }
     };
   });
 
@@ -1552,6 +1662,8 @@ async function quotationsView() {
         })});
         quoteMsg.textContent = '✅ Cotización guardada';
         quoteMsg.style.color = '#16a34a';
+        quoteItem.value = ''; quoteSupplier.value = ''; quoteNumber.value = ''; quoteDays.value = '';
+        quoteUnitCost.value = ''; quotePayTerms.value = ''; quoteCode.value = ''; quoteName.value = '';
         setTimeout(render, 900);
       } catch (e) { quoteMsg.textContent = e.message; quoteMsg.style.color = '#dc2626'; }
     };
@@ -1683,6 +1795,7 @@ async function invoicingView() {
       const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
       if (!res.ok) throw new Error((await res.json()).error || 'Error');
       invMsg.textContent = '✅ Factura guardada'; invMsg.style.color = '#16a34a';
+      invPo.value = ''; invNumber.value = ''; invSubtotal.value = ''; invTaxes.value = '';
       setTimeout(render, 900);
     } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
   };
@@ -2032,17 +2145,18 @@ async function inventoryView() {
 }
 
 async function adminView() {
-  const [users, rules, suppliers] = await Promise.all([
+  const [users, rules, suppliers, cc] = await Promise.all([
     api('/api/admin/users'),
     api('/api/catalogs/approval-rules'),
-    api('/api/catalogs/suppliers')
+    api('/api/catalogs/suppliers'),
+    api('/api/catalogs/cost-centers')
   ]);
   app.innerHTML = shell(`
     <div class="grid grid-2">
       <div class="card section">
         <div class="module-title"><h3>Usuarios</h3><button class="btn-secondary" id="expUsersBtn">Exportar</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Depto</th><th>Proveedor</th></tr></thead>
-        <tbody>${users.map(u => `<tr><td>${u.full_name}</td><td>${u.email}</td><td>${u.role_code}</td><td>${u.department}</td><td>${u.supplier_id ? (suppliers.find(s=>s.id===u.supplier_id)||{}).business_name||u.supplier_id : '-'}</td></tr>`).join('')}</tbody>
+        <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Depto</th><th>CC</th><th>Proveedor</th></tr></thead>
+        <tbody>${users.map(u => `<tr><td>${u.full_name}</td><td style="font-size:12px">${u.email}</td><td style="font-size:12px">${u.role_code}</td><td style="font-size:12px">${u.department}</td><td style="font-size:12px">${u.default_cost_center_id ? (cc.find(c=>c.id===u.default_cost_center_id)||{}).name||'-' : '-'}</td><td style="font-size:12px">${u.supplier_id ? (suppliers.find(s=>s.id===u.supplier_id)||{}).business_name||u.supplier_id : '-'}</td></tr>`).join('')}</tbody>
         </table></div>
         <h4>Crear / Editar usuario</h4>
         <div style="margin-bottom:8px">
@@ -2058,6 +2172,10 @@ async function adminView() {
           <div><label>Rol</label><select id="usrRole"><option>cliente_requisicion</option><option>comprador</option><option>autorizador</option><option>pagos</option><option>proveedor</option><option>admin</option></select></div>
           <div><label>Proveedor (si rol=proveedor)</label><select id="usrSupplier"><option value="">Ninguno</option>${suppliers.map(s => `<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div>
           <div><label>Contraseña <span class="muted small">(dejar vacío para no cambiar)</span></label><input id="usrPass" placeholder="Nueva contraseña"/></div>
+        </div>
+        <div class="row-2">
+          <div><label>Centro de costo predeterminado</label><select id="usrCostCenter"><option value="">Sin predeterminado</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div>
+          <div><label style="font-size:11px" class="muted">Define el centro que se pre-selecciona al crear requisiciones</label></div>
         </div>
         <div><small class="muted">Si el rol es "proveedor", el proveedor es obligatorio.</small></div>
         <div class="actions">
@@ -2112,6 +2230,7 @@ async function adminView() {
     if (!u) {
       usrName.value = ''; usrEmail.value = ''; usrDept.value = '';
       usrRole.value = 'cliente_requisicion'; usrSupplier.value = ''; usrPass.value = '';
+      usrCostCenter.value = '';
       saveUsrBtn.textContent = 'Guardar usuario';
       return;
     }
@@ -2120,6 +2239,7 @@ async function adminView() {
     usrDept.value = u.department || '';
     usrRole.value = u.role_code;
     usrSupplier.value = u.supplier_id || '';
+    usrCostCenter.value = u.default_cost_center_id || '';
     usrPass.value = '';
     saveUsrBtn.textContent = 'Actualizar usuario';
   };
@@ -2128,7 +2248,7 @@ async function adminView() {
     try {
       if (!usrName.value || !usrEmail.value) throw new Error('Nombre y correo requeridos');
       const editId = usrEditId.value ? Number(usrEditId.value) : null;
-      const payload = { full_name: usrName.value, email: usrEmail.value, department: usrDept.value, role_code: usrRole.value, supplier_id: usrSupplier.value || null };
+      const payload = { full_name: usrName.value, email: usrEmail.value, department: usrDept.value, role_code: usrRole.value, supplier_id: usrSupplier.value || null, default_cost_center_id: usrCostCenter.value ? Number(usrCostCenter.value) : null };
       if (usrPass.value) payload.password = usrPass.value;
       if (editId) {
         await api(`/api/admin/users/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
@@ -2139,6 +2259,9 @@ async function adminView() {
         usrMsg.textContent = '✅ Usuario creado';
       }
       usrMsg.style.color = '#16a34a';
+      usrEditId.value = ''; usrName.value = ''; usrEmail.value = ''; usrDept.value = '';
+      usrRole.value = 'cliente_requisicion'; usrSupplier.value = ''; usrPass.value = '';
+      saveUsrBtn.textContent = 'Guardar usuario';
       setTimeout(render, 1000);
     } catch (e) { usrMsg.textContent = e.message; usrMsg.style.color = '#dc2626'; }
   };
@@ -2159,6 +2282,8 @@ async function adminView() {
       })});
       newSupMsg.textContent = out.message || '✅ Proveedor y usuario creados';
       newSupMsg.style.color = '#16a34a';
+      newSupName.value = ''; newSupCode.value = ''; newSupRfc.value = ''; newSupPhone.value = '';
+      newSupEmail.value = ''; newSupUserName.value = ''; newSupUserEmail.value = ''; newSupUserPass.value = 'Demo123*';
       setTimeout(render, 1200);
     } catch (e) { newSupMsg.textContent = e.message; newSupMsg.style.color = '#dc2626'; }
   };

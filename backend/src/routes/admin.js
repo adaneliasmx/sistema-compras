@@ -18,6 +18,7 @@ router.post('/users', (req, res) => {
     password_hash: bcrypt.hashSync(req.body.password || 'Demo123*', 10),
     role_code: req.body.role_code || 'cliente_requisicion',
     supplier_id: req.body.supplier_id ? Number(req.body.supplier_id) : null,
+    default_cost_center_id: req.body.default_cost_center_id ? Number(req.body.default_cost_center_id) : null,
     department: req.body.department || 'GENERAL',
     active: req.body.active !== false
   };
@@ -38,6 +39,7 @@ router.patch('/users/:id', (req, res) => {
   if (req.body.email !== undefined) u.email = req.body.email;
   if (req.body.role_code !== undefined) u.role_code = req.body.role_code;
   if (req.body.supplier_id !== undefined) u.supplier_id = req.body.supplier_id ? Number(req.body.supplier_id) : null;
+  if (req.body.default_cost_center_id !== undefined) u.default_cost_center_id = req.body.default_cost_center_id ? Number(req.body.default_cost_center_id) : null;
   if (req.body.department !== undefined) u.department = req.body.department;
   if (req.body.active !== undefined) u.active = req.body.active;
   if (req.body.password) u.password_hash = bcrypt.hashSync(req.body.password, 10);
