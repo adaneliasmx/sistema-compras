@@ -593,7 +593,11 @@ async function requisitionsView(editId = null) {
   document.getElementById('reqSearchFolio')?.addEventListener('input', filterReqList);
   document.getElementById('reqFilterStatus')?.addEventListener('change', filterReqList);
   const renderDraft = () => {
-    itemsDraft.innerHTML = state.itemsDraft.map(row => `<div class="item-box"><div class="row-3"><div><label>Ítem catálogo</label><select data-k="catalog_item_id" data-id="${row.id}"><option value="">Manual / no catalogado</option>${items.map(i => `<option value="${i.id}" ${Number(row.catalog_item_id)===i.id?'selected':''}>${i.code} · ${i.name}</option>`).join('')}</select></div><div><label>Nombre manual</label><input data-k="manual_item_name" data-id="${row.id}" value="${row.manual_item_name || ''}"/></div><div><label>Proveedor</label><select data-k="supplier_id" data-id="${row.id}"><option value="">Sin proveedor</option>${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}</select></div></div><div class="row-4"><div><label>Cantidad</label><input data-k="quantity" data-id="${row.id}" type="number" value="${row.quantity || 1}"/></div><div><label>Unidad</label><select data-k="unit" data-id="${row.id}">${units.map(u => `<option ${row.unit===u?'selected':''}>${u}</option>`).join('')}</select></div><div><label>Costo</label><input data-k="unit_cost" data-id="${row.id}" type="number" value="${row.unit_cost || 0}"/></div><div><label>Moneda</label><input data-k="currency" data-id="${row.id}" value="${row.currency || currency.value || 'MXN'}" readonly/></div></div><div class="row-2"><input data-k="web_link" data-id="${row.id}" placeholder="Liga web" value="${row.web_link || ''}"/><input data-k="comments" data-id="${row.id}" placeholder="Comentarios" value="${row.comments || ''}"/></div><div class="row-2"><div class="small muted">Centro: ${cc.find(x => x.id === Number(row.cost_center_id || costCenter.value))?.name || '-'} · Subcentro: ${scc.find(x => x.id === Number(row.sub_cost_center_id || subCostCenter.value))?.name || '-'}</div><button class="btn-danger" data-remove="${row.id}">Eliminar</button></div></div>`).join('');
+    itemsDraft.innerHTML = state.itemsDraft.map(row => {
+      const rowItems = row.supplier_id
+        ? items.filter(i => !i.supplier_id || Number(i.supplier_id) === Number(row.supplier_id))
+        : items;
+      return `<div class="item-box"><div class="row-3"><div><label>Ítem catálogo ${row.supplier_id ? '<span style="color:#3b82f6;font-size:10px">(filtrado por proveedor)</span>' : ''}</label><select data-k="catalog_item_id" data-id="${row.id}"><option value="">Manual / no catalogado</option>${rowItems.map(i => `<option value="${i.id}" ${Number(row.catalog_item_id)===i.id?'selected':''}>${i.code} · ${i.name}</option>`).join('')}</select></div><div><label>Nombre manual</label><input data-k="manual_item_name" data-id="${row.id}" value="${row.manual_item_name || ''}"/></div><div><label>Proveedor</label><select data-k="supplier_id" data-id="${row.id}"><option value="">Sin proveedor</option>${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}</select></div></div><div class="row-4"><div><label>Cantidad</label><input data-k="quantity" data-id="${row.id}" type="number" value="${row.quantity || 1}"/></div><div><label>Unidad</label><select data-k="unit" data-id="${row.id}">${units.map(u => `<option ${row.unit===u?'selected':''}>${u}</option>`).join('')}</select></div><div><label>Costo</label><input data-k="unit_cost" data-id="${row.id}" type="number" value="${row.unit_cost || 0}"/></div><div><label>Moneda</label><input data-k="currency" data-id="${row.id}" value="${row.currency || currency.value || 'MXN'}" readonly/></div></div><div class="row-2"><input data-k="web_link" data-id="${row.id}" placeholder="Liga web" value="${row.web_link || ''}"/><input data-k="comments" data-id="${row.id}" placeholder="Comentarios" value="${row.comments || ''}"/></div><div class="row-2"><div class="small muted">Centro: ${cc.find(x => x.id === Number(row.cost_center_id || costCenter.value))?.name || '-'} · Subcentro: ${scc.find(x => x.id === Number(row.sub_cost_center_id || subCostCenter.value))?.name || '-'}</div><button class="btn-danger" data-remove="${row.id}">Eliminar</button></div></div>`; }).join('');
     itemsDraft.querySelectorAll('[data-k]').forEach(el => el.oninput = el.onchange = e => {
       const id = e.target.dataset.id; const row = state.itemsDraft.find(x => x.id === id); const k = e.target.dataset.k;
       row[k] = e.target.type === 'number' ? Number(e.target.value || 0) : e.target.value;
@@ -646,15 +650,192 @@ async function requisitionPreviewView(id) {
 
 async function trackingListView() {
   const data = await api('/api/requisitions');
-  app.innerHTML = shell(`<div class="card section"><div class="module-title"><h3>Seguimiento de requisiciones</h3><button class="btn-secondary" id="expReqItemsBtn">Exportar base seguimiento</button></div><div class="row-4"><input id="fIni" type="date" placeholder="Fecha inicio"/><input id="fFin" type="date" placeholder="Fecha fin"/><input id="fUser" placeholder="Usuario"/><input id="fProv" placeholder="Proveedor"/></div><div class="table-wrap"><table><thead><tr><th>Folio</th><th>Fecha solicitud</th><th>PO</th><th>Estatus</th><th>Total</th><th></th></tr></thead><tbody>${data.map(r => `<tr><td>${r.folio}</td><td>${String(r.request_date || '').slice(0,10)}</td><td>${r.po_folio || '-'}</td><td>${statusPill(r.status)}</td><td>${Number(r.total_amount || 0).toFixed(2)} ${r.currency || ''}</td><td><a href="#/seguimiento/${r.id}">Abrir</a></td></tr>`).join('')}</tbody></table></div></div>`, 'seguimiento');
-  expReqItemsBtn.onclick = () => downloadCsv('seguimiento', 'seguimiento.csv', { fecha_inicio: fIni.value, fecha_fin: fFin.value, usuario: fUser.value, proveedor: fProv.value });
+
+  const renderTrackingTable = () => {
+    const folio = (document.getElementById('fFolio')?.value || '').toLowerCase();
+    const status = document.getElementById('fStatus')?.value || '';
+    const dateFrom = document.getElementById('fIni')?.value || '';
+    const dateTo = document.getElementById('fFin')?.value || '';
+    const filtered = data.filter(r =>
+      (!folio || String(r.folio||'').toLowerCase().includes(folio)) &&
+      (!status || r.status === status) &&
+      (!dateFrom || String(r.request_date||'').slice(0,10) >= dateFrom) &&
+      (!dateTo || String(r.request_date||'').slice(0,10) <= dateTo)
+    );
+    const wrap = document.getElementById('trackTableWrap');
+    if (wrap) wrap.innerHTML = `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Solicitante</th><th>PO</th><th>Estatus</th><th>Total</th><th></th></tr></thead><tbody>${filtered.map(r => `<tr><td><b>${r.folio}</b></td><td style="font-size:12px">${String(r.request_date||'').slice(0,10)}</td><td style="font-size:12px">${r.requester||'-'}</td><td style="font-size:12px">${r.po_folio||'-'}</td><td>${statusPill(r.status)}</td><td style="font-size:12px">${Number(r.total_amount||0).toFixed(2)} ${r.currency||''}</td><td><a href="#/seguimiento/${r.id}">Abrir</a></td></tr>`).join('')}</tbody></table>`;
+  };
+
+  app.innerHTML = shell(`
+    <div class="card section">
+      <div class="module-title"><h3>Seguimiento de requisiciones</h3><button class="btn-secondary" id="expReqItemsBtn">Exportar</button></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end">
+        <div><label class="small muted">Folio</label><input id="fFolio" placeholder="Buscar folio..." style="display:block"/></div>
+        <div><label class="small muted">Estatus</label><select id="fStatus" style="display:block"><option value="">Todos</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div>
+        <div><label class="small muted">Desde</label><input id="fIni" type="date" style="display:block"/></div>
+        <div><label class="small muted">Hasta</label><input id="fFin" type="date" style="display:block"/></div>
+        <button class="btn-secondary" id="clearFiltersBtn" style="align-self:flex-end">Limpiar</button>
+      </div>
+      <div class="table-wrap" id="trackTableWrap"></div>
+    </div>
+  `, 'seguimiento');
+
+  renderTrackingTable();
+  document.getElementById('fFolio').oninput = renderTrackingTable;
+  document.getElementById('fStatus').onchange = renderTrackingTable;
+  document.getElementById('fIni').onchange = renderTrackingTable;
+  document.getElementById('fFin').onchange = renderTrackingTable;
+  document.getElementById('clearFiltersBtn').onclick = () => {
+    document.getElementById('fFolio').value = '';
+    document.getElementById('fStatus').value = '';
+    document.getElementById('fIni').value = '';
+    document.getElementById('fFin').value = '';
+    renderTrackingTable();
+  };
+  expReqItemsBtn.onclick = () => downloadCsv('seguimiento', 'seguimiento.csv', {
+    fecha_inicio: document.getElementById('fIni')?.value || '',
+    fecha_fin: document.getElementById('fFin')?.value || ''
+  });
   bindCommon();
 }
 
 async function trackingDetailView(id) {
-  const d = await api(`/api/requisitions/${id}`);
-  const poSet = [...new Set(d.items.map(i => i.po_folio).filter(Boolean))].join(', ') || '-';
-  app.innerHTML = shell(`<div class="card section"><div class="module-title"><h3>${d.requisition.folio}</h3><a href="#/seguimiento">Volver</a></div><div class="grid grid-4"><div class="small muted">Fecha solicitud<br><b>${String(d.requisition.request_date || '').slice(0,10)}</b></div><div class="small muted">Urgencia<br><b>${d.requisition.urgency || '-'}</b></div><div class="small muted">PO<br><b>${poSet}</b></div><div class="small muted">Estatus<br>${statusPill(d.requisition.status)}</div></div></div><div class="card section" style="margin-top:16px"><h3>Ítems</h3><div class="table-wrap"><table><thead><tr><th>Línea</th><th>Ítem</th><th>Proveedor</th><th>PO</th><th>Cantidad</th><th>Costo</th><th>Estatus</th></tr></thead><tbody>${d.items.map(i => `<tr><td>${i.line_no}</td><td>${i.catalog_name || i.manual_item_name}</td><td>${i.supplier_name || '-'}</td><td>${i.po_folio || '-'}</td><td>${i.quantity} ${i.unit}</td><td>${Number(i.unit_cost || 0).toFixed(2)}</td><td>${statusPill(i.status)}</td></tr>`).join('')}</tbody></table></div></div><div class="card section" style="margin-top:16px"><h3>Historial</h3>${d.history.map(h => `<div class="list-line">${String(h.changed_at).replace('T', ' ').slice(0,16)} · ${h.module} · ${h.old_status || '-'} → ${h.new_status} · ${h.comment || ''}</div>`).join('')}</div>`, 'seguimiento');
+  const [d, allPos, allInvoices, allPayments] = await Promise.all([
+    api(`/api/requisitions/${id}`),
+    api('/api/purchases/purchase-orders').catch(() => []),
+    api('/api/invoices').catch(() => []),
+    api('/api/payments').catch(() => [])
+  ]);
+
+  const poFolios = [...new Set(d.items.map(i => i.po_folio).filter(Boolean))];
+  const linkedPOs = allPos.filter(p => poFolios.includes(p.folio));
+  const linkedPOIds = new Set(linkedPOs.map(p => p.id));
+  const linkedInvoices = allInvoices.filter(i => linkedPOIds.has(i.purchase_order_id));
+  const linkedInvIds = new Set(linkedInvoices.map(i => i.id));
+  const linkedPayments = allPayments.filter(p => linkedInvIds.has(p.invoice_id));
+
+  const historyColors = { requisitions: '#3b82f6', quotations: '#f59e0b', purchases: '#10b981', approvals: '#8b5cf6', payments: '#ef4444', catalogs: '#06b6d4' };
+
+  app.innerHTML = shell(`
+    <!-- Cabecera -->
+    <div class="card section">
+      <div class="module-title"><h3>${d.requisition.folio}</h3><a href="#/seguimiento" class="btn-secondary" style="text-decoration:none;padding:6px 12px;font-size:13px">← Volver</a></div>
+      <div class="grid grid-4">
+        <div class="small muted">Fecha solicitud<br><b>${String(d.requisition.request_date||'').slice(0,10)}</b></div>
+        <div class="small muted">Urgencia<br><b>${d.requisition.urgency||'-'}</b></div>
+        <div class="small muted">POs<br><b>${poFolios.join(', ')||'-'}</b></div>
+        <div class="small muted">Estatus<br>${statusPill(d.requisition.status)}</div>
+      </div>
+    </div>
+
+    <!-- Cadena Req → PO → Factura → Pago -->
+    <div class="card section" style="margin-top:12px">
+      <h3>🔗 Cadena de documentos</h3>
+      <div style="overflow-x:auto">
+        <div style="display:flex;gap:0;align-items:flex-start;min-width:600px;padding:8px 0">
+
+          <!-- Requisición -->
+          <div style="flex:1;min-width:120px">
+            <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;font-size:12px">
+              <div style="color:#1d4ed8;font-weight:700;margin-bottom:4px">📋 Requisición</div>
+              <div><b>${d.requisition.folio}</b></div>
+              <div class="muted">${String(d.requisition.request_date||'').slice(0,10)}</div>
+              <div style="margin-top:4px">${statusPill(d.requisition.status)}</div>
+              <div class="muted" style="margin-top:4px">Total: $${Number(d.requisition.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+            </div>
+          </div>
+
+          <div style="display:flex;align-items:center;padding:0 6px;margin-top:20px;color:#9ca3af;font-size:18px">→</div>
+
+          <!-- POs -->
+          <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px">
+            ${linkedPOs.length ? linkedPOs.map(po => `
+              <div style="background:#f0fff4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;font-size:12px">
+                <div style="color:#15803d;font-weight:700;margin-bottom:4px">🧾 Orden de Compra</div>
+                <div><b>${po.folio}</b></div>
+                <div class="muted">${String(po.created_at||'').slice(0,10)}</div>
+                <div style="margin-top:4px">${statusPill(po.status)}</div>
+                <div class="muted" style="margin-top:4px">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</div>
+                <div class="muted" style="margin-top:2px">${po.supplier_name||'-'}</div>
+              </div>`).join('')
+            : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin PO generada</div>'}
+          </div>
+
+          <div style="display:flex;align-items:center;padding:0 6px;margin-top:20px;color:#9ca3af;font-size:18px">→</div>
+
+          <!-- Facturas -->
+          <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px">
+            ${linkedInvoices.length ? linkedInvoices.map(inv => `
+              <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:12px">
+                <div style="color:#b45309;font-weight:700;margin-bottom:4px">📄 Factura</div>
+                <div><b>${inv.invoice_number}</b></div>
+                <div class="muted">${String(inv.created_at||'').slice(0,10)}</div>
+                <div style="margin-top:4px">${statusPill(inv.status)}</div>
+                <div class="muted" style="margin-top:4px">$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                ${inv.pdf_path ? `<a href="${inv.pdf_path}" target="_blank" style="font-size:11px">📎 PDF</a>` : ''}
+              </div>`).join('')
+            : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin factura</div>'}
+          </div>
+
+          <div style="display:flex;align-items:center;padding:0 6px;margin-top:20px;color:#9ca3af;font-size:18px">→</div>
+
+          <!-- Pagos -->
+          <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px">
+            ${linkedPayments.length ? linkedPayments.map(pay => `
+              <div style="background:#f0fff4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;font-size:12px">
+                <div style="color:#15803d;font-weight:700;margin-bottom:4px">💳 Pago</div>
+                <div><b>$${Number(pay.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</b></div>
+                <div class="muted">${String(pay.created_at||'').slice(0,10)}</div>
+                <div class="muted">${pay.payment_type||'-'} · ${pay.reference||'-'}</div>
+                ${pay.proof_path ? `<a href="${pay.proof_path}" target="_blank" style="font-size:11px">📎 Comprobante</a>` : ''}
+              </div>`).join('')
+            : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin pagos</div>'}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Ítems -->
+    <div class="card section" style="margin-top:12px">
+      <h3>Ítems de la requisición</h3>
+      <div class="table-wrap"><table>
+        <thead><tr><th>#</th><th>Ítem</th><th>Proveedor</th><th>PO</th><th>Cant.</th><th>Costo unit.</th><th>Total</th><th>Estatus</th></tr></thead>
+        <tbody>${d.items.map(i => {
+          const total = Number(i.quantity||0) * Number(i.unit_cost||0);
+          return `<tr>
+            <td>${i.line_no}</td>
+            <td><b>${i.catalog_name || i.manual_item_name}</b></td>
+            <td style="font-size:12px">${i.supplier_name||'-'}</td>
+            <td style="font-size:12px">${i.po_folio||'-'}</td>
+            <td>${i.quantity} ${i.unit}</td>
+            <td>$${Number(i.unit_cost||0).toFixed(2)}</td>
+            <td><b>$${total.toFixed(2)}</b></td>
+            <td>${statusPill(i.status)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>
+
+    <!-- Historial (timeline) -->
+    <div class="card section" style="margin-top:12px">
+      <h3>Historial de cambios</h3>
+      <div style="position:relative;padding-left:20px">
+        <div style="position:absolute;left:6px;top:0;bottom:0;width:2px;background:#e5e7eb"></div>
+        ${d.history.length ? d.history.map(h => {
+          const color = historyColors[h.module] || '#6b7280';
+          return `<div style="position:relative;margin-bottom:12px;padding-left:14px">
+            <div style="position:absolute;left:-14px;top:4px;width:10px;height:10px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 1px ${color}"></div>
+            <div style="font-size:12px">
+              <span style="color:${color};font-weight:600">${h.module}</span>
+              <span class="muted" style="margin-left:6px">${String(h.changed_at||'').replace('T',' ').slice(0,16)}</span>
+              ${h.old_status ? `<span class="muted"> · ${h.old_status} →</span> <b>${h.new_status}</b>` : `<b> · ${h.new_status}</b>`}
+            </div>
+            ${h.comment ? `<div class="small muted" style="margin-top:2px">${escapeHtml(h.comment)}</div>` : ''}
+          </div>`;
+        }).join('') : '<div class="muted small">Sin historial</div>'}
+      </div>
+    </div>
+  `, 'seguimiento');
   bindCommon();
 }
 
@@ -1281,16 +1462,22 @@ async function proveedorPOView() {
       ${pendingResponse.length === 0
         ? '<div class="muted small" style="padding:12px">Sin órdenes pendientes de confirmación.</div>'
         : pendingResponse.map(po => `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;border-bottom:1px solid #f3f4f6">
-          <div>
-            <b>${po.folio}</b>
-            <span class="small muted" style="margin-left:8px">${String(po.created_at||'').slice(0,10)}</span>
-            <span style="margin-left:12px;font-weight:600">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</span>
+        <div style="padding:10px;border-bottom:1px solid #f3f4f6">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div>
+              <b>${po.folio}</b>
+              <span class="small muted" style="margin-left:8px">${String(po.created_at||'').slice(0,10)}</span>
+              <span style="margin-left:12px;font-weight:600">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn-primary" style="font-size:12px;padding:5px 12px" onclick="respondPO(${po.id},'aceptada')">✅ Aceptar</button>
+              <button class="btn-secondary" style="font-size:12px;padding:5px 12px;color:#dc2626" onclick="respondPO(${po.id},'rechazada')">✖ Rechazar</button>
+            </div>
           </div>
-          <div style="display:flex;gap:8px">
-            <button class="btn-primary" style="font-size:12px;padding:5px 12px" onclick="respondPO(${po.id},'aceptada')">✅ Aceptar</button>
-            <button class="btn-secondary" style="font-size:12px;padding:5px 12px;color:#dc2626" onclick="respondPO(${po.id},'rechazada')">✖ Rechazar</button>
-          </div>
+          ${po.po_items && po.po_items.length ? `<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:4px">
+            <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Unidad</th><th style="padding:4px 8px;text-align:right">Precio unit.</th><th style="padding:4px 8px;text-align:right">Subtotal</th></tr></thead>
+            <tbody>${po.po_items.map(i=>`<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity}</td><td style="padding:4px 8px;text-align:right">${i.unit||'pza'}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${Number(i.subtotal||0).toFixed(2)}</td></tr>`).join('')}</tbody>
+          </table></div>` : ''}
         </div>`).join('')}
     </div>
 
@@ -1367,6 +1554,16 @@ async function proveedorPOView() {
                 ? `<span style="color:#16a34a;font-size:12px;font-weight:600">✅ Pagado</span>`
                 : ''}
             </div>
+            ${payments.length > 0 ? `<div style="margin-top:8px;overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="background:#f0f9ff"><th style="padding:4px 8px;text-align:left">Fecha</th><th style="padding:4px 8px;text-align:right">Monto</th><th style="padding:4px 8px;text-align:left">Tipo</th><th style="padding:4px 8px;text-align:left">Referencia</th><th style="padding:4px 8px;text-align:center">Comprobante</th></tr></thead>
+              <tbody>${payments.map(p=>`<tr>
+                <td style="padding:4px 8px">${String(p.created_at||'').slice(0,10)}</td>
+                <td style="padding:4px 8px;text-align:right;font-weight:600;color:#16a34a">$${Number(p.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+                <td style="padding:4px 8px">${p.payment_type||'-'}</td>
+                <td style="padding:4px 8px">${p.reference||'-'}</td>
+                <td style="padding:4px 8px;text-align:center">${p.proof_path ? `<a href="${p.proof_path}" target="_blank" style="font-size:12px">📎 Ver</a>` : '-'}</td>
+              </tr>`).join('')}</tbody>
+            </table></div>` : ''}
             <div id="urgent-msg-${inv.id}" class="small muted" style="margin-top:4px"></div>
           </div>`;
         }).join('')}

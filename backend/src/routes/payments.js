@@ -69,7 +69,20 @@ router.get('/my-invoices', (req, res) => {
   if (!req.user.supplier_id) return res.status(403).json({ error: 'Solo proveedores' });
   const rows = db.invoices
     .filter(i => i.supplier_id === req.user.supplier_id)
-    .map(i => enrichInvoice(i, db));
+    .map(i => {
+      const enriched = enrichInvoice(i, db);
+      const payments = db.payments
+        .filter(p => p.invoice_id === i.id)
+        .map(p => ({
+          id: p.id,
+          amount: p.amount,
+          payment_type: p.payment_type,
+          reference: p.reference,
+          created_at: p.created_at,
+          proof_path: p.proof_path
+        }));
+      return { ...enriched, payments };
+    });
   res.json(rows);
 });
 
