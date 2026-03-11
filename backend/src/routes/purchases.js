@@ -303,6 +303,12 @@ router.post('/items/:id/cancel', allowRoles('comprador', 'admin'), (req, res) =>
   const line = db.requisition_items.find(i => i.id === Number(req.params.id));
   if (!line) return res.status(404).json({ error: 'Ítem no encontrado' });
   if (['Cancelado', 'Cerrado'].includes(line.status)) return res.status(400).json({ error: `El ítem ya está ${line.status}` });
+  if (line.purchase_order_id) {
+    const po = db.purchase_orders.find(p => p.id === line.purchase_order_id);
+    if (po && !['Cancelada', 'Rechazada por proveedor'].includes(po.status)) {
+      return res.status(400).json({ error: `El ítem está asignado a la PO ${po.folio} (${po.status}). Cancela primero la PO para poder cancelar este ítem.` });
+    }
+  }
   const reason = req.body.reason || 'Sin justificación';
   const oldStatus = line.status;
   line.status = 'Cancelado';

@@ -3,6 +3,18 @@ const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
 const { addHistory, deriveItemStatus, recalcRequisition } = require('../utils/workflow');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+
+const quotationsUploadDir = path.join(__dirname, '../../../storage/quotations');
+fs.mkdirSync(quotationsUploadDir, { recursive: true });
+const quotationStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, quotationsUploadDir),
+  filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`)
+});
+const quotationUpload = multer({ storage: quotationStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+
 const router = express.Router();
 router.use(authRequired);
 
@@ -63,7 +75,7 @@ router.get('/by-item/:itemId', allowRoles('comprador', 'admin'), (req, res) => {
   res.json(quotes);
 });
 
-router.post('/', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.single('attachment'), (req, res) => {
   const db = read();
   const supplierId = req.user.supplier_id || Number(req.body.supplier_id);
   if (!supplierId) return res.status(400).json({ error: 'Proveedor requerido' });
@@ -95,7 +107,8 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
     is_winner: false,
     status: 'Cotizada',
     created_at: new Date().toISOString(),
-    created_by_user_id: req.user.id
+    created_by_user_id: req.user.id,
+    attachment_path: req.file ? `/storage/quotations/${req.file.filename}` : null
   };
 
   if (!row.requisition_item_id || !row.supplier_id) {

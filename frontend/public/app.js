@@ -848,11 +848,12 @@ async function trackingListView() {
 }
 
 async function trackingDetailView(id) {
-  const [d, allPos, allInvoices, allPayments] = await Promise.all([
+  const [d, allPos, allInvoices, allPayments, allQuotations] = await Promise.all([
     api(`/api/requisitions/${id}`),
     api('/api/purchases/purchase-orders').catch(() => []),
     api('/api/invoices').catch(() => []),
-    api('/api/payments').catch(() => [])
+    api('/api/payments').catch(() => []),
+    api('/api/quotations').catch(() => [])
   ]);
 
   const poFolios = [...new Set(d.items.map(i => i.po_folio).filter(Boolean))];
@@ -895,6 +896,30 @@ async function trackingDetailView(id) {
 
           <div style="display:flex;align-items:center;padding:0 6px;margin-top:20px;color:#9ca3af;font-size:18px">→</div>
 
+          <!-- Cotizaciones -->
+          <div style="flex:1;min-width:130px;display:flex;flex-direction:column;gap:6px">
+            ${(() => {
+              const itemIds = new Set(d.items.map(i => i.id));
+              const winnerQuotes = allQuotations.filter(q => q.is_winner && itemIds.has(q.requisition_item_id));
+              if (!winnerQuotes.length) {
+                const anyQuotes = allQuotations.filter(q => itemIds.has(q.requisition_item_id));
+                if (!anyQuotes.length) return '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin cotizaciones</div>';
+                return `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:12px"><div style="color:#b45309;font-weight:700;margin-bottom:4px">📩 Cotizaciones</div><div class="muted">${anyQuotes.length} recibida(s)</div><div class="muted">Sin ganadora aún</div></div>`;
+              }
+              return winnerQuotes.map(q => `
+                <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px;font-size:12px">
+                  <div style="color:#b45309;font-weight:700;margin-bottom:4px">📩 Cotización</div>
+                  <div><b>${q.supplier_name||'-'}</b></div>
+                  <div class="muted">$${Number(q.unit_cost||0).toFixed(2)} ${q.currency||'MXN'}</div>
+                  <div class="muted">Entrega: ${q.delivery_days||0} días</div>
+                  ${q.quote_number ? `<div class="muted">No. ${q.quote_number}</div>` : ''}
+                  ${q.attachment_path ? `<a href="${q.attachment_path}" target="_blank" style="font-size:11px;display:block;margin-top:4px">📎 Cotización</a>` : ''}
+                </div>`).join('');
+            })()}
+          </div>
+
+          <div style="display:flex;align-items:center;padding:0 6px;margin-top:20px;color:#9ca3af;font-size:18px">→</div>
+
           <!-- POs -->
           <div style="flex:1;min-width:140px;display:flex;flex-direction:column;gap:6px">
             ${linkedPOs.length ? linkedPOs.map(po => `
@@ -920,7 +945,8 @@ async function trackingDetailView(id) {
                 <div class="muted">${String(inv.created_at||'').slice(0,10)}</div>
                 <div style="margin-top:4px">${statusPill(inv.status)}</div>
                 <div class="muted" style="margin-top:4px">$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
-                ${inv.pdf_path ? `<a href="${inv.pdf_path}" target="_blank" style="font-size:11px">📎 PDF</a>` : ''}
+                ${inv.pdf_path ? `<a href="${inv.pdf_path}" target="_blank" style="font-size:11px;display:block">📎 PDF</a>` : ''}
+                ${inv.xml_path ? `<a href="${inv.xml_path}" target="_blank" style="font-size:11px;display:block">📋 XML</a>` : ''}
               </div>`).join('')
             : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin factura</div>'}
           </div>
@@ -1019,7 +1045,7 @@ async function purchasesView() {
 
   // Clasificar ítems por sección (cancelados excluidos salvo toggle)
   const itemsPendientePO = allItems.filter(x => x.supplier_id && x.unit_cost && !x.purchase_order_id && !['Cancelado','Rechazado','Cerrado','En cotización'].includes(x.status));
-  const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización');
+  const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización' && x.item_name && x.item_name.trim() && !x.purchase_order_id);
   const itemsSolicitados = allItems.filter(x => showCancelled ? true : !['Cancelado','Rechazado','Cerrado'].includes(x.status));
 
   let activeTab = 'pendientes';
@@ -1395,6 +1421,7 @@ async function purchasesView() {
           <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
             <h4 style="margin:0 0 4px">Registrar factura manualmente · ${p.folio}</h4>
             <p class="small muted" style="margin:0 0 10px">Usa esta opción solo si el proveedor no puede registrarla en el sistema.</p>
+            <div id="inv-items-${p.id}"></div>
             <div class="row-3">
               <div><label style="font-size:12px">No. factura *</label><input id="inv-num-${p.id}" placeholder="FACT-001"/></div>
               <div><label style="font-size:12px">Subtotal *</label><input id="inv-sub-${p.id}" type="number" value="${Number(p.total_amount||0).toFixed(2)}" oninput="document.getElementById('inv-tax-${p.id}').value=(+this.value*0.16).toFixed(2)"/></div>
@@ -1444,9 +1471,63 @@ async function purchasesView() {
 
       // Mostrar/ocultar formulario manual
       tabContent.querySelectorAll('.po-manual-invoice-btn').forEach(btn => {
-        btn.onclick = () => {
-          const form = document.getElementById(`invoice-form-${btn.dataset.id}`);
-          form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const form = document.getElementById(`invoice-form-${id}`);
+          if (form.style.display !== 'none') { form.style.display = 'none'; return; }
+          // Load PO items
+          const itemsDiv = document.getElementById(`inv-items-${id}`);
+          itemsDiv.innerHTML = '<div class="small muted">Cargando ítems...</div>';
+          form.style.display = 'block';
+          try {
+            const poData = await api(`/api/purchases/purchase-orders/${id}`);
+            const poItems = poData.po_items || poData.items || [];
+            if (poItems.length) {
+              let subtotal = 0;
+              poItems.forEach(i => { subtotal += Number(i.quantity||0) * Number(i.unit_cost||0); });
+              const iva = subtotal * 0.16;
+              itemsDiv.innerHTML = `
+                <div style="overflow-x:auto;margin-bottom:12px">
+                  <table style="width:100%;font-size:12px;border-collapse:collapse">
+                    <thead><tr style="background:#f3f4f6">
+                      <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Descripción</th>
+                      <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Cant.</th>
+                      <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Precio unit.</th>
+                      <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Subtotal</th>
+                      <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">IVA 16%</th>
+                      <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Total</th>
+                    </tr></thead>
+                    <tbody>${poItems.map(i => {
+                      const sub = Number(i.quantity||0) * Number(i.unit_cost||0);
+                      const iv = sub * 0.16;
+                      return `<tr style="border-bottom:1px solid #f3f4f6">
+                        <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}</td>
+                        <td style="padding:4px 8px;text-align:right">${Number(i.quantity||0)}</td>
+                        <td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td>
+                        <td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td>
+                        <td style="padding:4px 8px;text-align:right;color:#6b7280">$${iv.toFixed(2)}</td>
+                        <td style="padding:4px 8px;text-align:right"><b>$${(sub+iv).toFixed(2)}</b></td>
+                      </tr>`;
+                    }).join('')}</tbody>
+                    <tfoot><tr style="background:#f9fafb;font-weight:700">
+                      <td colspan="3" style="padding:6px 8px;text-align:right;font-size:12px">Totales:</td>
+                      <td style="padding:6px 8px;text-align:right;font-size:12px">$${subtotal.toFixed(2)}</td>
+                      <td style="padding:6px 8px;text-align:right;font-size:12px;color:#6b7280">$${iva.toFixed(2)}</td>
+                      <td style="padding:6px 8px;text-align:right;font-size:12px">$${(subtotal+iva).toFixed(2)}</td>
+                    </tr></tfoot>
+                  </table>
+                </div>`;
+              // Pre-fill form fields
+              const subEl = document.getElementById(`inv-sub-${id}`);
+              const taxEl = document.getElementById(`inv-tax-${id}`);
+              if (subEl) subEl.value = subtotal.toFixed(2);
+              if (taxEl) taxEl.value = iva.toFixed(2);
+            } else {
+              itemsDiv.innerHTML = '<div class="small muted" style="margin-bottom:8px">Sin ítems registrados en esta PO.</div>';
+            }
+          } catch(e) {
+            itemsDiv.innerHTML = `<div class="small" style="color:#dc2626;margin-bottom:8px">Error al cargar ítems: ${e.message}</div>`;
+          }
         };
       });
 
@@ -2129,17 +2210,36 @@ async function quotationsView() {
         if (!quoteItem.value) throw new Error('Selecciona un ítem');
         if (!quoteSupplier.value) throw new Error('Selecciona un proveedor');
         if (!quoteUnitCost.value || Number(quoteUnitCost.value) <= 0) throw new Error('Ingresa costo mayor a cero');
-        await api('/api/quotations', { method: 'POST', body: JSON.stringify({
-          requisition_item_id: Number(quoteItem.value),
-          supplier_id: Number(quoteSupplier.value),
-          quote_number: quoteNumber.value,
-          delivery_days: Number(quoteDays.value||0),
-          unit_cost: Number(quoteUnitCost.value),
-          currency: quoteCurrencyField.value || 'MXN',
-          payment_terms: quotePayTerms.value,
-          provider_code: quoteCode.value,
-          official_item_name: quoteName.value
-        })});
+        const qFile = document.getElementById('quoteFile');
+        let quoteResult;
+        if (qFile && qFile.files[0]) {
+          const fd = new FormData();
+          fd.append('requisition_item_id', quoteItem.value);
+          fd.append('supplier_id', quoteSupplier.value);
+          fd.append('quote_number', quoteNumber.value);
+          fd.append('delivery_days', quoteDays.value||0);
+          fd.append('unit_cost', quoteUnitCost.value);
+          fd.append('currency', quoteCurrencyField.value || 'MXN');
+          fd.append('payment_terms', quotePayTerms.value);
+          fd.append('provider_code', quoteCode.value);
+          fd.append('official_item_name', quoteName.value);
+          fd.append('attachment', qFile.files[0]);
+          const res = await fetch('/api/quotations', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+          if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+          quoteResult = await res.json();
+        } else {
+          quoteResult = await api('/api/quotations', { method: 'POST', body: JSON.stringify({
+            requisition_item_id: Number(quoteItem.value),
+            supplier_id: Number(quoteSupplier.value),
+            quote_number: quoteNumber.value,
+            delivery_days: Number(quoteDays.value||0),
+            unit_cost: Number(quoteUnitCost.value),
+            currency: quoteCurrencyField.value || 'MXN',
+            payment_terms: quotePayTerms.value,
+            provider_code: quoteCode.value,
+            official_item_name: quoteName.value
+          })});
+        }
         quoteMsg.textContent = '✅ Cotización guardada';
         quoteMsg.style.color = '#16a34a';
         quoteItem.value = ''; quoteSupplier.value = ''; quoteNumber.value = ''; quoteDays.value = '';
