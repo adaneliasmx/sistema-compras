@@ -121,4 +121,36 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   res.status(201).json(row);
 });
 
+// ── Recordatorio de pago (proveedor, máx 1 por semana) ────────────────────────
+router.post('/:id/reminder', allowRoles('proveedor'), (req, res) => {
+  const db = read();
+  const inv = db.invoices.find(i => i.id === Number(req.params.id));
+  if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+  if (inv.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
+  if (inv.status === 'Pagada') return res.status(400).json({ error: 'La factura ya está pagada' });
+
+  // Regla: máximo 1 recordatorio cada 7 días
+  if (inv.last_reminder_at) {
+    const daysSince = Math.floor((Date.now() - new Date(inv.last_reminder_at).getTime()) / 86400000);
+    if (daysSince < 7) {
+      return res.status(429).json({ error: `Ya enviaste un recordatorio hace ${daysSince} día(s). Puedes volver a enviar en ${7 - daysSince} día(s).` });
+    }
+  }
+
+  inv.last_reminder_at = new Date().toISOString();
+  inv.reminder_count = (inv.reminder_count || 0) + 1;
+  write(db);
+
+  // Generar mailto para notificar al comprador
+  const db2 = read();
+  const buyer = db2.users.find(u => u.role_code === 'comprador' || u.role_code === 'pagos');
+  const buyerEmail = buyer?.email || '';
+  const po = db2.purchase_orders.find(p => p.id === inv.purchase_order_id);
+  const subject = `Recordatorio de pago · Factura ${inv.invoice_number}`;
+  const body = `Estimado equipo de finanzas,\n\nLe recordamos que la factura ${inv.invoice_number} de la PO ${po?.folio||'-'} por $${Number(inv.total||0).toFixed(2)} está pendiente de pago.\n\nAgradecemos su atención.\n\nSaludos.`;
+  const mailto = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  res.json({ ok: true, mailto, reminder_count: inv.reminder_count, message: `Recordatorio #${inv.reminder_count} enviado` });
+});
+
 module.exports = router;

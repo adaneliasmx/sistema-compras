@@ -1732,6 +1732,14 @@ async function proveedorPOView() {
             </div>
             <b>$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</b>
           </div>
+          ${po.po_items && po.po_items.length ? `
+          <div style="overflow-x:auto;margin-bottom:10px">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Precio</th><th style="padding:4px 8px;text-align:right">Subtotal</th><th style="padding:4px 8px;text-align:right">IVA 16%</th><th style="padding:4px 8px;text-align:right;font-weight:700">Total</th></tr></thead>
+              <tbody>${po.po_items.map(i => { const sub=Number(i.quantity||0)*Number(i.unit_cost||0); const iva=sub*0.16; return `<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${iva.toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(sub+iva).toFixed(2)}</td></tr>`; }).join('')}</tbody>
+              <tfoot><tr style="background:#f0fdf4;font-weight:700"><td colspan="3" style="padding:4px 8px;text-align:right">Totales:</td><td style="padding:4px 8px;text-align:right">$${po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*0.16).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;color:#1d4ed8">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*1.16).toFixed(2)}</td></tr></tfoot>
+            </table>
+          </div>` : ''}
           <div class="row-3">
             <div><label style="font-size:12px">No. factura *</label><input id="sinv-num-${po.id}" placeholder="FACT-001"/></div>
             <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" value="${Number(po.total_amount||0).toFixed(2)}" oninput="document.getElementById('sinv-tax-${po.id}').value=(+this.value*0.16).toFixed(2)"/></div>
@@ -1782,6 +1790,14 @@ async function proveedorPOView() {
               ${!isPaid && !inv.urgent
                 ? `<button class="btn-secondary urgent-btn" data-id="${inv.id}" style="font-size:12px;padding:4px 10px;color:#dc2626;border-color:#dc2626">🔴 Marcar urgente</button>`
                 : ''}
+              ${!isPaid ? (() => {
+                const lastReminder = inv.last_reminder_at ? new Date(inv.last_reminder_at) : null;
+                const daysSince = lastReminder ? Math.floor((Date.now() - lastReminder.getTime()) / 86400000) : 999;
+                const canRemind = daysSince >= 7;
+                return canRemind
+                  ? `<button class="btn-secondary reminder-btn" data-id="${inv.id}" style="font-size:12px;padding:4px 10px;color:#2563eb;border-color:#2563eb">📩 Enviar recordatorio</button>`
+                  : `<span style="font-size:11px;color:#9ca3af">Recordatorio enviado hace ${daysSince} día(s)</span>`;
+              })() : ''}
               ${isPaid
                 ? `<span style="color:#16a34a;font-size:12px;font-weight:600">✅ Pagado</span>`
                 : ''}
@@ -1914,6 +1930,25 @@ async function proveedorPOView() {
       } catch(e) {
         btn.disabled = false;
         alert(e.message);
+      }
+    };
+  });
+
+  document.querySelectorAll('.reminder-btn').forEach(btn => {
+    btn.onclick = async () => {
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Enviando...';
+        const data = await api(`/api/invoices/${btn.dataset.id}/reminder`, { method: 'POST' });
+        if (data.mailto) window.open(data.mailto, '_blank');
+        const msgEl = document.getElementById(`urgent-msg-${btn.dataset.id}`);
+        if (msgEl) { msgEl.textContent = `✅ ${data.message}`; msgEl.style.color = '#16a34a'; }
+        btn.textContent = '✅ Recordatorio enviado';
+      } catch(e) {
+        btn.disabled = false;
+        btn.textContent = '📩 Enviar recordatorio';
+        const msgEl = document.getElementById(`urgent-msg-${btn.dataset.id}`);
+        if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
       }
     };
   });
@@ -2183,54 +2218,155 @@ async function quotationsView() {
 async function invoicingView() {
   const [pos, invs] = await Promise.all([api('/api/purchases/purchase-orders'), api('/api/invoices')]);
   const invoicedPOIds = new Set(invs.map(i => i.purchase_order_id));
+  // POs que pueden facturarse: entregadas o en proceso, aún sin factura
   const posPendientes = pos.filter(p => !invoicedPOIds.has(p.id) && ['Enviada','Aceptada','En proceso','Entregado'].includes(p.status));
+  // POs parcialmente facturadas (para candado)
+  const posConFactura = pos.filter(p => invoicedPOIds.has(p.id));
 
   app.innerHTML = shell(`
     <div class="grid grid-2">
+      <!-- Panel izquierdo: registrar factura -->
       <div class="card section">
-        <h3>Registrar factura <span class="small muted">(respaldo manual)</span></h3>
-        <p class="small muted" style="margin-bottom:10px">El proveedor registra su propia factura desde su sesión. Usa este formulario solo si es necesario.</p>
-        <label>PO (entregadas sin factura)</label>
-        <select id="invPo">
-          <option value="">Selecciona PO</option>
-          ${posPendientes.map(p => `<option value="${p.id}" data-supplier="${p.supplier_id}">${p.folio} · ${p.supplier_name}</option>`).join('')}
+        <h3>🧾 Registrar factura <span class="small muted">(respaldo manual)</span></h3>
+        <p class="small muted" style="margin-bottom:10px">El proveedor registra desde su sesión. Usa esto solo como respaldo.</p>
+
+        <label>Selecciona PO a facturar</label>
+        <select id="invPo" style="width:100%;margin-bottom:10px">
+          <option value="">— Selecciona una PO —</option>
+          ${posPendientes.map(p => `<option value="${p.id}" data-supplier="${p.supplier_id}" data-total="${p.total_amount||0}" data-folio="${p.folio}">${p.folio} · ${p.supplier_name} · $${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</option>`).join('')}
         </select>
-        <div class="row-3" style="margin-top:8px">
-          <div><label>No. factura *</label><input id="invNumber" placeholder="FACT-001"/></div>
-          <div><label>Subtotal *</label><input id="invSubtotal" type="number" placeholder="0.00"/></div>
-          <div><label>IVA</label><input id="invTaxes" type="number" placeholder="0.00"/></div>
+
+        <!-- Tabla de ítems (se llena al seleccionar PO) -->
+        <div id="invItemsPreview" style="display:none;margin-bottom:12px">
+          <h4 style="margin:0 0 6px;font-size:13px">Ítems de la PO</h4>
+          <div class="table-wrap">
+            <table id="invItemsTable">
+              <thead><tr><th>Descripción</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio unit.</th><th style="text-align:right">Subtotal</th><th style="text-align:right">IVA 16%</th><th style="text-align:right">Total</th></tr></thead>
+              <tbody id="invItemsBody"></tbody>
+              <tfoot id="invItemsFoot"></tfoot>
+            </table>
+          </div>
         </div>
-        <div class="row-2" style="margin-top:8px">
-          <div><label style="font-size:12px">📄 PDF</label><input type="file" id="invPdf" accept=".pdf" style="font-size:12px"/></div>
-          <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="invXml" accept=".xml" style="font-size:12px"/></div>
-        </div>
-        <div style="margin-top:10px">
-          <button class="btn-primary" id="saveInvBtn">Guardar factura</button>
-          <div id="invMsg" class="small muted" style="margin-top:6px"></div>
+
+        <!-- Formulario de factura -->
+        <div id="invFormBody" style="display:none">
+          <div class="row-3" style="margin-top:8px">
+            <div><label>No. factura *</label><input id="invNumber" placeholder="FACT-001"/></div>
+            <div><label>Subtotal *</label><input id="invSubtotal" type="number" placeholder="0.00" oninput="invTaxes.value=(+this.value*0.16).toFixed(2)"/></div>
+            <div><label>IVA (16%)</label><input id="invTaxes" type="number" placeholder="0.00"/></div>
+          </div>
+          <div class="row-2" style="margin-top:8px">
+            <div><label style="font-size:12px">📄 PDF de la factura</label><input type="file" id="invPdf" accept=".pdf" style="font-size:12px"/></div>
+            <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="invXml" accept=".xml" style="font-size:12px"/></div>
+          </div>
+          <!-- Candado de cobertura -->
+          <div id="invCoverageLock" style="margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px"></div>
+          <div style="margin-top:10px">
+            <button class="btn-primary" id="saveInvBtn">Guardar factura</button>
+            <div id="invMsg" class="small muted" style="margin-top:6px"></div>
+          </div>
         </div>
       </div>
 
+      <!-- Panel derecho: facturas registradas -->
       <div class="card section">
         <div class="module-title"><h3>Facturas registradas</h3><button class="btn-secondary" id="expInvBtn">Exportar</button></div>
+
+        <!-- Indicador de cobertura global -->
+        <div style="display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+          <div style="font-size:12px;color:#16a34a">✅ Con factura: <b>${posConFactura.length}</b> PO(s)</div>
+          <div style="font-size:12px;color:${posPendientes.length>0?'#f59e0b':'#16a34a'}">${posPendientes.length>0?'⚠':'✅'} Sin factura: <b>${posPendientes.length}</b> PO(s)</div>
+        </div>
+
         <div class="table-wrap"><table>
-          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Total</th><th>Estatus</th><th>Archivos</th></tr></thead>
+          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Estatus</th><th>Archivos</th></tr></thead>
           <tbody>${invs.length ? invs.map(i => `<tr>
             <td><b>${i.invoice_number}</b></td>
-            <td>${i.po_folio}</td>
-            <td>${i.supplier_name}</td>
-            <td>$${Number(i.total||0).toFixed(2)}</td>
+            <td style="font-size:12px">${i.po_folio||'-'}</td>
+            <td style="font-size:12px">${i.supplier_name||'-'}</td>
+            <td style="font-size:12px;text-align:right">$${Number(i.subtotal||0).toFixed(2)}</td>
+            <td style="font-size:12px;text-align:right">$${Number(i.taxes||0).toFixed(2)}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toFixed(2)}</td>
             <td>${statusPill(i.status)}</td>
             <td>
-              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" style="font-size:12px">📄 PDF</a>` : ''}
-              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" style="font-size:12px;margin-left:6px">📋 XML</a>` : ''}
+              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" style="font-size:12px">📄</a>` : ''}
+              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" style="font-size:12px;margin-left:4px">📋</a>` : ''}
               ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
             </td>
-          </tr>`).join('') : '<tr><td colspan="6" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
+          </tr>`).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
           </tbody>
         </table></div>
       </div>
     </div>
   `, 'facturacion');
+
+  // Al seleccionar PO → cargar ítems y pre-llenar montos
+  invPo.onchange = async () => {
+    const poId = invPo.value;
+    if (!poId) {
+      document.getElementById('invItemsPreview').style.display = 'none';
+      document.getElementById('invFormBody').style.display = 'none';
+      return;
+    }
+    // Buscar PO con sus ítems
+    const po = posPendientes.find(p => p.id === Number(poId));
+    const poData = pos.find(p => p.id === Number(poId));
+
+    // Intentar cargar ítems de la PO desde el API
+    try {
+      const allPos = await api('/api/purchases/purchase-orders');
+      const poFull = allPos.find(p => p.id === Number(poId));
+      const items = poFull?.po_items || [];
+
+      let subtotal = 0;
+      const rows = items.map(item => {
+        const itemSub = Number(item.quantity||0) * Number(item.unit_cost||0);
+        const itemIva = itemSub * 0.16;
+        subtotal += itemSub;
+        return `<tr>
+          <td style="font-size:12px">${escapeHtml(item.description||'-')}</td>
+          <td style="font-size:12px;text-align:right">${item.quantity} ${item.unit||''}</td>
+          <td style="font-size:12px;text-align:right">$${Number(item.unit_cost||0).toFixed(2)}</td>
+          <td style="font-size:12px;text-align:right">$${itemSub.toFixed(2)}</td>
+          <td style="font-size:12px;text-align:right">$${itemIva.toFixed(2)}</td>
+          <td style="font-size:12px;text-align:right;font-weight:600">$${(itemSub+itemIva).toFixed(2)}</td>
+        </tr>`;
+      }).join('');
+
+      const totalIva = subtotal * 0.16;
+      const total = subtotal + totalIva;
+
+      document.getElementById('invItemsBody').innerHTML = rows || '<tr><td colspan="6" class="muted small" style="text-align:center">Sin ítems detallados</td></tr>';
+      document.getElementById('invItemsFoot').innerHTML = `
+        <tr style="background:#f8fafc;font-weight:600">
+          <td colspan="3" style="padding:6px 4px;text-align:right;font-size:13px">Totales:</td>
+          <td style="padding:6px 4px;text-align:right;font-size:13px">$${subtotal.toFixed(2)}</td>
+          <td style="padding:6px 4px;text-align:right;font-size:13px">$${totalIva.toFixed(2)}</td>
+          <td style="padding:6px 4px;text-align:right;font-size:13px;color:#1d4ed8">$${total.toFixed(2)}</td>
+        </tr>`;
+
+      // Pre-llenar campos
+      invSubtotal.value = subtotal.toFixed(2);
+      invTaxes.value = totalIva.toFixed(2);
+
+      // Candado de cobertura
+      const lockEl = document.getElementById('invCoverageLock');
+      if (items.length > 0) {
+        lockEl.style.background = '#f0fff4';
+        lockEl.style.border = '1px solid #bbf7d0';
+        lockEl.innerHTML = `✅ <b>${items.length} ítem(s)</b> incluidos en esta factura · Subtotal $${subtotal.toFixed(2)} + IVA $${totalIva.toFixed(2)} = <b>$${total.toFixed(2)}</b>`;
+      } else {
+        lockEl.style.background = '#fffbeb';
+        lockEl.style.border = '1px solid #fde68a';
+        lockEl.innerHTML = `⚠ No se encontraron ítems detallados para esta PO. Verifica el subtotal manualmente.`;
+      }
+    } catch(e) {
+      document.getElementById('invItemsBody').innerHTML = '<tr><td colspan="6" class="muted small">No se pudieron cargar los ítems</td></tr>';
+    }
+
+    document.getElementById('invItemsPreview').style.display = '';
+    document.getElementById('invFormBody').style.display = '';
+  };
 
   saveInvBtn.onclick = async () => {
     try {
@@ -2251,9 +2387,9 @@ async function invoicingView() {
       if (invXml.files[0]) fd.append('xml', invXml.files[0]);
       const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
       if (!res.ok) throw new Error((await res.json()).error || 'Error');
-      invMsg.textContent = '✅ Factura guardada'; invMsg.style.color = '#16a34a';
-      invPo.value = ''; invNumber.value = ''; invSubtotal.value = ''; invTaxes.value = '';
-      setTimeout(render, 900);
+      invMsg.textContent = '✅ Factura guardada';
+      invMsg.style.color = '#16a34a';
+      setTimeout(invoicingView, 1000);
     } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
   };
   expInvBtn.onclick = () => downloadCsv('invoices', 'facturas.csv');
