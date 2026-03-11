@@ -413,8 +413,8 @@ async function catalogsView() {
       <!-- PROVEEDORES -->
       <div class="card section">
         <div class="module-title"><h3>Proveedores</h3><button class="btn-secondary" id="expSupBtn">Exportar</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th></tr></thead>
-        <tbody>${suppliers.map(s => `<tr><td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td></tr>`).join('')}</tbody>
+        <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th></tr></thead>
+        <tbody>${suppliers.map(s => `<tr><td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td><td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td></tr>`).join('')}</tbody>
         </table></div>
         <h4>Alta / edición de proveedor</h4>
         <div class="row-3">
@@ -493,6 +493,19 @@ async function catalogsView() {
 
   filterSupplierCat.onchange = () => { filterSupplierId = filterSupplierCat.value; renderItemsTable(); };
   document.getElementById('filterItemName').oninput = renderItemsTable;
+
+  document.querySelectorAll('.edit-sup-row').forEach(btn => {
+    btn.onclick = () => {
+      const s = suppliers.find(x => x.id === Number(btn.dataset.id));
+      if (!s) return;
+      supEditId.value = s.id;
+      supName.value = s.business_name || '';
+      supCode.value = s.provider_code || '';
+      supContact.value = s.contact_name || '';
+      supEmail.value = s.email || '';
+      supPhone.value = s.phone || '';
+    };
+  });
 
   // Auto-sugerir código al escribir nombre
   let codeTimer = null;
@@ -595,7 +608,7 @@ async function requisitionsView(editId = null) {
   const renderList = rows => rows.map(r => `<tr><td>${r.folio}</td><td>${statusPill(r.status)}</td><td>${Number(r.total_amount || 0).toFixed(2)} ${r.currency || ''}</td><td><a href="#/requisiciones/${r.id}">Validar</a></td></tr>`).join('');
   app.innerHTML = shell(`
     <div class="grid grid-2">
-      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:12px"><h4 id="itemEntryTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151">+ Nuevo ítem</h4><div class="row-3"><div><label style="font-size:12px">Ítem catálogo</label><select id="entry-catalog"><option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Nombre manual</label><input id="entry-manual-name" placeholder="Descripción del ítem"/></div><div><label style="font-size:12px">Proveedor</label><select id="entry-supplier"><option value="">Sin proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div></div><div class="row-4" style="margin-top:8px"><div><label style="font-size:12px">Cantidad</label><input id="entry-quantity" type="number" value="1" min="0.01"/></div><div><label style="font-size:12px">Unidad</label><select id="entry-unit">${units.map(u=>`<option>${u}</option>`).join('')}</select></div><div><label style="font-size:12px">Costo unit.</label><input id="entry-cost" type="number" value="0" min="0"/></div><div><label style="font-size:12px">Moneda</label><input id="entry-currency-item" value="MXN" readonly/></div></div><div class="row-2" style="margin-top:8px"><input id="entry-weblink" placeholder="Liga web (opcional)"/><input id="entry-item-comments" placeholder="Comentarios del ítem"/></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" id="addItemBtn">+ Agregar a lista</button><button class="btn-secondary" id="cancelEditItemBtn" style="display:none">✕ Cancelar edición</button></div></div><div id="itemsDraft" style="margin-top:12px"></div><div class="actions"><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
+      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:12px"><h4 id="itemEntryTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151">+ Nuevo ítem</h4><div class="row-3"><div><label style="font-size:12px">Ítem catálogo</label><select id="entry-catalog"><option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Nombre manual</label><input id="entry-manual-name" placeholder="Descripción del ítem" list="entry-manual-list" autocomplete="off"/><datalist id="entry-manual-list">${items.map(i=>`<option value="${i.name}" data-id="${i.id}">`).join('')}</datalist></div><div><label style="font-size:12px">Proveedor</label><select id="entry-supplier"><option value="">Sin proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div></div><div class="row-4" style="margin-top:8px"><div><label style="font-size:12px">Cantidad</label><input id="entry-quantity" type="number" value="1" min="0.01"/></div><div><label style="font-size:12px">Unidad</label><select id="entry-unit">${units.map(u=>`<option>${u}</option>`).join('')}</select></div><div><label style="font-size:12px">Costo unit.</label><input id="entry-cost" type="number" value="0" min="0"/></div><div><label style="font-size:12px">Moneda</label><input id="entry-currency-item" value="MXN" readonly/></div></div><div class="row-3" style="margin-top:8px"><div><label style="font-size:12px">Centro de costo</label><select id="entry-item-cc"><option value="">Del encabezado</option>${cc.map(c=>`<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Subcentro</label><select id="entry-item-scc"><option value="">Selecciona</option></select></div><div></div></div><div class="row-2" style="margin-top:8px"><input id="entry-weblink" placeholder="Liga web (opcional)"/><input id="entry-item-comments" placeholder="Comentarios del ítem"/></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" id="addItemBtn">+ Agregar a lista</button><button class="btn-secondary" id="cancelEditItemBtn" style="display:none">✕ Cancelar edición</button></div></div><div id="itemsDraft" style="margin-top:12px"></div><div class="actions"><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
       <div class="card section"><div class="module-title"><h3>Requisiciones</h3><button class="btn-secondary" id="expReqListBtn">Exportar</button></div><div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="reqSearchFolio" placeholder="Buscar folio..." style="flex:1;min-width:100px"/><select id="reqFilterStatus" style="flex:1;min-width:110px"><option value="">Todos los estatus</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div><div class="table-wrap" id="reqListWrap"><table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(list)}</tbody></table></div></div>
     </div>
   `, 'requisiciones');
@@ -628,6 +641,8 @@ async function requisitionsView(editId = null) {
     document.getElementById('entry-cost').value = '0';
     document.getElementById('entry-weblink').value = '';
     document.getElementById('entry-item-comments').value = '';
+    document.getElementById('entry-item-cc').value = '';
+    document.getElementById('entry-item-scc').innerHTML = '<option value="">Selecciona</option>';
     itemEntryTitle.textContent = '+ Nuevo ítem';
     addItemBtn.textContent = '+ Agregar a lista';
     cancelEditItemBtn.style.display = 'none';
@@ -642,6 +657,23 @@ async function requisitionsView(editId = null) {
       document.getElementById('entry-currency-item').value = cat.currency || currency.value || 'MXN';
       if (cat.cost_center_id) { costCenter.value = cat.cost_center_id; setSubOptions(cat.cost_center_id, cat.sub_cost_center_id || ''); if (cat.sub_cost_center_id) subCostCenter.value = cat.sub_cost_center_id; }
     }
+  };
+  document.getElementById('entry-manual-name').oninput = () => {
+    const val = document.getElementById('entry-manual-name').value.trim();
+    const cat = items.find(i => i.name.toLowerCase() === val.toLowerCase());
+    if (cat) {
+      document.getElementById('entry-catalog').value = cat.id;
+      if (cat.supplier_id) document.getElementById('entry-supplier').value = cat.supplier_id;
+      if (cat.unit) document.getElementById('entry-unit').value = cat.unit;
+      document.getElementById('entry-cost').value = Number(cat.unit_price || 0);
+      document.getElementById('entry-currency-item').value = cat.currency || currency.value || 'MXN';
+      if (cat.cost_center_id) { costCenter.value = cat.cost_center_id; setSubOptions(cat.cost_center_id, cat.sub_cost_center_id || ''); if (cat.sub_cost_center_id) subCostCenter.value = cat.sub_cost_center_id; }
+    }
+  };
+  document.getElementById('entry-item-cc').onchange = () => {
+    const ccId = document.getElementById('entry-item-cc').value;
+    const opts = scc.filter(x => Number(x.cost_center_id) === Number(ccId));
+    document.getElementById('entry-item-scc').innerHTML = `<option value="">Selecciona</option>${opts.map(x=>`<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}`;
   };
   const renderDraft = () => {
     const total = state.itemsDraft.reduce((s, x) => s + (Number(x.quantity||0) * Number(x.unit_cost||0)), 0);
@@ -667,6 +699,9 @@ async function requisitionsView(editId = null) {
         document.getElementById('entry-currency-item').value = row.currency || currency.value || 'MXN';
         document.getElementById('entry-weblink').value = row.web_link || '';
         document.getElementById('entry-item-comments').value = row.comments || '';
+        document.getElementById('entry-item-cc').value = row.cost_center_id || '';
+        document.getElementById('entry-item-cc').dispatchEvent(new Event('change'));
+        setTimeout(() => { document.getElementById('entry-item-scc').value = row.sub_cost_center_id || ''; }, 50);
         itemEntryTitle.textContent = '✏ Editando ítem';
         addItemBtn.textContent = '✔ Actualizar ítem';
         cancelEditItemBtn.style.display = '';
@@ -689,10 +724,12 @@ async function requisitionsView(editId = null) {
     const entryCur = document.getElementById('entry-currency-item').value || currency.value || 'MXN';
     const webLink = document.getElementById('entry-weblink').value.trim();
     const itemComments = document.getElementById('entry-item-comments').value.trim();
+    const itemCcId = Number(document.getElementById('entry-item-cc').value || 0) || null;
+    const itemSccId = Number(document.getElementById('entry-item-scc').value || 0) || null;
     if (!catalogId && !manualName) { reqMsg.textContent = 'Selecciona un ítem del catálogo o escribe un nombre.'; return; }
     if (qty <= 0) { reqMsg.textContent = 'La cantidad debe ser mayor a cero.'; return; }
     reqMsg.textContent = '';
-    const itemData = { catalog_item_id: catalogId ? Number(catalogId) : null, manual_item_name: manualName || null, supplier_id: supplierId ? Number(supplierId) : null, quantity: qty, unit, unit_cost: unitCost, currency: entryCur, web_link: webLink || null, comments: itemComments || null, cost_center_id: Number(costCenter.value||0)||null, sub_cost_center_id: Number(subCostCenter.value||0)||null };
+    const itemData = { catalog_item_id: catalogId ? Number(catalogId) : null, manual_item_name: manualName || null, supplier_id: supplierId ? Number(supplierId) : null, quantity: qty, unit, unit_cost: unitCost, currency: entryCur, web_link: webLink || null, comments: itemComments || null, cost_center_id: itemCcId || Number(costCenter.value||0)||null, sub_cost_center_id: itemSccId || Number(subCostCenter.value||0)||null };
     if (currentEditItemId) { const idx = state.itemsDraft.findIndex(x => x.id === currentEditItemId); if (idx >= 0) state.itemsDraft[idx] = { ...state.itemsDraft[idx], ...itemData }; } else { state.itemsDraft.push({ id: crypto.randomUUID(), ...itemData }); }
     clearEntryPanel(); renderDraft();
   };
@@ -700,11 +737,12 @@ async function requisitionsView(editId = null) {
   const validateManuals = () => { const hasManualNoCC = state.itemsDraft.some(x => !x.catalog_item_id && !(Number(costCenter.value||0) || Number(x.cost_center_id||0))); if (hasManualNoCC) { reqMsg.textContent = 'Los ítems manuales requieren centro de costo.'; costCenter.focus(); return false; } return true; };
   const buildPayload = (status) => ({ urgency: urgency.value, cost_center_id: Number(costCenter.value || 0) || null, sub_cost_center_id: Number(subCostCenter.value || 0) || null, currency: currency.value, programmed_date: programmedDate.value || null, comments: comments.value, status, items: state.itemsDraft.map(({ id, ...rest }) => ({ ...rest, cost_center_id: rest.cost_center_id || Number(costCenter.value||0) || null, sub_cost_center_id: rest.sub_cost_center_id || Number(subCostCenter.value||0) || null, currency: rest.currency || currency.value })) });
   previewReqBtn.onclick = () => openPrintPreview('Vista requisición', `<h1>${editing?.requisition.folio || 'Vista previa de requisición'}</h1><div class="small">Solicitante: ${escapeHtml(state.user?.name || '')}<br>Departamento: ${escapeHtml(state.user?.department || '')}<br>Urgencia: ${escapeHtml(urgency.value)}<br>Fecha programada: ${escapeHtml(programmedDate.value || '-')}</div><table><thead><tr><th>Ítem</th><th>Proveedor</th><th>Cantidad</th><th>Unidad</th><th>Costo</th><th>Moneda</th></tr></thead><tbody>${state.itemsDraft.map(x => `<tr><td>${escapeHtml((items.find(i => i.id === Number(x.catalog_item_id)) || {}).name || x.manual_item_name || '')}</td><td>${escapeHtml((suppliers.find(s => s.id === Number(x.supplier_id)) || {}).business_name || '-')}</td><td>${x.quantity}</td><td>${escapeHtml(x.unit || '')}</td><td>${Number(x.unit_cost||0).toFixed(2)}</td><td>${escapeHtml(x.currency || currency.value || 'MXN')}</td></tr>`).join('')}</tbody></table>`);
-  saveDraftBtn.onclick = async () => { try { if (!validateManuals()) return; if (editing) await api(`/api/requisitions/${editing.requisition.id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); location.hash = `#/requisiciones/${out.requisition.id}`; return; } render(); } catch (e) { reqMsg.textContent = e.message; } };
+  saveDraftBtn.onclick = async () => { try { if (!validateManuals()) return; if (editing) await api(`/api/requisitions/${editing.requisition.id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); state.itemsDraft = []; location.hash = `#/requisiciones/${out.requisition.id}`; return; } state.itemsDraft = []; render(); } catch (e) { reqMsg.textContent = e.message; } };
   sendReqBtn.onclick = async () => { try { if (!validateManuals()) return; let id = editing?.requisition.id; if (editing) await api(`/api/requisitions/${id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); id = out.requisition.id; }
       const out = await api(`/api/requisitions/${id}/send`, { method:'POST', body: JSON.stringify({}) });
       if (out.mailto_buyer) window.open(out.mailto_buyer, '_blank');
       if (out.mailto_requester) setTimeout(() => window.open(out.mailto_requester, '_blank'), 600);
+      state.itemsDraft = [];
       location.hash = `#/requisiciones/${id}`;
     } catch (e) { reqMsg.textContent = e.message; } };
   expReqListBtn.onclick = () => downloadCsv('requisitions', 'requisiciones.csv');
@@ -977,6 +1015,9 @@ async function purchasesView() {
         <button class="tab-btn" data-tab="pos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
           🧾 POs generadas <span style="background:#10b981;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${pos.length}</span>
         </button>
+        <button class="tab-btn" data-tab="requisiciones" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
+          📄 Requisiciones
+        </button>
       </div>
 
       <div id="tabContent"></div>
@@ -1194,7 +1235,7 @@ async function purchasesView() {
     <th>Estatus</th><th>PO</th><th>Acciones</th>
   </tr></thead>`;
 
-  const renderTab = (tab) => {
+  const renderTab = async (tab) => {
     activeTab = tab;
     // Update tab styles
     document.querySelectorAll('.tab-btn').forEach(b => {
@@ -1211,15 +1252,23 @@ async function purchasesView() {
       const authCount = itemsPendientePO.filter(x => x.status === 'Autorizado').length;
       const waitingAuthCount = itemsPendientePO.filter(x => x.status === 'En autorización').length;
       tabContent.innerHTML = `
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="filterItemsTab" placeholder="Buscar ítem, proveedor..." style="flex:1;min-width:150px"/></div>
         <div style="margin-bottom:8px;font-size:13px">
           ${itemsPendientePO.length} ítem(s) con proveedor y costo · <b>${authCount}</b> autorizado(s)
           ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización</span>` : ''}
           ${authCount > 0 ? `<button class="btn-secondary" id="selectAllAuth" style="margin-left:10px;padding:2px 8px;font-size:12px">Seleccionar autorizados</button>` : ''}
         </div>
-        <div class="table-wrap"><table>${THEAD}<tbody>
+        <div id="pendientesTableWrap"><div class="table-wrap"><table>${THEAD}<tbody>
           ${itemsPendientePO.length ? itemsPendientePO.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin ítems listos para PO.<br><small>Los ítems deben tener proveedor y costo asignados.</small></td></tr>'}
-        </tbody></table></div>`;
+        </tbody></table></div></div>`;
       bindTableActions(tabContent, itemsPendientePO);
+      document.getElementById('filterItemsTab').oninput = e => {
+        const val = e.target.value.toLowerCase();
+        const filtered = itemsPendientePO.filter(x => !val || (x.item_name||'').toLowerCase().includes(val) || (x.supplier_name||'').toLowerCase().includes(val));
+        const wrap = document.getElementById('pendientesTableWrap');
+        wrap.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.length ? filtered.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin resultados</td></tr>'}</tbody></table></div>`;
+        bindTableActions(wrap, itemsPendientePO);
+      };
 
     } else if (tab === 'cotizacion') {
       poActions.style.display = 'none';
@@ -1399,6 +1448,79 @@ async function purchasesView() {
           } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
         };
       });
+
+    } else if (tab === 'requisiciones') {
+      poActions.style.display = 'none';
+      const reqs = await api('/api/requisitions').catch(() => []);
+      let reqSortCol = 'folio', reqSortDir = 1;
+      let reqFilterText = '';
+      let reqFilterStatus = '';
+      let expandedReqIds = new Set();
+
+      const renderReqsTab = () => {
+        let filtered = reqs.filter(r =>
+          (!reqFilterText || r.folio.toLowerCase().includes(reqFilterText.toLowerCase()) || (r.requester||'').toLowerCase().includes(reqFilterText.toLowerCase())) &&
+          (!reqFilterStatus || r.status === reqFilterStatus)
+        );
+        filtered.sort((a,b) => {
+          const va = a[reqSortCol] || ''; const vb = b[reqSortCol] || '';
+          return reqSortDir * (String(va).localeCompare(String(vb)));
+        });
+        const statusOpts = ['','Borrador','Enviada','En cotización','En autorización','En proceso','Completada','Rechazada'];
+        tabContent.innerHTML = `
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+            <input id="reqTabFilter" placeholder="Buscar folio o solicitante..." value="${reqFilterText}" style="flex:1;min-width:150px"/>
+            <select id="reqTabStatus" style="min-width:130px">
+              ${statusOpts.map(s=>`<option value="${s}" ${s===reqFilterStatus?'selected':''}>${s||'Todos los estatus'}</option>`).join('')}
+            </select>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr>
+                ${['folio','status','department','requester','total_amount'].map(col => `<th style="cursor:pointer" data-sort="${col}">${{folio:'Folio',status:'Estatus',department:'Depto',requester:'Solicitante',total_amount:'Total'}[col]} ${reqSortCol===col?(reqSortDir===1?'▲':'▼'):''}</th>`).join('')}
+                <th></th>
+              </tr></thead>
+              <tbody>
+                ${filtered.map(r => {
+                  const isExp = expandedReqIds.has(r.id);
+                  return `<tr style="cursor:pointer" data-req-id="${r.id}">
+                    <td><b>${r.folio}</b></td>
+                    <td>${statusPill(r.status)}</td>
+                    <td style="font-size:12px">${r.department||'-'}</td>
+                    <td style="font-size:12px">${r.requester||'-'}</td>
+                    <td style="font-size:12px;text-align:right">$${Number(r.total_amount||0).toFixed(2)}</td>
+                    <td><button class="btn-secondary req-expand-btn" data-id="${r.id}" style="padding:2px 8px;font-size:11px">${isExp?'▲ Cerrar':'▼ Ver ítems'}</button></td>
+                  </tr>
+                  ${isExp ? `<tr><td colspan="6" style="padding:0">
+                    <div style="padding:8px 16px;background:#f8fafc;border-top:1px solid #e5e7eb" id="req-expand-${r.id}">
+                      <div class="small muted" style="text-align:center">Cargando...</div>
+                    </div>
+                  </td></tr>` : ''}`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+
+        tabContent.querySelector('#reqTabFilter').oninput = e => { reqFilterText = e.target.value; renderReqsTab(); };
+        tabContent.querySelector('#reqTabStatus').onchange = e => { reqFilterStatus = e.target.value; renderReqsTab(); };
+        tabContent.querySelectorAll('th[data-sort]').forEach(th => {
+          th.onclick = () => { if (reqSortCol===th.dataset.sort) reqSortDir*=-1; else { reqSortCol=th.dataset.sort; reqSortDir=1; } renderReqsTab(); };
+        });
+        tabContent.querySelectorAll('.req-expand-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const id = Number(btn.dataset.id);
+            if (expandedReqIds.has(id)) { expandedReqIds.delete(id); } else { expandedReqIds.add(id); }
+            renderReqsTab();
+            if (expandedReqIds.has(id)) {
+              const detail = await api(`/api/requisitions/${id}`).catch(()=>null);
+              const el = document.getElementById(`req-expand-${id}`);
+              if (!el || !detail) return;
+              el.innerHTML = `<table style="width:100%;font-size:12px"><thead><tr><th>#</th><th>Ítem</th><th>Proveedor</th><th>Cant.</th><th>Unidad</th><th>Costo</th><th>Total</th><th>Estatus</th></tr></thead><tbody>${detail.items.map(i=>`<tr><td>${i.line_no}</td><td>${escapeHtml(i.catalog_name||i.manual_item_name||'-')}</td><td style="font-size:11px">${escapeHtml(i.supplier_name||'-')}</td><td>${i.quantity}</td><td>${i.unit||'-'}</td><td>$${Number(i.unit_cost||0).toFixed(2)}</td><td>$${(Number(i.quantity||0)*Number(i.unit_cost||0)).toFixed(2)}</td><td>${statusPill(i.status)}</td></tr>`).join('')}</tbody></table>`;
+            }
+          };
+        });
+      };
+      renderReqsTab();
     }
   };
 
@@ -2429,8 +2551,8 @@ async function adminView() {
     <div class="grid grid-2">
       <div class="card section">
         <div class="module-title"><h3>Usuarios</h3><button class="btn-secondary" id="expUsersBtn">Exportar</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Depto</th><th>CC</th><th>Proveedor</th></tr></thead>
-        <tbody>${users.map(u => `<tr><td>${u.full_name}</td><td style="font-size:12px">${u.email}</td><td style="font-size:12px">${u.role_code}</td><td style="font-size:12px">${u.department}</td><td style="font-size:12px">${u.default_cost_center_id ? (cc.find(c=>c.id===u.default_cost_center_id)||{}).name||'-' : '-'}</td><td style="font-size:12px">${u.supplier_id ? (suppliers.find(s=>s.id===u.supplier_id)||{}).business_name||u.supplier_id : '-'}</td></tr>`).join('')}</tbody>
+        <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Depto</th><th>Estado</th><th>Acción</th></tr></thead>
+        <tbody>${users.map(u => `<tr><td><b>${u.full_name}</b></td><td style="font-size:12px">${u.email}</td><td style="font-size:12px">${u.role_code}</td><td style="font-size:12px">${u.department||'-'}</td><td><span style="font-size:11px;padding:2px 8px;border-radius:10px;background:${u.active!==false?'#dcfce7':'#fee2e2'};color:${u.active!==false?'#15803d':'#dc2626'}">${u.active!==false?'Activo':'Inactivo'}</span></td><td><button class="btn-secondary toggle-user-btn" data-id="${u.id}" data-active="${u.active!==false}" style="padding:2px 8px;font-size:11px">${u.active!==false?'Deshabilitar':'Habilitar'}</button> <button class="btn-secondary edit-user-btn" data-id="${u.id}" style="padding:2px 8px;font-size:11px">✏</button></td></tr>`).join('')}</tbody>
         </table></div>
         <h4>Crear / Editar usuario</h4>
         <div style="margin-bottom:8px">
@@ -2563,6 +2685,23 @@ async function adminView() {
   };
 
   expUsersBtn.onclick = () => downloadCsv('users', 'usuarios.csv');
+
+  document.querySelectorAll('.toggle-user-btn').forEach(btn => {
+    btn.onclick = async () => {
+      const active = btn.dataset.active === 'true';
+      try {
+        await api(`/api/admin/users/${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ active: !active }) });
+        adminView();
+      } catch(e) { alert(e.message); }
+    };
+  });
+  document.querySelectorAll('.edit-user-btn').forEach(btn => {
+    btn.onclick = () => {
+      usrEditId.value = btn.dataset.id;
+      usrEditId.dispatchEvent(new Event('change'));
+    };
+  });
+
   bindCommon();
 }
 
