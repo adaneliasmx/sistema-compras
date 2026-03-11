@@ -4,6 +4,12 @@ const bcrypt = require('bcryptjs');
 const dbPath = path.resolve(process.cwd(), process.env.DB_PATH || './database/app.json');
 fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 
+// Si ya existe la base de datos, no sobreescribir
+if (fs.existsSync(dbPath)) {
+  console.log('Base de datos ya existe en', dbPath, '— no se sobreescribe.');
+  process.exit(0);
+}
+
 const hash = bcrypt.hashSync('Demo123*', 10);
 const data = {
   users: [
