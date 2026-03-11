@@ -29,6 +29,27 @@ const MENU_BY_ROLE = {
 
 const app = document.getElementById('app');
 
+// Auto-logout por inactividad (15 minutos)
+const INACTIVITY_TIMEOUT = 15 * 60 * 1000;
+let inactivityTimer = null;
+
+function resetInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  if (state.token) {
+    inactivityTimer = setTimeout(() => {
+      logout();
+      alert('Sesión cerrada por inactividad. Por favor, inicia sesión de nuevo.');
+    }, INACTIVITY_TIMEOUT);
+  }
+}
+
+function initInactivityWatcher() {
+  ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt =>
+    document.addEventListener(evt, resetInactivityTimer, { passive: true })
+  );
+  resetInactivityTimer();
+}
+
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
@@ -36,6 +57,10 @@ async function api(path, options = {}) {
   const res = await fetch(path, { ...options, headers });
   const contentType = res.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await res.json() : await res.text();
+  if (res.status === 401) {
+    logout();
+    return;
+  }
   if (!res.ok) throw new Error(data.error || data || 'Error');
   return data;
 }
@@ -123,6 +148,7 @@ async function loginView() {
     try {
       const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: email.value, password: password.value }) });
       setAuth(data.token, data.user);
+      initInactivityWatcher();
       location.hash = `#/${getDefaultRouteByRole()}`;
       render();
     } catch (e) { err.textContent = e.message; }
@@ -2514,4 +2540,5 @@ async function render() {
 }
 
 window.addEventListener('hashchange', render);
+if (state.token) initInactivityWatcher();
 render();
