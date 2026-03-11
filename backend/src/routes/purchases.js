@@ -205,6 +205,39 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
     line.updated_at = new Date().toISOString();
     addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, purchase_order_id: po.id, old_status: oldStatus, new_status: 'Enviada', changed_by_user_id: buyerUserId, comment: `PO ${po.folio} generada` });
     recalcRequisition(db, line.requisition_id);
+    // Si el ítem es manual (sin catalog_item_id), guardarlo en catálogo con el precio
+    if (!line.catalog_item_id && line.manual_item_name) {
+      const normalizedName = line.manual_item_name.trim().toLowerCase();
+      const exists = db.catalog_items.find(c => c.name.toLowerCase().trim() === normalizedName);
+      if (!exists) {
+        const newCode = 'ITM-' + String(db.catalog_items.length + 1).padStart(4, '0');
+        const newItem = {
+          id: nextId(db.catalog_items),
+          code: newCode,
+          name: line.manual_item_name.trim(),
+          item_type: 'uso continuo',
+          unit: line.unit || 'pza',
+          supplier_id: line.supplier_id || null,
+          equivalent_code: '',
+          unit_price: line.unit_cost || 0,
+          currency: line.currency || 'MXN',
+          quote_validity_days: 30,
+          active: true,
+          inventoried: false,
+          cost_center_id: line.cost_center_id || null,
+          sub_cost_center_id: line.sub_cost_center_id || null,
+        };
+        db.catalog_items.push(newItem);
+        line.catalog_item_id = newItem.id;
+      } else {
+        // Si existe pero no tiene precio, actualizar precio
+        if (!exists.unit_price && line.unit_cost) {
+          exists.unit_price = line.unit_cost;
+          exists.currency = line.currency || 'MXN';
+        }
+        line.catalog_item_id = exists.id;
+      }
+    }
   });
   po.total_amount = total;
   return po;

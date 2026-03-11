@@ -23,7 +23,7 @@ const MENU_BY_ROLE = {
   comprador: ['dashboard', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos'],
   autorizador: ['dashboard', 'autorizaciones', 'seguimiento'],
   proveedor: ['cotizaciones', 'facturacion'],
-  pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion'],
+  pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones'],
   admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'inventarios', 'admin']
 };
 
@@ -438,8 +438,8 @@ async function catalogsView() {
     </div>
 
     <div class="grid grid-2" style="margin-top:16px">
-      <div class="card section"><h3>Centros / subcentros</h3><div class="table-wrap"><table><thead><tr><th>Centro</th><th>Subcentro</th></tr></thead><tbody>${cc.map(c => `<tr><td>${c.code} · ${c.name}</td><td>${scc.filter(x => x.cost_center_id === c.id).map(x => `${x.code} · ${x.name}`).join('<br>')}</td></tr>`).join('')}</tbody></table></div><h4>Editar centro</h4><div class="row-3"><select id="ccEditId"><option value="">Nuevo</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select><input id="ccCode" placeholder="Código"/><input id="ccName" placeholder="Nombre"/></div><div class="row-3"><button class="btn-primary" id="saveCcBtn">Guardar centro</button><select id="sccEditId"><option value="">Nuevo subcentro</option>${scc.map(x => `<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}</select><select id="sccParent"><option value="">Centro</option>${cc.map(c => `<option value="${c.id}">${c.code}</option>`).join('')}</select></div><div class="row-3"><input id="sccCode" placeholder="Código subcentro"/><input id="sccName" placeholder="Nombre subcentro"/><button class="btn-primary" id="saveSccBtn">Guardar subcentro</button></div><div id="ccMsg" class="small muted"></div></div>
-      <div class="card section"><h3>Reglas de autorización</h3>${rules.map(r => `<div class="list-line">${r.name}: ${Number(r.min_amount).toFixed(2)} a ${Number(r.max_amount).toFixed(2)} · ${r.auto_approve ? 'Automática' : `Rol ${r.approver_role}`}</div>`).join('')}<h4>Editar regla</h4><div class="row-3"><select id="ruleEditId"><option value="">Nueva</option>${rules.map(r => `<option value="${r.id}">${r.name}</option>`).join('')}</select><input id="ruleName" placeholder="Nombre"/><input id="ruleMin" type="number" placeholder="Monto min"/></div><div class="row-3"><input id="ruleMax" type="number" placeholder="Monto max"/><select id="ruleRole"><option value="">Sin rol</option><option value="comprador">comprador</option><option value="pagos">pagos</option><option value="admin">admin</option></select><label><input id="ruleAuto" type="checkbox"/> Automática</label></div><button class="btn-primary" id="saveRuleBtn">Guardar regla</button><div id="ruleMsg" class="small muted"></div></div>
+      <div class="card section"><h3>Centros / subcentros</h3><div class="table-wrap"><table><thead><tr><th>Código</th><th>Nombre</th><th>Subcentros</th><th></th></tr></thead><tbody>${cc.map(c => `<tr><td><b>${c.code}</b></td><td>${c.name}</td><td style="font-size:12px">${scc.filter(x => x.cost_center_id === c.id).map(x => `${x.code} · ${x.name}`).join(', ')||'-'}</td><td style="white-space:nowrap"><button class="btn-secondary edit-cc-btn" data-id="${c.id}" data-code="${c.code}" data-name="${c.name}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger del-cc-btn" data-id="${c.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`).join('')}</tbody></table></div><h4 id="ccFormTitle">Nuevo centro de costo</h4><div class="row-3"><input id="ccCode" placeholder="Código (ej. CC-PRD)"/><input id="ccName" placeholder="Nombre"/><button class="btn-primary" id="saveCcBtn">Guardar</button></div><input type="hidden" id="ccEditId" value=""/><div id="ccMsg" class="small muted" style="margin-top:4px"></div><hr style="margin:12px 0;border:none;border-top:1px solid #eee"/><h4>Subcentros</h4><div class="row-3"><select id="sccParent"><option value="">Centro padre</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select><input id="sccCode" placeholder="Código subcentro"/><input id="sccName" placeholder="Nombre subcentro"/></div><div style="margin-top:6px"><button class="btn-primary" id="saveSccBtn">Guardar subcentro</button></div></div>
+      <div class="card section"><h3>Reglas de autorización</h3><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Monto mín MXN</th><th>Monto máx MXN</th><th>Quién autoriza</th><th></th></tr></thead><tbody>${rules.map(r => `<tr><td><b>${r.name}</b></td><td>$${Number(r.min_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td><td>$${Number(r.max_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td><td>${r.auto_approve ? '<span style="color:#16a34a">✅ Automática</span>' : `👤 ${r.approver_role||'-'}`}</td><td style="white-space:nowrap"><button class="btn-secondary edit-rule-btn" data-id="${r.id}" data-name="${r.name}" data-min="${r.min_amount}" data-max="${r.max_amount}" data-role="${r.approver_role||''}" data-auto="${r.auto_approve}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger del-rule-btn" data-id="${r.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`).join('')}</tbody></table></div><h4 id="ruleFormTitle">Nueva regla</h4><div class="row-3"><input id="ruleName" placeholder="Nombre regla"/><input id="ruleMin" type="number" placeholder="Monto mín"/><input id="ruleMax" type="number" placeholder="Monto máx"/></div><div class="row-3"><select id="ruleRole"><option value="">Sin rol (automática)</option><option value="comprador">comprador</option><option value="autorizador">autorizador</option><option value="pagos">pagos</option><option value="admin">admin</option></select><label style="display:flex;align-items:center;gap:6px;padding-top:20px"><input id="ruleAuto" type="checkbox"/> Aprobación automática</label><button class="btn-primary" id="saveRuleBtn" style="margin-top:16px">Guardar regla</button></div><input type="hidden" id="ruleEditId" value=""/><div id="ruleMsg" class="small muted" style="margin-top:4px"></div></div>
     </div>
   `, 'catalogos');
 
@@ -591,12 +591,44 @@ async function catalogsView() {
 
   toggleImportBtn.onclick = () => importWrap.style.display = importWrap.style.display === 'none' ? 'block' : 'none';
   importSupBtn.onclick = async () => { try { const out = await api('/api/catalogs/suppliers/import', { method: 'POST', body: JSON.stringify({ csv: supCsv.value }) }); supMsg.textContent = `Importados: ${out.inserted}`; render(); } catch (e) { supMsg.textContent = e.message; } };
-  ccEditId.onchange = () => { const x = cc.find(v => v.id === Number(ccEditId.value)); if (!x) return; ccCode.value = x.code; ccName.value = x.name; };
-  sccEditId.onchange = () => { const x = scc.find(v => v.id === Number(sccEditId.value)); if (!x) return; sccCode.value = x.code; sccName.value = x.name; sccParent.value = x.cost_center_id; };
-  ruleEditId.onchange = () => { const x = rules.find(v => v.id === Number(ruleEditId.value)); if (!x) return; ruleName.value = x.name; ruleMin.value=x.min_amount; ruleMax.value=x.max_amount; ruleRole.value = x.approver_role || ''; ruleAuto.checked = !!x.auto_approve; };
-  saveCcBtn.onclick = async () => { try { const payload = { code: ccCode.value, name: ccName.value }; if (ccEditId.value) await api(`/api/catalogs/cost-centers/${ccEditId.value}`, { method: 'PATCH', body: JSON.stringify(payload) }); else await api('/api/catalogs/cost-centers', { method:'POST', body: JSON.stringify(payload)}); render(); } catch (e) { ccMsg.textContent = e.message; } };
-  saveSccBtn.onclick = async () => { try { const payload = { cost_center_id: Number(sccParent.value), code: sccCode.value, name: sccName.value }; if (sccEditId.value) await api(`/api/catalogs/sub-cost-centers/${sccEditId.value}`, { method:'PATCH', body: JSON.stringify(payload)}); else await api('/api/catalogs/sub-cost-centers', { method:'POST', body: JSON.stringify(payload)}); render(); } catch (e) { ccMsg.textContent = e.message; } };
-  saveRuleBtn.onclick = async () => { try { const payload = { name: ruleName.value, min_amount: Number(ruleMin.value||0), max_amount: Number(ruleMax.value||0), approver_role: ruleRole.value || null, auto_approve: ruleAuto.checked }; if (ruleEditId.value) await api(`/api/catalogs/approval-rules/${ruleEditId.value}`, { method:'PATCH', body: JSON.stringify(payload)}); else await api('/api/catalogs/approval-rules', { method:'POST', body: JSON.stringify(payload)}); render(); } catch (e) { ruleMsg.textContent = e.message; } };
+  saveCcBtn.onclick = async () => { try { const payload = { code: document.getElementById('ccCode').value, name: document.getElementById('ccName').value }; const editId = document.getElementById('ccEditId').value; if (editId) await api(`/api/catalogs/cost-centers/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) }); else await api('/api/catalogs/cost-centers', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ccMsg').textContent = e.message; } };
+  saveSccBtn.onclick = async () => { try { const payload = { cost_center_id: Number(sccParent.value), code: sccCode.value, name: sccName.value }; await api('/api/catalogs/sub-cost-centers', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ccMsg').textContent = e.message; } };
+  saveRuleBtn.onclick = async () => { try { const payload = { name: document.getElementById('ruleName').value, min_amount: Number(document.getElementById('ruleMin').value||0), max_amount: Number(document.getElementById('ruleMax').value||0), approver_role: document.getElementById('ruleRole').value || null, auto_approve: document.getElementById('ruleAuto').checked }; const editId = document.getElementById('ruleEditId').value; if (editId) await api(`/api/catalogs/approval-rules/${editId}`, { method:'PATCH', body: JSON.stringify(payload)}); else await api('/api/catalogs/approval-rules', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ruleMsg').textContent = e.message; } };
+  // Editar/eliminar centros de costo
+  document.querySelectorAll('.edit-cc-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.getElementById('ccEditId').value = btn.dataset.id;
+      document.getElementById('ccCode').value = btn.dataset.code;
+      document.getElementById('ccName').value = btn.dataset.name;
+      document.getElementById('ccFormTitle').textContent = 'Editar centro de costo';
+      document.getElementById('saveCcBtn').textContent = 'Actualizar';
+    };
+  });
+  document.querySelectorAll('.del-cc-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('¿Eliminar este centro de costo?')) return;
+      try { await api(`/api/catalogs/cost-centers/${btn.dataset.id}`, { method: 'DELETE' }); catalogsView(); } catch(e) { alert(e.message); }
+    };
+  });
+  // Editar/eliminar reglas
+  document.querySelectorAll('.edit-rule-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.getElementById('ruleEditId').value = btn.dataset.id;
+      document.getElementById('ruleName').value = btn.dataset.name;
+      document.getElementById('ruleMin').value = btn.dataset.min;
+      document.getElementById('ruleMax').value = btn.dataset.max;
+      document.getElementById('ruleRole').value = btn.dataset.role;
+      document.getElementById('ruleAuto').checked = btn.dataset.auto === 'true';
+      document.getElementById('ruleFormTitle').textContent = 'Editar regla';
+      document.getElementById('saveRuleBtn').textContent = 'Actualizar';
+    };
+  });
+  document.querySelectorAll('.del-rule-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('¿Eliminar esta regla de autorización?')) return;
+      try { await api(`/api/catalogs/approval-rules/${btn.dataset.id}`, { method: 'DELETE' }); catalogsView(); } catch(e) { alert(e.message); }
+    };
+  });
   bindCommon();
 }
 async function requisitionsView(editId = null) {
@@ -676,6 +708,7 @@ async function requisitionsView(editId = null) {
     document.getElementById('entry-item-scc').innerHTML = `<option value="">Selecciona</option>${opts.map(x=>`<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}`;
   };
   const renderDraft = () => {
+    state.itemsDraft = state.itemsDraft.map(x => ({ ...x, id: x.id || crypto.randomUUID() }));
     const total = state.itemsDraft.reduce((s, x) => s + (Number(x.quantity||0) * Number(x.unit_cost||0)), 0);
     itemsDraft.innerHTML = state.itemsDraft.length === 0
       ? '<p class="small muted" style="padding:12px 0;text-align:center;color:#9ca3af">Sin ítems. Completa el formulario de arriba y haz clic en "+ Agregar a lista".</p>'
@@ -710,7 +743,7 @@ async function requisitionsView(editId = null) {
       };
     });
     itemsDraft.querySelectorAll('.remove-draft-item').forEach(btn => {
-      btn.onclick = () => { if (currentEditItemId === btn.dataset.id) clearEntryPanel(); state.itemsDraft = state.itemsDraft.filter(x => x.id !== btn.dataset.id); renderDraft(); };
+      btn.onclick = () => { const rid = btn.dataset.id; if (currentEditItemId === rid) clearEntryPanel(); state.itemsDraft = state.itemsDraft.filter(x => String(x.id) !== String(rid)); renderDraft(); };
     });
   };
   renderDraft();
@@ -1953,7 +1986,11 @@ async function quotationsView() {
             <div><label>Código proveedor</label><input id="quoteCode" placeholder="SKU"/></div>
             <div><label>Nombre oficial del ítem</label><input id="quoteName" placeholder="Nombre oficial"/></div>
           </div>
-          <div class="actions"><button class="btn-primary" id="saveQuoteBtn">Guardar cotización</button></div>
+          <div style="margin-top:8px"><label style="font-size:12px">📎 Adjuntar cotización (PDF/imagen)</label><input type="file" id="quoteFile" accept=".pdf,.jpg,.jpeg,.png" style="font-size:12px;margin-top:4px;display:block"/></div>
+          <div class="actions" style="gap:8px">
+            <button class="btn-primary" id="saveQuoteBtn">Guardar cotización</button>
+            <button class="btn-secondary" id="declineQuoteBtn" style="color:#dc2626;border-color:#dc2626">✖ Declinar</button>
+          </div>
           <div id="quoteMsg" class="small muted"></div>
         `}
       </div>
@@ -2036,8 +2073,20 @@ async function quotationsView() {
   // Listeners del formulario
   if (document.getElementById('quoteItem')) {
     quoteItem.onchange = () => {
-      const opt = quoteItem.selectedOptions[0];
-      if (opt?.dataset?.supplier) quoteSupplier.value = opt.dataset.supplier;
+      const sel = quoteItem.options[quoteItem.selectedIndex];
+      const suppId = sel?.dataset?.supplier;
+      if (suppId) quoteSupplier.value = suppId;
+      // Auto-proponer número de cotización
+      const count = quotes.filter(q => q.requisition_item_id === Number(quoteItem.value)).length + 1;
+      quoteNumber.value = `COT-${String(quoteItem.value).slice(-4).padStart(4,'0')}-${String(count).padStart(2,'0')}`;
+      // Auto-llenar nombre si hay ítem seleccionado
+      const item = cotizacionesPendientes.find(i => i.id === Number(quoteItem.value));
+      if (item && !quoteName.value) quoteName.value = item.item_name || '';
+    };
+    // Auto-llenar código proveedor al seleccionar proveedor
+    quoteSupplier.onchange = () => {
+      const sup = suppliers.find(s => s.id === Number(quoteSupplier.value));
+      if (sup && sup.provider_code) quoteCode.value = sup.provider_code;
     };
 
     saveQuoteBtn.onclick = async () => {
@@ -2063,6 +2112,18 @@ async function quotationsView() {
         setTimeout(render, 900);
       } catch (e) { quoteMsg.textContent = e.message; quoteMsg.style.color = '#dc2626'; }
     };
+    if (document.getElementById('declineQuoteBtn')) {
+      declineQuoteBtn.onclick = async () => {
+        const itemId = quoteItem?.value;
+        if (!itemId) { quoteMsg.textContent = 'Selecciona un ítem.'; return; }
+        if (!confirm('¿Declinar cotización para este ítem? El ítem volverá a estar disponible.')) return;
+        try {
+          await api(`/api/purchases/items/${itemId}/cancel`, { method: 'POST', body: JSON.stringify({ reason: 'Cotización declinada por comprador' }) });
+          quoteMsg.textContent = '✅ Ítem declinado';
+          setTimeout(render, 800);
+        } catch(e) { quoteMsg.textContent = e.message; }
+      };
+    }
   }
 
   // Comparador
@@ -2225,7 +2286,7 @@ async function paymentsView() {
             const rowBg = overdue > 0 ? '#fef2f2' : overdue === 0 ? '#fffbeb' : '';
             const urgentTag = inv.urgent ? `<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>` : '';
             return `
-            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${inv.balance||inv.total||0}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}"
+            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${inv.balance||inv.total||0}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}" data-pofolio="${inv.po_folio||''}"
               style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${rowBg};transition:background 0.15s"
               onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='${rowBg}'">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -2321,7 +2382,8 @@ async function paymentsView() {
         balance: Number(row.dataset.balance),
         total: Number(row.dataset.total),
         creditDays: Number(row.dataset.creditdays || 0),
-        delivery: row.dataset.delivery || ''
+        delivery: row.dataset.delivery || '',
+        poFolio: row.dataset.pofolio || ''
       };
       payFormHint.style.display = 'none';
       payFormBody.style.display = 'block';
@@ -2332,7 +2394,22 @@ async function paymentsView() {
         <b>Factura:</b> ${selectedInv.number} &nbsp;|&nbsp;
         <b>Saldo:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
         <b>Total factura:</b> $${selectedInv.total.toLocaleString('es-MX',{minimumFractionDigits:2})}
+        <div id="payTraceInfo"></div>
       `;
+      // Intentar cargar trazabilidad (best-effort)
+      api(`/api/purchases/purchase-orders`).then(pos => {
+        const inv = selectedInv;
+        const poData = pos.find(p => p.folio === inv.poFolio);
+        if (!poData) return;
+        const traceEl = document.getElementById('payTraceInfo');
+        if (!traceEl) return;
+        traceEl.innerHTML = `
+          <div style="font-size:11px;color:#6b7280;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:6px">
+            <b>Trazabilidad:</b>
+            PO generada por: ${poData.buyer_name || '-'} ·
+            Proveedor: ${poData.supplier_name || '-'}
+          </div>`;
+      }).catch(()=>{});
     };
   });
 
