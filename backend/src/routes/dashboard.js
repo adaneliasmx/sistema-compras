@@ -4,6 +4,7 @@ const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 router.use(authRequired);
 
+// ── KPIs básicos ──────────────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   const db = read();
   const role = req.user.role_code;
@@ -13,8 +14,7 @@ router.get('/', (req, res) => {
 
   const visibleReqs = isClient
     ? db.requisitions.filter(r => r.requester_user_id === req.user.id)
-    : isSupplier
-    ? []
+    : isSupplier ? []
     : isAuthorizer
     ? db.requisitions.filter(r => db.requisition_items.some(i => i.requisition_id === r.id && i.status === 'En autorización'))
     : db.requisitions;
@@ -32,22 +32,179 @@ router.get('/', (req, res) => {
     ? db.purchase_orders.filter(po => po.supplier_id === req.user.supplier_id)
     : db.purchase_orders;
 
-  const totalReq = visibleReqs.length;
-  const totalItems = visibleItems.length;
   const pending = isSupplier
     ? visibleItems.filter(x => x.status === 'En proceso').length
     : isAuthorizer
     ? db.requisition_items.filter(x => x.status === 'En autorización').length
     : visibleItems.filter(x => ['En cotización','En autorización','Autorizado','En proceso','Entregado','Facturado','Pago parcial'].includes(x.status)).length;
-  const completed = visibleItems.filter(x => ['Cerrado','Rechazado'].includes(x.status)).length;
 
-  const recent = visibleReqs.slice().sort((a,b)=>b.id-a.id).slice(0,5).map(r => ({
+  const recent = visibleReqs.slice().sort((a, b) => b.id - a.id).slice(0, 5).map(r => ({
     ...r,
-    requester: (db.users.find(u=>u.id===r.requester_user_id)||{}).full_name || '',
-    items: db.requisition_items.filter(i=>i.requisition_id===r.id).length
+    requester: (db.users.find(u => u.id === r.requester_user_id) || {}).full_name || '',
+    items: db.requisition_items.filter(i => i.requisition_id === r.id).length
   }));
 
-  res.json({ totalReq, totalItems, pending, completed, poCount: visiblePOs.length, recent });
+  res.json({
+    totalReq: visibleReqs.length,
+    totalItems: visibleItems.length,
+    pending,
+    completed: visibleItems.filter(x => ['Cerrado', 'Rechazado'].includes(x.status)).length,
+    poCount: visiblePOs.length,
+    recent
+  });
 });
+
+// ── Datos para gráficas (solo comprador/pagos/admin) ─────────────────────────
+router.get('/charts', (req, res) => {
+  const db = read();
+  const { period = 'month', from, to } = req.query;
+
+  const now = new Date();
+  let startDate;
+  if (from) {
+    startDate = new Date(from);
+  } else {
+    startDate = new Date(now);
+    if (period === 'week') startDate.setDate(now.getDate() - 7 * 12);        // 12 semanas
+    else if (period === 'month') startDate.setMonth(now.getMonth() - 11);    // 12 meses
+    else startDate.setFullYear(now.getFullYear() - 4);                        // 5 años
+  }
+  const endDate = to ? new Date(to) : now;
+
+  // Bucket key según período
+  const bucketKey = (dateStr) => {
+    const d = new Date(dateStr);
+    if (isNaN(d) || d < startDate || d > endDate) return null;
+    if (period === 'week') {
+      const jan1 = new Date(d.getFullYear(), 0, 1);
+      const wk = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+      return `${d.getFullYear()}-W${String(wk).padStart(2, '0')}`;
+    }
+    if (period === 'month') return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    return String(d.getFullYear());
+  };
+
+  // ── 1. Gasto por centro de costo en el tiempo ────────────────────────────
+  const ccMap = {};
+  db.requisition_items.forEach(ri => {
+    const req = db.requisitions.find(r => r.id === ri.requisition_id);
+    if (!req || !req.created_at) return;
+    const bk = bucketKey(req.created_at);
+    if (!bk) return;
+    const cc = db.cost_centers.find(c => c.id === ri.cost_center_id);
+    const ccName = cc ? cc.name : 'Sin CC';
+    const amount = Number(ri.quantity || 0) * Number(ri.unit_cost || 0);
+    if (!ccMap[ccName]) ccMap[ccName] = {};
+    ccMap[ccName][bk] = (ccMap[ccName][bk] || 0) + amount;
+  });
+
+  // ── 2. Gasto por proveedor en el tiempo ─────────────────────────────────
+  const supplierMap = {};
+  db.purchase_orders.forEach(po => {
+    const bk = bucketKey(po.created_at);
+    if (!bk) return;
+    const sup = db.suppliers.find(s => s.id === po.supplier_id);
+    const supName = sup ? sup.business_name : 'Sin proveedor';
+    const amount = Number(po.total_amount || 0);
+    if (!supplierMap[supName]) supplierMap[supName] = {};
+    supplierMap[supName][bk] = (supplierMap[supName][bk] || 0) + amount;
+  });
+
+  // ── 3. Top ítems por gasto ───────────────────────────────────────────────
+  const itemTotals = {};
+  db.requisition_items.forEach(ri => {
+    const req = db.requisitions.find(r => r.id === ri.requisition_id);
+    if (!req?.created_at) return;
+    const bk = bucketKey(req.created_at);
+    if (!bk) return;
+    const ci = db.catalog_items.find(c => c.id === ri.catalog_item_id);
+    const name = ci ? ci.name : (ri.manual_item_name || 'Sin nombre');
+    const amount = Number(ri.quantity || 0) * Number(ri.unit_cost || 0);
+    itemTotals[name] = (itemTotals[name] || 0) + amount;
+  });
+  const topItems = Object.entries(itemTotals)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, total]) => ({ name, total }));
+
+  // ── 4. Órdenes recibidas por semana/período ──────────────────────────────
+  const ordersPerPeriod = {};
+  db.purchase_orders.forEach(po => {
+    const bk = bucketKey(po.created_at);
+    if (!bk) return;
+    ordersPerPeriod[bk] = (ordersPerPeriod[bk] || 0) + 1;
+  });
+
+  // ── 5. Eficiencia por proveedor ──────────────────────────────────────────
+  const supplierEfficiency = db.suppliers.map(sup => {
+    const supPOs = db.purchase_orders.filter(po => {
+      const bk = bucketKey(po.created_at);
+      return po.supplier_id === sup.id && bk;
+    });
+    const total = supPOs.length;
+    if (total === 0) return null;
+
+    const delivered = supPOs.filter(po => ['Entregado','Facturada','Cerrada','Pago parcial'].includes(po.status)).length;
+    const closed = supPOs.filter(po => po.status === 'Cerrada').length;
+
+    // Tiempo de entrega promedio (días entre created_at y updated_at en POs entregadas)
+    const deliveryTimes = supPOs
+      .filter(po => ['Entregado','Facturada','Cerrada'].includes(po.status) && po.updated_at && po.created_at)
+      .map(po => Math.round((new Date(po.updated_at) - new Date(po.created_at)) / 86400000));
+
+    const avgDeliveryDays = deliveryTimes.length
+      ? Math.round(deliveryTimes.reduce((a, b) => a + b, 0) / deliveryTimes.length)
+      : null;
+
+    return {
+      supplier: sup.business_name,
+      total_orders: total,
+      pct_delivery: total ? Math.round((delivered / total) * 100) : 0,
+      pct_closed: total ? Math.round((closed / total) * 100) : 0,
+      avg_delivery_days: avgDeliveryDays
+    };
+  }).filter(Boolean);
+
+  // ── 6. Seguimiento (%enviadas, %autorizadas, %en PO, %cerradas) ──────────
+  const allItems = db.requisition_items;
+  const trackTotal = allItems.length || 1;
+  const tracking = {
+    pct_sent: Math.round(allItems.filter(i => i.status !== 'Borrador').length / trackTotal * 100),
+    pct_authorized: Math.round(allItems.filter(i => !['Borrador','En cotización','En autorización'].includes(i.status)).length / trackTotal * 100),
+    pct_in_po: Math.round(allItems.filter(i => i.purchase_order_id).length / trackTotal * 100),
+    pct_closed: Math.round(allItems.filter(i => i.status === 'Cerrado').length / trackTotal * 100)
+  };
+
+  res.json({
+    cost_centers: ccMap,
+    suppliers: supplierMap,
+    top_items: topItems,
+    orders_per_period: ordersPerPeriod,
+    supplier_efficiency: supplierEfficiency,
+    tracking,
+    period,
+    buckets: generateBuckets(startDate, endDate, period)
+  });
+});
+
+function generateBuckets(start, end, period) {
+  const buckets = [];
+  const d = new Date(start);
+  while (d <= end) {
+    if (period === 'week') {
+      const jan1 = new Date(d.getFullYear(), 0, 1);
+      const wk = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+      buckets.push(`${d.getFullYear()}-W${String(wk).padStart(2, '0')}`);
+      d.setDate(d.getDate() + 7);
+    } else if (period === 'month') {
+      buckets.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+      d.setMonth(d.getMonth() + 1);
+    } else {
+      buckets.push(String(d.getFullYear()));
+      d.setFullYear(d.getFullYear() + 1);
+    }
+  }
+  return [...new Set(buckets)];
+}
 
 module.exports = router;

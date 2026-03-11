@@ -129,11 +129,208 @@ async function loginView() {
   };
 }
 
+let _dashCharts = {};
+function destroyDashCharts() {
+  Object.values(_dashCharts).forEach(c => { try { c.destroy(); } catch(_) {} });
+  _dashCharts = {};
+}
+
+const CHART_COLORS = ['#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6','#06b6d4','#f97316','#84cc16','#ec4899','#14b8a6'];
+
+function makeChart(id, type, labels, datasets, opts = {}) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  if (_dashCharts[id]) { try { _dashCharts[id].destroy(); } catch(_) {} }
+  _dashCharts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: type !== 'pie' && type !== 'doughnut' ? {
+        x: { ticks: { font: { size: 10 }, maxRotation: 45 } },
+        y: { beginAtZero: true, ticks: { font: { size: 10 }, callback: v => '$' + Number(v).toLocaleString('es-MX', { maximumFractionDigits: 0 }) } }
+      } : {},
+      ...opts
+    }
+  });
+}
+
 async function dashboardView() {
-  const d = await api('/api/dashboard');
-  app.innerHTML = shell(`<div class="grid grid-4"><div class="card kpi"><div class="muted">Requisiciones</div><div class="n">${d.totalReq}</div></div><div class="card kpi"><div class="muted">Ítems</div><div class="n">${d.totalItems}</div></div><div class="card kpi"><div class="muted">Pendientes</div><div class="n">${d.pending}</div></div><div class="card kpi"><div class="muted">Cerrados</div><div class="n">${d.completed}</div></div></div><div class="card section" style="margin-top:16px"><div class="module-title"><h3>Últimas requisiciones</h3><button class="btn-secondary" id="expReqBtn">Exportar CSV</button></div><div class="table-wrap"><table><thead><tr><th>Folio</th><th>Solicitante</th><th>Estatus</th><th>Fecha</th><th>Items</th></tr></thead><tbody>${d.recent.map(r => `<tr><td><a href="#/seguimiento/${r.id}">${r.folio}</a></td><td>${r.requester}</td><td>${statusPill(r.status)}</td><td>${String(r.created_at || r.request_date || '').slice(0,10)}</td><td>${r.items}</td></tr>`).join('')}</tbody></table></div></div>`, 'dashboard');
+  const [d, charts] = await Promise.all([
+    api('/api/dashboard'),
+    api('/api/dashboard/charts?period=month').catch(() => null)
+  ]);
+
+  const canCharts = roleCan('comprador', 'pagos', 'admin');
+
+  app.innerHTML = shell(`
+    <!-- KPIs -->
+    <div class="grid grid-4">
+      <div class="card kpi"><div class="muted">Requisiciones</div><div class="n">${d.totalReq}</div></div>
+      <div class="card kpi"><div class="muted">Ítems</div><div class="n">${d.totalItems}</div></div>
+      <div class="card kpi"><div class="muted">Pendientes</div><div class="n" style="color:#f59e0b">${d.pending}</div></div>
+      <div class="card kpi"><div class="muted">Cerrados</div><div class="n" style="color:#10b981">${d.completed}</div></div>
+    </div>
+
+    ${canCharts && charts ? `
+    <!-- Filtros de período -->
+    <div class="card section" style="margin-top:16px;padding:12px 16px">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:13px">Período:</b>
+        <button class="btn-secondary period-btn active-period" data-period="week" style="padding:4px 12px;font-size:12px">Semanas</button>
+        <button class="btn-secondary period-btn" data-period="month" style="padding:4px 12px;font-size:12px">Meses</button>
+        <button class="btn-secondary period-btn" data-period="year" style="padding:4px 12px;font-size:12px">Años</button>
+        <span class="muted small" style="margin-left:8px">Desde:</span>
+        <input type="date" id="chartFrom" style="font-size:12px;padding:3px 6px"/>
+        <span class="muted small">Hasta:</span>
+        <input type="date" id="chartTo" style="font-size:12px;padding:3px 6px" value="${new Date().toISOString().slice(0,10)}"/>
+        <button class="btn-primary" id="applyChartFilter" style="padding:4px 12px;font-size:12px">Aplicar</button>
+      </div>
+    </div>
+
+    <!-- Gráfica: Gasto por centro de costo -->
+    <div class="grid grid-2" style="margin-top:12px">
+      <div class="card section">
+        <h3 style="margin-bottom:8px">Gasto por centro de costo</h3>
+        <div style="height:240px"><canvas id="chartCC"></canvas></div>
+      </div>
+      <div class="card section">
+        <h3 style="margin-bottom:8px">Gasto por proveedor</h3>
+        <div style="height:240px"><canvas id="chartSupplier"></canvas></div>
+      </div>
+    </div>
+
+    <div class="grid grid-2" style="margin-top:12px">
+      <div class="card section">
+        <h3 style="margin-bottom:8px">Top 10 ítems por gasto</h3>
+        <div style="height:240px"><canvas id="chartItems"></canvas></div>
+      </div>
+      <div class="card section">
+        <h3 style="margin-bottom:8px">Órdenes de compra por período</h3>
+        <div style="height:240px"><canvas id="chartOrders"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Eficiencia por proveedor -->
+    <div class="card section" style="margin-top:12px">
+      <h3 style="margin-bottom:8px">Eficiencia por proveedor</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div class="card kpi" style="flex:1;padding:8px"><div class="muted" style="font-size:11px">% Enviadas</div><div class="n" style="font-size:20px">${charts.tracking.pct_sent}%</div></div>
+        <div class="card kpi" style="flex:1;padding:8px"><div class="muted" style="font-size:11px">% Autorizadas</div><div class="n" style="font-size:20px">${charts.tracking.pct_authorized}%</div></div>
+        <div class="card kpi" style="flex:1;padding:8px"><div class="muted" style="font-size:11px">% En PO</div><div class="n" style="font-size:20px">${charts.tracking.pct_in_po}%</div></div>
+        <div class="card kpi" style="flex:1;padding:8px"><div class="muted" style="font-size:11px">% Cerradas</div><div class="n" style="font-size:20px;color:#10b981">${charts.tracking.pct_closed}%</div></div>
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Proveedor</th><th>Órdenes</th><th>% Entregado</th><th>% Cerrado</th><th>Tiempo prom. entrega</th></tr></thead>
+        <tbody>${charts.supplier_efficiency.length
+          ? charts.supplier_efficiency.map(e => `<tr>
+            <td><b>${e.supplier}</b></td>
+            <td>${e.total_orders}</td>
+            <td>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px">
+                  <div style="width:${e.pct_delivery}%;background:#3b82f6;border-radius:4px;height:8px"></div>
+                </div>
+                <span style="font-size:12px">${e.pct_delivery}%</span>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;background:#e5e7eb;border-radius:4px;height:8px">
+                  <div style="width:${e.pct_closed}%;background:#10b981;border-radius:4px;height:8px"></div>
+                </div>
+                <span style="font-size:12px">${e.pct_closed}%</span>
+              </div>
+            </td>
+            <td>${e.avg_delivery_days !== null ? `${e.avg_delivery_days} días` : '<span class="muted small">—</span>'}</td>
+          </tr>`).join('')
+          : '<tr><td colspan="5" class="muted" style="text-align:center;padding:12px">Sin datos de órdenes aún</td></tr>'}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
+    <!-- Últimas requisiciones -->
+    <div class="card section" style="margin-top:12px">
+      <div class="module-title"><h3>Últimas requisiciones</h3><button class="btn-secondary" id="expReqBtn">Exportar CSV</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Folio</th><th>Solicitante</th><th>Estatus</th><th>Fecha</th><th>Ítems</th></tr></thead>
+        <tbody>${d.recent.map(r => `<tr>
+          <td><a href="#/seguimiento/${r.id}">${r.folio}</a></td>
+          <td>${r.requester}</td>
+          <td>${statusPill(r.status)}</td>
+          <td>${String(r.created_at || r.request_date || '').slice(0,10)}</td>
+          <td>${r.items}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+  `, 'dashboard');
+
   expReqBtn.onclick = () => downloadCsv('requisitions', 'requisiciones.csv');
   bindCommon();
+
+  if (!canCharts || !charts) return;
+
+  // Renderizar gráficas
+  const renderCharts = (c) => {
+    destroyDashCharts();
+    const bks = c.buckets || [];
+
+    // CC
+    const ccNames = Object.keys(c.cost_centers);
+    makeChart('chartCC', 'bar', bks,
+      ccNames.map((name, i) => ({
+        label: name, backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+        data: bks.map(b => c.cost_centers[name][b] || 0)
+      }))
+    );
+
+    // Proveedores
+    const supNames = Object.keys(c.suppliers).slice(0, 6);
+    makeChart('chartSupplier', 'bar', bks,
+      supNames.map((name, i) => ({
+        label: name, backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+        data: bks.map(b => c.suppliers[name][b] || 0)
+      }))
+    );
+
+    // Top ítems (doughnut)
+    makeChart('chartItems', 'doughnut',
+      c.top_items.map(x => x.name),
+      [{ data: c.top_items.map(x => x.total), backgroundColor: CHART_COLORS }]
+    );
+
+    // Órdenes por período
+    makeChart('chartOrders', 'line', bks,
+      [{ label: 'Órdenes', data: bks.map(b => c.orders_per_period[b] || 0), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, tension: 0.3 }],
+      { scales: { y: { beginAtZero: true, ticks: { callback: v => v } } } }
+    );
+  };
+
+  renderCharts(charts);
+
+  // Cambio de período
+  let currentPeriod = 'month';
+  document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.onclick = async () => {
+      document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active-period'));
+      btn.classList.add('active-period');
+      currentPeriod = btn.dataset.period;
+      const from = document.getElementById('chartFrom')?.value || '';
+      const to = document.getElementById('chartTo')?.value || '';
+      const qs = `period=${currentPeriod}${from?'&from='+from:''}${to?'&to='+to:''}`;
+      const fresh = await api(`/api/dashboard/charts?${qs}`).catch(() => null);
+      if (fresh) renderCharts(fresh);
+    };
+  });
+
+  document.getElementById('applyChartFilter')?.addEventListener('click', async () => {
+    const from = document.getElementById('chartFrom')?.value || '';
+    const to = document.getElementById('chartTo')?.value || '';
+    const qs = `period=${currentPeriod}${from?'&from='+from:''}${to?'&to='+to:''}`;
+    const fresh = await api(`/api/dashboard/charts?${qs}`).catch(() => null);
+    if (fresh) renderCharts(fresh);
+  });
 }
 
 async function catalogsView() {
@@ -469,16 +666,19 @@ async function purchasesView() {
     'Otro motivo'
   ];
 
+  let showCancelled = false;
+  const loadItems = () => api(`/api/purchases/pending-items${showCancelled ? '?show_cancelled=true' : ''}`);
+
   const [allItems, pos, suppliers] = await Promise.all([
-    api('/api/purchases/pending-items'),
+    loadItems(),
     api('/api/purchases/purchase-orders'),
     api('/api/catalogs/suppliers')
   ]);
 
-  // Clasificar ítems por sección
+  // Clasificar ítems por sección (cancelados excluidos salvo toggle)
   const itemsPendientePO = allItems.filter(x => x.supplier_id && x.unit_cost && !x.purchase_order_id && !['Cancelado','Rechazado','Cerrado','En cotización'].includes(x.status));
   const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización');
-  const itemsSolicitados = allItems.filter(x => !['Cancelado','Rechazado','Cerrado'].includes(x.status));
+  const itemsSolicitados = allItems.filter(x => showCancelled ? true : !['Cancelado','Rechazado','Cerrado'].includes(x.status));
 
   let activeTab = 'pendientes';
 
@@ -576,10 +776,22 @@ async function purchasesView() {
     };
   };
 
-  const openRegisterCatalog = (row) => {
+  const openRegisterCatalog = async (row) => {
+    // Auto-sugerir código basado en ítems existentes
+    let suggestedCode = 'ITM-001';
+    try {
+      const existingItems = await api('/api/catalogs/items');
+      const codes = existingItems.map(i => i.code || '').filter(c => /^ITM-\d+$/i.test(c));
+      const maxNum = codes.reduce((max, c) => {
+        const n = parseInt(c.replace(/^ITM-/i, ''), 10);
+        return n > max ? n : max;
+      }, 0);
+      suggestedCode = `ITM-${String(maxNum + 1).padStart(3, '0')}`;
+    } catch (_) {}
+
     openActionCard(`Alta al catálogo · ${row.item_name}`, `
       <div class="row-3">
-        <div><label>Código del ítem</label><input id="regCode" placeholder="Ej. TLAP-001"/></div>
+        <div><label>Código del ítem <span style="color:#3b82f6;font-size:11px">(sugerido)</span></label><input id="regCode" value="${suggestedCode}"/></div>
         <div><label>Nombre oficial</label><input id="regName" value="${escapeHtml(row.item_name || '')}"/></div>
         <div><label>Proveedor</label><select id="regSupplier"><option value="">Selecciona</option>${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}</select></div>
       </div>
@@ -595,9 +807,17 @@ async function purchasesView() {
     regSaveBtn.onclick = async () => {
       try {
         if (!regCode.value) throw new Error('Código requerido');
-        await api(`/api/purchases/items/${row.id}/register-catalog-item`, { method:'POST', body: JSON.stringify({ supplier_id: regSupplier.value, code: regCode.value, name: regName.value, unit_price: Number(regPrice.value || 0), currency: regCurrency.value, unit: regUnit.value }) });
-        closeActionCard(); render();
-      } catch (e) { regMsg.textContent = e.message; }
+        const result = await api(`/api/purchases/items/${row.id}/register-catalog-item`, {
+          method: 'POST',
+          body: JSON.stringify({ supplier_id: regSupplier.value, code: regCode.value, name: regName.value, unit_price: Number(regPrice.value || 0), currency: regCurrency.value, unit: regUnit.value })
+        });
+        const extra = result.matched_count > 0
+          ? ` · ✅ ${result.matched_count} ítem(s) adicional(es) con el mismo nombre también fueron ligados.`
+          : '';
+        regMsg.textContent = `✅ Guardado como ${regCode.value}${extra}`;
+        regMsg.style.color = '#16a34a';
+        setTimeout(() => { closeActionCard(); render(); }, 1800);
+      } catch (e) { regMsg.textContent = e.message; regMsg.style.color = '#dc2626'; }
     };
   };
 
@@ -750,9 +970,13 @@ async function purchasesView() {
 
     } else if (tab === 'solicitados') {
       tabContent.innerHTML = `
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
           <select id="filterSupplierItems"><option value="">Todos los proveedores</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select>
-          <select id="filterStatusItems"><option value="">Todos los estatus</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Cancelado</option></select>
+          <select id="filterStatusItems"><option value="">Todos los estatus</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Entregado</option><option>Facturado</option></select>
+          <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="toggleCancelled" ${showCancelled?'checked':''}/>
+            Mostrar cancelados
+          </label>
         </div>
         <div id="allItemsTable">
           <div class="table-wrap"><table>${THEAD}<tbody>
@@ -761,15 +985,23 @@ async function purchasesView() {
         </div>`;
       bindTableActions(tabContent, itemsSolicitados);
 
-      document.getElementById('filterSupplierItems').onchange = (e) => {
-        const sid = Number(e.target.value || 0);
+      const applyFilters = () => {
+        const sid = Number(document.getElementById('filterSupplierItems')?.value || 0);
         const statusVal = document.getElementById('filterStatusItems')?.value || '';
-        const filtered = itemsSolicitados.filter(x => (!sid || Number(x.supplier_id) === sid) && (!statusVal || x.status === statusVal));
+        const inclCanc = document.getElementById('toggleCancelled')?.checked;
+        const src = inclCanc ? allItems : itemsSolicitados;
+        const filtered = src.filter(x => (!sid || Number(x.supplier_id) === sid) && (!statusVal || x.status === statusVal));
         allItemsTable.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.map(i => itemRow(i, true)).join('')}</tbody></table></div>`;
-        bindTableActions(allItemsTable, itemsSolicitados);
+        bindTableActions(allItemsTable, src);
       };
-      document.getElementById('filterStatusItems').onchange = (e) => {
-        document.getElementById('filterSupplierItems').dispatchEvent(new Event('change'));
+      document.getElementById('filterSupplierItems').onchange = applyFilters;
+      document.getElementById('filterStatusItems').onchange = applyFilters;
+      document.getElementById('toggleCancelled').onchange = async (e) => {
+        showCancelled = e.target.checked;
+        // Recargar ítems con/sin cancelados
+        const fresh = await api(`/api/purchases/pending-items${showCancelled ? '?show_cancelled=true' : ''}`);
+        allItems.length = 0; fresh.forEach(x => allItems.push(x));
+        applyFilters();
       };
 
     } else if (tab === 'pos') {

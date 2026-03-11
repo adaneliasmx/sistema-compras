@@ -56,8 +56,10 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
 
 router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();
+  const showCancelled = req.query.show_cancelled === 'true';
+  const excluded = showCancelled ? ['Cerrado', 'Rechazado'] : ['Cerrado', 'Rechazado', 'Cancelado'];
   const rows = db.requisition_items
-    .filter(i => !['Cerrado', 'Rechazado'].includes(i.status))
+    .filter(i => !excluded.includes(i.status))
     .map(i => ({
       ...i,
       requisition_folio: (db.requisitions.find(r => r.id === i.requisition_id) || {}).folio,
@@ -111,19 +113,36 @@ router.post('/items/:id/register-catalog-item', allowRoles('comprador', 'admin')
     sub_cost_center_id: line.sub_cost_center_id || null
   };
   db.catalog_items.push(item);
-  line.catalog_item_id = item.id;
-  line.supplier_id = item.supplier_id;
-  line.unit_cost = item.unit_price;
-  line.currency = item.currency;
-  line.manual_item_name = line.manual_item_name || item.name;
-  const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
-  const oldStatus = line.status;
-  recalcRequisition(db, line.requisition_id);
-  line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
-  addHistory(db, { module: 'catalogs', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: line.status, changed_by_user_id: req.user.id, comment: `Ítem ${item.code} dado de alta en catálogo` });
-  recalcRequisition(db, line.requisition_id);
+
+  // Función para ligar un requisition_item al nuevo ítem de catálogo
+  const linkItemToNew = (ri) => {
+    ri.catalog_item_id = item.id;
+    ri.supplier_id = item.supplier_id;
+    ri.unit_cost = item.unit_price;
+    ri.currency = item.currency;
+    ri.updated_at = new Date().toISOString();
+    const reqRow2 = db.requisitions.find(r => r.id === ri.requisition_id);
+    const old = ri.status;
+    recalcRequisition(db, ri.requisition_id);
+    ri.status = deriveItemStatus(db, Number(reqRow2?.total_amount || 0), ri);
+    addHistory(db, { module: 'catalogs', requisition_id: ri.requisition_id, requisition_item_id: ri.id, old_status: old, new_status: ri.status, changed_by_user_id: req.user.id, comment: `Ligado al nuevo ítem de catálogo ${item.code}` });
+    recalcRequisition(db, ri.requisition_id);
+  };
+
+  // Ligar el ítem original
+  linkItemToNew(line);
+
+  // Buscar otros ítems con el mismo nombre y ligarlos también
+  const normalizedName = (line.manual_item_name || item.name).toLowerCase().trim();
+  const matches = db.requisition_items.filter(ri =>
+    ri.id !== line.id &&
+    !ri.catalog_item_id &&
+    (ri.manual_item_name || '').toLowerCase().trim() === normalizedName
+  );
+  matches.forEach(ri => linkItemToNew(ri));
+
   write(db);
-  res.status(201).json({ item, requisition_item: line });
+  res.status(201).json({ item, requisition_item: line, matched_count: matches.length });
 });
 
 router.post('/items/:id/request-quotation', allowRoles('comprador', 'admin'), (req, res) => {
