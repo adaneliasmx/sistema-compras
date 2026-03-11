@@ -115,7 +115,15 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   });
 
   const po = db.purchase_orders.find(x => x.id === row.purchase_order_id);
-  if (po) po.status = 'Facturada';
+  if (po) {
+    // Sumar subtotales de todas las facturas de esta PO
+    const totalFacturado = db.invoices
+      .filter(i => i.purchase_order_id === po.id)
+      .reduce((s, i) => s + Number(i.subtotal || 0), 0);
+    const poSubtotal = Number(po.total_amount || 0);
+    // ≥ 95% del monto cubierto → Facturada; si no → Facturación parcial
+    po.status = (poSubtotal > 0 && totalFacturado >= poSubtotal * 0.95) ? 'Facturada' : 'Facturación parcial';
+  }
 
   write(db);
   res.status(201).json(row);

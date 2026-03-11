@@ -1,8 +1,11 @@
 function getApprovalRule(db, total) {
-  return (db.approval_rules || [])
+  const active = (db.approval_rules || [])
     .filter(r => r.active)
-    .sort((a, b) => Number(a.min_amount || 0) - Number(b.min_amount || 0))
-    .find(r => total >= Number(r.min_amount || 0) && total <= Number(r.max_amount || 0));
+    .sort((a, b) => Number(a.min_amount || 0) - Number(b.min_amount || 0));
+  // Si hay un hueco entre reglas, usa la última (rango más alto) como fallback
+  return active.find(r => total >= Number(r.min_amount || 0) && total <= Number(r.max_amount || 0))
+    || active[active.length - 1]
+    || null;
 }
 
 function addHistory(db, { module, requisition_id, requisition_item_id = null, purchase_order_id = null, invoice_id = null, old_status = null, new_status, changed_by_user_id = null, comment = '' }) {
@@ -43,8 +46,9 @@ function deriveItemStatus(db, requisitionTotal, item) {
 function aggregateRequisitionStatus(items) {
   if (!items.length) return 'Enviada';
   const statuses = items.map(i => i.status);
+  if (statuses.every(s => s === 'Cancelado')) return 'Cancelada';
   if (statuses.every(s => ['Rechazado','Cancelado'].includes(s))) return 'Rechazada';
-  if (statuses.every(s => ['Cerrado', 'Rechazado'].includes(s))) return 'Completada';
+  if (statuses.every(s => ['Cerrado', 'Rechazado', 'Cancelado'].includes(s))) return 'Completada';
   if (statuses.some(s => ['En proceso', 'Entregado', 'Facturado', 'Pago parcial', 'Pagada', 'Cerrado'].includes(s))) return 'En proceso';
   if (statuses.some(s => s === 'En autorización')) return 'En autorización';
   if (statuses.some(s => s === 'En cotización')) return 'En cotización';
@@ -56,7 +60,10 @@ function recalcRequisition(db, requisitionId) {
   const req = (db.requisitions || []).find(r => r.id === requisitionId);
   if (!req) return null;
   const items = (db.requisition_items || []).filter(i => i.requisition_id === requisitionId);
-  req.total_amount = items.reduce((sum, i) => sum + Number(i.quantity || 0) * Number(i.unit_cost || 0), 0);
+  // Excluir ítems cancelados o rechazados del total (no representan gasto real)
+  req.total_amount = items
+    .filter(i => !['Cancelado', 'Rechazado'].includes(i.status))
+    .reduce((sum, i) => sum + Number(i.quantity || 0) * Number(i.unit_cost || 0), 0);
   req.status = aggregateRequisitionStatus(items);
   req.updated_at = new Date().toISOString();
   return req;

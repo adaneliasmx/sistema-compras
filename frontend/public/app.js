@@ -82,7 +82,7 @@ function logout() {
 
 function statusPill(status) {
   const map = {
-    'Borrador': 'gray', 'Enviada': 'gray', 'En cotización': 'orange', 'En autorización': 'gray', 'Autorizado': '', 'En proceso': 'orange', 'Entregado': 'orange', 'Facturado': 'orange', 'Pago parcial': 'orange', 'Pagada': '', 'Completada': '', 'Cerrado': '', 'Rechazada': 'red', 'Rechazado': 'red'
+    'Borrador': 'gray', 'Enviada': 'gray', 'En cotización': 'orange', 'En autorización': 'gray', 'Autorizado': '', 'En proceso': 'orange', 'Entregado': 'orange', 'Facturado': 'orange', 'Facturada': 'orange', 'Facturación parcial': 'orange', 'Pago parcial': 'orange', 'Pagada': '', 'Completada': '', 'Cerrado': '', 'Cancelada': 'red', 'Cancelado': 'red', 'Rechazada': 'red', 'Rechazado': 'red'
   };
   return `<span class="pill ${map[status] || 'gray'}">${status || '-'}</span>`;
 }
@@ -1391,12 +1391,13 @@ async function purchasesView() {
       const STATUS_NEXT = { 'Enviada': 'En proceso', 'Aceptada': 'En proceso', 'En proceso': 'Entregado' };
       const STATUS_LABEL_BTN = { 'Enviada': '▶ Marcar En proceso', 'Aceptada': '▶ Marcar En proceso', 'En proceso': '✅ Marcar Entregado' };
 
-      const visiblePos = pos.filter(p => !['Cancelada','Cancelado'].includes(p.status)); tabContent.innerHTML = visiblePos.length ? visiblePos.map(p => {
+      const visiblePos = pos.filter(p => p.status !== 'Cancelada'); tabContent.innerHTML = visiblePos.length ? visiblePos.map(p => {
         const nextS = STATUS_NEXT[p.status];
         const btnLabel = STATUS_LABEL_BTN[p.status];
         const canRequestInvoice = p.status === 'Entregado' && !p.invoice_requested;
         const invoiceRequested = p.invoice_requested;
         const canManualInvoice = p.status === 'Entregado';
+        const canCancel = !['Facturada','Facturación parcial','Cerrada','Cancelada','Rechazada por proveedor'].includes(p.status);
         const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
         const reqTag = invoiceRequested ? `<span style="font-size:11px;color:#2563eb;margin-left:8px">📧 Factura solicitada al proveedor</span>` : '';
         return `
@@ -1416,6 +1417,7 @@ async function purchasesView() {
             ${nextS ? `<button class="btn-primary po-advance-btn" data-id="${p.id}" data-status="${nextS}" style="font-size:12px;padding:5px 12px">${btnLabel}</button>` : ''}
             ${canRequestInvoice ? `<button class="btn-secondary po-req-invoice-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📧 Solicitar factura al proveedor</button>` : ''}
             ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
+            ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
           </div>
           <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
           <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
@@ -1447,6 +1449,50 @@ async function purchasesView() {
             await api(`/api/purchases/purchase-orders/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.status }) });
             render();
           } catch(e) { alert(e.message); btn.disabled = false; }
+        };
+      });
+
+      // Cancelar PO
+      tabContent.querySelectorAll('.po-cancel-btn').forEach(btn => {
+        btn.onclick = () => {
+          const folio = btn.dataset.folio;
+          openActionCard(`Cancelar PO · ${folio}`, `
+            <p class="small muted">Esta acción cancela la orden de compra y regresa los ítems al estado <b>Autorizado</b> para que se puedan generar en una nueva PO.</p>
+            <label style="font-size:12px">Motivo de cancelación *</label>
+            <select id="poCancelReason" style="width:100%;margin-bottom:8px">
+              <option value="Error en la PO">Error en la PO</option>
+              <option value="Proveedor no disponible">Proveedor no disponible</option>
+              <option value="Cambio de proveedor">Cambio de proveedor</option>
+              <option value="Ítem ya no requerido">Ítem ya no requerido</option>
+              <option value="Otro motivo">Otro motivo</option>
+            </select>
+            <div id="poCancelOtherWrap" style="display:none;margin-bottom:8px">
+              <input id="poCancelOtherText" placeholder="Describe el motivo..." style="width:100%"/>
+            </div>
+            <div class="actions">
+              <button class="btn-danger" id="confirmPoCancelBtn">Confirmar cancelación</button>
+              <button class="btn-secondary" id="abortPoCancelBtn">No cancelar</button>
+            </div>
+            <div id="poCancelMsg" class="small muted"></div>
+          `);
+          document.getElementById('poCancelReason').onchange = () => {
+            document.getElementById('poCancelOtherWrap').style.display =
+              document.getElementById('poCancelReason').value === 'Otro motivo' ? 'block' : 'none';
+          };
+          document.getElementById('abortPoCancelBtn').onclick = closeActionCard;
+          document.getElementById('confirmPoCancelBtn').onclick = async () => {
+            try {
+              const sel = document.getElementById('poCancelReason').value;
+              const reason = sel === 'Otro motivo' ? (document.getElementById('poCancelOtherText').value || 'Otro motivo') : sel;
+              await api(`/api/purchases/purchase-orders/${btn.dataset.id}/cancel`, { method: 'POST', body: JSON.stringify({ reason }) });
+              document.getElementById('poCancelMsg').textContent = '✅ PO cancelada. Los ítems regresaron a Autorizado.';
+              document.getElementById('poCancelMsg').style.color = '#16a34a';
+              setTimeout(() => { closeActionCard(); render(); }, 1200);
+            } catch(e) {
+              document.getElementById('poCancelMsg').textContent = e.message;
+              document.getElementById('poCancelMsg').style.color = '#dc2626';
+            }
+          };
         };
       });
 
@@ -1703,7 +1749,7 @@ async function proveedorPOView() {
   const pendingInvoice = pos.filter(p => ['Aceptada','En proceso','Entregado'].includes(p.status));
   const invoicedPOs = new Set(myInvoices.map(i => i.purchase_order_id));
   const toInvoice = pendingInvoice.filter(p => !invoicedPOs.has(p.id));
-  const done = pos.filter(p => ['Facturada','Cerrada','Rechazada por proveedor'].includes(p.status));
+  const done = pos.filter(p => ['Facturada','Facturación parcial','Cerrada','Rechazada por proveedor'].includes(p.status));
 
   // Solicitudes de cotización pendientes (sin cotización enviada)
   const pendingQuoteRequests = myRequests.filter(r => !r.has_quote);

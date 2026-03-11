@@ -169,8 +169,10 @@ router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) =
     reqItem.delivery_days = winner.delivery_days;
     reqItem.payment_terms = winner.payment_terms;
 
-    const reqRow = db.requisitions.find(r => r.id === reqItem.requisition_id);
+    // 1. Recalcular total de la requisición con el nuevo unit_cost ya asignado
     recalcRequisition(db, reqItem.requisition_id);
+    const reqRow = db.requisitions.find(r => r.id === reqItem.requisition_id);
+    // 2. Derivar status con el total correcto
     reqItem.status = deriveItemStatus(db, Number(reqRow?.total_amount || 0), reqItem);
     reqItem.updated_at = new Date().toISOString();
 
@@ -183,6 +185,7 @@ router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) =
       changed_by_user_id: req.user.id,
       comment: `Cotización ganadora: ${(db.suppliers.find(s=>s.id===winner.supplier_id)||{}).business_name||''} · $${winner.unit_cost} · Entrega: ${winner.delivery_days} días`
     });
+    // 3. Recalcular de nuevo para que el status de la requisición refleje el nuevo status del ítem
     recalcRequisition(db, reqItem.requisition_id);
   }
 

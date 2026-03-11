@@ -390,4 +390,40 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
   res.json(po);
 });
 
+// Cancelar PO completa (comprador/admin) — libera los ítems para re-proceso
+router.post('/purchase-orders/:id/cancel', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+  if (['Cancelada', 'Cerrada', 'Facturada'].includes(po.status)) {
+    return res.status(400).json({ error: `No se puede cancelar una PO en estado "${po.status}"` });
+  }
+  const reason = req.body.reason || 'Sin justificación';
+  const oldStatus = po.status;
+  po.status = 'Cancelada';
+  po.cancel_reason = reason;
+  po.cancelled_at = new Date().toISOString();
+  po.cancelled_by = req.user.id;
+  po.updated_at = new Date().toISOString();
+
+  // Liberar los ítems de la requisición (quitar purchase_order_id y regresar a Autorizado)
+  const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
+  poItems.forEach(poLine => {
+    poLine.status = 'Cancelada';
+    const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+    if (reqItem) {
+      const oldItemStatus = reqItem.status;
+      reqItem.purchase_order_id = null;
+      reqItem.status = 'Autorizado'; // regresa al estado previo para poder generar nueva PO
+      reqItem.updated_at = new Date().toISOString();
+      addHistory(db, { module: 'purchases', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, purchase_order_id: po.id, old_status: oldItemStatus, new_status: 'Autorizado', changed_by_user_id: req.user.id, comment: `PO ${po.folio} cancelada: ${reason}` });
+      recalcRequisition(db, reqItem.requisition_id);
+    }
+  });
+
+  addHistory(db, { module: 'purchases', requisition_id: null, purchase_order_id: po.id, old_status: oldStatus, new_status: 'Cancelada', changed_by_user_id: req.user.id, comment: `PO cancelada: ${reason}` });
+  write(db);
+  res.json({ ok: true, po });
+});
+
 module.exports = router;
