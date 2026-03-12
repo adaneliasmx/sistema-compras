@@ -1033,6 +1033,9 @@ async function trackingDetailView(id) {
 
 async function approvalsView() {
   const rows = await api('/api/approvals/pending');
+
+  const fmtMXN = v => Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+
   app.innerHTML = shell(`
     <div class="card section">
       <div class="module-title">
@@ -1045,24 +1048,46 @@ async function approvalsView() {
       </div>
       ${rows.length ? `
       <div class="table-wrap">
-        <table>
+        <table id="approveTable">
           <thead><tr>
             <th style="width:32px"><input type="checkbox" id="selectAllApprove" title="Seleccionar todos"/></th>
-            <th>Req.</th><th>Solicitante</th><th>Ítem</th><th>Proveedor</th><th style="text-align:right">Total req.</th><th>Regla</th><th>Acciones</th>
+            <th>Req.</th><th>Solicitante</th><th>Ítem</th><th>Proveedor</th><th>C. Costo</th>
+            <th style="text-align:right">Total req.</th><th>Regla</th><th>Acciones</th>
           </tr></thead>
-          <tbody>${rows.map(r => `<tr>
-            <td><input type="checkbox" class="approve-check" value="${r.id}"/></td>
-            <td style="font-size:12px"><b>${r.requisition_folio}</b></td>
-            <td style="font-size:12px">${escapeHtml(r.requester_name || '-')}</td>
-            <td><b>${escapeHtml(r.item_name)}</b></td>
-            <td style="font-size:12px">${escapeHtml(r.supplier_name)}</td>
-            <td style="font-size:12px;text-align:right">$${Number(r.requisition_total || 0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
-            <td style="font-size:12px">${r.approval_rule || '-'}</td>
-            <td style="white-space:nowrap">
-              <button class="btn-secondary approve-btn" data-id="${r.id}" style="font-size:12px;padding:3px 10px">✅ Autorizar</button>
-              <button class="btn-danger reject-btn" data-id="${r.id}" style="font-size:12px;padding:3px 10px">✖ Rechazar</button>
-            </td>
-          </tr>`).join('')}
+          <tbody>
+          ${rows.map(r => `
+            <tr data-rowid="${r.id}">
+              <td><input type="checkbox" class="approve-check" value="${r.id}"/></td>
+              <td style="font-size:12px"><b>${r.requisition_folio}</b></td>
+              <td style="font-size:12px">${escapeHtml(r.requester_name || '-')}</td>
+              <td>
+                <b>${escapeHtml(r.item_name)}</b>
+                ${r.quote_pdf ? `<br><a href="${r.quote_pdf}" target="_blank" style="font-size:11px;color:#2563eb">📄 Ver cotización PDF</a>` : ''}
+              </td>
+              <td style="font-size:12px">${escapeHtml(r.supplier_name)}</td>
+              <td style="font-size:11px;color:#6b7280">${escapeHtml(r.cost_center_name)}${r.sub_cost_center_name ? `<br>${escapeHtml(r.sub_cost_center_name)}` : ''}</td>
+              <td style="font-size:12px;text-align:right">$${fmtMXN(r.requisition_total)}</td>
+              <td style="font-size:12px">${r.approval_rule || '-'}</td>
+              <td style="white-space:nowrap;min-width:260px">
+                <button class="btn-secondary detail-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Ver historial y gastos">🔍 Detalles</button>
+                <button class="btn-primary approve-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px">✅</button>
+                <button class="btn-danger reject-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px">✖</button>
+                <button class="btn-secondary pause-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Pausar / programar">⏸</button>
+              </td>
+            </tr>
+            <tr class="detail-row" id="detail-row-${r.id}" style="display:none">
+              <td colspan="9" style="padding:0;background:#f8fafc;border-top:none">
+                <div id="detail-content-${r.id}" style="padding:16px">
+                  <div class="muted small">Cargando detalles...</div>
+                </div>
+              </td>
+            </tr>
+            <tr class="action-row" id="action-row-${r.id}" style="display:none">
+              <td colspan="9" style="padding:8px 16px;background:#fffbeb;border-top:1px solid #fde68a">
+                <div id="action-content-${r.id}"></div>
+              </td>
+            </tr>
+          `).join('')}
           </tbody>
         </table>
       </div>
@@ -1071,13 +1096,152 @@ async function approvalsView() {
     </div>
   `, 'autorizaciones');
 
-  const getSelectedIds = () => [...document.querySelectorAll('.approve-check:checked')].map(c => c.value);
   const approveMsg = document.getElementById('approveMsg');
+  const getSelectedIds = () => [...document.querySelectorAll('.approve-check:checked')].map(c => c.value);
 
-  document.getElementById('selectAllApprove')?.addEventListener('change', e => {
-    document.querySelectorAll('.approve-check').forEach(c => c.checked = e.target.checked);
+  // ── Utilidades de panel ───────────────────────────────────────────────────
+  const closeActionRow = (id) => {
+    const ar = document.getElementById(`action-row-${id}`);
+    if (ar) ar.style.display = 'none';
+  };
+
+  const showActionRow = (id, html) => {
+    const ar = document.getElementById(`action-row-${id}`);
+    const ac = document.getElementById(`action-content-${id}`);
+    if (ar && ac) { ac.innerHTML = html; ar.style.display = ''; }
+  };
+
+  const spendTable = (data, ccName, subName) => {
+    const hasSub = data.some(d => d.sub_cost_center !== null);
+    return `<table style="width:100%;font-size:12px;border-collapse:collapse">
+      <thead><tr style="background:#f1f5f9">
+        <th style="padding:4px 8px;text-align:left">Período</th>
+        <th style="padding:4px 8px;text-align:right">Total empresa</th>
+        <th style="padding:4px 8px;text-align:right">${escapeHtml(ccName || 'C. Costo')}</th>
+        ${hasSub ? `<th style="padding:4px 8px;text-align:right">${escapeHtml(subName || 'Sub CC')}</th>` : ''}
+      </tr></thead>
+      <tbody>${data.map((d, idx) => `
+        <tr style="background:${idx%2?'#f8fafc':'white'};border-bottom:1px solid #e5e7eb">
+          <td style="padding:3px 8px">${d.label}</td>
+          <td style="padding:3px 8px;text-align:right">$${fmtMXN(d.total)}</td>
+          <td style="padding:3px 8px;text-align:right">$${fmtMXN(d.cost_center)}</td>
+          ${hasSub ? `<td style="padding:3px 8px;text-align:right">${d.sub_cost_center !== null ? '$'+fmtMXN(d.sub_cost_center) : '-'}</td>` : ''}
+        </tr>`).join('')}
+      </tbody>
+    </table>`;
+  };
+
+  // ── Detalles (panel expandible) ───────────────────────────────────────────
+  document.querySelectorAll('.detail-btn').forEach(btn => btn.onclick = async () => {
+    const id = btn.dataset.id;
+    const detailRow = document.getElementById(`detail-row-${id}`);
+    const detailContent = document.getElementById(`detail-content-${id}`);
+    if (!detailRow) return;
+
+    if (detailRow.style.display !== 'none') {
+      detailRow.style.display = 'none';
+      btn.textContent = '🔍 Detalles';
+      return;
+    }
+
+    btn.textContent = '⏳';
+    detailRow.style.display = '';
+    detailContent.innerHTML = '<div class="muted small">Cargando...</div>';
+
+    try {
+      const ctx = await api(`/api/approvals/items/${id}/context`);
+      const cc = ctx.cost_center?.name || '-';
+      const sub = ctx.sub_cost_center?.name || null;
+      const cat = ctx.catalog_item;
+      const quote = ctx.winning_quote;
+
+      detailContent.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:12px">
+          <div>
+            <div class="small muted" style="font-weight:600;margin-bottom:6px">📦 Información del ítem</div>
+            <table style="font-size:12px;width:100%">
+              ${cat ? `<tr><td class="muted">Código catálogo</td><td><b>${cat.code}</b></td></tr>
+              <tr><td class="muted">Tipo</td><td>${cat.item_type || '-'}</td></tr>
+              <tr><td class="muted">Precio catálogo</td><td>$${fmtMXN(cat.unit_price)} ${cat.currency || 'MXN'}</td></tr>` : ''}
+              <tr><td class="muted">Cantidad solicitada</td><td><b>${ctx.item.quantity} ${ctx.item.unit || 'pza'}</b></td></tr>
+              <tr><td class="muted">Costo unitario</td><td><b>$${fmtMXN(ctx.item.unit_cost)} ${ctx.item.currency || 'MXN'}</b></td></tr>
+              <tr><td class="muted">Subtotal ítem</td><td><b>$${fmtMXN(Number(ctx.item.quantity||0)*Number(ctx.item.unit_cost||0))}</b></td></tr>
+              <tr><td class="muted">Proveedor</td><td>${ctx.supplier?.business_name || '-'}</td></tr>
+              <tr><td class="muted">C. Costo</td><td>${cc}${sub ? ` › ${sub}` : ''}</td></tr>
+              <tr><td class="muted">Solicitante</td><td>${ctx.requester?.full_name || '-'}</td></tr>
+              ${ctx.item.comments ? `<tr><td class="muted">Comentarios</td><td style="font-style:italic">${escapeHtml(ctx.item.comments)}</td></tr>` : ''}
+            </table>
+          </div>
+          <div>
+            <div class="small muted" style="font-weight:600;margin-bottom:6px">📄 Cotizaciones</div>
+            ${ctx.all_quotes.length ? ctx.all_quotes.map(q => `
+              <div style="padding:6px 10px;margin-bottom:4px;background:${q.is_winner?'#f0fff4':'white'};border:1px solid ${q.is_winner?'#86efac':'#e5e7eb'};border-radius:6px;font-size:12px">
+                ${q.is_winner ? '🏆 ' : ''}<b>${escapeHtml(q.supplier_name)}</b>
+                · $${fmtMXN(q.unit_cost)} ${q.currency||'MXN'}
+                · ${q.delivery_days || '?'} días
+                ${q.attachment_path ? `· <a href="${q.attachment_path}" target="_blank" style="color:#2563eb">📄 PDF</a>` : ''}
+                ${q.quote_number ? `<span class="muted"> · #${q.quote_number}</span>` : ''}
+              </div>`).join('') : '<div class="muted small">Sin cotizaciones registradas</div>'}
+          </div>
+        </div>
+
+        ${ctx.purchase_history.length ? `
+        <div style="margin-bottom:12px">
+          <div class="small muted" style="font-weight:600;margin-bottom:6px">🕓 Historial de compras del ítem (últimas ${ctx.purchase_history.length})</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="background:#f1f5f9">
+                <th style="padding:4px 8px;text-align:left">PO</th>
+                <th style="padding:4px 8px;text-align:left">Req.</th>
+                <th style="padding:4px 8px;text-align:left">Fecha</th>
+                <th style="padding:4px 8px;text-align:left">Proveedor</th>
+                <th style="padding:4px 8px;text-align:right">Cant.</th>
+                <th style="padding:4px 8px;text-align:right">P. Unit.</th>
+                <th style="padding:4px 8px;text-align:right">Subtotal</th>
+                <th style="padding:4px 8px">Estatus</th>
+              </tr></thead>
+              <tbody>${ctx.purchase_history.map((h, idx) => `
+                <tr style="background:${idx%2?'#f8fafc':'white'};border-bottom:1px solid #e5e7eb">
+                  <td style="padding:3px 8px"><b>${h.po_folio}</b></td>
+                  <td style="padding:3px 8px">${h.requisition_folio}</td>
+                  <td style="padding:3px 8px">${String(h.po_date||'').slice(0,10)}</td>
+                  <td style="padding:3px 8px">${escapeHtml(h.supplier_name)}</td>
+                  <td style="padding:3px 8px;text-align:right">${h.quantity} ${h.unit}</td>
+                  <td style="padding:3px 8px;text-align:right">$${fmtMXN(h.unit_cost)}</td>
+                  <td style="padding:3px 8px;text-align:right">$${fmtMXN(h.subtotal)}</td>
+                  <td style="padding:3px 8px">${h.status}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : `<div class="muted small" style="margin-bottom:12px">Sin historial de compras para este ítem.</div>`}
+
+        <div>
+          <div class="small muted" style="font-weight:600;margin-bottom:8px">📊 Gasto histórico (empresa / ${cc}${sub ? ' / '+sub : ''})</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Últimas 8 semanas</div>
+              ${spendTable(ctx.spending.weekly, cc, sub)}
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Últimos 12 meses</div>
+              ${spendTable(ctx.spending.monthly, cc, sub)}
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Por año</div>
+              ${spendTable(ctx.spending.annual, cc, sub)}
+            </div>
+          </div>
+        </div>
+      `;
+      btn.textContent = '🔍 Cerrar';
+    } catch(e) {
+      detailContent.innerHTML = `<div class="small" style="color:#dc2626">Error al cargar: ${e.message}</div>`;
+      btn.textContent = '🔍 Detalles';
+    }
   });
 
+  // ── Autorizar individual ──────────────────────────────────────────────────
   document.querySelectorAll('.approve-btn').forEach(btn => btn.onclick = async () => {
     try {
       btn.disabled = true;
@@ -1086,14 +1250,119 @@ async function approvalsView() {
     } catch(e) { alert(e.message); btn.disabled = false; }
   });
 
-  document.querySelectorAll('.reject-btn').forEach(btn => btn.onclick = async () => {
-    try {
-      btn.disabled = true;
-      await api(`/api/approvals/items/${btn.dataset.id}/reject`, { method: 'POST', body: JSON.stringify({ comment: 'Rechazado' }) });
-      render();
-    } catch(e) { alert(e.message); btn.disabled = false; }
+  // ── Rechazar individual con formulario de motivo ──────────────────────────
+  document.querySelectorAll('.reject-btn').forEach(btn => btn.onclick = () => {
+    const id = btn.dataset.id;
+    // Cerrar otros paneles de acción abiertos
+    document.querySelectorAll('.action-row').forEach(r => r.style.display = 'none');
+    showActionRow(id, `
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <label class="small muted">Motivo del rechazo *</label>
+          <select id="rejectReasonSel-${id}" style="width:100%;margin-bottom:6px;font-size:13px">
+            <option value="">Seleccionar motivo...</option>
+            <option>Presupuesto insuficiente este período</option>
+            <option>Precio fuera de rango aceptable</option>
+            <option>Cotización no válida o incompleta</option>
+            <option>Ítem no prioritario</option>
+            <option>Requiere mayor justificación</option>
+            <option>Proveedor no aprobado</option>
+            <option>Otro motivo</option>
+          </select>
+          <textarea id="rejectComment-${id}" placeholder="Comentario adicional (opcional)..." style="width:100%;height:56px;font-size:12px;resize:vertical"></textarea>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;padding-top:18px">
+          <button class="btn-danger confirm-reject-btn" data-id="${id}" style="font-size:12px;padding:5px 14px">✖ Confirmar rechazo</button>
+          <button class="btn-secondary" onclick="document.getElementById('action-row-${id}').style.display='none'" style="font-size:12px;padding:4px 10px">Cancelar</button>
+        </div>
+      </div>
+    `);
+
+    document.querySelector(`.confirm-reject-btn[data-id="${id}"]`).onclick = async (e) => {
+      const sel = document.getElementById(`rejectReasonSel-${id}`).value;
+      const comment = document.getElementById(`rejectComment-${id}`).value.trim();
+      const reason = [sel, comment].filter(Boolean).join(' — ');
+      if (!sel) { alert('Selecciona un motivo de rechazo.'); return; }
+      try {
+        e.target.disabled = true;
+        const out = await api(`/api/approvals/items/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) });
+        if (out.mailto) {
+          const link = document.createElement('a');
+          link.href = out.mailto; link.target = '_blank'; link.click();
+        }
+        render();
+      } catch(err) { alert(err.message); e.target.disabled = false; }
+    };
   });
 
+  // ── Pausar individual ─────────────────────────────────────────────────────
+  document.querySelectorAll('.pause-btn').forEach(btn => btn.onclick = () => {
+    const id = btn.dataset.id;
+    document.querySelectorAll('.action-row').forEach(r => r.style.display = 'none');
+    const nextMonth = new Date();
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+    nextMonth.setDate(1);
+    const nextMonthStr = nextMonth.toISOString().slice(0, 10);
+    showActionRow(id, `
+      <div style="display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap">
+        <div style="flex:1;min-width:220px">
+          <label class="small muted">Programar para</label>
+          <div style="display:flex;gap:8px;margin-bottom:6px;margin-top:2px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+              <input type="radio" name="pauseType-${id}" value="next_month" checked/> Siguiente mes (${nextMonthStr})
+            </label>
+            <label style="display:flex;align-items:center;gap:4px;font-size:13px">
+              <input type="radio" name="pauseType-${id}" value="custom"/> Fecha específica
+            </label>
+          </div>
+          <input type="date" id="pauseDate-${id}" style="display:none;margin-bottom:6px;font-size:13px" min="${new Date().toISOString().slice(0,10)}"/>
+          <textarea id="pauseReason-${id}" placeholder="Motivo de la pausa..." style="width:100%;height:48px;font-size:12px;resize:vertical">Pendiente de presupuesto para el siguiente mes</textarea>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px;padding-top:18px">
+          <button class="btn-secondary confirm-pause-btn" data-id="${id}" style="font-size:12px;padding:5px 14px">⏸ Pausar</button>
+          <button class="btn-secondary" onclick="document.getElementById('action-row-${id}').style.display='none'" style="font-size:12px;padding:4px 10px">Cancelar</button>
+        </div>
+      </div>
+    `);
+
+    document.querySelectorAll(`input[name="pauseType-${id}"]`).forEach(radio => {
+      radio.onchange = () => {
+        const d = document.getElementById(`pauseDate-${id}`);
+        d.style.display = radio.value === 'custom' ? '' : 'none';
+      };
+    });
+
+    document.querySelector(`.confirm-pause-btn[data-id="${id}"]`).onclick = async (e) => {
+      const type = document.querySelector(`input[name="pauseType-${id}"]:checked`).value;
+      const reason = document.getElementById(`pauseReason-${id}`).value.trim() || 'Pausado';
+      const payload = { reason };
+      if (type === 'custom') {
+        const d = document.getElementById(`pauseDate-${id}`).value;
+        if (!d) { alert('Selecciona una fecha.'); return; }
+        payload.paused_until = d;
+      }
+      try {
+        e.target.disabled = true;
+        const out = await api(`/api/approvals/items/${id}/pause`, { method: 'POST', body: JSON.stringify(payload) });
+        const row = document.querySelector(`tr[data-rowid="${id}"]`);
+        if (row) {
+          const td = row.querySelector('td:nth-child(4)');
+          if (td) td.innerHTML += `<br><small style="color:#f59e0b">⏸ Pausado hasta ${String(out.paused_until).slice(0,10)}</small>`;
+          row.style.opacity = '0.5';
+        }
+        closeActionRow(id);
+        approveMsg.textContent = `⏸ Ítem pausado hasta ${String(out.paused_until).slice(0,10)}`;
+        setTimeout(() => { approveMsg.textContent = ''; }, 4000);
+      } catch(err) { alert(err.message); e.target.disabled = false; }
+    };
+  });
+
+  // ── Seleccionar todos ─────────────────────────────────────────────────────
+  document.getElementById('selectAllApprove')?.addEventListener('change', e => {
+    document.querySelectorAll('.approve-check').forEach(c => c.checked = e.target.checked);
+  });
+
+  // ── Autorizar masivo ──────────────────────────────────────────────────────
   document.getElementById('approveAllBtn')?.addEventListener('click', async () => {
     const ids = getSelectedIds();
     if (!ids.length) { approveMsg.textContent = 'Selecciona al menos un ítem.'; return; }
@@ -1108,14 +1377,16 @@ async function approvalsView() {
     setTimeout(render, 900);
   });
 
+  // ── Rechazar masivo (pide motivo) ─────────────────────────────────────────
   document.getElementById('rejectAllBtn')?.addEventListener('click', async () => {
     const ids = getSelectedIds();
     if (!ids.length) { approveMsg.textContent = 'Selecciona al menos un ítem.'; return; }
-    if (!confirm(`¿Rechazar ${ids.length} ítem(s) seleccionado(s)?`)) return;
+    const reason = prompt(`Motivo de rechazo para ${ids.length} ítem(s):`);
+    if (reason === null) return;
     approveMsg.textContent = 'Rechazando...';
     let ok = 0, fail = 0;
     for (const id of ids) {
-      try { await api(`/api/approvals/items/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment: 'Rechazo masivo' }) }); ok++; }
+      try { await api(`/api/approvals/items/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason: reason || 'Rechazo masivo' }) }); ok++; }
       catch(_) { fail++; }
     }
     approveMsg.textContent = `✖ ${ok} rechazado(s)${fail ? `, ${fail} con error` : ''}`;
