@@ -1033,9 +1033,95 @@ async function trackingDetailView(id) {
 
 async function approvalsView() {
   const rows = await api('/api/approvals/pending');
-  app.innerHTML = shell(`<div class="card section"><div class="module-title"><h3>Autorizaciones pendientes</h3><button class="btn-secondary" id="expReqItemsBtn">Exportar items</button></div><div class="table-wrap"><table><thead><tr><th>Req</th><th>Solicitante</th><th>Ítem</th><th>Proveedor</th><th>Total req</th><th>Regla</th><th>Acciones</th></tr></thead><tbody>${rows.map(r => `<tr><td>${r.requisition_folio}</td><td>${r.requester_name || '-'}</td><td>${r.item_name}</td><td>${r.supplier_name}</td><td>${Number(r.requisition_total || 0).toFixed(2)}</td><td>${r.approval_rule || '-'}</td><td><button class="btn-secondary approve-btn" data-id="${r.id}">Autorizar</button> <button class="btn-danger reject-btn" data-id="${r.id}">Rechazar</button></td></tr>`).join('')}</tbody></table></div></div>`, 'autorizaciones');
-  document.querySelectorAll('.approve-btn').forEach(btn => btn.onclick = async () => { await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado desde módulo de autorizaciones' }) }); render(); });
-  document.querySelectorAll('.reject-btn').forEach(btn => btn.onclick = async () => { await api(`/api/approvals/items/${btn.dataset.id}/reject`, { method: 'POST', body: JSON.stringify({ comment: 'Rechazado desde módulo de autorizaciones' }) }); render(); });
+  app.innerHTML = shell(`
+    <div class="card section">
+      <div class="module-title">
+        <h3>Autorizaciones pendientes <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${rows.length}</span></h3>
+        <div style="display:flex;gap:8px">
+          <button class="btn-primary" id="approveAllBtn" style="font-size:12px;padding:5px 12px" ${!rows.length?'disabled':''}>✅ Autorizar seleccionados</button>
+          <button class="btn-danger" id="rejectAllBtn" style="font-size:12px;padding:5px 12px" ${!rows.length?'disabled':''}>✖ Rechazar seleccionados</button>
+          <button class="btn-secondary" id="expReqItemsBtn">Exportar</button>
+        </div>
+      </div>
+      ${rows.length ? `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+            <th style="width:32px"><input type="checkbox" id="selectAllApprove" title="Seleccionar todos"/></th>
+            <th>Req.</th><th>Solicitante</th><th>Ítem</th><th>Proveedor</th><th style="text-align:right">Total req.</th><th>Regla</th><th>Acciones</th>
+          </tr></thead>
+          <tbody>${rows.map(r => `<tr>
+            <td><input type="checkbox" class="approve-check" value="${r.id}"/></td>
+            <td style="font-size:12px"><b>${r.requisition_folio}</b></td>
+            <td style="font-size:12px">${escapeHtml(r.requester_name || '-')}</td>
+            <td><b>${escapeHtml(r.item_name)}</b></td>
+            <td style="font-size:12px">${escapeHtml(r.supplier_name)}</td>
+            <td style="font-size:12px;text-align:right">$${Number(r.requisition_total || 0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+            <td style="font-size:12px">${r.approval_rule || '-'}</td>
+            <td style="white-space:nowrap">
+              <button class="btn-secondary approve-btn" data-id="${r.id}" style="font-size:12px;padding:3px 10px">✅ Autorizar</button>
+              <button class="btn-danger reject-btn" data-id="${r.id}" style="font-size:12px;padding:3px 10px">✖ Rechazar</button>
+            </td>
+          </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div id="approveMsg" class="small muted" style="margin-top:6px"></div>` :
+      '<div class="muted small" style="padding:24px;text-align:center">Sin ítems pendientes de autorización ✅</div>'}
+    </div>
+  `, 'autorizaciones');
+
+  const getSelectedIds = () => [...document.querySelectorAll('.approve-check:checked')].map(c => c.value);
+  const approveMsg = document.getElementById('approveMsg');
+
+  document.getElementById('selectAllApprove')?.addEventListener('change', e => {
+    document.querySelectorAll('.approve-check').forEach(c => c.checked = e.target.checked);
+  });
+
+  document.querySelectorAll('.approve-btn').forEach(btn => btn.onclick = async () => {
+    try {
+      btn.disabled = true;
+      await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado' }) });
+      render();
+    } catch(e) { alert(e.message); btn.disabled = false; }
+  });
+
+  document.querySelectorAll('.reject-btn').forEach(btn => btn.onclick = async () => {
+    try {
+      btn.disabled = true;
+      await api(`/api/approvals/items/${btn.dataset.id}/reject`, { method: 'POST', body: JSON.stringify({ comment: 'Rechazado' }) });
+      render();
+    } catch(e) { alert(e.message); btn.disabled = false; }
+  });
+
+  document.getElementById('approveAllBtn')?.addEventListener('click', async () => {
+    const ids = getSelectedIds();
+    if (!ids.length) { approveMsg.textContent = 'Selecciona al menos un ítem.'; return; }
+    if (!confirm(`¿Autorizar ${ids.length} ítem(s) seleccionado(s)?`)) return;
+    approveMsg.textContent = 'Autorizando...';
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try { await api(`/api/approvals/items/${id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorización masiva' }) }); ok++; }
+      catch(_) { fail++; }
+    }
+    approveMsg.textContent = `✅ ${ok} autorizado(s)${fail ? `, ${fail} con error` : ''}`;
+    setTimeout(render, 900);
+  });
+
+  document.getElementById('rejectAllBtn')?.addEventListener('click', async () => {
+    const ids = getSelectedIds();
+    if (!ids.length) { approveMsg.textContent = 'Selecciona al menos un ítem.'; return; }
+    if (!confirm(`¿Rechazar ${ids.length} ítem(s) seleccionado(s)?`)) return;
+    approveMsg.textContent = 'Rechazando...';
+    let ok = 0, fail = 0;
+    for (const id of ids) {
+      try { await api(`/api/approvals/items/${id}/reject`, { method: 'POST', body: JSON.stringify({ comment: 'Rechazo masivo' }) }); ok++; }
+      catch(_) { fail++; }
+    }
+    approveMsg.textContent = `✖ ${ok} rechazado(s)${fail ? `, ${fail} con error` : ''}`;
+    setTimeout(render, 900);
+  });
+
   expReqItemsBtn.onclick = () => downloadCsv('requisition_items', 'items_autorizacion.csv');
   bindCommon();
 }
@@ -1066,7 +1152,7 @@ async function purchasesView() {
   const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización' && x.item_name && x.item_name.trim() && !x.purchase_order_id);
   const itemsSolicitados = allItems.filter(x => showCancelled ? true : !['Cancelado','Rechazado','Cerrado'].includes(x.status));
 
-  let activeTab = 'pendientes';
+  let activeTab = sessionStorage.getItem('compras_active_tab') || 'pendientes';
 
   app.innerHTML = shell(`
     <div class="card section">
@@ -1241,7 +1327,7 @@ async function purchasesView() {
     return `<tr style="${rowBg}" data-id="${i.id}">
       <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
-      <td><b>${i.item_name}</b>${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}</small>` : ''}</td>
+      <td><b>${i.item_name}</b>${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}${i.cancelled_by_name ? ` · por ${i.cancelled_by_name}` : ''}</small>` : ''}</td>
       <td>
         <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}>
           <option value="">Sin proveedor</option>
@@ -1261,6 +1347,7 @@ async function purchasesView() {
         ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
         ${i.status === 'Autorizado' && i.supplier_id && i.unit_cost && !i.purchase_order_id ? `<button class="btn-primary single-po" data-id="${i.id}" style="padding:2px 7px;font-size:11px">PO</button>` : ''}
         ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">✖</button>` : ''}
+        ${i.status === 'Cancelado' ? `<button class="btn-secondary restore-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px;color:#2563eb" title="Restaurar ítem cancelado">↩</button>` : ''}
       </td>
     </tr>`;
   };
@@ -1298,6 +1385,13 @@ async function purchasesView() {
       const row = sourceList.find(x => Number(x.id) === Number(btn.dataset.id));
       openCancelItem(row);
     });
+    tableEl.querySelectorAll('.restore-item').forEach(btn => btn.onclick = async () => {
+      if (!confirm('¿Restaurar este ítem cancelado? Regresará al flujo según sus datos actuales.')) return;
+      try {
+        await api(`/api/purchases/items/${btn.dataset.id}/restore`, { method: 'POST' });
+        btn.textContent = '✅'; setTimeout(render, 800);
+      } catch(e) { alert(e.message); }
+    });
     // Select all
     const selAll = tableEl.querySelector('#selectAllCheck');
     if (selAll) selAll.onchange = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = selAll.checked);
@@ -1314,6 +1408,7 @@ async function purchasesView() {
 
   const renderTab = async (tab) => {
     activeTab = tab;
+    sessionStorage.setItem('compras_active_tab', tab);
     // Update tab styles
     document.querySelectorAll('.tab-btn').forEach(b => {
       const isActive = b.dataset.tab === tab;

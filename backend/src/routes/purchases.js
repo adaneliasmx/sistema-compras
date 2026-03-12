@@ -65,7 +65,8 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       requisition_folio: (db.requisitions.find(r => r.id === i.requisition_id) || {}).folio,
       supplier_name: (db.suppliers.find(s => s.id === i.supplier_id) || {}).business_name || '-',
       item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '',
-      po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : ''
+      po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
+      cancelled_by_name: i.cancelled_by ? (db.users.find(u => u.id === i.cancelled_by) || {}).full_name || '' : ''
     }));
   res.json(rows);
 });
@@ -317,6 +318,33 @@ router.post('/items/:id/cancel', allowRoles('comprador', 'admin'), (req, res) =>
   line.cancelled_by = req.user.id;
   line.updated_at = new Date().toISOString();
   addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Cancelado', changed_by_user_id: req.user.id, comment: `Cancelado: ${reason}` });
+  recalcRequisition(db, line.requisition_id);
+  write(db);
+  res.json({ ok: true, item: line });
+});
+
+// Restaurar ítem cancelado (por error) → regresa al estado correcto según reglas
+router.post('/items/:id/restore', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const line = db.requisition_items.find(i => i.id === Number(req.params.id));
+  if (!line) return res.status(404).json({ error: 'Ítem no encontrado' });
+  if (line.status !== 'Cancelado') return res.status(400).json({ error: 'Solo se pueden restaurar ítems cancelados' });
+  if (line.purchase_order_id) {
+    const po = db.purchase_orders.find(p => p.id === line.purchase_order_id);
+    if (po && !['Cancelada', 'Rechazada por proveedor'].includes(po.status)) {
+      return res.status(400).json({ error: `El ítem sigue asignado a la PO ${po.folio} que no está cancelada` });
+    }
+    line.purchase_order_id = null;
+  }
+  const oldStatus = line.status;
+  line.cancel_reason = null;
+  line.cancelled_at = null;
+  line.cancelled_by = null;
+  const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
+  recalcRequisition(db, line.requisition_id);
+  line.status = deriveItemStatus(db, Number(reqRow?.total_amount || 0), line);
+  line.updated_at = new Date().toISOString();
+  addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: line.status, changed_by_user_id: req.user.id, comment: 'Ítem restaurado manualmente' });
   recalcRequisition(db, line.requisition_id);
   write(db);
   res.json({ ok: true, item: line });

@@ -163,9 +163,31 @@ router.delete('/:id', (req, res) => {
   const reqRow = db.requisitions.find(r => r.id === Number(req.params.id));
   if (!reqRow) return res.status(404).json({ error: 'No encontrada' });
   if (!canEditReq(req.user, reqRow, db)) return res.status(403).json({ error: 'No se puede eliminar esta requisición' });
-  db.requisitions = db.requisitions.filter(r => r.id !== reqRow.id);
+
+  // IDs de ítems de esta requisición
+  const itemIds = new Set(db.requisition_items.filter(i => i.requisition_id === reqRow.id).map(i => i.id));
+
+  // Cascade: limpiar cotizaciones y solicitudes de cotización vinculadas
+  const quotationIds = new Set(db.quotations.filter(q => itemIds.has(q.requisition_item_id)).map(q => q.id));
+  db.quotations = db.quotations.filter(q => !quotationIds.has(q.id));
+  db.quotation_requests = (db.quotation_requests || []).filter(r => !itemIds.has(r.requisition_item_id));
+
+  // Cascade: limpiar POs que solo tengan ítems de esta requisición
+  const poIds = new Set(db.purchase_order_items.filter(poi => itemIds.has(poi.requisition_item_id)).map(poi => poi.purchase_order_id));
+  db.purchase_order_items = db.purchase_order_items.filter(poi => !itemIds.has(poi.requisition_item_id));
+  // Eliminar POs que ya no tienen ítems
+  poIds.forEach(poId => {
+    const remaining = db.purchase_order_items.filter(poi => poi.purchase_order_id === poId);
+    if (!remaining.length) {
+      db.purchase_orders = db.purchase_orders.filter(po => po.id !== poId);
+    }
+  });
+
+  // Cascade: ítems, historial y requisición
   db.requisition_items = db.requisition_items.filter(i => i.requisition_id !== reqRow.id);
   db.status_history = db.status_history.filter(h => h.requisition_id !== reqRow.id);
+  db.requisitions = db.requisitions.filter(r => r.id !== reqRow.id);
+
   write(db);
   res.json({ ok: true });
 });
