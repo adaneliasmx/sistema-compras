@@ -72,7 +72,12 @@ async function api(path, options = {}) {
     logout();
     return;
   }
-  if (!res.ok) throw new Error(data.error || data || 'Error');
+  if (!res.ok) {
+    const err = new Error(data?.error || data || 'Error');
+    err.responseData = data;
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -154,7 +159,7 @@ function defaultCostCenterForUser(cc, scc) {
 }
 
 async function loginView() {
-  app.innerHTML = `<div class="login-wrap"><div class="card login-card"><h1>Entrar</h1><p>Usuarios demo:<br><b>cliente@demo.com</b><br><b>comprador@demo.com</b><br><b>admin@demo.com</b><br><b>pagos@demo.com</b><br><b>autorizador@demo.com</b><br><b>proveedor@demo.com</b><br>Contraseña: <b>Demo123*</b></p><label>Correo</label><input id="email" value="cliente@demo.com" /><label>Contraseña</label><input id="password" type="password" value="Demo123*" /><button class="btn-primary" id="loginBtn" style="margin-top:16px;width:100%">Iniciar sesión</button><div id="err" class="error"></div></div></div>`;
+  app.innerHTML = `<div class="login-wrap"><div class="card login-card"><h1>Entrar</h1><p>Usuarios demo:<br><b>cliente@demo.com</b><br><b>comprador@demo.com</b><br><b>admin@demo.com</b><br><b>pagos@demo.com</b><br><b>autorizador@demo.com</b><br><b>proveedor@demo.com</b><br>Contraseña: <b>Demo123*</b></p><label>Correo</label><input id="email" value="cliente@demo.com" /><label>Contraseña</label><input id="password" type="password" value="Demo123*" /><button class="btn-primary" id="loginBtn" style="margin-top:16px;width:100%">Iniciar sesión</button><div id="err" class="error"></div><div style="text-align:center;margin-top:12px"><button type="button" id="forgotPwBtn" class="btn-secondary" style="font-size:12px;padding:4px 12px;background:none;border:none;color:#3b82f6;cursor:pointer;text-decoration:underline">¿Olvidé mi contraseña?</button></div><div id="forgotPanel" style="display:none;margin-top:12px;padding:12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px"><p class="small muted" style="margin:0 0 8px">Escribe tu correo y se enviará una notificación al administrador para autorizar el cambio.</p><input id="resetEmail" placeholder="tu@correo.com" style="width:100%;margin-bottom:8px"/><button class="btn-primary" id="sendResetBtn" style="width:100%">Enviar solicitud</button><div id="resetMsg" class="small muted" style="margin-top:6px"></div></div></div></div>`;
   loginBtn.onclick = async () => {
     try {
       const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: email.value, password: password.value }) });
@@ -163,6 +168,43 @@ async function loginView() {
       location.hash = `#/${getDefaultRouteByRole()}`;
       render();
     } catch (e) { err.textContent = e.message; }
+  };
+  document.getElementById('forgotPwBtn').onclick = () => {
+    const p = document.getElementById('forgotPanel');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  };
+  document.getElementById('sendResetBtn').onclick = async () => {
+    const msgEl = document.getElementById('resetMsg');
+    const emailVal = document.getElementById('resetEmail').value.trim();
+    if (!emailVal) { msgEl.textContent = 'Escribe tu correo.'; msgEl.style.color = '#dc2626'; return; }
+    try {
+      msgEl.textContent = 'Enviando...';
+      msgEl.style.color = '#6b7280';
+      const out = await api('/api/auth/request-reset', { method: 'POST', body: JSON.stringify({ email: emailVal }) });
+      if (out.mailto) window.open(out.mailto, '_blank');
+      msgEl.textContent = '✅ Solicitud enviada. El administrador recibirá una notificación y te enviará un enlace de recuperación.';
+      msgEl.style.color = '#16a34a';
+      document.getElementById('resetEmail').value = '';
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+  };
+}
+
+async function resetPasswordView(token) {
+  app.innerHTML = `<div class="login-wrap"><div class="card login-card"><h1>Nueva contraseña</h1><p class="small muted">Crea tu nueva contraseña de acceso al sistema.</p><label>Nueva contraseña</label><input id="newPw" type="password" placeholder="Mínimo 6 caracteres"/><label style="margin-top:8px">Confirmar contraseña</label><input id="newPw2" type="password" placeholder="Repite la contraseña"/><button class="btn-primary" id="savePwBtn" style="margin-top:16px;width:100%">Guardar nueva contraseña</button><div id="pwMsg" class="small muted" style="margin-top:8px"></div></div></div>`;
+  document.getElementById('savePwBtn').onclick = async () => {
+    const pw = document.getElementById('newPw').value;
+    const pw2 = document.getElementById('newPw2').value;
+    const msgEl = document.getElementById('pwMsg');
+    if (!pw || pw.length < 6) { msgEl.textContent = 'La contraseña debe tener al menos 6 caracteres.'; msgEl.style.color = '#dc2626'; return; }
+    if (pw !== pw2) { msgEl.textContent = 'Las contraseñas no coinciden.'; msgEl.style.color = '#dc2626'; return; }
+    try {
+      msgEl.textContent = 'Guardando...';
+      msgEl.style.color = '#6b7280';
+      const out = await api('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password: pw }) });
+      msgEl.textContent = `✅ ${out.message}`;
+      msgEl.style.color = '#16a34a';
+      setTimeout(() => { location.hash = '#/login'; render(); }, 2000);
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
   };
 }
 
@@ -1527,10 +1569,80 @@ async function purchasesView() {
   };
   const closeActionCard = () => { purchaseActionCard.hidden = true; purchaseActionBody.innerHTML = ''; };
 
-  const doGeneratePO = async (itemIds) => {
+  const doGeneratePO = async (itemIds, forceStale = false) => {
     const ids = itemIds.map(Number).filter(Boolean);
     if (!ids.length) throw new Error('Selecciona al menos un ítem');
-    return await api('/api/purchases/generate-po', { method: 'POST', body: JSON.stringify({ item_ids: ids, currency: poCurrency.value }) });
+    return await api('/api/purchases/generate-po', { method: 'POST', body: JSON.stringify({ item_ids: ids, currency: poCurrency.value, force_stale_confirm: forceStale || undefined }) });
+  };
+
+  const showStaleDialog = (staleItems, itemIds) => {
+    openActionCard('⚠ Precios desactualizados — Confirmación requerida', `
+      <p class="small muted">Los siguientes ítems no han sido pedidos en más de 30 días. Confirma o actualiza el precio antes de generar la PO.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ítem</th><th>Último pedido</th><th>Precio actual</th><th>Actualizar precio</th></tr></thead>
+        <tbody>${staleItems.map(s => `<tr>
+          <td style="font-size:12px"><b>${escapeHtml(s.name)}</b><br><span class="muted">${s.reason||''}</span></td>
+          <td style="font-size:12px">${s.last_ordered ? String(s.last_ordered).slice(0,10) : '—'}</td>
+          <td style="font-size:12px;font-weight:600">$${Number(s.unit_cost||0).toFixed(2)}</td>
+          <td><div style="display:flex;gap:4px"><input class="stale-cost-input" data-id="${s.id}" type="number" value="${Number(s.unit_cost||0)}" min="0" style="width:90px;font-size:12px"/><button class="btn-secondary stale-update-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">Guardar</button><span class="stale-saved-msg" data-id="${s.id}" style="font-size:11px;color:#16a34a"></span></div></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn-primary" id="confirmStaleBtn">✅ Confirmar precios actuales y generar PO</button>
+        <button class="btn-secondary" id="cancelStaleBtn">Cancelar</button>
+        <span id="stalePoMsg" class="small muted" style="margin-left:8px"></span>
+      </div>
+    `);
+    document.querySelectorAll('.stale-update-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const newCost = Number(document.querySelector(`.stale-cost-input[data-id="${btn.dataset.id}"]`)?.value || 0);
+        const savedMsg = document.querySelector(`.stale-saved-msg[data-id="${btn.dataset.id}"]`);
+        try {
+          await api(`/api/purchases/items/${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ unit_cost: newCost }) });
+          if (savedMsg) { savedMsg.textContent = '✅ Guardado'; }
+          btn.disabled = true;
+        } catch(e) { alert(e.message); }
+      };
+    });
+    document.getElementById('cancelStaleBtn').onclick = closeActionCard;
+    document.getElementById('confirmStaleBtn').onclick = async () => {
+      const msgEl = document.getElementById('stalePoMsg');
+      try {
+        msgEl.textContent = 'Generando PO...';
+        const out = await doGeneratePO(itemIds, true);
+        msgEl.textContent = out.message;
+        setTimeout(() => { closeActionCard(); render(); }, 1800);
+      } catch(e) { msgEl.textContent = e.message; }
+    };
+  };
+
+  const showZeroCostError = (zeroCostItems) => {
+    openActionCard('❌ Ítems sin precio', `
+      <p class="small muted">Los siguientes ítems tienen precio $0 y no pueden incluirse en una PO. Cotiza o actualiza el costo primero.</p>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Ítem</th><th>Acción</th></tr></thead>
+        <tbody>${zeroCostItems.map(i => `<tr>
+          <td style="font-size:12px"><b>${escapeHtml(i.name)}</b></td>
+          <td><div style="display:flex;gap:4px"><input class="zero-cost-input" data-id="${i.id}" type="number" value="0" min="0.01" step="0.01" style="width:100px;font-size:12px"/><button class="btn-secondary zero-update-btn" data-id="${i.id}" style="padding:2px 8px;font-size:11px">Actualizar</button><span class="zero-saved-msg" data-id="${i.id}" style="font-size:11px;color:#16a34a"></span></div></td>
+        </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="actions"><button class="btn-secondary" id="closeZeroBtn">Cerrar</button></div>
+    `);
+    document.getElementById('closeZeroBtn').onclick = closeActionCard;
+    document.querySelectorAll('.zero-update-btn').forEach(btn => {
+      btn.onclick = async () => {
+        const newCost = Number(document.querySelector(`.zero-cost-input[data-id="${btn.dataset.id}"]`)?.value || 0);
+        const savedMsg = document.querySelector(`.zero-saved-msg[data-id="${btn.dataset.id}"]`);
+        if (newCost <= 0) { alert('El precio debe ser mayor a $0'); return; }
+        try {
+          await api(`/api/purchases/items/${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ unit_cost: newCost }) });
+          if (savedMsg) savedMsg.textContent = '✅ Guardado';
+          btn.disabled = true;
+        } catch(e) { alert(e.message); }
+      };
+    });
   };
 
   const openCancelItem = (row) => {
@@ -2418,7 +2530,12 @@ async function purchasesView() {
       const out = await doGeneratePO(lastPreviewIds);
       poConfirmMsg.textContent = out.message;
       setTimeout(render, 1800);
-    } catch (e) { poConfirmMsg.textContent = e.message; }
+    } catch (e) {
+      poConfirmMsg.textContent = '';
+      if (e.responseData?.error === 'stale_prices') { poPreviewSection.style.display = 'none'; showStaleDialog(e.responseData.stale_items, lastPreviewIds); }
+      else if (e.responseData?.error === 'zero_cost') { poPreviewSection.style.display = 'none'; showZeroCostError(e.responseData.zero_cost_items); }
+      else { poConfirmMsg.textContent = e.message; }
+    }
   };
 
   genPoBtn.onclick = async () => {
@@ -2429,7 +2546,12 @@ async function purchasesView() {
       const out = await doGeneratePO(ids);
       poMsg.textContent = out.message;
       setTimeout(render, 1800);
-    } catch (e) { poMsg.textContent = e.message; }
+    } catch (e) {
+      poMsg.textContent = '';
+      if (e.responseData?.error === 'stale_prices') { showStaleDialog(e.responseData.stale_items, ids); }
+      else if (e.responseData?.error === 'zero_cost') { showZeroCostError(e.responseData.zero_cost_items); }
+      else { poMsg.textContent = e.message; }
+    }
   };
 
   expPoBtn.onclick = () => downloadCsv('compras_db', 'compras_db.csv', {});
@@ -3709,7 +3831,7 @@ async function adminView() {
       ${rules.map(r => `<div class="list-line">${r.name}: $${r.min_amount} – $${r.max_amount} · ${r.auto_approve ? '✅ Auto' : '👤 '+r.approver_role}</div>`).join('') || '<div class="muted small">Sin reglas configuradas</div>'}
     </div>
     <div class="card section" style="margin-top:16px">
-      <h3>Proveedores registrados</h3>
+      <div class="module-title"><h3>Proveedores registrados</h3><div style="display:flex;gap:8px"><button class="btn-secondary" id="expSuppliersBtn" style="font-size:12px">⬇ Exportar CSV</button><label class="btn-secondary" style="font-size:12px;cursor:pointer;padding:6px 12px">⬆ Importar CSV<input type="file" id="impSuppliersFile" accept=".csv,.txt" style="display:none"/></label><span id="impSuppliersMsg" class="small muted"></span></div></div>
       <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuario asignado</th><th>Acción</th></tr></thead>
       <tbody>${suppliers.map(s => {
         const supUser = users.find(u => u.supplier_id === s.id && u.role_code === 'proveedor');
@@ -3740,6 +3862,11 @@ async function adminView() {
         </div>
         <div id="supMsg" class="small muted"></div>
       </div>
+    </div>
+    <!-- 🔑 Solicitudes de cambio de contraseña -->
+    <div class="card section" style="margin-top:16px">
+      <h3>🔑 Solicitudes de cambio de contraseña</h3>
+      <div id="pwRequestsWrap"><div class="small muted">Cargando...</div></div>
     </div>
     <!-- 📦 Exportar / Importar base de datos -->
     <div class="card section" style="margin-top:16px;border:2px solid #bfdbfe;background:#eff6ff">
@@ -3895,6 +4022,77 @@ async function adminView() {
     };
   });
 
+  // ── Cargar solicitudes de contraseña ────────────────────────────────────────
+  (async () => {
+    const wrap = document.getElementById('pwRequestsWrap');
+    try {
+      const reqs = await api('/api/admin/password-requests');
+      if (!reqs.length) { wrap.innerHTML = '<div class="small muted">Sin solicitudes pendientes ✅</div>'; return; }
+      wrap.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Usuario</th><th>Correo</th><th>Solicitado</th><th>Acciones</th></tr></thead><tbody>
+        ${reqs.map(r => `<tr>
+          <td><b>${escapeHtml(r.user_name)}</b></td>
+          <td style="font-size:12px">${escapeHtml(r.user_email)}</td>
+          <td style="font-size:12px">${String(r.requested_at||'').slice(0,16).replace('T',' ')}</td>
+          <td><button class="btn-primary approve-pw-req" data-id="${r.id}" style="padding:3px 10px;font-size:12px">✅ Aprobar y enviar enlace</button> <button class="btn-danger reject-pw-req" data-id="${r.id}" style="padding:3px 10px;font-size:12px">✖ Rechazar</button></td>
+        </tr>`).join('')}
+      </tbody></table></div>`;
+      wrap.querySelectorAll('.approve-pw-req').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            btn.disabled = true; btn.textContent = '...';
+            const out = await api(`/api/admin/password-requests/${btn.dataset.id}/approve`, { method: 'POST' });
+            if (out.mailto) window.open(out.mailto, '_blank');
+            btn.closest('tr').innerHTML = `<td colspan="4" style="color:#16a34a;font-size:12px">✅ Enlace enviado a ${escapeHtml(out.message||'')}</td>`;
+          } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = '✅ Aprobar y enviar enlace'; }
+        };
+      });
+      wrap.querySelectorAll('.reject-pw-req').forEach(btn => {
+        btn.onclick = async () => {
+          if (!confirm('¿Rechazar esta solicitud?')) return;
+          try {
+            await api(`/api/admin/password-requests/${btn.dataset.id}`, { method: 'DELETE' });
+            btn.closest('tr').remove();
+            if (!wrap.querySelectorAll('tbody tr').length) wrap.innerHTML = '<div class="small muted">Sin solicitudes pendientes ✅</div>';
+          } catch(e) { alert(e.message); }
+        };
+      });
+    } catch(e) { wrap.innerHTML = `<div class="small muted">${e.message}</div>`; }
+  })();
+
+  // ── Exportar proveedores CSV ─────────────────────────────────────────────────
+  document.getElementById('expSuppliersBtn')?.addEventListener('click', async () => {
+    try {
+      const resp = await fetch('/api/catalogs/suppliers/export-csv', {
+        headers: { 'Authorization': `Bearer ${state.token}` }
+      });
+      if (!resp.ok) throw new Error('Error al exportar');
+      const blob = await resp.blob();
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `proveedores-${new Date().toISOString().slice(0,10)}.csv`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch(e) { alert(e.message); }
+  });
+
+  // ── Importar proveedores CSV ─────────────────────────────────────────────────
+  document.getElementById('impSuppliersFile')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const msgEl = document.getElementById('impSuppliersMsg');
+    if (!confirm(`¿Importar proveedores desde "${file.name}"? Los proveedores nuevos se agregarán (no reemplaza existentes).`)) { e.target.value = ''; return; }
+    try {
+      msgEl.textContent = 'Importando...';
+      const csv = await file.text();
+      const out = await api('/api/catalogs/suppliers/import', { method: 'POST', body: JSON.stringify({ csv }) });
+      msgEl.textContent = `✅ ${out.inserted} proveedor(es) importado(s)`;
+      msgEl.style.color = '#16a34a';
+      e.target.value = '';
+      setTimeout(render, 1200);
+    } catch(err) { msgEl.textContent = err.message; msgEl.style.color = '#dc2626'; e.target.value = ''; }
+  });
+
   document.getElementById('resetDbBtn')?.addEventListener('click', async () => {
     const confirmMsg = '¿Estás seguro? Esto borrará TODAS las requisiciones, POs, cotizaciones, facturas y pagos.\n\nEscribe CONFIRMAR para continuar:';
     const input = prompt(confirmMsg);
@@ -3958,6 +4156,12 @@ async function adminView() {
 async function render() {
   const route = (location.hash || '').replace('#/', '');
   const requestedModule = route.split('/')[0];
+  // Ruta pública: recuperación de contraseña (no requiere sesión)
+  if (route.startsWith('reset-password')) {
+    const params = new URLSearchParams(route.replace('reset-password', '').replace('?', ''));
+    const token = params.get('token');
+    if (token) return resetPasswordView(token);
+  }
   if (!state.token || !state.user) return loginView();
   const defaultRoute = getDefaultRouteByRole();
   if (!route || route === 'login') { location.hash = `#/${defaultRoute}`; return; }

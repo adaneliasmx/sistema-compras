@@ -41,6 +41,7 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
       if (!l.unit_cost) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin costo`);
       if (!l.supplier_id) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin proveedor`);
       if (l.sub_cost_center_proposed && !l.sub_cost_center_id) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" tiene subcentro propuesto ("${l.sub_cost_center_proposed}") pendiente de asignación por Compras`);
+      if (!l.unit_cost) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" tiene precio $0. Debe cotizarse o actualizarse antes de generar la PO.`);
     });
     const currencies = [...new Set(groupLines.map(l => l.currency || 'MXN'))];
     if (currencies.length > 1) warnings.push(`Ítems con monedas mixtas (${currencies.join(', ')}). Se usará MXN como moneda de la PO.`);
@@ -346,6 +347,17 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   // Excluir ítems ya cancelados o ya con PO
   const disponibles = lines.filter(x => !['Cancelado', 'Rechazado', 'Cerrado'].includes(x.status) && !x.purchase_order_id);
 
+  // Detectar ítems con costo = 0 (bloqueante — deben cotizarse o actualizarse)
+  const zeroCost = disponibles.filter(x => x.status === 'Autorizado' && x.supplier_id && !x.unit_cost);
+  if (zeroCost.length) {
+    const names = zeroCost.map(x => (db.catalog_items.find(c=>c.id===x.catalog_item_id)||{}).name||x.manual_item_name||'ítem');
+    return res.status(400).json({
+      error: 'zero_cost',
+      message: `No se puede generar la PO: los siguientes ítems tienen precio $0. Cotíza o actualiza el costo antes de generar la PO.`,
+      zero_cost_items: zeroCost.map((x, i) => ({ id: x.id, name: names[i] }))
+    });
+  }
+
   // Solo ítems Autorizados con proveedor y costo pueden generar PO
   const aptos = disponibles.filter(x => x.status === 'Autorizado' && x.supplier_id && x.unit_cost);
 
@@ -366,6 +378,38 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
       return res.status(400).json({ error: 'Hay ítems Autorizados sin proveedor o costo asignado.', items: sinDatos.map(x => x.id) });
     }
     return res.status(400).json({ error: 'No hay ítems listos para PO.' });
+  }
+
+  // Verificar precios desactualizados (sin pedirse en 30+ días)
+  if (!req.body.force_stale_confirm) {
+    const STALE_DAYS = 30;
+    const now = Date.now();
+    const staleItems = [];
+    aptos.forEach(line => {
+      if (!line.catalog_item_id) return; // ítems manuales no aplica
+      const itemName = (db.catalog_items.find(c=>c.id===line.catalog_item_id)||{}).name || line.manual_item_name || 'ítem';
+      // Buscar la última PO que incluyó este ítem de catálogo
+      const lastPo = db.purchase_order_items
+        .filter(poi => poi.catalog_item_id === line.catalog_item_id)
+        .map(poi => db.purchase_orders.find(po => po.id === poi.purchase_order_id))
+        .filter(Boolean)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+      if (!lastPo) {
+        staleItems.push({ id: line.id, name: itemName, unit_cost: line.unit_cost, last_ordered: null, days_since: null, reason: 'Nunca pedido antes' });
+      } else {
+        const daysSince = Math.floor((now - new Date(lastPo.created_at).getTime()) / 86400000);
+        if (daysSince >= STALE_DAYS) {
+          staleItems.push({ id: line.id, name: itemName, unit_cost: line.unit_cost, last_ordered: lastPo.created_at, days_since: daysSince, reason: `Último pedido hace ${daysSince} días` });
+        }
+      }
+    });
+    if (staleItems.length) {
+      return res.status(409).json({
+        error: 'stale_prices',
+        message: 'Algunos ítems no se han pedido en más de 30 días. Confirma o actualiza los precios antes de generar la PO.',
+        stale_items: staleItems
+      });
+    }
   }
 
   // Agrupar por proveedor

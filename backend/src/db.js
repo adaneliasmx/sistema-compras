@@ -24,6 +24,7 @@ const EMPTY_DB = {
   purchase_orders: [], purchase_order_items: [],
   invoices: [], invoice_items: [], payments: [],
   status_history: [], approval_rules: [], quotation_requests: [],
+  password_reset_requests: [], password_reset_tokens: [],
   settings: {}
 };
 

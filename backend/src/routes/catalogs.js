@@ -186,6 +186,20 @@ router.post('/suppliers', (req, res) => {
   res.status(201).json({ supplier: row, user: userCreated });
 });
 
+router.get('/suppliers/export-csv', (req, res) => {
+  const db = read();
+  const headers = ['provider_code', 'business_name', 'contact_name', 'email', 'phone', 'rfc', 'address'];
+  const lines = [headers.join(',')];
+  db.suppliers.forEach(s => {
+    lines.push(headers.map(h => `"${String(s[h] || '').replace(/"/g, '""')}"`).join(','));
+  });
+  const csv = '\uFEFF' + lines.join('\r\n'); // BOM para Excel
+  const filename = `proveedores-${new Date().toISOString().slice(0,10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+});
+
 router.post('/suppliers/import', (req, res) => {
   if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
   const db = read();
@@ -193,7 +207,7 @@ router.post('/suppliers/import', (req, res) => {
   let inserted = 0;
   rows.forEach(r => {
     if (!r.business_name) return;
-    db.suppliers.push({ id: nextId(db.suppliers), provider_code: r.provider_code || providerCodeFromName(r.business_name, db.suppliers), business_name: r.business_name, contact_name: r.contact_name || '', email: r.email || '', phone: r.phone || '', active: true, created_at: new Date().toISOString() });
+    db.suppliers.push({ id: nextId(db.suppliers), provider_code: r.provider_code || providerCodeFromName(r.business_name, db.suppliers), business_name: r.business_name, contact_name: r.contact_name || '', email: r.email || '', phone: r.phone || '', rfc: r.rfc || '', address: r.address || '', active: true, created_at: new Date().toISOString() });
     inserted += 1;
   });
   write(db);
@@ -210,7 +224,7 @@ router.patch('/suppliers/:id', (req, res) => {
       return res.status(400).json({ error: `El código "${req.body.provider_code}" ya está en uso` });
     }
   }
-  Object.assign(row, { provider_code: req.body.provider_code || row.provider_code, business_name: req.body.business_name || row.business_name, contact_name: req.body.contact_name ?? row.contact_name, email: req.body.email ?? row.email, phone: req.body.phone ?? row.phone, active: req.body.active ?? row.active });
+  Object.assign(row, { provider_code: req.body.provider_code || row.provider_code, business_name: req.body.business_name || row.business_name, contact_name: req.body.contact_name ?? row.contact_name, email: req.body.email ?? row.email, phone: req.body.phone ?? row.phone, rfc: req.body.rfc ?? row.rfc, address: req.body.address ?? row.address, active: req.body.active ?? row.active });
   write(db);
   res.json(row);
 });

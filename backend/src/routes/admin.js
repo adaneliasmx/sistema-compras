@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
@@ -92,6 +93,60 @@ router.post('/suppliers-with-user', (req, res) => {
     user: { ...user, password_hash: undefined },
     message: `Proveedor "${supplier.business_name}" creado con usuario "${user.email}"`
   });
+});
+
+// ── Solicitudes de recuperación de contraseña ─────────────────────────────────
+router.get('/password-requests', (req, res) => {
+  const db = read();
+  const pending = (db.password_reset_requests || []).filter(r => r.status === 'pending');
+  res.json(pending);
+});
+
+router.post('/password-requests/:id/approve', (req, res) => {
+  const db = read();
+  if (!db.password_reset_requests) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  const request = db.password_reset_requests.find(r => r.id === Number(req.params.id) && r.status === 'pending');
+  if (!request) return res.status(404).json({ error: 'Solicitud no encontrada o ya procesada' });
+
+  if (!db.password_reset_tokens) db.password_reset_tokens = [];
+  // Invalidar tokens previos del usuario
+  db.password_reset_tokens.forEach(t => { if (t.user_id === request.user_id && t.status === 'active') t.status = 'replaced'; });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  db.password_reset_tokens.push({
+    id: nextId(db.password_reset_tokens),
+    user_id: request.user_id,
+    token,
+    created_at: new Date().toISOString(),
+    status: 'active'
+  });
+
+  request.status = 'approved';
+  request.approved_at = new Date().toISOString();
+  request.approved_by = req.user.id;
+  write(db);
+
+  // Construir URL del sistema desde el header
+  const origin = req.headers.origin || req.headers.referer?.replace(/\/$/, '') || '';
+  const baseUrl = origin || 'http://localhost:3000';
+  const resetUrl = `${baseUrl}/#/reset-password?token=${token}`;
+
+  const subject = `Cambio de contraseña autorizado · Sistema de Compras`;
+  const body = `Hola ${request.user_name},\n\nTu solicitud de cambio de contraseña ha sido autorizada.\n\nHaz clic en el siguiente enlace para crear tu nueva contraseña:\n${resetUrl}\n\nEste enlace expira en 24 horas.\nSi no solicitaste este cambio, ignora este mensaje.`;
+  const mailto = `mailto:${encodeURIComponent(request.user_email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  res.json({ ok: true, mailto, reset_url: resetUrl, message: `Enlace generado para ${request.user_name}` });
+});
+
+router.delete('/password-requests/:id', (req, res) => {
+  const db = read();
+  if (!db.password_reset_requests) return res.status(404).json({ error: 'No encontrado' });
+  const r = db.password_reset_requests.find(x => x.id === Number(req.params.id));
+  if (!r) return res.status(404).json({ error: 'No encontrado' });
+  r.status = 'rejected';
+  r.rejected_at = new Date().toISOString();
+  write(db);
+  res.json({ ok: true });
 });
 
 // ── Exportar base de datos completa ───────────────────────────────────────────
