@@ -656,7 +656,7 @@ async function requisitionsView(editId = null) {
   const renderList = rows => rows.map(r => `<tr><td>${r.folio}</td><td>${statusPill(r.status)}</td><td>${Number(r.total_amount || 0).toFixed(2)} ${r.currency || ''}</td><td><a href="#/requisiciones/${r.id}">Validar</a></td></tr>`).join('');
   app.innerHTML = shell(`
     <div class="grid grid-2">
-      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:12px"><h4 id="itemEntryTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151">+ Nuevo ítem</h4><div class="row-3"><div><label style="font-size:12px">Ítem catálogo</label><select id="entry-catalog"><option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Nombre manual</label><input id="entry-manual-name" placeholder="Descripción del ítem" list="entry-manual-list" autocomplete="off"/><datalist id="entry-manual-list">${items.map(i=>`<option value="${i.name}" data-id="${i.id}">`).join('')}</datalist></div><div><label style="font-size:12px">Proveedor</label><select id="entry-supplier"><option value="">Sin proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div></div><div class="row-4" style="margin-top:8px"><div><label style="font-size:12px">Cantidad</label><input id="entry-quantity" type="number" value="1" min="0.01"/></div><div><label style="font-size:12px">Unidad</label><select id="entry-unit">${units.map(u=>`<option>${u}</option>`).join('')}</select></div><div><label style="font-size:12px">Costo unit.</label><input id="entry-cost" type="number" value="0" min="0"/></div><div><label style="font-size:12px">Moneda</label><input id="entry-currency-item" value="MXN" readonly/></div></div><div class="row-3" style="margin-top:8px"><div><label style="font-size:12px">Centro de costo</label><select id="entry-item-cc"><option value="">Del encabezado</option>${cc.map(c=>`<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Subcentro</label><select id="entry-item-scc"><option value="">Selecciona</option></select></div><div></div></div><div class="row-2" style="margin-top:8px"><input id="entry-weblink" placeholder="Liga web (opcional)"/><input id="entry-item-comments" placeholder="Comentarios del ítem"/></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" id="addItemBtn">+ Agregar a lista</button><button class="btn-secondary" id="cancelEditItemBtn" style="display:none">✕ Cancelar edición</button></div></div><div id="itemsDraft" style="margin-top:12px"></div><div class="actions"><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
+      <div class="card section"><h3>${editing ? 'Editar requisición' : 'Nueva requisición'}</h3><div class="row-3"><div><label>Urgencia</label><select id="urgency"><option ${editing?.requisition.urgency==='Alto'?'selected':''}>Alto</option><option ${editing?.requisition.urgency==='Medio'?'selected':''}>Medio</option><option ${editing?.requisition.urgency==='Bajo'?'selected':''}>Bajo</option><option ${editing?.requisition.urgency==='Entrega programada'?'selected':''}>Entrega programada</option></select><div id="urgencyRange" class="small muted"></div></div><div><label>Centro de costo</label><select id="costCenter"><option value="">Selecciona</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label>Subcentro</label><select id="subCostCenter"></select></div></div><div class="row-3"><div><label>Moneda</label><input id="currency" value="${editing?.requisition.currency || 'MXN'}" readonly/></div><div><label>Fecha programada</label><input id="programmedDate" type="date" value="${editing?.requisition.programmed_date || ''}"/></div><div><label>Comentarios</label><input id="comments" placeholder="Observaciones" value="${editing?.requisition.comments || ''}"/></div></div><div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:12px"><h4 id="itemEntryTitle" style="margin:0 0 8px;font-size:13px;font-weight:700;color:#374151">+ Nuevo ítem</h4><div class="row-3"><div><label style="font-size:12px">Ítem catálogo</label><select id="entry-catalog"><option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Nombre manual</label><input id="entry-manual-name" placeholder="Descripción del ítem" list="entry-manual-list" autocomplete="off"/><datalist id="entry-manual-list">${items.map(i=>`<option value="${i.name}" data-id="${i.id}">`).join('')}</datalist></div><div><label style="font-size:12px">Proveedor</label><select id="entry-supplier"><option value="">Sin proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div></div><div class="row-4" style="margin-top:8px"><div><label style="font-size:12px">Cantidad</label><input id="entry-quantity" type="number" value="1" min="0.01"/></div><div><label style="font-size:12px">Unidad</label><select id="entry-unit">${units.map(u=>`<option>${u}</option>`).join('')}</select></div><div><label style="font-size:12px">Costo unit.</label><input id="entry-cost" type="number" value="0" min="0"/></div><div><label style="font-size:12px">Moneda</label><input id="entry-currency-item" value="MXN" readonly/></div></div><div class="row-3" style="margin-top:8px"><div><label style="font-size:12px">Centro de costo</label><select id="entry-item-cc"><option value="">Del encabezado</option>${cc.map(c=>`<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div><div><label style="font-size:12px">Subcentro <span style="color:#dc2626">*</span></label><select id="entry-item-scc"><option value="">— Obligatorio —</option></select><input id="entry-item-scc-other" placeholder="Nombre/motivo del subcentro propuesto" style="display:none;margin-top:4px;width:100%;font-size:12px"/></div><div></div></div><div class="row-2" style="margin-top:8px"><input id="entry-weblink" placeholder="Liga web (opcional)"/><input id="entry-item-comments" placeholder="Comentarios del ítem"/></div><div style="display:flex;gap:8px;margin-top:10px"><button class="btn-primary" id="addItemBtn">+ Agregar a lista</button><button class="btn-secondary" id="cancelEditItemBtn" style="display:none">✕ Cancelar edición</button></div></div><div id="itemsDraft" style="margin-top:12px"></div><div class="actions"><button class="btn-secondary" id="previewReqBtn">Vista PDF</button><button class="btn-secondary" id="saveDraftBtn">Guardar borrador</button><button class="btn-primary" id="sendReqBtn">Guardar y enviar</button></div><div id="reqMsg" class="error"></div></div>
       <div class="card section"><div class="module-title"><h3>Requisiciones</h3><button class="btn-secondary" id="expReqListBtn">Exportar</button></div><div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="reqSearchFolio" placeholder="Buscar folio..." style="flex:1;min-width:100px"/><select id="reqFilterStatus" style="flex:1;min-width:110px"><option value="">Todos los estatus</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div><div class="table-wrap" id="reqListWrap"><table><thead><tr><th>Folio</th><th>Estatus</th><th>Total</th><th>Detalle</th></tr></thead><tbody>${renderList(list)}</tbody></table></div></div>
     </div>
   `, 'requisiciones');
@@ -690,14 +690,17 @@ async function requisitionsView(editId = null) {
     document.getElementById('entry-weblink').value = '';
     document.getElementById('entry-item-comments').value = '';
     document.getElementById('entry-item-cc').value = '';
-    document.getElementById('entry-item-scc').innerHTML = '<option value="">Selecciona</option>';
+    document.getElementById('entry-item-scc').innerHTML = '<option value="">— Obligatorio —</option>';
+    document.getElementById('entry-item-scc-other').value = '';
+    document.getElementById('entry-item-scc-other').style.display = 'none';
     itemEntryTitle.textContent = '+ Nuevo ítem';
     addItemBtn.textContent = '+ Agregar a lista';
     cancelEditItemBtn.style.display = 'none';
     currentEditItemId = null;
   };
   document.getElementById('entry-catalog').onchange = () => {
-    const cat = items.find(i => i.id === Number(document.getElementById('entry-catalog').value));
+    const catId = Number(document.getElementById('entry-catalog').value);
+    const cat = items.find(i => i.id === catId);
     if (cat) {
       if (cat.supplier_id) document.getElementById('entry-supplier').value = cat.supplier_id;
       if (cat.unit) document.getElementById('entry-unit').value = cat.unit;
@@ -705,6 +708,17 @@ async function requisitionsView(editId = null) {
       document.getElementById('entry-currency-item').value = cat.currency || currency.value || 'MXN';
       if (cat.cost_center_id) { costCenter.value = cat.cost_center_id; setSubOptions(cat.cost_center_id, cat.sub_cost_center_id || ''); if (cat.sub_cost_center_id) subCostCenter.value = cat.sub_cost_center_id; }
     }
+  };
+  document.getElementById('entry-supplier').onchange = () => {
+    const suppId = Number(document.getElementById('entry-supplier').value);
+    const catSel = document.getElementById('entry-catalog');
+    if (suppId) {
+      const filtered = items.filter(i => i.supplier_id === suppId);
+      catSel.innerHTML = `<option value="">Manual / no catalogado</option>${filtered.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}`;
+    } else {
+      catSel.innerHTML = `<option value="">Manual / no catalogado</option>${items.map(i=>`<option value="${i.id}">${i.code} · ${i.name}</option>`).join('')}`;
+    }
+    catSel.value = '';
   };
   document.getElementById('entry-manual-name').oninput = () => {
     const val = document.getElementById('entry-manual-name').value.trim();
@@ -721,7 +735,12 @@ async function requisitionsView(editId = null) {
   document.getElementById('entry-item-cc').onchange = () => {
     const ccId = document.getElementById('entry-item-cc').value;
     const opts = scc.filter(x => Number(x.cost_center_id) === Number(ccId));
-    document.getElementById('entry-item-scc').innerHTML = `<option value="">Selecciona</option>${opts.map(x=>`<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}`;
+    document.getElementById('entry-item-scc').innerHTML = `<option value="">— Obligatorio —</option>${opts.map(x=>`<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}<option value="__otro__">+ Otro (proponer nuevo)</option>`;
+    document.getElementById('entry-item-scc-other').style.display = 'none';
+  };
+  document.getElementById('entry-item-scc').onchange = () => {
+    const isOtro = document.getElementById('entry-item-scc').value === '__otro__';
+    document.getElementById('entry-item-scc-other').style.display = isOtro ? 'block' : 'none';
   };
   const renderDraft = () => {
     state.itemsDraft = state.itemsDraft.map(x => ({ ...x, id: x.id || crypto.randomUUID() }));
@@ -734,7 +753,8 @@ async function requisitionsView(editId = null) {
           const itemName = (items.find(i => i.id === Number(row.catalog_item_id)) || {}).name || row.manual_item_name || '-';
           const supplierName = (suppliers.find(s => s.id === Number(row.supplier_id)) || {}).business_name || '-';
           const lineTotal = Number(row.quantity||0) * Number(row.unit_cost||0);
-          return `<tr style="${currentEditItemId === row.id ? 'background:#eff6ff' : ''}"><td style="font-size:12px"><b>${escapeHtml(itemName)}</b>${row.web_link ? `<br><a href="${escapeHtml(row.web_link)}" target="_blank" style="font-size:10px;color:#3b82f6">🔗 Liga</a>` : ''}</td><td style="font-size:12px">${escapeHtml(supplierName)}</td><td style="font-size:12px;text-align:right">${row.quantity}</td><td style="font-size:12px">${escapeHtml(row.unit||'-')}</td><td style="font-size:12px;text-align:right">$${Number(row.unit_cost||0).toFixed(2)}</td><td style="font-size:12px;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td><td style="white-space:nowrap"><button class="btn-secondary edit-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger remove-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`;
+          const sccLabel = row.sub_cost_center_proposed ? `<span style="font-size:10px;color:#b45309;background:#fffbeb;padding:1px 5px;border-radius:3px">⚠ SCC propuesto: ${escapeHtml(row.sub_cost_center_proposed)}</span>` : '';
+          return `<tr style="${currentEditItemId === row.id ? 'background:#eff6ff' : ''}"><td style="font-size:12px"><b>${escapeHtml(itemName)}</b>${row.web_link ? `<br><a href="${escapeHtml(row.web_link)}" target="_blank" style="font-size:10px;color:#3b82f6">🔗 Liga</a>` : ''}${sccLabel ? '<br>'+sccLabel : ''}</td><td style="font-size:12px">${escapeHtml(supplierName)}</td><td style="font-size:12px;text-align:right">${row.quantity}</td><td style="font-size:12px">${escapeHtml(row.unit||'-')}</td><td style="font-size:12px;text-align:right">$${Number(row.unit_cost||0).toFixed(2)}</td><td style="font-size:12px;text-align:right;font-weight:600">$${lineTotal.toFixed(2)}</td><td style="white-space:nowrap"><button class="btn-secondary edit-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger remove-draft-item" data-id="${row.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`;
         }).join('')}</tbody><tfoot><tr><td colspan="5" style="text-align:right;font-size:12px;font-weight:600;padding:6px 4px">Total estimado:</td><td style="font-size:13px;font-weight:700;color:#1d4ed8;padding:6px 4px">$${total.toFixed(2)}</td><td></td></tr></tfoot></table></div>`;
     itemsDraft.querySelectorAll('.edit-draft-item').forEach(btn => {
       btn.onclick = () => {
@@ -752,7 +772,15 @@ async function requisitionsView(editId = null) {
         document.getElementById('entry-item-comments').value = row.comments || '';
         document.getElementById('entry-item-cc').value = row.cost_center_id || '';
         document.getElementById('entry-item-cc').dispatchEvent(new Event('change'));
-        setTimeout(() => { document.getElementById('entry-item-scc').value = row.sub_cost_center_id || ''; }, 50);
+        setTimeout(() => {
+          if (row.sub_cost_center_proposed) {
+            document.getElementById('entry-item-scc').value = '__otro__';
+            document.getElementById('entry-item-scc-other').value = row.sub_cost_center_proposed;
+            document.getElementById('entry-item-scc-other').style.display = 'block';
+          } else {
+            document.getElementById('entry-item-scc').value = row.sub_cost_center_id || '';
+          }
+        }, 50);
         itemEntryTitle.textContent = '✏ Editando ítem';
         addItemBtn.textContent = '✔ Actualizar ítem';
         cancelEditItemBtn.style.display = '';
@@ -779,8 +807,14 @@ async function requisitionsView(editId = null) {
     const itemSccId = Number(document.getElementById('entry-item-scc').value || 0) || null;
     if (!catalogId && !manualName) { reqMsg.textContent = 'Selecciona un ítem del catálogo o escribe un nombre.'; return; }
     if (qty <= 0) { reqMsg.textContent = 'La cantidad debe ser mayor a cero.'; return; }
+    const sccVal = document.getElementById('entry-item-scc').value;
+    const sccOtherVal = document.getElementById('entry-item-scc-other').value.trim();
+    if (!sccVal) { reqMsg.textContent = 'El subcentro de costo es obligatorio por ítem.'; document.getElementById('entry-item-scc').focus(); return; }
+    if (sccVal === '__otro__' && !sccOtherVal) { reqMsg.textContent = 'Escribe el nombre o motivo del subcentro propuesto.'; document.getElementById('entry-item-scc-other').focus(); return; }
     reqMsg.textContent = '';
-    const itemData = { catalog_item_id: catalogId ? Number(catalogId) : null, manual_item_name: manualName || null, supplier_id: supplierId ? Number(supplierId) : null, quantity: qty, unit, unit_cost: unitCost, currency: entryCur, web_link: webLink || null, comments: itemComments || null, cost_center_id: itemCcId || Number(costCenter.value||0)||null, sub_cost_center_id: itemSccId || Number(subCostCenter.value||0)||null };
+    const subCcProposed = sccVal === '__otro__' ? sccOtherVal : null;
+    const resolvedSccId = sccVal !== '__otro__' ? (Number(sccVal) || null) : null;
+    const itemData = { catalog_item_id: catalogId ? Number(catalogId) : null, manual_item_name: manualName || null, supplier_id: supplierId ? Number(supplierId) : null, quantity: qty, unit, unit_cost: unitCost, currency: entryCur, web_link: webLink || null, comments: itemComments || null, cost_center_id: itemCcId || Number(costCenter.value||0)||null, sub_cost_center_id: resolvedSccId, sub_cost_center_proposed: subCcProposed };
     if (currentEditItemId) { const idx = state.itemsDraft.findIndex(x => x.id === currentEditItemId); if (idx >= 0) state.itemsDraft[idx] = { ...state.itemsDraft[idx], ...itemData }; } else { state.itemsDraft.push({ id: crypto.randomUUID(), ...itemData }); }
     clearEntryPanel(); renderDraft();
   };
@@ -994,9 +1028,10 @@ async function trackingDetailView(id) {
         <thead><tr><th>#</th><th>Ítem</th><th>Proveedor</th><th>PO</th><th>Cant.</th><th>Costo unit.</th><th>Total</th><th>Estatus</th></tr></thead>
         <tbody>${d.items.map(i => {
           const total = Number(i.quantity||0) * Number(i.unit_cost||0);
-          return `<tr>
+          const rejectInfo = i.status === 'Rechazado' && i.reject_reason ? `<div style="margin-top:4px;padding:4px 8px;background:#fee2e2;border-radius:4px;font-size:11px;color:#b91c1c">✖ Rechazado: ${escapeHtml(i.reject_reason)}</div>` : '';
+          return `<tr style="${i.status==='Rechazado'?'opacity:0.75;background:#fff5f5':''}">
             <td>${i.line_no}</td>
-            <td><b>${i.catalog_name || i.manual_item_name}</b></td>
+            <td><b>${i.catalog_name || i.manual_item_name}</b>${rejectInfo}</td>
             <td style="font-size:12px">${i.supplier_name||'-'}</td>
             <td style="font-size:12px">${i.po_folio||'-'}</td>
             <td>${i.quantity} ${i.unit}</td>
@@ -1412,16 +1447,18 @@ async function purchasesView() {
   let showCancelled = false;
   const loadItems = () => api(`/api/purchases/pending-items${showCancelled ? '?show_cancelled=true' : ''}`);
 
-  const [allItems, pos, suppliers] = await Promise.all([
+  const [allItems, pos, suppliers, sccList] = await Promise.all([
     loadItems(),
     api('/api/purchases/purchase-orders'),
-    api('/api/catalogs/suppliers')
+    api('/api/catalogs/suppliers'),
+    api('/api/catalogs/sub-cost-centers')
   ]);
 
   // Clasificar ítems por sección (cancelados excluidos salvo toggle)
   const itemsPendientePO = allItems.filter(x => x.supplier_id && x.unit_cost && !x.purchase_order_id && !['Cancelado','Rechazado','Cerrado','En cotización'].includes(x.status));
   const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización' && x.item_name && x.item_name.trim() && !x.purchase_order_id);
   const itemsSolicitados = allItems.filter(x => showCancelled ? true : !['Cancelado','Rechazado','Cerrado'].includes(x.status));
+  const itemsPendingScc = allItems.filter(x => x.sub_cost_center_proposed && !x.sub_cost_center_id && !['Cancelado','Rechazado','Cerrado'].includes(x.status));
 
   let activeTab = sessionStorage.getItem('compras_active_tab') || 'pendientes';
 
@@ -1451,6 +1488,9 @@ async function purchasesView() {
         </button>
         <button class="tab-btn" data-tab="requisiciones" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
           📄 Requisiciones
+        </button>
+        <button class="tab-btn" data-tab="scc_pending" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:${itemsPendingScc.length?'#b45309':'#6b7280'}">
+          🗂 SCC Propuestos ${itemsPendingScc.length ? `<span style="background:#f59e0b;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${itemsPendingScc.length}</span>` : ''}
         </button>
       </div>
 
@@ -2298,6 +2338,47 @@ async function purchasesView() {
         });
       };
       renderReqsTab();
+    } else if (tab === 'scc_pending') {
+    poActions.style.display = 'none';
+    if (!itemsPendingScc.length) {
+      tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Sin subcentros de costo propuestos pendientes ✅</div>';
+    } else {
+      tabContent.innerHTML = `
+        <p class="small muted">Los siguientes ítems tienen subcentro de costo propuesto por el solicitante. Asigna el subcentro oficial antes de poder generar la PO.</p>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Requisición</th><th>Ítem</th><th>Proveedor</th><th>SCC Propuesto</th><th>Asignar SCC</th></tr></thead>
+          <tbody>${itemsPendingScc.map(row => `<tr>
+            <td style="font-size:12px">${row.requisition_folio||'-'}</td>
+            <td style="font-size:12px"><b>${escapeHtml(row.item_name||'-')}</b></td>
+            <td style="font-size:12px">${escapeHtml(row.supplier_name||'-')}</td>
+            <td style="font-size:12px"><span style="background:#fffbeb;padding:2px 8px;border-radius:4px;color:#b45309;font-weight:600">${escapeHtml(row.sub_cost_center_proposed||'')}</span></td>
+            <td>
+              <select class="assign-scc-select" data-id="${row.id}" style="font-size:12px;margin-right:6px">
+                <option value="">— Selecciona SCC —</option>
+                ${sccList.map(s=>`<option value="${s.id}">${s.code} · ${s.name}</option>`).join('')}
+              </select>
+              <button class="btn-primary assign-scc-btn" data-id="${row.id}" style="padding:3px 10px;font-size:12px">Asignar</button>
+            </td>
+          </tr>`).join('')}
+          </tbody>
+        </table></div>
+      `;
+      tabContent.querySelectorAll('.assign-scc-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const itemId = btn.dataset.id;
+          const sel = tabContent.querySelector(`.assign-scc-select[data-id="${itemId}"]`);
+          if (!sel?.value) { alert('Selecciona un subcentro de costo'); return; }
+          try {
+            await api(`/api/purchases/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ sub_cost_center_id: Number(sel.value) }) });
+            btn.textContent = '✅';
+            btn.disabled = true;
+            sel.disabled = true;
+            // Refresh after short delay
+            setTimeout(render, 1000);
+          } catch(e) { alert(e.message); }
+        };
+      });
+    }
     }
   };
 
@@ -3629,15 +3710,56 @@ async function adminView() {
     </div>
     <div class="card section" style="margin-top:16px">
       <h3>Proveedores registrados</h3>
-      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuario asignado</th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuario asignado</th><th>Acción</th></tr></thead>
       <tbody>${suppliers.map(s => {
         const supUser = users.find(u => u.supplier_id === s.id && u.role_code === 'proveedor');
         return `<tr>
           <td>${s.provider_code||'-'}</td><td><b>${s.business_name}</b></td>
           <td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
           <td>${supUser ? `✅ ${supUser.email}` : '<span style="color:#dc2626">⚠ Sin usuario</span>'}</td>
+          <td><button class="btn-secondary edit-supplier-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">✏ Editar</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>
+      <h4 style="margin-top:16px" id="editSupplierTitle">Editar proveedor</h4>
+      <div id="editSupplierForm" style="display:none">
+        <input type="hidden" id="supEditId"/>
+        <div class="row-3">
+          <div><label>Razón social *</label><input id="supBizName" placeholder="Nombre del proveedor"/></div>
+          <div><label>Código</label><input id="supCode" placeholder="PRV-001"/></div>
+          <div><label>RFC</label><input id="supRfc" placeholder="RFC"/></div>
+        </div>
+        <div class="row-3">
+          <div><label>Nombre contacto</label><input id="supContact" placeholder="Nombre contacto"/></div>
+          <div><label>Correo</label><input id="supEmail" type="email" placeholder="proveedor@empresa.com"/></div>
+          <div><label>Teléfono</label><input id="supPhone" placeholder="55 0000 0000"/></div>
+        </div>
+        <div><label>Dirección</label><input id="supAddress" placeholder="Dirección completa" style="width:100%"/></div>
+        <div class="actions">
+          <button class="btn-primary" id="saveSupplierBtn">Guardar cambios</button>
+          <button class="btn-secondary" id="cancelSupplierBtn">Cancelar</button>
+        </div>
+        <div id="supMsg" class="small muted"></div>
+      </div>
+    </div>
+    <!-- 📦 Exportar / Importar base de datos -->
+    <div class="card section" style="margin-top:16px;border:2px solid #bfdbfe;background:#eff6ff">
+      <h3 style="color:#1d4ed8">📦 Exportar / Importar base de datos</h3>
+      <p class="small muted">Exporta la base de datos actual como JSON para hacer respaldo o migrarla al servidor en línea. Importa un archivo JSON para reemplazar los datos del servidor.</p>
+      <div class="row-2" style="gap:24px;align-items:flex-start">
+        <div>
+          <b style="font-size:13px">⬇ Exportar</b>
+          <p class="small muted" style="margin:4px 0 8px">Descarga todos los datos (catálogos, usuarios, proveedores, transacciones) como un archivo JSON.</p>
+          <button class="btn-primary" id="exportDbBtn" style="padding:8px 20px">⬇ Descargar backup JSON</button>
+          <span id="exportDbMsg" class="small muted" style="display:block;margin-top:6px"></span>
+        </div>
+        <div>
+          <b style="font-size:13px">⬆ Importar (cargar en línea)</b>
+          <p class="small muted" style="margin:4px 0 8px">Selecciona un archivo JSON exportado previamente para <b>reemplazar</b> toda la base de datos del servidor activo.</p>
+          <input type="file" id="importDbFile" accept=".json" style="font-size:12px;margin-bottom:8px;display:block"/>
+          <button class="btn-secondary" id="importDbBtn" style="padding:8px 20px">⬆ Importar y reemplazar</button>
+          <span id="importDbMsg" class="small muted" style="display:block;margin-top:6px"></span>
+        </div>
+      </div>
     </div>
     <!-- ⚠ Reset de base de datos — SOLO PRUEBAS -->
     <div class="card section" style="margin-top:16px;border:2px solid #fca5a5;background:#fff8f8">
@@ -3716,6 +3838,47 @@ async function adminView() {
 
   expUsersBtn.onclick = () => downloadCsv('users', 'usuarios.csv');
 
+  document.querySelectorAll('.edit-supplier-btn').forEach(btn => {
+    btn.onclick = () => {
+      const s = suppliers.find(x => x.id === Number(btn.dataset.id));
+      if (!s) return;
+      supEditId.value = s.id;
+      supBizName.value = s.business_name || '';
+      supCode.value = s.provider_code || '';
+      supRfc.value = s.rfc || '';
+      supContact.value = s.contact_name || '';
+      supEmail.value = s.email || '';
+      supPhone.value = s.phone || '';
+      supAddress.value = s.address || '';
+      editSupplierForm.style.display = 'block';
+      supMsg.textContent = '';
+      editSupplierTitle.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+
+  cancelSupplierBtn?.addEventListener('click', () => {
+    editSupplierForm.style.display = 'none';
+    supEditId.value = '';
+  });
+
+  saveSupplierBtn?.addEventListener('click', async () => {
+    try {
+      if (!supBizName.value) throw new Error('Razón social requerida');
+      await api(`/api/catalogs/suppliers/${supEditId.value}`, { method: 'PATCH', body: JSON.stringify({
+        business_name: supBizName.value,
+        provider_code: supCode.value || undefined,
+        rfc: supRfc.value || undefined,
+        contact_name: supContact.value || undefined,
+        email: supEmail.value || undefined,
+        phone: supPhone.value || undefined,
+        address: supAddress.value || undefined
+      })});
+      supMsg.textContent = '✅ Proveedor actualizado';
+      supMsg.style.color = '#16a34a';
+      setTimeout(render, 1000);
+    } catch(e) { supMsg.textContent = e.message; supMsg.style.color = '#dc2626'; }
+  });
+
   document.querySelectorAll('.toggle-user-btn').forEach(btn => {
     btn.onclick = async () => {
       const active = btn.dataset.active === 'true';
@@ -3743,6 +3906,50 @@ async function adminView() {
       msgEl.textContent = `✅ ${out.message}`;
       msgEl.style.color = '#16a34a';
     } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+  });
+
+  // ── Exportar DB ───────────────────────────────────────────────────────────
+  document.getElementById('exportDbBtn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('exportDbMsg');
+    try {
+      msgEl.textContent = 'Generando...';
+      msgEl.style.color = '#6b7280';
+      // Usamos fetch directo para obtener el blob del archivo
+      const resp = await fetch('/api/admin/export-db', {
+        headers: { 'Authorization': `Bearer ${state.token}` }
+      });
+      if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || resp.statusText); }
+      const blob = await resp.blob();
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : `backup-db-${new Date().toISOString().slice(0,10)}.json`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      msgEl.textContent = `✅ Archivo descargado: ${filename}`;
+      msgEl.style.color = '#16a34a';
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+  });
+
+  // ── Importar DB ───────────────────────────────────────────────────────────
+  document.getElementById('importDbBtn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('importDbMsg');
+    const fileInput = document.getElementById('importDbFile');
+    if (!fileInput.files?.length) { msgEl.textContent = 'Selecciona un archivo JSON primero.'; msgEl.style.color = '#dc2626'; return; }
+    const confirmMsg = '⚠ Esto REEMPLAZARÁ toda la base de datos del servidor activo con el archivo seleccionado.\n\nEscribe IMPORTAR para confirmar:';
+    if (prompt(confirmMsg) !== 'IMPORTAR') { alert('Operación cancelada.'); return; }
+    try {
+      msgEl.textContent = 'Leyendo archivo...';
+      msgEl.style.color = '#6b7280';
+      const text = await fileInput.files[0].text();
+      const data = JSON.parse(text);
+      msgEl.textContent = 'Importando...';
+      const out = await api('/api/admin/import-db', { method: 'POST', body: JSON.stringify({ confirm: 'IMPORT_CONFIRMAR', data }) });
+      msgEl.textContent = `✅ ${out.message}`;
+      msgEl.style.color = '#16a34a';
+      fileInput.value = '';
+    } catch(e) { msgEl.textContent = e.message || 'Error al importar'; msgEl.style.color = '#dc2626'; }
   });
 
   bindCommon();

@@ -40,6 +40,7 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
       if (l.status !== 'Autorizado') warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" no está Autorizado (${l.status})`);
       if (!l.unit_cost) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin costo`);
       if (!l.supplier_id) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin proveedor`);
+      if (l.sub_cost_center_proposed && !l.sub_cost_center_id) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" tiene subcentro propuesto ("${l.sub_cost_center_proposed}") pendiente de asignación por Compras`);
     });
     const currencies = [...new Set(groupLines.map(l => l.currency || 'MXN'))];
     if (currencies.length > 1) warnings.push(`Ítems con monedas mixtas (${currencies.join(', ')}). Se usará MXN como moneda de la PO.`);
@@ -101,6 +102,12 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   if (req.body.unit_cost !== undefined) line.unit_cost = Number(req.body.unit_cost || 0);
   if (req.body.comments !== undefined) line.comments = req.body.comments;
   if (req.body.currency !== undefined) line.currency = req.body.currency || line.currency || 'MXN';
+  if (req.body.sub_cost_center_id !== undefined) {
+    line.sub_cost_center_id = req.body.sub_cost_center_id ? Number(req.body.sub_cost_center_id) : null;
+    // Assign removes the pending proposal
+    if (line.sub_cost_center_id) line.sub_cost_center_proposed = null;
+  }
+  if (req.body.sub_cost_center_proposed !== undefined) line.sub_cost_center_proposed = req.body.sub_cost_center_proposed || null;
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   recalcRequisition(db, line.requisition_id);
   // Solo re-derivar status en etapas tempranas; no regresar ítems que ya avanzaron en el flujo
@@ -341,6 +348,13 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
 
   // Solo ítems Autorizados con proveedor y costo pueden generar PO
   const aptos = disponibles.filter(x => x.status === 'Autorizado' && x.supplier_id && x.unit_cost);
+
+  // Bloquear ítems con subcentro de costo pendiente de asignación
+  const pendingScc = aptos.filter(x => x.sub_cost_center_proposed && !x.sub_cost_center_id);
+  if (pendingScc.length) {
+    const names = pendingScc.map(x => (db.catalog_items.find(c=>c.id===x.catalog_item_id)||{}).name||x.manual_item_name||'ítem').join(', ');
+    return res.status(400).json({ error: `Los siguientes ítems tienen subcentro de costo propuesto pendiente de asignación por Compras: ${names}. Asigna el subcentro antes de generar la PO.` });
+  }
 
   if (!aptos.length) {
     const noAutorizados = disponibles.filter(x => x.status !== 'Autorizado');

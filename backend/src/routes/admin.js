@@ -94,6 +94,46 @@ router.post('/suppliers-with-user', (req, res) => {
   });
 });
 
+// ── Exportar base de datos completa ───────────────────────────────────────────
+router.get('/export-db', (req, res) => {
+  const db = read();
+  // Ocultar hashes de contraseñas por seguridad
+  const safe = {
+    ...db,
+    users: (db.users || []).map(u => ({ ...u, password_hash: undefined }))
+  };
+  const json = JSON.stringify(safe, null, 2);
+  const filename = `backup-db-${new Date().toISOString().slice(0,10)}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(json);
+});
+
+// ── Importar / reemplazar base de datos completa ──────────────────────────────
+router.post('/import-db', (req, res) => {
+  if (req.body.confirm !== 'IMPORT_CONFIRMAR') {
+    return res.status(400).json({ error: 'Debes enviar { confirm: "IMPORT_CONFIRMAR", data: {...} }' });
+  }
+  const incoming = req.body.data;
+  if (!incoming || typeof incoming !== 'object') {
+    return res.status(400).json({ error: 'Se requiere el campo "data" con el JSON de la base de datos' });
+  }
+  // Conservar password_hashes de usuarios existentes y mezclar con los importados
+  const currentDb = read();
+  const merged = { ...currentDb, ...incoming };
+  // Re-mapear contraseñas: si el usuario importado no trae hash, conservar el actual
+  merged.users = (incoming.users || []).map(u => {
+    if (u.password_hash) return u;
+    const existing = currentDb.users.find(x => x.id === u.id || x.email === u.email);
+    return { ...u, password_hash: existing?.password_hash || bcrypt.hashSync('Demo123*', 10) };
+  });
+  write(merged);
+  res.json({
+    ok: true,
+    message: `Base de datos importada correctamente. ${merged.users?.length || 0} usuarios, ${merged.suppliers?.length || 0} proveedores, ${merged.catalog_items?.length || 0} ítems de catálogo.`
+  });
+});
+
 // ── Reset de base de datos de pruebas (conserva catálogos y usuarios) ─────────
 // ⚠ SOLO PARA ENTORNOS DE PRUEBA — eliminar antes de producción final
 router.post('/reset-db', (req, res) => {
