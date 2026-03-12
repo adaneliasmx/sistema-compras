@@ -892,29 +892,126 @@ async function requisitionPreviewView(id) {
 }
 
 async function trackingListView() {
-  const data = await api('/api/requisitions');
+  const [data, allPos] = await Promise.all([
+    api('/api/requisitions'),
+    api('/api/purchases/purchase-orders').catch(() => [])
+  ]);
 
-  const renderTrackingTable = () => {
-    const folio = (document.getElementById('fFolio')?.value || '').toLowerCase();
-    const status = document.getElementById('fStatus')?.value || '';
-    const dateFrom = document.getElementById('fIni')?.value || '';
-    const dateTo = document.getElementById('fFin')?.value || '';
-    const filtered = data.filter(r =>
-      (!folio || String(r.folio||'').toLowerCase().includes(folio)) &&
-      (!status || r.status === status) &&
-      (!dateFrom || String(r.request_date||'').slice(0,10) >= dateFrom) &&
-      (!dateTo || String(r.request_date||'').slice(0,10) <= dateTo)
-    );
-    const wrap = document.getElementById('trackTableWrap');
-    if (wrap) wrap.innerHTML = `<table><thead><tr><th>Folio</th><th>Fecha</th><th>Solicitante</th><th>PO</th><th>Estatus</th><th>Total</th><th></th></tr></thead><tbody>${filtered.map(r => `<tr><td><b>${r.folio}</b></td><td style="font-size:12px">${String(r.request_date||'').slice(0,10)}</td><td style="font-size:12px">${r.requester||'-'}</td><td style="font-size:12px">${r.po_folio||'-'}</td><td>${statusPill(r.status)}</td><td style="font-size:12px">${Number(r.total_amount||0).toFixed(2)} ${r.currency||''}</td><td><a href="#/seguimiento/${r.id}">Abrir</a></td></tr>`).join('')}</tbody></table>`;
+  let trackMode = 'req'; // 'req' | 'po' | 'item'
+
+  const getFilters = () => ({
+    folio: (document.getElementById('fFolio')?.value || '').toLowerCase(),
+    status: document.getElementById('fStatus')?.value || '',
+    dateFrom: document.getElementById('fIni')?.value || '',
+    dateTo: document.getElementById('fFin')?.value || ''
+  });
+
+  const statusOptionsReq = ['Borrador','Enviada','En cotización','En autorización','En proceso','Completada','Rechazada'];
+  const statusOptionsPos = ['Abierta','Enviada','Recibida','Facturación parcial','Facturada','Pago parcial','Cerrada','Cancelada'];
+  const statusOptionsItem = ['Pendiente','En cotización','Autorizado','En proceso','Facturado','Pago parcial','Cerrado','Rechazado','Cancelado'];
+
+  const renderView = () => {
+    const { folio, status, dateFrom, dateTo } = getFilters();
+
+    if (trackMode === 'req') {
+      const filtered = data.filter(r =>
+        (!folio || String(r.folio||'').toLowerCase().includes(folio)) &&
+        (!status || r.status === status) &&
+        (!dateFrom || String(r.request_date||'').slice(0,10) >= dateFrom) &&
+        (!dateTo || String(r.request_date||'').slice(0,10) <= dateTo)
+      );
+      document.getElementById('trackTableWrap').innerHTML = `
+        <table><thead><tr><th>Folio</th><th>Fecha</th><th>Solicitante</th><th>PO</th><th>Estatus</th><th>Total</th><th></th></tr></thead>
+        <tbody>${filtered.map(r => `<tr>
+          <td><b>${r.folio}</b></td>
+          <td style="font-size:12px">${String(r.request_date||'').slice(0,10)}</td>
+          <td style="font-size:12px">${r.requester||'-'}</td>
+          <td style="font-size:12px">${r.po_folio||'-'}</td>
+          <td>${statusPill(r.status)}</td>
+          <td style="font-size:12px">${Number(r.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${r.currency||''}</td>
+          <td><a href="#/seguimiento/${r.id}">Abrir</a></td>
+        </tr>`).join('')}</tbody></table>`;
+
+    } else if (trackMode === 'po') {
+      const filtered = allPos.filter(p =>
+        (!folio || String(p.folio||'').toLowerCase().includes(folio)) &&
+        (!status || p.status === status) &&
+        (!dateFrom || String(p.created_at||'').slice(0,10) >= dateFrom) &&
+        (!dateTo || String(p.created_at||'').slice(0,10) <= dateTo)
+      );
+      document.getElementById('trackTableWrap').innerHTML = `
+        <table><thead><tr><th>PO Folio</th><th>Fecha</th><th>Proveedor</th><th>Ítems</th><th>Total</th><th>Estatus</th><th>Anticipo</th></tr></thead>
+        <tbody>${filtered.length ? filtered.map(p => `<tr>
+          <td><b>${p.folio}</b></td>
+          <td style="font-size:12px">${String(p.created_at||'').slice(0,10)}</td>
+          <td style="font-size:12px">${p.supplier_name||'-'}</td>
+          <td style="text-align:center">${p.items||0}</td>
+          <td style="font-size:12px">$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${p.currency||'MXN'}</td>
+          <td>${statusPill(p.status)}</td>
+          <td style="font-size:12px">${p.advance_percentage ? `${p.advance_percentage}% · ${p.advance_status||'-'}` : '-'}</td>
+        </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:#9ca3af">Sin órdenes de compra</td></tr>'}</tbody></table>`;
+
+    } else { // item
+      const allItems = allPos.flatMap(p =>
+        (p.po_items||[]).map(it => ({
+          ...it,
+          po_folio: p.folio,
+          supplier_name: p.supplier_name,
+          po_created_at: p.created_at
+        }))
+      );
+      const filtered = allItems.filter(it =>
+        (!folio || String(it.po_folio||'').toLowerCase().includes(folio) || String(it.item_name||it.name||'').toLowerCase().includes(folio)) &&
+        (!status || it.status === status) &&
+        (!dateFrom || String(it.po_created_at||'').slice(0,10) >= dateFrom) &&
+        (!dateTo || String(it.po_created_at||'').slice(0,10) <= dateTo)
+      );
+      document.getElementById('trackTableWrap').innerHTML = `
+        <table><thead><tr><th>PO</th><th>Ítem</th><th>Cant.</th><th>Costo unit.</th><th>Subtotal</th><th>Proveedor</th><th>Estatus</th></tr></thead>
+        <tbody>${filtered.length ? filtered.map(it => `<tr>
+          <td style="font-size:12px"><b>${it.po_folio}</b></td>
+          <td style="font-size:12px">${it.item_name||it.name||it.manual_item_name||'-'}</td>
+          <td style="text-align:center;font-size:12px">${it.quantity||0} ${it.unit||''}</td>
+          <td style="font-size:12px">$${Number(it.unit_cost||0).toFixed(2)}</td>
+          <td style="font-size:12px">$${(Number(it.quantity||0)*Number(it.unit_cost||0)).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+          <td style="font-size:12px">${it.supplier_name||'-'}</td>
+          <td>${statusPill(it.status)}</td>
+        </tr>`).join('') : '<tr><td colspan="7" style="text-align:center;color:#9ca3af">Sin ítems en órdenes de compra</td></tr>'}</tbody></table>`;
+    }
+  };
+
+  const updateStatusOptions = () => {
+    const sel = document.getElementById('fStatus');
+    if (!sel) return;
+    const opts = trackMode === 'req' ? statusOptionsReq : trackMode === 'po' ? statusOptionsPos : statusOptionsItem;
+    sel.innerHTML = `<option value="">Todos</option>` + opts.map(o => `<option>${o}</option>`).join('');
+  };
+
+  const setMode = mode => {
+    trackMode = mode;
+    document.getElementById('fStatus').value = '';
+    updateStatusOptions();
+    ['btnModeReq','btnModePo','btnModeItem'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.className = 'btn-secondary';
+    });
+    const activeId = mode === 'req' ? 'btnModeReq' : mode === 'po' ? 'btnModePo' : 'btnModeItem';
+    const activeEl = document.getElementById(activeId);
+    if (activeEl) activeEl.className = 'btn-primary';
+    renderView();
   };
 
   app.innerHTML = shell(`
     <div class="card section">
-      <div class="module-title"><h3>Seguimiento de requisiciones</h3><button class="btn-secondary" id="expReqItemsBtn">Exportar</button></div>
+      <div class="module-title"><h3>Seguimiento</h3><button class="btn-secondary" id="expReqItemsBtn">Exportar</button></div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button id="btnModeReq" class="btn-primary" style="font-size:13px">📋 Por Requisición</button>
+        <button id="btnModePo" class="btn-secondary" style="font-size:13px">🧾 Por PO</button>
+        <button id="btnModeItem" class="btn-secondary" style="font-size:13px">📦 Por Ítem</button>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end">
-        <div><label class="small muted">Folio</label><input id="fFolio" placeholder="Buscar folio..." style="display:block"/></div>
-        <div><label class="small muted">Estatus</label><select id="fStatus" style="display:block"><option value="">Todos</option><option>Borrador</option><option>Enviada</option><option>En cotización</option><option>En autorización</option><option>En proceso</option><option>Completada</option><option>Rechazada</option></select></div>
+        <div><label class="small muted">Buscar</label><input id="fFolio" placeholder="Folio / ítem..." style="display:block"/></div>
+        <div><label class="small muted">Estatus</label><select id="fStatus" style="display:block"><option value="">Todos</option></select></div>
         <div><label class="small muted">Desde</label><input id="fIni" type="date" style="display:block"/></div>
         <div><label class="small muted">Hasta</label><input id="fFin" type="date" style="display:block"/></div>
         <button class="btn-secondary" id="clearFiltersBtn" style="align-self:flex-end">Limpiar</button>
@@ -923,19 +1020,25 @@ async function trackingListView() {
     </div>
   `, 'seguimiento');
 
-  renderTrackingTable();
-  document.getElementById('fFolio').oninput = renderTrackingTable;
-  document.getElementById('fStatus').onchange = renderTrackingTable;
-  document.getElementById('fIni').onchange = renderTrackingTable;
-  document.getElementById('fFin').onchange = renderTrackingTable;
+  updateStatusOptions();
+  renderView();
+
+  document.getElementById('btnModeReq').onclick = () => setMode('req');
+  document.getElementById('btnModePo').onclick = () => setMode('po');
+  document.getElementById('btnModeItem').onclick = () => setMode('item');
+
+  document.getElementById('fFolio').oninput = renderView;
+  document.getElementById('fStatus').onchange = renderView;
+  document.getElementById('fIni').onchange = renderView;
+  document.getElementById('fFin').onchange = renderView;
   document.getElementById('clearFiltersBtn').onclick = () => {
     document.getElementById('fFolio').value = '';
     document.getElementById('fStatus').value = '';
     document.getElementById('fIni').value = '';
     document.getElementById('fFin').value = '';
-    renderTrackingTable();
+    renderView();
   };
-  expReqItemsBtn.onclick = () => downloadCsv('seguimiento', 'seguimiento.csv', {
+  document.getElementById('expReqItemsBtn').onclick = () => downloadCsv('seguimiento', 'seguimiento.csv', {
     fecha_inicio: document.getElementById('fIni')?.value || '',
     fecha_fin: document.getElementById('fFin')?.value || ''
   });

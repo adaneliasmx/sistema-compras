@@ -553,7 +553,10 @@ router.get('/purchase-orders', allowRoles('comprador', 'proveedor', 'admin'), (r
   const rows = db.purchase_orders
     .filter(po => req.user.supplier_id ? po.supplier_id === req.user.supplier_id : true)
     .map(po => {
-      const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
+      const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => ({
+        ...i,
+        item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '-'
+      }));
       return {
         ...po,
         supplier_name: (db.suppliers.find(s => s.id === po.supplier_id) || {}).business_name || '',
