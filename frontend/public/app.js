@@ -1969,13 +1969,19 @@ async function purchasesView() {
         const canCancel = !['Facturada','Facturación parcial','Cerrada','Cancelada','Rechazada por proveedor'].includes(p.status);
         const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
         const reqTag = invoiceRequested ? `<span style="font-size:11px;color:#2563eb;margin-left:8px">📧 Factura solicitada al proveedor</span>` : '';
+        // Anticipo
+        const advancePct = Number(p.advance_percentage || 0);
+        const advanceAmt = Number(p.advance_amount || 0);
+        const advStatus = p.advance_status || 'N/A';
+        const canRequestAdvance = advancePct > 0 && ['Pendiente','Solicitado'].includes(advStatus) && ['Enviada','Aceptada','En proceso'].includes(p.status);
+        const advanceTag = advancePct > 0 ? `<span style="font-size:11px;margin-left:8px;padding:2px 8px;border-radius:10px;background:${advStatus==='Pagado'?'#dcfce7':advStatus==='Facturado'?'#fef9c3':advStatus==='Solicitado'?'#dbeafe':'#f3f4f6'};color:${advStatus==='Pagado'?'#15803d':advStatus==='Facturado'?'#854d0e':advStatus==='Solicitado'?'#1d4ed8':'#6b7280'}">💰 Anticipo ${advancePct}% ${advStatus==='Pagado'?'· Pagado $'+advanceAmt.toLocaleString('es-MX',{minimumFractionDigits:2}):advStatus==='Facturado'?'· Factura recibida':advStatus==='Solicitado'?'· Solicitado':'· Pendiente de solicitar'}</span>` : '';
         return `
         <div class="card section" style="margin-bottom:12px" id="po-card-${p.id}">
           <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
             <div>
               <b style="font-size:15px">${p.folio}</b>
               <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
-              ${respTag}${reqTag}
+              ${respTag}${reqTag}${advanceTag}
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${statusPill(p.status)}
@@ -1984,6 +1990,7 @@ async function purchasesView() {
           </div>
           <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
             ${nextS ? `<button class="btn-primary po-advance-btn" data-id="${p.id}" data-status="${nextS}" style="font-size:12px;padding:5px 12px">${btnLabel}</button>` : ''}
+            ${canRequestAdvance ? `<button class="btn-secondary po-req-advance-btn" data-id="${p.id}" data-pct="${advancePct}" data-amt="${advanceAmt}" style="font-size:12px;padding:5px 12px">💰 Solicitar anticipo (${advancePct}%)</button>` : ''}
             ${canRequestInvoice ? `<button class="btn-secondary po-req-invoice-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📧 Solicitar factura al proveedor</button>` : ''}
             ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
             ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
@@ -2081,6 +2088,28 @@ async function purchasesView() {
               document.getElementById('poCancelMsg').style.color = '#dc2626';
             }
           };
+        };
+      });
+
+      // Solicitar anticipo al proveedor
+      tabContent.querySelectorAll('.po-req-advance-btn').forEach(btn => {
+        btn.onclick = async () => {
+          try {
+            btn.disabled = true;
+            const advPct = btn.dataset.pct;
+            const data = await api(`/api/purchases/purchase-orders/${btn.dataset.id}/request-advance`, {
+              method: 'POST', body: JSON.stringify({ advance_percentage: Number(advPct) })
+            });
+            if (data.mailto) window.open(data.mailto, '_blank');
+            const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+            msgEl.textContent = `✅ Anticipo solicitado: $${Number(data.advance_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} (${advPct}%). El proveedor debe subir su factura de anticipo.`;
+            msgEl.style.color = '#16a34a';
+            btn.textContent = `💰 Anticipo ${advPct}% solicitado`;
+          } catch(e) {
+            const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+            msgEl.textContent = e.message; msgEl.style.color = '#dc2626';
+            btn.disabled = false;
+          }
         };
       });
 
@@ -2455,8 +2484,32 @@ async function proveedorPOView() {
               <tfoot><tr style="background:#f0fdf4;font-weight:700"><td colspan="3" style="padding:4px 8px;text-align:right">Totales:</td><td style="padding:4px 8px;text-align:right">$${po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*0.16).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;color:#1d4ed8">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*1.16).toFixed(2)}</td></tr></tfoot>
             </table>
           </div>` : ''}
+          ${Number(po.advance_percentage||0) > 0 && po.advance_status !== 'N/A' ? `
+          <div style="padding:8px 10px;margin-bottom:10px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;font-size:12px">
+            💰 <b>Esta PO requiere anticipo del ${po.advance_percentage}%</b>
+            (${Number(po.advance_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'})
+            · Estado: <b>${po.advance_status}</b>
+            ${po.advance_status === 'Solicitado' ? '<br><span style="color:#1d4ed8">→ El comprador solicitó el anticipo. Sube la factura de anticipo primero.</span>' : ''}
+          </div>
+          ${po.advance_status === 'Solicitado' ? `
+          <div style="background:#f0f9ff;padding:10px;border-radius:6px;margin-bottom:10px;border:1px solid #bae6fd">
+            <b style="font-size:13px">📄 Subir factura de ANTICIPO</b>
+            <div class="row-3" style="margin-top:8px">
+              <div><label style="font-size:12px">No. factura anticipo *</label><input id="sinv-ant-num-${po.id}" placeholder="ANT-001"/></div>
+              <div><label style="font-size:12px">Subtotal anticipo</label><input id="sinv-ant-sub-${po.id}" type="number" value="${Number(po.advance_amount||0).toFixed(2)}" oninput="document.getElementById('sinv-ant-tax-${po.id}').value=(+this.value*0.16).toFixed(2)"/></div>
+              <div><label style="font-size:12px">IVA (16%)</label><input id="sinv-ant-tax-${po.id}" type="number" value="${(Number(po.advance_amount||0)*0.16).toFixed(2)}"/></div>
+            </div>
+            <div class="row-2" style="margin-top:8px">
+              <div><label style="font-size:12px">📄 PDF</label><input type="file" id="sinv-ant-pdf-${po.id}" accept=".pdf" style="font-size:12px"/></div>
+              <div><label style="font-size:12px">📋 XML</label><input type="file" id="sinv-ant-xml-${po.id}" accept=".xml" style="font-size:12px"/></div>
+            </div>
+            <div style="margin-top:8px;display:flex;gap:10px;align-items:center">
+              <button class="btn-primary sup-inv-save" data-id="${po.id}" data-supplier="${po.supplier_id}" data-type="anticipo" style="font-size:12px;padding:5px 14px;background:#1d4ed8">💰 Subir factura anticipo</button>
+              <span id="sinv-ant-msg-${po.id}" class="small muted"></span>
+            </div>
+          </div>` : ''}` : ''}
           <div class="row-3">
-            <div><label style="font-size:12px">No. factura *</label><input id="sinv-num-${po.id}" placeholder="FACT-001"/></div>
+            <div><label style="font-size:12px">No. factura ${Number(po.advance_percentage||0)>0?'final':''} *</label><input id="sinv-num-${po.id}" placeholder="FACT-001"/></div>
             <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" value="${Number(po.total_amount||0).toFixed(2)}" oninput="document.getElementById('sinv-tax-${po.id}').value=(+this.value*0.16).toFixed(2)"/></div>
             <div><label style="font-size:12px">IVA (16%)</label><input id="sinv-tax-${po.id}" type="number" value="${(Number(po.total_amount||0)*0.16).toFixed(2)}"/></div>
           </div>
@@ -2465,7 +2518,7 @@ async function proveedorPOView() {
             <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="sinv-xml-${po.id}" accept=".xml" style="font-size:12px"/></div>
           </div>
           <div style="display:flex;gap:10px;margin-top:10px;align-items:center;flex-wrap:wrap">
-            <button class="btn-primary sup-inv-save" data-id="${po.id}" data-supplier="${po.supplier_id}" style="font-size:12px;padding:5px 14px">Subir factura</button>
+            <button class="btn-primary sup-inv-save" data-id="${po.id}" data-supplier="${po.supplier_id}" data-type="normal" style="font-size:12px;padding:5px 14px">Subir factura</button>
             <span id="sinv-msg-${po.id}" class="small muted"></span>
           </div>
         </div>`).join('')}
@@ -2568,14 +2621,18 @@ async function proveedorPOView() {
   document.querySelectorAll('.sup-inv-save').forEach(btn => {
     btn.onclick = async () => {
       const id = btn.dataset.id;
-      const numEl = document.getElementById(`sinv-num-${id}`);
-      const subEl = document.getElementById(`sinv-sub-${id}`);
-      const taxEl = document.getElementById(`sinv-tax-${id}`);
-      const pdfEl = document.getElementById(`sinv-pdf-${id}`);
-      const xmlEl = document.getElementById(`sinv-xml-${id}`);
-      const msgEl = document.getElementById(`sinv-msg-${id}`);
+      const invType = btn.dataset.type || 'normal';
+      const isAnticipo = invType === 'anticipo';
+      // Usar inputs de anticipo si es anticipo, de lo contrario los normales
+      const prefix = isAnticipo ? `sinv-ant-${id}` : `sinv-${id}`;
+      const numEl = document.getElementById(isAnticipo ? `sinv-ant-num-${id}` : `sinv-num-${id}`);
+      const subEl = document.getElementById(isAnticipo ? `sinv-ant-sub-${id}` : `sinv-sub-${id}`);
+      const taxEl = document.getElementById(isAnticipo ? `sinv-ant-tax-${id}` : `sinv-tax-${id}`);
+      const pdfEl = document.getElementById(isAnticipo ? `sinv-ant-pdf-${id}` : `sinv-pdf-${id}`);
+      const xmlEl = document.getElementById(isAnticipo ? `sinv-ant-xml-${id}` : `sinv-xml-${id}`);
+      const msgEl = document.getElementById(isAnticipo ? `sinv-ant-msg-${id}` : `sinv-msg-${id}`);
       try {
-        if (!numEl.value) throw new Error('Ingresa el número de factura');
+        if (!numEl || !numEl.value) throw new Error('Ingresa el número de factura');
         const sub = Number(subEl.value||0);
         if (!sub) throw new Error('Ingresa subtotal mayor a cero');
         const tax = Number(taxEl.value||0);
@@ -2583,17 +2640,19 @@ async function proveedorPOView() {
         fd.append('purchase_order_id', id);
         fd.append('supplier_id', btn.dataset.supplier);
         fd.append('invoice_number', numEl.value);
+        fd.append('invoice_type', invType);
         fd.append('subtotal', sub);
         fd.append('taxes', tax);
         fd.append('total', sub + tax);
-        if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
-        if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
+        if (pdfEl && pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
+        if (xmlEl && xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
         const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
         if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
-        msgEl.textContent = '✅ Factura subida correctamente'; msgEl.style.color = '#16a34a';
+        msgEl.textContent = isAnticipo ? '✅ Factura de anticipo subida. El área de pagos recibirá la solicitud.' : '✅ Factura subida correctamente';
+        msgEl.style.color = '#16a34a';
         btn.disabled = true;
         setTimeout(render, 1200);
-      } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+      } catch(e) { if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; } }
     };
   });
 
@@ -3156,17 +3215,25 @@ async function paymentsView() {
             const overdue = Number(inv.days_overdue || 0);
             const rowBg = overdue > 0 ? '#fef2f2' : overdue === 0 ? '#fffbeb' : '';
             const urgentTag = inv.urgent ? `<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>` : '';
+            const isAnticipo = inv.invoice_type === 'anticipo';
+            const advancePaid = Number(inv.advance_paid_on_po || 0);
+            const pendingBal = Number(inv.pending_balance ?? inv.balance ?? inv.total ?? 0);
+            const anticipoTag = isAnticipo ? `<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 7px;font-size:10px;margin-left:6px;font-weight:600">💰 ANTICIPO</span>` : '';
+            const advanceInfo = !isAnticipo && advancePaid > 0
+              ? `<span class="small" style="color:#16a34a">✔ Anticipo pagado: $${advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} · Saldo: $${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>`
+              : '';
             return `
-            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${inv.balance||inv.total||0}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}" data-pofolio="${inv.po_folio||''}"
-              style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${rowBg};transition:background 0.15s"
-              onmouseover="this.style.background='#eff6ff'" onmouseout="this.style.background='${rowBg}'">
+            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${pendingBal}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}" data-pofolio="${inv.po_folio||''}" data-type="${inv.invoice_type||'normal'}" data-advance-paid="${advancePaid}"
+              style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${isAnticipo?'#eff6ff':rowBg};transition:background 0.15s"
+              onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='${isAnticipo?'#eff6ff':rowBg}'">
               <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                 <div>
-                  <b>${inv.invoice_number}</b>${urgentTag}
+                  <b>${inv.invoice_number}</b>${anticipoTag}${urgentTag}
                   <div class="small muted">${inv.supplier_name} · PO: ${inv.po_folio||'-'}</div>
+                  ${advanceInfo}
                 </div>
                 <div style="text-align:right">
-                  <div style="font-weight:700">$${Number(inv.balance||inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                  <div style="font-weight:700;color:${isAnticipo?'#1d4ed8':'inherit'}">$${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
                   <div class="small muted">Total $${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
                 </div>
               </div>
@@ -3254,17 +3321,22 @@ async function paymentsView() {
         total: Number(row.dataset.total),
         creditDays: Number(row.dataset.creditdays || 0),
         delivery: row.dataset.delivery || '',
-        poFolio: row.dataset.pofolio || ''
+        poFolio: row.dataset.pofolio || '',
+        invoiceType: row.dataset.type || 'normal',
+        advancePaid: Number(row.dataset['advance-paid'] || 0)
       };
       payFormHint.style.display = 'none';
       payFormBody.style.display = 'block';
       payAmount.value = selectedInv.balance.toFixed(2);
       payCreditDays.value = selectedInv.creditDays || '';
       payDelivery.value = selectedInv.delivery || '';
+      const isAnticipo = selectedInv.invoiceType === 'anticipo';
       payInvSummary.innerHTML = `
+        ${isAnticipo ? `<div style="background:#dbeafe;padding:4px 10px;border-radius:4px;margin-bottom:8px;font-size:12px;color:#1d4ed8;font-weight:600">💰 FACTURA DE ANTICIPO — Pago adelantado antes de la entrega</div>` : ''}
         <b>Factura:</b> ${selectedInv.number} &nbsp;|&nbsp;
-        <b>Saldo:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
+        <b>${isAnticipo ? 'Monto anticipo' : 'Saldo a pagar'}:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
         <b>Total factura:</b> $${selectedInv.total.toLocaleString('es-MX',{minimumFractionDigits:2})}
+        ${!isAnticipo && selectedInv.advancePaid > 0 ? `<br><span style="color:#16a34a;font-size:12px">✔ Anticipo ya pagado: $${selectedInv.advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} (descontado del saldo)</span>` : ''}
         <div id="payTraceInfo"></div>
       `;
       // Intentar cargar trazabilidad (best-effort)
@@ -3567,6 +3639,16 @@ async function adminView() {
         </tr>`;
       }).join('')}</tbody></table></div>
     </div>
+    <!-- ⚠ Reset de base de datos — SOLO PRUEBAS -->
+    <div class="card section" style="margin-top:16px;border:2px solid #fca5a5;background:#fff8f8">
+      <h3 style="color:#dc2626">⚠ Reset de base de datos (solo pruebas)</h3>
+      <p class="small muted">Borra todas las transacciones (requisiciones, POs, cotizaciones, facturas, pagos) pero <b>conserva usuarios, proveedores, catálogo, centros de costo y reglas</b>.<br>
+      Este botón debe eliminarse antes de ir a producción.</p>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn-danger" id="resetDbBtn" style="padding:8px 20px">🗑 Resetear base de datos de pruebas</button>
+        <span id="resetDbMsg" class="small muted"></span>
+      </div>
+    </div>
   `, 'admin');
 
   usrEditId.onchange = () => {
@@ -3648,6 +3730,19 @@ async function adminView() {
       usrEditId.value = btn.dataset.id;
       usrEditId.dispatchEvent(new Event('change'));
     };
+  });
+
+  document.getElementById('resetDbBtn')?.addEventListener('click', async () => {
+    const confirmMsg = '¿Estás seguro? Esto borrará TODAS las requisiciones, POs, cotizaciones, facturas y pagos.\n\nEscribe CONFIRMAR para continuar:';
+    const input = prompt(confirmMsg);
+    if (input !== 'CONFIRMAR') { alert('Operación cancelada.'); return; }
+    const msgEl = document.getElementById('resetDbMsg');
+    try {
+      msgEl.textContent = 'Reseteando...';
+      const out = await api('/api/admin/reset-db', { method: 'POST', body: JSON.stringify({ confirm: 'RESET_CONFIRMAR' }) });
+      msgEl.textContent = `✅ ${out.message}`;
+      msgEl.style.color = '#16a34a';
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
   });
 
   bindCommon();

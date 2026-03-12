@@ -33,11 +33,20 @@ router.get('/', (req, res) => {
   const db = read();
   const rows = db.invoices
     .filter(inv => req.user.supplier_id ? inv.supplier_id === req.user.supplier_id : true)
-    .map(inv => ({
-      ...inv,
-      supplier_name: (db.suppliers.find(s => s.id === inv.supplier_id) || {}).business_name || '',
-      po_folio: (db.purchase_orders.find(po => po.id === inv.purchase_order_id) || {}).folio || ''
-    }));
+    .map(inv => {
+      const po = db.purchase_orders.find(p => p.id === inv.purchase_order_id) || {};
+      // Sumar anticipos pagados para esta PO (facturas tipo anticipo ya pagadas)
+      const advancePaid = db.invoices
+        .filter(i => i.purchase_order_id === inv.purchase_order_id && i.invoice_type === 'anticipo' && i.status === 'Pagada')
+        .reduce((s, i) => s + Number(i.paid_amount || i.total || 0), 0);
+      return {
+        ...inv,
+        supplier_name: (db.suppliers.find(s => s.id === inv.supplier_id) || {}).business_name || '',
+        po_folio: po.folio || '',
+        po_advance_percentage: po.advance_percentage || 0,
+        advance_paid_on_po: advancePaid
+      };
+    });
   res.json(rows);
 });
 
@@ -89,11 +98,13 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   const pdfFile = req.files?.pdf?.[0];
   const xmlFile = req.files?.xml?.[0];
 
+  const invoiceType = req.body.invoice_type || 'normal'; // 'normal' | 'anticipo'
   const row = {
     id: nextId(db.invoices),
     purchase_order_id: poId,
     supplier_id: supplierId,
     invoice_number: req.body.invoice_number,
+    invoice_type: invoiceType,
     subtotal: Number(req.body.subtotal || 0),
     taxes: Number(req.body.taxes || 0),
     total: Number(req.body.total || 0) || (Number(req.body.subtotal || 0) + Number(req.body.taxes || 0)),
@@ -109,29 +120,37 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
 
   db.invoices.push(row);
 
-  // Actualizar ítems de la PO a "Facturado"
-  const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === row.purchase_order_id);
-  poItems.forEach(poLine => {
-    poLine.status = 'Facturado';
-    const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
-    if (reqItem) {
-      const oldStatus = reqItem.status;
-      reqItem.status = 'Facturado';
-      reqItem.updated_at = new Date().toISOString();
-      addHistory(db, { module: 'invoices', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, invoice_id: row.id, old_status: oldStatus, new_status: 'Facturado', changed_by_user_id: req.user.id, comment: `Factura ${row.invoice_number}` });
-      recalcRequisition(db, reqItem.requisition_id);
-    }
-  });
-
   const po = db.purchase_orders.find(x => x.id === row.purchase_order_id);
-  if (po) {
-    // Sumar subtotales de todas las facturas de esta PO
-    const totalFacturado = db.invoices
-      .filter(i => i.purchase_order_id === po.id)
-      .reduce((s, i) => s + Number(i.subtotal || 0), 0);
-    const poSubtotal = Number(po.total_amount || 0);
-    // ≥ 95% del monto cubierto → Facturada; si no → Facturación parcial
-    po.status = (poSubtotal > 0 && totalFacturado >= poSubtotal * 0.95) ? 'Facturada' : 'Facturación parcial';
+
+  if (invoiceType === 'anticipo') {
+    // Factura de anticipo: actualizar advance_status de la PO
+    if (po) {
+      po.advance_status = 'Facturado';
+      po.advance_invoice_id = row.id;
+    }
+  } else {
+    // Factura normal: actualizar ítems de la PO a "Facturado"
+    const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === row.purchase_order_id);
+    poItems.forEach(poLine => {
+      poLine.status = 'Facturado';
+      const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+      if (reqItem) {
+        const oldStatus = reqItem.status;
+        reqItem.status = 'Facturado';
+        reqItem.updated_at = new Date().toISOString();
+        addHistory(db, { module: 'invoices', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, invoice_id: row.id, old_status: oldStatus, new_status: 'Facturado', changed_by_user_id: req.user.id, comment: `Factura ${row.invoice_number}` });
+        recalcRequisition(db, reqItem.requisition_id);
+      }
+    });
+
+    if (po) {
+      // Sumar subtotales de facturas normales (excluir anticipos del cálculo de cobertura)
+      const totalFacturado = db.invoices
+        .filter(i => i.purchase_order_id === po.id && i.invoice_type !== 'anticipo')
+        .reduce((s, i) => s + Number(i.subtotal || 0), 0);
+      const poSubtotal = Number(po.total_amount || 0);
+      po.status = (poSubtotal > 0 && totalFacturado >= poSubtotal * 0.95) ? 'Facturada' : 'Facturación parcial';
+    }
   }
 
   write(db);

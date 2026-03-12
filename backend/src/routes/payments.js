@@ -58,8 +58,31 @@ router.get('/pending-invoices', allowRoles('pagos', 'comprador', 'admin'), (req,
   const db = read();
   const rows = db.invoices
     .filter(i => i.status !== 'Pagada')
-    .map(i => enrichInvoice(i, db))
-    .sort((a, b) => (b.days_overdue || -999) - (a.days_overdue || -999)); // más vencidas primero
+    .map(i => {
+      const enriched = enrichInvoice(i, db);
+      const po = db.purchase_orders.find(p => p.id === i.purchase_order_id) || {};
+      // Para facturas normales: anticipos ya pagados en la misma PO
+      const advancePaid = i.invoice_type !== 'anticipo'
+        ? db.invoices
+            .filter(a => a.purchase_order_id === i.purchase_order_id && a.invoice_type === 'anticipo' && a.status === 'Pagada')
+            .reduce((s, a) => s + Number(a.paid_amount || a.total || 0), 0)
+        : 0;
+      return {
+        ...enriched,
+        invoice_type: i.invoice_type || 'normal',
+        po_advance_percentage: po.advance_percentage || 0,
+        po_advance_status: po.advance_status || 'N/A',
+        advance_paid_on_po: advancePaid,
+        // Saldo real a pagar descontando anticipos ya cubiertos
+        pending_balance: Math.max(0, Number(enriched.balance || enriched.total || 0) - advancePaid)
+      };
+    })
+    .sort((a, b) => {
+      // Anticipos primero, luego por vencimiento
+      if (a.invoice_type === 'anticipo' && b.invoice_type !== 'anticipo') return -1;
+      if (a.invoice_type !== 'anticipo' && b.invoice_type === 'anticipo') return 1;
+      return (b.days_overdue || -999) - (a.days_overdue || -999);
+    });
   res.json(rows);
 });
 
@@ -156,8 +179,17 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
     // Actualizar PO y sus ítems
     const po = db.purchase_orders.find(x => x.id === invoice.purchase_order_id);
     if (po) {
-      po.paid_amount = db.invoices.filter(i => i.purchase_order_id === po.id).reduce((sum, inv) => sum + Number(inv.paid_amount || 0), 0);
-      po.status = po.paid_amount >= Number(po.total_amount || 0) && Number(po.total_amount || 0) > 0 ? 'Cerrada' : 'Pago parcial';
+      // Si la factura pagada es un anticipo, actualizar advance_status en la PO
+      if (invoice.invoice_type === 'anticipo' && invoice.status === 'Pagada') {
+        po.advance_status = 'Pagado';
+        po.advance_paid = Number(invoice.paid_amount || invoice.total || 0);
+      }
+      // paid_amount = suma de facturas normales (no anticipo) pagadas
+      po.paid_amount = db.invoices
+        .filter(i => i.purchase_order_id === po.id && i.invoice_type !== 'anticipo')
+        .reduce((sum, inv) => sum + Number(inv.paid_amount || 0), 0);
+      const totalNormal = Number(po.total_amount || 0);
+      po.status = (totalNormal > 0 && po.paid_amount >= totalNormal) ? 'Cerrada' : 'Pago parcial';
     }
 
     const poItems = db.purchase_order_items.filter(x => x.purchase_order_id === invoice.purchase_order_id);

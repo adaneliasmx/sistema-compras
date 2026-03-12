@@ -202,6 +202,11 @@ router.post('/items/:id/request-quotation', allowRoles('comprador', 'admin'), (r
 // Motor único de generación de PO — agrupa por proveedor automáticamente
 function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
   const supplier = db.suppliers.find(s => s.id === supplierId);
+  // Tomar el porcentaje de anticipo del mayor winning_quote de los ítems del grupo
+  const advancePct = lines.reduce((max, line) => {
+    const q = line.winning_quote_id ? db.quotations.find(q => q.id === line.winning_quote_id) : null;
+    return Math.max(max, Number(q?.advance_percentage || 0));
+  }, 0);
   const po = {
     id: nextId(db.purchase_orders),
     folio: nextPOFolio(db, supplier?.provider_code || 'GEN'),
@@ -213,7 +218,11 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
     total_amount: 0,
     supplier_response: 'Pendiente',
     supplier_email: supplier?.email || '',
-    supplier_contact: supplier?.contact_name || ''
+    supplier_contact: supplier?.contact_name || '',
+    advance_percentage: advancePct,
+    advance_amount: 0,       // se calcula al fijar total_amount
+    advance_status: advancePct > 0 ? 'Pendiente' : 'N/A',
+    advance_paid: 0
   };
   db.purchase_orders.push(po);
   let total = 0;
@@ -278,8 +287,46 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
     }
   });
   po.total_amount = total;
+  po.advance_amount = advancePct > 0 ? Math.round(total * advancePct / 100 * 100) / 100 : 0;
   return po;
 }
+
+// Solicitar anticipo de una PO (comprador genera la solicitud al proveedor)
+router.post('/purchase-orders/:id/request-advance', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+  if (!Number(po.advance_percentage || 0) && !req.body.advance_percentage) {
+    return res.status(400).json({ error: 'La PO no tiene porcentaje de anticipo definido' });
+  }
+  if (po.advance_status === 'Pagado') return res.status(400).json({ error: 'El anticipo ya fue pagado' });
+
+  if (req.body.advance_percentage) po.advance_percentage = Number(req.body.advance_percentage);
+  po.advance_amount = Math.round(Number(po.total_amount || 0) * Number(po.advance_percentage) / 100 * 100) / 100;
+  po.advance_status = 'Solicitado';
+  po.advance_requested_at = new Date().toISOString();
+  po.advance_requested_by = req.user.id;
+  po.updated_at = new Date().toISOString();
+
+  const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
+  const subject = `Anticipo requerido · ${po.folio} · ${po.advance_percentage}%`;
+  const body = [
+    `Estimado ${supplier.contact_name || supplier.business_name},`,
+    ``,
+    `Le informamos que la Orden de Compra ${po.folio} requiere un anticipo del ${po.advance_percentage}%.`,
+    ``,
+    `Monto del anticipo: $${po.advance_amount.toFixed(2)} ${po.currency || 'MXN'}`,
+    `Total de la orden: $${Number(po.total_amount || 0).toFixed(2)} ${po.currency || 'MXN'}`,
+    ``,
+    `Por favor registre la factura de anticipo en el portal para proceder con el pago.`,
+    ``,
+    `Gracias.`
+  ].join('\n');
+  const mailto = `mailto:${encodeURIComponent(supplier.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  write(db);
+  res.json({ ok: true, po, mailto, advance_amount: po.advance_amount });
+});
 
 router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();

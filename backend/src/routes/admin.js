@@ -94,4 +94,25 @@ router.post('/suppliers-with-user', (req, res) => {
   });
 });
 
+// ── Reset de base de datos de pruebas (conserva catálogos y usuarios) ─────────
+// ⚠ SOLO PARA ENTORNOS DE PRUEBA — eliminar antes de producción final
+router.post('/reset-db', (req, res) => {
+  const db = read();
+  if (req.body.confirm !== 'RESET_CONFIRMAR') {
+    return res.status(400).json({ error: 'Debes enviar { confirm: "RESET_CONFIRMAR" }' });
+  }
+  db.requisitions = [];
+  db.requisition_items = [];
+  db.quotation_requests = [];
+  db.quotations = [];
+  db.purchase_orders = [];
+  db.purchase_order_items = [];
+  db.invoices = [];
+  db.invoice_items = [];
+  db.payments = [];
+  db.status_history = [];
+  write(db);
+  res.json({ ok: true, message: 'Base de datos de transacciones reiniciada. Catálogos, usuarios, proveedores, reglas e inventario conservados.' });
+});
+
 module.exports = router;
