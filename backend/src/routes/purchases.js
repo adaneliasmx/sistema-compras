@@ -66,7 +66,16 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       supplier_name: (db.suppliers.find(s => s.id === i.supplier_id) || {}).business_name || '-',
       item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '',
       po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
-      cancelled_by_name: i.cancelled_by ? (db.users.find(u => u.id === i.cancelled_by) || {}).full_name || '' : ''
+      cancelled_by_name: i.cancelled_by ? (db.users.find(u => u.id === i.cancelled_by) || {}).full_name || '' : '',
+      quote_sub_status: (() => {
+        const reqs = (db.quotation_requests || []).filter(r => r.requisition_item_id === i.id);
+        if (!reqs.length) return 'por_solicitar';
+        const quotes = db.quotations.filter(q => q.requisition_item_id === i.id);
+        if (quotes.length) return 'cotizado';
+        const allRejected = reqs.every(r => r.status === 'Rechazada');
+        if (allRejected) return 'rechazado_proveedor';
+        return 'solicitada';
+      })()
     }));
   res.json(rows);
 });

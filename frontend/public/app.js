@@ -93,7 +93,7 @@ function logout() {
 
 function statusPill(status) {
   const map = {
-    'Borrador': 'gray', 'Enviada': 'gray', 'En cotización': 'orange', 'En autorización': 'gray', 'Autorizado': '', 'En proceso': 'orange', 'Entregado': 'orange', 'Facturado': 'orange', 'Facturada': 'orange', 'Facturación parcial': 'orange', 'Pago parcial': 'orange', 'Pagada': '', 'Completada': '', 'Cerrado': '', 'Cancelada': 'red', 'Cancelado': 'red', 'Rechazada': 'red', 'Rechazado': 'red'
+    'Borrador': 'gray', 'Enviada': 'gray', 'Por solicitar': 'gray', 'Solicitada': 'blue', 'Cotizado': '', 'Rechazado por proveedor': 'red', 'En cotización': 'orange', 'En autorización': 'gray', 'Autorizado': '', 'En proceso': 'orange', 'Entregado': 'orange', 'Facturado': 'orange', 'Facturada': 'orange', 'Facturación parcial': 'orange', 'Pago parcial': 'orange', 'Pagada': '', 'Completada': '', 'Cerrado': '', 'Cancelada': 'red', 'Cancelado': 'red', 'Rechazada': 'red', 'Rechazado': 'red'
   };
   return `<span class="pill ${map[status] || 'gray'}">${status || '-'}</span>`;
 }
@@ -1299,7 +1299,24 @@ async function purchasesView() {
   const openQuotationRequest = (row) => {
     openActionCard(`Solicitar cotización · ${row.item_name}`, `
       <p class="small muted">Selecciona proveedores (Ctrl+Click para varios):</p>
-      <select id="quoteSuppliersMulti" multiple size="7" style="width:100%;margin-bottom:12px">${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name} ${s.email?'· '+s.email:''}</option>`).join('')}</select>
+      <select id="quoteSuppliersMulti" multiple size="6" style="width:100%;margin-bottom:8px">${suppliers.map(s => `<option value="${s.id}" ${Number(row.supplier_id)===s.id?'selected':''}>${s.business_name} ${s.email?'· '+s.email:''}</option>`).join('')}</select>
+      <div style="margin-bottom:12px">
+        <button type="button" id="toggleNewSupplierBtn" class="btn-secondary" style="font-size:12px;padding:3px 10px">➕ Registrar nuevo proveedor</button>
+        <div id="newSupplierForm" style="display:none;margin-top:8px;padding:10px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px">
+          <div class="row-2" style="margin-bottom:6px">
+            <div><label style="font-size:12px">Nombre empresa *</label><input id="nsBizName" placeholder="Empresa S.A." style="font-size:12px"/></div>
+            <div><label style="font-size:12px">Contacto</label><input id="nsContact" placeholder="Nombre contacto" style="font-size:12px"/></div>
+          </div>
+          <div class="row-2" style="margin-bottom:6px">
+            <div><label style="font-size:12px">Email acceso (usuario) *</label><input id="nsEmail" type="email" placeholder="proveedor@empresa.com" style="font-size:12px"/></div>
+            <div><label style="font-size:12px">Teléfono</label><input id="nsPhone" placeholder="555 000 0000" style="font-size:12px"/></div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button type="button" id="saveNewSupplierBtn" class="btn-primary" style="font-size:12px;padding:4px 12px">Guardar y seleccionar</button>
+            <span id="nsMsg" class="small muted"></span>
+          </div>
+        </div>
+      </div>
       <div class="row-2">
         <select id="quoteReqCurrency"><option ${String(row.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(row.currency||'MXN')==='USD'?'selected':''}>USD</option></select>
         <button class="btn-primary" id="sendQuoteReqBtn">Enviar solicitud</button>
@@ -1308,6 +1325,45 @@ async function purchasesView() {
       <div id="quoteReqMsg" class="small muted"></div>
     `);
     quoteCancelBtn.onclick = closeActionCard;
+
+    document.getElementById('toggleNewSupplierBtn').onclick = () => {
+      const f = document.getElementById('newSupplierForm');
+      f.style.display = f.style.display === 'none' ? 'block' : 'none';
+    };
+
+    document.getElementById('saveNewSupplierBtn').onclick = async () => {
+      const nsMsg = document.getElementById('nsMsg');
+      const bizName = document.getElementById('nsBizName').value.trim();
+      const email = document.getElementById('nsEmail').value.trim();
+      if (!bizName) { nsMsg.textContent = 'El nombre de empresa es obligatorio.'; return; }
+      if (!email) { nsMsg.textContent = 'El email es obligatorio para crear el acceso del proveedor.'; return; }
+      try {
+        nsMsg.textContent = 'Guardando...';
+        const tempPwd = Math.random().toString(36).slice(2, 10) + 'A1!';
+        const result = await api('/api/catalogs/suppliers', { method: 'POST', body: JSON.stringify({
+          business_name: bizName,
+          contact_name: document.getElementById('nsContact').value.trim(),
+          email,
+          phone: document.getElementById('nsPhone').value.trim(),
+          user_email: email,
+          user_full_name: document.getElementById('nsContact').value.trim() || bizName,
+          user_password: tempPwd
+        })});
+        // Add to local suppliers list and select in multi-select
+        suppliers.push(result.supplier);
+        const opt = document.createElement('option');
+        opt.value = result.supplier.id;
+        opt.textContent = `${result.supplier.business_name} · ${result.supplier.email}`;
+        opt.selected = true;
+        document.getElementById('quoteSuppliersMulti').appendChild(opt);
+        // Show credentials to copy/send
+        const siteUrl = window.location.origin;
+        nsMsg.innerHTML = `✅ Proveedor creado. <b>Usuario:</b> ${email} <b>Contraseña:</b> ${tempPwd} <a href="mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Acceso al portal de compras')}&body=${encodeURIComponent('Bienvenido al portal de compras.\n\nUsuario: '+email+'\nContraseña: '+tempPwd+'\nAcceso: '+siteUrl)}" style="font-size:11px;margin-left:6px">📧 Enviar acceso</a>`;
+        nsMsg.style.color = '#16a34a';
+        document.getElementById('newSupplierForm').style.display = 'none';
+      } catch(e) { nsMsg.textContent = e.message; nsMsg.style.color = '#dc2626'; }
+    };
+
     sendQuoteReqBtn.onclick = async () => {
       try {
         const supplier_ids = [...quoteSuppliersMulti.selectedOptions].map(o => Number(o.value)).filter(Boolean);
@@ -1444,23 +1500,151 @@ async function purchasesView() {
 
     } else if (tab === 'cotizacion') {
       poActions.style.display = 'none';
-      tabContent.innerHTML = `
-        <p class="small muted" style="margin-bottom:8px">Ítems en proceso de cotización. Ve a <a href="#/cotizaciones">Cotizaciones</a> para registrar y elegir ganadoras.</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Req.</th><th>Ítem</th><th>Proveedor actual</th><th>Cant.</th><th>Unidad</th><th>Estatus</th><th>Acción</th></tr></thead>
-          <tbody>${itemsEnCotizacion.length ? itemsEnCotizacion.map(i => `<tr>
-            <td style="font-size:11px">${i.requisition_folio||'-'}</td>
-            <td><b>${i.item_name}</b></td>
-            <td>${i.supplier_name||'<span style="color:#f59e0b">Sin asignar</span>'}</td>
-            <td>${Number(i.quantity||0)}</td>
-            <td>${i.unit||'-'}</td>
-            <td>${statusPill(i.status)}</td>
-            <td><button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">📩 Cotizar</button>
-                <button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">✖</button></td>
-          </tr>`).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin ítems en cotización</td></tr>'}
-          </tbody></table></div>`;
-      tabContent.querySelectorAll('.quote-item').forEach(btn => btn.onclick = () => openQuotationRequest(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id))));
-      tabContent.querySelectorAll('.cancel-item').forEach(btn => btn.onclick = () => openCancelItem(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id))));
+
+      // Enriquecer con sub-status derivado de solicitudes/cotizaciones
+      const subStatusLabel = (s) => ({
+        por_solicitar: 'Por solicitar',
+        solicitada: 'Solicitada',
+        cotizado: 'Cotizado',
+        rechazado_proveedor: 'Rechazado por proveedor'
+      })[s] || 'Por solicitar';
+
+      const subStatusColor = (s) => ({
+        por_solicitar: '#6b7280',
+        solicitada: '#2563eb',
+        cotizado: '#16a34a',
+        rechazado_proveedor: '#dc2626'
+      })[s] || '#6b7280';
+
+      let expandedCotizId = null;
+
+      const renderCotizTab = async () => {
+        const rows = itemsEnCotizacion;
+        tabContent.innerHTML = rows.length ? `
+          <div class="table-wrap"><table>
+            <thead><tr>
+              <th>Req.</th><th>Ítem</th><th>Cant.</th><th>Unidad</th><th>Estatus solicitud</th><th>Acciones</th>
+            </tr></thead>
+            <tbody id="cotizTbody">
+              ${rows.map(i => {
+                const ssl = subStatusLabel(i.quote_sub_status);
+                const ssc = subStatusColor(i.quote_sub_status);
+                return `<tr class="cotiz-row" data-id="${i.id}" style="cursor:pointer">
+                  <td style="font-size:11px">${i.requisition_folio||'-'}</td>
+                  <td><b>${escapeHtml(i.item_name)}</b></td>
+                  <td>${Number(i.quantity||0)}</td>
+                  <td>${i.unit||'-'}</td>
+                  <td><span style="color:${ssc};font-weight:600;font-size:12px">● ${ssl}</span></td>
+                  <td style="white-space:nowrap">
+                    ${i.quote_sub_status === 'por_solicitar' || i.quote_sub_status === 'rechazado_proveedor'
+                      ? `<button class="btn-secondary re-quote-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">📩 ${i.quote_sub_status === 'rechazado_proveedor' ? 'Nuevo proveedor' : 'Solicitar'}</button>`
+                      : ''}
+                    <button class="btn-secondary view-quotes-btn" data-id="${i.id}" style="padding:2px 8px;font-size:12px">🔍 Ver cotizaciones</button>
+                    <button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">✖</button>
+                  </td>
+                </tr>
+                <tr id="cotiz-detail-${i.id}" style="display:none"><td colspan="6" style="padding:0;background:#f8fafc;border-top:1px solid #e5e7eb"></td></tr>`;
+              }).join('')}
+            </tbody>
+          </table></div>` :
+          '<div class="muted small" style="padding:24px;text-align:center">Sin ítems en cotización ✅</div>';
+
+        tabContent.querySelectorAll('.re-quote-item').forEach(btn => {
+          btn.onclick = () => openQuotationRequest(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id)));
+        });
+        tabContent.querySelectorAll('.cancel-item').forEach(btn => {
+          btn.onclick = () => openCancelItem(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id)));
+        });
+
+        tabContent.querySelectorAll('.view-quotes-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const itemId = Number(btn.dataset.id);
+            const detailRow = document.getElementById(`cotiz-detail-${itemId}`);
+            if (detailRow.style.display !== 'none') { detailRow.style.display = 'none'; return; }
+            // Hide other expanded rows
+            tabContent.querySelectorAll('[id^="cotiz-detail-"]').forEach(r => r.style.display = 'none');
+            detailRow.style.display = '';
+            const td = detailRow.querySelector('td');
+            td.innerHTML = '<div class="muted small" style="padding:12px">Cargando cotizaciones...</div>';
+
+            try {
+              const detail = await api(`/api/quotations/item-detail/${itemId}`);
+              const item = itemsEnCotizacion.find(x => x.id === itemId);
+              if (!detail.length) {
+                td.innerHTML = `<div style="padding:12px">
+                  <p class="small muted">Sin solicitudes enviadas aún.</p>
+                  <button class="btn-primary do-request-btn" data-id="${itemId}" style="font-size:12px;padding:4px 12px">📩 Solicitar cotización</button>
+                </div>`;
+                td.querySelector('.do-request-btn').onclick = () => { detailRow.style.display='none'; openQuotationRequest(item); };
+                return;
+              }
+
+              td.innerHTML = `<div style="padding:12px">
+                <h4 style="margin:0 0 10px;font-size:13px">Cotizaciones de <b>${escapeHtml(item?.item_name||'')}</b></h4>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  ${detail.map(req => {
+                    const q = req.quote;
+                    const isRejected = req.status === 'Rechazada';
+                    return `<div style="border:1px solid ${isRejected?'#fca5a5':q?'#bbf7d0':'#e5e7eb'};border-radius:8px;padding:10px;background:${isRejected?'#fff5f5':q?'#f0fff4':'#fafafa'}">
+                      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:4px">
+                        <div>
+                          <b style="font-size:13px">${escapeHtml(req.supplier_name)}</b>
+                          ${isRejected ? '<span style="color:#dc2626;font-size:12px;margin-left:8px">✖ Rechazado por el proveedor</span>' : ''}
+                          ${!q && !isRejected ? '<span style="color:#f59e0b;font-size:12px;margin-left:8px">⏳ Esperando respuesta</span>' : ''}
+                          ${q ? `<span style="color:#16a34a;font-size:12px;margin-left:8px">✅ Cotización recibida</span>` : ''}
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap">
+                          ${isRejected ? `<button class="btn-secondary re-quote-btn" data-id="${itemId}" style="font-size:12px;padding:3px 10px">📩 Nuevo proveedor</button>` : ''}
+                          ${q && !q.is_winner ? `<button class="btn-primary approve-quote-btn" data-qid="${q.id}" data-iid="${itemId}" style="font-size:12px;padding:3px 10px">✅ Aprobar</button>` : ''}
+                          ${q?.is_winner ? `<span style="color:#16a34a;font-size:12px;font-weight:700">⭐ Ganadora</span>` : ''}
+                        </div>
+                      </div>
+                      ${q ? `<div style="margin-top:6px;font-size:12px;display:flex;gap:16px;flex-wrap:wrap">
+                        <span>💰 <b>$${Number(q.unit_cost||0).toFixed(2)} ${q.currency||'MXN'}</b></span>
+                        <span>🚚 ${q.delivery_days||0} días</span>
+                        ${q.payment_terms ? `<span>💳 ${escapeHtml(q.payment_terms)}</span>` : ''}
+                        ${q.quote_number ? `<span>No. ${escapeHtml(q.quote_number)}</span>` : ''}
+                        ${q.attachment_path ? `<a href="${q.attachment_path}" target="_blank" style="font-size:12px">📎 Ver cotización</a>` : ''}
+                      </div>` : ''}
+                    </div>`;
+                  }).join('')}
+                </div>
+                <div style="margin-top:10px;display:flex;gap:8px">
+                  <button class="btn-secondary re-quote-btn" data-id="${itemId}" style="font-size:12px;padding:4px 12px">📩 Solicitar a nuevo proveedor</button>
+                </div>
+                <div id="cotiz-panel-msg-${itemId}" class="small muted" style="margin-top:6px"></div>
+              </div>`;
+
+              // Aprobar cotización (select-winner)
+              td.querySelectorAll('.approve-quote-btn').forEach(ab => {
+                ab.onclick = async () => {
+                  if (!confirm('¿Aprobar esta cotización como ganadora? Las otras solicitudes pendientes se cancelarán automáticamente.')) return;
+                  try {
+                    ab.disabled = true;
+                    await api(`/api/quotations/${ab.dataset.qid}/select-winner`, { method: 'POST' });
+                    document.getElementById(`cotiz-panel-msg-${ab.dataset.iid}`).textContent = '✅ Cotización aprobada. Ítem pasó a Pendientes de PO.';
+                    setTimeout(render, 1200);
+                  } catch(e) {
+                    document.getElementById(`cotiz-panel-msg-${ab.dataset.iid}`).textContent = e.message;
+                    document.getElementById(`cotiz-panel-msg-${ab.dataset.iid}`).style.color = '#dc2626';
+                    ab.disabled = false;
+                  }
+                };
+              });
+
+              // Re-cotizar con nuevo proveedor
+              td.querySelectorAll('.re-quote-btn').forEach(rb => {
+                rb.onclick = () => { detailRow.style.display='none'; openQuotationRequest(itemsEnCotizacion.find(x => x.id === Number(rb.dataset.id))); };
+              });
+
+            } catch(e) {
+              td.innerHTML = `<div style="padding:12px;color:#dc2626">Error al cargar: ${e.message}</div>`;
+            }
+          };
+        });
+      };
+
+      renderCotizTab();
 
     } else if (tab === 'solicitados') {
       tabContent.innerHTML = `
@@ -1554,13 +1738,32 @@ async function purchasesView() {
         </div>`;
       }).join('') : '<div class="muted small" style="padding:16px;text-align:center">Sin órdenes de compra activas</div>';
 
-      // Avanzar status
+      // Avanzar status (actualización en sitio, sin recargar toda la vista)
       tabContent.querySelectorAll('.po-advance-btn').forEach(btn => {
         btn.onclick = async () => {
           try {
             btn.disabled = true;
-            await api(`/api/purchases/purchase-orders/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.status }) });
-            render();
+            const updatedPO = await api(`/api/purchases/purchase-orders/${btn.dataset.id}/status`, { method: 'PATCH', body: JSON.stringify({ status: btn.dataset.status }) });
+            // Actualizar en sitio: cambiar pill de status y ocultar botón
+            const card = document.getElementById(`po-card-${btn.dataset.id}`);
+            if (card) {
+              const nextS2 = STATUS_NEXT[updatedPO.status];
+              const btnLabel2 = STATUS_LABEL_BTN[updatedPO.status];
+              // Refrescar pill
+              card.querySelectorAll('.pill').forEach(p => {
+                if (['Enviada','Aceptada','En proceso','Entregado','Facturada','Facturación parcial','Cerrada'].some(s => p.textContent.trim() === s)) {
+                  p.outerHTML = statusPill(updatedPO.status);
+                }
+              });
+              // Cambiar botón
+              if (nextS2) { btn.textContent = STATUS_LABEL_BTN[nextS2] || nextS2; btn.dataset.status = nextS2; btn.disabled = false; }
+              else { btn.remove(); }
+              // Mostrar mensaje breve en tarjeta
+              const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+              if (msgEl) { msgEl.textContent = `✅ Estado actualizado a: ${updatedPO.status}`; msgEl.style.color='#16a34a'; setTimeout(()=>{ msgEl.textContent=''; }, 3000); }
+            } else {
+              render();
+            }
           } catch(e) { alert(e.message); btn.disabled = false; }
         };
       });

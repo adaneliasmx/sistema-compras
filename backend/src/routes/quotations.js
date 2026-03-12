@@ -193,6 +193,47 @@ router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) =
     });
     // 3. Recalcular de nuevo para que el status de la requisición refleje el nuevo status del ítem
     recalcRequisition(db, reqItem.requisition_id);
+
+    // Cancelar solicitudes pendientes de otros proveedores para este ítem
+    (db.quotation_requests || [])
+      .filter(r => r.requisition_item_id === winner.requisition_item_id && r.supplier_id !== winner.supplier_id && r.status === 'Pendiente')
+      .forEach(r => { r.status = 'Cancelada'; r.cancelled_at = new Date().toISOString(); });
+
+    // Auto-registrar en catálogo si no tiene código de ítem
+    if (!reqItem.catalog_item_id && winner.unit_cost) {
+      const existingName = (winner.official_item_name || reqItem.manual_item_name || '').toLowerCase().trim();
+      const alreadyInCatalog = existingName && db.catalog_items.find(c => (c.name || '').toLowerCase().trim() === existingName);
+      if (!alreadyInCatalog && existingName) {
+        const maxCode = db.catalog_items.reduce((max, c) => {
+          const n = parseInt((c.code || '').replace(/^ITM-/i, ''), 10);
+          return isNaN(n) ? max : Math.max(max, n);
+        }, 0);
+        const newCode = `ITM-${String(maxCode + 1).padStart(4, '0')}`;
+        const newItem = {
+          id: nextId(db.catalog_items),
+          code: newCode,
+          name: winner.official_item_name || reqItem.manual_item_name || '',
+          item_type: 'uso continuo',
+          unit: reqItem.unit || 'pza',
+          supplier_id: winner.supplier_id,
+          equivalent_code: winner.provider_code || '',
+          unit_price: winner.unit_cost,
+          currency: winner.currency || 'MXN',
+          quote_validity_days: 30,
+          active: true,
+          inventoried: false,
+          cost_center_id: reqItem.cost_center_id || null,
+          sub_cost_center_id: reqItem.sub_cost_center_id || null,
+          created_from_quotation: winner.id
+        };
+        db.catalog_items.push(newItem);
+        reqItem.catalog_item_id = newItem.id;
+        winner.catalog_item_id = newItem.id;
+      } else if (alreadyInCatalog) {
+        reqItem.catalog_item_id = alreadyInCatalog.id;
+        winner.catalog_item_id = alreadyInCatalog.id;
+      }
+    }
   }
 
   write(db);
@@ -252,6 +293,36 @@ router.post('/:id/register-catalog-from-winner', allowRoles('comprador', 'admin'
 
   write(db);
   res.status(201).json({ catalog_item: item, requisition_item: reqItem });
+});
+
+// Proveedor declina solicitud de cotización
+router.post('/requests/:id/decline', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+  const db = read();
+  const qr = (db.quotation_requests || []).find(r => r.id === Number(req.params.id));
+  if (!qr) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (req.user.role_code === 'proveedor' && qr.supplier_id !== req.user.supplier_id) {
+    return res.status(403).json({ error: 'Sin permiso' });
+  }
+  qr.status = 'Rechazada';
+  qr.declined_at = new Date().toISOString();
+  qr.decline_reason = req.body.reason || 'Sin motivo';
+  write(db);
+  res.json({ ok: true });
+});
+
+// Detalle de cotización por ítem: solicitudes + cotizaciones recibidas
+router.get('/item-detail/:itemId', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const itemId = Number(req.params.itemId);
+  const requests = (db.quotation_requests || [])
+    .filter(r => r.requisition_item_id === itemId)
+    .map(r => ({
+      ...r,
+      supplier_name: (db.suppliers.find(s => s.id === r.supplier_id) || {}).business_name || '-',
+      supplier_email: (db.suppliers.find(s => s.id === r.supplier_id) || {}).email || '',
+      quote: db.quotations.find(q => q.requisition_item_id === itemId && q.supplier_id === r.supplier_id) || null
+    }));
+  res.json(requests);
 });
 
 module.exports = router;
