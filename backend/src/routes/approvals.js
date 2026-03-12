@@ -35,6 +35,10 @@ function updateDecision(req, res, status) {
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   const rule = getApprovalRule(db, Number(reqRow?.total_amount || 0));
   if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No puedes autorizar esta solicitud' });
+  // Un usuario no puede aprobar su propia requisición (conflicto de interés)
+  if (req.user.role_code !== 'admin' && reqRow?.requester_user_id === req.user.id) {
+    return res.status(403).json({ error: 'No puedes autorizar una requisición que tú mismo solicitaste.' });
+  }
   const oldStatus = line.status;
   line.status = status;
   line.updated_at = new Date().toISOString();

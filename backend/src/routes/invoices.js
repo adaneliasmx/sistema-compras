@@ -69,6 +69,15 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
     return res.status(400).json({ error: 'PO, proveedor y número de factura son requeridos' });
   }
 
+  // Validar número de factura único por proveedor
+  const dupInvoice = db.invoices.find(i =>
+    i.supplier_id === supplierId &&
+    i.invoice_number.trim().toLowerCase() === req.body.invoice_number.trim().toLowerCase()
+  );
+  if (dupInvoice) {
+    return res.status(409).json({ error: `La factura "${req.body.invoice_number}" ya fue registrada anteriormente para este proveedor.` });
+  }
+
   // Proveedor solo puede facturar sus propias POs
   if (isSupplier) {
     const po = db.purchase_orders.find(x => x.id === poId);

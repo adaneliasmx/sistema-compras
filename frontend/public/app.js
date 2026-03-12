@@ -1,7 +1,18 @@
+const DRAFT_KEY = 'req_draft_items';
+function saveDraftToStorage() {
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(state.itemsDraft)); } catch(_) {}
+}
+function loadDraftFromStorage() {
+  try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch(_) { return null; }
+}
+function clearDraftStorage() {
+  try { localStorage.removeItem(DRAFT_KEY); } catch(_) {}
+}
+
 const state = {
   token: localStorage.getItem('token'),
   user: JSON.parse(localStorage.getItem('user') || 'null'),
-  itemsDraft: [{ id: crypto.randomUUID(), quantity: 1, unit: 'pza', unit_cost: 0 }]
+  itemsDraft: []
 };
 
 const navItems = [
@@ -635,8 +646,13 @@ async function requisitionsView(editId = null) {
   const [items, suppliers, cc, scc, list, units] = await Promise.all([api('/api/catalogs/items'), api('/api/catalogs/suppliers'), api('/api/catalogs/cost-centers'), api('/api/catalogs/sub-cost-centers'), api('/api/requisitions'), api('/api/catalogs/units')]);
   let editing = null;
   if (editId) editing = await api(`/api/requisitions/${editId}`);
-  if (!editing && !state.itemsDraft.length) state.itemsDraft = [];
-  if (editing) state.itemsDraft = editing.items.map(x => ({ ...x, id: crypto.randomUUID() }));
+  if (editing) {
+    state.itemsDraft = editing.items.map(x => ({ ...x, id: crypto.randomUUID() }));
+  } else if (!state.itemsDraft.length) {
+    // Restaurar borrador guardado si existe
+    const saved = loadDraftFromStorage();
+    state.itemsDraft = (saved && saved.length) ? saved : [];
+  }
   const renderList = rows => rows.map(r => `<tr><td>${r.folio}</td><td>${statusPill(r.status)}</td><td>${Number(r.total_amount || 0).toFixed(2)} ${r.currency || ''}</td><td><a href="#/requisiciones/${r.id}">Validar</a></td></tr>`).join('');
   app.innerHTML = shell(`
     <div class="grid grid-2">
@@ -709,6 +725,8 @@ async function requisitionsView(editId = null) {
   };
   const renderDraft = () => {
     state.itemsDraft = state.itemsDraft.map(x => ({ ...x, id: x.id || crypto.randomUUID() }));
+    // Persistir borrador en localStorage para sobrevivir recargas de página
+    if (!editing) saveDraftToStorage();
     const total = state.itemsDraft.reduce((s, x) => s + (Number(x.quantity||0) * Number(x.unit_cost||0)), 0);
     itemsDraft.innerHTML = state.itemsDraft.length === 0
       ? '<p class="small muted" style="padding:12px 0;text-align:center;color:#9ca3af">Sin ítems. Completa el formulario de arriba y haz clic en "+ Agregar a lista".</p>'
@@ -770,12 +788,12 @@ async function requisitionsView(editId = null) {
   const validateManuals = () => { const hasManualNoCC = state.itemsDraft.some(x => !x.catalog_item_id && !(Number(costCenter.value||0) || Number(x.cost_center_id||0))); if (hasManualNoCC) { reqMsg.textContent = 'Los ítems manuales requieren centro de costo.'; costCenter.focus(); return false; } return true; };
   const buildPayload = (status) => ({ urgency: urgency.value, cost_center_id: Number(costCenter.value || 0) || null, sub_cost_center_id: Number(subCostCenter.value || 0) || null, currency: currency.value, programmed_date: programmedDate.value || null, comments: comments.value, status, items: state.itemsDraft.map(({ id, ...rest }) => ({ ...rest, cost_center_id: rest.cost_center_id || Number(costCenter.value||0) || null, sub_cost_center_id: rest.sub_cost_center_id || Number(subCostCenter.value||0) || null, currency: rest.currency || currency.value })) });
   previewReqBtn.onclick = () => openPrintPreview('Vista requisición', `<h1>${editing?.requisition.folio || 'Vista previa de requisición'}</h1><div class="small">Solicitante: ${escapeHtml(state.user?.name || '')}<br>Departamento: ${escapeHtml(state.user?.department || '')}<br>Urgencia: ${escapeHtml(urgency.value)}<br>Fecha programada: ${escapeHtml(programmedDate.value || '-')}</div><table><thead><tr><th>Ítem</th><th>Proveedor</th><th>Cantidad</th><th>Unidad</th><th>Costo</th><th>Moneda</th></tr></thead><tbody>${state.itemsDraft.map(x => `<tr><td>${escapeHtml((items.find(i => i.id === Number(x.catalog_item_id)) || {}).name || x.manual_item_name || '')}</td><td>${escapeHtml((suppliers.find(s => s.id === Number(x.supplier_id)) || {}).business_name || '-')}</td><td>${x.quantity}</td><td>${escapeHtml(x.unit || '')}</td><td>${Number(x.unit_cost||0).toFixed(2)}</td><td>${escapeHtml(x.currency || currency.value || 'MXN')}</td></tr>`).join('')}</tbody></table>`);
-  saveDraftBtn.onclick = async () => { try { if (!validateManuals()) return; if (editing) await api(`/api/requisitions/${editing.requisition.id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); state.itemsDraft = []; location.hash = `#/requisiciones/${out.requisition.id}`; return; } state.itemsDraft = []; render(); } catch (e) { reqMsg.textContent = e.message; } };
+  saveDraftBtn.onclick = async () => { try { if (!validateManuals()) return; if (editing) await api(`/api/requisitions/${editing.requisition.id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); state.itemsDraft = []; clearDraftStorage(); location.hash = `#/requisiciones/${out.requisition.id}`; return; } state.itemsDraft = []; clearDraftStorage(); render(); } catch (e) { reqMsg.textContent = e.message; } };
   sendReqBtn.onclick = async () => { try { if (!validateManuals()) return; let id = editing?.requisition.id; if (editing) await api(`/api/requisitions/${id}`, { method:'PATCH', body: JSON.stringify(buildPayload('Borrador'))}); else { const out = await api('/api/requisitions', { method:'POST', body: JSON.stringify(buildPayload('Borrador'))}); id = out.requisition.id; }
       const out = await api(`/api/requisitions/${id}/send`, { method:'POST', body: JSON.stringify({}) });
       if (out.mailto_buyer) window.open(out.mailto_buyer, '_blank');
       if (out.mailto_requester) setTimeout(() => window.open(out.mailto_requester, '_blank'), 600);
-      state.itemsDraft = [];
+      state.itemsDraft = []; clearDraftStorage();
       location.hash = `#/requisiciones/${id}`;
     } catch (e) { reqMsg.textContent = e.message; } };
   expReqListBtn.onclick = () => downloadCsv('requisitions', 'requisiciones.csv');
@@ -2237,7 +2255,8 @@ async function quotationsView() {
     quoteItem.onchange = () => {
       const sel = quoteItem.options[quoteItem.selectedIndex];
       const suppId = sel?.dataset?.supplier;
-      if (suppId) quoteSupplier.value = suppId;
+      // Solo auto-rellenar proveedor si el campo está vacío para no sobreescribir selección manual
+      if (suppId && !quoteSupplier.value) quoteSupplier.value = suppId;
       // Auto-proponer número de cotización
       const count = quotes.filter(q => q.requisition_item_id === Number(quoteItem.value)).length + 1;
       quoteNumber.value = `COT-${String(quoteItem.value).slice(-4).padStart(4,'0')}-${String(count).padStart(2,'0')}`;

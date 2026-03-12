@@ -114,6 +114,12 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
   if (!row.requisition_item_id || !row.supplier_id) {
     return res.status(400).json({ error: 'Ítem y proveedor requeridos' });
   }
+  if (Number(row.unit_cost) <= 0) {
+    return res.status(400).json({ error: 'El costo unitario debe ser mayor a cero.' });
+  }
+  if (Number(row.delivery_days) < 0) {
+    return res.status(400).json({ error: 'Los días de entrega no pueden ser negativos.' });
+  }
 
   db.quotation_requests = db.quotation_requests || [];
   const qr = db.quotation_requests.find(r =>
