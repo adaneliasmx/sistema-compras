@@ -11,8 +11,14 @@ function nextPOFolio(db, providerCode) {
   const y = now.getFullYear();
   const m = String(now.getMonth() + 1).padStart(2, '0');
   const prefix = `PO-${providerCode}-${y}${m}`;
-  const count = db.purchase_orders.filter(x => String(x.folio).startsWith(prefix)).length + 1;
-  return `${prefix}-${String(count).padStart(4, '0')}`;
+  // Usar el mayor sufijo numérico existente para evitar duplicados si se borran POs
+  const maxSuffix = db.purchase_orders
+    .filter(x => String(x.folio).startsWith(prefix))
+    .reduce((max, x) => {
+      const n = parseInt(String(x.folio).slice(prefix.length + 1), 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+  return `${prefix}-${String(maxSuffix + 1).padStart(4, '0')}`;
 }
 
 // Preview: agrupa ítems seleccionados por proveedor antes de generar POs
@@ -35,13 +41,15 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
       if (!l.unit_cost) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin costo`);
       if (!l.supplier_id) warnings.push(`Ítem "${(db.catalog_items.find(c=>c.id===l.catalog_item_id)||{}).name||l.manual_item_name}" sin proveedor`);
     });
+    const currencies = [...new Set(groupLines.map(l => l.currency || 'MXN'))];
+    if (currencies.length > 1) warnings.push(`Ítems con monedas mixtas (${currencies.join(', ')}). Se usará MXN como moneda de la PO.`);
     return {
       supplier_id: Number(supplierId),
       supplier_name: supplier?.business_name || '⚠ Sin proveedor asignado',
       supplier_email: supplier?.email || '',
       item_count: groupLines.length,
       total,
-      currency: groupLines[0].currency || 'MXN',
+      currency: currencies.length === 1 ? currencies[0] : 'MXN',
       items: groupLines.map(l => ({
         id: l.id, status: l.status,
         name: (db.catalog_items.find(c => c.id === l.catalog_item_id) || {}).name || l.manual_item_name,
@@ -68,11 +76,13 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
       cancelled_by_name: i.cancelled_by ? (db.users.find(u => u.id === i.cancelled_by) || {}).full_name || '' : '',
       quote_sub_status: (() => {
+        // Solo aplica para ítems que aún están en etapa de cotización
+        if (i.status !== 'En cotización') return null;
         const reqs = (db.quotation_requests || []).filter(r => r.requisition_item_id === i.id);
         if (!reqs.length) return 'por_solicitar';
         const quotes = db.quotations.filter(q => q.requisition_item_id === i.id);
         if (quotes.length) return 'cotizado';
-        const allRejected = reqs.every(r => r.status === 'Rechazada');
+        const allRejected = reqs.length > 0 && reqs.every(r => r.status === 'Rechazada');
         if (allRejected) return 'rechazado_proveedor';
         return 'solicitada';
       })()
@@ -93,7 +103,11 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   if (req.body.currency !== undefined) line.currency = req.body.currency || line.currency || 'MXN';
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   recalcRequisition(db, line.requisition_id);
-  line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
+  // Solo re-derivar status en etapas tempranas; no regresar ítems que ya avanzaron en el flujo
+  const EARLY_STATUSES = ['En cotización', 'En autorización', 'Autorizado'];
+  if (EARLY_STATUSES.includes(line.status)) {
+    line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
+  }
   line.updated_at = new Date().toISOString();
   addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: line.status, changed_by_user_id: req.user.id, comment: 'Edición de ítem por compras' });
   recalcRequisition(db, line.requisition_id);
@@ -165,7 +179,17 @@ router.post('/items/:id/request-quotation', allowRoles('comprador', 'admin'), (r
   line.currency = req.body.currency || line.currency || 'MXN';
   line.updated_at = new Date().toISOString();
   db.quotation_requests = db.quotation_requests || [];
-  supplierIds.forEach(supplier_id => db.quotation_requests.push({ id: nextId(db.quotation_requests), requisition_item_id: line.id, supplier_id, created_at: new Date().toISOString(), created_by_user_id: req.user.id, status: 'Pendiente' }));
+  // Deduplicar: no crear solicitud si ya existe una activa para ese proveedor+ítem
+  supplierIds.forEach(supplier_id => {
+    const existing = db.quotation_requests.find(r =>
+      r.requisition_item_id === line.id &&
+      r.supplier_id === supplier_id &&
+      r.status === 'Pendiente'
+    );
+    if (!existing) {
+      db.quotation_requests.push({ id: nextId(db.quotation_requests), requisition_item_id: line.id, supplier_id, created_at: new Date().toISOString(), created_by_user_id: req.user.id, status: 'Pendiente' });
+    }
+  });
   const emails = supplierIds.map(id => (db.suppliers.find(s => s.id === id) || {}).email).filter(Boolean);
   addHistory(db, { module: 'quotations', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: null, new_status: 'En cotización', changed_by_user_id: req.user.id, comment: 'Solicitud de cotización enviada' });
   recalcRequisition(db, line.requisition_id);
@@ -220,7 +244,11 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
       const normalizedName = line.manual_item_name.trim().toLowerCase();
       const exists = db.catalog_items.find(c => c.name.toLowerCase().trim() === normalizedName);
       if (!exists) {
-        const newCode = 'ITM-' + String(db.catalog_items.length + 1).padStart(4, '0');
+        const maxCatNum = db.catalog_items.reduce((max, c) => {
+          const n = parseInt((c.code || '').replace(/^ITM-/i, ''), 10);
+          return isNaN(n) ? max : Math.max(max, n);
+        }, 0);
+        const newCode = 'ITM-' + String(maxCatNum + 1).padStart(4, '0');
         const newItem = {
           id: nextId(db.catalog_items),
           code: newCode,
@@ -264,18 +292,20 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   // Excluir ítems ya cancelados o ya con PO
   const disponibles = lines.filter(x => !['Cancelado', 'Rechazado', 'Cerrado'].includes(x.status) && !x.purchase_order_id);
 
-  // Validar que tengan proveedor y costo (requisito mínimo para PO parcial)
-  const incompletos = disponibles.filter(x => !x.supplier_id || !x.unit_cost);
-  if (incompletos.length && incompletos.length === disponibles.length) {
-    return res.status(400).json({
-      error: `Los ítems seleccionados no tienen proveedor o costo asignado. Asigna proveedor y costo antes de generar la PO.`,
-      items: incompletos.map(x => x.id)
-    });
-  }
+  // Solo ítems Autorizados con proveedor y costo pueden generar PO
+  const aptos = disponibles.filter(x => x.status === 'Autorizado' && x.supplier_id && x.unit_cost);
 
-  // Usar los que sí tienen proveedor+costo (PO parcial si los demás están incompletos)
-  const aptos = disponibles.filter(x => x.supplier_id && x.unit_cost);
-  if (!aptos.length) return res.status(400).json({ error: 'No hay ítems listos para PO. Asigna proveedor y costo.' });
+  if (!aptos.length) {
+    const noAutorizados = disponibles.filter(x => x.status !== 'Autorizado');
+    const sinDatos = disponibles.filter(x => x.status === 'Autorizado' && (!x.supplier_id || !x.unit_cost));
+    if (noAutorizados.length === disponibles.length) {
+      return res.status(400).json({ error: 'Los ítems seleccionados no están Autorizados. Solo se pueden generar POs para ítems Autorizados.', items: noAutorizados.map(x => x.id) });
+    }
+    if (sinDatos.length) {
+      return res.status(400).json({ error: 'Hay ítems Autorizados sin proveedor o costo asignado.', items: sinDatos.map(x => x.id) });
+    }
+    return res.status(400).json({ error: 'No hay ítems listos para PO.' });
+  }
 
   // Agrupar por proveedor
   const grupos = {};
@@ -285,11 +315,13 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     grupos[sid].push(line);
   });
 
-  const currency = req.body.currency || 'MXN';
   const purchaseOrders = [];
 
   for (const [supplierId, groupLines] of Object.entries(grupos)) {
-    const po = createPOForGroup(db, groupLines, Number(supplierId), req.user.id, currency);
+    // Respetar la moneda del grupo: si todos los ítems coinciden en moneda, usarla; si hay mix, MXN por defecto
+    const currencies = [...new Set(groupLines.map(l => l.currency || 'MXN'))];
+    const groupCurrency = currencies.length === 1 ? currencies[0] : (req.body.currency || 'MXN');
+    const po = createPOForGroup(db, groupLines, Number(supplierId), req.user.id, groupCurrency);
     purchaseOrders.push(po);
   }
 
@@ -326,6 +358,10 @@ router.post('/items/:id/cancel', allowRoles('comprador', 'admin'), (req, res) =>
   line.cancelled_at = new Date().toISOString();
   line.cancelled_by = req.user.id;
   line.updated_at = new Date().toISOString();
+  // Cancelar solicitudes de cotización pendientes del ítem
+  (db.quotation_requests || [])
+    .filter(r => r.requisition_item_id === line.id && r.status === 'Pendiente')
+    .forEach(r => { r.status = 'Cancelada'; r.cancelled_at = new Date().toISOString(); });
   addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Cancelado', changed_by_user_id: req.user.id, comment: `Cancelado: ${reason}` });
   recalcRequisition(db, line.requisition_id);
   write(db);
@@ -443,7 +479,7 @@ router.post('/purchase-orders/:id/cancel', allowRoles('comprador', 'admin'), (re
   po.cancelled_by = req.user.id;
   po.updated_at = new Date().toISOString();
 
-  // Liberar los ítems de la requisición (quitar purchase_order_id y regresar a Autorizado)
+  // Liberar los ítems de la requisición (quitar purchase_order_id y re-derivar status)
   const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
   poItems.forEach(poLine => {
     poLine.status = 'Cancelada';
@@ -451,9 +487,12 @@ router.post('/purchase-orders/:id/cancel', allowRoles('comprador', 'admin'), (re
     if (reqItem) {
       const oldItemStatus = reqItem.status;
       reqItem.purchase_order_id = null;
-      reqItem.status = 'Autorizado'; // regresa al estado previo para poder generar nueva PO
+      // Re-derivar status real en lugar de hardcodear 'Autorizado'
+      recalcRequisition(db, reqItem.requisition_id);
+      const reqRow2 = db.requisitions.find(r => r.id === reqItem.requisition_id);
+      reqItem.status = deriveItemStatus(db, Number(reqRow2?.total_amount || 0), reqItem);
       reqItem.updated_at = new Date().toISOString();
-      addHistory(db, { module: 'purchases', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, purchase_order_id: po.id, old_status: oldItemStatus, new_status: 'Autorizado', changed_by_user_id: req.user.id, comment: `PO ${po.folio} cancelada: ${reason}` });
+      addHistory(db, { module: 'purchases', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, purchase_order_id: po.id, old_status: oldItemStatus, new_status: reqItem.status, changed_by_user_id: req.user.id, comment: `PO ${po.folio} cancelada: ${reason}` });
       recalcRequisition(db, reqItem.requisition_id);
     }
   });

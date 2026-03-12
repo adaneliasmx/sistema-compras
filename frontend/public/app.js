@@ -1385,16 +1385,17 @@ async function purchasesView() {
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
       <td><b>${i.item_name}</b>${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}${i.cancelled_by_name ? ` · por ${i.cancelled_by_name}` : ''}</small>` : ''}</td>
       <td>
-        <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}>
+        <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}>
           <option value="">Sin proveedor</option>
           ${suppliers.map(s => `<option value="${s.id}" ${Number(i.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}
         </select>
+        ${i.winning_quote_id ? `<br><small style="color:#6b7280;font-size:10px" title="Asignado por cotización ganadora">🔒 cotización</small>` : ''}
       </td>
       <td>${Number(i.quantity||0)}</td>
       <td>${i.unit||'-'}</td>
-      <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}/></td>
+      <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}/></td>
       <td><b>$${Number(total).toFixed(2)}</b></td>
-      <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
+      <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
       <td>${statusPill(i.status)}</td>
       <td style="font-size:11px">${i.po_folio||'-'}</td>
       <td style="white-space:nowrap">
