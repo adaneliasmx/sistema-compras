@@ -869,6 +869,7 @@ async function requisitionsView(editId = null) {
       const out = await api(`/api/requisitions/${id}/send`, { method:'POST', body: JSON.stringify({}) });
       if (out.mailto_buyer) window.open(out.mailto_buyer, '_blank');
       if (out.mailto_requester) setTimeout(() => window.open(out.mailto_requester, '_blank'), 600);
+      if (out.mailto_authorizer) setTimeout(() => window.open(out.mailto_authorizer, '_blank'), 1200);
       state.itemsDraft = []; clearDraftStorage();
       location.hash = `#/requisiciones/${id}`;
     } catch (e) { reqMsg.textContent = e.message; } };
@@ -969,6 +970,10 @@ async function trackingDetailView(id) {
         <div class="small muted">POs<br><b>${poFolios.join(', ')||'-'}</b></div>
         <div class="small muted">Estatus<br>${statusPill(d.requisition.status)}</div>
       </div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button id="viewByItemBtn" class="btn-primary" style="font-size:12px;padding:5px 14px">📦 Vista por ítem</button>
+        <button id="viewByPoBtn" class="btn-secondary" style="font-size:12px;padding:5px 14px">🧾 Vista por PO</button>
+      </div>
     </div>
 
     <!-- Cadena Req → PO → Factura → Pago -->
@@ -1064,7 +1069,7 @@ async function trackingDetailView(id) {
     </div>
 
     <!-- Ítems -->
-    <div class="card section" style="margin-top:12px">
+    <div class="card section" style="margin-top:12px" id="viewByItemSection">
       <h3>Ítems de la requisición</h3>
       <div class="table-wrap"><table>
         <thead><tr><th>#</th><th>Ítem</th><th>Proveedor</th><th>PO</th><th>Cant.</th><th>Costo unit.</th><th>Total</th><th>Estatus</th></tr></thead>
@@ -1085,6 +1090,27 @@ async function trackingDetailView(id) {
       </table></div>
     </div>
 
+    <!-- Vista por PO -->
+    <div class="card section" style="margin-top:12px;display:none" id="viewByPoSection">
+      <h3>🧾 Vista por Orden de Compra</h3>
+      ${linkedPOs.length ? linkedPOs.map(po => {
+        const poItems = d.items.filter(i => i.po_folio === po.folio);
+        const poInvoices = linkedInvoices.filter(inv => inv.purchase_order_id === po.id);
+        const poPayments = linkedPayments.filter(pay => poInvoices.some(inv => inv.id === pay.invoice_id));
+        return `<div style="border:1px solid #e5e7eb;border-radius:8px;padding:14px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+            <div><b style="font-size:15px">${po.folio}</b> <span class="muted" style="margin-left:8px">${po.supplier_name||'-'}</span></div>
+            <div style="display:flex;gap:8px;align-items:center">${statusPill(po.status)}<b>$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</b></div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead><tr style="background:#f9fafb"><th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Ítem</th><th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Cant.</th><th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Precio unit.</th><th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Total</th><th style="padding:4px 8px;border-bottom:1px solid #e5e7eb">Estatus</th></tr></thead>
+            <tbody>${poItems.map(i => `<tr><td style="padding:4px 8px">${escapeHtml(i.catalog_name||i.manual_item_name||'-')}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(Number(i.quantity||0)*Number(i.unit_cost||0)).toFixed(2)}</td><td style="padding:4px 8px">${statusPill(i.status)}</td></tr>`).join('')}</tbody>
+          </table>
+          ${poInvoices.length ? `<div style="margin-top:8px;font-size:12px;color:#b45309"><b>Facturas:</b> ${poInvoices.map(inv => `${inv.invoice_number} · $${Number(inv.total||0).toFixed(2)} · ${statusPill(inv.status)}`).join(' | ')}</div>` : ''}
+          ${poPayments.length ? `<div style="margin-top:4px;font-size:12px;color:#15803d"><b>Pagos:</b> ${poPayments.map(pay => `$${Number(pay.amount||0).toFixed(2)} (${pay.payment_type||'-'})`).join(' | ')}</div>` : ''}
+        </div>`;
+      }).join('') : '<div class="muted small">Sin POs generadas para esta requisición</div>'}
+    </div>
     <!-- Historial (timeline) -->
     <div class="card section" style="margin-top:12px">
       <h3>Historial de cambios</h3>
@@ -1105,6 +1131,20 @@ async function trackingDetailView(id) {
       </div>
     </div>
   `, 'seguimiento');
+
+  document.getElementById('viewByItemBtn')?.addEventListener('click', () => {
+    document.getElementById('viewByItemSection').style.display = 'block';
+    document.getElementById('viewByPoSection').style.display = 'none';
+    document.getElementById('viewByItemBtn').className = 'btn-primary';
+    document.getElementById('viewByPoBtn').className = 'btn-secondary';
+  });
+  document.getElementById('viewByPoBtn')?.addEventListener('click', () => {
+    document.getElementById('viewByItemSection').style.display = 'none';
+    document.getElementById('viewByPoSection').style.display = 'block';
+    document.getElementById('viewByPoBtn').className = 'btn-primary';
+    document.getElementById('viewByItemBtn').className = 'btn-secondary';
+  });
+
   bindCommon();
 }
 
@@ -2146,6 +2186,7 @@ async function purchasesView() {
             ${canRequestInvoice ? `<button class="btn-secondary po-req-invoice-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📧 Solicitar factura al proveedor</button>` : ''}
             ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
             ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
+            <button class="btn-secondary po-print-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">🖨 Ver/Imprimir PO</button>
           </div>
           <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
           <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
@@ -2346,6 +2387,37 @@ async function purchasesView() {
         };
       });
 
+      // Imprimir PO
+      tabContent.querySelectorAll('.po-print-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const poId = btn.dataset.id;
+          const po = pos.find(p => String(p.id) === String(poId));
+          if (!po) return;
+          try {
+            const poData = await api(`/api/purchases/purchase-orders/${poId}`).catch(() => ({ items: [] }));
+            const poItems = (poData.items || []).map(l => ({ ...l, name: (l.name || l.manual_item_name || '-') }));
+            const supplier = { business_name: po.supplier_name, email: po.supplier_email || '' };
+            const linesHtml = poItems.length
+              ? poItems.map(l => `<tr><td>${escapeHtml(l.name||'-')}</td><td style="text-align:right">${l.quantity} ${l.unit||''}</td><td style="text-align:right">$${Number(l.unit_cost||0).toFixed(2)}</td><td style="text-align:right"><b>$${(Number(l.quantity||0)*Number(l.unit_cost||0)).toFixed(2)}</b></td></tr>`).join('')
+              : `<tr><td colspan="4" style="color:#9ca3af">Sin ítems disponibles — verifica en el sistema</td></tr>`;
+            openPrintPreview(`Orden de Compra ${po.folio}`, `
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+                <div><h1 style="margin:0;font-size:20px">Orden de Compra</h1><h2 style="margin:4px 0;color:#1d4ed8">${po.folio}</h2></div>
+                <div style="text-align:right;font-size:12px;color:#6b7280">Fecha: ${String(po.created_at||'').slice(0,10)}<br>Estado: ${po.status}</div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;font-size:13px">
+                <div><b>Proveedor:</b><br>${escapeHtml(po.supplier_name||'-')}</div>
+                <div><b>Moneda:</b> ${po.currency||'MXN'}<br><b>Total:</b> $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+              </div>
+              <table><thead><tr><th>Ítem</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio unit.</th><th style="text-align:right">Total</th></tr></thead>
+              <tbody>${linesHtml}</tbody>
+              <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;padding:8px 4px">Total</td><td style="text-align:right;font-weight:700;font-size:15px;padding:8px 4px">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr></tfoot></table>
+              <div style="margin-top:20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:8px">Impreso el ${new Date().toLocaleString('es-MX')} · Sistema de Compras</div>
+            `);
+          } catch(e) { alert('Error al generar vista de impresión: ' + e.message); }
+        };
+      });
+
       // Guardar factura manual con archivos
       tabContent.querySelectorAll('.inv-save-btn').forEach(btn => {
         btn.onclick = async () => {
@@ -2529,6 +2601,11 @@ async function purchasesView() {
       poConfirmMsg.textContent = 'Generando...';
       const out = await doGeneratePO(lastPreviewIds);
       poConfirmMsg.textContent = out.message;
+      if (out.po_mailtos?.length) {
+        out.po_mailtos.forEach((pm, i) => {
+          if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
+        });
+      }
       setTimeout(render, 1800);
     } catch (e) {
       poConfirmMsg.textContent = '';
@@ -2545,6 +2622,12 @@ async function purchasesView() {
       poMsg.textContent = 'Generando POs...';
       const out = await doGeneratePO(ids);
       poMsg.textContent = out.message;
+      // Abrir mailto: por cada PO generada (con pequeño delay entre ventanas)
+      if (out.po_mailtos?.length) {
+        out.po_mailtos.forEach((pm, i) => {
+          if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
+        });
+      }
       setTimeout(render, 1800);
     } catch (e) {
       poMsg.textContent = '';
@@ -3085,16 +3168,42 @@ async function quotationsView() {
   // Listeners del formulario
   if (document.getElementById('quoteItem')) {
     quoteItem.onchange = () => {
-      const sel = quoteItem.options[quoteItem.selectedIndex];
-      const suppId = sel?.dataset?.supplier;
-      // Solo auto-rellenar proveedor si el campo está vacío para no sobreescribir selección manual
-      if (suppId && !quoteSupplier.value) quoteSupplier.value = suppId;
+      // Limpiar todos los campos al cambiar de ítem
+      quoteSupplier.value = '';
+      quoteNumber.value = '';
+      quoteDays.value = '';
+      quoteUnitCost.value = '';
+      quotePayTerms.value = '';
+      quoteCode.value = '';
+      quoteName.value = '';
+      const qf = document.getElementById('quoteFile');
+      if (qf) qf.value = '';
+      const msgEl = document.getElementById('quoteMsg');
+      if (msgEl) { msgEl.textContent = ''; }
+
+      if (!quoteItem.value) {
+        // Sin ítem: mostrar todos los proveedores
+        quoteSupplier.innerHTML = `<option value="">Proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}`;
+        return;
+      }
+
+      // Filtrar proveedores: solo los que tienen solicitud de cotización para este ítem
+      const item = cotizacionesPendientes.find(i => i.id === Number(quoteItem.value));
+      const requestedIds = new Set(item?.quotation_request_supplier_ids || []);
+      const requestedSuppliers = suppliers.filter(s => requestedIds.has(s.id));
+      const otherSuppliers = suppliers.filter(s => !requestedIds.has(s.id));
+
+      quoteSupplier.innerHTML = `
+        <option value="">— Selecciona proveedor —</option>
+        ${requestedSuppliers.length ? `<optgroup label="Proveedores solicitados">${requestedSuppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</optgroup>` : ''}
+        <optgroup label="➕ Agregar cotización de otro proveedor">${otherSuppliers.map(s=>`<option value="${s.id}" data-extra="1">${s.business_name}</option>`).join('')}</optgroup>
+      `;
+
       // Auto-proponer número de cotización
       const count = quotes.filter(q => q.requisition_item_id === Number(quoteItem.value)).length + 1;
       quoteNumber.value = `COT-${String(quoteItem.value).slice(-4).padStart(4,'0')}-${String(count).padStart(2,'0')}`;
-      // Auto-llenar nombre si hay ítem seleccionado
-      const item = cotizacionesPendientes.find(i => i.id === Number(quoteItem.value));
-      if (item && !quoteName.value) quoteName.value = item.item_name || '';
+      // Auto-llenar nombre
+      if (item) quoteName.value = item.item_name || '';
     };
     // Auto-llenar código proveedor al seleccionar proveedor
     quoteSupplier.onchange = () => {

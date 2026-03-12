@@ -87,7 +87,10 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
         const allRejected = reqs.length > 0 && reqs.every(r => r.status === 'Rechazada');
         if (allRejected) return 'rechazado_proveedor';
         return 'solicitada';
-      })()
+      })(),
+      quotation_request_supplier_ids: (db.quotation_requests || [])
+        .filter(r => r.requisition_item_id === i.id)
+        .map(r => r.supplier_id)
     }));
   res.json(rows);
 });
@@ -432,9 +435,54 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
 
   write(db);
 
+  // Generar mailto por PO con CC al solicitante y autorizadores
+  const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
+  const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
+  const ccEmails = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
+  const poMailtos = purchaseOrders.map(po => {
+    const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
+    const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
+    const lineDetails = poLines.map(l => {
+      const cat = db.catalog_items.find(c => c.id === l.catalog_item_id);
+      const name = cat?.name || l.manual_item_name || 'ítem';
+      return `  - ${name}: ${l.quantity} ${l.unit || ''} x $${Number(l.unit_cost||0).toFixed(2)} = $${(Number(l.quantity||0)*Number(l.unit_cost||0)).toFixed(2)}`;
+    }).join('\n');
+    // Buscar requisición para obtener solicitante
+    const reqItem = db.requisition_items.find(ri => ri.purchase_order_id === po.id);
+    const reqRow = reqItem ? db.requisitions.find(r => r.id === reqItem.requisition_id) : null;
+    const requester = reqRow ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
+    const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
+    const subject = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
+    const body = [
+      `Estimado ${supplier.contact_name || supplier.business_name},`,
+      ``,
+      `Le enviamos la Orden de Compra ${po.folio} con los siguientes detalles:`,
+      ``,
+      `Proveedor: ${supplier.business_name}`,
+      `Fecha: ${String(po.created_at||'').slice(0,10)}`,
+      ``,
+      `Ítems solicitados:`,
+      lineDetails,
+      ``,
+      `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
+      ``,
+      `Por favor confirme la recepción de esta orden y la fecha estimada de entrega.`,
+      ``,
+      `Gracias.`
+    ].join('\n');
+    return {
+      po_id: po.id,
+      po_folio: po.folio,
+      supplier_email: supplier.email || '',
+      cc: allCc,
+      mailto: `mailto:${encodeURIComponent(supplier.email||'')}?cc=${encodeURIComponent(allCc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    };
+  });
+
   const skipped = lines.length - aptos.length;
   res.status(201).json({
     purchase_orders: purchaseOrders,
+    po_mailtos: poMailtos,
     po_count: purchaseOrders.length,
     item_count: aptos.length,
     skipped_count: skipped,
@@ -521,7 +569,10 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
   const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
   if (!po) return res.status(404).json({ error: 'PO no encontrada' });
   if (req.user.supplier_id && po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
-  const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
+  const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => ({
+    ...i,
+    name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '-'
+  }));
   res.json({ po, items });
 });
 

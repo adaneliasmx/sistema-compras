@@ -207,7 +207,10 @@ router.post('/:id/send', (req, res) => {
   recalcRequisition(db, reqRow.id);
   if (reqRow.status === 'Borrador') reqRow.status = 'Enviada';
   reqRow.sent_at = new Date().toISOString();
-  const buyerEmail = req.body.email_to || db.settings?.buyer_email || 'compras@demo.com';
+  const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
+  const buyerEmails = buyers.map(u => u.email).filter(Boolean);
+  const buyerEmail = buyerEmails[0] || req.body.email_to || db.settings?.buyer_email || 'compras@demo.com';
+  const buyerCc = buyerEmails.slice(1).join(',');
   const requesterEmail = (db.users.find(u => u.id === reqRow.requester_user_id) || {}).email || req.user.email || '';
   const subject = req.body.email_subject || `Requisición ${reqRow.folio}`;
   const previewUrl = `${req.protocol}://${req.get('host')}/#/requisiciones/${reqRow.id}`;
@@ -222,7 +225,23 @@ router.post('/:id/send', (req, res) => {
   reqRow.email_subject = subject;
   addHistory(db, { module: 'requisitions', requisition_id: reqRow.id, old_status: 'Borrador', new_status: reqRow.status, changed_by_user_id: req.user.id, comment: 'Requisición enviada por correo' });
   write(db);
-  res.json({ requisition: reqRow, mailto_buyer: `mailto:${encodeURIComponent(buyerEmail)}?cc=${encodeURIComponent(requesterEmail)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, mailto_requester: requesterEmail ? `mailto:${encodeURIComponent(requesterEmail)}?subject=${encodeURIComponent(`Confirmación ${reqRow.folio}`)}&body=${encodeURIComponent(`Tu requisición ${reqRow.folio} fue enviada a compras.\n\nPuedes verla aquí: ${previewUrl}`)}` : null });
+  // Notificación a autorizadores si hay ítems en autorización
+  const authItems = db.requisition_items.filter(i => i.requisition_id === reqRow.id && i.status === 'En autorización');
+  const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
+  let mailto_authorizer = null;
+  if (authItems.length && authorizers.length) {
+    const authEmails = authorizers.map(u => u.email).filter(Boolean).join(',');
+    const authSubject = `Solicitud de autorización · ${reqRow.folio}`;
+    const authBody = `Estimado autorizador,\n\nSe requiere su autorización para la siguiente requisición:\n\nFolio: ${reqRow.folio}\nSolicitante: ${(db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name||''}\nTotal: $${Number(reqRow.total_amount||0).toFixed(2)} ${reqRow.currency||'MXN'}\nÍtems pendientes de autorización: ${authItems.length}\n\nVer en sistema: ${previewUrl.replace('requisiciones','autorizaciones')}`;
+    mailto_authorizer = `mailto:${encodeURIComponent(authEmails)}?subject=${encodeURIComponent(authSubject)}&body=${encodeURIComponent(authBody)}`;
+  }
+  const allBuyersCc = [buyerCc, requesterEmail].filter(Boolean).join(',');
+  res.json({
+    requisition: reqRow,
+    mailto_buyer: `mailto:${encodeURIComponent(buyerEmail)}?cc=${encodeURIComponent(allBuyersCc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`,
+    mailto_requester: requesterEmail ? `mailto:${encodeURIComponent(requesterEmail)}?subject=${encodeURIComponent(`Confirmación ${reqRow.folio}`)}&body=${encodeURIComponent(`Tu requisición ${reqRow.folio} fue enviada a compras.\n\nPuedes verla aquí: ${previewUrl}`)}` : null,
+    mailto_authorizer
+  });
 });
 
 module.exports = router;
