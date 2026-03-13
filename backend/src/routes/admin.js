@@ -1,6 +1,8 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
@@ -208,6 +210,134 @@ router.post('/reset-db', (req, res) => {
   db.status_history = [];
   write(db);
   res.json({ ok: true, message: 'Base de datos de transacciones reiniciada. Catálogos, usuarios, proveedores, reglas e inventario conservados.' });
+});
+
+// ── Información del sistema ────────────────────────────────────────────────
+router.get('/system-info', (req, res) => {
+  const db = read();
+  const mem = process.memoryUsage();
+
+  // Tamaño del archivo de base de datos
+  let dbSize = 0;
+  try {
+    const dbPath = path.resolve(process.cwd(), 'database/app.json');
+    dbSize = fs.statSync(dbPath).size;
+  } catch (e) {}
+
+  // Tamaño total de la carpeta storage (archivos PDF/XML/imágenes)
+  let storageSize = 0;
+  let invoiceFileCount = 0;
+  let paymentFileCount = 0;
+  const walkDir = dir => {
+    try {
+      fs.readdirSync(dir).forEach(f => {
+        const fp = path.join(dir, f);
+        const stat = fs.statSync(fp);
+        if (stat.isDirectory()) walkDir(fp);
+        else {
+          storageSize += stat.size;
+          if (fp.includes('invoices')) invoiceFileCount++;
+          if (fp.includes('payments')) paymentFileCount++;
+        }
+      });
+    } catch (e) {}
+  };
+  walkDir(path.resolve(process.cwd(), 'storage'));
+
+  // Rango de fechas de transacciones
+  const allDates = [
+    ...(db.requisitions || []).map(r => r.request_date || r.created_at),
+    ...(db.purchase_orders || []).map(p => p.created_at),
+    ...(db.payments || []).map(p => p.created_at)
+  ].filter(Boolean).sort();
+  const oldest = allDates[0] || null;
+  const newest = allDates[allDates.length - 1] || null;
+  const monthsCovered = oldest
+    ? Math.floor((Date.now() - new Date(oldest).getTime()) / (1000 * 60 * 60 * 24 * 30.44))
+    : 0;
+
+  res.json({
+    memory: { heapUsed: mem.heapUsed, heapTotal: mem.heapTotal, rss: mem.rss },
+    db: {
+      size: dbSize,
+      requisitions: db.requisitions?.length || 0,
+      purchase_orders: db.purchase_orders?.length || 0,
+      invoices: db.invoices?.length || 0,
+      payments: db.payments?.length || 0,
+      history: db.status_history?.length || 0
+    },
+    storage: { size: storageSize, invoiceFiles: invoiceFileCount, paymentFiles: paymentFileCount },
+    timeline: { oldest, newest, monthsCovered }
+  });
+});
+
+// ── Archivar y eliminar datos antiguos ────────────────────────────────────
+router.post('/archive-old-data', (req, res) => {
+  if (req.body.confirm !== 'ARCHIVE_CONFIRMAR') {
+    return res.status(400).json({ error: 'Debes enviar { confirm: "ARCHIVE_CONFIRMAR", cutoff_date: "YYYY-MM-DD" }' });
+  }
+  if (!req.body.cutoff_date) return res.status(400).json({ error: 'Se requiere cutoff_date (YYYY-MM-DD)' });
+
+  const db = read();
+  const cutoff = new Date(req.body.cutoff_date);
+
+  const oldReqs = db.requisitions.filter(r => new Date(r.request_date || r.created_at) < cutoff);
+  const oldReqIds = new Set(oldReqs.map(r => r.id));
+  const oldItems = db.requisition_items.filter(i => oldReqIds.has(i.requisition_id));
+  const oldItemIds = new Set(oldItems.map(i => i.id));
+  const oldPOs = db.purchase_orders.filter(p => {
+    if (new Date(p.created_at) < cutoff) return true;
+    return (p.requisition_ids || []).every(rid => oldReqIds.has(rid));
+  });
+  const oldPOIds = new Set(oldPOs.map(p => p.id));
+  const oldPOItems = db.purchase_order_items.filter(i => oldPOIds.has(i.purchase_order_id));
+  const oldInvoices = db.invoices.filter(i => oldPOIds.has(i.purchase_order_id));
+  const oldInvoiceIds = new Set(oldInvoices.map(i => i.id));
+  const oldPayments = db.payments.filter(p => oldInvoiceIds.has(p.invoice_id));
+  const oldHistory = (db.status_history || []).filter(h => oldReqIds.has(h.requisition_id));
+  const oldQuotationReqs = (db.quotation_requests || []).filter(q => oldItemIds.has(q.requisition_item_id));
+  const oldQuotations = (db.quotations || []).filter(q => oldItemIds.has(q.requisition_item_id));
+
+  if (!oldReqs.length && !oldPOs.length) {
+    return res.status(400).json({ error: 'No hay datos anteriores a esa fecha para archivar.' });
+  }
+
+  const archived = {
+    archived_at: new Date().toISOString(),
+    cutoff_date: req.body.cutoff_date,
+    requisitions: oldReqs,
+    requisition_items: oldItems,
+    purchase_orders: oldPOs,
+    purchase_order_items: oldPOItems,
+    invoices: oldInvoices,
+    payments: oldPayments,
+    status_history: oldHistory,
+    quotation_requests: oldQuotationReqs,
+    quotations: oldQuotations
+  };
+
+  // Remover de la DB
+  db.requisitions = db.requisitions.filter(r => !oldReqIds.has(r.id));
+  db.requisition_items = db.requisition_items.filter(i => !oldItemIds.has(i.id));
+  db.purchase_orders = db.purchase_orders.filter(p => !oldPOIds.has(p.id));
+  db.purchase_order_items = db.purchase_order_items.filter(i => !oldPOIds.has(i.purchase_order_id));
+  db.invoices = db.invoices.filter(i => !oldInvoiceIds.has(i.id));
+  db.payments = db.payments.filter(p => !oldInvoiceIds.has(p.invoice_id));
+  if (db.status_history) db.status_history = db.status_history.filter(h => !oldReqIds.has(h.requisition_id));
+  if (db.quotation_requests) db.quotation_requests = db.quotation_requests.filter(q => !oldItemIds.has(q.requisition_item_id));
+  if (db.quotations) db.quotations = db.quotations.filter(q => !oldItemIds.has(q.requisition_item_id));
+  write(db);
+
+  const summary = {
+    requisitions: oldReqs.length,
+    purchase_orders: oldPOs.length,
+    invoices: oldInvoices.length,
+    payments: oldPayments.length
+  };
+
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="archivo-${req.body.cutoff_date}.json"`);
+  res.json({ ...archived, _summary: summary });
 });
 
 module.exports = router;

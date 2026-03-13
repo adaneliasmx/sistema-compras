@@ -13,6 +13,7 @@ const paymentsRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
 const approvalsRoutes = require('./routes/approvals');
 const exportsRoutes = require('./routes/exports');
+const notificationsRoutes = require('./routes/notifications');
 
 const { initDb } = require('./db');
 
@@ -35,6 +36,7 @@ app.use('/api/payments', paymentsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
+app.use('/api/notifications', notificationsRoutes);
 
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));

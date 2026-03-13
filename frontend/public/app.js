@@ -105,7 +105,62 @@ function statusPill(status) {
 
 function shell(content, active = 'dashboard') {
   const allowed = MENU_BY_ROLE[state.user?.role] || [];
-  return `<div class="layout"><aside class="sidebar"><div class="brand">Sistema de Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="logoutBtn">Cerrar sesión</a></nav></aside><main class="main"><div class="topbar"><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div><span class="badge">Flujo operativo</span></div>${content}</main></div>`;
+  return `<div class="layout"><aside class="sidebar"><div class="brand">Sistema de Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="logoutBtn">Cerrar sesión</a></nav></aside><main class="main"><div class="topbar"><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div><div style="display:flex;align-items:center;gap:12px"><span class="badge">Flujo operativo</span><button id="notifBellBtn" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:20px" title="Notificaciones">🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:0;background:#dc2626;color:white;border-radius:50%;font-size:10px;font-weight:700;width:16px;height:16px;line-height:16px;text-align:center"></span></button></div></div><div id="notifPanel" style="display:none;position:fixed;top:60px;right:16px;width:340px;max-height:500px;overflow-y:auto;background:white;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;padding:0"><div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">Notificaciones<button id="notifCloseBtn" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:18px">×</button></div><div id="notifList" style="padding:8px 0"></div></div>${content}</main></div>`;
+}
+
+// ── Sistema de notificaciones ──────────────────────────────────────────────
+let _notifInterval = null;
+const priorityColor = { urgent: '#dc2626', high: '#d97706', medium: '#3b82f6', low: '#6b7280' };
+const priorityBg = { urgent: '#fef2f2', high: '#fffbeb', medium: '#eff6ff', low: '#f9fafb' };
+
+async function loadNotifications() {
+  if (!state.token) return;
+  try {
+    const notes = await api('/api/notifications');
+    const badge = document.getElementById('notifBadge');
+    const list = document.getElementById('notifList');
+    if (!badge || !list) return;
+    const important = notes.filter(n => n.priority !== 'low');
+    badge.textContent = important.length || notes.length;
+    badge.style.display = notes.length ? 'block' : 'none';
+    list.innerHTML = notes.length
+      ? notes.map(n => `
+          <a href="${n.route}" id="notifItem_${n.id}" style="display:block;padding:10px 16px;border-bottom:1px solid #f1f5f9;text-decoration:none;background:${priorityBg[n.priority]||'white'};cursor:pointer">
+            <div style="display:flex;align-items:flex-start;gap:8px">
+              <span style="font-size:18px">${n.icon}</span>
+              <div style="flex:1">
+                <div style="font-size:13px;font-weight:600;color:${priorityColor[n.priority]||'#111'}">${n.title}</div>
+                ${n.body ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${n.body}</div>` : ''}
+              </div>
+            </div>
+          </a>`).join('')
+      : '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">Sin notificaciones pendientes ✅</div>';
+    list.querySelectorAll('a[id^="notifItem_"]').forEach(el => {
+      el.onclick = () => { document.getElementById('notifPanel').style.display = 'none'; };
+    });
+  } catch(e) { /* silencioso */ }
+}
+
+function initNotifications() {
+  if (_notifInterval) clearInterval(_notifInterval);
+  loadNotifications();
+  _notifInterval = setInterval(loadNotifications, 60000); // refrescar cada 60s
+
+  document.addEventListener('click', e => {
+    const panel = document.getElementById('notifPanel');
+    const bell = document.getElementById('notifBellBtn');
+    if (!panel || !bell) return;
+    if (bell.contains(e.target)) {
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+      if (panel.style.display === 'block') loadNotifications();
+    } else if (!panel.contains(e.target)) {
+      panel.style.display = 'none';
+    }
+  });
+  document.getElementById('notifCloseBtn')?.addEventListener('click', () => {
+    const panel = document.getElementById('notifPanel');
+    if (panel) panel.style.display = 'none';
+  });
 }
 
 function bindCommon() {
@@ -3976,11 +4031,12 @@ async function inventoryView() {
 }
 
 async function adminView() {
-  const [users, rules, suppliers, cc] = await Promise.all([
+  const [users, rules, suppliers, cc, sysInfo] = await Promise.all([
     api('/api/admin/users'),
     api('/api/catalogs/approval-rules'),
     api('/api/catalogs/suppliers'),
-    api('/api/catalogs/cost-centers')
+    api('/api/catalogs/cost-centers'),
+    api('/api/admin/system-info').catch(() => null)
   ]);
   app.innerHTML = shell(`
     <div class="grid grid-2">
@@ -4099,6 +4155,52 @@ async function adminView() {
           <span id="importDbMsg" class="small muted" style="display:block;margin-top:6px"></span>
         </div>
       </div>
+    </div>
+    <!-- 🖥 Estado del sistema -->
+    <div class="card section" style="margin-top:16px;border:2px solid #d1fae5;background:#f0fdf4">
+      <h3 style="color:#065f46">🖥 Estado del sistema</h3>
+      ${sysInfo ? (() => {
+        const fmt = b => b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : b < 1024*1024*1024 ? `${(b/1024/1024).toFixed(1)} MB` : `${(b/1024/1024/1024).toFixed(2)} GB`;
+        const heapPct = Math.round(sysInfo.memory.heapUsed / sysInfo.memory.heapTotal * 100);
+        const heapColor = heapPct > 80 ? '#dc2626' : heapPct > 60 ? '#d97706' : '#16a34a';
+        const mo = sysInfo.timeline.monthsCovered;
+        const alertMsg = mo >= 30 ? `⚠ Llevas ${mo} meses de datos. Se recomienda archivar los más antiguos.` : mo >= 20 ? `ℹ Llevas ${mo} meses de datos. Considera programar un respaldo pronto.` : `✅ ${mo} mes(es) de datos. Sin necesidad de archivo por ahora.`;
+        const alertColor = mo >= 30 ? '#dc2626' : mo >= 20 ? '#d97706' : '#065f46';
+        return `
+        <div class="grid grid-4" style="gap:12px;margin-bottom:16px">
+          <div style="background:white;border-radius:8px;padding:12px;border:1px solid #d1fae5">
+            <div class="small muted">Memoria RAM usada</div>
+            <div style="font-size:18px;font-weight:700;color:${heapColor}">${heapPct}%</div>
+            <div class="small muted">${fmt(sysInfo.memory.heapUsed)} / ${fmt(sysInfo.memory.heapTotal)}</div>
+            <div style="height:6px;background:#e5e7eb;border-radius:3px;margin-top:6px"><div style="height:6px;background:${heapColor};border-radius:3px;width:${heapPct}%"></div></div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:12px;border:1px solid #d1fae5">
+            <div class="small muted">Base de datos</div>
+            <div style="font-size:18px;font-weight:700">${fmt(sysInfo.db.size)}</div>
+            <div class="small muted">${sysInfo.db.requisitions} req · ${sysInfo.db.purchase_orders} POs · ${sysInfo.db.invoices} facturas · ${sysInfo.db.payments} pagos</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:12px;border:1px solid #d1fae5">
+            <div class="small muted">Archivos (PDFs/XMLs)</div>
+            <div style="font-size:18px;font-weight:700">${fmt(sysInfo.storage.size)}</div>
+            <div class="small muted">${sysInfo.storage.invoiceFiles} fact. · ${sysInfo.storage.paymentFiles} comprobantes</div>
+          </div>
+          <div style="background:white;border-radius:8px;padding:12px;border:1px solid #d1fae5">
+            <div class="small muted">Historial de datos</div>
+            <div style="font-size:18px;font-weight:700">${mo} mes(es)</div>
+            <div class="small muted">${sysInfo.timeline.oldest ? sysInfo.timeline.oldest.slice(0,10) : '-'} → hoy</div>
+          </div>
+        </div>
+        <div style="padding:10px 14px;border-radius:8px;background:white;border:1px solid ${alertColor};color:${alertColor};font-size:13px;margin-bottom:14px">${alertMsg}</div>
+        <div style="background:white;border-radius:8px;padding:14px;border:1px solid #d1fae5">
+          <b style="font-size:13px">🗂 Archivar y eliminar datos anteriores a una fecha</b>
+          <p class="small muted" style="margin:6px 0 10px">Se descargará un archivo JSON con los datos antiguos (respaldo) y se eliminarán de la base de datos activa. Los catálogos, usuarios y proveedores NO se tocan.</p>
+          <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+            <div><label class="small muted">Archivar datos anteriores a</label><input id="archiveCutoff" type="date" style="display:block" value="${(() => { const d = new Date(); d.setMonth(d.getMonth() - 18); return d.toISOString().slice(0,10); })()}"/></div>
+            <button class="btn-secondary" id="archiveBtn" style="background:#065f46;color:white;border-color:#065f46">📥 Archivar y descargar</button>
+            <span id="archiveMsg" class="small muted"></span>
+          </div>
+        </div>`;
+      })() : '<p class="small muted">No se pudo obtener información del sistema.</p>'}
     </div>
     <!-- ⚠ Reset de base de datos — SOLO PRUEBAS -->
     <div class="card section" style="margin-top:16px;border:2px solid #fca5a5;background:#fff8f8">
@@ -4362,6 +4464,28 @@ async function adminView() {
     } catch(e) { msgEl.textContent = e.message || 'Error al importar'; msgEl.style.color = '#dc2626'; }
   });
 
+  // ── Archivar datos antiguos ────────────────────────────────────────────────
+  document.getElementById('archiveBtn')?.addEventListener('click', async () => {
+    const cutoff = document.getElementById('archiveCutoff')?.value;
+    const msgEl = document.getElementById('archiveMsg');
+    if (!cutoff) { msgEl.textContent = 'Selecciona una fecha de corte.'; msgEl.style.color = '#dc2626'; return; }
+    if (!confirm(`¿Archivar y ELIMINAR todos los datos anteriores al ${cutoff}?\n\nSe descargará un respaldo JSON. Esta acción no se puede deshacer.`)) return;
+    try {
+      msgEl.textContent = 'Archivando...'; msgEl.style.color = '#6b7280';
+      const resp = await fetch('/api/admin/archive-old-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+        body: JSON.stringify({ confirm: 'ARCHIVE_CONFIRMAR', cutoff_date: cutoff })
+      });
+      if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || resp.statusText); }
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = `archivo-${cutoff}.json`; a.click();
+      URL.revokeObjectURL(url);
+      msgEl.textContent = '✅ Archivo descargado y datos eliminados.'; msgEl.style.color = '#16a34a';
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+  });
+
   bindCommon();
 }
 
@@ -4395,6 +4519,6 @@ async function render() {
   location.hash = `#/${defaultRoute}`;
 }
 
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => { render().then(() => { if (state.token) initNotifications(); }); });
 if (state.token) initInactivityWatcher();
-render();
+render().then(() => { if (state.token) initNotifications(); });
