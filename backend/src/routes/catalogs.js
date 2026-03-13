@@ -229,6 +229,35 @@ router.patch('/suppliers/:id', (req, res) => {
   res.json(row);
 });
 
+// ── Asignaciones de subcentros por usuario ────────────────────────────────
+router.get('/user-scc-assignments', (req, res) => {
+  if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  const assignableRoles = ['cliente_requisicion', 'comprador', 'autorizador', 'pagos', 'admin'];
+  const users = db.users.filter(u => assignableRoles.includes(u.role_code) && u.active !== false).map(u => ({
+    id: u.id,
+    full_name: u.full_name,
+    email: u.email,
+    role_code: u.role_code,
+    department: u.department || '',
+    default_cost_center_id: u.default_cost_center_id || null,
+    default_sub_cost_center_id: u.default_sub_cost_center_id || null,
+    allowed_scc_ids: u.allowed_scc_ids || []
+  }));
+  res.json(users);
+});
+
+router.patch('/user-scc-assignments/:user_id', (req, res) => {
+  if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  const u = db.users.find(x => x.id === Number(req.params.user_id));
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' });
+  if (req.body.allowed_scc_ids !== undefined) u.allowed_scc_ids = Array.isArray(req.body.allowed_scc_ids) ? req.body.allowed_scc_ids.map(Number).filter(Boolean) : [];
+  if (req.body.default_sub_cost_center_id !== undefined) u.default_sub_cost_center_id = req.body.default_sub_cost_center_id ? Number(req.body.default_sub_cost_center_id) : null;
+  write(db);
+  res.json({ ok: true, allowed_scc_ids: u.allowed_scc_ids, default_sub_cost_center_id: u.default_sub_cost_center_id });
+});
+
 router.get('/cost-centers', (req, res) => res.json(read().cost_centers.sort((a,b)=>String(a.code).localeCompare(String(b.code)))));
 router.get('/sub-cost-centers', (req, res) => { const rows = read().sub_cost_centers.sort((a,b)=>String(a.code).localeCompare(String(b.code))); if (req.query.cost_center_id) return res.json(rows.filter(x => Number(x.cost_center_id) === Number(req.query.cost_center_id))); res.json(rows); });
 router.get('/inventory-catalogs', (req, res) => res.json(read().inventory_catalogs.sort((a,b)=>String(a.name).localeCompare(String(b.name)))));

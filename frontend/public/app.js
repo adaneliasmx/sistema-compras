@@ -626,6 +626,19 @@ async function catalogsView() {
   </div>
 </div>
     </div>
+
+    <!-- Subcentros por usuario -->
+    <div class="card section" style="margin-top:16px">
+      <div class="module-title">
+        <h3>🗂 Subcentros de costo por usuario</h3>
+        <span class="small muted">Asigna qué subcentros puede usar cada persona al crear requisiciones</span>
+      </div>
+      <p class="small muted" style="margin-bottom:10px">
+        Si un usuario tiene subcentros asignados, solo verá esos en el formulario de requisición.
+        Si no tiene ninguno asignado, verá todos los subcentros disponibles del centro de costo seleccionado.
+      </p>
+      <div id="sccAssignWrap"><div class="small muted">Cargando...</div></div>
+    </div>
   `, 'catalogos');
 
   // Render tabla de ítems
@@ -965,6 +978,126 @@ async function catalogsView() {
     };
   });
   bindCommon();
+
+  // ── Herramienta de asignación de subcentros por usuario ───────────────────
+  const loadSccAssignments = async () => {
+    const wrap = document.getElementById('sccAssignWrap');
+    if (!wrap) return;
+    try {
+      const assignUsers = await api('/api/catalogs/user-scc-assignments');
+      const roleLabel = { cliente_requisicion: 'Cliente', comprador: 'Comprador', autorizador: 'Autorizador', pagos: 'Pagos', admin: 'Admin' };
+
+      wrap.innerHTML = `
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Usuario</th>
+                <th>Rol</th>
+                <th>Depto.</th>
+                <th>Subcentros asignados</th>
+                <th>Predeterminado</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${assignUsers.map(u => {
+                const assignedScc = scc.filter(s => (u.allowed_scc_ids || []).includes(s.id));
+                const assignedNames = assignedScc.map(s => `<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:11px;margin-right:3px">${s.code}</span>`).join('') || '<span class="small muted">Todos (sin restricción)</span>';
+                const defScc = scc.find(s => s.id === u.default_sub_cost_center_id);
+                return `<tr>
+                  <td><b>${u.full_name}</b><div class="small muted">${u.email}</div></td>
+                  <td style="font-size:12px">${roleLabel[u.role_code]||u.role_code}</td>
+                  <td style="font-size:12px">${u.department||'-'}</td>
+                  <td>${assignedNames}</td>
+                  <td style="font-size:12px">${defScc ? `${defScc.code} · ${defScc.name}` : '-'}</td>
+                  <td><button class="btn-secondary assign-scc-btn" data-id="${u.id}" data-name="${u.full_name}" style="padding:3px 10px;font-size:12px">✏ Asignar</button></td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div id="sccAssignForm" style="display:none;margin-top:16px;padding:14px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px">
+          <h4 id="sccAssignFormTitle" style="margin:0 0 10px">Asignar subcentros</h4>
+          <input type="hidden" id="sccAssignUserId"/>
+          <div class="row-2" style="align-items:flex-start;gap:16px">
+            <div style="flex:1">
+              <label class="small muted" style="display:block;margin-bottom:6px">Subcentros permitidos <span class="small muted">(selecciona uno o más; vacío = todos)</span></label>
+              <div id="sccCheckboxList" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;background:white">
+                ${scc.map(s => {
+                  const parentCc = cc.find(c => c.id === Number(s.cost_center_id));
+                  return `<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;cursor:pointer">
+                    <input type="checkbox" class="scc-allow-chk" value="${s.id}"/>
+                    <span style="font-weight:600;color:#1d4ed8">${s.code}</span>
+                    <span>${s.name}</span>
+                    <span class="small muted">(${parentCc?.code||'?'})</span>
+                  </label>`;
+                }).join('')}
+              </div>
+            </div>
+            <div style="flex:1">
+              <label class="small muted" style="display:block;margin-bottom:6px">Subcentro predeterminado</label>
+              <select id="sccDefaultSel" style="width:100%">
+                <option value="">Sin predeterminado</option>
+                ${scc.map(s => {
+                  const parentCc = cc.find(c => c.id === Number(s.cost_center_id));
+                  return `<option value="${s.id}">${s.code} · ${s.name} (${parentCc?.code||'?'})</option>`;
+                }).join('')}
+              </select>
+              <p class="small muted" style="margin-top:6px">Se pre-selecciona automáticamente al crear una requisición.</p>
+            </div>
+          </div>
+          <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+            <button class="btn-primary" id="saveSccAssignBtn">💾 Guardar asignación</button>
+            <button class="btn-secondary" id="cancelSccAssignBtn">Cancelar</button>
+            <span id="sccAssignMsg" class="small muted"></span>
+          </div>
+        </div>`;
+
+      wrap.querySelectorAll('.assign-scc-btn').forEach(btn => {
+        btn.onclick = () => {
+          const userId = Number(btn.dataset.id);
+          const u = assignUsers.find(x => x.id === userId);
+          if (!u) return;
+          document.getElementById('sccAssignUserId').value = userId;
+          document.getElementById('sccAssignFormTitle').textContent = `Asignar subcentros a: ${u.full_name}`;
+          document.getElementById('sccAssignMsg').textContent = '';
+          // Marcar checkboxes
+          document.querySelectorAll('.scc-allow-chk').forEach(chk => {
+            chk.checked = (u.allowed_scc_ids || []).includes(Number(chk.value));
+          });
+          // Predeterminado
+          document.getElementById('sccDefaultSel').value = u.default_sub_cost_center_id || '';
+          document.getElementById('sccAssignForm').style.display = 'block';
+          document.getElementById('sccAssignForm').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        };
+      });
+
+      document.getElementById('saveSccAssignBtn').onclick = async () => {
+        const msgEl = document.getElementById('sccAssignMsg');
+        const userId = document.getElementById('sccAssignUserId').value;
+        const allowed = [...document.querySelectorAll('.scc-allow-chk:checked')].map(c => Number(c.value));
+        const defScc = document.getElementById('sccDefaultSel').value;
+        try {
+          msgEl.textContent = 'Guardando...'; msgEl.style.color = '#6b7280';
+          await api(`/api/catalogs/user-scc-assignments/${userId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ allowed_scc_ids: allowed, default_sub_cost_center_id: defScc ? Number(defScc) : null })
+          });
+          msgEl.textContent = '✅ Asignación guardada'; msgEl.style.color = '#16a34a';
+          document.getElementById('sccAssignForm').style.display = 'none';
+          setTimeout(loadSccAssignments, 600);
+        } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+      };
+
+      document.getElementById('cancelSccAssignBtn').onclick = () => {
+        document.getElementById('sccAssignForm').style.display = 'none';
+      };
+    } catch(e) {
+      document.getElementById('sccAssignWrap').innerHTML = `<div class="small muted">No disponible: ${e.message}</div>`;
+    }
+  };
+  loadSccAssignments();
 }
 async function requisitionsView(editId = null) {
   const [items, suppliers, cc, scc, list, units] = await Promise.all([api('/api/catalogs/items'), api('/api/catalogs/suppliers'), api('/api/catalogs/cost-centers'), api('/api/catalogs/sub-cost-centers'), api('/api/requisitions'), api('/api/catalogs/units')]);
@@ -1058,9 +1191,17 @@ async function requisitionsView(editId = null) {
   };
   document.getElementById('entry-item-cc').onchange = () => {
     const ccId = document.getElementById('entry-item-cc').value;
-    const opts = scc.filter(x => Number(x.cost_center_id) === Number(ccId));
+    const allowedIds = state.user?.allowed_scc_ids || [];
+    let opts = scc.filter(x => Number(x.cost_center_id) === Number(ccId));
+    // Si el usuario tiene subcentros asignados, filtrar solo los suyos
+    if (allowedIds.length > 0) opts = opts.filter(x => allowedIds.includes(x.id));
     document.getElementById('entry-item-scc').innerHTML = `<option value="">— Obligatorio —</option>${opts.map(x=>`<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}<option value="__otro__">+ Otro (proponer nuevo)</option>`;
     document.getElementById('entry-item-scc-other').style.display = 'none';
+    // Pre-seleccionar el subcentro predeterminado del usuario si aplica
+    const defScc = state.user?.default_sub_cost_center_id;
+    if (defScc && opts.find(x => x.id === defScc)) {
+      document.getElementById('entry-item-scc').value = defScc;
+    }
   };
   document.getElementById('entry-item-scc').onchange = () => {
     const isOtro = document.getElementById('entry-item-scc').value === '__otro__';
@@ -4390,7 +4531,13 @@ async function adminView() {
         </div>
         <div class="row-2">
           <div><label>Centro de costo predeterminado</label><select id="usrCostCenter"><option value="">Sin predeterminado</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div>
-          <div><label style="font-size:11px" class="muted">Define el centro que se pre-selecciona al crear requisiciones</label></div>
+          <div><label>Subcentro predeterminado</label><select id="usrDefaultScc"><option value="">Sin predeterminado</option>${scc.map(s => { const p = cc.find(c=>c.id===Number(s.cost_center_id)); return `<option value="${s.id}">${s.code} · ${s.name} (${p?.code||'?'})</option>`; }).join('')}</select></div>
+        </div>
+        <div style="margin-bottom:8px">
+          <label class="small muted" style="display:block;margin-bottom:4px">Subcentros permitidos <span class="small muted">(vacío = todos)</span></label>
+          <div id="usrSccCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;max-height:120px;overflow-y:auto;background:white">
+            ${scc.map(s => { const p = cc.find(c=>c.id===Number(s.cost_center_id)); return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="usr-scc-chk" value="${s.id}"/> <b style="color:#1d4ed8">${s.code}</b> ${s.name} <span class="muted">(${p?.code||'?'})</span></label>`; }).join('')}
+          </div>
         </div>
         <div><small class="muted">Si el rol es "proveedor", el proveedor es obligatorio.</small></div>
         <div class="actions">
@@ -4548,6 +4695,8 @@ async function adminView() {
       usrName.value = ''; usrEmail.value = ''; usrDept.value = '';
       usrRole.value = 'cliente_requisicion'; usrSupplier.value = ''; usrPass.value = '';
       usrCostCenter.value = '';
+      document.getElementById('usrDefaultScc').value = '';
+      document.querySelectorAll('.usr-scc-chk').forEach(chk => { chk.checked = false; });
       saveUsrBtn.textContent = 'Guardar usuario';
       return;
     }
@@ -4557,6 +4706,9 @@ async function adminView() {
     usrRole.value = u.role_code;
     usrSupplier.value = u.supplier_id || '';
     usrCostCenter.value = u.default_cost_center_id || '';
+    document.getElementById('usrDefaultScc').value = u.default_sub_cost_center_id || '';
+    const allowedIds = u.allowed_scc_ids || [];
+    document.querySelectorAll('.usr-scc-chk').forEach(chk => { chk.checked = allowedIds.includes(Number(chk.value)); });
     usrPass.value = '';
     saveUsrBtn.textContent = 'Actualizar usuario';
   };
@@ -4565,7 +4717,8 @@ async function adminView() {
     try {
       if (!usrName.value || !usrEmail.value) throw new Error('Nombre y correo requeridos');
       const editId = usrEditId.value ? Number(usrEditId.value) : null;
-      const payload = { full_name: usrName.value, email: usrEmail.value, department: usrDept.value, role_code: usrRole.value, supplier_id: usrSupplier.value || null, default_cost_center_id: usrCostCenter.value ? Number(usrCostCenter.value) : null };
+      const allowedSccIds = [...document.querySelectorAll('.usr-scc-chk:checked')].map(c => Number(c.value));
+      const payload = { full_name: usrName.value, email: usrEmail.value, department: usrDept.value, role_code: usrRole.value, supplier_id: usrSupplier.value || null, default_cost_center_id: usrCostCenter.value ? Number(usrCostCenter.value) : null, default_sub_cost_center_id: document.getElementById('usrDefaultScc').value ? Number(document.getElementById('usrDefaultScc').value) : null, allowed_scc_ids: allowedSccIds };
       if (usrPass.value) payload.password = usrPass.value;
       if (editId) {
         await api(`/api/admin/users/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });

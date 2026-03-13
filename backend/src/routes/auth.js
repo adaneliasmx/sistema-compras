@@ -24,7 +24,8 @@ router.post('/login', (req, res) => {
       department: user.department,
       supplier_id: user.supplier_id || null,
       default_cost_center_id: user.default_cost_center_id || null,
-      default_sub_cost_center_id: user.default_sub_cost_center_id || null
+      default_sub_cost_center_id: user.default_sub_cost_center_id || null,
+      allowed_scc_ids: user.allowed_scc_ids || []
     }
   });
 });
