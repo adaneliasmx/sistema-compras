@@ -478,6 +478,10 @@ async function catalogsView() {
   // Estado de filtro de proveedor para catálogo
   let filterSupplierId = '';
   let editingItemId = null;
+  let itemsPageSize = 30;
+  let suppliersPageSize = 30;
+  let ccPageSize = 50;
+  let sccPageSize = 50;
 
   const getFilteredItems = () => filterSupplierId
     ? items.filter(x => Number(x.supplier_id) === Number(filterSupplierId))
@@ -497,6 +501,12 @@ async function catalogsView() {
           </select>
           <input id="filterItemName" placeholder="Buscar nombre..." style="flex:1;min-width:100px"/>
         </div>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:6px">
+  <label class="small muted">Mostrar:</label>
+  <select id="itemsPageSizeSel" style="padding:2px 6px;font-size:12px">
+    <option value="20">20</option><option value="30" selected>30</option><option value="50">50</option><option value="100">100</option><option value="0">Todos</option>
+  </select>
+</div>
         <div class="table-wrap" id="itemsTableWrap"></div>
         <h4 style="margin-top:16px" id="itemFormTitle">Nuevo ítem</h4>
         <div class="row-3">
@@ -521,7 +531,13 @@ async function catalogsView() {
       <!-- PROVEEDORES -->
       <div class="card section">
         <div class="module-title"><h3>Proveedores</h3><button class="btn-secondary" id="expSupBtn">Exportar</button></div>
-        <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th></tr></thead>
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:6px">
+  <label class="small muted">Mostrar:</label>
+  <select id="suppliersPageSizeSel" style="padding:2px 6px;font-size:12px">
+    <option value="20">20</option><option value="30" selected>30</option><option value="50">50</option><option value="100">100</option><option value="0">Todos</option>
+  </select>
+</div>
+        <div class="table-wrap" id="supTableWrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th></tr></thead>
         <tbody>${suppliers.map(s => `<tr><td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td><td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td></tr>`).join('')}</tbody>
         </table></div>
         <h4>Alta / edición de proveedor</h4>
@@ -546,8 +562,69 @@ async function catalogsView() {
     </div>
 
     <div class="grid grid-2" style="margin-top:16px">
-      <div class="card section"><h3>Centros / subcentros</h3><div class="table-wrap"><table><thead><tr><th>Código</th><th>Nombre</th><th>Subcentros</th><th></th></tr></thead><tbody>${cc.map(c => `<tr><td><b>${c.code}</b></td><td>${c.name}</td><td style="font-size:12px">${scc.filter(x => x.cost_center_id === c.id).map(x => `${x.code} · ${x.name}`).join(', ')||'-'}</td><td style="white-space:nowrap"><button class="btn-secondary edit-cc-btn" data-id="${c.id}" data-code="${c.code}" data-name="${c.name}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger del-cc-btn" data-id="${c.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`).join('')}</tbody></table></div><h4 id="ccFormTitle">Nuevo centro de costo</h4><div class="row-3"><input id="ccCode" placeholder="Código (ej. CC-PRD)"/><input id="ccName" placeholder="Nombre"/><button class="btn-primary" id="saveCcBtn">Guardar</button></div><input type="hidden" id="ccEditId" value=""/><div id="ccMsg" class="small muted" style="margin-top:4px"></div><hr style="margin:12px 0;border:none;border-top:1px solid #eee"/><h4>Subcentros</h4><div class="row-3"><select id="sccParent"><option value="">Centro padre</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select><input id="sccCode" placeholder="Código subcentro"/><input id="sccName" placeholder="Nombre subcentro"/></div><div style="margin-top:6px"><button class="btn-primary" id="saveSccBtn">Guardar subcentro</button></div></div>
-      <div class="card section"><h3>Reglas de autorización</h3><div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Monto mín MXN</th><th>Monto máx MXN</th><th>Quién autoriza</th><th></th></tr></thead><tbody>${rules.map(r => `<tr><td><b>${r.name}</b></td><td>$${Number(r.min_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td><td>$${Number(r.max_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td><td>${r.auto_approve ? '<span style="color:#16a34a">✅ Automática</span>' : `👤 ${r.approver_role||'-'}`}</td><td style="white-space:nowrap"><button class="btn-secondary edit-rule-btn" data-id="${r.id}" data-name="${r.name}" data-min="${r.min_amount}" data-max="${r.max_amount}" data-role="${r.approver_role||''}" data-auto="${r.auto_approve}" style="padding:2px 7px;font-size:11px">✏</button> <button class="btn-danger del-rule-btn" data-id="${r.id}" style="padding:2px 7px;font-size:11px">✖</button></td></tr>`).join('')}</tbody></table></div><h4 id="ruleFormTitle">Nueva regla</h4><div class="row-3"><input id="ruleName" placeholder="Nombre regla"/><input id="ruleMin" type="number" placeholder="Monto mín"/><input id="ruleMax" type="number" placeholder="Monto máx"/></div><div class="row-3"><select id="ruleRole"><option value="">Sin rol (automática)</option><option value="comprador">comprador</option><option value="autorizador">autorizador</option><option value="pagos">pagos</option><option value="admin">admin</option></select><label style="display:flex;align-items:center;gap:6px;padding-top:20px"><input id="ruleAuto" type="checkbox"/> Aprobación automática</label><button class="btn-primary" id="saveRuleBtn" style="margin-top:16px">Guardar regla</button></div><input type="hidden" id="ruleEditId" value=""/><div id="ruleMsg" class="small muted" style="margin-top:4px"></div></div>
+      <div class="card section">
+  <h3>Centros de costo</h3>
+  <div class="table-wrap" id="ccTableWrap"></div>
+  <h4 id="ccFormTitle">Nuevo centro de costo</h4>
+  <div class="row-3">
+    <div><label>Código *</label><input id="ccCode" placeholder="Ej. CC-PRD"/></div>
+    <div><label>Nombre *</label><input id="ccName" placeholder="Nombre del centro"/></div>
+    <button class="btn-primary" id="saveCcBtn" style="margin-top:20px">Guardar</button>
+  </div>
+  <input type="hidden" id="ccEditId" value=""/>
+  <div id="ccMsg" class="small muted" style="margin-top:4px"></div>
+
+  <hr style="margin:16px 0;border:none;border-top:2px solid #e5e7eb"/>
+  <h3>Subcentros de costo</h3>
+  <div class="table-wrap" id="sccTableWrap"></div>
+  <h4 id="sccFormTitle">Nuevo subcentro</h4>
+  <div class="row-3">
+    <div><label>Centro padre *</label><select id="sccParent"><option value="">— Selecciona —</option>${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}</select></div>
+    <div><label>Código *</label><input id="sccCode" placeholder="Ej. SCC-MNT"/></div>
+    <div><label>Nombre *</label><input id="sccName" placeholder="Nombre subcentro"/></div>
+  </div>
+  <input type="hidden" id="sccEditId" value=""/>
+  <div style="margin-top:8px"><button class="btn-primary" id="saveSccBtn">Guardar subcentro</button></div>
+  <div id="sccMsg" class="small muted" style="margin-top:4px"></div>
+</div>
+      <div class="card section">
+  <h3>Reglas de autorización</h3>
+  <p class="small muted">Las reglas definen qué rango de montos requiere autorización y quién debe autorizar.</p>
+  <div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Monto mín</th><th>Monto máx</th><th>Quién autoriza</th><th>Estado</th><th></th></tr></thead>
+  <tbody>${rules.map(r => `<tr>
+    <td><b>${r.name}</b></td>
+    <td>$${Number(r.min_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+    <td>$${Number(r.max_amount).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+    <td>${r.auto_approve ? '<span style="color:#16a34a">✅ Automática</span>' : `👤 ${r.approver_role||'-'}`}</td>
+    <td>${r.active ? '<span style="color:#16a34a">Activa</span>' : '<span style="color:#9ca3af">Inactiva</span>'}</td>
+    <td style="white-space:nowrap">
+      <button class="btn-secondary edit-rule-btn" data-id="${r.id}" data-name="${r.name}" data-min="${r.min_amount}" data-max="${r.max_amount}" data-role="${r.approver_role||''}" data-auto="${r.auto_approve}" data-active="${r.active}" style="padding:2px 7px;font-size:11px">✏</button>
+      <button class="btn-danger del-rule-btn" data-id="${r.id}" style="padding:2px 7px;font-size:11px">✖</button>
+    </td>
+  </tr>`).join('')}</tbody></table></div>
+
+  <h4 id="ruleFormTitle" style="margin-top:14px">Nueva regla</h4>
+  <div class="row-3">
+    <div><label>Nombre *</label><input id="ruleName" placeholder="Nombre regla"/></div>
+    <div><label>Monto mínimo MXN</label><input id="ruleMin" type="number" placeholder="0"/></div>
+    <div><label>Monto máximo MXN</label><input id="ruleMax" type="number" placeholder="999999"/></div>
+  </div>
+  <div class="row-3" style="margin-top:8px">
+    <div><label>Quién autoriza</label><select id="ruleRole"><option value="">Sin rol (automática)</option><option value="comprador">comprador</option><option value="autorizador">autorizador</option><option value="pagos">pagos</option><option value="admin">admin</option></select></div>
+    <div style="padding-top:18px"><label><input id="ruleAuto" type="checkbox"/> Aprobación automática</label></div>
+    <div style="padding-top:18px"><label><input id="ruleActive" type="checkbox" checked/> Activa</label></div>
+  </div>
+  <div style="margin-top:12px;padding:10px 14px;background:#fef3c7;border:1px solid #fde68a;border-radius:8px">
+    <label style="font-size:13px;font-weight:600;color:#b45309">🔒 Confirmar con tu contraseña para guardar</label>
+    <input id="rulePassword" type="password" placeholder="Tu contraseña actual" style="display:block;margin-top:6px;width:100%;max-width:280px"/>
+  </div>
+  <input type="hidden" id="ruleEditId" value=""/>
+  <div style="margin-top:10px;display:flex;gap:10px;align-items:center">
+    <button class="btn-primary" id="saveRuleBtn">Guardar regla</button>
+    <button class="btn-secondary" id="cancelRuleBtn" style="display:none">Cancelar edición</button>
+    <span id="ruleMsg" class="small muted"></span>
+  </div>
+</div>
     </div>
   `, 'catalogos');
 
@@ -555,8 +632,12 @@ async function catalogsView() {
   const renderItemsTable = () => {
     const nameFilter = (document.getElementById('filterItemName')?.value || '').toLowerCase();
     const filtered = getFilteredItems().filter(i => !nameFilter || i.name.toLowerCase().includes(nameFilter));
+    const pageSel = document.getElementById('itemsPageSizeSel');
+    if (pageSel) itemsPageSize = Number(pageSel.value);
+    const shown = itemsPageSize > 0 ? filtered.slice(0, itemsPageSize) : filtered;
+    const hiddenCount = filtered.length - shown.length;
     itemsTableWrap.innerHTML = `<table><thead><tr><th>Código</th><th>Nombre</th><th>Unidad</th><th>Proveedor</th><th>Precio</th><th>Acciones</th></tr></thead>
-    <tbody>${filtered.map(i => `<tr>
+    <tbody>${shown.map(i => `<tr>
       <td style="font-size:12px"><b>${i.code}</b></td>
       <td>${i.name}</td>
       <td>${i.unit}</td>
@@ -568,6 +649,7 @@ async function catalogsView() {
       </td>
     </tr>`).join('')}
     ${filtered.length === 0 ? '<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin ítems</td></tr>' : ''}
+    ${hiddenCount > 0 ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más. Cambia el límite de visualización arriba.</td></tr>` : ''}
     </tbody></table>`;
 
     itemsTableWrap.querySelectorAll('.edit-item-btn').forEach(btn => btn.onclick = () => {
@@ -601,19 +683,102 @@ async function catalogsView() {
 
   filterSupplierCat.onchange = () => { filterSupplierId = filterSupplierCat.value; renderItemsTable(); };
   document.getElementById('filterItemName').oninput = renderItemsTable;
+  document.getElementById('itemsPageSizeSel')?.addEventListener('change', renderItemsTable);
 
-  document.querySelectorAll('.edit-sup-row').forEach(btn => {
-    btn.onclick = () => {
-      const s = suppliers.find(x => x.id === Number(btn.dataset.id));
-      if (!s) return;
-      supEditId.value = s.id;
-      supName.value = s.business_name || '';
-      supCode.value = s.provider_code || '';
-      supContact.value = s.contact_name || '';
-      supEmail.value = s.email || '';
-      supPhone.value = s.phone || '';
-    };
-  });
+  // Pagination for suppliers table
+  const renderSuppliersTable = () => {
+    const pageSel = document.getElementById('suppliersPageSizeSel');
+    if (pageSel) suppliersPageSize = Number(pageSel.value);
+    const shown = suppliersPageSize > 0 ? suppliers.slice(0, suppliersPageSize) : suppliers;
+    const hiddenCount = suppliers.length - shown.length;
+    const supTableWrap = document.getElementById('supTableWrap');
+    if (supTableWrap) supTableWrap.innerHTML = `<table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th></tr></thead>
+    <tbody>${shown.map(s => `<tr><td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td><td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td></tr>`).join('')}
+    ${hiddenCount > 0 ? `<tr><td colspan="5" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más.</td></tr>` : ''}
+    </tbody></table>`;
+    supTableWrap?.querySelectorAll('.edit-sup-row').forEach(btn => {
+      btn.onclick = () => {
+        const s = suppliers.find(x => x.id === Number(btn.dataset.id));
+        if (!s) return;
+        supEditId.value = s.id;
+        supName.value = s.business_name || '';
+        supCode.value = s.provider_code || '';
+        supContact.value = s.contact_name || '';
+        supEmail.value = s.email || '';
+        supPhone.value = s.phone || '';
+      };
+    });
+  };
+  renderSuppliersTable();
+  document.getElementById('suppliersPageSizeSel')?.addEventListener('change', renderSuppliersTable);
+
+  // Render CC table
+  const renderCcTable = () => {
+    const shown = cc; // small list, show all
+    document.getElementById('ccTableWrap').innerHTML = `<table><thead><tr><th>Código</th><th>Nombre</th><th>Activo</th><th></th></tr></thead>
+    <tbody>${shown.map(c => `<tr>
+      <td><b>${c.code}</b></td><td>${c.name}</td>
+      <td>${c.active !== false ? '✅' : '❌'}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-secondary edit-cc-btn" data-id="${c.id}" data-code="${c.code}" data-name="${c.name}" style="padding:2px 7px;font-size:11px">✏</button>
+        <button class="btn-danger del-cc-btn" data-id="${c.id}" style="padding:2px 7px;font-size:11px">✖</button>
+      </td>
+    </tr>`).join('')}
+    ${!shown.length ? '<tr><td colspan="4" style="text-align:center;color:#9ca3af;padding:8px">Sin centros de costo</td></tr>' : ''}
+    </tbody></table>`;
+    document.querySelectorAll('.edit-cc-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.getElementById('ccEditId').value = btn.dataset.id;
+        document.getElementById('ccCode').value = btn.dataset.code;
+        document.getElementById('ccName').value = btn.dataset.name;
+        document.getElementById('ccFormTitle').textContent = 'Editar centro de costo';
+        document.getElementById('saveCcBtn').textContent = 'Actualizar';
+      };
+    });
+    document.querySelectorAll('.del-cc-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('¿Eliminar este centro de costo?')) return;
+        try { await api(`/api/catalogs/cost-centers/${btn.dataset.id}`, { method: 'DELETE' }); catalogsView(); } catch(e) { alert(e.message); }
+      };
+    });
+  };
+  renderCcTable();
+
+  // Render SCC table
+  const renderSccTable = () => {
+    document.getElementById('sccTableWrap').innerHTML = `<table><thead><tr><th>Centro padre</th><th>Código</th><th>Nombre</th><th>Activo</th><th></th></tr></thead>
+    <tbody>${scc.map(s => {
+      const parentCc = cc.find(c => c.id === Number(s.cost_center_id));
+      return `<tr>
+        <td style="font-size:12px">${parentCc?.code||'-'} · ${parentCc?.name||'-'}</td>
+        <td><b>${s.code}</b></td><td>${s.name}</td>
+        <td>${s.active !== false ? '✅' : '❌'}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-secondary edit-scc-btn" data-id="${s.id}" data-parent="${s.cost_center_id}" data-code="${s.code}" data-name="${s.name}" style="padding:2px 7px;font-size:11px">✏</button>
+          <button class="btn-danger del-scc-btn" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✖</button>
+        </td>
+      </tr>`;
+    }).join('')}
+    ${!scc.length ? '<tr><td colspan="5" style="text-align:center;color:#9ca3af;padding:8px">Sin subcentros</td></tr>' : ''}
+    </tbody></table>`;
+    document.querySelectorAll('.edit-scc-btn').forEach(btn => {
+      btn.onclick = () => {
+        document.getElementById('sccEditId').value = btn.dataset.id;
+        document.getElementById('sccParent').value = btn.dataset.parent;
+        document.getElementById('sccCode').value = btn.dataset.code;
+        document.getElementById('sccName').value = btn.dataset.name;
+        document.getElementById('sccFormTitle').textContent = 'Editar subcentro';
+        document.getElementById('saveSccBtn').textContent = 'Actualizar subcentro';
+      };
+    });
+    document.querySelectorAll('.del-scc-btn').forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm('¿Eliminar este subcentro?')) return;
+        try { await api(`/api/catalogs/sub-cost-centers/${btn.dataset.id}`, { method: 'DELETE' }); catalogsView(); } catch(e) { alert(e.message); }
+      };
+    });
+  };
+  renderSccTable();
 
   // Auto-sugerir código al escribir nombre
   let codeTimer = null;
@@ -699,24 +864,83 @@ async function catalogsView() {
 
   toggleImportBtn.onclick = () => importWrap.style.display = importWrap.style.display === 'none' ? 'block' : 'none';
   importSupBtn.onclick = async () => { try { const out = await api('/api/catalogs/suppliers/import', { method: 'POST', body: JSON.stringify({ csv: supCsv.value }) }); supMsg.textContent = `Importados: ${out.inserted}`; render(); } catch (e) { supMsg.textContent = e.message; } };
-  saveCcBtn.onclick = async () => { try { const payload = { code: document.getElementById('ccCode').value, name: document.getElementById('ccName').value }; const editId = document.getElementById('ccEditId').value; if (editId) await api(`/api/catalogs/cost-centers/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) }); else await api('/api/catalogs/cost-centers', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ccMsg').textContent = e.message; } };
-  saveSccBtn.onclick = async () => { try { const payload = { cost_center_id: Number(sccParent.value), code: sccCode.value, name: sccName.value }; await api('/api/catalogs/sub-cost-centers', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ccMsg').textContent = e.message; } };
-  saveRuleBtn.onclick = async () => { try { const payload = { name: document.getElementById('ruleName').value, min_amount: Number(document.getElementById('ruleMin').value||0), max_amount: Number(document.getElementById('ruleMax').value||0), approver_role: document.getElementById('ruleRole').value || null, auto_approve: document.getElementById('ruleAuto').checked }; const editId = document.getElementById('ruleEditId').value; if (editId) await api(`/api/catalogs/approval-rules/${editId}`, { method:'PATCH', body: JSON.stringify(payload)}); else await api('/api/catalogs/approval-rules', { method:'POST', body: JSON.stringify(payload)}); catalogsView(); } catch (e) { document.getElementById('ruleMsg').textContent = e.message; } };
-  // Editar/eliminar centros de costo
-  document.querySelectorAll('.edit-cc-btn').forEach(btn => {
-    btn.onclick = () => {
-      document.getElementById('ccEditId').value = btn.dataset.id;
-      document.getElementById('ccCode').value = btn.dataset.code;
-      document.getElementById('ccName').value = btn.dataset.name;
-      document.getElementById('ccFormTitle').textContent = 'Editar centro de costo';
-      document.getElementById('saveCcBtn').textContent = 'Actualizar';
-    };
-  });
-  document.querySelectorAll('.del-cc-btn').forEach(btn => {
-    btn.onclick = async () => {
-      if (!confirm('¿Eliminar este centro de costo?')) return;
-      try { await api(`/api/catalogs/cost-centers/${btn.dataset.id}`, { method: 'DELETE' }); catalogsView(); } catch(e) { alert(e.message); }
-    };
+  document.getElementById('saveCcBtn').onclick = async () => {
+    try {
+      const payload = { code: document.getElementById('ccCode').value, name: document.getElementById('ccName').value };
+      const editId = document.getElementById('ccEditId').value;
+      if (editId) await api(`/api/catalogs/cost-centers/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      else await api('/api/catalogs/cost-centers', { method: 'POST', body: JSON.stringify(payload) });
+      document.getElementById('ccMsg').textContent = '✅ Guardado';
+      document.getElementById('ccMsg').style.color = '#16a34a';
+      document.getElementById('ccEditId').value = '';
+      document.getElementById('ccCode').value = '';
+      document.getElementById('ccName').value = '';
+      document.getElementById('ccFormTitle').textContent = 'Nuevo centro de costo';
+      document.getElementById('saveCcBtn').textContent = 'Guardar';
+      setTimeout(catalogsView, 700);
+    } catch (e) { document.getElementById('ccMsg').textContent = e.message; document.getElementById('ccMsg').style.color = '#dc2626'; }
+  };
+  document.getElementById('saveSccBtn').onclick = async () => {
+    try {
+      const editId = document.getElementById('sccEditId').value;
+      const payload = {
+        cost_center_id: Number(document.getElementById('sccParent').value),
+        code: document.getElementById('sccCode').value,
+        name: document.getElementById('sccName').value
+      };
+      if (!payload.cost_center_id || !payload.code || !payload.name) throw new Error('Centro, código y nombre son requeridos');
+      if (editId) await api(`/api/catalogs/sub-cost-centers/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      else await api('/api/catalogs/sub-cost-centers', { method: 'POST', body: JSON.stringify(payload) });
+      document.getElementById('sccMsg').textContent = '✅ Guardado';
+      document.getElementById('sccMsg').style.color = '#16a34a';
+      document.getElementById('sccEditId').value = '';
+      document.getElementById('sccCode').value = '';
+      document.getElementById('sccName').value = '';
+      document.getElementById('sccFormTitle').textContent = 'Nuevo subcentro';
+      document.getElementById('saveSccBtn').textContent = 'Guardar subcentro';
+      setTimeout(catalogsView, 700);
+    } catch (e) { document.getElementById('sccMsg').textContent = e.message; document.getElementById('sccMsg').style.color = '#dc2626'; }
+  };
+  document.getElementById('saveRuleBtn').onclick = async () => {
+    const msgEl = document.getElementById('ruleMsg');
+    const pw = document.getElementById('rulePassword')?.value || '';
+    if (!pw) { msgEl.textContent = 'Debes ingresar tu contraseña para guardar cambios en las reglas.'; msgEl.style.color = '#dc2626'; return; }
+    try {
+      msgEl.textContent = 'Verificando...'; msgEl.style.color = '#6b7280';
+      await api('/api/auth/verify-password', { method: 'POST', body: JSON.stringify({ password: pw }) });
+      const payload = {
+        name: document.getElementById('ruleName').value,
+        min_amount: Number(document.getElementById('ruleMin').value || 0),
+        max_amount: Number(document.getElementById('ruleMax').value || 0),
+        approver_role: document.getElementById('ruleRole').value || null,
+        auto_approve: document.getElementById('ruleAuto').checked,
+        active: document.getElementById('ruleActive').checked
+      };
+      const editId = document.getElementById('ruleEditId').value;
+      if (editId) await api(`/api/catalogs/approval-rules/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+      else await api('/api/catalogs/approval-rules', { method: 'POST', body: JSON.stringify(payload) });
+      msgEl.textContent = '✅ Regla guardada'; msgEl.style.color = '#16a34a';
+      document.getElementById('rulePassword').value = '';
+      document.getElementById('ruleEditId').value = '';
+      document.getElementById('ruleName').value = '';
+      document.getElementById('ruleMin').value = '';
+      document.getElementById('ruleMax').value = '';
+      document.getElementById('ruleFormTitle').textContent = 'Nueva regla';
+      document.getElementById('saveRuleBtn').textContent = 'Guardar regla';
+      document.getElementById('cancelRuleBtn').style.display = 'none';
+      setTimeout(catalogsView, 700);
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+  };
+  document.getElementById('cancelRuleBtn')?.addEventListener('click', () => {
+    document.getElementById('ruleEditId').value = '';
+    document.getElementById('ruleName').value = '';
+    document.getElementById('ruleMin').value = '';
+    document.getElementById('ruleMax').value = '';
+    document.getElementById('rulePassword').value = '';
+    document.getElementById('ruleFormTitle').textContent = 'Nueva regla';
+    document.getElementById('saveRuleBtn').textContent = 'Guardar regla';
+    document.getElementById('cancelRuleBtn').style.display = 'none';
+    document.getElementById('ruleMsg').textContent = '';
   });
   // Editar/eliminar reglas
   document.querySelectorAll('.edit-rule-btn').forEach(btn => {
@@ -727,8 +951,11 @@ async function catalogsView() {
       document.getElementById('ruleMax').value = btn.dataset.max;
       document.getElementById('ruleRole').value = btn.dataset.role;
       document.getElementById('ruleAuto').checked = btn.dataset.auto === 'true';
+      document.getElementById('ruleActive').checked = btn.dataset.active !== 'false';
       document.getElementById('ruleFormTitle').textContent = 'Editar regla';
-      document.getElementById('saveRuleBtn').textContent = 'Actualizar';
+      document.getElementById('saveRuleBtn').textContent = 'Actualizar regla';
+      document.getElementById('cancelRuleBtn').style.display = 'inline-block';
+      document.getElementById('rulePassword').focus();
     };
   });
   document.querySelectorAll('.del-rule-btn').forEach(btn => {

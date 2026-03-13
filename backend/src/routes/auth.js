@@ -95,4 +95,14 @@ router.post('/reset-password', (req, res) => {
   res.json({ ok: true, message: 'Contraseña cambiada exitosamente. Ya puedes iniciar sesión.' });
 });
 
+// Verificar contraseña del usuario actual (para confirmación de acciones sensibles)
+router.post('/verify-password', authRequired, (req, res) => {
+  const db = read();
+  const user = db.users.find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const ok = bcrypt.compareSync(req.body.password || '', user.password_hash || '');
+  if (!ok) return res.status(401).json({ error: 'Contraseña incorrecta' });
+  res.json({ ok: true });
+});
+
 module.exports = router;
