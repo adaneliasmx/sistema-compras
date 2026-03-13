@@ -67,7 +67,10 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
 router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();
   const showCancelled = req.query.show_cancelled === 'true';
-  const excluded = showCancelled ? ['Cerrado', 'Rechazado'] : ['Cerrado', 'Rechazado', 'Cancelado'];
+  const includeRejected = req.query.include_rejected === 'true';
+  const excluded = ['Cerrado'];
+  if (!showCancelled) excluded.push('Cancelado');
+  if (!includeRejected) excluded.push('Rechazado');
   const rows = db.requisition_items
     .filter(i => !excluded.includes(i.status))
     .map(i => ({
@@ -77,6 +80,8 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '',
       po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
       cancelled_by_name: i.cancelled_by ? (db.users.find(u => u.id === i.cancelled_by) || {}).full_name || '' : '',
+      is_rejected: i.status === 'Rechazado',
+      reject_reason: i.reject_reason || null,
       quote_sub_status: (() => {
         // Solo aplica para ítems que aún están en etapa de cotización
         if (i.status !== 'En cotización') return null;
@@ -619,7 +624,11 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
     }
   });
   write(db);
-  res.json(po);
+  const response = { ...po };
+  if (newStatus === 'Entregado' && Number(po.advance_paid || 0) > 0) {
+    response.advance_reminder = `⚠ Recuerda: esta PO tiene un anticipo pagado de $${Number(po.advance_paid).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'} (${po.advance_percentage}%). El saldo pendiente por facturar es $${(Number(po.total_amount||0) - Number(po.advance_paid||0)).toLocaleString('es-MX',{minimumFractionDigits:2})}.`;
+  }
+  res.json(response);
 });
 
 // Cancelar PO completa (comprador/admin) — libera los ítems para re-proceso

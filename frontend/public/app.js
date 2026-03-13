@@ -1686,19 +1686,24 @@ async function purchasesView() {
 
   let showCancelled = false;
   const loadItems = () => api(`/api/purchases/pending-items${showCancelled ? '?show_cancelled=true' : ''}`);
+  const loadRejected = () => api('/api/purchases/pending-items?include_rejected=true&show_cancelled=true');
 
-  const [allItems, pos, suppliers, sccList] = await Promise.all([
+  const [allItems, allItemsWithRejected, pos, suppliers, sccList] = await Promise.all([
     loadItems(),
+    loadRejected(),
     api('/api/purchases/purchase-orders'),
     api('/api/catalogs/suppliers'),
     api('/api/catalogs/sub-cost-centers')
   ]);
+
+  const rejectedItems = allItemsWithRejected.filter(x => x.is_rejected);
 
   // Clasificar ítems por sección (cancelados excluidos salvo toggle)
   const itemsPendientePO = allItems.filter(x => x.supplier_id && x.unit_cost && !x.purchase_order_id && !['Cancelado','Rechazado','Cerrado','En cotización'].includes(x.status));
   const itemsEnCotizacion = allItems.filter(x => x.status === 'En cotización' && x.item_name && x.item_name.trim() && !x.purchase_order_id);
   const itemsSolicitados = allItems.filter(x => showCancelled ? true : !['Cancelado','Rechazado','Cerrado'].includes(x.status));
   const itemsPendingScc = allItems.filter(x => x.sub_cost_center_proposed && !x.sub_cost_center_id && !['Cancelado','Rechazado','Cerrado'].includes(x.status));
+  const posConAnticipo = pos.filter(p => Number(p.advance_percentage || 0) > 0 && p.advance_status !== 'N/A' && p.advance_status !== 'Pagado');
 
   let activeTab = sessionStorage.getItem('compras_active_tab') || 'pendientes';
 
@@ -1722,6 +1727,7 @@ async function purchasesView() {
         </button>
         <button class="tab-btn" data-tab="solicitados" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
           📦 Todos los ítems <span style="background:#6b7280;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${itemsSolicitados.length}</span>
+          ${rejectedItems.length ? `<span style="background:#dc2626;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px" title="${rejectedItems.length} rechazados">🚫${rejectedItems.length}</span>` : ''}
         </button>
         <button class="tab-btn" data-tab="pos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
           🧾 POs generadas <span style="background:#10b981;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${pos.length}</span>
@@ -1731,6 +1737,9 @@ async function purchasesView() {
         </button>
         <button class="tab-btn" data-tab="scc_pending" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:${itemsPendingScc.length?'#b45309':'#6b7280'}">
           🗂 SCC Propuestos ${itemsPendingScc.length ? `<span style="background:#f59e0b;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${itemsPendingScc.length}</span>` : ''}
+        </button>
+        <button class="tab-btn" data-tab="anticipos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:${posConAnticipo.length?'#1d4ed8':'#6b7280'}">
+          💰 Anticipos ${posConAnticipo.length ? `<span style="background:#1d4ed8;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${posConAnticipo.length}</span>` : ''}
         </button>
       </div>
 
@@ -2269,6 +2278,22 @@ async function purchasesView() {
       renderCotizTab();
 
     } else if (tab === 'solicitados') {
+      const rejectedSection = rejectedItems.length ? `
+  <div style="margin-top:20px;border-top:2px solid #fca5a5;padding-top:14px">
+    <div style="font-weight:700;color:#dc2626;margin-bottom:8px">🚫 Ítems rechazados (${rejectedItems.length})</div>
+    <table>
+      <thead><tr><th>Folio Req.</th><th>Ítem</th><th>Motivo de rechazo</th><th>Proveedor</th><th>Costo</th></tr></thead>
+      <tbody>
+        ${rejectedItems.map(it => `<tr style="background:#fef2f2;color:#7f1d1d">
+          <td style="font-size:12px">${it.requisition_folio||'-'}</td>
+          <td style="font-size:12px"><s>${it.item_name||'-'}</s></td>
+          <td style="font-size:12px">${it.reject_reason||'Sin motivo'}</td>
+          <td style="font-size:12px">${it.supplier_name||'-'}</td>
+          <td style="font-size:12px">$${Number(it.unit_cost||0).toFixed(2)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>` : '';
       tabContent.innerHTML = `
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
           <select id="filterSupplierItems"><option value="">Todos los proveedores</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select>
@@ -2282,7 +2307,8 @@ async function purchasesView() {
           <div class="table-wrap"><table>${THEAD}<tbody>
             ${itemsSolicitados.map(i => itemRow(i, true)).join('')}
           </tbody></table></div>
-        </div>`;
+        </div>
+        ${rejectedSection}`;
       bindTableActions(tabContent, itemsSolicitados);
 
       const applyFilters = () => {
@@ -2391,6 +2417,8 @@ async function purchasesView() {
               // Mostrar mensaje breve en tarjeta
               const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
               if (msgEl) { msgEl.textContent = `✅ Estado actualizado a: ${updatedPO.status}`; msgEl.style.color='#16a34a'; setTimeout(()=>{ msgEl.textContent=''; }, 3000); }
+              // Mostrar recordatorio de anticipo si aplica
+              if (updatedPO.advance_reminder) { alert(updatedPO.advance_reminder); }
             } else {
               render();
             }
@@ -2721,6 +2749,70 @@ async function purchasesView() {
         };
       });
     }
+    } else if (tab === 'anticipos') {
+      poActions.style.display = 'none';
+      const advStatusBadge = (s) => {
+        const cfg = {
+          'Pendiente': { bg: '#fef9c3', color: '#854d0e' },
+          'Solicitado': { bg: '#dbeafe', color: '#1d4ed8' },
+          'Facturado': { bg: '#ffedd5', color: '#9a3412' },
+          'Pagado': { bg: '#dcfce7', color: '#15803d' }
+        }[s] || { bg: '#f3f4f6', color: '#6b7280' };
+        return `<span style="background:${cfg.bg};color:${cfg.color};padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600">${s}</span>`;
+      };
+      if (!posConAnticipo.length) {
+        tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Sin órdenes de compra con anticipo pendiente ✅</div>';
+      } else {
+        tabContent.innerHTML = `
+          <h4 style="margin:0 0 12px;font-size:14px;color:#1d4ed8">Órdenes de Compra con Anticipo Pendiente</h4>
+          ${posConAnticipo.map(p => {
+            const advancePct = Number(p.advance_percentage || 0);
+            const advanceAmt = Number(p.advance_amount || 0);
+            const advStatus = p.advance_status || 'N/A';
+            const canRequest = ['Pendiente','Solicitado'].includes(advStatus) && ['Enviada','Aceptada','En proceso'].includes(p.status);
+            return `<div class="card section" style="margin-bottom:12px;border-left:4px solid #1d4ed8">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                <div>
+                  <b style="font-size:15px">${p.folio}</b>
+                  <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                  ${statusPill(p.status)}
+                  <b>$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${p.currency||'MXN'}</b>
+                </div>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px">
+                <span>💰 Anticipo: <b>${advancePct}%</b> = <b>$${advanceAmt.toLocaleString('es-MX',{minimumFractionDigits:2})}</b></span>
+                <span>Estado: ${advStatusBadge(advStatus)}</span>
+              </div>
+              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                ${canRequest ? `<button class="btn-secondary po-req-advance-btn" data-id="${p.id}" data-pct="${advancePct}" data-amt="${advanceAmt}" style="font-size:12px;padding:5px 12px">💰 Solicitar anticipo (${advancePct}%)</button>` : ''}
+              </div>
+              <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
+            </div>`;
+          }).join('')}`;
+
+        // Bind solicitar anticipo buttons
+        tabContent.querySelectorAll('.po-req-advance-btn').forEach(btn => {
+          btn.onclick = async () => {
+            try {
+              btn.disabled = true;
+              const advPct = btn.dataset.pct;
+              const data = await api(`/api/purchases/purchase-orders/${btn.dataset.id}/request-advance`, {
+                method: 'POST', body: JSON.stringify({ advance_percentage: Number(advPct) })
+              });
+              if (data.mailto) window.open(data.mailto, '_blank');
+              const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+              if (msgEl) { msgEl.textContent = `✅ Anticipo solicitado: $${Number(data.advance_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} (${advPct}%). El proveedor debe subir su factura de anticipo.`; msgEl.style.color = '#16a34a'; }
+              btn.textContent = `💰 Anticipo ${advPct}% solicitado`;
+            } catch(e) {
+              const msgEl = document.getElementById(`req-msg-${btn.dataset.id}`);
+              if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+              btn.disabled = false;
+            }
+          };
+        });
+      }
     }
   };
 
@@ -3666,6 +3758,9 @@ async function paymentsView() {
     api('/api/payments')
   ]);
 
+  const anticiposPendientes = pending.filter(inv => inv.invoice_type === 'anticipo');
+  const facturasPendientes = pending.filter(inv => inv.invoice_type !== 'anticipo');
+
   function overdueTag(inv) {
     if (inv.days_overdue === null || inv.days_overdue === undefined) return '';
     if (inv.days_overdue > 0) return `<span style="color:#dc2626;font-weight:700;font-size:12px"> ⚠ ${inv.days_overdue} días vencido</span>`;
@@ -3681,40 +3776,46 @@ async function paymentsView() {
         <div class="module-title"><h3>Facturas pendientes de pago</h3></div>
         ${pending.length === 0
           ? '<div class="muted small" style="padding:16px;text-align:center">✅ Sin facturas pendientes</div>'
-          : pending.map(inv => {
-            const overdue = Number(inv.days_overdue || 0);
-            const rowBg = overdue > 0 ? '#fef2f2' : overdue === 0 ? '#fffbeb' : '';
-            const urgentTag = inv.urgent ? `<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>` : '';
-            const isAnticipo = inv.invoice_type === 'anticipo';
-            const advancePaid = Number(inv.advance_paid_on_po || 0);
-            const pendingBal = Number(inv.pending_balance ?? inv.balance ?? inv.total ?? 0);
-            const anticipoTag = isAnticipo ? `<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 7px;font-size:10px;margin-left:6px;font-weight:600">💰 ANTICIPO</span>` : '';
-            const advanceInfo = !isAnticipo && advancePaid > 0
-              ? `<span class="small" style="color:#16a34a">✔ Anticipo pagado: $${advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} · Saldo: $${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>`
-              : '';
-            return `
-            <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${pendingBal}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}" data-pofolio="${inv.po_folio||''}" data-type="${inv.invoice_type||'normal'}" data-advance-paid="${advancePaid}"
-              style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${isAnticipo?'#eff6ff':rowBg};transition:background 0.15s"
-              onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='${isAnticipo?'#eff6ff':rowBg}'">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-                <div>
-                  <b>${inv.invoice_number}</b>${anticipoTag}${urgentTag}
-                  <div class="small muted">${inv.supplier_name} · PO: ${inv.po_folio||'-'}</div>
-                  ${advanceInfo}
+          : (() => {
+            const renderInvRow = (inv) => {
+              const overdue = Number(inv.days_overdue || 0);
+              const rowBg = overdue > 0 ? '#fef2f2' : overdue === 0 ? '#fffbeb' : '';
+              const urgentTag = inv.urgent ? `<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>` : '';
+              const isAnticipo = inv.invoice_type === 'anticipo';
+              const advancePaid = Number(inv.advance_paid_on_po || 0);
+              const pendingBal = Number(inv.pending_balance ?? inv.balance ?? inv.total ?? 0);
+              const anticipoTag = isAnticipo ? `<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 7px;font-size:10px;margin-left:6px;font-weight:600">💰 ANTICIPO</span>` : '';
+              const advanceInfo = !isAnticipo && advancePaid > 0
+                ? `<span class="small" style="color:#16a34a">✔ Anticipo pagado: $${advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} · Saldo: $${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>`
+                : '';
+              return `
+              <div class="pay-invoice-row" data-id="${inv.id}" data-supplier="${inv.supplier_id}" data-email="${inv.supplier_email||''}" data-number="${inv.invoice_number}" data-balance="${pendingBal}" data-total="${inv.total||0}" data-creditdays="${inv.credit_days||0}" data-delivery="${inv.delivery_date||''}" data-pofolio="${inv.po_folio||''}" data-type="${inv.invoice_type||'normal'}" data-advance-paid="${advancePaid}"
+                style="padding:12px;border-bottom:1px solid #f3f4f6;cursor:pointer;background:${isAnticipo?'#eff6ff':rowBg};transition:background 0.15s"
+                onmouseover="this.style.background='#dbeafe'" onmouseout="this.style.background='${isAnticipo?'#eff6ff':rowBg}'">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                  <div>
+                    <b>${inv.invoice_number}</b>${anticipoTag}${urgentTag}
+                    <div class="small muted">${inv.supplier_name} · PO: ${inv.po_folio||'-'}</div>
+                    ${advanceInfo}
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-weight:700;color:${isAnticipo?'#1d4ed8':'inherit'}">$${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                    <div class="small muted">Total $${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                  </div>
                 </div>
-                <div style="text-align:right">
-                  <div style="font-weight:700;color:${isAnticipo?'#1d4ed8':'inherit'}">$${pendingBal.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
-                  <div class="small muted">Total $${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                <div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap">
+                  <span class="small muted">Factura: ${String(inv.created_at||'').slice(0,10)}</span>
+                  ${inv.due_date ? `<span class="small muted">Vence: ${inv.due_date}</span>` : ''}
+                  ${overdueTag(inv)}
+                  ${inv.urgent_note ? `<span class="small" style="color:#dc2626">Nota urgente: ${inv.urgent_note}</span>` : ''}
                 </div>
-              </div>
-              <div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap">
-                <span class="small muted">Factura: ${String(inv.created_at||'').slice(0,10)}</span>
-                ${inv.due_date ? `<span class="small muted">Vence: ${inv.due_date}</span>` : ''}
-                ${overdueTag(inv)}
-                ${inv.urgent_note ? `<span class="small" style="color:#dc2626">Nota urgente: ${inv.urgent_note}</span>` : ''}
-              </div>
-            </div>`;
-          }).join('')}
+              </div>`;
+            };
+            return (anticiposPendientes.length ? `<div style="padding:8px 12px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;border-bottom:1px solid #bfdbfe">💰 Anticipos pendientes (${anticiposPendientes.length})</div>` : '') +
+              anticiposPendientes.map(renderInvRow).join('') +
+              (facturasPendientes.length ? `<div style="padding:8px 12px;background:#f8fafc;color:#374151;font-size:12px;font-weight:700;border-bottom:1px solid #e5e7eb">🧾 Facturas normales pendientes (${facturasPendientes.length})</div>` : '') +
+              facturasPendientes.map(renderInvRow).join('');
+          })()}
       </div>
 
       <!-- Panel derecho: formulario de pago -->

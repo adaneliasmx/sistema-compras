@@ -1,0 +1,447 @@
+{
+  "units": [
+    "pza",
+    "kg",
+    "litro",
+    "tambor",
+    "serv",
+    "caja",
+    "juego"
+  ],
+  "users": [
+    {
+      "id": 1,
+      "email": "cliente@demo.com",
+      "active": true,
+      "full_name": "Cliente Demo",
+      "role_code": "cliente_requisicion",
+      "department": "MANT",
+      "supplier_id": null,
+      "default_cost_center_id": 2,
+      "default_sub_cost_center_id": 3
+    },
+    {
+      "id": 2,
+      "email": "comprador@demo.com",
+      "active": true,
+      "full_name": "Comprador Demo",
+      "role_code": "comprador",
+      "department": "COMPRAS",
+      "supplier_id": null,
+      "default_cost_center_id": 1,
+      "default_sub_cost_center_id": 1
+    },
+    {
+      "id": 3,
+      "email": "admin@demo.com",
+      "active": true,
+      "full_name": "Admin Demo",
+      "role_code": "admin",
+      "department": "SISTEMAS",
+      "supplier_id": null,
+      "default_cost_center_id": 1,
+      "default_sub_cost_center_id": 1
+    },
+    {
+      "id": 4,
+      "email": "pagos@demo.com",
+      "active": true,
+      "full_name": "Pagos Demo",
+      "role_code": "pagos",
+      "department": "FINANZAS",
+      "supplier_id": null,
+      "default_cost_center_id": 3,
+      "default_sub_cost_center_id": 4
+    },
+    {
+      "id": 5,
+      "email": "proveedor@demo.com",
+      "active": true,
+      "full_name": "Proveedor Demo",
+      "role_code": "proveedor",
+      "department": "EXTERNO",
+      "supplier_id": 1
+    },
+    {
+      "id": 6,
+      "email": "autorizador@demo.com",
+      "active": true,
+      "full_name": "Autorizador Demo",
+      "role_code": "autorizador",
+      "department": "GERENCIA",
+      "supplier_id": null,
+      "default_cost_center_id": 1,
+      "default_sub_cost_center_id": 2
+    }
+  ],
+  "invoices": [],
+  "payments": [],
+  "settings": {
+    "buyer_email": "compras@demo.com"
+  },
+  "suppliers": [
+    {
+      "id": 1,
+      "email": "ana@quimicos.com",
+      "phone": "5550001111",
+      "active": true,
+      "contact_name": "Ana López",
+      "business_name": "Químicos del Norte",
+      "provider_code": "QNO-001"
+    },
+    {
+      "id": 2,
+      "email": "ventas@refacciones.com",
+      "phone": "5550002222",
+      "active": true,
+      "contact_name": "Carlos Díaz",
+      "business_name": "Refacciones Industriales",
+      "provider_code": "RIN-002"
+    },
+    {
+      "id": 3,
+      "email": "cotizaciones@serviciosmx.com",
+      "phone": "5550003333",
+      "active": true,
+      "contact_name": "Laura Pérez",
+      "business_name": "Servicios Técnicos MX",
+      "provider_code": "STM-003"
+    },
+    {
+      "id": 4,
+      "rfc": "",
+      "email": "tlap@cuesto.com",
+      "phone": "234567",
+      "active": true,
+      "address": "",
+      "created_at": "2026-03-10T21:49:28.338Z",
+      "contact_name": "luis",
+      "business_name": "tlapaleria",
+      "provider_code": "T-001"
+    }
+  ],
+  "quotations": [],
+  "cost_centers": [
+    {
+      "id": 1,
+      "code": "CC-100",
+      "name": "Producción",
+      "active": true
+    },
+    {
+      "id": 2,
+      "code": "CC-200",
+      "name": "Mantenimiento",
+      "active": true
+    },
+    {
+      "id": 3,
+      "code": "CC-300",
+      "name": "Calidad",
+      "active": true
+    },
+    {
+      "id": 4,
+      "code": "CC-400",
+      "name": "SMYA",
+      "active": true
+    },
+    {
+      "id": 5,
+      "code": "CC-500",
+      "name": "RHH",
+      "active": true
+    }
+  ],
+  "requisitions": [],
+  "catalog_items": [
+    {
+      "id": 1,
+      "code": "ITM-001",
+      "name": "Sosa cáustica",
+      "unit": "kg",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "unit_price": 45,
+      "inventoried": true,
+      "supplier_id": 1,
+      "cost_center_id": 2,
+      "equivalent_code": "",
+      "sub_cost_center_id": 3,
+      "quote_validity_days": 30
+    },
+    {
+      "id": 2,
+      "code": "ITM-002",
+      "name": "Tambor plástico 200L",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "provisional",
+      "unit_price": 420,
+      "inventoried": false,
+      "supplier_id": 1,
+      "cost_center_id": 1,
+      "equivalent_code": "",
+      "sub_cost_center_id": 1,
+      "quote_validity_days": 30
+    },
+    {
+      "id": 3,
+      "code": "ITM-003",
+      "name": "Bomba de recirculación",
+      "unit": "pza",
+      "active": true,
+      "currency": "USD",
+      "item_type": "refacción",
+      "unit_price": 6500,
+      "inventoried": false,
+      "supplier_id": 2,
+      "cost_center_id": 2,
+      "equivalent_code": "",
+      "sub_cost_center_id": 3,
+      "quote_validity_days": 15
+    },
+    {
+      "id": 4,
+      "code": "ITM-004",
+      "name": "Servicio de calibración",
+      "unit": "serv",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "servicio",
+      "unit_price": 3800,
+      "inventoried": false,
+      "supplier_id": 3,
+      "cost_center_id": 3,
+      "equivalent_code": "",
+      "sub_cost_center_id": 4,
+      "quote_validity_days": 10
+    },
+    {
+      "id": 5,
+      "code": "CN-001",
+      "name": "cinta negra",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "created_at": "2026-03-10T21:49:58.922Z",
+      "unit_price": 26,
+      "inventoried": false,
+      "supplier_id": 4,
+      "equivalent_code": "",
+      "quote_validity_days": 30
+    },
+    {
+      "id": 6,
+      "code": "tlap-002",
+      "name": "cinta transparente",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "unit_price": 26,
+      "inventoried": false,
+      "supplier_id": 4,
+      "cost_center_id": 1,
+      "equivalent_code": "",
+      "sub_cost_center_id": 2,
+      "quote_validity_days": 30
+    },
+    {
+      "id": 7,
+      "code": "tlap-003",
+      "name": "cinta negra",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "unit_price": 23,
+      "inventoried": false,
+      "supplier_id": 4,
+      "cost_center_id": 1,
+      "equivalent_code": "",
+      "sub_cost_center_id": 1,
+      "quote_validity_days": 30
+    },
+    {
+      "id": 8,
+      "code": "LDC-001",
+      "name": "Laminas de carton",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "created_at": "2026-03-12T16:01:44.401Z",
+      "unit_price": 1.8,
+      "inventoried": false,
+      "supplier_id": 4,
+      "equivalent_code": "",
+      "quote_validity_days": 30
+    },
+    {
+      "id": 9,
+      "code": "ITM-0009",
+      "name": "Resistencias espiral",
+      "unit": "pza",
+      "active": true,
+      "currency": "MXN",
+      "item_type": "uso continuo",
+      "unit_price": 15000,
+      "inventoried": false,
+      "supplier_id": 1,
+      "cost_center_id": 2,
+      "equivalent_code": "",
+      "sub_cost_center_id": 9,
+      "quote_validity_days": 30
+    }
+  ],
+  "invoice_items": [],
+  "approval_rules": [
+    {
+      "id": 1,
+      "name": "Auto autorización",
+      "active": true,
+      "max_amount": 1000,
+      "min_amount": 0,
+      "auto_approve": true,
+      "approver_role": null
+    },
+    {
+      "id": 2,
+      "name": "Gerencia",
+      "active": true,
+      "max_amount": 5000,
+      "min_amount": 1000.01,
+      "auto_approve": false,
+      "approver_role": "comprador"
+    },
+    {
+      "id": 3,
+      "name": "Dirección / pagos",
+      "active": true,
+      "max_amount": 999999999,
+      "min_amount": 5000.01,
+      "auto_approve": false,
+      "approver_role": "pagos"
+    }
+  ],
+  "status_history": [],
+  "inventory_items": [
+    {
+      "id": 1,
+      "unit": "kg",
+      "active": true,
+      "max_stock": 500,
+      "min_stock": 100,
+      "current_stock": 180,
+      "catalog_item_id": 1,
+      "inventory_catalog_id": 2
+    }
+  ],
+  "purchase_orders": [],
+  "sub_cost_centers": [
+    {
+      "id": 9,
+      "code": "CC-201",
+      "name": "Resistencias",
+      "active": true,
+      "cost_center_id": 2
+    },
+    {
+      "id": 1,
+      "code": "SC-101",
+      "name": "Línea 1",
+      "active": true,
+      "cost_center_id": 1
+    },
+    {
+      "id": 2,
+      "code": "SC-102",
+      "name": "Línea 2",
+      "active": true,
+      "cost_center_id": 1
+    },
+    {
+      "id": 5,
+      "code": "SC-103",
+      "name": "Insumos proceso",
+      "active": true,
+      "cost_center_id": 1
+    },
+    {
+      "id": 6,
+      "code": "SC-104",
+      "name": "Insumos empaque",
+      "active": true,
+      "cost_center_id": 1
+    },
+    {
+      "id": 3,
+      "code": "SC-201",
+      "name": "Herramientas",
+      "active": true,
+      "cost_center_id": 2
+    },
+    {
+      "id": 10,
+      "code": "SC-203",
+      "name": "Refacción L1",
+      "active": true,
+      "cost_center_id": 2
+    },
+    {
+      "id": 11,
+      "code": "SC-204",
+      "name": "Refacción LB",
+      "active": true,
+      "cost_center_id": 2
+    },
+    {
+      "id": 4,
+      "code": "SC-301",
+      "name": "Laboratorio",
+      "active": true,
+      "cost_center_id": 3
+    },
+    {
+      "id": 7,
+      "code": "SC-401",
+      "name": "EPP",
+      "active": true,
+      "cost_center_id": 4
+    },
+    {
+      "id": 8,
+      "code": "SC-501",
+      "name": "UNIFORMES",
+      "active": true,
+      "cost_center_id": 5
+    }
+  ],
+  "requisition_items": [],
+  "inventory_catalogs": [
+    {
+      "id": 3,
+      "name": "Inventario Mantenimiento",
+      "active": true,
+      "description": ""
+    },
+    {
+      "id": 1,
+      "name": "Inventario PTAR",
+      "active": true,
+      "description": ""
+    },
+    {
+      "id": 2,
+      "name": "Inventario Químicos",
+      "active": true,
+      "description": ""
+    }
+  ],
+  "quotation_requests": [],
+  "purchase_order_items": []
+}

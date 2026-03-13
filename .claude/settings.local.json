@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node:*)",
+      "Bash(npm install:*)",
+      "Read(//c/Users/proye/OneDrive 2026/OneDrive - Corporativo Cuesto, S de RL de CV/Cuesto Dropbox/Informacion Cuesto/COMPRAS//**)",
+      "Bash(python3 -c \":*)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}
