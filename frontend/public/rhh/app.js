@@ -18,7 +18,9 @@ const MENU_BY_ROLE = {
   empleado: [
     ['mi-horario', '📅 Mi Horario'],
     ['mis-solicitudes', '📝 Mis Solicitudes'],
-    ['mis-incidencias', '⚠️ Mis Incidencias']
+    ['mis-incidencias', '⚠️ Mis Incidencias'],
+    ['queja-anonima', '📢 Queja anónima'],
+    ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
   supervisor: [
     ['calendario', '📅 Calendario'],
@@ -33,7 +35,10 @@ const MENU_BY_ROLE = {
     ['incidencias', '⚠️ Incidencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
-    ['reportes', '📊 Reportes']
+    ['reportes', '📊 Reportes'],
+    ['programacion-te', '🔥 Prog. T.E.'],
+    ['quejas-rh', '📢 Quejas'],
+    ['aclaraciones-rh', '💬 Aclaraciones']
   ],
   admin: [
     ['dashboard', '📊 Dashboard'],
@@ -43,7 +48,10 @@ const MENU_BY_ROLE = {
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
     ['catalogos', '📁 Catálogos'],
-    ['reportes', '📊 Reportes']
+    ['reportes', '📊 Reportes'],
+    ['programacion-te', '🔥 Prog. T.E.'],
+    ['quejas-rh', '📢 Quejas'],
+    ['aclaraciones-rh', '💬 Aclaraciones']
   ]
 };
 
@@ -511,19 +519,23 @@ async function asignacionView() {
     const rows = (data.data || []).map(row => {
       const emp = row.employee;
       const cells = row.days.map((day, di) => {
-        const assignId = day.schedule_entry?.id;
-        if (!day.works_this_day && !day.incidence && !day.schedule_entry) {
-          return `<td style="background:#f9fafb;text-align:center;"><span class="small muted">—</span></td>`;
+        const dateStr = fmtDate(dates[di]);
+        const teAuth = approvedTE.find(t => t.date === dateStr && emp.shift && t.shift_id === emp.shift?.id) || null;
+        if (!day.works_this_day && !day.incidence && !day.schedule_entry && !teAuth) {
+          return `<td style="background:#f3f4f6;text-align:center;"><span class="small muted">—</span></td>`;
         }
         const inc = day.incidence;
         if (inc) {
           return `<td style="text-align:center;"><span class="cell-chip cell-${day.status}">${incTypeLabel(inc.type)}</span></td>`;
         }
+        if (!day.works_this_day && teAuth) {
+          return `<td style="background:#fef9c3;text-align:center;"><span class="cell-chip cell-tiempo_extra" style="font-size:11px;">🔥 T.E.</span></td>`;
+        }
         const assigned = !!day.schedule_entry || day.works_this_day;
         return `<td style="text-align:center;">
           ${assigned
             ? `<span class="cell-chip cell-asignado" style="cursor:default;">✓ ${emp.shift?.code || ''}</span>`
-            : `<button class="btn-primary" style="font-size:11px;padding:4px 8px;" onclick="assignDay(${emp.id},'${fmtDate(dates[di])}',${emp.shift?.id||0})">Asignar</button>`
+            : `<button class="btn-primary" style="font-size:11px;padding:4px 8px;" onclick="assignDay(${emp.id},'${dateStr}',${emp.shift?.id||0})">Asignar</button>`
           }
         </td>`;
       }).join('');
@@ -538,9 +550,20 @@ async function asignacionView() {
         </tr>`;
     }).join('');
 
+    // Cargar TE autorizadas del período
+    const teMonth = fmtDate(dates[0]).slice(0, 7);
+    let teAuths = [];
+    try {
+      teAuths = await api(`/api/rhh/schedule/te-authorizations?month=${teMonth}`) || [];
+    } catch(_) {}
+    const approvedTE = teAuths.filter(t => t.status === 'approved');
+
     const headerCells = dates.map(d => {
       const isToday = fmtDate(d) === fmtDate(new Date());
-      return `<th style="${isToday ? 'background:#d1fae5;' : ''}">${DAYS_SHORT[d.getDay()]}<br><span class="small">${d.getDate()}/${d.getMonth()+1}</span></th>`;
+      const dateStr = fmtDate(d);
+      // Verificar si algún turno tiene TE en este día
+      const hasTEThisDay = approvedTE.some(t => t.date === dateStr);
+      return `<th style="${isToday ? 'background:#d1fae5;' : ''}">${DAYS_SHORT[d.getDay()]}<br><span class="small">${d.getDate()}/${d.getMonth()+1}</span>${hasTEThisDay ? '<br><span style="font-size:10px;color:#b45309;font-weight:700;">🔥 T.E.</span>' : ''}</th>`;
     }).join('');
 
     const content = `
@@ -653,6 +676,7 @@ async function submitIncidence() {
 
 // ── 5. Empleados (CRUD) ───────────────────────────────────────────────────────
 let empTab = 'list';
+let empEditId = null; // ID del empleado actualmente en edición/expediente
 let empFilter = { dept: '', shift: '', status: 'active', search: '' };
 
 async function empleadosView() {
@@ -713,13 +737,13 @@ async function empleadosView() {
           ? '<div class="empty-state"><div class="empty-icon">👥</div><p>Sin empleados que coincidan con los filtros</p></div>'
           : `<table>
                <thead><tr>
-                 <th>Número</th><th>Nombre</th><th>Departamento</th>
-                 <th>Puesto</th><th>Turno</th><th>Estatus</th><th>Acciones</th>
+                 <th>No. Emp</th><th>Nombre</th><th>Departamento</th>
+                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Estatus</th><th>Acciones</th>
                </tr></thead>
                <tbody>
                  ${employees.map(emp => `
                    <tr>
-                     <td><span class="small muted">${emp.employee_number}</span></td>
+                     <td><span class="small muted">${emp.employee_number}</span>${emp.checker_number ? `<br><span class="small muted">Check: ${emp.checker_number}</span>` : ''}</td>
                      <td>
                        <strong>${emp.full_name}</strong><br>
                        <span class="small muted">${emp.email}</span>
@@ -727,9 +751,11 @@ async function empleadosView() {
                      <td>${emp.department?.name || '—'}</td>
                      <td>${emp.position?.name || '—'}</td>
                      <td>${shiftDot(emp.shift)}</td>
+                     <td style="text-align:right;font-size:12px;">${emp.daily_salary ? `$${Number(emp.daily_salary).toLocaleString()}/día` : (emp.base_salary ? `$${Number(emp.base_salary).toLocaleString()}/mes` : '—')}</td>
                      <td>${statusPill(emp.status)}</td>
                      <td>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showEditEmployee(${emp.id})">✏️ Editar</button>
+                       <button class="btn-ghost" style="font-size:12px;" onclick="showExpediente(${emp.id})">📁 Exp.</button>
                        ${emp.status === 'active' ? `<button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="deactivateEmployee(${emp.id})">🗑️ Desactivar</button>` : ''}
                      </td>
                    </tr>`).join('')}
@@ -748,16 +774,20 @@ async function empleadosView() {
     const content = `
       <div class="module-title">
         <h2>👥 Gestión de Empleados</h2>
-        <button class="btn-primary" onclick="empTab='nuevo';empleadosView()">+ Nuevo empleado</button>
+        <button class="btn-primary" onclick="empTab='nuevo';empEditId=null;empleadosView()">+ Nuevo empleado</button>
       </div>
       <div class="tabs">
         <button class="tab-btn ${empTab==='list'?'active':''}" onclick="empTab='list';empleadosView()">📋 Lista</button>
-        <button class="tab-btn ${empTab==='nuevo'?'active':''}" onclick="empTab='nuevo';empleadosView()">➕ Nuevo empleado</button>
+        <button class="tab-btn ${empTab==='nuevo'?'active':''}" onclick="empTab='nuevo';empleadosView()">➕ Nuevo/Editar</button>
+        ${empEditId ? `<button class="tab-btn ${empTab==='expediente'?'active':''}" onclick="empTab='expediente';empleadosView()">📁 Expediente</button>` : ''}
       </div>
-      ${empTab === 'list' ? listContent : formContent}
+      ${empTab === 'list' ? listContent : (empTab === 'expediente' ? '<div id="expediente-wrap"><div class="loading-overlay">Cargando expediente...</div></div>' : formContent)}
     `;
 
     el.innerHTML = shell(content, 'empleados');
+    if (empTab === 'expediente' && empEditId) {
+      loadExpediente(empEditId);
+    }
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'empleados');
   }
@@ -777,10 +807,21 @@ function empFormHtml(emp) {
     `<option value="${e.id}" ${emp?.supervisor_id == e.id ? 'selected' : ''}>${e.full_name}</option>`
   ).join('');
 
+  // Checkboxes de puestos habilitados
+  const enabledPosIds = Array.isArray(emp?.enabled_positions) ? emp.enabled_positions.map(Number) : [];
+  const positionCheckboxes = state.positions.map(p =>
+    `<label style="display:flex;align-items:center;gap:6px;font-weight:normal;margin:4px 0;">
+      <input type="checkbox" class="emp-pos-chk" value="${p.id}" ${enabledPosIds.includes(p.id) ? 'checked' : ''}>
+      ${p.name} <span class="small muted">(${state.departments.find(d=>d.id===p.department_id)?.name || ''})</span>
+    </label>`
+  ).join('');
+
   return `
     <div class="form-section">
       <h3>${emp ? `Editar: ${emp.full_name}` : 'Nuevo Empleado'}</h3>
       <input type="hidden" id="ef-id" value="${emp?.id || ''}" />
+
+      <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Datos generales</h4>
       <div class="row">
         <div>
           <label>Nombre completo *</label>
@@ -797,48 +838,74 @@ function empFormHtml(emp) {
           <input id="ef-phone" value="${emp?.phone || ''}" placeholder="555-0000" />
         </div>
         <div>
-          <label>Departamento</label>
-          <select id="ef-dept"><option value="">Sin asignar</option>${depts}</select>
+          <label>Fecha de nacimiento</label>
+          <input id="ef-birth" type="date" value="${emp?.birth_date || ''}" />
+        </div>
+      </div>
+
+      <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Datos oficiales</h4>
+      <div class="row">
+        <div>
+          <label>RFC</label>
+          <input id="ef-rfc" value="${emp?.rfc || ''}" placeholder="LOAM900322XXX" style="text-transform:uppercase;" />
+        </div>
+        <div>
+          <label>CURP</label>
+          <input id="ef-curp" value="${emp?.curp || ''}" placeholder="LOAM900322MDFXXX00" style="text-transform:uppercase;" />
         </div>
       </div>
       <div class="row">
         <div>
-          <label>Puesto</label>
+          <label>NSS (Núm. Seguro Social)</label>
+          <input id="ef-nss" value="${emp?.nss || ''}" placeholder="12345678901" />
+        </div>
+        <div>
+          <label>No. de checador</label>
+          <input id="ef-checker" value="${emp?.checker_number || ''}" placeholder="001" />
+        </div>
+      </div>
+
+      <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Datos laborales</h4>
+      <div class="row">
+        <div>
+          <label>Departamento</label>
+          <select id="ef-dept"><option value="">Sin asignar</option>${depts}</select>
+        </div>
+        <div>
+          <label>Puesto principal</label>
           <select id="ef-pos"><option value="">Sin asignar</option>${positions}</select>
         </div>
+      </div>
+      <div class="row">
         <div>
           <label>Turno</label>
           <select id="ef-shift"><option value="">Sin asignar</option>${shifts}</select>
         </div>
-      </div>
-      <div class="row">
         <div>
           <label>Supervisor directo</label>
           <select id="ef-supervisor"><option value="">Sin supervisor</option>${supervisors}</select>
         </div>
+      </div>
+      <div class="row">
         <div>
           <label>Tipo de contrato</label>
           <select id="ef-contract">
             <option value="indefinido" ${emp?.contract_type==='indefinido'?'selected':''}>Indefinido</option>
+            <option value="determinado" ${emp?.contract_type==='determinado'?'selected':''}>Determinado</option>
+            <option value="eventual" ${emp?.contract_type==='eventual'?'selected':''}>Eventual</option>
             <option value="temporal" ${emp?.contract_type==='temporal'?'selected':''}>Temporal</option>
             <option value="honorarios" ${emp?.contract_type==='honorarios'?'selected':''}>Honorarios</option>
           </select>
+        </div>
+        <div>
+          <label>Proyecto / Cliente</label>
+          <input id="ef-project" value="${emp?.project || ''}" placeholder="SKF, Amsted, etc." />
         </div>
       </div>
       <div class="row">
         <div>
           <label>Fecha de ingreso</label>
-          <input id="ef-start" type="date" value="${emp?.start_date || ''}" />
-        </div>
-        <div>
-          <label>Fecha de nacimiento</label>
-          <input id="ef-birth" type="date" value="${emp?.birth_date || ''}" />
-        </div>
-      </div>
-      <div class="row">
-        <div>
-          <label>Salario base (mensual)</label>
-          <input id="ef-salary" type="number" value="${emp?.base_salary || ''}" placeholder="0.00" min="0" />
+          <input id="ef-start" type="date" value="${emp?.start_date || emp?.hire_date || ''}" />
         </div>
         <div>
           <label>Estatus</label>
@@ -848,6 +915,34 @@ function empFormHtml(emp) {
           </select>
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>Salario diario</label>
+          <input id="ef-daily-salary" type="number" value="${emp?.daily_salary || ''}" placeholder="0.00" min="0" step="0.01" />
+        </div>
+        <div>
+          <label>Salario base (mensual)</label>
+          <input id="ef-salary" type="number" value="${emp?.base_salary || ''}" placeholder="0.00" min="0" />
+        </div>
+      </div>
+
+      <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Puestos habilitados</h4>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+        ${positionCheckboxes}
+      </div>
+
+      <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Contacto de emergencia</h4>
+      <div class="row">
+        <div>
+          <label>Nombre del contacto</label>
+          <input id="ef-ec-name" value="${emp?.emergency_contact_name || ''}" placeholder="Nombre completo" />
+        </div>
+        <div>
+          <label>Teléfono del contacto</label>
+          <input id="ef-ec-phone" value="${emp?.emergency_contact_phone || ''}" placeholder="555-0000" />
+        </div>
+      </div>
+
       <div class="actions" style="margin-top:16px;">
         <button class="btn-primary" onclick="saveEmployee()">💾 Guardar</button>
         <button class="btn-ghost" onclick="empTab='list';empleadosView()">Cancelar</button>
@@ -857,38 +952,59 @@ function empFormHtml(emp) {
 }
 
 async function showEditEmployee(id) {
-  const el = document.getElementById('app');
   try {
     const emp = await api(`/api/rhh/employees/${id}`);
     if (!emp) return;
     empTab = 'nuevo';
+    empEditId = id;
     await empleadosView();
     const wrap = document.getElementById('emp-form-wrap');
     if (wrap) wrap.innerHTML = empFormHtml(emp);
-    // Switch to nuevo tab
-    document.querySelectorAll('.tab-btn').forEach(b => {
-      b.classList.toggle('active', b.textContent.includes('Nuevo'));
-    });
   } catch (err) {
     toast(err.message, 'error');
   }
 }
 
+async function showExpediente(id) {
+  empEditId = id;
+  empTab = 'expediente';
+  await empleadosView();
+  loadExpediente(id);
+}
+
 async function saveEmployee() {
   const id = document.getElementById('ef-id')?.value;
+  // Recolectar puestos habilitados
+  const enabledPositions = [...document.querySelectorAll('.emp-pos-chk:checked')].map(c => Number(c.value));
+
   const body = {
     full_name: document.getElementById('ef-name')?.value?.trim(),
     email: document.getElementById('ef-email')?.value?.trim(),
     phone: document.getElementById('ef-phone')?.value?.trim() || null,
+    birth_date: document.getElementById('ef-birth')?.value || null,
+    // Datos oficiales
+    rfc: document.getElementById('ef-rfc')?.value?.trim()?.toUpperCase() || '',
+    curp: document.getElementById('ef-curp')?.value?.trim()?.toUpperCase() || '',
+    nss: document.getElementById('ef-nss')?.value?.trim() || '',
+    checker_number: document.getElementById('ef-checker')?.value?.trim() || '',
+    // Datos laborales
     department_id: document.getElementById('ef-dept')?.value || null,
     position_id: document.getElementById('ef-pos')?.value || null,
     shift_id: document.getElementById('ef-shift')?.value || null,
     supervisor_id: document.getElementById('ef-supervisor')?.value || null,
     contract_type: document.getElementById('ef-contract')?.value,
+    project: document.getElementById('ef-project')?.value?.trim() || '',
     start_date: document.getElementById('ef-start')?.value || null,
-    birth_date: document.getElementById('ef-birth')?.value || null,
+    hire_date: document.getElementById('ef-start')?.value || null,
+    status: document.getElementById('ef-status')?.value,
+    daily_salary: document.getElementById('ef-daily-salary')?.value ? Number(document.getElementById('ef-daily-salary').value) : null,
     base_salary: document.getElementById('ef-salary')?.value || 0,
-    status: document.getElementById('ef-status')?.value
+    // Puestos habilitados
+    enabled_positions: enabledPositions,
+    primary_position_id: document.getElementById('ef-pos')?.value ? Number(document.getElementById('ef-pos').value) : null,
+    // Contacto de emergencia
+    emergency_contact_name: document.getElementById('ef-ec-name')?.value?.trim() || '',
+    emergency_contact_phone: document.getElementById('ef-ec-phone')?.value?.trim() || ''
   };
 
   if (!body.full_name || !body.email) {
@@ -906,6 +1022,7 @@ async function saveEmployee() {
     }
     await loadCatalogs();
     empTab = 'list';
+    empEditId = null;
     empleadosView();
   } catch (err) {
     toast(err.message, 'error');
@@ -1999,6 +2116,811 @@ async function changePassword() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// EXPEDIENTE DIGITAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DOC_CATEGORIES = {
+  contrato: 'Contrato',
+  identificacion: 'Identificación',
+  nss: 'NSS',
+  curp: 'CURP',
+  acta_administrativa: 'Acta administrativa',
+  incapacidad: 'Incapacidad',
+  carta_renuncia: 'Carta de renuncia',
+  evaluacion: 'Evaluación',
+  capacitacion: 'Capacitación',
+  otro: 'Otro'
+};
+
+const DOC_ICONS = {
+  'application/pdf': '📄',
+  'image/jpeg': '🖼️',
+  'image/png': '🖼️',
+  'image/jpg': '🖼️',
+  default: '📎'
+};
+
+function docIcon(fileType) {
+  return DOC_ICONS[fileType] || DOC_ICONS.default;
+}
+
+async function loadExpediente(empId) {
+  const wrap = document.getElementById('expediente-wrap');
+  if (!wrap) return;
+
+  try {
+    const [emp, docs] = await Promise.all([
+      api(`/api/rhh/employees/${empId}`),
+      api(`/api/rhh/employees/${empId}/documents`)
+    ]);
+    if (!emp || !docs) return;
+
+    const REQUIRED_CATEGORIES = ['contrato', 'identificacion', 'nss', 'curp'];
+    const presentCats = new Set((docs || []).map(d => d.category));
+
+    const checklistHtml = REQUIRED_CATEGORIES.map(cat =>
+      `<span style="margin-right:12px;">${presentCats.has(cat) ? '✅' : '⬜'} ${DOC_CATEGORIES[cat]}</span>`
+    ).join('');
+
+    // Agrupar por categoría
+    const byCategory = {};
+    for (const doc of (docs || [])) {
+      if (!byCategory[doc.category]) byCategory[doc.category] = [];
+      byCategory[doc.category].push(doc);
+    }
+
+    const docsHtml = Object.entries(byCategory).map(([cat, catDocs]) => `
+      <div style="margin-bottom:16px;">
+        <h5 style="margin:0 0 8px;color:#064e3b;font-size:13px;">${DOC_CATEGORIES[cat] || cat}</h5>
+        ${catDocs.map(doc => `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px;background:#f0fdf4;border-radius:8px;margin-bottom:6px;border:1px solid #bbf7d0;">
+            <span style="font-size:20px;">${docIcon(doc.file_type)}</span>
+            <div style="flex:1;">
+              <div style="font-weight:600;font-size:13px;">${doc.name}</div>
+              <div class="small muted">${fmtDateDisplay(doc.uploaded_at?.slice(0,10))}${doc.notes ? ' — ' + doc.notes : ''}</div>
+            </div>
+            ${doc.has_file ? `<button class="btn-ghost" style="font-size:12px;" onclick="downloadDoc(${empId},${doc.id},'${doc.name}')">⬇️ Descargar</button>` : ''}
+            <button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="deleteDoc(${empId},${doc.id})">🗑️</button>
+          </div>`).join('')}
+      </div>`).join('');
+
+    const catOpts = Object.entries(DOC_CATEGORIES).map(([v, l]) =>
+      `<option value="${v}">${l}</option>`
+    ).join('');
+
+    wrap.innerHTML = `
+      <div class="card section">
+        <h3>📁 Expediente digital — ${emp.full_name}</h3>
+        <div style="margin-bottom:16px;padding:12px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
+          <strong>Checklist de documentos requeridos:</strong><br>
+          <div style="margin-top:8px;">${checklistHtml}</div>
+        </div>
+        ${docs.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">📁</div><p>No hay documentos cargados</p></div>'
+          : docsHtml
+        }
+        <div style="margin-top:16px;padding:16px;background:#fafafa;border-radius:10px;border:1px solid var(--line);">
+          <h4 style="margin:0 0 12px;">Subir documento</h4>
+          <div class="row">
+            <div>
+              <label>Categoría *</label>
+              <select id="doc-cat">${catOpts}</select>
+            </div>
+            <div>
+              <label>Nombre *</label>
+              <input id="doc-name" placeholder="Ej: Contrato indefinido 2025" />
+            </div>
+          </div>
+          <div class="row" style="margin-top:8px;">
+            <div>
+              <label>Archivo (PDF, JPG, PNG — máx. 5MB)</label>
+              <input type="file" id="doc-file" accept=".pdf,.jpg,.jpeg,.png" onchange="previewDocFile(this)" />
+            </div>
+            <div>
+              <label>Notas</label>
+              <input id="doc-notes" placeholder="Observaciones opcionales..." />
+            </div>
+          </div>
+          <div id="doc-file-info" class="small muted" style="margin-top:6px;"></div>
+          <div style="margin-top:12px;">
+            <button class="btn-primary" onclick="uploadDoc(${empId})">📤 Subir documento</button>
+          </div>
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    if (wrap) wrap.innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+function previewDocFile(input) {
+  const info = document.getElementById('doc-file-info');
+  if (!info) return;
+  const file = input.files?.[0];
+  if (!file) { info.textContent = ''; return; }
+  const mb = (file.size / 1024 / 1024).toFixed(2);
+  if (file.size > 5 * 1024 * 1024) {
+    info.textContent = `⚠️ Archivo demasiado grande (${mb} MB). El límite es 5 MB.`;
+    info.style.color = '#b91c1c';
+    input.value = '';
+    return;
+  }
+  info.textContent = `✅ ${file.name} (${mb} MB)`;
+  info.style.color = '#059669';
+}
+
+async function uploadDoc(empId) {
+  const category = document.getElementById('doc-cat')?.value;
+  const name = document.getElementById('doc-name')?.value?.trim();
+  const notes = document.getElementById('doc-notes')?.value?.trim() || null;
+  const fileInput = document.getElementById('doc-file');
+  const file = fileInput?.files?.[0] || null;
+
+  if (!category || !name) {
+    toast('Categoría y nombre son requeridos', 'warning');
+    return;
+  }
+
+  let file_data = null;
+  let file_type = null;
+
+  if (file) {
+    if (file.size > 5 * 1024 * 1024) {
+      toast('El archivo supera el límite de 5 MB', 'error');
+      return;
+    }
+    file_type = file.type;
+    file_data = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  try {
+    await api(`/api/rhh/employees/${empId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ category, name, file_data, file_type, notes })
+    });
+    toast('Documento subido exitosamente');
+    loadExpediente(empId);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function downloadDoc(empId, docId, name) {
+  try {
+    const doc = await api(`/api/rhh/employees/${empId}/documents/${docId}`);
+    if (!doc?.file_data) { toast('El documento no tiene archivo adjunto', 'warning'); return; }
+    const a = document.createElement('a');
+    a.href = doc.file_data;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function deleteDoc(empId, docId) {
+  if (!confirm('¿Eliminar este documento del expediente?')) return;
+  try {
+    await api(`/api/rhh/employees/${empId}/documents/${docId}`, { method: 'DELETE' });
+    toast('Documento eliminado');
+    loadExpediente(empId);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PROGRAMACIÓN DE T.E.
+// ══════════════════════════════════════════════════════════════════════════════
+
+let teYear = new Date().getFullYear();
+let teMonth = new Date().getMonth() + 1;
+
+// Días no laborables por turno que pueden tener TE:
+// T1 (id:1): domingos (0)
+// T2 (id:2): domingos (0)
+// T3 (id:3): sábados (6) y domingos (0)
+// ADM (id:4): no aplica TE
+const TE_NON_WORK_DAYS = {
+  1: [0],       // T1: domingos
+  2: [0],       // T2: domingos
+  3: [6, 0]     // T3: sábados y domingos
+};
+
+async function programacionTEView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando programación T.E....</div>', 'programacion-te');
+
+  try {
+    const monthStr = `${teYear}-${String(teMonth).padStart(2, '0')}`;
+    const teAuths = await api(`/api/rhh/schedule/te-authorizations?month=${monthStr}`) || [];
+
+    const lastDay = new Date(teYear, teMonth, 0).getDate();
+    const operativeShifts = state.shifts.filter(s => TE_NON_WORK_DAYS[s.id]);
+    const role = state.user?.role;
+    const canApprove = ['rh', 'admin'].includes(role);
+    const canRequest = ['supervisor', 'rh', 'admin'].includes(role);
+
+    // Construir grid: columnas = turnos T1, T2, T3
+    // Solo mostrar días que al menos un turno tiene como no laboral
+    const gridRows = [];
+    for (let d = 1; d <= lastDay; d++) {
+      const dateStr = `${teYear}-${String(teMonth).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const dayOfWeek = new Date(dateStr + 'T12:00:00').getDay();
+      const dayName = DAYS_SHORT[dayOfWeek];
+
+      const cols = operativeShifts.map(shift => {
+        const nonWorkDays = TE_NON_WORK_DAYS[shift.id] || [];
+        const isNonWork = nonWorkDays.includes(dayOfWeek);
+        if (!isNonWork) return null; // este turno trabaja normalmente este día
+
+        const auth = teAuths.find(t => t.date === dateStr && t.shift_id === shift.id) || null;
+
+        let cellContent = '';
+        let cellBg = '#f3f4f6'; // gris = no laboral sin TE
+
+        if (auth) {
+          if (auth.status === 'approved') {
+            cellBg = '#dcfce7';
+            cellContent = `<span class="pill active" style="font-size:11px;">✅ Autorizado</span>`;
+            if (canApprove) cellContent += `<br><button class="btn-ghost" style="font-size:10px;margin-top:4px;color:#b91c1c;" onclick="updateTE(${auth.id},'rejected')">Cancelar</button>`;
+          } else if (auth.status === 'pending') {
+            cellBg = '#fef9c3';
+            cellContent = `<span class="pill pendiente" style="font-size:11px;">⏳ Pendiente</span>`;
+            if (canApprove) cellContent += `
+              <br><button class="btn-primary" style="font-size:10px;margin-top:4px;padding:3px 8px;" onclick="updateTE(${auth.id},'approved')">✅ Aprobar</button>
+              <button class="btn-ghost" style="font-size:10px;margin-top:2px;color:#b91c1c;" onclick="updateTE(${auth.id},'rejected')">✗ Rechazar</button>`;
+          } else if (auth.status === 'rejected') {
+            cellBg = '#fee2e2';
+            cellContent = `<span class="pill rechazada" style="font-size:11px;">✗ Rechazado</span>`;
+            if (canRequest) cellContent += `<br><button class="btn-ghost" style="font-size:10px;margin-top:4px;" onclick="requestTE('${dateStr}',${shift.id})">Re-solicitar</button>`;
+          }
+        } else {
+          cellContent = `<span class="small muted">No laboral</span>`;
+          if (canRequest) cellContent += `<br><button class="btn-primary" style="font-size:10px;margin-top:4px;padding:3px 8px;" onclick="requestTE('${dateStr}',${shift.id})">+ Solicitar T.E.</button>`;
+        }
+
+        return { shift, cellBg, cellContent };
+      });
+
+      const hasNonWorkDay = cols.some(c => c !== null);
+      if (hasNonWorkDay) {
+        gridRows.push({ dateStr, dayName, d, cols });
+      }
+    }
+
+    const shiftHeaders = operativeShifts.map(s =>
+      `<th style="text-align:center;"><span class="shift-dot" style="background:${s.color}"></span>${s.name}</th>`
+    ).join('');
+
+    const tableRows = gridRows.map(row => {
+      const cells = row.cols.map((col, ci) => {
+        if (!col) {
+          return `<td style="background:white;text-align:center;"><span class="small muted">Laboral</span></td>`;
+        }
+        return `<td style="background:${col.cellBg};text-align:center;padding:10px 8px;vertical-align:middle;">${col.cellContent}</td>`;
+      }).join('');
+      return `<tr>
+        <td style="font-weight:600;white-space:nowrap;">${row.dayName} ${row.d}</td>
+        ${cells}
+      </tr>`;
+    }).join('');
+
+    const content = `
+      <div class="module-title">
+        <h2>🔥 Programación T.E. (Tiempo Extra)</h2>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+        <button class="btn-ghost" onclick="teMonth--;if(teMonth<1){teMonth=12;teYear--;}programacionTEView()">‹</button>
+        <strong style="min-width:160px;text-align:center;">${MONTHS[teMonth-1]} ${teYear}</strong>
+        <button class="btn-ghost" onclick="teMonth++;if(teMonth>12){teMonth=1;teYear++;}programacionTEView()">›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="teYear=new Date().getFullYear();teMonth=new Date().getMonth()+1;programacionTEView()">Hoy</button>
+      </div>
+
+      <div class="card section" style="margin-bottom:12px;padding:10px 16px;">
+        <strong>Leyenda:</strong>
+        <span style="margin:0 8px;padding:4px 8px;background:#f3f4f6;border-radius:6px;font-size:12px;">Gris: No laboral</span>
+        <span style="margin:0 8px;padding:4px 8px;background:#fef9c3;border-radius:6px;font-size:12px;">Amarillo: TE pendiente</span>
+        <span style="margin:0 8px;padding:4px 8px;background:#dcfce7;border-radius:6px;font-size:12px;">Verde: TE autorizado</span>
+        <span style="margin:0 8px;padding:4px 8px;background:#fee2e2;border-radius:6px;font-size:12px;">Rojo: Rechazado</span>
+        <span style="margin:0 8px;padding:4px 8px;background:white;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">Blanco: Día laboral</span>
+      </div>
+
+      <div class="card section table-wrap">
+        ${gridRows.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">🔥</div><p>No hay días no laborables en este mes para los turnos operativos</p></div>'
+          : `<table>
+               <thead>
+                 <tr>
+                   <th>Día</th>
+                   ${shiftHeaders}
+                 </tr>
+               </thead>
+               <tbody>${tableRows}</tbody>
+             </table>`
+        }
+      </div>
+    `;
+
+    el.innerHTML = shell(content, 'programacion-te');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'programacion-te');
+  }
+}
+
+async function requestTE(date, shiftId) {
+  const notes = prompt(`Solicitar T.E. para turno en ${date}. Notas (opcional):`);
+  if (notes === null) return; // cancelado
+  try {
+    await api('/api/rhh/schedule/te-authorizations', {
+      method: 'POST',
+      body: JSON.stringify({ date, shift_id: shiftId, notes: notes || null, positions: [] })
+    });
+    toast('Solicitud de T.E. enviada');
+    programacionTEView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function updateTE(id, status) {
+  try {
+    await api(`/api/rhh/schedule/te-authorizations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
+    toast(status === 'approved' ? 'T.E. autorizado' : 'T.E. rechazado/cancelado');
+    programacionTEView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// QUEJA ANÓNIMA
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function quejaAnonimView() {
+  const el = document.getElementById('app');
+
+  const catOpts = [
+    ['acoso', 'Acoso'],
+    ['seguridad', 'Seguridad'],
+    ['condiciones_trabajo', 'Condiciones de trabajo'],
+    ['trato_injusto', 'Trato injusto'],
+    ['otro', 'Otro']
+  ].map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+
+  const content = `
+    <div class="module-title">
+      <h2>📢 Queja Anónima</h2>
+    </div>
+
+    <div class="card section" style="max-width:600px;">
+      <div style="padding:12px;background:#fef9c3;border-radius:10px;border:1px solid #fcd34d;margin-bottom:20px;">
+        <strong>🔒 Tu identidad no será revelada.</strong><br>
+        <span class="small">Esta queja es completamente anónima. Solo el área de Recursos Humanos puede ver su contenido. No se registra ningún dato que te identifique.</span>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Categoría *</label>
+          <select id="qan-cat">${catOpts}</select>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <label>Descripción * (mínimo 20 caracteres)</label>
+        <textarea id="qan-desc" rows="5" placeholder="Describe la situación con el mayor detalle posible..."></textarea>
+        <div id="qan-count" class="small muted" style="text-align:right;margin-top:4px;">0 caracteres</div>
+      </div>
+      <div style="margin-top:14px;">
+        <button class="btn-primary" onclick="submitQueja()">📤 Enviar queja anónima</button>
+      </div>
+    </div>
+  `;
+
+  const role = state.user?.role || 'empleado';
+  el.innerHTML = shell(content, 'queja-anonima');
+
+  // Contador de caracteres
+  setTimeout(() => {
+    const desc = document.getElementById('qan-desc');
+    const count = document.getElementById('qan-count');
+    if (desc && count) {
+      desc.addEventListener('input', () => {
+        const n = desc.value.length;
+        count.textContent = `${n} caracteres`;
+        count.style.color = n < 20 ? '#b91c1c' : '#059669';
+      });
+    }
+  }, 100);
+}
+
+async function submitQueja() {
+  const category = document.getElementById('qan-cat')?.value;
+  const description = document.getElementById('qan-desc')?.value?.trim();
+  if (!category || !description) { toast('Completa todos los campos', 'warning'); return; }
+  if (description.length < 20) { toast('La descripción debe tener al menos 20 caracteres', 'warning'); return; }
+
+  try {
+    await api('/api/rhh/incidences/complaints', {
+      method: 'POST',
+      body: JSON.stringify({ category, description })
+    });
+    toast('Tu queja ha sido enviada de forma anónima. Gracias por reportar.');
+    // Limpiar form
+    const cat = document.getElementById('qan-cat');
+    const desc = document.getElementById('qan-desc');
+    const count = document.getElementById('qan-count');
+    if (cat) cat.selectedIndex = 0;
+    if (desc) desc.value = '';
+    if (count) count.textContent = '0 caracteres';
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ── Vista de quejas para RH/Admin ─────────────────────────────────────────────
+async function quejasRHView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando quejas...</div>', 'quejas-rh');
+
+  try {
+    const complaints = await api('/api/rhh/incidences/complaints') || [];
+
+    const COMPLAINT_LABELS = {
+      acoso: 'Acoso',
+      seguridad: 'Seguridad',
+      condiciones_trabajo: 'Condiciones de trabajo',
+      trato_injusto: 'Trato injusto',
+      otro: 'Otro'
+    };
+
+    const STATUS_LABELS = {
+      new: { label: 'Nueva', cls: 'pill pendiente' },
+      reviewed: { label: 'En revisión', cls: 'pill active' },
+      closed: { label: 'Cerrada', cls: 'pill gray' }
+    };
+
+    const rows = complaints.map(c => {
+      const statusInfo = STATUS_LABELS[c.status] || { label: c.status, cls: 'pill gray' };
+      return `
+        <tr>
+          <td>${fmtDateDisplay(c.date)}</td>
+          <td><span class="badge">${COMPLAINT_LABELS[c.category] || c.category}</span></td>
+          <td style="max-width:300px;font-size:13px;">${c.description}</td>
+          <td><span class="${statusInfo.cls}">${statusInfo.label}</span></td>
+          <td style="max-width:200px;font-size:12px;color:var(--muted);">${c.response || '—'}</td>
+          <td>
+            <button class="btn-ghost" style="font-size:12px;" onclick="responderQueja(${c.id},'${c.status}')">💬 Responder</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+      <div class="module-title">
+        <h2>📢 Quejas Anónimas</h2>
+        <span class="badge">${complaints.filter(c => c.status === 'new').length} nuevas</span>
+      </div>
+
+      <div class="card section table-wrap">
+        ${complaints.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">📢</div><p>No hay quejas registradas</p></div>'
+          : `<table>
+               <thead><tr>
+                 <th>Fecha</th><th>Categoría</th><th>Descripción</th>
+                 <th>Estado</th><th>Respuesta</th><th>Acciones</th>
+               </tr></thead>
+               <tbody>${rows}</tbody>
+             </table>`
+        }
+      </div>
+      <div id="queja-resp-container"></div>
+    `;
+
+    el.innerHTML = shell(content, 'quejas-rh');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'quejas-rh');
+  }
+}
+
+function responderQueja(id, currentStatus) {
+  const container = document.getElementById('queja-resp-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="card section" style="margin-top:12px;max-width:600px;">
+      <h4>Responder queja #${id}</h4>
+      <div style="margin-bottom:12px;">
+        <label>Cambiar estado</label>
+        <select id="qr-status">
+          <option value="new" ${currentStatus==='new'?'selected':''}>Nueva</option>
+          <option value="reviewed" ${currentStatus==='reviewed'?'selected':''}>En revisión</option>
+          <option value="closed" ${currentStatus==='closed'?'selected':''}>Cerrada</option>
+        </select>
+      </div>
+      <div>
+        <label>Respuesta / Notas internas</label>
+        <textarea id="qr-resp" rows="3" placeholder="Escribe una respuesta o nota interna..."></textarea>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn-primary" onclick="saveRespQueja(${id})">💾 Guardar</button>
+        <button class="btn-ghost" onclick="document.getElementById('queja-resp-container').innerHTML=''">Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveRespQueja(id) {
+  const status = document.getElementById('qr-status')?.value;
+  const response = document.getElementById('qr-resp')?.value?.trim() || null;
+  try {
+    await api(`/api/rhh/incidences/complaints/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, response })
+    });
+    toast('Queja actualizada');
+    quejasRHView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ACLARACIÓN DE NÓMINA
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CLARIFICATION_REASONS = {
+  falta_mal_registrada: 'Falta mal registrada',
+  te_no_pagado: 'T.E. no pagado',
+  descuento_incorrecto: 'Descuento incorrecto',
+  bono_no_aplicado: 'Bono no aplicado',
+  otro: 'Otro'
+};
+
+const CLARIFICATION_STATUS = {
+  open: { label: 'Abierta', cls: 'pill pendiente' },
+  in_review: { label: 'En revisión', cls: 'pill active' },
+  resolved: { label: 'Resuelta', cls: 'pill aprobada' }
+};
+
+async function aclaracionNominaView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando aclaraciones...</div>', 'aclaracion-nomina');
+
+  try {
+    const clarifications = await api('/api/rhh/incidences/payroll-clarifications') || [];
+
+    const reasonOpts = Object.entries(CLARIFICATION_REASONS).map(([v, l]) =>
+      `<option value="${v}">${l}</option>`
+    ).join('');
+
+    // Generar opciones de períodos (últimos 12 meses)
+    const periodOpts = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const val = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const lbl = `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+      periodOpts.push(`<option value="${val}">${lbl}</option>`);
+    }
+
+    const rows = clarifications.map(c => {
+      const statusInfo = CLARIFICATION_STATUS[c.status] || { label: c.status, cls: 'pill gray' };
+      return `
+        <tr>
+          <td>${c.period}</td>
+          <td><span class="badge">${CLARIFICATION_REASONS[c.reason] || c.reason}</span></td>
+          <td style="max-width:250px;font-size:13px;">${c.description}</td>
+          <td><span class="${statusInfo.cls}">${statusInfo.label}</span></td>
+          <td style="font-size:12px;color:var(--muted);">${c.response || '—'}</td>
+          <td>${fmtDateDisplay(c.created_at?.slice(0,10))}</td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+      <div class="module-title">
+        <h2>💬 Aclaración de Nómina</h2>
+      </div>
+
+      <div class="card section" style="margin-bottom:16px;">
+        <h3>Nueva aclaración</h3>
+        <div class="row">
+          <div>
+            <label>Período *</label>
+            <select id="acl-period">${periodOpts.join('')}</select>
+          </div>
+          <div>
+            <label>Motivo *</label>
+            <select id="acl-reason">${reasonOpts}</select>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <label>Descripción *</label>
+          <textarea id="acl-desc" rows="3" placeholder="Describe el problema o discrepancia que encontraste..."></textarea>
+        </div>
+        <div style="margin-top:12px;">
+          <label>Archivo adjunto (opcional, máx. 5MB)</label>
+          <input type="file" id="acl-file" accept=".pdf,.jpg,.jpeg,.png" onchange="previewAclFile(this)" />
+          <div id="acl-file-info" class="small muted" style="margin-top:4px;"></div>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn-primary" onclick="submitAclaracion()">📤 Enviar aclaración</button>
+        </div>
+      </div>
+
+      <div class="card section">
+        <h3>Mis aclaraciones</h3>
+        ${clarifications.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">💬</div><p>No has enviado aclaraciones aún</p></div>'
+          : `<table>
+               <thead><tr>
+                 <th>Período</th><th>Motivo</th><th>Descripción</th>
+                 <th>Estado</th><th>Respuesta</th><th>Enviada</th>
+               </tr></thead>
+               <tbody>${rows}</tbody>
+             </table>`
+        }
+      </div>
+    `;
+
+    el.innerHTML = shell(content, 'aclaracion-nomina');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'aclaracion-nomina');
+  }
+}
+
+function previewAclFile(input) {
+  const info = document.getElementById('acl-file-info');
+  if (!info) return;
+  const file = input.files?.[0];
+  if (!file) { info.textContent = ''; return; }
+  const mb = (file.size / 1024 / 1024).toFixed(2);
+  if (file.size > 5 * 1024 * 1024) {
+    info.textContent = `⚠️ Archivo demasiado grande (${mb} MB). El límite es 5 MB.`;
+    info.style.color = '#b91c1c';
+    input.value = '';
+    return;
+  }
+  info.textContent = `✅ ${file.name} (${mb} MB)`;
+  info.style.color = '#059669';
+}
+
+async function submitAclaracion() {
+  const period = document.getElementById('acl-period')?.value;
+  const reason = document.getElementById('acl-reason')?.value;
+  const description = document.getElementById('acl-desc')?.value?.trim();
+  const fileInput = document.getElementById('acl-file');
+  const file = fileInput?.files?.[0] || null;
+
+  if (!period || !reason || !description) {
+    toast('Período, motivo y descripción son requeridos', 'warning');
+    return;
+  }
+
+  let attachment_data = null;
+  if (file) {
+    if (file.size > 5 * 1024 * 1024) { toast('El archivo supera el límite de 5 MB', 'error'); return; }
+    attachment_data = await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  try {
+    await api('/api/rhh/incidences/payroll-clarifications', {
+      method: 'POST',
+      body: JSON.stringify({ period, reason, description, attachment_data })
+    });
+    toast('Aclaración enviada. RH la revisará pronto.');
+    aclaracionNominaView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ── Vista de aclaraciones para RH/Admin ───────────────────────────────────────
+async function aclaracionesRHView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando aclaraciones...</div>', 'aclaraciones-rh');
+
+  try {
+    const clarifications = await api('/api/rhh/incidences/payroll-clarifications') || [];
+
+    const rows = clarifications.map(c => {
+      const statusInfo = CLARIFICATION_STATUS[c.status] || { label: c.status, cls: 'pill gray' };
+      return `
+        <tr>
+          <td><strong>${c.employee?.full_name || '—'}</strong><br><span class="small muted">${c.employee?.employee_number || ''}</span></td>
+          <td>${c.period}</td>
+          <td><span class="badge">${CLARIFICATION_REASONS[c.reason] || c.reason}</span></td>
+          <td style="max-width:220px;font-size:13px;">${c.description}</td>
+          <td><span class="${statusInfo.cls}">${statusInfo.label}</span></td>
+          <td style="font-size:12px;color:var(--muted);">${c.response || '—'}</td>
+          <td>
+            <button class="btn-ghost" style="font-size:12px;" onclick="responderAclaracion(${c.id},'${c.status}')">💬 Responder</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    const content = `
+      <div class="module-title">
+        <h2>💬 Aclaraciones de Nómina</h2>
+        <span class="badge">${clarifications.filter(c => c.status === 'open').length} abiertas</span>
+      </div>
+
+      <div class="card section table-wrap">
+        ${clarifications.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">💬</div><p>No hay aclaraciones registradas</p></div>'
+          : `<table>
+               <thead><tr>
+                 <th>Empleado</th><th>Período</th><th>Motivo</th>
+                 <th>Descripción</th><th>Estado</th><th>Respuesta</th><th>Acciones</th>
+               </tr></thead>
+               <tbody>${rows}</tbody>
+             </table>`
+        }
+      </div>
+      <div id="acl-resp-container"></div>
+    `;
+
+    el.innerHTML = shell(content, 'aclaraciones-rh');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'aclaraciones-rh');
+  }
+}
+
+function responderAclaracion(id, currentStatus) {
+  const container = document.getElementById('acl-resp-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="card section" style="margin-top:12px;max-width:600px;">
+      <h4>Responder aclaración #${id}</h4>
+      <div style="margin-bottom:12px;">
+        <label>Cambiar estado</label>
+        <select id="ar-status">
+          <option value="open" ${currentStatus==='open'?'selected':''}>Abierta</option>
+          <option value="in_review" ${currentStatus==='in_review'?'selected':''}>En revisión</option>
+          <option value="resolved" ${currentStatus==='resolved'?'selected':''}>Resuelta</option>
+        </select>
+      </div>
+      <div>
+        <label>Respuesta</label>
+        <textarea id="ar-resp" rows="3" placeholder="Escribe la respuesta para el empleado..."></textarea>
+      </div>
+      <div style="margin-top:12px;">
+        <button class="btn-primary" onclick="saveRespAclaracion(${id})">💾 Guardar</button>
+        <button class="btn-ghost" onclick="document.getElementById('acl-resp-container').innerHTML=''">Cancelar</button>
+      </div>
+    </div>
+  `;
+}
+
+async function saveRespAclaracion(id) {
+  const status = document.getElementById('ar-status')?.value;
+  const response = document.getElementById('ar-resp')?.value?.trim() || null;
+  try {
+    await api(`/api/rhh/incidences/payroll-clarifications/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status, response })
+    });
+    toast('Aclaración actualizada');
+    aclaracionesRHView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -2028,7 +2950,12 @@ function render() {
     prenomina: prenominaView,
     catalogos: catalogosView,
     reportes: reportesView,
-    perfil: perfilView
+    perfil: perfilView,
+    'programacion-te': programacionTEView,
+    'queja-anonima': quejaAnonimView,
+    'quejas-rh': quejasRHView,
+    'aclaracion-nomina': aclaracionNominaView,
+    'aclaraciones-rh': aclaracionesRHView
   };
 
   const viewFn = views[hash];

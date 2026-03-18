@@ -73,7 +73,9 @@ router.post('/', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
   const {
     full_name, email, phone, department_id, position_id, shift_id,
-    supervisor_id, start_date, birth_date, contract_type, base_salary, status
+    supervisor_id, start_date, hire_date, birth_date, contract_type, base_salary, status,
+    rfc, curp, nss, checker_number, daily_salary, enabled_positions,
+    primary_position_id, project, emergency_contact_name, emergency_contact_phone
   } = req.body || {};
 
   if (!full_name || !email) return res.status(400).json({ error: 'Nombre y email son requeridos' });
@@ -96,11 +98,22 @@ router.post('/', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
     position_id: position_id ? Number(position_id) : null,
     shift_id: shift_id ? Number(shift_id) : null,
     supervisor_id: supervisor_id ? Number(supervisor_id) : null,
-    start_date: start_date || null,
+    start_date: start_date || hire_date || null,
+    hire_date: hire_date || start_date || null,
     birth_date: birth_date || null,
     status: status || 'active',
     contract_type: contract_type || 'indefinido',
     base_salary: base_salary ? Number(base_salary) : 0,
+    daily_salary: daily_salary ? Number(daily_salary) : null,
+    rfc: rfc || '',
+    curp: curp || '',
+    nss: nss || '',
+    checker_number: checker_number || '',
+    primary_position_id: primary_position_id ? Number(primary_position_id) : (position_id ? Number(position_id) : null),
+    enabled_positions: Array.isArray(enabled_positions) ? enabled_positions.map(Number) : (position_id ? [Number(position_id)] : []),
+    project: project || '',
+    emergency_contact_name: emergency_contact_name || '',
+    emergency_contact_phone: emergency_contact_phone || '',
     photo: null,
     created_at: new Date().toISOString()
   };
@@ -118,9 +131,14 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
   const idx = (db.rhh_employees || []).findIndex(e => e.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const allowed = ['full_name', 'email', 'phone', 'department_id', 'position_id',
-    'shift_id', 'supervisor_id', 'start_date', 'birth_date', 'contract_type',
-    'base_salary', 'status', 'photo'];
+  const allowed = [
+    'full_name', 'email', 'phone', 'department_id', 'position_id',
+    'shift_id', 'supervisor_id', 'start_date', 'hire_date', 'birth_date',
+    'contract_type', 'base_salary', 'daily_salary', 'status', 'photo',
+    'rfc', 'curp', 'nss', 'checker_number',
+    'primary_position_id', 'enabled_positions',
+    'project', 'emergency_contact_name', 'emergency_contact_phone'
+  ];
 
   const emp = { ...db.rhh_employees[idx] };
   for (const key of allowed) {
@@ -128,6 +146,10 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
       emp[key] = req.body[key];
     }
   }
+  // Si start_date/hire_date cambia, sincronizar ambos
+  if (req.body.start_date && !req.body.hire_date) emp.hire_date = req.body.start_date;
+  if (req.body.hire_date && !req.body.start_date) emp.start_date = req.body.hire_date;
+
   emp.updated_at = new Date().toISOString();
   db.rhh_employees[idx] = emp;
   write(db);
@@ -184,6 +206,103 @@ router.get('/:id/timeline', rhhAuthRequired, (req, res) => {
   });
 
   res.json({ employee: enrichEmployee(emp, db), timeline });
+});
+
+// ── Documentos del empleado ───────────────────────────────────────────────────
+
+// GET /api/rhh/employees/:id/documents
+router.get('/:id/documents', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  // Empleado solo puede ver sus propios documentos
+  if (req.rhhUser.role === 'empleado' && empId !== req.rhhUser.employee_id) {
+    return res.status(403).json({ error: 'Acceso denegado' });
+  }
+
+  const docs = (db.rhh_documents || [])
+    .filter(d => d.employee_id === empId)
+    // No enviar file_data para no sobrecargar la lista
+    .map(d => {
+      const { file_data, ...rest } = d;
+      return { ...rest, has_file: !!file_data };
+    });
+
+  res.json(docs);
+});
+
+// POST /api/rhh/employees/:id/documents
+router.post('/:id/documents', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const { category, name, file_data, file_type, notes, file_url } = req.body || {};
+  if (!category || !name) return res.status(400).json({ error: 'Categoría y nombre son requeridos' });
+
+  const VALID_CATEGORIES = [
+    'contrato', 'identificacion', 'nss', 'curp', 'acta_administrativa',
+    'incapacidad', 'carta_renuncia', 'evaluacion', 'capacitacion', 'otro'
+  ];
+  if (!VALID_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'Categoría inválida' });
+  }
+
+  const docs = db.rhh_documents || [];
+  const doc = {
+    id: nextId(docs),
+    employee_id: empId,
+    category,
+    name: String(name),
+    file_data: file_data || null,
+    file_url: file_url || null,
+    file_type: file_type || null,
+    notes: notes || null,
+    uploaded_by: req.rhhUser.id,
+    uploaded_at: new Date().toISOString()
+  };
+
+  docs.push(doc);
+  db.rhh_documents = docs;
+  write(db);
+
+  // Devolver sin file_data
+  const { file_data: _fd, ...docResponse } = doc;
+  res.status(201).json({ ...docResponse, has_file: !!file_data });
+});
+
+// GET /api/rhh/employees/:id/documents/:docId — obtener un documento con file_data
+router.get('/:id/documents/:docId', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const docId = Number(req.params.docId);
+
+  if (req.rhhUser.role === 'empleado' && empId !== req.rhhUser.employee_id) {
+    return res.status(403).json({ error: 'Acceso denegado' });
+  }
+
+  const doc = (db.rhh_documents || []).find(d => d.id === docId && d.employee_id === empId);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+
+  res.json(doc);
+});
+
+// DELETE /api/rhh/employees/:id/documents/:docId
+router.delete('/:id/documents/:docId', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const docId = Number(req.params.docId);
+
+  const idx = (db.rhh_documents || []).findIndex(d => d.id === docId && d.employee_id === empId);
+  if (idx === -1) return res.status(404).json({ error: 'Documento no encontrado' });
+
+  db.rhh_documents.splice(idx, 1);
+  write(db);
+
+  res.json({ ok: true });
 });
 
 module.exports = router;

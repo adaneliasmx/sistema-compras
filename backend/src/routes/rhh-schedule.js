@@ -23,7 +23,6 @@ function getWeekDates(weekStr) {
 
 function currentWeekStr() {
   const now = new Date();
-  const startOfYear = new Date(now.getFullYear(), 0, 1);
   const jan4 = new Date(now.getFullYear(), 0, 4);
   const startOfWeek1 = new Date(jan4);
   startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
@@ -71,6 +70,11 @@ router.get('/', rhhAuthRequired, (req, res) => {
     i => i.date >= startDate && i.date <= endDate && i.status !== 'rechazada'
   );
 
+  // Cargar TE autorizadas del rango
+  const teAuths = (db.rhh_te_authorizations || []).filter(
+    t => t.date >= startDate && t.date <= endDate && t.status === 'approved'
+  );
+
   const shifts = db.rhh_shifts || [];
   const departments = db.rhh_departments || [];
   const positions = db.rhh_positions || [];
@@ -87,8 +91,12 @@ router.get('/', rhhAuthRequired, (req, res) => {
       const incidence = incidences.find(i => i.employee_id === emp.id && i.date === date) || null;
       const assigned = scheduleEntries.find(s => s.employee_id === emp.id && s.date === date) || null;
 
+      // Verificar si hay TE autorizada para este día/turno
+      const teAuth = shift ? teAuths.find(t => t.date === date && t.shift_id === shift.id) || null : null;
+
       let cellStatus = 'no_laboral';
       if (worksThisDay) cellStatus = 'asignado';
+      if (!worksThisDay && teAuth) cellStatus = 'tiempo_extra'; // día no laboral con TE
       if (incidence) {
         cellStatus = incidence.type === 'vacacion' ? 'vacacion' :
           incidence.type === 'falta' ? 'falta' :
@@ -103,7 +111,8 @@ router.get('/', rhhAuthRequired, (req, res) => {
         works_this_day: worksThisDay,
         status: cellStatus,
         incidence,
-        schedule_entry: assigned
+        schedule_entry: assigned,
+        te_authorization: teAuth
       };
     });
 
@@ -235,6 +244,74 @@ router.get('/calendar', rhhAuthRequired, (req, res) => {
   }
 
   res.json({ year, month, days });
+});
+
+// ── TE Authorizations ─────────────────────────────────────────────────────────
+
+// GET /api/rhh/schedule/te-authorizations?month=YYYY-MM
+router.get('/te-authorizations', rhhAuthRequired, (req, res) => {
+  const db = read();
+  let list = db.rhh_te_authorizations || [];
+
+  const { month } = req.query;
+  if (month) {
+    list = list.filter(t => t.date && t.date.startsWith(month));
+  }
+
+  res.json(list);
+});
+
+// POST /api/rhh/schedule/te-authorizations — crear solicitud TE
+router.post('/te-authorizations', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const { date, shift_id, positions, notes } = req.body || {};
+
+  if (!date || !shift_id) return res.status(400).json({ error: 'date y shift_id son requeridos' });
+
+  const teAuths = db.rhh_te_authorizations || [];
+  const entry = {
+    id: nextId(teAuths),
+    date: String(date),
+    shift_id: Number(shift_id),
+    status: 'pending',
+    requested_by: req.rhhUser.id,
+    approved_by: null,
+    notes: notes || null,
+    positions: Array.isArray(positions) ? positions.map(Number) : [],
+    created_at: new Date().toISOString()
+  };
+
+  teAuths.push(entry);
+  db.rhh_te_authorizations = teAuths;
+  write(db);
+
+  res.status(201).json(entry);
+});
+
+// PATCH /api/rhh/schedule/te-authorizations/:id — aprobar/rechazar TE
+router.patch('/te-authorizations/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const id = Number(req.params.id);
+  const idx = (db.rhh_te_authorizations || []).findIndex(t => t.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Autorización TE no encontrada' });
+
+  const { status, approved_by, notes } = req.body || {};
+  const VALID_STATUS = ['pending', 'approved', 'rejected'];
+  if (status && !VALID_STATUS.includes(status)) {
+    return res.status(400).json({ error: 'Estado inválido' });
+  }
+
+  const entry = { ...db.rhh_te_authorizations[idx] };
+  if (status) entry.status = status;
+  if (approved_by !== undefined) entry.approved_by = approved_by;
+  else if (status === 'approved' || status === 'rejected') entry.approved_by = req.rhhUser.id;
+  if (notes !== undefined) entry.notes = notes;
+  entry.updated_at = new Date().toISOString();
+
+  db.rhh_te_authorizations[idx] = entry;
+  write(db);
+
+  res.json(entry);
 });
 
 module.exports = router;

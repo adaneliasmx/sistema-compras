@@ -32,7 +32,10 @@ const EMPTY_DB = {
   rhh_training_records: [],
   rhh_evaluations: [],
   rhh_uniforms: [],
-  rhh_uniform_assignments: []
+  rhh_uniform_assignments: [],
+  rhh_te_authorizations: [],
+  rhh_anonymous_complaints: [],
+  rhh_payroll_clarifications: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

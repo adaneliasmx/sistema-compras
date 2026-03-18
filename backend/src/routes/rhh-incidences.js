@@ -5,6 +5,178 @@ const router = express.Router();
 
 const VALID_TYPES = ['falta', 'vacacion', 'incapacidad', 'permiso', 'tiempo_extra', 'cumpleanos'];
 
+// ── Quejas anónimas ───────────────────────────────────────────────────────────
+// (Se definen PRIMERO para evitar colisión con /:id)
+
+const VALID_COMPLAINT_CATEGORIES = [
+  'acoso', 'seguridad', 'condiciones_trabajo', 'trato_injusto', 'otro'
+];
+
+// POST /api/rhh/incidences/complaints — crear queja (NO guarda employee_id)
+router.post('/complaints', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const { category, description } = req.body || {};
+
+  if (!category || !description) {
+    return res.status(400).json({ error: 'Categoría y descripción son requeridas' });
+  }
+  if (!VALID_COMPLAINT_CATEGORIES.includes(category)) {
+    return res.status(400).json({ error: 'Categoría inválida' });
+  }
+  if (String(description).trim().length < 20) {
+    return res.status(400).json({ error: 'La descripción debe tener al menos 20 caracteres' });
+  }
+
+  const complaints = db.rhh_anonymous_complaints || [];
+  const complaint = {
+    id: nextId(complaints),
+    date: new Date().toISOString().slice(0, 10),
+    category: String(category),
+    description: String(description).trim(),
+    status: 'new',
+    response: null,
+    reviewed_by: null,
+    created_at: new Date().toISOString()
+    // NO se guarda employee_id — es anónimo
+  };
+
+  complaints.push(complaint);
+  db.rhh_anonymous_complaints = complaints;
+  write(db);
+
+  res.status(201).json({ ok: true, message: 'Tu queja ha sido registrada de forma anónima.' });
+});
+
+// GET /api/rhh/incidences/complaints — listar quejas (solo rh/admin)
+router.get('/complaints', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const complaints = (db.rhh_anonymous_complaints || [])
+    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  res.json(complaints);
+});
+
+// PATCH /api/rhh/incidences/complaints/:id — responder/cerrar
+router.patch('/complaints/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const id = Number(req.params.id);
+  const idx = (db.rhh_anonymous_complaints || []).findIndex(c => c.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Queja no encontrada' });
+
+  const { status, response } = req.body || {};
+  const VALID_STATUS = ['new', 'reviewed', 'closed'];
+
+  const complaint = { ...db.rhh_anonymous_complaints[idx] };
+  if (status) {
+    if (!VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Estado inválido' });
+    complaint.status = status;
+  }
+  if (response !== undefined) complaint.response = response;
+  complaint.reviewed_by = req.rhhUser.id;
+  complaint.updated_at = new Date().toISOString();
+
+  db.rhh_anonymous_complaints[idx] = complaint;
+  write(db);
+
+  res.json(complaint);
+});
+
+// ── Aclaraciones de nómina ────────────────────────────────────────────────────
+// (Se definen ANTES de /:id para evitar colisión)
+
+const VALID_CLARIFICATION_REASONS = [
+  'falta_mal_registrada', 'te_no_pagado', 'descuento_incorrecto', 'bono_no_aplicado', 'otro'
+];
+
+// POST /api/rhh/incidences/payroll-clarifications — empleado crea aclaración
+router.post('/payroll-clarifications', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const { period, reason, description, attachment_data } = req.body || {};
+
+  if (!period || !reason || !description) {
+    return res.status(400).json({ error: 'Período, motivo y descripción son requeridos' });
+  }
+  if (!VALID_CLARIFICATION_REASONS.includes(reason)) {
+    return res.status(400).json({ error: 'Motivo inválido' });
+  }
+
+  // Determinar employee_id del solicitante
+  let empId = req.rhhUser.employee_id;
+  if (!empId && ['rh', 'admin'].includes(req.rhhUser.role) && req.body.employee_id) {
+    empId = Number(req.body.employee_id);
+  }
+  if (!empId) return res.status(400).json({ error: 'No tienes un perfil de empleado vinculado' });
+
+  const clarifications = db.rhh_payroll_clarifications || [];
+  const entry = {
+    id: nextId(clarifications),
+    employee_id: empId,
+    period: String(period),
+    reason: String(reason),
+    description: String(description).trim(),
+    attachment_data: attachment_data || null,
+    status: 'open',
+    response: null,
+    created_at: new Date().toISOString()
+  };
+
+  clarifications.push(entry);
+  db.rhh_payroll_clarifications = clarifications;
+  write(db);
+
+  res.status(201).json(entry);
+});
+
+// GET /api/rhh/incidences/payroll-clarifications
+// Empleado ve las suyas; rh/admin ve todas
+router.get('/payroll-clarifications', rhhAuthRequired, (req, res) => {
+  const db = read();
+  let list = db.rhh_payroll_clarifications || [];
+
+  if (req.rhhUser.role === 'empleado' && req.rhhUser.employee_id) {
+    list = list.filter(c => c.employee_id === req.rhhUser.employee_id);
+  }
+
+  list = list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+  const employees = db.rhh_employees || [];
+  const enriched = list.map(c => {
+    const emp = employees.find(e => e.id === c.employee_id) || null;
+    return {
+      ...c,
+      employee: emp ? { id: emp.id, full_name: emp.full_name, employee_number: emp.employee_number } : null
+    };
+  });
+
+  res.json(enriched);
+});
+
+// PATCH /api/rhh/incidences/payroll-clarifications/:id — rh/admin responde
+router.patch('/payroll-clarifications/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const id = Number(req.params.id);
+  const idx = (db.rhh_payroll_clarifications || []).findIndex(c => c.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Aclaración no encontrada' });
+
+  const { status, response } = req.body || {};
+  const VALID_STATUS = ['open', 'in_review', 'resolved'];
+
+  const entry = { ...db.rhh_payroll_clarifications[idx] };
+  if (status) {
+    if (!VALID_STATUS.includes(status)) return res.status(400).json({ error: 'Estado inválido' });
+    entry.status = status;
+  }
+  if (response !== undefined) entry.response = response;
+  entry.reviewed_by = req.rhhUser.id;
+  entry.updated_at = new Date().toISOString();
+
+  db.rhh_payroll_clarifications[idx] = entry;
+  write(db);
+
+  res.json(entry);
+});
+
+// ── Incidencias ───────────────────────────────────────────────────────────────
+
 // GET /api/rhh/incidences/today-absences
 router.get('/today-absences', rhhAuthRequired, (req, res) => {
   const db = read();
@@ -53,7 +225,6 @@ router.get('/coverage-suggestions', rhhAuthRequired, (req, res) => {
     if (absentIds.has(e.id)) return false;
     const shift = (db.rhh_shifts || []).find(s => s.id === e.shift_id);
     if (!shift) return false;
-    // Si se pide un turno específico, preferir empleados de ese turno o de turno diferente
     return true;
   });
 
@@ -170,7 +341,10 @@ router.post('/', rhhAuthRequired, (req, res) => {
 // PATCH /api/rhh/incidences/:id — aprobar/rechazar o editar
 router.patch('/:id', rhhAuthRequired, (req, res) => {
   const db = read();
-  const idx = (db.rhh_incidences || []).findIndex(i => i.id === Number(req.params.id));
+  const id = Number(req.params.id);
+  if (isNaN(id)) return res.status(400).json({ error: 'ID inválido' });
+
+  const idx = (db.rhh_incidences || []).findIndex(i => i.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Incidencia no encontrada' });
 
   const inc = { ...db.rhh_incidences[idx] };
