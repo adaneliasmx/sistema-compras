@@ -107,21 +107,46 @@ router.patch('/compras/users/:id', superAdminRequired, (req, res) => {
   res.json({ ok: true, user });
 });
 
-// Crear usuario en compras
+// Usuarios de otros módulos que NO están en el módulo indicado
+router.get('/users/candidates/:module', superAdminRequired, (req, res) => {
+  const { module } = req.params;
+  const compras = readCompras();
+  const rhh = readRhh();
+
+  const comprasEmails = new Set((compras.users || []).map(u => u.email?.toLowerCase()));
+  const rhhEmails    = new Set((rhh.rhh_users || []).map(u => u.email?.toLowerCase()));
+
+  let candidates = [];
+  if (module === 'compras') {
+    // Usuarios de RHH que aún no están en compras
+    candidates = (rhh.rhh_users || [])
+      .filter(u => !comprasEmails.has(u.email?.toLowerCase()))
+      .map(u => ({ name: u.full_name, email: u.email, from: 'RHH', password_hash: u.password_hash }));
+  } else if (module === 'rhh') {
+    // Usuarios de compras que aún no están en RHH
+    candidates = (compras.users || [])
+      .filter(u => !rhhEmails.has(u.email?.toLowerCase()))
+      .map(u => ({ name: u.full_name, email: u.email, from: 'Compras', password_hash: u.password_hash }));
+  }
+  res.json({ candidates });
+});
+
+// Crear usuario en compras (nuevo o asignación desde otro módulo)
 router.post('/compras/users', superAdminRequired, (req, res) => {
-  const { full_name, email, password, role_code, department } = req.body || {};
-  if (!full_name || !email || !password || !role_code)
-    return res.status(400).json({ error: 'Nombre, correo, contraseña y rol son requeridos' });
+  const { full_name, email, password, password_hash, role_code, department } = req.body || {};
+  if (!full_name || !email || !role_code)
+    return res.status(400).json({ error: 'Nombre, correo y rol son requeridos' });
+  if (!password && !password_hash)
+    return res.status(400).json({ error: 'Contraseña requerida' });
   const db = readCompras();
-  const { write } = require('../db');
-  const { nextId } = require('../db');
+  const { write, nextId } = require('../db');
   if ((db.users || []).find(u => u.email?.toLowerCase() === email.toLowerCase()))
-    return res.status(400).json({ error: 'Ya existe un usuario con ese correo' });
+    return res.status(400).json({ error: 'Ya existe un usuario con ese correo en este módulo' });
   const user = {
     id: nextId(db.users),
     full_name,
     email: email.toLowerCase(),
-    password_hash: bcrypt.hashSync(String(password), 10),
+    password_hash: password_hash || bcrypt.hashSync(String(password), 10),
     role_code,
     department: department || '',
     supplier_id: null,
@@ -134,20 +159,22 @@ router.post('/compras/users', superAdminRequired, (req, res) => {
   res.json({ ok: true, user: { id: user.id, name: user.full_name, email: user.email, role: user.role_code } });
 });
 
-// Crear usuario en RHH
+// Crear usuario en RHH (nuevo o asignación desde otro módulo)
 router.post('/rhh/users', superAdminRequired, (req, res) => {
-  const { full_name, email, password, role } = req.body || {};
-  if (!full_name || !email || !password || !role)
-    return res.status(400).json({ error: 'Nombre, correo, contraseña y rol son requeridos' });
+  const { full_name, email, password, password_hash, role } = req.body || {};
+  if (!full_name || !email || !role)
+    return res.status(400).json({ error: 'Nombre, correo y rol son requeridos' });
+  if (!password && !password_hash)
+    return res.status(400).json({ error: 'Contraseña requerida' });
   const db = readRhh();
   const { write, nextId } = require('../db-rhh');
   if ((db.rhh_users || []).find(u => u.email?.toLowerCase() === email.toLowerCase()))
-    return res.status(400).json({ error: 'Ya existe un usuario con ese correo' });
+    return res.status(400).json({ error: 'Ya existe un usuario con ese correo en este módulo' });
   const user = {
     id: nextId(db.rhh_users),
     full_name,
     email: email.toLowerCase(),
-    password_hash: bcrypt.hashSync(String(password), 10),
+    password_hash: password_hash || bcrypt.hashSync(String(password), 10),
     role,
     employee_id: null,
     active: true,

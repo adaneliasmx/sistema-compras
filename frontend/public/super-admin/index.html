@@ -141,18 +141,53 @@
       <span id="modalTitle">Agregar usuario</span>
       <button class="modal-close" onclick="closeModal()">×</button>
     </div>
-    <label class="modal-label">Nombre completo</label>
-    <input class="modal-input" type="text" id="mName" placeholder="Ej. Juan Pérez"/>
-    <label class="modal-label">Correo electrónico</label>
-    <input class="modal-input" type="email" id="mEmail" placeholder="juan@empresa.com"/>
-    <label class="modal-label">Contraseña</label>
-    <input class="modal-input" type="password" id="mPass" placeholder="Mínimo 6 caracteres"/>
-    <label class="modal-label">Rol</label>
-    <select class="modal-input" id="mRole"></select>
+
+    <!-- Tabs -->
+    <div style="display:flex;gap:0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px">
+      <button id="tabNew" onclick="switchTab('new')"
+        style="flex:1;padding:8px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#ede9fe;color:#6d28d9">
+        + Nuevo usuario
+      </button>
+      <button id="tabExist" onclick="switchTab('exist')"
+        style="flex:1;padding:8px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#f8fafc;color:#64748b">
+        Asignar existente
+      </button>
+    </div>
+
+    <!-- Nuevo usuario -->
+    <div id="panelNew">
+      <label class="modal-label">Nombre completo</label>
+      <input class="modal-input" type="text" id="mName" placeholder="Ej. Juan Pérez"/>
+      <label class="modal-label">Correo electrónico</label>
+      <input class="modal-input" type="email" id="mEmail" placeholder="juan@empresa.com"/>
+      <label class="modal-label">Contraseña</label>
+      <input class="modal-input" type="password" id="mPass" placeholder="Mínimo 6 caracteres"/>
+      <label class="modal-label">Rol en este módulo</label>
+      <select class="modal-input" id="mRole"></select>
+    </div>
+
+    <!-- Asignar existente -->
+    <div id="panelExist" style="display:none">
+      <label class="modal-label">Seleccionar usuario</label>
+      <select class="modal-input" id="mExistUser" onchange="onExistUserChange()">
+        <option value="">— Cargando... —</option>
+      </select>
+      <div id="mExistInfo" style="display:none;margin-top:10px;padding:10px 12px;background:#f8fafc;border-radius:10px;font-size:13px">
+        <div><b id="mExistName"></b></div>
+        <div style="color:#64748b;font-size:12px" id="mExistEmail"></div>
+        <div style="color:#94a3b8;font-size:11px;margin-top:2px" id="mExistFrom"></div>
+      </div>
+      <label class="modal-label">Rol en este módulo</label>
+      <select class="modal-input" id="mRoleExist"></select>
+      <div style="margin-top:10px;padding:10px 12px;background:#fefce8;border-radius:10px;font-size:12px;color:#92400e">
+        El usuario usará su contraseña actual del módulo de origen para acceder aquí.
+      </div>
+    </div>
+
     <div class="modal-err" id="modalErr"></div>
     <div class="modal-actions">
       <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="btn-modal-save" onclick="saveNewUser()">Crear usuario</button>
+      <button class="btn-modal-save" id="btnSaveUser" onclick="saveNewUser()">Crear usuario</button>
     </div>
   </div>
 </div>
@@ -202,18 +237,66 @@ const ROLES_COMPRAS = Object.entries(ROLE_LABELS_COMPRAS);
 const ROLES_RHH = Object.entries(ROLE_LABELS_RHH);
 
 let _modalModule = null;
+let _modalTab = 'new';
+let _candidates = [];
 
-function openAddUser(moduleId) {
+function switchTab(tab) {
+  _modalTab = tab;
+  document.getElementById('panelNew').style.display    = tab === 'new'   ? 'block' : 'none';
+  document.getElementById('panelExist').style.display  = tab === 'exist' ? 'block' : 'none';
+  document.getElementById('tabNew').style.background   = tab === 'new'   ? '#ede9fe' : '#f8fafc';
+  document.getElementById('tabNew').style.color        = tab === 'new'   ? '#6d28d9' : '#64748b';
+  document.getElementById('tabExist').style.background = tab === 'exist' ? '#ede9fe' : '#f8fafc';
+  document.getElementById('tabExist').style.color      = tab === 'exist' ? '#6d28d9' : '#64748b';
+  document.getElementById('btnSaveUser').textContent   = tab === 'new'   ? 'Crear usuario' : 'Asignar usuario';
+  document.getElementById('modalErr').textContent = '';
+}
+
+async function openAddUser(moduleId) {
   _modalModule = moduleId;
   const roles = moduleId === 'compras' ? ROLES_COMPRAS : ROLES_RHH;
-  document.getElementById('modalTitle').textContent = `Agregar usuario · ${moduleId === 'compras' ? 'Compras' : 'RHH'}`;
-  document.getElementById('mRole').innerHTML = roles.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  const label = moduleId === 'compras' ? 'Compras' : 'RHH';
+  document.getElementById('modalTitle').textContent = `Agregar usuario · ${label}`;
+  document.getElementById('mRole').innerHTML     = roles.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  document.getElementById('mRoleExist').innerHTML = roles.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
   document.getElementById('mName').value = '';
   document.getElementById('mEmail').value = '';
   document.getElementById('mPass').value = '';
   document.getElementById('modalErr').textContent = '';
+  document.getElementById('mExistInfo').style.display = 'none';
+  switchTab('new');
+
+  // Cargar candidatos en background
+  _candidates = [];
+  document.getElementById('mExistUser').innerHTML = '<option value="">— Cargando... —</option>';
+  api(`/api/super-admin/users/candidates/${moduleId}`)
+    .then(({ candidates }) => {
+      _candidates = candidates;
+      const sel = document.getElementById('mExistUser');
+      if (candidates.length === 0) {
+        sel.innerHTML = '<option value="">— Sin usuarios disponibles —</option>';
+      } else {
+        sel.innerHTML = '<option value="">— Selecciona un usuario —</option>' +
+          candidates.map((c, i) => `<option value="${i}">${c.name} · ${c.email} (${c.from})</option>`).join('');
+      }
+    })
+    .catch(() => {
+      document.getElementById('mExistUser').innerHTML = '<option value="">— Error al cargar —</option>';
+    });
+
   document.getElementById('userModal').classList.add('open');
   document.getElementById('mName').focus();
+}
+
+function onExistUserChange() {
+  const idx = document.getElementById('mExistUser').value;
+  const info = document.getElementById('mExistInfo');
+  if (idx === '' || !_candidates[idx]) { info.style.display = 'none'; return; }
+  const c = _candidates[idx];
+  document.getElementById('mExistName').textContent  = c.name;
+  document.getElementById('mExistEmail').textContent = c.email;
+  document.getElementById('mExistFrom').textContent  = `Origen: módulo ${c.from}`;
+  info.style.display = 'block';
 }
 
 function closeModal() {
@@ -222,18 +305,29 @@ function closeModal() {
 }
 
 async function saveNewUser() {
-  const name = document.getElementById('mName').value.trim();
-  const email = document.getElementById('mEmail').value.trim();
-  const pass = document.getElementById('mPass').value;
-  const role = document.getElementById('mRole').value;
   const errEl = document.getElementById('modalErr');
   errEl.textContent = '';
-  if (!name || !email || !pass) { errEl.textContent = 'Todos los campos son requeridos'; return; }
-  if (pass.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
   try {
-    const body = _modalModule === 'compras'
-      ? { full_name: name, email, password: pass, role_code: role }
-      : { full_name: name, email, password: pass, role };
+    let body;
+    if (_modalTab === 'new') {
+      const name  = document.getElementById('mName').value.trim();
+      const email = document.getElementById('mEmail').value.trim();
+      const pass  = document.getElementById('mPass').value;
+      const role  = document.getElementById('mRole').value;
+      if (!name || !email || !pass) { errEl.textContent = 'Todos los campos son requeridos'; return; }
+      if (pass.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+      body = _modalModule === 'compras'
+        ? { full_name: name, email, password: pass, role_code: role }
+        : { full_name: name, email, password: pass, role };
+    } else {
+      const idx  = document.getElementById('mExistUser').value;
+      const role = document.getElementById('mRoleExist').value;
+      if (idx === '') { errEl.textContent = 'Selecciona un usuario'; return; }
+      const c = _candidates[idx];
+      body = _modalModule === 'compras'
+        ? { full_name: c.name, email: c.email, password_hash: c.password_hash, role_code: role }
+        : { full_name: c.name, email: c.email, password_hash: c.password_hash, role };
+    }
     await api(`/api/super-admin/${_modalModule}/users`, { method: 'POST', body: JSON.stringify(body) });
     closeModal();
     loadModules();
