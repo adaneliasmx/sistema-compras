@@ -283,9 +283,170 @@ router.post('/te-authorizations', rhhAuthRequired, rhhRequireRole('supervisor', 
 
   teAuths.push(entry);
   db.rhh_te_authorizations = teAuths;
+
+  // Crear notificaciones para empleados elegibles (Automatización 6)
+  const positionIds = Array.isArray(positions) ? positions.map(Number) : [];
+  if (positionIds.length > 0) {
+    const notifications = db.rhh_notifications || [];
+    const allPositions = db.rhh_positions || [];
+    const allEmployees = db.rhh_employees || [];
+
+    // Buscar empleados activos que tengan alguno de los puestos requeridos habilitados
+    const eligibleEmps = allEmployees.filter(emp =>
+      emp.status === 'active' &&
+      Array.isArray(emp.enabled_positions) &&
+      emp.enabled_positions.some(pid => positionIds.includes(Number(pid)))
+    );
+
+    for (const emp of eligibleEmps) {
+      const posName = allPositions.find(p => positionIds.includes(p.id))?.name || 'varios puestos';
+      notifications.push({
+        id: nextId(notifications),
+        employee_id: emp.id,
+        type: 'te_available',
+        title: '⚡ Tiempo Extra Disponible',
+        message: `Hay tiempo extra disponible para ${posName} el ${date}. ¡Postúlate!`,
+        data: { te_authorization_id: entry.id, date: entry.date, shift_id: entry.shift_id, position_ids: positionIds },
+        read: false,
+        created_at: new Date().toISOString()
+      });
+    }
+    db.rhh_notifications = notifications;
+  }
+
   write(db);
 
   res.status(201).json(entry);
+});
+
+// ── POST /api/rhh/schedule/te-applications — postularse a TE ──────────────────
+router.post('/te-applications', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const { te_authorization_id } = req.body || {};
+  if (!te_authorization_id) return res.status(400).json({ error: 'te_authorization_id es requerido' });
+
+  const empId = req.rhhUser.employee_id;
+  if (!empId) return res.status(400).json({ error: 'No tienes perfil de empleado vinculado' });
+
+  const auth = (db.rhh_te_authorizations || []).find(t => t.id === Number(te_authorization_id));
+  if (!auth) return res.status(404).json({ error: 'Autorización TE no encontrada' });
+
+  // Verificar que el empleado tenga algún puesto requerido
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const positionIds = auth.positions || [];
+  if (positionIds.length > 0) {
+    const empPositions = Array.isArray(emp.enabled_positions) ? emp.enabled_positions.map(Number) : [];
+    const hasPosition = positionIds.some(pid => empPositions.includes(Number(pid)));
+    if (!hasPosition) return res.status(403).json({ error: 'No tienes el puesto requerido para esta TE' });
+  }
+
+  const applications = db.rhh_te_applications || [];
+
+  // Verificar que no haya ya una aplicación del mismo empleado
+  const existing = applications.find(a => a.te_authorization_id === Number(te_authorization_id) && a.employee_id === empId);
+  if (existing) return res.status(409).json({ error: 'Ya te postulaste para esta TE' });
+
+  const application = {
+    id: nextId(applications),
+    te_authorization_id: Number(te_authorization_id),
+    employee_id: empId,
+    status: 'applied',
+    applied_at: new Date().toISOString(),
+    selected_by: null,
+    selected_at: null,
+    notes: null
+  };
+  applications.push(application);
+  db.rhh_te_applications = applications;
+  write(db);
+
+  res.status(201).json({ ok: true, application });
+});
+
+// ── GET /api/rhh/schedule/te-applications/my — mis postulaciones (empleado) ───
+router.get('/te-applications/my', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.rhhUser?.employee_id;
+  if (!empId) return res.json([]);
+  const applications = (db.rhh_te_applications || []).filter(a => a.employee_id === empId);
+  res.json(applications);
+});
+
+// ── GET /api/rhh/schedule/te-applications/:te_authorization_id ────────────────
+router.get('/te-applications/:te_authorization_id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const teAuthId = Number(req.params.te_authorization_id);
+  const applications = (db.rhh_te_applications || []).filter(a => a.te_authorization_id === teAuthId);
+  const employees = db.rhh_employees || [];
+
+  const enriched = applications.map(app => {
+    const emp = employees.find(e => e.id === app.employee_id) || null;
+    return { ...app, employee: emp ? { id: emp.id, full_name: emp.full_name, employee_number: emp.employee_number } : null };
+  });
+
+  res.json(enriched);
+});
+
+// ── PATCH /api/rhh/schedule/te-applications/:id ───────────────────────────────
+router.patch('/te-applications/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const id = Number(req.params.id);
+  const { status, notes } = req.body || {};
+
+  const applications = db.rhh_te_applications || [];
+  const idx = applications.findIndex(a => a.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Aplicación no encontrada' });
+
+  const VALID = ['applied', 'selected', 'rejected'];
+  if (status && !VALID.includes(status)) return res.status(400).json({ error: 'Status inválido' });
+
+  const app = { ...applications[idx] };
+  if (status) app.status = status;
+  if (notes !== undefined) app.notes = notes;
+
+  if (status === 'selected') {
+    app.selected_by = req.rhhUser.id;
+    app.selected_at = new Date().toISOString();
+
+    // Rechazar automáticamente las demás aplicaciones del mismo te_authorization_id
+    for (let i = 0; i < applications.length; i++) {
+      if (applications[i].te_authorization_id === app.te_authorization_id && applications[i].id !== id) {
+        applications[i] = { ...applications[i], status: 'rejected' };
+      }
+    }
+
+    // Actualizar rhh_attendance del empleado seleccionado
+    const auth = (db.rhh_te_authorizations || []).find(t => t.id === app.te_authorization_id);
+    if (auth) {
+      const attendance = db.rhh_attendance || [];
+      const attIdx = attendance.findIndex(a => a.employee_id === app.employee_id && a.date === auth.date);
+      const now = new Date().toISOString();
+      if (attIdx !== -1) {
+        attendance[attIdx] = { ...attendance[attIdx], status: 'labora', te_hours: auth.te_hours || 0, updated_at: now };
+      } else {
+        attendance.push({
+          id: nextId(attendance),
+          employee_id: app.employee_id,
+          date: auth.date,
+          status: 'labora',
+          te_hours: auth.te_hours || 0,
+          notes: 'TE asignada',
+          registered_by: req.rhhUser.id,
+          created_at: now,
+          updated_at: now
+        });
+      }
+      db.rhh_attendance = attendance;
+    }
+  }
+
+  applications[idx] = app;
+  db.rhh_te_applications = applications;
+  write(db);
+
+  res.json({ ok: true, application: app });
 });
 
 // PATCH /api/rhh/schedule/te-authorizations/:id — aprobar/rechazar TE
@@ -453,20 +614,36 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
         isEditable = true;
       }
 
-      // 3. Incidencias aprobadas que cubren esta fecha
-      const covering = incidences.filter(i =>
+      // 3. Incidencias APROBADAS que cubren esta fecha
+      const coveringApproved = incidences.filter(i =>
         i.employee_id === emp.id &&
         i.status === 'aprobada' &&
         i.date <= dateStr &&
         (i.date_end || i.date) >= dateStr
       );
-      if (covering.length > 0) {
-        const inc = covering[covering.length - 1];
+      if (coveringApproved.length > 0) {
+        const inc = coveringApproved[coveringApproved.length - 1];
         if (inc.type === 'vacacion') status = 'vacaciones';
         else if (inc.type === 'incapacidad') status = 'incapacidad';
         else if (inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce' || inc.type === 'permiso') status = 'permiso';
         else if (inc.type === 'falta') status = 'falta';
         else if (inc.type === 'retardo') status = 'retardo';
+      }
+
+      // 3b. Incidencias PENDIENTES que cubren esta fecha (solo si no hay aprobada ni registro explícito)
+      if (coveringApproved.length === 0 && !attRecord) {
+        const coveringPending = incidences.filter(i =>
+          i.employee_id === emp.id &&
+          i.status === 'pendiente' &&
+          i.date <= dateStr &&
+          (i.date_end || i.date) >= dateStr
+        );
+        if (coveringPending.length > 0) {
+          const inc = coveringPending[coveringPending.length - 1];
+          if (inc.type === 'vacacion') status = 'vacaciones_pendiente';
+          else if (inc.type === 'permiso' || inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce') status = 'permiso_pendiente';
+          else if (inc.type === 'falta') status = 'falta_pendiente';
+        }
       }
 
       // 4. Cumpleaños
@@ -552,6 +729,25 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
   const existingIdx = attendance.findIndex(a => a.employee_id === Number(employee_id) && a.date === date);
   const now = new Date().toISOString();
 
+  // Guardar en log de trazabilidad ANTES de modificar
+  const prevRecord = existingIdx !== -1 ? attendance[existingIdx] : null;
+  const attLog = db.rhh_attendance_log || [];
+  const logEntry = {
+    id: nextId(attLog),
+    employee_id: Number(employee_id),
+    date: String(date),
+    old_status: prevRecord ? prevRecord.status : 'sin_registro',
+    new_status: status,
+    old_te: prevRecord ? (prevRecord.te_hours || 0) : 0,
+    new_te: te_hours !== undefined ? Number(te_hours) : 0,
+    changed_by_id: req.rhhUser.id,
+    changed_by_name: req.rhhUser.full_name || req.rhhUser.email,
+    changed_at: now,
+    ip: null
+  };
+  attLog.push(logEntry);
+  db.rhh_attendance_log = attLog;
+
   if (existingIdx !== -1) {
     attendance[existingIdx] = {
       ...attendance[existingIdx],
@@ -563,7 +759,7 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     };
     db.rhh_attendance = attendance;
     write(db);
-    return res.json({ ok: true, record: attendance[existingIdx] });
+    return res.json({ ok: true, record: attendance[existingIdx], log: logEntry });
   }
 
   const record = {
@@ -582,7 +778,29 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
   db.rhh_attendance = attendance;
   write(db);
 
-  res.status(201).json({ ok: true, record });
+  res.status(201).json({ ok: true, record, log: logEntry });
+});
+
+// ── GET /api/rhh/schedule/attendance-log ──────────────────────────────────────
+router.get('/attendance-log', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const { employee_id, date, week_start } = req.query;
+  let list = db.rhh_attendance_log || [];
+
+  if (employee_id) list = list.filter(l => l.employee_id === Number(employee_id));
+
+  if (date) {
+    list = list.filter(l => l.date === date);
+  } else if (week_start) {
+    // 7 días desde week_start
+    const end = new Date(week_start + 'T12:00:00');
+    end.setDate(end.getDate() + 6);
+    const endStr = end.toISOString().slice(0, 10);
+    list = list.filter(l => l.date >= week_start && l.date <= endStr);
+  }
+
+  list = list.sort((a, b) => new Date(b.changed_at) - new Date(a.changed_at));
+  res.json(list);
 });
 
 // ── POST /api/rhh/schedule/request-te ─────────────────────────────────────────

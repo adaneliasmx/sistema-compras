@@ -41,7 +41,11 @@ const EMPTY_DB = {
   rhh_vacancies: [],
   rhh_doc_templates: [],
   rhh_attendance: [],
-  rhh_holidays: []
+  rhh_holidays: [],
+  rhh_attendance_log: [],
+  rhh_vacation_rules: [],
+  rhh_te_applications: [],
+  rhh_notifications: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

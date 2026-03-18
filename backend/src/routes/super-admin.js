@@ -170,19 +170,82 @@ router.post('/rhh/users', superAdminRequired, (req, res) => {
   const { write, nextId } = require('../db-rhh');
   if ((db.rhh_users || []).find(u => u.email?.toLowerCase() === email.toLowerCase()))
     return res.status(400).json({ error: 'Ya existe un usuario con ese correo en este módulo' });
+
+  // Determinar department_id y shift_id según el rol
+  // IDs de departamentos: 1=Operaciones, 2=Producción, 3=Calidad, 4=Mantenimiento, 5=Servicios, 6=Administración
+  const depts = db.rhh_departments || [];
+  const findDept = (name) => {
+    const d = depts.find(d => d.name?.toLowerCase().includes(name.toLowerCase()));
+    return d ? d.id : null;
+  };
+  let dept_id, shift_id;
+  if (role === 'admin') {
+    dept_id = findDept('administra') || 6;
+    shift_id = 4; // Administrativo
+  } else if (role === 'rh') {
+    dept_id = findDept('administra') || 6;
+    shift_id = 4;
+  } else if (role === 'supervisor') {
+    dept_id = findDept('produc') || 2;
+    shift_id = 1;
+  } else {
+    dept_id = findDept('produc') || 2;
+    shift_id = 1;
+  }
+
+  // Crear el empleado primero para obtener su ID
+  const employees = db.rhh_employees || [];
+  const empId = nextId(employees);
+  const empNum = 'EMP-' + String(empId).padStart(3, '0');
+  const today = new Date().toISOString().slice(0, 10);
+
+  const employee = {
+    id: empId,
+    employee_number: empNum,
+    full_name,
+    email: email.toLowerCase(),
+    phone: null,
+    department_id: dept_id,
+    position_id: null,
+    shift_id,
+    supervisor_id: null,
+    start_date: today,
+    hire_date: today,
+    birth_date: null,
+    status: 'active',
+    contract_type: 'indefinido',
+    base_salary: 0,
+    daily_salary: null,
+    rfc: '',
+    curp: '',
+    nss: '',
+    checker_number: '',
+    primary_position_id: null,
+    enabled_positions: [],
+    project: '',
+    emergency_contact_name: '',
+    emergency_contact_phone: '',
+    total_vacation_days: 15,
+    photo: null,
+    created_at: new Date().toISOString()
+  };
+  employees.push(employee);
+  db.rhh_employees = employees;
+
+  // Crear el usuario vinculado al empleado
   const user = {
     id: nextId(db.rhh_users),
     full_name,
     email: email.toLowerCase(),
     password_hash: password_hash || bcrypt.hashSync(String(password), 10),
     role,
-    employee_id: null,
+    employee_id: empId,
     active: true,
     created_at: new Date().toISOString()
   };
   db.rhh_users = [...(db.rhh_users || []), user];
   write(db);
-  res.json({ ok: true, user: { id: user.id, name: user.full_name, email: user.email, role: user.role } });
+  res.json({ ok: true, user: { id: user.id, name: user.full_name, email: user.email, role: user.role }, employee_created: true, employee });
 });
 
 // Toggle usuario activo/inactivo en rhh

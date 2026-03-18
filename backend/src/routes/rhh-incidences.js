@@ -3,7 +3,22 @@ const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
-const VALID_TYPES = ['falta', 'vacacion', 'incapacidad', 'permiso', 'tiempo_extra', 'cumpleanos'];
+const VALID_TYPES = ['falta', 'vacacion', 'incapacidad', 'permiso', 'permiso_con_goce', 'permiso_sin_goce', 'tiempo_extra', 'cumpleanos'];
+
+// ── Utilidad: días hábiles entre dos fechas ────────────────────────────────────
+function workDaysBetween(fromDate, toDate, holidayDates, workDays) {
+  let count = 0;
+  const from = new Date(fromDate + 'T12:00:00');
+  const to = new Date(toDate + 'T12:00:00');
+  const cur = new Date(from);
+  while (cur <= to) {
+    const dayOfWeek = cur.getDay();
+    const dateStr = cur.toISOString().slice(0, 10);
+    if (workDays.includes(dayOfWeek) && !holidayDates.includes(dateStr)) count++;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return count;
+}
 
 // ── Quejas anónimas ───────────────────────────────────────────────────────────
 // (Se definen PRIMERO para evitar colisión con /:id)
@@ -175,6 +190,64 @@ router.patch('/payroll-clarifications/:id', rhhAuthRequired, rhhRequireRole('rh'
   res.json(entry);
 });
 
+// ── Reglas de vacaciones ──────────────────────────────────────────────────────
+
+// GET /api/rhh/incidences/vacation-rules
+router.get('/vacation-rules', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const rules = db.rhh_vacation_rules || [];
+  if (rules.length === 0) {
+    // Reglas por defecto
+    return res.json({
+      id: 1,
+      name: 'Reglas de vacaciones',
+      rules: [
+        { max_days: 1, min_advance_days: 1, label: '1 día: mínimo 1 día de anticipación' },
+        { max_days: 3, min_advance_days: 7, label: '2-3 días: mínimo 1 semana de anticipación' },
+        { max_days: 999, min_advance_days: 14, label: '4+ días: mínimo 2 semanas de anticipación' }
+      ],
+      max_days_per_week: 1,
+      count_holidays: true,
+      updated_at: '2026-01-01T00:00:00.000Z',
+      updated_by: null
+    });
+  }
+  res.json(rules[0]);
+});
+
+// PATCH /api/rhh/incidences/vacation-rules — solo admin/rh
+router.patch('/vacation-rules', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { rules, max_days_per_week, count_holidays } = req.body || {};
+
+  let vacRules = db.rhh_vacation_rules || [];
+  const existing = vacRules.length > 0 ? { ...vacRules[0] } : {
+    id: 1,
+    name: 'Reglas de vacaciones',
+    rules: [],
+    max_days_per_week: 1,
+    count_holidays: true,
+    updated_at: null,
+    updated_by: null
+  };
+
+  if (Array.isArray(rules)) existing.rules = rules;
+  if (max_days_per_week !== undefined) existing.max_days_per_week = Number(max_days_per_week);
+  if (count_holidays !== undefined) existing.count_holidays = Boolean(count_holidays);
+  existing.updated_at = new Date().toISOString();
+  existing.updated_by = req.rhhUser.id;
+
+  if (vacRules.length > 0) {
+    vacRules[0] = existing;
+  } else {
+    vacRules = [existing];
+  }
+  db.rhh_vacation_rules = vacRules;
+  write(db);
+
+  res.json(existing);
+});
+
 // ── Incidencias ───────────────────────────────────────────────────────────────
 
 // GET /api/rhh/incidences/today-absences
@@ -304,6 +377,77 @@ router.post('/', rhhAuthRequired, (req, res) => {
 
   const emp = (db.rhh_employees || []).find(e => e.id === targetEmpId && e.status === 'active');
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  // ── Validaciones para vacaciones y permisos (Automatización 4) ───────────────
+  const isVacationType = ['vacacion', 'permiso_con_goce', 'permiso_sin_goce', 'permiso'].includes(type);
+  if (isVacationType) {
+    const today = new Date().toISOString().slice(0, 10);
+    const endDate = date_end || date;
+    const holidayDates = (db.rhh_holidays || []).map(h => h.date);
+    const shift = (db.rhh_shifts || []).find(s => s.id === emp.shift_id);
+    const workDays = shift ? (shift.work_days || [1,2,3,4,5]) : [1,2,3,4,5];
+
+    const vacRules = db.rhh_vacation_rules || [];
+    const currentRules = vacRules.length > 0 ? vacRules[0] : {
+      rules: [
+        { max_days: 1, min_advance_days: 1 },
+        { max_days: 3, min_advance_days: 7 },
+        { max_days: 999, min_advance_days: 14 }
+      ],
+      count_holidays: true
+    };
+
+    // Calcular días de la solicitud
+    const requestedDays = workDaysBetween(date, endDate, currentRules.count_holidays ? holidayDates : [], workDays);
+
+    // Solo para vacaciones: validar días disponibles
+    if (type === 'vacacion') {
+      const currentYear = new Date(date).getFullYear();
+      const yearStart = `${currentYear}-01-01`;
+      const yearEnd = `${currentYear}-12-31`;
+
+      const usedDays = (db.rhh_incidences || []).filter(i =>
+        i.employee_id === targetEmpId &&
+        i.type === 'vacacion' &&
+        i.status === 'aprobada' &&
+        i.date >= yearStart && i.date <= yearEnd
+      ).reduce((acc, i) => {
+        const eDate = i.date_end || i.date;
+        return acc + workDaysBetween(i.date, eDate, currentRules.count_holidays ? holidayDates : [], workDays);
+      }, 0);
+
+      const totalVac = emp.total_vacation_days || 15;
+      const remaining = totalVac - usedDays;
+
+      if (requestedDays > remaining) {
+        return res.status(400).json({
+          error: `No tienes suficientes días de vacaciones. Tienes ${remaining} días disponibles y estás solicitando ${requestedDays}.`
+        });
+      }
+    }
+
+    // Validar reglas de anticipación
+    const advanceDays = workDaysBetween(today, date, holidayDates, workDays);
+    const rules = currentRules.rules || [];
+    // Ordenar por max_days ascendente
+    const sortedRules = [...rules].sort((a, b) => a.max_days - b.max_days);
+    let applicableRule = null;
+    for (const rule of sortedRules) {
+      if (requestedDays <= rule.max_days) {
+        applicableRule = rule;
+        break;
+      }
+    }
+
+    if (applicableRule && advanceDays < applicableRule.min_advance_days) {
+      return res.status(400).json({
+        error: `Para solicitar ${requestedDays} día(s) necesitas al menos ${applicableRule.min_advance_days} día(s) de anticipación. Tu solicitud empieza en ${advanceDays} día(s) hábil(es).`,
+        advance_days: advanceDays,
+        required_advance: applicableRule.min_advance_days,
+        requested_days: requestedDays
+      });
+    }
+  }
 
   // Determinar estado inicial según rol
   let initialStatus = 'pendiente';

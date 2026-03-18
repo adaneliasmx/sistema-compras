@@ -68,6 +68,7 @@
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
+      "total_vacation_days": 15,
       "photo": null,
       "created_at": "2026-01-01T00:00:00.000Z"
     },
@@ -97,6 +98,7 @@
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
+      "total_vacation_days": 15,
       "photo": null,
       "created_at": "2026-01-01T00:00:00.000Z"
     },
@@ -126,6 +128,7 @@
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
+      "total_vacation_days": 15,
       "photo": null,
       "created_at": "2026-01-01T00:00:00.000Z"
     }
@@ -254,6 +257,24 @@
     }
   ],
   "rhh_attendance": [],
+  "rhh_attendance_log": [],
+  "rhh_te_applications": [],
+  "rhh_notifications": [],
+  "rhh_vacation_rules": [
+    {
+      "id": 1,
+      "name": "Reglas de vacaciones",
+      "rules": [
+        { "max_days": 1, "min_advance_days": 1, "label": "1 día: mínimo 1 día de anticipación" },
+        { "max_days": 3, "min_advance_days": 7, "label": "2-3 días: mínimo 1 semana de anticipación" },
+        { "max_days": 999, "min_advance_days": 14, "label": "4+ días: mínimo 2 semanas de anticipación" }
+      ],
+      "max_days_per_week": 1,
+      "count_holidays": true,
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "updated_by": null
+    }
+  ],
   "rhh_holidays": [
     { "id": 1, "date": "2026-01-01", "name": "Año Nuevo", "created_at": "2026-01-01T00:00:00.000Z" },
     { "id": 2, "date": "2026-02-02", "name": "Día de la Constitución", "created_at": "2026-01-01T00:00:00.000Z" },

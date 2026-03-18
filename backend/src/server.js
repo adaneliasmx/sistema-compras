@@ -28,6 +28,7 @@ const rhhIncidencesRoutes = require('./routes/rhh-incidences');
 const rhhDashboardRoutes = require('./routes/rhh-dashboard');
 const rhhVacanciesRoutes = require('./routes/rhh-vacancies');
 const rhhEvaluationsRoutes = require('./routes/rhh-evaluations');
+const rhhNotificationsRoutes = require('./routes/rhh-notifications');
 
 const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
@@ -68,6 +69,7 @@ app.use('/api/rhh/incidences', rhhIncidencesRoutes);
 app.use('/api/rhh/dashboard', rhhDashboardRoutes);
 app.use('/api/rhh/vacancies', rhhVacanciesRoutes);
 app.use('/api/rhh/evaluations', rhhEvaluationsRoutes);
+app.use('/api/rhh/notifications', rhhNotificationsRoutes);
 
 // ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
 // Portal principal

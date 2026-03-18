@@ -4,6 +4,44 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
+function calcVacationBalance(emp, db) {
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear}-12-31`;
+  const incidences = db.rhh_incidences || [];
+
+  const vacApproved = incidences.filter(i =>
+    i.employee_id === emp.id &&
+    i.type === 'vacacion' &&
+    i.status === 'aprobada' &&
+    i.date >= yearStart && i.date <= yearEnd
+  );
+
+  const vacPending = incidences.filter(i =>
+    i.employee_id === emp.id &&
+    i.type === 'vacacion' &&
+    i.status === 'pendiente' &&
+    i.date >= yearStart && i.date <= yearEnd
+  );
+
+  function countDays(inc) {
+    const end = inc.date_end || inc.date;
+    if (end !== inc.date) {
+      const start = new Date(inc.date + 'T12:00:00');
+      const endD = new Date(end + 'T12:00:00');
+      return Math.round((endD - start) / (24 * 60 * 60 * 1000)) + 1;
+    }
+    return 1;
+  }
+
+  const vacation_used = vacApproved.reduce((acc, i) => acc + countDays(i), 0);
+  const vacation_pending = vacPending.reduce((acc, i) => acc + countDays(i), 0);
+  const total_vacation_days = emp.total_vacation_days || 15;
+  const vacation_remaining = Math.max(0, total_vacation_days - vacation_used);
+
+  return { vacation_used, vacation_remaining, vacation_pending, total_vacation_days };
+}
+
 function enrichEmployee(emp, db) {
   const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id) || null;
   const pos = (db.rhh_positions || []).find(p => p.id === emp.position_id) || null;
@@ -11,12 +49,14 @@ function enrichEmployee(emp, db) {
   const supervisor = emp.supervisor_id
     ? (db.rhh_employees || []).find(e => e.id === emp.supervisor_id) || null
     : null;
+  const vacBalance = calcVacationBalance(emp, db);
   return {
     ...emp,
     department: dept,
     position: pos,
     shift,
-    supervisor: supervisor ? { id: supervisor.id, full_name: supervisor.full_name } : null
+    supervisor: supervisor ? { id: supervisor.id, full_name: supervisor.full_name } : null,
+    ...vacBalance
   };
 }
 
@@ -173,7 +213,8 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
     'contract_type', 'base_salary', 'daily_salary', 'status', 'photo',
     'rfc', 'curp', 'nss', 'checker_number',
     'primary_position_id', 'enabled_positions',
-    'project', 'emergency_contact_name', 'emergency_contact_phone'
+    'project', 'emergency_contact_name', 'emergency_contact_phone',
+    'total_vacation_days'
   ];
 
   const emp = { ...db.rhh_employees[idx] };
@@ -388,6 +429,63 @@ router.delete('/:id/documents/:docId', rhhAuthRequired, rhhRequireRole('rh', 'ad
   write(db);
 
   res.json({ ok: true });
+});
+
+// GET /api/rhh/employees/vacation-balance/:id
+router.get('/vacation-balance/:id', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  // Empleado solo puede ver su propio balance
+  if (req.rhhUser.role === 'empleado' && empId !== req.rhhUser.employee_id) {
+    return res.status(403).json({ error: 'Acceso denegado' });
+  }
+
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear}-12-31`;
+  const incidences = db.rhh_incidences || [];
+
+  const vacIncidences = incidences.filter(i =>
+    i.employee_id === empId &&
+    i.type === 'vacacion' &&
+    i.date >= yearStart && i.date <= yearEnd
+  );
+
+  function countDays(inc) {
+    const end = inc.date_end || inc.date;
+    if (end !== inc.date) {
+      const start = new Date(inc.date + 'T12:00:00');
+      const endD = new Date(end + 'T12:00:00');
+      return Math.round((endD - start) / (24 * 60 * 60 * 1000)) + 1;
+    }
+    return 1;
+  }
+
+  const detail = vacIncidences.map(i => ({
+    start_date: i.date,
+    end_date: i.date_end || i.date,
+    days: countDays(i),
+    status: i.status
+  }));
+
+  const vacation_used = vacIncidences.filter(i => i.status === 'aprobada').reduce((acc, i) => acc + countDays(i), 0);
+  const vacation_pending = vacIncidences.filter(i => i.status === 'pendiente').reduce((acc, i) => acc + countDays(i), 0);
+  const total_vacation_days = emp.total_vacation_days || 15;
+  const vacation_remaining = Math.max(0, total_vacation_days - vacation_used);
+
+  res.json({
+    employee_id: empId,
+    employee_name: emp.full_name,
+    total_vacation_days,
+    vacation_used,
+    vacation_remaining,
+    vacation_pending,
+    year: currentYear,
+    detail
+  });
 });
 
 // POST /api/rhh/employees/:id/generate-doc

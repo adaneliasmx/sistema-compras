@@ -248,7 +248,21 @@ function shell(content, activeHash) {
             <strong>${state.user?.full_name || ''}</strong>
             <span class="badge" style="margin-left:8px;">${role.toUpperCase()}</span>
           </div>
-          <div class="small muted">${new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</div>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <button id="rhhNotifBtn" onclick="toggleNotifPanel()" style="position:relative;background:none;border:none;cursor:pointer;font-size:20px;padding:4px 8px;border-radius:8px;" title="Notificaciones">
+              🔔<span id="rhhNotifBadge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;border-radius:50%;font-size:10px;min-width:16px;height:16px;line-height:16px;text-align:center;font-weight:700;"></span>
+            </button>
+            <div class="small muted">${new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}</div>
+          </div>
+        </div>
+        <div id="rhhNotifPanel" style="display:none;position:fixed;top:60px;right:16px;z-index:9990;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 8px 32px rgba(0,0,0,0.15);width:340px;max-height:420px;overflow-y:auto;">
+          <div style="padding:12px 16px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;">
+            <strong style="font-size:14px;">🔔 Notificaciones</strong>
+            <button onclick="markAllNotifsRead()" class="btn-ghost" style="font-size:11px;padding:3px 8px;">Marcar todo leído</button>
+          </div>
+          <div id="rhhNotifList" style="padding:8px 0;">
+            <div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">Cargando...</div>
+          </div>
         </div>
         ${content}
       </main>
@@ -747,10 +761,14 @@ async function empleadosView() {
           : `<table>
                <thead><tr>
                  <th>No. Emp</th><th>Nombre</th><th>Departamento</th>
-                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Estatus</th><th>Acciones</th>
+                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Vac.</th><th>Estatus</th><th>Acciones</th>
                </tr></thead>
                <tbody>
-                 ${employees.map(emp => `
+                 ${employees.map(emp => {
+                   const vacRem = emp.vacation_remaining ?? (emp.total_vacation_days || 15);
+                   const vacTotal = emp.total_vacation_days || 15;
+                   const vacColor = vacRem <= 0 ? '#b91c1c' : vacRem <= 5 ? '#b45309' : '#059669';
+                   return `
                    <tr>
                      <td><span class="small muted">${emp.employee_number}</span>${emp.checker_number ? `<br><span class="small muted">Check: ${emp.checker_number}</span>` : ''}</td>
                      <td>
@@ -761,6 +779,7 @@ async function empleadosView() {
                      <td>${emp.position?.name || '—'}</td>
                      <td>${shiftDot(emp.shift)}</td>
                      <td style="text-align:right;font-size:12px;">${emp.daily_salary ? `$${Number(emp.daily_salary).toLocaleString()}/día` : (emp.base_salary ? `$${Number(emp.base_salary).toLocaleString()}/mes` : '—')}</td>
+                     <td style="text-align:center;font-weight:700;color:${vacColor};font-size:12px;" title="${vacRem} días restantes de ${vacTotal}">${vacRem}/${vacTotal}</td>
                      <td>${statusPill(emp.status)}</td>
                      <td>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showEditEmployee(${emp.id})">✏️ Editar</button>
@@ -768,7 +787,8 @@ async function empleadosView() {
                        <button class="btn-ghost" style="font-size:12px;" onclick="historialEmpleadoView(${emp.id})">📋 Historial</button>
                        ${emp.status === 'active' ? `<button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="deactivateEmployee(${emp.id})">🗑️ Desactivar</button>` : ''}
                      </td>
-                   </tr>`).join('')}
+                   </tr>`;
+                 }).join('')}
                </tbody>
              </table>`
         }
@@ -935,6 +955,12 @@ function empFormHtml(emp) {
           <input id="ef-salary" type="number" value="${emp?.base_salary || ''}" placeholder="0.00" min="0" />
         </div>
       </div>
+      <div class="row">
+        <div>
+          <label>Días de vacaciones anuales</label>
+          <input id="ef-vac-days" type="number" value="${emp?.total_vacation_days ?? 15}" min="0" max="365" style="width:100px;" />
+        </div>
+      </div>
 
       <h4 style="margin:16px 0 8px;color:#064e3b;border-bottom:1px solid var(--line);padding-bottom:6px;">Puestos habilitados</h4>
       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px;padding:8px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0;">
@@ -1014,7 +1040,9 @@ async function saveEmployee() {
     primary_position_id: document.getElementById('ef-pos')?.value ? Number(document.getElementById('ef-pos').value) : null,
     // Contacto de emergencia
     emergency_contact_name: document.getElementById('ef-ec-name')?.value?.trim() || '',
-    emergency_contact_phone: document.getElementById('ef-ec-phone')?.value?.trim() || ''
+    emergency_contact_phone: document.getElementById('ef-ec-phone')?.value?.trim() || '',
+    // Vacaciones
+    total_vacation_days: document.getElementById('ef-vac-days')?.value ? Number(document.getElementById('ef-vac-days').value) : 15
   };
 
   if (!body.full_name || !body.email) {
@@ -1310,13 +1338,32 @@ async function miHorarioView() {
       return;
     }
 
-    const [calData, empData] = await Promise.all([
+    const today = fmtDate(new Date());
+    const monthStr = `${myCalYear}-${String(myCalMonth).padStart(2, '0')}`;
+    const [calData, empData, myApps] = await Promise.all([
       api(`/api/rhh/schedule/calendar?year=${myCalYear}&month=${myCalMonth}&employee_id=${empId}`),
-      api(`/api/rhh/employees/${empId}`)
+      api(`/api/rhh/employees/${empId}`),
+      api(`/api/rhh/schedule/te-applications/my`).catch(() => [])
     ]);
     if (!calData) return;
 
-    const today = fmtDate(new Date());
+    // TE seleccionados próximos
+    const selectedTEs = (myApps || []).filter(a => a.status === 'selected');
+    let teAlertHtml = '';
+    if (selectedTEs.length > 0) {
+      const teAuths = await api(`/api/rhh/schedule/te-authorizations?month=${monthStr}`).catch(() => []);
+      const alerts = selectedTEs.map(a => {
+        const auth = (teAuths || []).find(t => t.id === a.te_authorization_id);
+        if (!auth || auth.date < today) return null;
+        const shift = state.shifts.find(s => s.id === auth.shift_id);
+        const pos = state.positions.find(p => p.id === a.position_id);
+        return `<div style="background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:8px;font-size:13px;">
+          ⚡ <strong>Tienes tiempo extra programado el ${fmtDateDisplay(auth.date)}</strong>${shift ? ` en turno ${shift.name}` : ''}${pos ? ` · Puesto: ${pos.name}` : ''}
+        </div>`;
+      }).filter(Boolean).join('');
+      teAlertHtml = alerts;
+    }
+
     const firstDayOfWeek = new Date(`${myCalYear}-${String(myCalMonth).padStart(2, '0')}-01T12:00:00`).getDay();
     const lastDay = new Date(myCalYear, myCalMonth, 0).getDate();
 
@@ -1356,6 +1403,8 @@ async function miHorarioView() {
         </div>
       </div>
 
+      ${teAlertHtml}
+
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
         <button class="btn-ghost" onclick="myCalMonth--;if(myCalMonth<1){myCalMonth=12;myCalYear--;}miHorarioView()">‹</button>
         <strong style="min-width:160px;text-align:center;">${MONTHS[myCalMonth-1]} ${myCalYear}</strong>
@@ -1388,16 +1437,30 @@ async function miHorarioView() {
 
 // ── 8. Mis Solicitudes (empleado) ─────────────────────────────────────────────
 async function misSolicitudesView() {
+  _msVacBalance = null; // reset cache on each view load
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando solicitudes...</div>', 'mis-solicitudes');
 
   try {
-    const incidences = await api('/api/rhh/incidences?type=vacacion&type=permiso') || await api('/api/rhh/incidences');
+    const empId = state.user?.employee_id;
+    const [incidences, vacBalance] = await Promise.all([
+      api('/api/rhh/incidences'),
+      empId ? api(`/api/rhh/employees/vacation-balance/${empId}`).catch(() => null) : Promise.resolve(null)
+    ]);
     if (!incidences) return;
 
     const myIncidences = (incidences || []).filter(i =>
-      ['vacacion', 'permiso'].includes(i.type) && i.employee_id === state.user?.employee_id
+      ['vacacion', 'permiso'].includes(i.type) && i.employee_id === empId
     );
+
+    const vacInfoHtml = vacBalance
+      ? `<div style="padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin-bottom:12px;font-size:13px;">
+          🌴 <strong>Vacaciones ${vacBalance.year}:</strong>
+          Usadas <strong>${vacBalance.vacation_used}</strong> ·
+          Pendientes <strong>${vacBalance.vacation_pending}</strong> ·
+          <span style="color:#059669;font-weight:700;">${vacBalance.vacation_remaining} días disponibles</span> de ${vacBalance.total_vacation_days}
+        </div>`
+      : '';
 
     const rows = myIncidences.map(inc => `
       <tr>
@@ -1413,31 +1476,35 @@ async function misSolicitudesView() {
         <h2>📝 Mis Solicitudes</h2>
       </div>
 
+      ${vacInfoHtml}
+
       <div class="card section" style="margin-bottom:16px;">
         <h3>Nueva solicitud</h3>
         <div class="row">
           <div>
             <label>Tipo *</label>
-            <select id="ms-type">
+            <select id="ms-type" onchange="onMsSolicitudTypeChange()">
               <option value="vacacion">Vacación</option>
               <option value="permiso">Permiso</option>
             </select>
           </div>
           <div>
             <label>Fecha inicio *</label>
-            <input type="date" id="ms-date" value="${fmtDate(new Date())}" />
+            <input type="date" id="ms-date" value="${fmtDate(new Date())}" onchange="onMsSolicitudTypeChange()" />
           </div>
           <div>
             <label>Fecha fin</label>
-            <input type="date" id="ms-date-end" value="${fmtDate(new Date())}" />
+            <input type="date" id="ms-date-end" value="${fmtDate(new Date())}" onchange="onMsSolicitudTypeChange()" />
           </div>
         </div>
+        <div id="ms-vac-inline" style="display:none;margin-top:8px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:13px;"></div>
         <div style="margin-top:10px;">
           <label>Motivo / Notas</label>
           <textarea id="ms-notes" rows="2" placeholder="Describe el motivo de tu solicitud..."></textarea>
         </div>
+        <div id="ms-warn" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#92400e;"></div>
         <div style="margin-top:10px;">
-          <button class="btn-primary" onclick="submitMiSolicitud()">Enviar solicitud</button>
+          <button id="ms-submit-btn" class="btn-primary" onclick="submitMiSolicitud()">Enviar solicitud</button>
         </div>
       </div>
 
@@ -1459,6 +1526,48 @@ async function misSolicitudesView() {
   }
 }
 
+// Called when type or dates change to show live vacation balance info
+let _msVacBalance = null;
+async function onMsSolicitudTypeChange() {
+  const type = document.getElementById('ms-type')?.value;
+  const date = document.getElementById('ms-date')?.value;
+  const dateEnd = document.getElementById('ms-date-end')?.value || date;
+  const inlineEl = document.getElementById('ms-vac-inline');
+  const submitBtn = document.getElementById('ms-submit-btn');
+  const warnEl = document.getElementById('ms-warn');
+
+  if (type === 'vacacion' && inlineEl) {
+    // Load balance if needed
+    if (!_msVacBalance) {
+      const empId = state.user?.employee_id;
+      if (empId) {
+        try { _msVacBalance = await api(`/api/rhh/employees/vacation-balance/${empId}`); } catch (_) {}
+      }
+    }
+    if (_msVacBalance && date && dateEnd) {
+      const startD = new Date(date + 'T12:00:00');
+      const endD = new Date(dateEnd + 'T12:00:00');
+      const requestedDays = Math.round((endD - startD) / (24 * 60 * 60 * 1000)) + 1;
+      const remaining = _msVacBalance.vacation_remaining || 0;
+      const overLimit = requestedDays > remaining;
+      inlineEl.style.display = 'block';
+      inlineEl.innerHTML = `Tienes <strong>${remaining}</strong> días disponibles. Solicitar <strong>${requestedDays}</strong> día${requestedDays !== 1 ? 's' : ''}.${overLimit ? ' <span style="color:#b91c1c;font-weight:700;">Insuficiente.</span>' : ''}`;
+      if (submitBtn) submitBtn.disabled = overLimit;
+      if (warnEl && overLimit) {
+        warnEl.textContent = `No tienes suficientes días de vacaciones disponibles. Tienes ${remaining} días y estás solicitando ${requestedDays}.`;
+        warnEl.style.display = 'block';
+      } else if (warnEl && !overLimit) {
+        warnEl.style.display = 'none';
+      }
+    } else {
+      inlineEl.style.display = 'none';
+    }
+  } else {
+    if (inlineEl) inlineEl.style.display = 'none';
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
 async function submitMiSolicitud() {
   const type = document.getElementById('ms-type')?.value;
   const date = document.getElementById('ms-date')?.value;
@@ -1466,6 +1575,44 @@ async function submitMiSolicitud() {
   const notes = document.getElementById('ms-notes')?.value;
 
   if (!type || !date) { toast('Tipo y fecha son requeridos', 'warning'); return; }
+
+  // Verificar reglas de anticipación ANTES de enviar (Automatización 4)
+  if (type === 'vacacion' || type === 'permiso') {
+    try {
+      const rules = await api('/api/rhh/incidences/vacation-rules');
+      if (rules && rules.rules && rules.rules.length > 0) {
+        const today = new Date().toISOString().slice(0, 10);
+        const endDate = date_end || date;
+
+        // Calcular días simples (calendario) de la solicitud
+        const startD = new Date(date + 'T12:00:00');
+        const endD = new Date(endDate + 'T12:00:00');
+        const requestedDays = Math.round((endD - startD) / (24 * 60 * 60 * 1000)) + 1;
+
+        // Calcular días de anticipación
+        const todayD = new Date(today + 'T12:00:00');
+        const advanceDays = Math.round((startD - todayD) / (24 * 60 * 60 * 1000));
+
+        // Encontrar regla aplicable
+        const sortedRules = [...rules.rules].sort((a, b) => a.max_days - b.max_days);
+        let applicableRule = null;
+        for (const rule of sortedRules) {
+          if (requestedDays <= rule.max_days) { applicableRule = rule; break; }
+        }
+
+        if (applicableRule && advanceDays < applicableRule.min_advance_days) {
+          const warnEl = document.getElementById('ms-warn');
+          if (warnEl) {
+            warnEl.textContent = `⚠ Esta solicitud requiere ${applicableRule.min_advance_days} días de anticipación. Tu solicitud empieza en ${advanceDays} días. Podría ser rechazada.`;
+            warnEl.style.display = 'block';
+          }
+        } else {
+          const warnEl = document.getElementById('ms-warn');
+          if (warnEl) warnEl.style.display = 'none';
+        }
+      }
+    } catch (_) {}
+  }
 
   try {
     await api('/api/rhh/incidences', {
@@ -1485,8 +1632,61 @@ async function misIncidenciasView() {
   el.innerHTML = shell('<div class="loading-overlay">...</div>', 'mis-incidencias');
 
   try {
-    const incidences = await api('/api/rhh/incidences');
+    const empId = state.user?.employee_id;
+    const today = fmtDate(new Date());
+    const monthStr = today.slice(0, 7);
+
+    const [incidences, teAuths, myApplications] = await Promise.all([
+      api('/api/rhh/incidences'),
+      api(`/api/rhh/schedule/te-authorizations?month=${monthStr}`).catch(() => []),
+      empId ? api(`/api/rhh/schedule/te-applications/my`).catch(() => []) : Promise.resolve([])
+    ]);
     if (!incidences) return;
+
+    // ── TE disponibles para postular ──────────────────────────────────────
+    const emp = empId ? (await api(`/api/rhh/employees/${empId}`).catch(() => null)) : null;
+    const myPositions = emp?.enabled_positions || [];
+
+    const approvedTEs = (teAuths || []).filter(t =>
+      t.status === 'approved' &&
+      t.date >= today &&
+      (t.positions || []).some(p => myPositions.includes(p))
+    );
+
+    const teRows = approvedTEs.map(te => {
+      const myApp = (myApplications || []).find(a => a.te_authorization_id === te.id);
+      const shift = state.shifts.find(s => s.id === te.shift_id);
+      let actionHtml;
+      if (myApp) {
+        if (myApp.status === 'selected') {
+          actionHtml = `<span class="pill active" style="font-size:12px;">⚡ Seleccionado</span>`;
+        } else if (myApp.status === 'rejected') {
+          actionHtml = `<span class="pill rechazada" style="font-size:12px;">✗ No seleccionado</span>`;
+        } else {
+          actionHtml = `<span class="pill pendiente" style="font-size:12px;">✓ Postulado</span>`;
+        }
+      } else {
+        actionHtml = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="postularTE(${te.id})">Postularme</button>`;
+      }
+      return `<tr>
+        <td>${fmtDateDisplay(te.date)}</td>
+        <td>${shift ? `${shiftDot(shift)} ${shift.name}` : te.shift_id}</td>
+        <td>${te.notes || '—'}</td>
+        <td>${actionHtml}</td>
+      </tr>`;
+    }).join('');
+
+    const teSectionHtml = approvedTEs.length > 0 ? `
+      <div class="card section" style="margin-bottom:16px;">
+        <h3>⚡ Tiempo Extra Disponible</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Estos son los TEs autorizados para los cuales puedes postularte según tus puestos habilitados.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Fecha</th><th>Turno</th><th>Notas</th><th>Acción</th></tr></thead>
+            <tbody>${teRows}</tbody>
+          </table>
+        </div>
+      </div>` : '';
 
     const rows = (incidences || []).map(inc => `
       <tr>
@@ -1499,6 +1699,7 @@ async function misIncidenciasView() {
 
     const content = `
       <h2>⚠️ Mis Incidencias</h2>
+      ${teSectionHtml}
       <div class="card section table-wrap">
         ${incidences.length === 0
           ? '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin incidencias registradas</p></div>'
@@ -1513,6 +1714,19 @@ async function misIncidenciasView() {
     el.innerHTML = shell(content, 'mis-incidencias');
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'mis-incidencias');
+  }
+}
+
+async function postularTE(teAuthId) {
+  try {
+    await api('/api/rhh/schedule/te-applications', {
+      method: 'POST',
+      body: JSON.stringify({ te_authorization_id: teAuthId })
+    });
+    toast('Postulación enviada exitosamente.');
+    misIncidenciasView();
+  } catch (err) {
+    toast(err.message, 'error');
   }
 }
 
@@ -1771,6 +1985,10 @@ async function catalogosView() {
 
     let tabContent = '';
 
+    if (catTab === 'vacation-rules') {
+      tabContent = await buildVacRulesTab();
+    } else
+
     if (catTab === 'departments') {
       const rows = state.departments.map(d => `
         <tr>
@@ -1879,6 +2097,7 @@ async function catalogosView() {
         <button class="tab-btn ${catTab==='departments'?'active':''}" onclick="catTab='departments';catalogosView()">🏢 Departamentos</button>
         <button class="tab-btn ${catTab==='positions'?'active':''}" onclick="catTab='positions';catalogosView()">💼 Puestos</button>
         <button class="tab-btn ${catTab==='shifts'?'active':''}" onclick="catTab='shifts';catalogosView()">⏰ Turnos</button>
+        <button class="tab-btn ${catTab==='vacation-rules'?'active':''}" onclick="catTab='vacation-rules';catalogosView()">🌴 Reglas Vacaciones</button>
       </div>
       ${tabContent}
     `;
@@ -2117,6 +2336,62 @@ function exportReportCSV() {
 async function perfilView() {
   const el = document.getElementById('app');
   const u = state.user;
+  const role = u?.role || 'empleado';
+  const menu = MENU_BY_ROLE[role] || [];
+  const activeH = menu[0]?.[0] || '';
+
+  // Load vacation balance for employees
+  let vacSectionHtml = '';
+  if (u?.employee_id) {
+    try {
+      const vb = await api(`/api/rhh/employees/vacation-balance/${u.employee_id}`).catch(() => null);
+      if (vb) {
+        const used = vb.vacation_used || 0;
+        const total = vb.total_vacation_days || 15;
+        const remaining = vb.vacation_remaining || 0;
+        const pending = vb.vacation_pending || 0;
+        const usedPct = Math.min(100, Math.round((used / total) * 100));
+        const barFilled = Math.round(usedPct / 100 * 10);
+        const barEmpty = 10 - barFilled;
+        const bar = '█'.repeat(barFilled) + '░'.repeat(barEmpty);
+
+        const usedRows = (vb.detail || []).filter(d => d.status === 'aprobada').map(d => `
+          <tr>
+            <td>${fmtDateDisplay(d.date)}${d.date_end && d.date_end !== d.date ? ` → ${fmtDateDisplay(d.date_end)}` : ''}</td>
+            <td>${d.days} día${d.days !== 1 ? 's' : ''}</td>
+            <td><span class="pill active">Aprobada</span></td>
+          </tr>`).join('');
+
+        const pendRows = (vb.detail || []).filter(d => d.status === 'pendiente').map(d => `
+          <tr>
+            <td>${fmtDateDisplay(d.date)}${d.date_end && d.date_end !== d.date ? ` → ${fmtDateDisplay(d.date_end)}` : ''}</td>
+            <td>${d.days} día${d.days !== 1 ? 's' : ''}</td>
+            <td><span class="pill pendiente">Pendiente</span></td>
+          </tr>`).join('');
+
+        vacSectionHtml = `
+          <div class="card section" style="margin-top:16px;max-width:480px;">
+            <h4 style="margin-bottom:12px;">🌴 Mis Vacaciones ${vb.year}</h4>
+            <div style="font-family:monospace;font-size:15px;margin-bottom:8px;letter-spacing:2px;color:#047857;">[${bar}]</div>
+            <div style="font-size:13px;color:var(--muted);margin-bottom:12px;">
+              ${used} de ${total} días usados · <strong style="color:#059669;">${remaining} restantes</strong>${pending > 0 ? ` · ${pending} pendientes de aprobación` : ''}
+            </div>
+            ${usedRows ? `
+              <details open>
+                <summary style="font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;">Vacaciones tomadas</summary>
+                <table><thead><tr><th>Fechas</th><th>Días</th><th>Estado</th></tr></thead>
+                <tbody>${usedRows}</tbody></table>
+              </details>` : '<p style="font-size:13px;color:var(--muted);">No has tomado vacaciones este año.</p>'}
+            ${pendRows ? `
+              <details style="margin-top:8px;">
+                <summary style="font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px;">Solicitudes pendientes</summary>
+                <table><thead><tr><th>Fechas</th><th>Días</th><th>Estado</th></tr></thead>
+                <tbody>${pendRows}</tbody></table>
+              </details>` : ''}
+          </div>`;
+      }
+    } catch (_) {}
+  }
 
   const content = `
     <h2>⚙️ Mi Perfil</h2>
@@ -2139,11 +2414,9 @@ async function perfilView() {
         <button class="btn-primary" onclick="changePassword()">Cambiar contraseña</button>
       </div>
     </div>
+    ${vacSectionHtml}
   `;
 
-  const role = u?.role || 'empleado';
-  const menu = MENU_BY_ROLE[role] || [];
-  const activeH = menu[0]?.[0] || '';
   el.innerHTML = shell(content, activeH);
 }
 
@@ -3995,16 +4268,20 @@ function fmtWeekLabel(startStr) {
 
 function statusColor(status) {
   const map = {
-    labora:      { bg: '#dcfce7', text: '#166534' },
-    festivo:     { bg: '#e0e7ff', text: '#3730a3' },
-    descanso:    { bg: '#f1f5f9', text: '#64748b' },
-    vacaciones:  { bg: '#dbeafe', text: '#1e40af' },
-    falta:       { bg: '#fee2e2', text: '#991b1b' },
-    retardo:     { bg: '#ffedd5', text: '#9a3412' },
-    cumpleanos:  { bg: '#f3e8ff', text: '#6b21a8' },
-    permiso:     { bg: '#fef9c3', text: '#854d0e' },
-    incapacidad: { bg: '#ede9fe', text: '#5b21b6' },
-    vacio:       { bg: '#e5e7eb', text: '#9ca3af' }
+    labora:               { bg: '#dcfce7', text: '#166534' },
+    festivo:              { bg: '#e0e7ff', text: '#3730a3' },
+    descanso:             { bg: '#f1f5f9', text: '#64748b' },
+    vacaciones:           { bg: '#dbeafe', text: '#1e40af' },
+    falta:                { bg: '#fee2e2', text: '#991b1b' },
+    retardo:              { bg: '#ffedd5', text: '#9a3412' },
+    cumpleanos:           { bg: '#f3e8ff', text: '#6b21a8' },
+    permiso:              { bg: '#fef9c3', text: '#854d0e' },
+    incapacidad:          { bg: '#ede9fe', text: '#5b21b6' },
+    vacio:                { bg: '#e5e7eb', text: '#9ca3af' },
+    // Estados pendientes (Automatización 3)
+    vacaciones_pendiente: { bg: '#eff6ff', text: '#1e40af', border: '1px dashed #3b82f6' },
+    permiso_pendiente:    { bg: '#fefce8', text: '#854d0e', border: '1px dashed #eab308' },
+    falta_pendiente:      { bg: '#fff1f2', text: '#991b1b', border: '1px dashed #f87171' }
   };
   return map[status] || { bg: '#f3f4f6', text: '#6b7280' };
 }
@@ -4014,7 +4291,11 @@ function statusLabel(status) {
     labora: 'Labora', festivo: 'FESTIVO', descanso: 'Descanso',
     vacaciones: 'Vacaciones', falta: 'Falta', retardo: 'Retardo',
     cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', incapacidad: 'Incapacidad',
-    vacio: ''
+    vacio: '',
+    // Estados pendientes (Automatización 3)
+    vacaciones_pendiente: 'Vac. ⏳',
+    permiso_pendiente: 'Permiso ⏳',
+    falta_pendiente: 'Falta ⏳'
   };
   return map[status] !== undefined ? map[status] : status;
 }
@@ -4102,6 +4383,22 @@ async function saveAttendance(empId, date, status, cellEl) {
     }
 
     toast('Asistencia guardada');
+
+    // Mostrar ícono de historial si el servidor devolvió log (Automatización 2)
+    if (result.log) {
+      const logIcon = document.createElement('span');
+      logIcon.className = 'att-log-icon';
+      logIcon.textContent = ' 📝';
+      logIcon.style.cssText = 'font-size:10px;cursor:pointer;vertical-align:middle;';
+      const fmtDt = (iso) => {
+        const d = new Date(iso);
+        return `${d.getDate()}/${d.getMonth()+1} ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+      };
+      logIcon.title = `Cambiado por ${result.log.changed_by_name} el ${fmtDt(result.log.changed_at)}`;
+      // Eliminar ícono previo si existe
+      cellEl.querySelectorAll('.att-log-icon').forEach(el => el.remove());
+      cellEl.appendChild(logIcon);
+    }
   } catch (err) {
     toast(err.message, 'error');
   }
@@ -4340,9 +4637,71 @@ async function listaAsistenciaView() {
   el.innerHTML = shell('<div class="loading-overlay">Cargando lista de asistencia...</div>', 'lista-asistencia');
 
   try {
+    const role = state.user?.role;
     const data = await api(`/api/rhh/schedule/weekly-attendance?week_start=${attendanceWeekStart}`);
     if (!data) return;
     attendanceData = data;
+
+    // Load TE postulants summary for supervisors/rh/admin (Automatización 6)
+    let tePendingSummaryHtml = '';
+    if (['supervisor', 'rh', 'admin'].includes(role)) {
+      try {
+        const today = fmtDate(new Date());
+        const monthStr = today.slice(0, 7);
+        const teAuths = await api(`/api/rhh/schedule/te-authorizations?month=${monthStr}`).catch(() => []);
+        const approvedTEs = (teAuths || []).filter(t => t.status === 'approved' && t.date >= today);
+        if (approvedTEs.length > 0) {
+          // For each approved TE, check applications
+          const teWithApps = [];
+          for (const te of approvedTEs) {
+            const apps = await api(`/api/rhh/schedule/te-applications/${te.id}`).catch(() => []);
+            const pendingApps = (apps || []).filter(a => a.status === 'pending');
+            if (pendingApps.length > 0) {
+              teWithApps.push({ te, apps, pendingApps });
+            }
+          }
+          if (teWithApps.length > 0) {
+            const totalPending = teWithApps.reduce((s, t) => s + t.pendingApps.length, 0);
+            const teItems = teWithApps.map(({ te, apps, pendingApps }) => {
+              const shift = state.shifts.find(s => s.id === te.shift_id);
+              const appRows = apps.map(a => {
+                const empName = a.employee?.full_name || `Emp. ${a.employee_id}`;
+                const empNum = a.employee?.employee_number || '';
+                let actionHtml = '';
+                if (a.status === 'pending') {
+                  actionHtml = `<button class="btn-primary" style="font-size:11px;padding:3px 8px;" onclick="selectTEApplicant(${a.id})">Seleccionar</button>`;
+                } else if (a.status === 'selected') {
+                  actionHtml = `<span class="pill active" style="font-size:11px;">✅ Seleccionado</span>`;
+                } else {
+                  actionHtml = `<span class="pill rechazada" style="font-size:11px;">✗ Rechazado</span>`;
+                }
+                return `<tr>
+                  <td style="font-size:12px;">${empName} <span style="color:var(--muted);">(${empNum})</span></td>
+                  <td style="font-size:12px;">${actionHtml}</td>
+                </tr>`;
+              }).join('');
+              return `
+                <div style="border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;overflow:hidden;">
+                  <div style="background:#f9fafb;padding:8px 12px;font-size:13px;font-weight:600;border-bottom:1px solid #e5e7eb;">
+                    ⚡ ${fmtDateDisplay(te.date)} — ${shift ? shift.name : 'Turno ?'}
+                    <span style="font-weight:400;color:var(--muted);margin-left:8px;">${pendingApps.length} postulante${pendingApps.length !== 1 ? 's' : ''} pendiente${pendingApps.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <table style="width:100%;"><tbody>${appRows}</tbody></table>
+                </div>`;
+            }).join('');
+
+            tePendingSummaryHtml = `
+              <div id="te-postulants-section" class="card section" style="margin-bottom:16px;border-left:4px solid #f59e0b;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+                  <h3 style="margin:0;">⚡ T.E. con postulantes pendientes</h3>
+                  <span style="background:#f59e0b;color:#fff;border-radius:12px;padding:2px 10px;font-size:12px;font-weight:700;">${totalPending} pendiente${totalPending !== 1 ? 's' : ''}</span>
+                </div>
+                ${teItems}
+              </div>`;
+          }
+        }
+      } catch (_) {}
+    }
 
     // Recolectar valores únicos para filtros
     const areas = [...new Set(
@@ -4413,10 +4772,11 @@ async function listaAsistenciaView() {
           const clickHandler = editable
             ? `onclick="openStatusDropdown(${emp.id},'${day.date}','${day.status}',this)"`
             : '';
+          const borderStyle = colors.border ? `border:${colors.border};` : '';
 
           dayCells += `<td style="padding:2px 3px;">
             <div class="${editCls}" data-empid="${emp.id}" data-date="${day.date}"
-              style="background:${colors.bg};color:${colors.text};"
+              style="background:${colors.bg};color:${colors.text};${borderStyle}"
               ${clickHandler}>
               ${label}${bdayIcon}
             </div>
@@ -4459,6 +4819,8 @@ async function listaAsistenciaView() {
       <div class="module-title">
         <h2>📋 Lista de Asistencia Semanal</h2>
       </div>
+
+      ${tePendingSummaryHtml}
 
       <div class="attendance-controls">
         <div class="att-week-nav">
@@ -4552,6 +4914,19 @@ function attNavWeek(offset) {
   listaAsistenciaView();
 }
 
+async function selectTEApplicant(appId) {
+  try {
+    await api(`/api/rhh/schedule/te-applications/${appId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'selected' })
+    });
+    toast('Empleado seleccionado para T.E.');
+    listaAsistenciaView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
 function toggleTotals() {
   totalsVisible = !totalsVisible;
   const cols = document.querySelectorAll('.col-total');
@@ -4589,6 +4964,192 @@ function applyAttFilters() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// NOTIFICACIONES RHH (Automatización 6)
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _notifPanelOpen = false;
+
+async function loadNotifBadge() {
+  try {
+    const list = await api('/api/rhh/notifications');
+    if (!list) return;
+    const unread = list.filter(n => !n.read).length;
+    const badge = document.getElementById('rhhNotifBadge');
+    if (badge) {
+      if (unread > 0) {
+        badge.style.display = 'block';
+        badge.textContent = unread > 9 ? '9+' : unread;
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+    return list;
+  } catch (_) {}
+}
+
+async function toggleNotifPanel() {
+  const panel = document.getElementById('rhhNotifPanel');
+  if (!panel) return;
+  _notifPanelOpen = !_notifPanelOpen;
+  panel.style.display = _notifPanelOpen ? 'block' : 'none';
+  if (_notifPanelOpen) {
+    await renderNotifList();
+  }
+}
+
+async function renderNotifList() {
+  const listEl = document.getElementById('rhhNotifList');
+  if (!listEl) return;
+  try {
+    const list = await api('/api/rhh/notifications');
+    if (!list) return;
+    if (list.length === 0) {
+      listEl.innerHTML = '<div style="text-align:center;padding:24px;color:var(--muted);font-size:13px;">Sin notificaciones</div>';
+      return;
+    }
+    listEl.innerHTML = list.map(n => `
+      <div style="padding:10px 16px;border-bottom:1px solid #f3f4f6;${n.read ? 'opacity:0.6;' : 'background:#f0fdf4;'}">
+        <div style="font-size:13px;font-weight:${n.read ? 400 : 700};">${n.title}</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:2px;">${n.message}</div>
+        ${!n.read ? `<button class="btn-ghost" style="font-size:11px;margin-top:4px;padding:2px 6px;" onclick="markNotifRead(${n.id})">Marcar leída</button>` : ''}
+      </div>`).join('');
+    // Actualizar badge
+    const unread = list.filter(n => !n.read).length;
+    const badge = document.getElementById('rhhNotifBadge');
+    if (badge) {
+      badge.style.display = unread > 0 ? 'block' : 'none';
+      badge.textContent = unread > 9 ? '9+' : unread;
+    }
+  } catch (err) {
+    listEl.innerHTML = `<div style="padding:12px;color:#b91c1c;font-size:12px;">${err.message}</div>`;
+  }
+}
+
+async function markNotifRead(id) {
+  try {
+    await api(`/api/rhh/notifications/${id}`, { method: 'PATCH', body: JSON.stringify({ read: true }) });
+    await renderNotifList();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function markAllNotifsRead() {
+  try {
+    await api('/api/rhh/notifications/read-all', { method: 'PATCH' });
+    await renderNotifList();
+    toast('Notificaciones marcadas como leídas');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// Cerrar panel al hacer click fuera
+document.addEventListener('click', (e) => {
+  const panel = document.getElementById('rhhNotifPanel');
+  const btn = document.getElementById('rhhNotifBtn');
+  if (panel && btn && !panel.contains(e.target) && !btn.contains(e.target)) {
+    panel.style.display = 'none';
+    _notifPanelOpen = false;
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// REGLAS DE VACACIONES — tab en catálogos (Automatización 4)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function buildVacRulesTab() {
+  let rulesData;
+  try {
+    rulesData = await api('/api/rhh/incidences/vacation-rules');
+  } catch (_) {
+    rulesData = { rules: [], max_days_per_week: 1, count_holidays: true };
+  }
+
+  const rules = rulesData.rules || [];
+  const rulesRows = rules.map((r, i) => `
+    <tr>
+      <td><input type="number" class="vr-maxdays" data-idx="${i}" value="${r.max_days}" style="width:70px;" /></td>
+      <td><input type="number" class="vr-advance" data-idx="${i}" value="${r.min_advance_days}" style="width:70px;" /></td>
+      <td><input type="text" class="vr-label" data-idx="${i}" value="${r.label || ''}" style="width:260px;" /></td>
+      <td><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="removeVacRule(${i})">🗑️</button></td>
+    </tr>`).join('');
+
+  return `
+    <div class="card section">
+      <h3>Reglas de vacaciones</h3>
+      <div style="display:flex;gap:16px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+        <label style="font-weight:600;display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="vr-count-holidays" ${rulesData.count_holidays ? 'checked' : ''} />
+          Contar festivos en el cálculo de días
+        </label>
+        <label style="font-weight:600;">
+          Máx. días por semana:
+          <input type="number" id="vr-max-week" value="${rulesData.max_days_per_week || 1}" style="width:60px;margin-left:6px;" />
+        </label>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Hasta N días</th>
+            <th>Anticipación mínima (días)</th>
+            <th>Descripción</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody id="vr-rules-body">
+          ${rulesRows || '<tr><td colspan="4" style="text-align:center;color:var(--muted);">Sin reglas configuradas</td></tr>'}
+        </tbody>
+      </table>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="addVacRule()">+ Agregar regla</button>
+        <button class="btn-primary" onclick="saveVacRules()">💾 Guardar cambios</button>
+      </div>
+    </div>`;
+}
+
+function addVacRule() {
+  const tbody = document.getElementById('vr-rules-body');
+  if (!tbody) return;
+  const idx = tbody.querySelectorAll('tr').length;
+  const row = document.createElement('tr');
+  row.innerHTML = `
+    <td><input type="number" class="vr-maxdays" data-idx="${idx}" value="1" style="width:70px;" /></td>
+    <td><input type="number" class="vr-advance" data-idx="${idx}" value="1" style="width:70px;" /></td>
+    <td><input type="text" class="vr-label" data-idx="${idx}" value="" style="width:260px;" /></td>
+    <td><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="this.closest('tr').remove()">🗑️</button></td>`;
+  tbody.appendChild(row);
+}
+
+function removeVacRule(idx) {
+  const tbody = document.getElementById('vr-rules-body');
+  if (!tbody) return;
+  const rows = tbody.querySelectorAll('tr');
+  if (rows[idx]) rows[idx].remove();
+}
+
+async function saveVacRules() {
+  const countHolidays = document.getElementById('vr-count-holidays')?.checked ?? true;
+  const maxWeek = Number(document.getElementById('vr-max-week')?.value) || 1;
+  const tbody = document.getElementById('vr-rules-body');
+  if (!tbody) return;
+
+  const rules = [];
+  const rows = tbody.querySelectorAll('tr');
+  rows.forEach(row => {
+    const maxDays = Number(row.querySelector('.vr-maxdays')?.value) || 1;
+    const minAdv = Number(row.querySelector('.vr-advance')?.value) || 1;
+    const label = row.querySelector('.vr-label')?.value?.trim() || '';
+    rules.push({ max_days: maxDays, min_advance_days: minAdv, label });
+  });
+
+  try {
+    await api('/api/rhh/incidences/vacation-rules', {
+      method: 'PATCH',
+      body: JSON.stringify({ rules, max_days_per_week: maxWeek, count_holidays: countHolidays })
+    });
+    toast('Reglas de vacaciones actualizadas');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -4601,6 +5162,8 @@ function render() {
   }
 
   const hash = location.hash.slice(1) || 'dashboard';
+  // Keep notification badge current on every navigation
+  setTimeout(() => loadNotifBadge(), 200);
   const role = state.user.role;
 
   // Vista por hash
