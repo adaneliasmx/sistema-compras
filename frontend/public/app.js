@@ -105,7 +105,7 @@ function statusPill(status) {
 
 function shell(content, active = 'dashboard') {
   const allowed = MENU_BY_ROLE[state.user?.role] || [];
-  return `<div class="layout"><aside class="sidebar"><div class="brand">Sistema de Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="logoutBtn">Cerrar sesión</a></nav></aside><main class="main"><div class="topbar"><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div><div style="display:flex;align-items:center;gap:12px"><span class="badge">Flujo operativo</span><button id="notifBellBtn" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:20px" title="Notificaciones">🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:0;background:#dc2626;color:white;border-radius:50%;font-size:10px;font-weight:700;width:16px;height:16px;line-height:16px;text-align:center"></span></button></div></div><div id="notifPanel" style="display:none;position:fixed;top:60px;right:16px;width:340px;max-height:500px;overflow-y:auto;background:white;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;padding:0"><div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">Notificaciones<button id="notifCloseBtn" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:18px">×</button></div><div id="notifList" style="padding:8px 0"></div></div>${content}</main></div>`;
+  return `<div class="layout"><aside class="sidebar"><div class="brand">🛒 Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="logoutBtn">Cerrar sesión</a></nav><div style="margin-top:auto;padding-top:18px;border-top:1px solid rgba(255,255,255,.1);margin-top:18px"><a href="/" style="display:flex;align-items:center;gap:8px;color:#94a3b8;text-decoration:none;font-size:13px;padding:8px 12px;border-radius:10px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='transparent'">← Portal principal</a></div></aside><main class="main"><div class="topbar"><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div><div style="display:flex;align-items:center;gap:12px"><span class="badge">Flujo operativo</span><button id="notifBellBtn" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:20px" title="Notificaciones">🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:0;background:#dc2626;color:white;border-radius:50%;font-size:10px;font-weight:700;width:16px;height:16px;line-height:16px;text-align:center"></span></button></div></div><div id="notifPanel" style="display:none;position:fixed;top:60px;right:16px;width:340px;max-height:500px;overflow-y:auto;background:white;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;padding:0"><div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">Notificaciones<button id="notifCloseBtn" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:18px">×</button></div><div id="notifList" style="padding:8px 0"></div></div>${content}</main></div>`;
 }
 
 // ── Sistema de notificaciones ──────────────────────────────────────────────
@@ -1022,11 +1022,15 @@ async function catalogsView() {
           <input type="hidden" id="sccAssignUserId"/>
           <div class="row-2" style="align-items:flex-start;gap:16px">
             <div style="flex:1">
-              <label class="small muted" style="display:block;margin-bottom:6px">Subcentros permitidos <span class="small muted">(selecciona uno o más; vacío = todos)</span></label>
+              <label class="small muted" style="display:block;margin-bottom:4px">Subcentros permitidos <span class="small muted">(vacío = todos)</span></label>
+              <select id="sccAssignCcFilter" style="width:100%;margin-bottom:6px;font-size:13px">
+                <option value="">— Filtrar por centro de costo —</option>
+                ${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}
+              </select>
               <div id="sccCheckboxList" style="max-height:200px;overflow-y:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;background:white">
                 ${scc.map(s => {
                   const parentCc = cc.find(c => c.id === Number(s.cost_center_id));
-                  return `<label style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;cursor:pointer">
+                  return `<label class="scc-assign-row" data-cc="${s.cost_center_id}" style="display:flex;align-items:center;gap:6px;padding:3px 0;font-size:13px;cursor:pointer">
                     <input type="checkbox" class="scc-allow-chk" value="${s.id}"/>
                     <span style="font-weight:600;color:#1d4ed8">${s.code}</span>
                     <span>${s.name}</span>
@@ -1093,6 +1097,22 @@ async function catalogsView() {
       document.getElementById('cancelSccAssignBtn').onclick = () => {
         document.getElementById('sccAssignForm').style.display = 'none';
       };
+
+      document.getElementById('sccAssignCcFilter')?.addEventListener('change', function() {
+        const ccId = this.value;
+        document.querySelectorAll('.scc-assign-row').forEach(row => {
+          row.style.display = (!ccId || row.dataset.cc === ccId) ? 'flex' : 'none';
+        });
+        const defSel = document.getElementById('sccDefaultSel');
+        if (defSel) {
+          [...defSel.options].forEach(opt => {
+            if (!opt.value) return;
+            const s = scc.find(x => x.id === Number(opt.value));
+            opt.style.display = (!ccId || String(s?.cost_center_id) === ccId) ? '' : 'none';
+          });
+          if (defSel.selectedOptions[0]?.style.display === 'none') defSel.value = '';
+        }
+      });
     } catch(e) {
       document.getElementById('sccAssignWrap').innerHTML = `<div class="small muted">No disponible: ${e.message}</div>`;
     }
@@ -4500,11 +4520,12 @@ async function inventoryView() {
 }
 
 async function adminView() {
-  const [users, rules, suppliers, cc, sysInfo] = await Promise.all([
+  const [users, rules, suppliers, cc, scc, sysInfo] = await Promise.all([
     api('/api/admin/users'),
     api('/api/catalogs/approval-rules'),
     api('/api/catalogs/suppliers'),
     api('/api/catalogs/cost-centers'),
+    api('/api/catalogs/sub-cost-centers'),
     api('/api/admin/system-info').catch(() => null)
   ]);
   app.innerHTML = shell(`
@@ -4535,8 +4556,12 @@ async function adminView() {
         </div>
         <div style="margin-bottom:8px">
           <label class="small muted" style="display:block;margin-bottom:4px">Subcentros permitidos <span class="small muted">(vacío = todos)</span></label>
+          <select id="usrSccCcFilter" style="width:100%;margin-bottom:6px;font-size:13px">
+            <option value="">— Filtrar por centro de costo —</option>
+            ${cc.map(c => `<option value="${c.id}">${c.code} · ${c.name}</option>`).join('')}
+          </select>
           <div id="usrSccCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;max-height:120px;overflow-y:auto;background:white">
-            ${scc.map(s => { const p = cc.find(c=>c.id===Number(s.cost_center_id)); return `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="usr-scc-chk" value="${s.id}"/> <b style="color:#1d4ed8">${s.code}</b> ${s.name} <span class="muted">(${p?.code||'?'})</span></label>`; }).join('')}
+            ${scc.map(s => { const p = cc.find(c=>c.id===Number(s.cost_center_id)); return `<label class="usr-scc-row" data-cc="${s.cost_center_id}" style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;white-space:nowrap"><input type="checkbox" class="usr-scc-chk" value="${s.id}"/> <b style="color:#1d4ed8">${s.code}</b> ${s.name} <span class="muted">(${p?.code||'?'})</span></label>`; }).join('')}
           </div>
         </div>
         <div><small class="muted">Si el rol es "proveedor", el proveedor es obligatorio.</small></div>
@@ -4713,6 +4738,23 @@ async function adminView() {
     saveUsrBtn.textContent = 'Actualizar usuario';
   };
   clearUsrBtn.onclick = () => { usrEditId.value = ''; usrEditId.dispatchEvent(new Event('change')); };
+
+  document.getElementById('usrSccCcFilter')?.addEventListener('change', function() {
+    const ccId = this.value;
+    document.querySelectorAll('.usr-scc-row').forEach(row => {
+      row.style.display = (!ccId || row.dataset.cc === ccId) ? 'flex' : 'none';
+    });
+    const defSel = document.getElementById('usrDefaultScc');
+    if (defSel) {
+      [...defSel.options].forEach(opt => {
+        if (!opt.value) return;
+        const s = scc.find(x => x.id === Number(opt.value));
+        opt.style.display = (!ccId || String(s?.cost_center_id) === ccId) ? '' : 'none';
+      });
+      if (defSel.selectedOptions[0]?.style.display === 'none') defSel.value = '';
+    }
+  });
+
   saveUsrBtn.onclick = async () => {
     try {
       if (!usrName.value || !usrEmail.value) throw new Error('Nombre y correo requeridos');

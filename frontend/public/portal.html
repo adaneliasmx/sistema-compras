@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Portal Empresarial · Sistemas Integrados</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    :root{
+      --navy:#0f172a;
+      --navy2:#1e293b;
+      --blue:#1d4ed8;
+      --blue-light:#dbeafe;
+      --teal:#0f766e;
+      --text:#1f2937;
+      --muted:#64748b;
+      --line:#e2e8f0;
+      --bg:#f0f4f8;
+    }
+
+    body{min-height:100vh;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+    /* ── HEADER ───────────────────────────────────────── */
+    header{
+      background:var(--navy);
+      color:#fff;
+      padding:0 40px;
+      height:70px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      box-shadow:0 2px 12px rgba(0,0,0,.25);
+    }
+    .brand{display:flex;align-items:center;gap:14px}
+    .brand-icon{
+      width:42px;height:42px;border-radius:10px;
+      background:linear-gradient(135deg,var(--blue),var(--teal));
+      display:grid;place-items:center;font-size:22px;
+    }
+    .brand-text h1{font-size:18px;font-weight:800;letter-spacing:.5px}
+    .brand-text p{font-size:11px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-top:1px}
+    .header-right{font-size:13px;color:#94a3b8}
+
+    /* ── HERO ─────────────────────────────────────────── */
+    .hero{
+      background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 60%,#1e3a5f 100%);
+      color:#fff;
+      text-align:center;
+      padding:64px 40px 80px;
+      position:relative;
+      overflow:hidden;
+    }
+    .hero::before{
+      content:'';position:absolute;inset:0;
+      background:radial-gradient(ellipse at 70% 50%,rgba(29,78,216,.25) 0%,transparent 60%);
+    }
+    .hero h2{font-size:36px;font-weight:800;margin-bottom:12px;position:relative;z-index:1}
+    .hero p{font-size:16px;color:#94a3b8;max-width:560px;margin:0 auto;position:relative;z-index:1;line-height:1.6}
+    .hero-dots{
+      position:absolute;top:20px;left:20px;opacity:.07;font-size:120px;line-height:1;
+      pointer-events:none;user-select:none;
+    }
+
+    /* ── MODULES GRID ─────────────────────────────────── */
+    .modules-section{
+      flex:1;padding:48px 40px 64px;
+      max-width:1100px;margin:0 auto;width:100%;
+    }
+    .section-label{
+      font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
+      color:var(--muted);margin-bottom:24px;
+    }
+    .modules-grid{
+      display:grid;
+      grid-template-columns:repeat(2,1fr);
+      gap:24px;
+    }
+
+    /* ── MODULE CARD ──────────────────────────────────── */
+    .mod-card{
+      background:#fff;border:1px solid var(--line);border-radius:20px;
+      padding:32px;display:flex;flex-direction:column;gap:20px;
+      box-shadow:0 4px 20px rgba(15,23,42,.06);
+      transition:transform .18s,box-shadow .18s;
+      position:relative;overflow:hidden;
+    }
+    .mod-card.active{cursor:pointer}
+    .mod-card.active:hover{transform:translateY(-4px);box-shadow:0 12px 36px rgba(15,23,42,.14)}
+    .mod-card.inactive{opacity:.72}
+    .mod-card::before{
+      content:'';position:absolute;top:0;left:0;right:0;height:4px;
+      background:var(--card-color,#e2e8f0);border-radius:20px 20px 0 0;
+    }
+    .mod-card.active::before{background:linear-gradient(90deg,var(--card-color),color-mix(in srgb,var(--card-color) 60%,#fff))}
+
+    .mod-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .mod-icon{
+      width:56px;height:56px;border-radius:14px;
+      background:color-mix(in srgb,var(--card-color) 15%,#fff);
+      display:grid;place-items:center;font-size:28px;flex-shrink:0;
+    }
+    .mod-status{
+      font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;
+      letter-spacing:.5px;white-space:nowrap;margin-top:4px;
+    }
+    .status-active{background:#dcfce7;color:#15803d}
+    .status-dev{background:#fef3c7;color:#b45309}
+
+    .mod-title{font-size:20px;font-weight:800;margin-bottom:6px}
+    .mod-desc{font-size:13px;color:var(--muted);line-height:1.55}
+
+    .mod-features{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+    .feat-pill{
+      font-size:11px;padding:3px 10px;border-radius:999px;font-weight:600;
+      background:color-mix(in srgb,var(--card-color) 10%,#f8fafc);
+      color:color-mix(in srgb,var(--card-color) 80%,#1f2937);
+      border:1px solid color-mix(in srgb,var(--card-color) 20%,#e2e8f0);
+    }
+
+    .mod-footer{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:16px;border-top:1px solid var(--line)}
+    .mod-version{font-size:11px;color:var(--muted)}
+
+    .btn-enter{
+      padding:10px 22px;border-radius:12px;font-size:14px;font-weight:700;
+      background:var(--card-color);color:#fff;border:0;cursor:pointer;
+      display:flex;align-items:center;gap:7px;
+      transition:filter .15s;text-decoration:none;
+    }
+    .btn-enter:hover{filter:brightness(1.1)}
+    .btn-soon{
+      padding:10px 22px;border-radius:12px;font-size:14px;font-weight:700;
+      background:#f1f5f9;color:#94a3b8;border:0;cursor:not-allowed;
+    }
+
+    /* ── FOOTER ───────────────────────────────────────── */
+    footer{
+      background:var(--navy);color:#475569;
+      text-align:center;font-size:12px;padding:20px;
+    }
+
+    @media(max-width:760px){
+      .modules-grid{grid-template-columns:1fr}
+      .hero h2{font-size:26px}
+      .modules-section{padding:32px 20px 48px}
+      header{padding:0 20px}
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🏢</div>
+      <div class="brand-text">
+        <h1>Sistemas Empresariales</h1>
+        <p>Portal de acceso a módulos</p>
+      </div>
+    </div>
+    <div class="header-right">v2.0 · Plataforma Integrada</div>
+  </header>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="hero-dots">⬡</div>
+    <h2>Selecciona un módulo</h2>
+    <p>Accede a las herramientas disponibles según los permisos asignados a tu usuario en cada área.</p>
+  </div>
+
+  <!-- MODULES -->
+  <div class="modules-section">
+    <div class="section-label">Módulos disponibles</div>
+    <div class="modules-grid">
+
+      <!-- COMPRAS ✅ -->
+      <div class="mod-card active" style="--card-color:#1d4ed8" onclick="location.href='/compras'">
+        <div class="mod-header">
+          <div class="mod-icon">🛒</div>
+          <span class="mod-status status-active">● Activo</span>
+        </div>
+        <div>
+          <div class="mod-title">Gestión de Compras</div>
+          <div class="mod-desc">Administra el ciclo completo de compras: requisiciones, cotizaciones, órdenes de compra, facturas y pagos a proveedores.</div>
+        </div>
+        <div class="mod-features">
+          <span class="feat-pill">Requisiciones</span>
+          <span class="feat-pill">Cotizaciones</span>
+          <span class="feat-pill">Órdenes de compra</span>
+          <span class="feat-pill">Facturas</span>
+          <span class="feat-pill">Pagos</span>
+          <span class="feat-pill">Trazabilidad</span>
+        </div>
+        <div class="mod-footer">
+          <span class="mod-version">v1.0 · Módulo completo</span>
+          <a class="btn-enter" href="/compras">Ingresar →</a>
+        </div>
+      </div>
+
+      <!-- CALIDAD 🚧 -->
+      <div class="mod-card inactive" style="--card-color:#7c3aed">
+        <div class="mod-header">
+          <div class="mod-icon">📋</div>
+          <span class="mod-status status-dev">⏳ En desarrollo</span>
+        </div>
+        <div>
+          <div class="mod-title">Registros de Calidad</div>
+          <div class="mod-desc">Control y trazabilidad de procesos de calidad, no conformidades, auditorías internas y seguimiento de indicadores.</div>
+        </div>
+        <div class="mod-features">
+          <span class="feat-pill">No conformidades</span>
+          <span class="feat-pill">Auditorías</span>
+          <span class="feat-pill">Indicadores</span>
+          <span class="feat-pill">Certificaciones</span>
+        </div>
+        <div class="mod-footer">
+          <span class="mod-version">Próximamente</span>
+          <button class="btn-soon" disabled>🔒 Próximamente</button>
+        </div>
+      </div>
+
+      <!-- RHH 🚧 -->
+      <div class="mod-card inactive" style="--card-color:#0f766e">
+        <div class="mod-header">
+          <div class="mod-icon">👥</div>
+          <span class="mod-status status-dev">⏳ En desarrollo</span>
+        </div>
+        <div>
+          <div class="mod-title">Recursos Humanos</div>
+          <div class="mod-desc">Gestión de personal, nómina, expedientes, asistencia, vacaciones, evaluaciones de desempeño y organigrama.</div>
+        </div>
+        <div class="mod-features">
+          <span class="feat-pill">Expedientes</span>
+          <span class="feat-pill">Nómina</span>
+          <span class="feat-pill">Asistencia</span>
+          <span class="feat-pill">Vacaciones</span>
+          <span class="feat-pill">Evaluaciones</span>
+        </div>
+        <div class="mod-footer">
+          <span class="mod-version">Próximamente</span>
+          <button class="btn-soon" disabled>🔒 Próximamente</button>
+        </div>
+      </div>
+
+      <!-- MANTENIMIENTO 🚧 -->
+      <div class="mod-card inactive" style="--card-color:#b45309">
+        <div class="mod-header">
+          <div class="mod-icon">🔧</div>
+          <span class="mod-status status-dev">⏳ En desarrollo</span>
+        </div>
+        <div>
+          <div class="mod-title">Órdenes de Mantenimiento</div>
+          <div class="mod-desc">Registro y seguimiento de órdenes de mantenimiento preventivo y correctivo, activos, técnicos y bitácoras de intervención.</div>
+        </div>
+        <div class="mod-features">
+          <span class="feat-pill">OT preventivo</span>
+          <span class="feat-pill">OT correctivo</span>
+          <span class="feat-pill">Activos</span>
+          <span class="feat-pill">Bitácoras</span>
+        </div>
+        <div class="mod-footer">
+          <span class="mod-version">Próximamente</span>
+          <button class="btn-soon" disabled>🔒 Próximamente</button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer>
+    &copy; 2026 · Sistemas Empresariales Integrados · Todos los derechos reservados
+  </footer>
+
+</body>
+</html>

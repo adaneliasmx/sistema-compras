@@ -38,6 +38,20 @@ app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
+// Portal: raíz → portada de módulos
+app.get('/', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
+});
+
+// Módulo Compras: cualquier ruta bajo /compras → SPA de compras
+app.get('/compras', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
+});
+app.get('/compras/*', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
+});
+
+// Fallback para rutas legacy (hash routing no necesita esto, pero por compatibilidad)
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
 });
