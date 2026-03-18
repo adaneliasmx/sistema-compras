@@ -24,14 +24,15 @@ const MENU_BY_ROLE = {
     ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
   supervisor: [
+    ['lista-asistencia', '📋 Lista Asistencia'],
     ['calendario', '📅 Calendario'],
-    ['asignacion', '👥 Asignación'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['ausencias-hoy', '🚨 Ausencias Hoy'],
     ['mis-evaluaciones', '⭐ Mi Evaluación']
   ],
   rh: [
     ['dashboard', '📊 Dashboard'],
+    ['lista-asistencia', '📋 Lista Asistencia'],
     ['empleados', '👥 Empleados'],
     ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
@@ -46,6 +47,7 @@ const MENU_BY_ROLE = {
   ],
   admin: [
     ['dashboard', '📊 Dashboard'],
+    ['lista-asistencia', '📋 Lista Asistencia'],
     ['empleados', '👥 Empleados'],
     ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
@@ -3952,6 +3954,641 @@ async function saveDocTemplate() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// LISTA DE ASISTENCIA SEMANAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Estado de la vista ────────────────────────────────────────────────────────
+let attendanceWeekStart = null;
+let attendanceFilters = { area: '', project: '', shift: '' };
+let attendanceData = null;
+let totalsVisible = false;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function getMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString().slice(0, 10);
+}
+
+function getAttWeekNumber(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const jan4 = new Date(d.getFullYear(), 0, 4);
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const diff = d - startOfWeek1;
+  return Math.floor(diff / (7 * 24 * 60 * 60 * 1000)) + 1;
+}
+
+function fmtWeekLabel(startStr) {
+  const start = new Date(startStr + 'T12:00:00');
+  const end = new Date(startStr + 'T12:00:00');
+  end.setDate(end.getDate() + 6);
+  const wn = getAttWeekNumber(startStr);
+  const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const startLbl = `${start.getDate()} ${MONTHS_ES[start.getMonth()]}`;
+  const endLbl = `${end.getDate()} ${MONTHS_ES[end.getMonth()]} ${end.getFullYear()}`;
+  return `Semana ${wn} · ${startLbl} al ${endLbl}`;
+}
+
+function statusColor(status) {
+  const map = {
+    labora:      { bg: '#dcfce7', text: '#166534' },
+    festivo:     { bg: '#e0e7ff', text: '#3730a3' },
+    descanso:    { bg: '#f1f5f9', text: '#64748b' },
+    vacaciones:  { bg: '#dbeafe', text: '#1e40af' },
+    falta:       { bg: '#fee2e2', text: '#991b1b' },
+    retardo:     { bg: '#ffedd5', text: '#9a3412' },
+    cumpleanos:  { bg: '#f3e8ff', text: '#6b21a8' },
+    permiso:     { bg: '#fef9c3', text: '#854d0e' },
+    incapacidad: { bg: '#ede9fe', text: '#5b21b6' },
+    vacio:       { bg: '#e5e7eb', text: '#9ca3af' }
+  };
+  return map[status] || { bg: '#f3f4f6', text: '#6b7280' };
+}
+
+function statusLabel(status) {
+  const map = {
+    labora: 'Labora', festivo: 'FESTIVO', descanso: 'Descanso',
+    vacaciones: 'Vacaciones', falta: 'Falta', retardo: 'Retardo',
+    cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', incapacidad: 'Incapacidad',
+    vacio: ''
+  };
+  return map[status] !== undefined ? map[status] : status;
+}
+
+function attShiftColor(code) {
+  const map = { T1: '#1d4ed8', T2: '#0f766e', T3: '#7c3aed', T4: '#b45309' };
+  return map[code] || '#475569';
+}
+
+// ── Dropdown de estatus inline ─────────────────────────────────────────────────
+function openStatusDropdown(empId, date, currentStatus, cellEl) {
+  // Cerrar dropdowns previos
+  document.querySelectorAll('.status-dropdown').forEach(d => d.remove());
+
+  const options = [
+    { value: 'labora',     label: 'Labora',          bg: '#dcfce7', text: '#166534' },
+    { value: 'falta',      label: 'Falta',            bg: '#fee2e2', text: '#991b1b' },
+    { value: 'retardo',    label: 'Retardo',          bg: '#ffedd5', text: '#9a3412' },
+    { value: 'vacaciones', label: 'Vacaciones',       bg: '#dbeafe', text: '#1e40af' },
+    { value: 'permiso',    label: 'Permiso',          bg: '#fef9c3', text: '#854d0e' },
+    { value: 'descanso',   label: 'Descanso',         bg: '#f1f5f9', text: '#64748b' },
+    { value: 'festivo',    label: 'Festivo',          bg: '#e0e7ff', text: '#3730a3' },
+    { value: 'cumpleanos', label: 'CUMPLEAÑOS',       bg: '#f3e8ff', text: '#6b21a8' }
+  ];
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'status-dropdown';
+
+  options.forEach(opt => {
+    const item = document.createElement('div');
+    item.className = 'status-dropdown-item';
+    item.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${opt.bg};border:1px solid ${opt.text}22;"></span>${opt.label}`;
+    item.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.remove();
+      saveAttendance(empId, date, opt.value, cellEl);
+    });
+    dropdown.appendChild(item);
+  });
+
+  // Posicionar cerca de la celda
+  const rect = cellEl.getBoundingClientRect();
+  dropdown.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 280)}px`;
+  dropdown.style.left = `${Math.min(rect.left, window.innerWidth - 180)}px`;
+
+  document.body.appendChild(dropdown);
+
+  // Cerrar al click fuera
+  setTimeout(() => {
+    document.addEventListener('click', function closeDropdown() {
+      dropdown.remove();
+      document.removeEventListener('click', closeDropdown);
+    }, { once: true });
+  }, 0);
+}
+
+// ── Guardar asistencia ─────────────────────────────────────────────────────────
+async function saveAttendance(empId, date, status, cellEl) {
+  try {
+    const result = await api('/api/rhh/schedule/attendance', {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: empId, date, status })
+    });
+    if (!result) return;
+
+    // Actualizar celda en DOM
+    const colors = statusColor(status);
+    cellEl.style.background = colors.bg;
+    cellEl.style.color = colors.text;
+    // Preservar emoji cumpleaños
+    const bdaySpan = cellEl.querySelector('.bday-icon');
+    cellEl.textContent = statusLabel(status);
+    if (bdaySpan) cellEl.appendChild(bdaySpan);
+
+    // Actualizar cache en memoria
+    if (attendanceData) {
+      for (const sg of attendanceData.shifts) {
+        const emp = sg.employees.find(e => e.id === empId);
+        if (emp) {
+          const day = emp.days.find(d => d.date === date);
+          if (day) day.status = status;
+          break;
+        }
+      }
+    }
+
+    toast('Asistencia guardada');
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ── Modal solicitud TE ─────────────────────────────────────────────────────────
+function openTEModal(empId, date, empName) {
+  let modal = document.getElementById('te-modal-overlay');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'te-modal-overlay';
+    modal.className = 'te-modal-overlay';
+    modal.innerHTML = `
+      <div class="te-modal-box">
+        <h3>Solicitar Tiempo Extra</h3>
+        <div id="te-modal-empname" style="font-weight:600;margin-bottom:8px;color:#064e3b;"></div>
+        <div id="te-modal-dateshow" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
+        <label>Horas solicitadas</label>
+        <input id="te-modal-hours" type="number" min="0.5" max="24" step="0.5" placeholder="4" />
+        <label>Notas</label>
+        <textarea id="te-modal-notes" rows="2" placeholder="Motivo del tiempo extra..."></textarea>
+        <div class="te-modal-actions">
+          <button class="btn-ghost" onclick="closeTEModal()">Cancelar</button>
+          <button class="btn-primary" id="te-modal-confirm">Solicitar autorización</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  modal.dataset.empId = empId;
+  modal.dataset.date = date;
+  document.getElementById('te-modal-empname').textContent = empName;
+  document.getElementById('te-modal-dateshow').textContent = `Fecha: ${date}`;
+  document.getElementById('te-modal-hours').value = '';
+  document.getElementById('te-modal-notes').value = '';
+  modal.classList.add('open');
+
+  document.getElementById('te-modal-confirm').onclick = async () => {
+    const hours = parseFloat(document.getElementById('te-modal-hours').value);
+    const notes = document.getElementById('te-modal-notes').value;
+    if (!hours || hours <= 0) { toast('Ingresa las horas', 'warning'); return; }
+
+    // Buscar shift_id del empleado
+    let shiftId = null;
+    if (attendanceData) {
+      for (const sg of attendanceData.shifts) {
+        const emp = sg.employees.find(e => e.id === empId);
+        if (emp) { shiftId = sg.shift.id; break; }
+      }
+    }
+
+    try {
+      await api('/api/rhh/schedule/request-te', {
+        method: 'POST',
+        body: JSON.stringify({ employee_id: empId, date, shift_id: shiftId, te_hours: hours, notes })
+      });
+      toast('Solicitud de T.E. enviada');
+      closeTEModal();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+}
+
+function closeTEModal() {
+  const modal = document.getElementById('te-modal-overlay');
+  if (modal) modal.classList.remove('open');
+}
+
+// ── Click en celda TE ──────────────────────────────────────────────────────────
+function handleTEClick(empId, date, currentHours, empName, isLaborDay, cellEl) {
+  // Modo inline edit
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.min = '-24';
+  input.max = '24';
+  input.step = '0.5';
+  input.value = currentHours || '';
+  input.style.cssText = 'width:44px;text-align:center;border:1px solid #059669;border-radius:4px;font-size:12px;padding:2px 4px;';
+
+  cellEl.textContent = '';
+  cellEl.appendChild(input);
+  input.focus();
+
+  async function saveTE() {
+    const hours = parseFloat(input.value) || 0;
+    try {
+      await api('/api/rhh/schedule/attendance', {
+        method: 'POST',
+        body: JSON.stringify({ employee_id: empId, date, status: 'labora', te_hours: hours })
+      });
+      // Actualizar cache
+      if (attendanceData) {
+        for (const sg of attendanceData.shifts) {
+          const emp = sg.employees.find(e => e.id === empId);
+          if (emp) {
+            const day = emp.days.find(d => d.date === date);
+            if (day) { day.te_hours = hours; }
+            // Recalc total
+            const teTotal = emp.days.reduce((s, d) => s + (d.te_hours || 0), 0);
+            emp.totals.te_total = teTotal;
+            emp.totals.dias_pendientes = Math.round((teTotal / 8) * 100) / 100;
+            break;
+          }
+        }
+      }
+      cellEl.textContent = hours !== 0 ? hours : '';
+      if (hours < 0) cellEl.classList.add('te-negative');
+      else cellEl.classList.remove('te-negative');
+      toast('T.E. guardado');
+    } catch (err) {
+      cellEl.textContent = currentHours || '';
+      toast(err.message, 'error');
+    }
+  }
+
+  input.addEventListener('blur', saveTE);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { input.blur(); }
+    if (e.key === 'Escape') { cellEl.textContent = currentHours || ''; }
+  });
+}
+
+// ── Dropdown de puestos ────────────────────────────────────────────────────────
+function openPuestoDropdown(empId, cellEl, employee) {
+  document.querySelectorAll('.position-dropdown').forEach(d => d.remove());
+
+  const enabledIds = Array.isArray(employee.enabled_positions) ? employee.enabled_positions.map(Number) : [];
+  const allPositions = state.positions || [];
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'position-dropdown';
+
+  if (allPositions.length === 0) {
+    dropdown.innerHTML = '<div style="padding:8px;color:var(--muted);font-size:12px;">Sin puestos disponibles</div>';
+  } else {
+    allPositions.forEach(pos => {
+      const isEnabled = enabledIds.includes(pos.id);
+      const item = document.createElement('div');
+      item.className = 'position-dropdown-item';
+      item.innerHTML = `<span style="font-size:14px;">${isEnabled ? '✓' : '○'}</span><span>${pos.name}</span>`;
+      item.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        let newEnabled;
+        if (isEnabled) {
+          newEnabled = enabledIds.filter(id => id !== pos.id);
+        } else {
+          newEnabled = [...enabledIds, pos.id];
+        }
+        dropdown.remove();
+        try {
+          await api(`/api/rhh/employees/${empId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ enabled_positions: newEnabled })
+          });
+          employee.enabled_positions = newEnabled;
+          // Actualizar celda
+          const posName = newEnabled.length > 0
+            ? (allPositions.find(p => p.id === newEnabled[0])?.name || '—')
+            : '—';
+          cellEl.textContent = posName;
+          if (newEnabled.length === 0) cellEl.classList.add('no-position-warn');
+          else cellEl.classList.remove('no-position-warn');
+          toast('Puestos actualizados');
+        } catch (err) {
+          toast(err.message, 'error');
+        }
+      });
+      dropdown.appendChild(item);
+    });
+  }
+
+  const rect = cellEl.getBoundingClientRect();
+  dropdown.style.top = `${Math.min(rect.bottom + 4, window.innerHeight - 300)}px`;
+  dropdown.style.left = `${Math.min(rect.left, window.innerWidth - 220)}px`;
+  document.body.appendChild(dropdown);
+
+  setTimeout(() => {
+    document.addEventListener('click', function closePuesto() {
+      dropdown.remove();
+      document.removeEventListener('click', closePuesto);
+    }, { once: true });
+  }, 0);
+}
+
+// ── Modal + Festivo ────────────────────────────────────────────────────────────
+function openHolidayModal() {
+  let modal = document.getElementById('holiday-modal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'holiday-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:grid;place-items:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(360px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 16px;color:#3730a3;">+ Agregar festivo</h3>
+      <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Fecha</label>
+      <input id="hol-date" type="date" style="width:100%;margin-bottom:12px;" />
+      <label style="display:block;font-size:12px;font-weight:700;margin-bottom:4px;">Nombre del festivo</label>
+      <input id="hol-name" type="text" placeholder="Ej. Día de la Constitución" style="width:100%;" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn-ghost" onclick="document.getElementById('holiday-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="saveHoliday()">Guardar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function saveHoliday() {
+  const date = document.getElementById('hol-date')?.value;
+  const name = document.getElementById('hol-name')?.value?.trim();
+  if (!date || !name) { toast('Fecha y nombre son requeridos', 'warning'); return; }
+
+  try {
+    await api('/api/rhh/schedule/holidays', {
+      method: 'POST',
+      body: JSON.stringify({ date, name })
+    });
+    document.getElementById('holiday-modal')?.remove();
+    toast('Festivo agregado');
+    listaAsistenciaView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ── VISTA PRINCIPAL ────────────────────────────────────────────────────────────
+async function listaAsistenciaView() {
+  const el = document.getElementById('app');
+  if (!attendanceWeekStart) {
+    attendanceWeekStart = getMonday(new Date());
+  }
+
+  el.innerHTML = shell('<div class="loading-overlay">Cargando lista de asistencia...</div>', 'lista-asistencia');
+
+  try {
+    const data = await api(`/api/rhh/schedule/weekly-attendance?week_start=${attendanceWeekStart}`);
+    if (!data) return;
+    attendanceData = data;
+
+    // Recolectar valores únicos para filtros
+    const areas = [...new Set(
+      data.shifts.flatMap(sg => sg.employees.map(e => e.area)).filter(a => a && a !== '—')
+    )].sort();
+    const projects = [...new Set(
+      data.shifts.flatMap(sg => sg.employees.map(e => e.project)).filter(p => p && p !== '—')
+    )].sort();
+
+    const areaOpts = areas.map(a => `<option value="${a}" ${attendanceFilters.area===a?'selected':''}>${a}</option>`).join('');
+    const projOpts = projects.map(p => `<option value="${p}" ${attendanceFilters.project===p?'selected':''}>${p}</option>`).join('');
+    const shiftOpts = data.shifts.map(sg => `<option value="${sg.shift.code||sg.shift.name}" ${attendanceFilters.shift===(sg.shift.code||sg.shift.name)?'selected':''}>${sg.shift.name}</option>`).join('');
+
+    // Construir cabeceras de días
+    const dayHeaders = data.days.map(day => {
+      const holidayCls = day.is_holiday ? 'att-day-holiday-head' : '';
+      const holidayTip = day.is_holiday ? ` title="${day.holiday_name}"` : '';
+      return `
+        <th colspan="2" class="${holidayCls}"${holidayTip} style="text-align:center;min-width:150px;">
+          ${day.label}${day.is_holiday ? `<br><span style="font-size:10px;font-weight:700;">🎌 ${day.holiday_name}</span>` : ''}
+        </th>`;
+    }).join('');
+
+    const daySubHeaders = data.days.map(() =>
+      `<th style="text-align:center;min-width:90px;">Asistencia</th><th style="text-align:center;min-width:50px;">T.E.</th>`
+    ).join('');
+
+    // Construir filas
+    let rowsHtml = '';
+    for (const shiftGroup of data.shifts) {
+      const shiftCode = shiftGroup.shift.code || shiftGroup.shift.name || '?';
+      const shiftColor = attShiftColor(shiftCode);
+      const empCount = shiftGroup.employees.length;
+
+      // Filtrar empleados según filtros activos
+      const filtered = shiftGroup.employees.filter(emp => {
+        if (attendanceFilters.area && emp.area !== attendanceFilters.area) return false;
+        if (attendanceFilters.project && emp.project !== attendanceFilters.project) return false;
+        if (attendanceFilters.shift && (shiftGroup.shift.code || shiftGroup.shift.name) !== attendanceFilters.shift) return false;
+        return true;
+      });
+
+      if (filtered.length === 0) continue;
+
+      // Fila separadora de turno
+      const totalCols = 5 + data.days.length * 2 + 4; // 5 fijas + 14 días cols + 4 totales
+      rowsHtml += `
+        <tr class="shift-separator" style="--shift-color:${shiftColor};">
+          <td colspan="${totalCols}" class="col-name" style="color:#fff;font-size:12px;font-weight:800;letter-spacing:.5px;background:${shiftColor};">
+            ━━━ ${shiftGroup.shift.name} · ${empCount} empleado${empCount !== 1 ? 's' : ''}
+          </td>
+        </tr>`;
+
+      for (const emp of filtered) {
+        // Celda puesto
+        const hasPosWarn = !emp.enabled_positions || emp.enabled_positions.length === 0;
+        const posDisplay = hasPosWarn ? '⚠ Sin puesto' : (emp.position || '—');
+        const posCellCls = hasPosWarn ? 'col-position no-position-warn' : 'col-position';
+
+        // Celdas de días
+        let dayCells = '';
+        emp.days.forEach((day, di) => {
+          const colors = statusColor(day.status);
+          const label = statusLabel(day.status);
+          const editable = day.is_editable;
+          const editCls = editable ? 'att-cell' : 'att-cell no-editable';
+          const bdayIcon = day.birthday ? `<span class="bday-icon" style="font-size:13px;"> 🎂</span>` : '';
+          const clickHandler = editable
+            ? `onclick="openStatusDropdown(${emp.id},'${day.date}','${day.status}',this)"`
+            : '';
+
+          dayCells += `<td style="padding:2px 3px;">
+            <div class="${editCls}" data-empid="${emp.id}" data-date="${day.date}"
+              style="background:${colors.bg};color:${colors.text};"
+              ${clickHandler}>
+              ${label}${bdayIcon}
+            </div>
+          </td>`;
+
+          // Celda TE
+          const teVal = day.te_hours || 0;
+          const teCls = teVal < 0 ? 'te-cell te-negative' : 'te-cell';
+          dayCells += `<td style="padding:2px 3px;">
+            <div class="${teCls}" data-empid="${emp.id}" data-date="${day.date}"
+              onclick="handleTEClick(${emp.id},'${day.date}',${teVal},'${emp.full_name.replace(/'/g,"\\'")}',${editable},this)">
+              ${teVal !== 0 ? teVal : ''}
+            </div>
+          </td>`;
+        });
+
+        // Celdas de totales
+        const tot = emp.totals;
+        const totalsCls = totalsVisible ? 'col-total' : 'col-total hidden';
+        rowsHtml += `
+          <tr data-area="${emp.area}" data-project="${emp.project}" data-shift="${shiftGroup.shift.code||shiftGroup.shift.name}">
+            <td class="col-name" title="${emp.full_name}">${emp.full_name}</td>
+            <td class="col-area" style="font-size:11px;">${emp.area}</td>
+            <td class="col-project" style="font-size:11px;">${emp.project}</td>
+            <td class="${posCellCls}" onclick="openPuestoDropdown(${emp.id},this,${JSON.stringify(emp).replace(/"/g,'&quot;')})" title="Click para editar puestos">${posDisplay}</td>
+            <td class="col-shift" style="font-weight:800;color:${shiftColor};">${emp.shift_code}</td>
+            ${dayCells}
+            <td class="${totalsCls}" style="font-weight:700;color:#16a34a;">${tot.te_total || 0}h</td>
+            <td class="${totalsCls}">${tot.dias_pendientes}</td>
+            <td class="${totalsCls}" style="color:#1e40af;">${tot.vacaciones_restantes}</td>
+            <td class="${totalsCls}" style="color:#9a3412;">${tot.retardos_acumulados}</td>
+          </tr>`;
+      }
+    }
+
+    const totalCols = 5 + data.days.length * 2 + 4;
+    const totalsCls = totalsVisible ? 'col-total' : 'col-total hidden';
+
+    const content = `
+      <div class="module-title">
+        <h2>📋 Lista de Asistencia Semanal</h2>
+      </div>
+
+      <div class="attendance-controls">
+        <div class="att-week-nav">
+          <button class="btn-ghost" onclick="attNavWeek(-1)">‹ Semana anterior</button>
+          <span class="att-week-label">${fmtWeekLabel(attendanceWeekStart)}</span>
+          <button class="btn-ghost" onclick="attNavWeek(1)">Semana siguiente ›</button>
+          <button class="btn-ghost" style="font-size:12px;" onclick="attendanceWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px;">
+          <select onchange="attendanceFilters.area=this.value;applyAttFilters()" style="font-size:12px;padding:5px 8px;">
+            <option value="">Área: todas</option>${areaOpts}
+          </select>
+          <select onchange="attendanceFilters.project=this.value;applyAttFilters()" style="font-size:12px;padding:5px 8px;">
+            <option value="">Proyecto: todos</option>${projOpts}
+          </select>
+          <select onchange="attendanceFilters.shift=this.value;applyAttFilters()" style="font-size:12px;padding:5px 8px;">
+            <option value="">Turno: todos</option>${shiftOpts}
+          </select>
+          <button class="btn-toggle-totals" onclick="toggleTotals()">
+            ${totalsVisible ? '◀ Ocultar totales' : 'Expandir totales ▶'}
+          </button>
+          ${['rh','admin'].includes(state.user?.role) ? `<button class="btn-add-holiday" onclick="openHolidayModal()">🎌 + Festivo</button>` : ''}
+        </div>
+      </div>
+
+      <div class="attendance-wrap">
+        <table class="attendance-table" id="att-table">
+          <thead>
+            <tr>
+              <th class="col-name" rowspan="2">Nombre</th>
+              <th class="col-area" rowspan="2">Área</th>
+              <th class="col-project" rowspan="2">Proyecto</th>
+              <th class="col-position" rowspan="2">Puesto</th>
+              <th class="col-shift" rowspan="2">Turno</th>
+              ${dayHeaders}
+              <th class="${totalsCls}" rowspan="2">Total T.E.</th>
+              <th class="${totalsCls}" rowspan="2">Días pend.</th>
+              <th class="${totalsCls}" rowspan="2">Vacac. rest.</th>
+              <th class="${totalsCls}" rowspan="2">Retardos</th>
+            </tr>
+            <tr>
+              ${daySubHeaders}
+            </tr>
+          </thead>
+          <tbody>
+            ${rowsHtml || `<tr><td colspan="${totalCols}" style="text-align:center;padding:32px;color:var(--muted);">Sin empleados para mostrar</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="te-modal-overlay" id="te-modal-overlay">
+        <div class="te-modal-box">
+          <h3>Solicitar Tiempo Extra</h3>
+          <div id="te-modal-empname" style="font-weight:600;margin-bottom:8px;color:#064e3b;"></div>
+          <div id="te-modal-dateshow" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
+          <label>Horas solicitadas</label>
+          <input id="te-modal-hours" type="number" min="0.5" max="24" step="0.5" placeholder="4" />
+          <label>Notas</label>
+          <textarea id="te-modal-notes" rows="2" placeholder="Motivo del tiempo extra..."></textarea>
+          <div class="te-modal-actions">
+            <button class="btn-ghost" onclick="closeTEModal()">Cancelar</button>
+            <button class="btn-primary" id="te-modal-confirm">Solicitar autorización</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;">
+        <strong>Leyenda:</strong>
+        <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;">Labora</span>
+        <span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700;">Falta</span>
+        <span style="background:#ffedd5;color:#9a3412;padding:2px 8px;border-radius:4px;font-weight:700;">Retardo</span>
+        <span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-weight:700;">Vacaciones</span>
+        <span style="background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:4px;font-weight:700;">Permiso</span>
+        <span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:4px;font-weight:700;">Festivo</span>
+        <span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-weight:700;">Descanso</span>
+        <span style="background:#f3e8ff;color:#6b21a8;padding:2px 8px;border-radius:4px;font-weight:700;">Cumpleaños</span>
+        <span style="background:#e5e7eb;color:#9ca3af;padding:2px 8px;border-radius:4px;font-weight:700;">No opera</span>
+      </div>
+    `;
+
+    el.innerHTML = shell(content, 'lista-asistencia');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-asistencia');
+  }
+}
+
+function attNavWeek(offset) {
+  const d = new Date(attendanceWeekStart + 'T12:00:00');
+  d.setDate(d.getDate() + offset * 7);
+  attendanceWeekStart = d.toISOString().slice(0, 10);
+  listaAsistenciaView();
+}
+
+function toggleTotals() {
+  totalsVisible = !totalsVisible;
+  const cols = document.querySelectorAll('.col-total');
+  cols.forEach(c => c.classList.toggle('hidden', !totalsVisible));
+  const btn = document.querySelector('.btn-toggle-totals');
+  if (btn) btn.textContent = totalsVisible ? '◀ Ocultar totales' : 'Expandir totales ▶';
+}
+
+function applyAttFilters() {
+  // Los filtros son client-side: mostrar/ocultar filas según data-atributos
+  const table = document.getElementById('att-table');
+  if (!table) return;
+  const rows = table.querySelectorAll('tbody tr:not(.shift-separator)');
+  rows.forEach(row => {
+    const area = row.dataset.area || '';
+    const project = row.dataset.project || '';
+    const shift = row.dataset.shift || '';
+    let visible = true;
+    if (attendanceFilters.area && area !== attendanceFilters.area) visible = false;
+    if (attendanceFilters.project && project !== attendanceFilters.project) visible = false;
+    if (attendanceFilters.shift && shift !== attendanceFilters.shift) visible = false;
+    row.style.display = visible ? '' : 'none';
+  });
+  // Ocultar separadores de turno si todos sus hijos están ocultos
+  const separators = table.querySelectorAll('tbody tr.shift-separator');
+  separators.forEach(sep => {
+    let next = sep.nextElementSibling;
+    let hasVisible = false;
+    while (next && !next.classList.contains('shift-separator')) {
+      if (next.style.display !== 'none') { hasVisible = true; break; }
+      next = next.nextElementSibling;
+    }
+    sep.style.display = hasVisible ? '' : 'none';
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -3971,6 +4608,7 @@ function render() {
     dashboard: dashboardView,
     calendario: calendarioView,
     asignacion: asignacionView,
+    'lista-asistencia': listaAsistenciaView,
     empleados: empleadosView,
     incidencias: incidenciasView,
     autorizaciones: autorizacionesView,

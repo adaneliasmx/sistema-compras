@@ -252,5 +252,15 @@
       "variables": ["nombre","rfc","curp","nss","puesto","departamento","fecha_ingreso","salario_diario","fecha_actual"],
       "created_at": "2026-01-01T00:00:00.000Z"
     }
+  ],
+  "rhh_attendance": [],
+  "rhh_holidays": [
+    { "id": 1, "date": "2026-01-01", "name": "Año Nuevo", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 2, "date": "2026-02-02", "name": "Día de la Constitución", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 3, "date": "2026-03-16", "name": "Natalicio de Juárez", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 4, "date": "2026-05-01", "name": "Día del Trabajo", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 5, "date": "2026-09-16", "name": "Independencia", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 6, "date": "2026-11-02", "name": "Día de Muertos", "created_at": "2026-01-01T00:00:00.000Z" },
+    { "id": 7, "date": "2026-12-25", "name": "Navidad", "created_at": "2026-01-01T00:00:00.000Z" }
   ]
 }
