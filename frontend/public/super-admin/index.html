@@ -363,11 +363,19 @@ function renderModulePanel(m) {
   } else {
     const roleLabels = m.id === 'compras' ? ROLE_LABELS_COMPRAS : ROLE_LABELS_RHH;
     const module = m.id;
+    const roleOptions = Object.entries(roleLabels)
+      .map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
     const rows = m.users.map(u => `
       <tr>
         <td><b>${u.name}</b></td>
         <td style="font-size:12px;color:#64748b">${u.email}</td>
-        <td><span class="role-badge">${roleLabels[u.role] || u.role}</span></td>
+        <td>
+          <select class="role-select" data-module="${module}" data-id="${u.id}"
+            style="font-size:12px;padding:3px 6px;border-radius:7px;border:1.5px solid #e2e8f0;background:#f8fafc;font-weight:700;color:#173b90;cursor:pointer"
+            onchange="changeRole('${module}', ${u.id}, this.value, this)">
+            ${roleOptions.replace(`value="${u.role}"`, `value="${u.role}" selected`)}
+          </select>
+        </td>
         <td><span class="status-dot ${u.active ? 'dot-green' : 'dot-red'}"></span>${u.active ? 'Activo' : 'Inactivo'}</td>
         <td>
           <button class="btn-sm ${u.active ? 'btn-disable' : 'btn-enable'}"
@@ -409,6 +417,23 @@ async function toggleUser(module, userId, active) {
     await api(`/api/super-admin/${module}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
     loadModules();
   } catch(e) { alert(e.message); }
+}
+
+async function changeRole(module, userId, newRole, selectEl) {
+  const prev = selectEl.dataset.prev || selectEl.value;
+  selectEl.dataset.prev = newRole;
+  const field = module === 'compras' ? 'role_code' : 'role';
+  try {
+    selectEl.style.borderColor = '#f59e0b';
+    await api(`/api/super-admin/${module}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ [field]: newRole }) });
+    selectEl.style.borderColor = '#22c55e';
+    setTimeout(() => { selectEl.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    selectEl.value = prev;
+    selectEl.style.borderColor = '#ef4444';
+    setTimeout(() => { selectEl.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
 }
 
 // Cerrar modal al hacer clic fuera
