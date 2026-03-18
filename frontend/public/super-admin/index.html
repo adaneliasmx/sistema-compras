@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Super Administrador · Portal Empresarial</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    :root{--navy:#0f172a;--navy2:#1e293b;--purple:#7c3aed;--blue:#1d4ed8;--text:#1f2937;--muted:#64748b;--line:#e2e8f0;--bg:#f0f4f8}
+    body{min-height:100vh;background:var(--bg);color:var(--text)}
+
+    /* LOGIN */
+    #loginScreen{min-height:100vh;display:grid;place-items:center;background:linear-gradient(135deg,var(--navy) 0%,#1e1b4b 100%);padding:24px}
+    .login-box{background:#fff;border-radius:20px;padding:36px;width:min(420px,100%);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+    .login-logo{text-align:center;margin-bottom:24px}
+    .login-logo .icon{font-size:48px;display:block;margin-bottom:8px}
+    .login-logo h2{font-size:20px;font-weight:800;color:var(--navy)}
+    .login-logo p{font-size:13px;color:var(--muted);margin-top:4px}
+    .badge-restricted{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin-top:6px}
+    label{display:block;margin:14px 0 5px;font-weight:700;font-size:13px;color:var(--text)}
+    input{width:100%;padding:11px 13px;border-radius:11px;border:1.5px solid var(--line);font-size:14px;background:#fff;color:var(--text);outline:none}
+    input:focus{border-color:var(--purple)}
+    .btn-login{width:100%;margin-top:20px;padding:13px;border-radius:12px;font-size:15px;font-weight:800;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer;transition:filter .15s}
+    .btn-login:hover{filter:brightness(1.1)}
+    .err{color:#dc2626;font-size:13px;margin-top:10px;text-align:center;min-height:18px}
+    .back-link{display:block;text-align:center;margin-top:16px;font-size:13px;color:var(--muted);text-decoration:none}
+    .back-link:hover{color:var(--purple)}
+
+    /* APP */
+    #appScreen{display:none}
+    header{background:var(--navy);color:#fff;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;box-shadow:0 2px 10px rgba(0,0,0,.2)}
+    .h-brand{display:flex;align-items:center;gap:12px}
+    .h-icon{width:36px;height:36px;border-radius:9px;background:linear-gradient(135deg,var(--purple),var(--blue));display:grid;place-items:center;font-size:18px}
+    .h-title{font-size:16px;font-weight:800}
+    .h-sub{font-size:11px;color:#94a3b8;margin-top:1px}
+    .h-right{display:flex;align-items:center;gap:14px}
+    .h-user{font-size:13px;color:#94a3b8}
+    .btn-logout{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:rgba(255,255,255,.08);color:#cbd5e1;border:1px solid rgba(255,255,255,.12);cursor:pointer}
+    .btn-portal{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:rgba(124,58,237,.3);color:#c4b5fd;border:1px solid rgba(124,58,237,.4);cursor:pointer;text-decoration:none}
+
+    main{padding:32px;max-width:1200px;margin:0 auto}
+    .page-title{font-size:22px;font-weight:800;margin-bottom:6px}
+    .page-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+
+    /* MODULE PANELS */
+    .modules-wrap{display:grid;gap:24px}
+    .module-panel{background:#fff;border-radius:16px;border:1px solid var(--line);box-shadow:0 2px 12px rgba(0,0,0,.05);overflow:hidden}
+    .module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
+    .module-header-left{display:flex;align-items:center;gap:14px}
+    .mod-h-icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:22px;flex-shrink:0}
+    .module-header h3{font-size:16px;font-weight:800;margin-bottom:3px}
+    .mod-meta{font-size:12px;color:var(--muted)}
+    .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
+    .pill-active{background:#dcfce7;color:#15803d}
+    .pill-dev{background:#fef3c7;color:#b45309}
+    .toggle-icon{font-size:18px;color:var(--muted);transition:transform .2s}
+    .module-body{display:none;padding:0 22px 18px}
+    .module-body.open{display:block}
+
+    /* USERS TABLE */
+    table{width:100%;border-collapse:collapse;margin-top:12px}
+    th,td{padding:9px 10px;text-align:left;font-size:13px;border-bottom:1px solid var(--line)}
+    th{background:#f8fafc;font-weight:700;font-size:12px;color:var(--muted)}
+    .role-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#e8eefc;color:#173b90}
+    .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
+    .dot-green{background:#22c55e}.dot-red{background:#ef4444}
+    .btn-sm{padding:4px 10px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:0}
+    .btn-disable{background:#fee2e2;color:#dc2626}
+    .btn-enable{background:#dcfce7;color:#15803d}
+    .dev-notice{text-align:center;padding:24px;color:var(--muted);font-size:13px}
+    .dev-notice span{font-size:32px;display:block;margin-bottom:8px}
+  </style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">
+      <span class="icon">⚙️</span>
+      <h2>Super Administrador</h2>
+      <p>Control total de módulos y usuarios</p>
+      <span class="badge-restricted">🔐 Acceso restringido</span>
+    </div>
+    <label>Correo electrónico</label>
+    <input type="email" id="saEmail" placeholder="aelias@cuesto.com.mx"/>
+    <label>Contraseña</label>
+    <input type="password" id="saPass" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button class="btn-login" onclick="doLogin()">Ingresar al panel</button>
+    <div class="err" id="loginErr"></div>
+    <a href="/" class="back-link">← Volver al portal</a>
+  </div>
+</div>
+
+<!-- APP -->
+<div id="appScreen">
+  <header>
+    <div class="h-brand">
+      <div class="h-icon">⚙️</div>
+      <div>
+        <div class="h-title">Super Administrador</div>
+        <div class="h-sub">Panel de control global</div>
+      </div>
+    </div>
+    <div class="h-right">
+      <span class="h-user" id="saUserName"></span>
+      <a class="btn-portal" href="/">← Portal</a>
+      <button class="btn-logout" onclick="logout()">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="page-title">Panel de módulos</div>
+    <div class="page-sub">Gestión de usuarios y accesos por módulo. Click en cada módulo para expandir.</div>
+    <div class="modules-wrap" id="modulesWrap">
+      <div style="text-align:center;padding:48px;color:#94a3b8">Cargando módulos...</div>
+    </div>
+  </main>
+</div>
+
+<script>
+const TOKEN_KEY = 'sa_token';
+
+async function api(url, opts = {}) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) }
+  });
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
+  return res.json();
+}
+
+async function doLogin() {
+  const email = document.getElementById('saEmail').value.trim();
+  const pass = document.getElementById('saPass').value;
+  const errEl = document.getElementById('loginErr');
+  errEl.textContent = '';
+  try {
+    const data = await api('/api/super-admin/login', { method: 'POST', body: JSON.stringify({ email, password: pass }) });
+    localStorage.setItem(TOKEN_KEY, data.token);
+    showApp(data.name);
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+function logout() {
+  localStorage.removeItem(TOKEN_KEY);
+  document.getElementById('loginScreen').style.display = 'grid';
+  document.getElementById('appScreen').style.display = 'none';
+}
+
+function showApp(name) {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  document.getElementById('saUserName').textContent = name || '';
+  loadModules();
+}
+
+const MODULE_COLORS = { compras: '#1d4ed8', rhh: '#0f766e', calidad: '#7c3aed', mantenimiento: '#b45309' };
+const ROLE_LABELS_COMPRAS = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
+const ROLE_LABELS_RHH = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+
+async function loadModules() {
+  const wrap = document.getElementById('modulesWrap');
+  try {
+    const { modules } = await api('/api/super-admin/overview');
+    wrap.innerHTML = modules.map(m => renderModulePanel(m)).join('');
+    // Toggle expand
+    wrap.querySelectorAll('.module-header').forEach(hdr => {
+      hdr.onclick = () => {
+        const body = hdr.nextElementSibling;
+        const icon = hdr.querySelector('.toggle-icon');
+        body.classList.toggle('open');
+        icon.style.transform = body.classList.contains('open') ? 'rotate(180deg)' : '';
+      };
+    });
+  } catch(e) { wrap.innerHTML = `<div style="color:#dc2626;padding:24px">${e.message}</div>`; }
+}
+
+function renderModulePanel(m) {
+  const color = MODULE_COLORS[m.id] || '#64748b';
+  const pill = m.status === 'active'
+    ? '<span class="pill pill-active">● Activo</span>'
+    : '<span class="pill pill-dev">⏳ En desarrollo</span>';
+
+  let bodyContent = '';
+  if (m.status === 'development') {
+    bodyContent = `<div class="dev-notice"><span>🚧</span>Este módulo está en desarrollo. No hay usuarios que gestionar aún.</div>`;
+  } else {
+    const roleLabels = m.id === 'compras' ? ROLE_LABELS_COMPRAS : ROLE_LABELS_RHH;
+    const module = m.id;
+    const rows = m.users.map(u => `
+      <tr>
+        <td><b>${u.name}</b></td>
+        <td style="font-size:12px;color:#64748b">${u.email}</td>
+        <td><span class="role-badge">${roleLabels[u.role] || u.role}</span></td>
+        <td><span class="status-dot ${u.active ? 'dot-green' : 'dot-red'}"></span>${u.active ? 'Activo' : 'Inactivo'}</td>
+        <td>
+          <button class="btn-sm ${u.active ? 'btn-disable' : 'btn-enable'}"
+            onclick="toggleUser('${module}', ${u.id}, ${!u.active})">
+            ${u.active ? 'Deshabilitar' : 'Habilitar'}
+          </button>
+        </td>
+      </tr>`).join('');
+
+    bodyContent = `
+      <table>
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5" style="color:#94a3b8;text-align:center;padding:16px">Sin usuarios</td></tr>'}</tbody>
+      </table>
+      ${m.url ? `<div style="margin-top:12px"><a href="${m.url}" target="_blank" style="font-size:13px;color:${color};font-weight:700">Ir al módulo →</a></div>` : ''}`;
+  }
+
+  return `
+    <div class="module-panel">
+      <div class="module-header">
+        <div class="module-header-left">
+          <div class="mod-h-icon" style="background:color-mix(in srgb,${color} 12%,#fff)">${m.icon}</div>
+          <div>
+            <h3>${m.name} ${pill}</h3>
+            <div class="mod-meta">${m.total_users} usuario${m.total_users !== 1 ? 's' : ''} registrados</div>
+          </div>
+        </div>
+        <span class="toggle-icon">▾</span>
+      </div>
+      <div class="module-body">${bodyContent}</div>
+    </div>`;
+}
+
+async function toggleUser(module, userId, active) {
+  try {
+    await api(`/api/super-admin/${module}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
+    loadModules();
+  } catch(e) { alert(e.message); }
+}
+
+// Auto-login si hay token
+(async () => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    try {
+      const me = await api('/api/super-admin/me');
+      showApp(me.name);
+    } catch { localStorage.removeItem(TOKEN_KEY); }
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,349 @@
+/* ── RHH Module Styles ────────────────────────────────────────────────────── */
+:root {
+  --rhh-sidebar: #064e3b;
+  --rhh-sidebar-hover: rgba(255,255,255,0.12);
+  --rhh-accent: #059669;
+  --rhh-accent-light: #d1fae5;
+  --rhh-accent-dark: #047857;
+}
+
+/* Override sidebar color for RHH */
+.rhh-layout .sidebar {
+  background: var(--rhh-sidebar);
+}
+
+.rhh-layout .brand {
+  color: #d1fae5;
+}
+
+.rhh-layout .nav a {
+  color: #a7f3d0;
+}
+
+.rhh-layout .nav a.active,
+.rhh-layout .nav a:hover {
+  background: var(--rhh-sidebar-hover);
+  color: #fff;
+}
+
+.rhh-layout .sidebar-footer {
+  padding: 12px 10px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  margin-top: 8px;
+}
+
+.rhh-layout .sidebar-footer a {
+  display: block;
+  color: #6ee7b7;
+  text-decoration: none;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.rhh-layout .sidebar-footer a:hover {
+  background: var(--rhh-sidebar-hover);
+  color: #fff;
+}
+
+/* Calendar styles */
+.cal-week-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.cal-week-table th {
+  background: #f0fdf4;
+  padding: 8px 6px;
+  border-bottom: 2px solid #d1fae5;
+  text-align: center;
+  font-size: 12px;
+}
+
+.cal-week-table td {
+  padding: 6px;
+  border: 1px solid var(--line);
+  vertical-align: top;
+  min-width: 90px;
+}
+
+.cal-week-table tr:hover td {
+  background: #f9fafb;
+}
+
+.cell-chip {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cell-asignado { background: #d1fae5; color: #065f46; }
+.cell-falta { background: #fee2e2; color: #991b1b; }
+.cell-vacacion { background: #fef9c3; color: #854d0e; }
+.cell-permiso { background: #fef9c3; color: #854d0e; }
+.cell-incapacidad { background: #ede9fe; color: #5b21b6; }
+.cell-tiempo_extra { background: #dbeafe; color: #1e40af; }
+.cell-no_laboral { background: #f3f4f6; color: #9ca3af; }
+
+/* Month calendar */
+.month-cal {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.month-cal-header {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  padding: 4px;
+}
+
+.month-cal-day {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  min-height: 64px;
+  font-size: 12px;
+  position: relative;
+}
+
+.month-cal-day.today {
+  border-color: var(--rhh-accent);
+  background: #f0fdf4;
+}
+
+.month-cal-day.empty {
+  background: #f9fafb;
+  border-color: transparent;
+}
+
+.month-cal-day .day-num {
+  font-weight: 700;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.month-cal-day.today .day-num {
+  color: var(--rhh-accent);
+}
+
+.month-cal-day .day-chips {
+  margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* KPI card accent */
+.kpi-rhh {
+  border-left: 4px solid var(--rhh-accent);
+}
+
+/* Status pills */
+.pill.aprobada { background: #d1fae5; color: #065f46; }
+.pill.pendiente { background: #fef9c3; color: #854d0e; }
+.pill.rechazada { background: #fee2e2; color: #991b1b; }
+.pill.active { background: #d1fae5; color: #065f46; }
+.pill.inactive { background: #e5e7eb; color: #374151; }
+
+/* Nav week controls */
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.week-nav button {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.week-nav button:hover {
+  background: #f0fdf4;
+  border-color: var(--rhh-accent);
+}
+
+.week-label {
+  font-weight: 700;
+  color: var(--text);
+  min-width: 200px;
+  text-align: center;
+}
+
+/* Incidence type pills */
+.type-falta { background: #fee2e2; color: #991b1b; }
+.type-vacacion { background: #dbeafe; color: #1e40af; }
+.type-permiso { background: #fef9c3; color: #854d0e; }
+.type-incapacidad { background: #ede9fe; color: #5b21b6; }
+.type-tiempo_extra { background: #d1fae5; color: #065f46; }
+.type-cumpleanos { background: #fce7f3; color: #9d174d; }
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 18px;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  border-bottom: 3px solid transparent;
+  padding: 10px 18px;
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: -2px;
+  border-radius: 0;
+}
+
+.tab-btn.active {
+  color: var(--rhh-accent);
+  border-bottom-color: var(--rhh-accent);
+}
+
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  margin-bottom: 16px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.filter-bar label {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.filter-bar select,
+.filter-bar input {
+  width: auto;
+  min-width: 140px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* Shift color dot */
+.shift-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+
+/* Coverage indicator */
+.coverage-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.coverage-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--rhh-accent);
+  transition: width 0.3s;
+}
+
+/* Form sections */
+.form-section {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.form-section h3 {
+  color: var(--rhh-accent);
+  margin-bottom: 16px;
+  font-size: 15px;
+}
+
+/* Prenomina table */
+.prenomina-table th {
+  background: #f0fdf4;
+}
+
+/* Empty state */
+.empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: var(--muted);
+}
+
+.empty-state .empty-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+/* Toast notifications */
+#rhh-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.toast {
+  background: #1f2937;
+  color: #fff;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 14px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  animation: slideIn 0.2s ease;
+  max-width: 320px;
+}
+
+.toast.success { background: #065f46; }
+.toast.error { background: #991b1b; }
+.toast.warning { background: #854d0e; }
+
+@keyframes slideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* Loading */
+.loading-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 768px) {
+  .cal-week-table { font-size: 11px; }
+  .month-cal { grid-template-columns: repeat(7, 1fr); gap: 2px; }
+  .month-cal-day { min-height: 44px; padding: 3px; }
+  .filter-bar { flex-direction: column; }
+  .filter-bar select, .filter-bar input { min-width: unset; width: 100%; }
+}

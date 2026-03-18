@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 
+// ── Módulo Compras ────────────────────────────────────────────────────────────
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const catalogsRoutes = require('./routes/catalogs');
@@ -15,7 +16,19 @@ const approvalsRoutes = require('./routes/approvals');
 const exportsRoutes = require('./routes/exports');
 const notificationsRoutes = require('./routes/notifications');
 
+// ── Super Admin ───────────────────────────────────────────────────────────────
+const superAdminRoutes = require('./routes/super-admin');
+
+// ── Módulo RHH ────────────────────────────────────────────────────────────────
+const rhhAuthRoutes = require('./routes/rhh-auth');
+const rhhEmployeesRoutes = require('./routes/rhh-employees');
+const rhhCatalogsRoutes = require('./routes/rhh-catalogs');
+const rhhScheduleRoutes = require('./routes/rhh-schedule');
+const rhhIncidencesRoutes = require('./routes/rhh-incidences');
+const rhhDashboardRoutes = require('./routes/rhh-dashboard');
+
 const { initDb } = require('./db');
+const { initDb: initRhhDb } = require('./db-rhh');
 
 const app = express();
 app.use(cors());
@@ -24,7 +37,10 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
 app.use(express.static(path.resolve(process.cwd(), 'frontend/public')));
 
+// ── API Health ────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, now: new Date().toISOString() }));
+
+// ── API Compras ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/catalogs', catalogsRoutes);
@@ -38,12 +54,24 @@ app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
-// Portal: raíz → portada de módulos
+// ── API Super Admin ───────────────────────────────────────────────────────────
+app.use('/api/super-admin', superAdminRoutes);
+
+// ── API RHH ───────────────────────────────────────────────────────────────────
+app.use('/api/rhh/auth', rhhAuthRoutes);
+app.use('/api/rhh/employees', rhhEmployeesRoutes);
+app.use('/api/rhh/catalogs', rhhCatalogsRoutes);
+app.use('/api/rhh/schedule', rhhScheduleRoutes);
+app.use('/api/rhh/incidences', rhhIncidencesRoutes);
+app.use('/api/rhh/dashboard', rhhDashboardRoutes);
+
+// ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
+// Portal principal
 app.get('/', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
 });
 
-// Módulo Compras: cualquier ruta bajo /compras → SPA de compras
+// Módulo Compras
 app.get('/compras', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
 });
@@ -51,14 +79,30 @@ app.get('/compras/*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
 });
 
-// Fallback para rutas legacy (hash routing no necesita esto, pero por compatibilidad)
+// Super Admin panel
+app.get('/super-admin', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/super-admin/index.html'));
+});
+app.get('/super-admin/*', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/super-admin/index.html'));
+});
+
+// Módulo RHH
+app.get('/rhh', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/rhh/index.html'));
+});
+app.get('/rhh/*', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/rhh/index.html'));
+});
+
+// Fallback
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
 });
 
 const port = Number(process.env.PORT || 3000);
 
-initDb()
+Promise.all([initDb(), initRhhDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);

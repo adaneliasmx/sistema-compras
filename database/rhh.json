@@ -1,0 +1,129 @@
+{
+  "rhh_users": [
+    {
+      "id": 1,
+      "full_name": "Administrador RHH",
+      "email": "admin.rhh@empresa.com",
+      "password_hash": "$2a$10$n5DoR4OD3iV3FacLoG.He.sxw/7sW6giWGwj6BWhIo/AaJB5wKh.q",
+      "role": "admin",
+      "employee_id": null,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "full_name": "Ana López",
+      "email": "rh@empresa.com",
+      "password_hash": "$2a$10$pjX8LIPRjV/2Nz8a/Yl7cOJeEWlPxpOTgJPPY2FWOqaxWEyl0DPMK",
+      "role": "rh",
+      "employee_id": 1,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "full_name": "Carlos Supervisor",
+      "email": "supervisor@empresa.com",
+      "password_hash": "$2a$10$lzIWUn3XnRFK2NqI0kLyPeVU5r6CiszFumH16xnzfkP/QMYeMoxxK",
+      "role": "supervisor",
+      "employee_id": 2,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "full_name": "María Empleado",
+      "email": "empleado@empresa.com",
+      "password_hash": "$2a$10$OspucwuwxyCrcRMfdGFjs.nhwI4mYnnBe8ZtQuMh2LHM6/O/qsShi",
+      "role": "empleado",
+      "employee_id": 3,
+      "active": true,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "rhh_employees": [
+    {
+      "id": 1,
+      "employee_number": "EMP-001",
+      "full_name": "Ana López",
+      "email": "rh@empresa.com",
+      "phone": "555-0001",
+      "department_id": 1,
+      "position_id": 1,
+      "shift_id": 4,
+      "supervisor_id": null,
+      "start_date": "2024-01-15",
+      "birth_date": "1990-03-22",
+      "status": "active",
+      "contract_type": "indefinido",
+      "base_salary": 18000,
+      "photo": null,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "employee_number": "EMP-002",
+      "full_name": "Carlos Supervisor",
+      "email": "supervisor@empresa.com",
+      "phone": "555-0002",
+      "department_id": 2,
+      "position_id": 2,
+      "shift_id": 1,
+      "supervisor_id": null,
+      "start_date": "2023-06-01",
+      "birth_date": "1985-07-10",
+      "status": "active",
+      "contract_type": "indefinido",
+      "base_salary": 22000,
+      "photo": null,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "employee_number": "EMP-003",
+      "full_name": "María Empleado",
+      "email": "empleado@empresa.com",
+      "phone": "555-0003",
+      "department_id": 2,
+      "position_id": 3,
+      "shift_id": 1,
+      "supervisor_id": 2,
+      "start_date": "2025-02-10",
+      "birth_date": "1998-12-05",
+      "status": "active",
+      "contract_type": "indefinido",
+      "base_salary": 14000,
+      "photo": null,
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "rhh_departments": [
+    {"id": 1, "name": "Recursos Humanos", "code": "RH", "manager_id": 1},
+    {"id": 2, "name": "Producción", "code": "PROD", "manager_id": 2},
+    {"id": 3, "name": "Mantenimiento", "code": "MANT", "manager_id": null},
+    {"id": 4, "name": "Administración", "code": "ADMIN", "manager_id": null}
+  ],
+  "rhh_positions": [
+    {"id": 1, "name": "Especialista RH", "department_id": 1, "level": 3},
+    {"id": 2, "name": "Supervisor de Producción", "department_id": 2, "level": 4},
+    {"id": 3, "name": "Operador", "department_id": 2, "level": 2},
+    {"id": 4, "name": "Técnico de Mantenimiento", "department_id": 3, "level": 3},
+    {"id": 5, "name": "Auxiliar Administrativo", "department_id": 4, "level": 2}
+  ],
+  "rhh_shifts": [
+    {"id": 1, "name": "Turno 1", "code": "T1", "start_time": "06:30", "end_time": "14:30", "work_days": [1,2,3,4,5,6], "color": "#1d4ed8"},
+    {"id": 2, "name": "Turno 2", "code": "T2", "start_time": "14:30", "end_time": "21:30", "work_days": [1,2,3,4,5,6], "color": "#0f766e"},
+    {"id": 3, "name": "Turno 3", "code": "T3", "start_time": "21:30", "end_time": "06:30", "work_days": [1,2,3,4,5], "color": "#7c3aed"},
+    {"id": 4, "name": "Administrativo", "code": "ADM", "start_time": "09:00", "end_time": "17:00", "work_days": [1,2,3,4,5], "color": "#b45309"}
+  ],
+  "rhh_schedule": [],
+  "rhh_incidences": [],
+  "rhh_overtime": [],
+  "rhh_vacation_requests": [],
+  "rhh_documents": [],
+  "rhh_trainings": [],
+  "rhh_training_records": [],
+  "rhh_evaluations": [],
+  "rhh_uniforms": [],
+  "rhh_uniform_assignments": []
+}

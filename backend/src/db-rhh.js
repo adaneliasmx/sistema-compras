@@ -1,0 +1,105 @@
+const fs = require('fs');
+const path = require('path');
+
+// ── JSON fallback (desarrollo local) ──────────────────────────────────────────
+const dbPath = path.resolve(process.cwd(), process.env.DB_RHH_PATH || './database/rhh.json');
+
+// ── PostgreSQL (producción en Render) ─────────────────────────────────────────
+let pool = null;
+if (process.env.DATABASE_URL) {
+  const { Pool } = require('pg');
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+  });
+}
+
+// ── Caché en memoria ──────────────────────────────────────────────────────────
+let _cache = null;
+
+const EMPTY_DB = {
+  rhh_users: [],
+  rhh_employees: [],
+  rhh_departments: [],
+  rhh_positions: [],
+  rhh_shifts: [],
+  rhh_schedule: [],
+  rhh_incidences: [],
+  rhh_overtime: [],
+  rhh_vacation_requests: [],
+  rhh_documents: [],
+  rhh_trainings: [],
+  rhh_training_records: [],
+  rhh_evaluations: [],
+  rhh_uniforms: [],
+  rhh_uniform_assignments: []
+};
+
+// Inicializa la base de datos (llamar una vez al arrancar el servidor)
+async function initDb() {
+  if (pool) {
+    // ── Modo PostgreSQL ──────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS rhh_data (
+        id   INT PRIMARY KEY DEFAULT 1,
+        data JSONB NOT NULL
+      )
+    `);
+    const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
+    if (rows.length === 0) {
+      let seed = { ...EMPTY_DB };
+      if (fs.existsSync(dbPath)) {
+        try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
+        console.log('[db-rhh] Migrando datos de JSON a PostgreSQL...');
+      }
+      _cache = seed;
+      await pool.query(
+        'INSERT INTO rhh_data(id, data) VALUES(1, $1)',
+        [JSON.stringify(seed)]
+      );
+      console.log('[db-rhh] PostgreSQL inicializado con datos seed.');
+    } else {
+      _cache = rows[0].data;
+      console.log('[db-rhh] Datos cargados desde PostgreSQL.');
+    }
+  } else {
+    // ── Modo JSON local ──────────────────────────────────────────────────────
+    if (!fs.existsSync(dbPath)) {
+      fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+      fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
+    }
+    _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    console.log('[db-rhh] Datos cargados desde JSON local:', dbPath);
+  }
+}
+
+// Lee el estado actual (síncrono, usa caché)
+function read() {
+  if (!_cache) {
+    if (!fs.existsSync(dbPath)) return { ...EMPTY_DB };
+    _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  }
+  return _cache;
+}
+
+// Escribe y persiste (actualiza caché + persiste en background)
+function write(data) {
+  _cache = data;
+  if (pool) {
+    pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(data)])
+      .catch(err => console.error('[db-rhh] Error persistiendo en PostgreSQL:', err.message));
+  } else {
+    try {
+      fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+    } catch (err) {
+      console.error('[db-rhh] Error escribiendo JSON:', err.message);
+    }
+  }
+}
+
+function nextId(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return 1;
+  return Math.max(...rows.map(x => Number(x.id) || 0)) + 1;
+}
+
+module.exports = { dbPath, read, write, nextId, initDb };
