@@ -107,6 +107,57 @@ router.patch('/compras/users/:id', superAdminRequired, (req, res) => {
   res.json({ ok: true, user });
 });
 
+// Crear usuario en compras
+router.post('/compras/users', superAdminRequired, (req, res) => {
+  const { full_name, email, password, role_code, department } = req.body || {};
+  if (!full_name || !email || !password || !role_code)
+    return res.status(400).json({ error: 'Nombre, correo, contraseña y rol son requeridos' });
+  const db = readCompras();
+  const { write } = require('../db');
+  const { nextId } = require('../db');
+  if ((db.users || []).find(u => u.email?.toLowerCase() === email.toLowerCase()))
+    return res.status(400).json({ error: 'Ya existe un usuario con ese correo' });
+  const user = {
+    id: nextId(db.users),
+    full_name,
+    email: email.toLowerCase(),
+    password_hash: bcrypt.hashSync(String(password), 10),
+    role_code,
+    department: department || '',
+    supplier_id: null,
+    default_cost_center_id: null,
+    default_sub_cost_center_id: null,
+    active: true
+  };
+  db.users = [...(db.users || []), user];
+  write(db);
+  res.json({ ok: true, user: { id: user.id, name: user.full_name, email: user.email, role: user.role_code } });
+});
+
+// Crear usuario en RHH
+router.post('/rhh/users', superAdminRequired, (req, res) => {
+  const { full_name, email, password, role } = req.body || {};
+  if (!full_name || !email || !password || !role)
+    return res.status(400).json({ error: 'Nombre, correo, contraseña y rol son requeridos' });
+  const db = readRhh();
+  const { write, nextId } = require('../db-rhh');
+  if ((db.rhh_users || []).find(u => u.email?.toLowerCase() === email.toLowerCase()))
+    return res.status(400).json({ error: 'Ya existe un usuario con ese correo' });
+  const user = {
+    id: nextId(db.rhh_users),
+    full_name,
+    email: email.toLowerCase(),
+    password_hash: bcrypt.hashSync(String(password), 10),
+    role,
+    employee_id: null,
+    active: true,
+    created_at: new Date().toISOString()
+  };
+  db.rhh_users = [...(db.rhh_users || []), user];
+  write(db);
+  res.json({ ok: true, user: { id: user.id, name: user.full_name, email: user.email, role: user.role } });
+});
+
 // Toggle usuario activo/inactivo en rhh
 router.patch('/rhh/users/:id', superAdminRequired, (req, res) => {
   const db = readRhh();

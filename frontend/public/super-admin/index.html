@@ -69,6 +69,22 @@
     .btn-enable{background:#dcfce7;color:#15803d}
     .dev-notice{text-align:center;padding:24px;color:var(--muted);font-size:13px}
     .dev-notice span{font-size:32px;display:block;margin-bottom:8px}
+    .btn-add{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:#ede9fe;color:#6d28d9;border:0;cursor:pointer;margin-top:10px}
+    .btn-add:hover{background:#ddd6fe}
+
+    /* MODAL */
+    .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;place-items:center}
+    .modal-overlay.open{display:grid}
+    .modal-box{background:#fff;border-radius:18px;padding:28px;width:min(440px,95vw);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .modal-title{font-size:17px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
+    .modal-close{background:none;border:0;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
+    .modal-label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.5px}
+    .modal-input{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid var(--line);font-size:14px;outline:none}
+    .modal-input:focus{border-color:var(--purple)}
+    .modal-actions{display:flex;gap:10px;margin-top:20px;justify-content:flex-end}
+    .btn-modal-cancel{padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;background:#f1f5f9;color:#64748b;border:0;cursor:pointer}
+    .btn-modal-save{padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer}
+    .modal-err{color:#dc2626;font-size:12px;margin-top:8px;min-height:16px}
   </style>
 </head>
 <body>
@@ -118,6 +134,29 @@
   </main>
 </div>
 
+<!-- MODAL AGREGAR USUARIO -->
+<div class="modal-overlay" id="userModal">
+  <div class="modal-box">
+    <div class="modal-title">
+      <span id="modalTitle">Agregar usuario</span>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <label class="modal-label">Nombre completo</label>
+    <input class="modal-input" type="text" id="mName" placeholder="Ej. Juan Pérez"/>
+    <label class="modal-label">Correo electrónico</label>
+    <input class="modal-input" type="email" id="mEmail" placeholder="juan@empresa.com"/>
+    <label class="modal-label">Contraseña</label>
+    <input class="modal-input" type="password" id="mPass" placeholder="Mínimo 6 caracteres"/>
+    <label class="modal-label">Rol</label>
+    <select class="modal-input" id="mRole"></select>
+    <div class="modal-err" id="modalErr"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="saveNewUser()">Crear usuario</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const TOKEN_KEY = 'sa_token';
 
@@ -159,6 +198,47 @@ function showApp(name) {
 const MODULE_COLORS = { compras: '#1d4ed8', rhh: '#0f766e', calidad: '#7c3aed', mantenimiento: '#b45309' };
 const ROLE_LABELS_COMPRAS = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
 const ROLE_LABELS_RHH = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const ROLES_COMPRAS = Object.entries(ROLE_LABELS_COMPRAS);
+const ROLES_RHH = Object.entries(ROLE_LABELS_RHH);
+
+let _modalModule = null;
+
+function openAddUser(moduleId) {
+  _modalModule = moduleId;
+  const roles = moduleId === 'compras' ? ROLES_COMPRAS : ROLES_RHH;
+  document.getElementById('modalTitle').textContent = `Agregar usuario · ${moduleId === 'compras' ? 'Compras' : 'RHH'}`;
+  document.getElementById('mRole').innerHTML = roles.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  document.getElementById('mName').value = '';
+  document.getElementById('mEmail').value = '';
+  document.getElementById('mPass').value = '';
+  document.getElementById('modalErr').textContent = '';
+  document.getElementById('userModal').classList.add('open');
+  document.getElementById('mName').focus();
+}
+
+function closeModal() {
+  document.getElementById('userModal').classList.remove('open');
+  _modalModule = null;
+}
+
+async function saveNewUser() {
+  const name = document.getElementById('mName').value.trim();
+  const email = document.getElementById('mEmail').value.trim();
+  const pass = document.getElementById('mPass').value;
+  const role = document.getElementById('mRole').value;
+  const errEl = document.getElementById('modalErr');
+  errEl.textContent = '';
+  if (!name || !email || !pass) { errEl.textContent = 'Todos los campos son requeridos'; return; }
+  if (pass.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  try {
+    const body = _modalModule === 'compras'
+      ? { full_name: name, email, password: pass, role_code: role }
+      : { full_name: name, email, password: pass, role };
+    await api(`/api/super-admin/${_modalModule}/users`, { method: 'POST', body: JSON.stringify(body) });
+    closeModal();
+    loadModules();
+  } catch(e) { errEl.textContent = e.message; }
+}
 
 async function loadModules() {
   const wrap = document.getElementById('modulesWrap');
@@ -208,7 +288,10 @@ function renderModulePanel(m) {
         <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="5" style="color:#94a3b8;text-align:center;padding:16px">Sin usuarios</td></tr>'}</tbody>
       </table>
-      ${m.url ? `<div style="margin-top:12px"><a href="${m.url}" target="_blank" style="font-size:13px;color:${color};font-weight:700">Ir al módulo →</a></div>` : ''}`;
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+        ${m.url ? `<a href="${m.url}" target="_blank" style="font-size:13px;color:${color};font-weight:700">Ir al módulo →</a>` : '<span></span>'}
+        <button class="btn-add" onclick="openAddUser('${m.id}')">+ Agregar usuario</button>
+      </div>`;
   }
 
   return `
@@ -233,6 +316,9 @@ async function toggleUser(module, userId, active) {
     loadModules();
   } catch(e) { alert(e.message); }
 }
+
+// Cerrar modal al hacer clic fuera
+document.getElementById('userModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
 
 // Auto-login si hay token
 (async () => {
