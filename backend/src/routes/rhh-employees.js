@@ -54,6 +54,42 @@ router.get('/', rhhAuthRequired, (req, res) => {
   res.json(list.map(e => enrichEmployee(e, db)));
 });
 
+// ── Plantillas de documentos (ANTES de /:id para evitar colisión) ─────────────
+
+// GET /api/rhh/employees/doc-templates
+router.get('/doc-templates', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const templates = (db.rhh_doc_templates || []).map(({ template_content, ...rest }) => rest);
+  res.json(templates);
+});
+
+// POST /api/rhh/employees/doc-templates
+router.post('/doc-templates', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { name, category, description, template_content, variables } = req.body || {};
+  if (!name || !template_content) {
+    return res.status(400).json({ error: 'name y template_content son requeridos' });
+  }
+
+  const templates = db.rhh_doc_templates || [];
+  const tpl = {
+    id: Math.max(0, ...templates.map(t => Number(t.id) || 0)) + 1,
+    name: String(name),
+    category: category || 'otro',
+    description: description || '',
+    template_content: String(template_content),
+    variables: Array.isArray(variables) ? variables : [],
+    created_at: new Date().toISOString()
+  };
+
+  templates.push(tpl);
+  db.rhh_doc_templates = templates;
+  write(db);
+
+  const { template_content: _tc, ...tplResponse } = tpl;
+  res.status(201).json(tplResponse);
+});
+
 // GET /api/rhh/employees/:id
 router.get('/:id', rhhAuthRequired, (req, res) => {
   const db = read();
@@ -141,6 +177,7 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
   ];
 
   const emp = { ...db.rhh_employees[idx] };
+  const wasActive = emp.status === 'active';
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
       emp[key] = req.body[key];
@@ -152,9 +189,38 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
 
   emp.updated_at = new Date().toISOString();
   db.rhh_employees[idx] = emp;
+
+  // Auto-crear vacante si el empleado se da de baja
+  let vacancy = null;
+  let vacancy_created = false;
+  if (wasActive && req.body.status === 'inactive' && emp.primary_position_id) {
+    const vacancies = db.rhh_vacancies || [];
+    vacancy = {
+      id: Math.max(0, ...vacancies.map(v => Number(v.id) || 0)) + 1,
+      position_id: emp.primary_position_id,
+      department_id: emp.department_id || null,
+      shift_id: emp.shift_id || null,
+      reason: req.body.termination_reason || 'baja_voluntaria',
+      origin_employee_id: emp.id,
+      status: 'open',
+      priority: 'alta',
+      project: emp.project || '',
+      notes: '',
+      opened_date: new Date().toISOString().slice(0, 10),
+      filled_date: null,
+      opened_by: req.rhhUser.id,
+      filled_by: null
+    };
+    vacancies.push(vacancy);
+    db.rhh_vacancies = vacancies;
+    vacancy_created = true;
+  }
+
   write(db);
 
-  res.json(enrichEmployee(emp, db));
+  const response = { ok: true, employee: enrichEmployee(emp, db), vacancy_created };
+  if (vacancy_created) response.vacancy = vacancy;
+  res.json(response);
 });
 
 // DELETE /api/rhh/employees/:id — soft delete
@@ -182,30 +248,49 @@ router.get('/:id/timeline', rhhAuthRequired, (req, res) => {
     return res.status(403).json({ error: 'Acceso denegado' });
   }
 
+  const ICON_MAP = {
+    falta:        { icon: '❌', color: '#dc2626' },
+    vacacion:     { icon: '🌴', color: '#2563eb' },
+    incapacidad:  { icon: '🏥', color: '#f59e0b' },
+    tiempo_extra: { icon: '⚡', color: '#16a34a' },
+    permiso:      { icon: '📋', color: '#7c3aed' },
+    asignacion:   { icon: '📅', color: '#64748b' }
+  };
+
   const incidences = (db.rhh_incidences || [])
     .filter(i => i.employee_id === empId)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  const overtime = (db.rhh_overtime || [])
-    .filter(o => o.employee_id === empId)
-    .sort((a, b) => new Date(b.date) - new Date(a.date));
+    .map(i => {
+      const info = ICON_MAP[i.type] || { icon: '📌', color: '#64748b' };
+      return { ...i, event_type: i.type, icon: info.icon, color: info.color };
+    });
 
   const schedule = (db.rhh_schedule || [])
     .filter(s => s.employee_id === empId)
-    .sort((a, b) => new Date(b.date) - new Date(a.date))
-    .slice(0, 30);
+    .slice(0, 30)
+    .map(s => {
+      const info = ICON_MAP.asignacion;
+      return { ...s, event_type: 'asignacion', icon: info.icon, color: info.color };
+    });
 
-  const timeline = [
-    ...incidences.map(i => ({ type: 'incidencia', ...i })),
-    ...overtime.map(o => ({ type: 'tiempo_extra', ...o })),
-    ...schedule.map(s => ({ type: 'asignacion', ...s }))
-  ].sort((a, b) => {
+  const events = [...incidences, ...schedule].sort((a, b) => {
     const da = new Date(b.date || b.created_at || 0);
     const db2 = new Date(a.date || a.created_at || 0);
     return da - db2;
   });
 
-  res.json({ employee: enrichEmployee(emp, db), timeline });
+  // Calcular stats
+  const faltas = incidences.filter(i => i.event_type === 'falta').length;
+  const vacaciones = incidences.filter(i => i.event_type === 'vacacion').length;
+  const incapacidades = incidences.filter(i => i.event_type === 'incapacidad').length;
+  const overtime = incidences.filter(i => i.event_type === 'tiempo_extra')
+    .reduce((sum, i) => sum + (Number(i.hours) || 0), 0);
+  const total_days = schedule.length;
+
+  res.json({
+    employee: enrichEmployee(emp, db),
+    events,
+    stats: { total_days, faltas, vacaciones, incapacidades, overtime }
+  });
 });
 
 // ── Documentos del empleado ───────────────────────────────────────────────────
@@ -303,6 +388,52 @@ router.delete('/:id/documents/:docId', rhhAuthRequired, rhhRequireRole('rh', 'ad
   write(db);
 
   res.json({ ok: true });
+});
+
+// POST /api/rhh/employees/:id/generate-doc
+router.post('/:id/generate-doc', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const { template_id } = req.body || {};
+  if (!template_id) return res.status(400).json({ error: 'template_id es requerido' });
+
+  const tpl = (db.rhh_doc_templates || []).find(t => t.id === Number(template_id));
+  if (!tpl) return res.status(404).json({ error: 'Plantilla no encontrada' });
+
+  const pos = (db.rhh_positions || []).find(p => p.id === emp.position_id);
+  const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id);
+
+  function fmtDDMMYYYY(str) {
+    if (!str) return '';
+    const [y, m, d] = str.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const replacements = {
+    nombre: emp.full_name || '',
+    rfc: emp.rfc || '',
+    curp: emp.curp || '',
+    nss: emp.nss || '',
+    puesto: pos ? pos.name : '',
+    departamento: dept ? dept.name : '',
+    fecha_ingreso: fmtDDMMYYYY(emp.start_date || emp.hire_date),
+    salario_diario: emp.daily_salary ? String(emp.daily_salary) : '',
+    fecha_actual: fmtDDMMYYYY(today)
+  };
+
+  let html_content = tpl.template_content;
+  for (const [key, value] of Object.entries(replacements)) {
+    html_content = html_content.split(`{{${key}}}`).join(value);
+  }
+
+  const namePart = (emp.full_name || 'documento').toLowerCase().replace(/\s+/g, '_');
+  const filename = `documento_${namePart}_${today}.html`;
+
+  res.json({ html_content, filename, category: tpl.category });
 });
 
 module.exports = router;

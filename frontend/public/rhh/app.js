@@ -19,6 +19,7 @@ const MENU_BY_ROLE = {
     ['mi-horario', '📅 Mi Horario'],
     ['mis-solicitudes', '📝 Mis Solicitudes'],
     ['mis-incidencias', '⚠️ Mis Incidencias'],
+    ['mis-evaluaciones', '⭐ Mi Evaluación'],
     ['queja-anonima', '📢 Queja anónima'],
     ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
@@ -26,7 +27,8 @@ const MENU_BY_ROLE = {
     ['calendario', '📅 Calendario'],
     ['asignacion', '👥 Asignación'],
     ['autorizaciones', '✅ Autorizaciones'],
-    ['ausencias-hoy', '🚨 Ausencias Hoy']
+    ['ausencias-hoy', '🚨 Ausencias Hoy'],
+    ['mis-evaluaciones', '⭐ Mi Evaluación']
   ],
   rh: [
     ['dashboard', '📊 Dashboard'],
@@ -35,6 +37,8 @@ const MENU_BY_ROLE = {
     ['incidencias', '⚠️ Incidencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
+    ['vacantes', '🔍 Vacantes'],
+    ['evaluaciones', '⭐ Evaluaciones'],
     ['reportes', '📊 Reportes'],
     ['programacion-te', '🔥 Prog. T.E.'],
     ['quejas-rh', '📢 Quejas'],
@@ -47,7 +51,10 @@ const MENU_BY_ROLE = {
     ['incidencias', '⚠️ Incidencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
+    ['vacantes', '🔍 Vacantes'],
+    ['evaluaciones', '⭐ Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
+    ['plantillas', '📄 Plantillas'],
     ['reportes', '📊 Reportes'],
     ['programacion-te', '🔥 Prog. T.E.'],
     ['quejas-rh', '📢 Quejas'],
@@ -756,6 +763,7 @@ async function empleadosView() {
                      <td>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showEditEmployee(${emp.id})">✏️ Editar</button>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showExpediente(${emp.id})">📁 Exp.</button>
+                       <button class="btn-ghost" style="font-size:12px;" onclick="historialEmpleadoView(${emp.id})">📋 Historial</button>
                        ${emp.status === 'active' ? `<button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="deactivateEmployee(${emp.id})">🗑️ Desactivar</button>` : ''}
                      </td>
                    </tr>`).join('')}
@@ -1029,11 +1037,50 @@ async function saveEmployee() {
   }
 }
 
-async function deactivateEmployee(id) {
-  if (!confirm('¿Desactivar este empleado?')) return;
+function deactivateEmployee(id) {
+  // Eliminar modal anterior si existe
+  const existing = document.getElementById('bajaModal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'bajaModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:28px;max-width:440px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 16px;color:#064e3b;">Dar de baja empleado</h3>
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-weight:600;margin-bottom:6px;">Motivo de baja</label>
+        <select id="baja-reason" style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;">
+          <option value="baja_voluntaria">Baja voluntaria (renuncia)</option>
+          <option value="baja_involuntaria">Baja involuntaria (despido)</option>
+        </select>
+      </div>
+      <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-bottom:20px;font-size:13px;color:#92400e;">
+        ⚠️ Se generará una vacante automáticamente para el puesto vacante.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('bajaModal').remove()">Cancelar</button>
+        <button class="btn-primary" style="background:#b91c1c;" onclick="confirmDeactivate(${id})">Confirmar baja</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+async function confirmDeactivate(id) {
+  const reason = document.getElementById('baja-reason')?.value || 'baja_voluntaria';
+  const modal = document.getElementById('bajaModal');
+  if (modal) modal.remove();
   try {
-    await api(`/api/rhh/employees/${id}`, { method: 'DELETE' });
-    toast('Empleado desactivado');
+    const result = await api(`/api/rhh/employees/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'inactive', termination_reason: reason })
+    });
+    if (result?.vacancy_created) {
+      toast('Empleado dado de baja. Se generó una vacante automáticamente.', 'success');
+    } else {
+      toast('Empleado dado de baja.');
+    }
     await loadCatalogs();
     empleadosView();
   } catch (err) {
@@ -2188,6 +2235,14 @@ async function loadExpediente(empId) {
       `<option value="${v}">${l}</option>`
     ).join('');
 
+    // Cargar plantillas de documentos
+    let docTemplates = [];
+    try { docTemplates = await api('/api/rhh/employees/doc-templates') || []; } catch (_) {}
+
+    const tplOpts = docTemplates.map(t =>
+      `<option value="${t.id}">${t.name} (${t.category})</option>`
+    ).join('');
+
     wrap.innerHTML = `
       <div class="card section">
         <h3>📁 Expediente digital — ${emp.full_name}</h3>
@@ -2226,6 +2281,19 @@ async function loadExpediente(empId) {
             <button class="btn-primary" onclick="uploadDoc(${empId})">📤 Subir documento</button>
           </div>
         </div>
+        ${docTemplates.length > 0 ? `
+        <div style="margin-top:16px;padding:16px;background:#eff6ff;border-radius:10px;border:1px solid #bfdbfe;">
+          <h4 style="margin:0 0 12px;color:#1d4ed8;">Generar documento desde plantilla</h4>
+          <div class="row">
+            <div>
+              <label>Plantilla</label>
+              <select id="gen-tpl-id">${tplOpts}</select>
+            </div>
+            <div style="align-self:flex-end;">
+              <button class="btn-primary" style="background:#1d4ed8;" onclick="generateDoc(${empId})">📄 Generar documento</button>
+            </div>
+          </div>
+        </div>` : ''}
       </div>
     `;
   } catch (err) {
@@ -2309,6 +2377,81 @@ async function deleteDoc(empId, docId) {
   try {
     await api(`/api/rhh/employees/${empId}/documents/${docId}`, { method: 'DELETE' });
     toast('Documento eliminado');
+    loadExpediente(empId);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function generateDoc(empId) {
+  const template_id = document.getElementById('gen-tpl-id')?.value;
+  if (!template_id) { toast('Selecciona una plantilla', 'warning'); return; }
+  try {
+    const result = await api(`/api/rhh/employees/${empId}/generate-doc`, {
+      method: 'POST',
+      body: JSON.stringify({ template_id: Number(template_id) })
+    });
+    if (!result) return;
+
+    // Mostrar modal con el documento generado
+    const existing = document.getElementById('docGenModal');
+    if (existing) existing.remove();
+
+    const modal = document.createElement('div');
+    modal.id = 'docGenModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:16px;width:100%;max-width:700px;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 8px 40px rgba(0,0,0,0.3);">
+        <div style="padding:16px 20px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;">
+          <h3 style="margin:0;color:#064e3b;">📄 ${result.filename}</h3>
+          <button class="btn-ghost" onclick="document.getElementById('docGenModal').remove()">✕ Cerrar</button>
+        </div>
+        <div id="doc-preview-content" style="flex:1;overflow:auto;padding:24px;font-family:serif;line-height:1.6;">${result.html_content}</div>
+        <div style="padding:16px 20px;border-top:1px solid #e5e7eb;display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn-ghost" onclick="printGeneratedDoc()">🖨️ Imprimir</button>
+          <button class="btn-primary" onclick="saveGeneratedDoc(${empId},'${result.filename}','${result.category}')">💾 Guardar en expediente</button>
+          <button class="btn-ghost" onclick="document.getElementById('docGenModal').remove()">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    // Guardar html para uso posterior
+    modal._htmlContent = result.html_content;
+    modal._category = result.category;
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function printGeneratedDoc() {
+  const content = document.getElementById('doc-preview-content')?.innerHTML;
+  if (!content) return;
+  const win = window.open('', '_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Documento</title>
+    <style>body{font-family:serif;padding:40px;line-height:1.6;}</style></head>
+    <body>${content}</body></html>`);
+  win.document.close();
+  win.print();
+}
+
+async function saveGeneratedDoc(empId, filename, category) {
+  const content = document.getElementById('doc-preview-content')?.innerHTML;
+  if (!content) return;
+  const htmlContent = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>${content}</body></html>`;
+  const file_data = 'data:text/html;base64,' + btoa(unescape(encodeURIComponent(htmlContent)));
+  try {
+    await api(`/api/rhh/employees/${empId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({
+        category: category || 'contrato',
+        name: filename,
+        file_data,
+        file_type: 'text/html',
+        notes: 'Generado automáticamente desde plantilla'
+      })
+    });
+    toast('Documento guardado en el expediente');
+    document.getElementById('docGenModal')?.remove();
     loadExpediente(empId);
   } catch (err) {
     toast(err.message, 'error');
@@ -2921,6 +3064,894 @@ async function saveRespAclaracion(id) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// VACANTES
+// ══════════════════════════════════════════════════════════════════════════════
+
+let vacantesShowForm = false;
+
+async function vacantesView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando vacantes...</div>', 'vacantes');
+
+  try {
+    const [vacantes, stats] = await Promise.all([
+      api('/api/rhh/vacancies'),
+      api('/api/rhh/vacancies/stats')
+    ]);
+    if (!vacantes) return;
+
+    const REASON_LABEL = {
+      baja_voluntaria: 'Baja voluntaria',
+      baja_involuntaria: 'Baja involuntaria',
+      expansion: 'Expansión',
+      nuevo_puesto: 'Nuevo puesto'
+    };
+    const PRIORITY_STYLE = {
+      alta: 'background:#fee2e2;color:#991b1b;',
+      media: 'background:#fef3c7;color:#92400e;',
+      baja: 'background:#dbeafe;color:#1e40af;'
+    };
+    const STATUS_LABEL = {
+      open: 'Abierta', in_process: 'En proceso', filled: 'Cubierta', cancelled: 'Cancelada'
+    };
+
+    const posOpts = state.positions.map(p =>
+      `<option value="${p.id}">${p.name}</option>`).join('');
+    const deptOpts = state.departments.map(d =>
+      `<option value="${d.id}">${d.name}</option>`).join('');
+    const shiftOpts = state.shifts.map(s =>
+      `<option value="${s.id}">${s.name}</option>`).join('');
+
+    const rows = vacantes.map(v => `
+      <tr>
+        <td>${v.position?.name || '—'}</td>
+        <td>${v.department?.name || '—'}</td>
+        <td>${v.shift?.name || '—'}</td>
+        <td><span class="badge">${REASON_LABEL[v.reason] || v.reason}</span></td>
+        <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;${PRIORITY_STYLE[v.priority] || ''}">${v.priority || '—'}</span></td>
+        <td>${STATUS_LABEL[v.status] || v.status}</td>
+        <td>${fmtDateDisplay(v.opened_date)}</td>
+        <td>
+          ${v.status === 'open' ? `<button class="btn-ghost" style="font-size:12px;" onclick="updateVacancy(${v.id},'in_process')">▶ En proceso</button>` : ''}
+          ${v.status === 'in_process' ? `<button class="btn-primary" style="font-size:11px;padding:4px 8px;" onclick="updateVacancy(${v.id},'filled')">✅ Cubierta</button>` : ''}
+          ${['open','in_process'].includes(v.status) ? `<button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="updateVacancy(${v.id},'cancelled')">✕ Cancelar</button>` : ''}
+        </td>
+      </tr>`).join('');
+
+    const formHtml = vacantesShowForm ? `
+      <div class="card section" style="margin-bottom:16px;">
+        <h3>Nueva vacante</h3>
+        <div class="row">
+          <div><label>Puesto *</label><select id="vac-pos"><option value="">Seleccionar...</option>${posOpts}</select></div>
+          <div><label>Departamento *</label><select id="vac-dept"><option value="">Seleccionar...</option>${deptOpts}</select></div>
+        </div>
+        <div class="row">
+          <div><label>Turno</label><select id="vac-shift"><option value="">Sin turno</option>${shiftOpts}</select></div>
+          <div><label>Prioridad</label>
+            <select id="vac-priority">
+              <option value="alta">Alta</option>
+              <option value="media" selected>Media</option>
+              <option value="baja">Baja</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div><label>Motivo</label>
+            <select id="vac-reason">
+              <option value="nuevo_puesto">Nuevo puesto</option>
+              <option value="expansion">Expansión</option>
+              <option value="baja_voluntaria">Baja voluntaria</option>
+              <option value="baja_involuntaria">Baja involuntaria</option>
+            </select>
+          </div>
+          <div><label>Notas</label><input id="vac-notes" placeholder="Observaciones..." /></div>
+        </div>
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn-primary" onclick="saveVacancy()">💾 Guardar</button>
+          <button class="btn-ghost" onclick="vacantesShowForm=false;vacantesView()">Cancelar</button>
+        </div>
+      </div>` : '';
+
+    const content = `
+      <div class="module-title">
+        <h2>🔍 Gestión de Vacantes</h2>
+        <button class="btn-primary" onclick="vacantesShowForm=!vacantesShowForm;vacantesView()">+ Nueva vacante</button>
+      </div>
+
+      <div class="grid grid-3" style="margin-bottom:20px;">
+        <div class="card kpi kpi-rhh">
+          <div class="muted small">Vacantes abiertas</div>
+          <div class="n" style="color:#b91c1c;">${stats?.open ?? 0}</div>
+        </div>
+        <div class="card kpi kpi-rhh">
+          <div class="muted small">En proceso</div>
+          <div class="n" style="color:#b45309;">${stats?.in_process ?? 0}</div>
+        </div>
+        <div class="card kpi kpi-rhh">
+          <div class="muted small">Cubiertas este mes</div>
+          <div class="n" style="color:#059669;">${stats?.filled_this_month ?? 0}</div>
+        </div>
+      </div>
+
+      ${formHtml}
+
+      <div class="card section table-wrap">
+        ${vacantes.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">🔍</div><p>No hay vacantes registradas</p></div>'
+          : `<table>
+               <thead><tr>
+                 <th>Puesto</th><th>Depto</th><th>Turno</th><th>Motivo</th>
+                 <th>Prioridad</th><th>Estado</th><th>Apertura</th><th>Acciones</th>
+               </tr></thead>
+               <tbody>${rows}</tbody>
+             </table>`
+        }
+      </div>
+    `;
+
+    el.innerHTML = shell(content, 'vacantes');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'vacantes');
+  }
+}
+
+async function saveVacancy() {
+  const position_id = document.getElementById('vac-pos')?.value;
+  const department_id = document.getElementById('vac-dept')?.value;
+  const shift_id = document.getElementById('vac-shift')?.value || null;
+  const priority = document.getElementById('vac-priority')?.value;
+  const reason = document.getElementById('vac-reason')?.value;
+  const notes = document.getElementById('vac-notes')?.value?.trim() || '';
+
+  if (!position_id || !department_id) {
+    toast('Puesto y departamento son requeridos', 'warning');
+    return;
+  }
+
+  try {
+    await api('/api/rhh/vacancies', {
+      method: 'POST',
+      body: JSON.stringify({ position_id, department_id, shift_id, priority, reason, notes })
+    });
+    toast('Vacante creada');
+    vacantesShowForm = false;
+    vacantesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function updateVacancy(id, status) {
+  try {
+    await api(`/api/rhh/vacancies/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status })
+    });
+    const msgs = { in_process: 'Vacante marcada en proceso', filled: 'Vacante cubierta', cancelled: 'Vacante cancelada' };
+    toast(msgs[status] || 'Vacante actualizada');
+    vacantesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// HISTORIAL DEL EMPLEADO
+// ══════════════════════════════════════════════════════════════════════════════
+
+let historialFilter = { type: '', month: '', year: '' };
+
+async function historialEmpleadoView(employeeId) {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando historial...</div>', 'empleados');
+
+  try {
+    const result = await api(`/api/rhh/employees/${employeeId}/timeline`);
+    if (!result) return;
+
+    const { employee: emp, events, stats } = result;
+
+    // Aplicar filtros
+    let filtered = events || [];
+    if (historialFilter.type) filtered = filtered.filter(e => e.event_type === historialFilter.type);
+    if (historialFilter.month) filtered = filtered.filter(e => {
+      const d = e.date || e.created_at?.slice(0, 10) || '';
+      return d.startsWith(`${historialFilter.year || new Date().getFullYear()}-${historialFilter.month.padStart(2, '0')}`);
+    });
+
+    const initials = (emp.full_name || 'EMP').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+
+    const TYPE_LABEL = {
+      falta: 'Falta', vacacion: 'Vacación', incapacidad: 'Incapacidad',
+      tiempo_extra: 'Tiempo extra', permiso: 'Permiso', asignacion: 'Asignación'
+    };
+
+    const monthOpts = Array.from({length:12}, (_, i) =>
+      `<option value="${String(i+1).padStart(2,'0')}" ${historialFilter.month===String(i+1).padStart(2,'0')?'selected':''}>${MONTHS[i]}</option>`
+    ).join('');
+
+    const typeOpts = Object.entries(TYPE_LABEL).map(([v, l]) =>
+      `<option value="${v}" ${historialFilter.type===v?'selected':''}>${l}</option>`
+    ).join('');
+
+    const yearNow = new Date().getFullYear();
+    const yearOpts = [yearNow, yearNow-1, yearNow-2].map(y =>
+      `<option value="${y}" ${(historialFilter.year||String(yearNow))===String(y)?'selected':''}>${y}</option>`
+    ).join('');
+
+    const timelineHtml = filtered.length === 0
+      ? '<div class="empty-state"><div class="empty-icon">📋</div><p>Sin eventos para los filtros seleccionados</p></div>'
+      : filtered.map(ev => {
+          const dateStr = ev.date || ev.created_at?.slice(0, 10) || '';
+          const desc = ev.notes || ev.type || '';
+          return `
+            <div style="display:flex;gap:12px;margin-bottom:12px;">
+              <div style="width:4px;background:${ev.color || '#64748b'};border-radius:2px;flex-shrink:0;"></div>
+              <div style="flex:1;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 14px;border-left:3px solid ${ev.color || '#64748b'};">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                  <span style="font-size:18px;">${ev.icon || '📌'}</span>
+                  <strong style="font-size:14px;">${TYPE_LABEL[ev.event_type] || ev.event_type || '—'}</strong>
+                  <span class="small muted" style="margin-left:auto;">${fmtDateDisplay(dateStr)}</span>
+                </div>
+                ${desc ? `<div style="font-size:13px;color:var(--muted);">${desc}</div>` : ''}
+                ${ev.hours ? `<div style="font-size:12px;color:#059669;margin-top:2px;">⏱️ ${ev.hours}h extra</div>` : ''}
+              </div>
+            </div>`;
+        }).join('');
+
+    // CSV export
+    const csvData = filtered.map(ev => {
+      const dateStr = ev.date || ev.created_at?.slice(0, 10) || '';
+      return `"${TYPE_LABEL[ev.event_type] || ev.event_type}","${dateStr}","${ev.notes || ''}"`;
+    });
+
+    const content = `
+      <div class="module-title">
+        <h2>📋 Historial del empleado</h2>
+        <button class="btn-ghost" onclick="historialFilter={type:'',month:'',year:''};empTab='list';empleadosView()">← Volver</button>
+      </div>
+
+      <div class="card section" style="margin-bottom:16px;">
+        <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+          <div style="width:52px;height:52px;border-radius:50%;background:#064e3b;color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;flex-shrink:0;">${initials}</div>
+          <div>
+            <div style="font-size:18px;font-weight:700;">${emp.full_name}</div>
+            <div class="small muted">${emp.employee_number} — ${emp.position?.name || '—'}</div>
+          </div>
+        </div>
+        <div class="grid grid-4" style="margin-top:16px;">
+          <div class="card kpi kpi-rhh" style="padding:12px;">
+            <div class="muted small">Días asignados</div>
+            <div class="n" style="font-size:24px;">${stats?.total_days ?? 0}</div>
+          </div>
+          <div class="card kpi kpi-rhh" style="padding:12px;">
+            <div class="muted small">Faltas</div>
+            <div class="n" style="font-size:24px;color:#dc2626;">${stats?.faltas ?? 0}</div>
+          </div>
+          <div class="card kpi kpi-rhh" style="padding:12px;">
+            <div class="muted small">Vacaciones</div>
+            <div class="n" style="font-size:24px;color:#2563eb;">${stats?.vacaciones ?? 0}</div>
+          </div>
+          <div class="card kpi kpi-rhh" style="padding:12px;">
+            <div class="muted small">Hrs. extra</div>
+            <div class="n" style="font-size:24px;color:#16a34a;">${stats?.overtime ?? 0}h</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="filter-bar" style="margin-bottom:16px;">
+        <div>
+          <label>Tipo de evento</label>
+          <select onchange="historialFilter.type=this.value;historialEmpleadoView(${employeeId})">
+            <option value="">Todos</option>${typeOpts}
+          </select>
+        </div>
+        <div>
+          <label>Mes</label>
+          <select onchange="historialFilter.month=this.value;historialEmpleadoView(${employeeId})">
+            <option value="">Todos</option>${monthOpts}
+          </select>
+        </div>
+        <div>
+          <label>Año</label>
+          <select onchange="historialFilter.year=this.value;historialEmpleadoView(${employeeId})">
+            ${yearOpts}
+          </select>
+        </div>
+        <div style="align-self:flex-end;">
+          <button class="btn-ghost" onclick="exportHistorialCSV(${employeeId})">📥 Exportar CSV</button>
+        </div>
+      </div>
+
+      <div class="card section" style="padding:16px;">
+        ${timelineHtml}
+      </div>
+    `;
+
+    el.innerHTML = shell(content, 'empleados');
+    // Guardar datos filtrados para exportar
+    window._historialFiltered = filtered.map(ev => ({
+      tipo: TYPE_LABEL[ev.event_type] || ev.event_type,
+      fecha: ev.date || ev.created_at?.slice(0, 10) || '',
+      notas: ev.notes || ''
+    }));
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'empleados');
+  }
+}
+
+function exportHistorialCSV(employeeId) {
+  const data = window._historialFiltered || [];
+  if (!data.length) { toast('No hay datos para exportar', 'warning'); return; }
+  const csv = ['Tipo,Fecha,Notas', ...data.map(r => `"${r.tipo}","${r.fecha}","${r.notas}"`)].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = `historial_empleado_${employeeId}.csv`;
+  a.click();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EVALUACIONES
+// ══════════════════════════════════════════════════════════════════════════════
+
+let evalTab = 'periodos';
+
+async function evaluacionesView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando evaluaciones...</div>', 'evaluaciones');
+
+  try {
+    const [periods, templates] = await Promise.all([
+      api('/api/rhh/evaluations/periods'),
+      api('/api/rhh/evaluations/templates')
+    ]);
+
+    const tabContent = evalTab === 'periodos'
+      ? await buildPeriodosTab(periods || [], templates || [])
+      : evalTab === 'plantillas'
+      ? buildPlantillasTab(templates || [])
+      : await buildResultadosTab(periods || []);
+
+    const content = `
+      <div class="module-title">
+        <h2>⭐ Evaluaciones de Desempeño</h2>
+      </div>
+      <div class="tabs">
+        <button class="tab-btn ${evalTab==='periodos'?'active':''}" onclick="evalTab='periodos';evaluacionesView()">📅 Periodos</button>
+        <button class="tab-btn ${evalTab==='plantillas'?'active':''}" onclick="evalTab='plantillas';evaluacionesView()">📋 Plantillas</button>
+        <button class="tab-btn ${evalTab==='resultados'?'active':''}" onclick="evalTab='resultados';evaluacionesView()">📊 Resultados</button>
+      </div>
+      ${tabContent}
+    `;
+    el.innerHTML = shell(content, 'evaluaciones');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'evaluaciones');
+  }
+}
+
+async function buildPeriodosTab(periods, templates) {
+  const empOpts = state.employees.map(e =>
+    `<option value="${e.id}">${e.full_name}</option>`).join('');
+  const tplOpts = templates.map(t =>
+    `<option value="${t.id}">${t.name}</option>`).join('');
+  const userOpts = state.employees.map(e =>
+    `<option value="${e.id}">${e.full_name}</option>`).join('');
+
+  const STATUS_LABEL = { open: 'Abierto', closed: 'Cerrado', draft: 'Borrador' };
+
+  const periodsHtml = periods.length === 0
+    ? '<div class="empty-state"><div class="empty-icon">📅</div><p>No hay periodos registrados</p></div>'
+    : periods.map(p => {
+        const completedCount = (p.evaluations || []).filter(e => e.completed).length;
+        const totalCount = (p.evaluations || []).length;
+        return `
+          <div class="card" style="margin-bottom:12px;padding:16px;border-left:4px solid ${p.status==='closed'?'#059669':'#f59e0b'};">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <strong>${p.name}</strong>
+              <span class="badge">${STATUS_LABEL[p.status] || p.status}</span>
+            </div>
+            <div class="small muted">${fmtDateDisplay(p.start_date)} → ${fmtDateDisplay(p.end_date)}</div>
+            <div class="small muted" style="margin-top:4px;">Evaluaciones: ${completedCount}/${totalCount} completadas</div>
+            ${p.status === 'closed' || p.status === 'open' ? `
+              <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+                <label style="font-weight:normal;font-size:13px;">
+                  Calidad cumplida:
+                  <select onchange="updatePeriodo(${p.id},{quality_met:this.value==='true'})" style="font-size:13px;padding:3px 6px;">
+                    <option value="true" ${p.quality_met===true?'selected':''}>Sí</option>
+                    <option value="false" ${p.quality_met===false?'selected':''}>No</option>
+                    <option value="null" ${p.quality_met===null?'selected':''}>—</option>
+                  </select>
+                </label>
+                <label style="font-weight:normal;font-size:13px;">
+                  Reclamos cumplidos:
+                  <select onchange="updatePeriodo(${p.id},{claims_met:this.value==='true'})" style="font-size:13px;padding:3px 6px;">
+                    <option value="true" ${p.claims_met===true?'selected':''}>Sí</option>
+                    <option value="false" ${p.claims_met===false?'selected':''}>No</option>
+                    <option value="null" ${p.claims_met===null?'selected':''}>—</option>
+                  </select>
+                </label>
+                ${p.status === 'open' ? `<button class="btn-ghost" style="font-size:12px;" onclick="updatePeriodo(${p.id},{status:'closed'})">🔒 Cerrar periodo</button>` : ''}
+              </div>` : ''}
+          </div>`;
+      }).join('');
+
+  return `
+    <div class="card section" style="margin-bottom:16px;">
+      <h3>Crear nuevo periodo</h3>
+      <div class="row">
+        <div><label>Nombre *</label><input id="ep-name" placeholder="Ej: Marzo 2026" /></div>
+        <div><label>Fecha inicio *</label><input id="ep-start" type="date" /></div>
+      </div>
+      <div class="row">
+        <div><label>Fecha fin *</label><input id="ep-end" type="date" /></div>
+      </div>
+      <h4 style="margin:12px 0 8px;">Asignaciones (evaluador → evaluado)</h4>
+      <div id="ep-assignments" style="margin-bottom:8px;"></div>
+      <button class="btn-ghost" onclick="addEpAssignment('${empOpts.replace(/'/g,"\\'")}','${tplOpts.replace(/'/g,"\\'")}','${userOpts.replace(/'/g,"\\'")}')">+ Agregar asignación</button>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn-primary" onclick="savePeriodo()">💾 Guardar periodo</button>
+      </div>
+    </div>
+    <div>${periodsHtml}</div>
+  `;
+}
+
+let _epEmpOpts = '', _epTplOpts = '', _epUserOpts = '';
+function addEpAssignment(empOpts, tplOpts, userOpts) {
+  if (empOpts) { _epEmpOpts = empOpts; _epTplOpts = tplOpts; _epUserOpts = userOpts; }
+  const container = document.getElementById('ep-assignments');
+  if (!container) return;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.cssText = 'margin-bottom:8px;align-items:center;';
+  row.innerHTML = `
+    <div><label style="font-size:12px;">Evaluador</label>
+      <select class="ep-evaluator" style="font-size:13px;"><option value="">—</option>${_epUserOpts}</select></div>
+    <div><label style="font-size:12px;">Evaluado</label>
+      <select class="ep-employee" style="font-size:13px;"><option value="">—</option>${_epEmpOpts}</select></div>
+    <div><label style="font-size:12px;">Plantilla</label>
+      <select class="ep-template" style="font-size:13px;"><option value="">—</option>${_epTplOpts}</select></div>
+    <div style="align-self:flex-end;"><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="this.closest('.row').remove()">✕</button></div>
+  `;
+  container.appendChild(row);
+}
+
+async function savePeriodo() {
+  const name = document.getElementById('ep-name')?.value?.trim();
+  const start_date = document.getElementById('ep-start')?.value;
+  const end_date = document.getElementById('ep-end')?.value;
+  if (!name || !start_date || !end_date) {
+    toast('Nombre, fecha inicio y fecha fin son requeridos', 'warning');
+    return;
+  }
+  const evaluations = [];
+  document.querySelectorAll('#ep-assignments .row').forEach(row => {
+    const ev = row.querySelector('.ep-evaluator')?.value;
+    const emp = row.querySelector('.ep-employee')?.value;
+    const tpl = row.querySelector('.ep-template')?.value;
+    if (ev && emp && tpl) {
+      evaluations.push({ evaluator_id: Number(ev), employee_id: Number(emp), template_id: Number(tpl) });
+    }
+  });
+  try {
+    await api('/api/rhh/evaluations/periods', {
+      method: 'POST',
+      body: JSON.stringify({ name, start_date, end_date, evaluations })
+    });
+    toast('Periodo creado');
+    evaluacionesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function updatePeriodo(id, body) {
+  try {
+    await api(`/api/rhh/evaluations/periods/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body)
+    });
+    toast('Periodo actualizado');
+    evaluacionesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+function buildPlantillasTab(templates) {
+  const FIELD_TYPES = { score_1_5: 'Puntuación 1-5', score_1_10: 'Puntuación 1-10', boolean: 'Sí/No', text: 'Texto' };
+
+  const tplList = templates.length === 0
+    ? '<div class="empty-state"><div class="empty-icon">📋</div><p>No hay plantillas registradas</p></div>'
+    : templates.map(t => `
+        <div class="card" style="margin-bottom:10px;padding:14px;">
+          <strong>${t.name}</strong>
+          ${t.position_id ? `<span class="small muted"> — ${state.positions.find(p=>p.id===t.position_id)?.name||''}</span>` : ''}
+          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
+            ${(t.fields||[]).map(f => `<span class="badge">${f.label} (${f.weight}%)</span>`).join('')}
+          </div>
+        </div>`
+      ).join('');
+
+  const posOpts = state.positions.map(p =>
+    `<option value="${p.id}">${p.name}</option>`).join('');
+
+  return `
+    <div class="card section" style="margin-bottom:16px;">
+      <h3>Nueva plantilla de evaluación</h3>
+      <div class="row">
+        <div><label>Nombre *</label><input id="tpl-name" placeholder="Ej: Evaluación Operativo" /></div>
+        <div><label>Puesto (opcional)</label>
+          <select id="tpl-pos"><option value="">Todos los puestos</option>${posOpts}</select>
+        </div>
+      </div>
+      <h4 style="margin:12px 0 8px;">Campos de evaluación</h4>
+      <div id="tpl-fields"></div>
+      <button class="btn-ghost" onclick="addTplField()">+ Agregar campo</button>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn-primary" onclick="saveTemplate()">💾 Guardar plantilla</button>
+      </div>
+    </div>
+    <div>${tplList}</div>
+  `;
+}
+
+function addTplField() {
+  const container = document.getElementById('tpl-fields');
+  if (!container) return;
+  const idx = container.children.length;
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.style.cssText = 'margin-bottom:8px;align-items:center;';
+  row.innerHTML = `
+    <div><label style="font-size:12px;">Etiqueta</label><input class="tpl-f-label" placeholder="Ej: Puntualidad" style="font-size:13px;" /></div>
+    <div><label style="font-size:12px;">Tipo</label>
+      <select class="tpl-f-type" style="font-size:13px;">
+        <option value="score_1_5">Puntuación 1-5</option>
+        <option value="score_1_10">Puntuación 1-10</option>
+        <option value="boolean">Sí/No</option>
+        <option value="text">Texto</option>
+      </select></div>
+    <div><label style="font-size:12px;">Peso %</label><input class="tpl-f-weight" type="number" min="0" max="100" value="0" style="font-size:13px;width:70px;" /></div>
+    <div style="align-self:flex-end;"><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="this.closest('.row').remove()">✕</button></div>
+  `;
+  container.appendChild(row);
+}
+
+async function saveTemplate() {
+  const name = document.getElementById('tpl-name')?.value?.trim();
+  const position_id = document.getElementById('tpl-pos')?.value || null;
+  if (!name) { toast('El nombre de la plantilla es requerido', 'warning'); return; }
+
+  const fields = [];
+  document.querySelectorAll('#tpl-fields .row').forEach((row, i) => {
+    const label = row.querySelector('.tpl-f-label')?.value?.trim();
+    const type = row.querySelector('.tpl-f-type')?.value;
+    const weight = Number(row.querySelector('.tpl-f-weight')?.value) || 0;
+    if (label) fields.push({ id: i + 1, label, type, weight, description: '' });
+  });
+
+  try {
+    await api('/api/rhh/evaluations/templates', {
+      method: 'POST',
+      body: JSON.stringify({ name, position_id, fields })
+    });
+    toast('Plantilla creada');
+    evaluacionesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+async function buildResultadosTab(periods) {
+  const periodOpts = periods.map(p =>
+    `<option value="${p.id}">${p.name}</option>`).join('');
+
+  const selectedPeriodId = window._evalResultPeriodId || (periods[0]?.id);
+  let resultsHtml = '';
+
+  if (selectedPeriodId) {
+    try {
+      const data = await api(`/api/rhh/evaluations/results/${selectedPeriodId}`);
+      if (data?.results?.length > 0) {
+        const rows = data.results.map(r => `
+          <tr>
+            <td>${r.employee_name}</td>
+            <td style="text-align:center;font-weight:700;">${r.score?.toFixed(1) ?? '—'}</td>
+            <td style="text-align:center;">${r.dia_desempeno?.toFixed(2) ?? '—'}</td>
+            <td style="text-align:center;">${r.dia_calidad ?? '—'}</td>
+            <td style="text-align:center;">${r.dia_reclamos ?? '—'}</td>
+            <td style="text-align:center;font-weight:700;color:#059669;">${r.bonus_days?.toFixed(2) ?? '—'}</td>
+          </tr>`).join('');
+        const totalBonus = data.results.reduce((s, r) => s + (r.bonus_days || 0), 0);
+        resultsHtml = `
+          <table>
+            <thead><tr>
+              <th>Empleado</th><th style="text-align:center;">Score (%)</th>
+              <th style="text-align:center;">Día desempeño</th>
+              <th style="text-align:center;">Día calidad</th>
+              <th style="text-align:center;">Día reclamos</th>
+              <th style="text-align:center;">Total días bono</th>
+            </tr></thead>
+            <tbody>${rows}</tbody>
+            <tfoot>
+              <tr style="background:#f0fdf4;font-weight:700;">
+                <td>TOTAL</td><td></td><td></td><td></td><td></td>
+                <td style="text-align:center;color:#059669;">${totalBonus.toFixed(2)}</td>
+              </tr>
+            </tfoot>
+          </table>`;
+      } else {
+        resultsHtml = '<div class="empty-state"><p>Sin resultados para este periodo</p></div>';
+      }
+    } catch (e) {
+      resultsHtml = `<div class="notice error">${e.message}</div>`;
+    }
+  }
+
+  return `
+    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
+      <label style="font-weight:600;">Periodo:</label>
+      <select onchange="window._evalResultPeriodId=Number(this.value);evaluacionesView();evalTab='resultados';"
+              style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;">
+        <option value="">Seleccionar...</option>${periodOpts.replace(`value="${selectedPeriodId}"`, `value="${selectedPeriodId}" selected`)}
+      </select>
+    </div>
+    <div class="card section table-wrap">${resultsHtml || '<div class="empty-state"><p>Selecciona un periodo</p></div>'}</div>
+  `;
+}
+
+// ── Mis evaluaciones (empleados/supervisores como evaluadores) ─────────────────
+
+async function misEvaluacionesView() {
+  const el = document.getElementById('app');
+  const hash = state.user?.role === 'empleado' ? 'mis-evaluaciones' : 'mis-evaluaciones';
+  el.innerHTML = shell('<div class="loading-overlay">Cargando evaluaciones pendientes...</div>', 'mis-evaluaciones');
+
+  try {
+    const pending = await api('/api/rhh/evaluations/my-pending') || [];
+
+    const rows = pending.length === 0
+      ? '<div class="empty-state"><div class="empty-icon">⭐</div><p>No tienes evaluaciones pendientes</p></div>'
+      : pending.map((p, i) => `
+          <div class="card" style="margin-bottom:12px;padding:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <strong>${p.period_name}</strong>
+                <div class="small muted">Evaluar a: ${p.employee_name}</div>
+                <div class="small muted">Plantilla: ${p.template_name}</div>
+              </div>
+              <button class="btn-primary" onclick="openEvalForm(${i})">Evaluar →</button>
+            </div>
+            <div id="eval-form-${i}" style="display:none;margin-top:16px;"></div>
+          </div>`).join('');
+
+    el.innerHTML = shell(`
+      <div class="module-title">
+        <h2>⭐ Mis Evaluaciones Pendientes</h2>
+      </div>
+      ${rows}
+    `, 'mis-evaluaciones');
+
+    // Guardar datos para uso en formularios
+    window._pendingEvals = pending;
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'mis-evaluaciones');
+  }
+}
+
+function openEvalForm(idx) {
+  const container = document.getElementById(`eval-form-${idx}`);
+  if (!container) return;
+  const isVisible = container.style.display !== 'none';
+  container.style.display = isVisible ? 'none' : 'block';
+  if (isVisible) return;
+
+  const pending = window._pendingEvals?.[idx];
+  if (!pending) return;
+
+  const fields = pending.template?.fields || [];
+  const fieldsHtml = fields.map(f => {
+    const inputId = `ef-f-${idx}-${f.id}`;
+    let inputHtml = '';
+    if (f.type === 'score_1_5') {
+      inputHtml = `<div style="display:flex;gap:6px;margin-top:6px;">
+        ${[1,2,3,4,5].map(v =>
+          `<label style="display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:normal;">
+            <input type="radio" name="${inputId}" value="${v}" style="width:auto;" />${v}
+          </label>`).join('')}
+      </div>`;
+    } else if (f.type === 'score_1_10') {
+      inputHtml = `<input type="range" id="${inputId}" min="1" max="10" value="5"
+        oninput="document.getElementById('${inputId}-val').textContent=this.value"
+        style="width:100%;margin-top:6px;" />
+        <span id="${inputId}-val" style="font-size:13px;color:#059669;">5</span>/10`;
+    } else if (f.type === 'boolean') {
+      inputHtml = `<label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
+        <input type="checkbox" id="${inputId}" style="width:auto;" /> Sí
+      </label>`;
+    } else if (f.type === 'text') {
+      inputHtml = `<textarea id="${inputId}" rows="2" placeholder="Comentario..." style="margin-top:6px;"></textarea>`;
+    }
+
+    return `
+      <div style="margin-bottom:16px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid var(--line);">
+        <label style="font-weight:600;">${f.label} <span class="small muted">(${f.weight}%)</span></label>
+        ${inputHtml}
+      </div>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div>
+      ${fieldsHtml}
+      <div>
+        <label>Notas adicionales</label>
+        <textarea id="eval-notes-${idx}" rows="2" placeholder="Observaciones opcionales..."></textarea>
+      </div>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn-primary" onclick="submitEvaluation(${idx})">📤 Enviar evaluación</button>
+      </div>
+    </div>
+  `;
+}
+
+async function submitEvaluation(idx) {
+  const pending = window._pendingEvals?.[idx];
+  if (!pending) return;
+
+  const fields = pending.template?.fields || [];
+  const answers = fields.map(f => {
+    const inputId = `ef-f-${idx}-${f.id}`;
+    let value;
+    if (f.type === 'score_1_5') {
+      const checked = document.querySelector(`input[name="${inputId}"]:checked`);
+      value = checked ? Number(checked.value) : 0;
+    } else if (f.type === 'score_1_10') {
+      value = Number(document.getElementById(inputId)?.value || 5);
+    } else if (f.type === 'boolean') {
+      value = document.getElementById(inputId)?.checked || false;
+    } else {
+      value = document.getElementById(inputId)?.value?.trim() || '';
+    }
+    return { field_id: f.id, value };
+  });
+
+  const notes = document.getElementById(`eval-notes-${idx}`)?.value?.trim() || '';
+
+  try {
+    await api('/api/rhh/evaluations/submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        period_id: pending.period_id,
+        employee_id: pending.employee_id,
+        template_id: pending.template_id,
+        answers,
+        notes
+      })
+    });
+    toast('Evaluación enviada exitosamente');
+    misEvaluacionesView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLANTILLAS DE DOCUMENTOS (vista para admin)
+// ══════════════════════════════════════════════════════════════════════════════
+
+let docTplShowForm = false;
+const AVAILABLE_VARIABLES = ['nombre','rfc','curp','nss','puesto','departamento','fecha_ingreso','salario_diario','fecha_actual','email','telefono'];
+const DOC_TPL_CATEGORIES = { contrato:'Contrato', identificacion:'Identificación', evaluacion:'Evaluación', carta:'Carta', otro:'Otro' };
+
+async function plantillasView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando plantillas...</div>', 'plantillas');
+
+  try {
+    const templates = await api('/api/rhh/employees/doc-templates') || [];
+
+    const varChips = AVAILABLE_VARIABLES.map(v =>
+      `<span class="badge" style="cursor:pointer;margin:3px;" onclick="insertVariable('{{${v}}}')" title="Insertar {{${v}}}">${v}</span>`
+    ).join('');
+
+    const catOpts = Object.entries(DOC_TPL_CATEGORIES).map(([v, l]) =>
+      `<option value="${v}">${l}</option>`).join('');
+
+    const tplList = templates.length === 0
+      ? '<div class="empty-state"><div class="empty-icon">📄</div><p>No hay plantillas de documentos</p></div>'
+      : templates.map(t => `
+          <div class="card" style="margin-bottom:10px;padding:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div>
+                <strong>${t.name}</strong>
+                <span class="badge" style="margin-left:8px;">${DOC_TPL_CATEGORIES[t.category] || t.category}</span>
+              </div>
+              <span class="small muted">${fmtDateDisplay(t.created_at?.slice(0,10))}</span>
+            </div>
+            ${t.description ? `<div class="small muted" style="margin-top:4px;">${t.description}</div>` : ''}
+          </div>`
+        ).join('');
+
+    const formHtml = docTplShowForm ? `
+      <div class="card section" style="margin-bottom:16px;">
+        <h3>Nueva plantilla de documento</h3>
+        <div class="row">
+          <div><label>Nombre *</label><input id="dt-name" placeholder="Ej: Contrato de trabajo" /></div>
+          <div><label>Categoría</label><select id="dt-cat">${catOpts}</select></div>
+        </div>
+        <div style="margin-top:10px;">
+          <label>Descripción</label>
+          <input id="dt-desc" placeholder="Descripción breve de la plantilla..." />
+        </div>
+        <div style="margin-top:10px;">
+          <label>Variables disponibles (clic para insertar):</label>
+          <div style="margin-top:6px;">${varChips}</div>
+        </div>
+        <div style="margin-top:10px;">
+          <label>Contenido de la plantilla (HTML) *</label>
+          <textarea id="dt-content" rows="10"
+            style="font-family:monospace;font-size:13px;"
+            placeholder="<h2>Contrato</h2><p>Para {{nombre}}...</p>"></textarea>
+        </div>
+        <div class="actions" style="margin-top:12px;">
+          <button class="btn-primary" onclick="saveDocTemplate()">💾 Guardar plantilla</button>
+          <button class="btn-ghost" onclick="docTplShowForm=false;plantillasView()">Cancelar</button>
+        </div>
+      </div>` : '';
+
+    const content = `
+      <div class="module-title">
+        <h2>📄 Plantillas de Documentos</h2>
+        <button class="btn-primary" onclick="docTplShowForm=!docTplShowForm;plantillasView()">+ Nueva plantilla</button>
+      </div>
+      ${formHtml}
+      <div>${tplList}</div>
+    `;
+    el.innerHTML = shell(content, 'plantillas');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'plantillas');
+  }
+}
+
+function insertVariable(varStr) {
+  const ta = document.getElementById('dt-content');
+  if (!ta) return;
+  const start = ta.selectionStart;
+  const end = ta.selectionEnd;
+  ta.value = ta.value.slice(0, start) + varStr + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + varStr.length;
+  ta.focus();
+}
+
+async function saveDocTemplate() {
+  const name = document.getElementById('dt-name')?.value?.trim();
+  const category = document.getElementById('dt-cat')?.value;
+  const description = document.getElementById('dt-desc')?.value?.trim() || '';
+  const template_content = document.getElementById('dt-content')?.value?.trim();
+
+  if (!name || !template_content) {
+    toast('Nombre y contenido son requeridos', 'warning');
+    return;
+  }
+
+  // Extraer variables usadas
+  const variables = [...new Set([...template_content.matchAll(/\{\{(\w+)\}\}/g)].map(m => m[1]))];
+
+  try {
+    await api('/api/rhh/employees/doc-templates', {
+      method: 'POST',
+      body: JSON.stringify({ name, category, description, template_content, variables })
+    });
+    toast('Plantilla creada exitosamente');
+    docTplShowForm = false;
+    plantillasView();
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -2955,7 +3986,11 @@ function render() {
     'queja-anonima': quejaAnonimView,
     'quejas-rh': quejasRHView,
     'aclaracion-nomina': aclaracionNominaView,
-    'aclaraciones-rh': aclaracionesRHView
+    'aclaraciones-rh': aclaracionesRHView,
+    vacantes: vacantesView,
+    evaluaciones: evaluacionesView,
+    'mis-evaluaciones': misEvaluacionesView,
+    plantillas: plantillasView
   };
 
   const viewFn = views[hash];

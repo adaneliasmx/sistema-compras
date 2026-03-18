@@ -170,10 +170,87 @@
   "rhh_documents": [],
   "rhh_trainings": [],
   "rhh_training_records": [],
-  "rhh_evaluations": [],
+  "rhh_evaluations": [
+    {
+      "id": 1,
+      "period_id": 1,
+      "employee_id": 3,
+      "evaluator_id": 1,
+      "template_id": 1,
+      "answers": [
+        {"field_id": 1, "value": 4},
+        {"field_id": 2, "value": 5},
+        {"field_id": 3, "value": 3}
+      ],
+      "score": 82,
+      "bonus_days": 2.82,
+      "dia_desempeno": 0.82,
+      "dia_calidad": 1,
+      "dia_reclamos": 1,
+      "submitted_at": "2026-02-28T10:00:00.000Z",
+      "notes": ""
+    }
+  ],
+  "rhh_evaluation_templates": [
+    {
+      "id": 1,
+      "name": "Evaluación Operativo",
+      "position_id": null,
+      "fields": [
+        {"id": 1, "label": "Cumplimiento de tareas", "type": "score_1_5", "weight": 40, "description": ""},
+        {"id": 2, "label": "Trabajo en equipo", "type": "score_1_5", "weight": 30, "description": ""},
+        {"id": 3, "label": "Puntualidad", "type": "score_1_5", "weight": 30, "description": ""}
+      ],
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "rhh_evaluation_periods": [
+    {
+      "id": 1,
+      "name": "Febrero 2026",
+      "start_date": "2026-02-01",
+      "end_date": "2026-02-28",
+      "status": "closed",
+      "quality_met": true,
+      "claims_met": true,
+      "evaluations": [
+        {"evaluator_id": 1, "employee_id": 3, "template_id": 1, "completed": true}
+      ],
+      "created_at": "2026-02-01T00:00:00.000Z"
+    }
+  ],
   "rhh_uniforms": [],
   "rhh_uniform_assignments": [],
   "rhh_te_authorizations": [],
   "rhh_anonymous_complaints": [],
-  "rhh_payroll_clarifications": []
+  "rhh_payroll_clarifications": [],
+  "rhh_vacancies": [
+    {
+      "id": 1,
+      "position_id": 3,
+      "department_id": 1,
+      "shift_id": 1,
+      "reason": "baja_voluntaria",
+      "origin_employee_id": 3,
+      "status": "open",
+      "priority": "alta",
+      "project": "",
+      "notes": "",
+      "opened_date": "2026-03-01",
+      "filled_date": null,
+      "opened_by": 1,
+      "filled_by": null
+    }
+  ],
+  "rhh_doc_templates": [
+    {
+      "id": 1,
+      "name": "Contrato de trabajo",
+      "category": "contrato",
+      "description": "Contrato laboral básico",
+      "template_content": "<h2>CONTRATO DE TRABAJO</h2><p>Entre la empresa y <b>{{nombre}}</b>, con RFC <b>{{rfc}}</b>, CURP <b>{{curp}}</b>, NSS <b>{{nss}}</b>.</p><p>Puesto: <b>{{puesto}}</b> en el departamento de <b>{{departamento}}</b>.</p><p>Fecha de ingreso: <b>{{fecha_ingreso}}</b>. Salario diario: <b>${{salario_diario}}</b>.</p><p>Generado el {{fecha_actual}}.</p>",
+      "variables": ["nombre","rfc","curp","nss","puesto","departamento","fecha_ingreso","salario_diario","fecha_actual"],
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ]
 }

@@ -26,6 +26,8 @@ const rhhCatalogsRoutes = require('./routes/rhh-catalogs');
 const rhhScheduleRoutes = require('./routes/rhh-schedule');
 const rhhIncidencesRoutes = require('./routes/rhh-incidences');
 const rhhDashboardRoutes = require('./routes/rhh-dashboard');
+const rhhVacanciesRoutes = require('./routes/rhh-vacancies');
+const rhhEvaluationsRoutes = require('./routes/rhh-evaluations');
 
 const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
@@ -64,6 +66,8 @@ app.use('/api/rhh/catalogs', rhhCatalogsRoutes);
 app.use('/api/rhh/schedule', rhhScheduleRoutes);
 app.use('/api/rhh/incidences', rhhIncidencesRoutes);
 app.use('/api/rhh/dashboard', rhhDashboardRoutes);
+app.use('/api/rhh/vacancies', rhhVacanciesRoutes);
+app.use('/api/rhh/evaluations', rhhEvaluationsRoutes);
 
 // ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
 // Portal principal
