@@ -714,7 +714,7 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
 // ── POST /api/rhh/schedule/attendance ─────────────────────────────────────────
 router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
   const db = read();
-  const { employee_id, date, status, te_hours, notes } = req.body || {};
+  const { employee_id, date, status, te_hours, notes, cost_center, project_id } = req.body || {};
 
   if (!employee_id || !date || !status) {
     return res.status(400).json({ error: 'employee_id, date y status son requeridos' });
@@ -748,12 +748,20 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
   attLog.push(logEntry);
   db.rhh_attendance_log = attLog;
 
+  const VALID_CC = ['rh', 'operaciones', 'cliente', null, undefined];
+  const cc = cost_center || null;
+  if (cc && !['rh', 'operaciones', 'cliente'].includes(cc)) {
+    return res.status(400).json({ error: 'cost_center inválido (rh | operaciones | cliente)' });
+  }
+
   if (existingIdx !== -1) {
     attendance[existingIdx] = {
       ...attendance[existingIdx],
       status,
       te_hours: te_hours !== undefined ? Number(te_hours) : attendance[existingIdx].te_hours,
       notes: notes !== undefined ? notes : attendance[existingIdx].notes,
+      cost_center: cost_center !== undefined ? cc : attendance[existingIdx].cost_center,
+      project_id: project_id !== undefined ? (project_id || null) : attendance[existingIdx].project_id,
       registered_by: req.rhhUser.id,
       updated_at: now
     };
@@ -769,6 +777,8 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     status: String(status),
     te_hours: te_hours !== undefined ? Number(te_hours) : 0,
     notes: notes || null,
+    cost_center: cc,
+    project_id: project_id || null,
     registered_by: req.rhhUser.id,
     created_at: now,
     updated_at: now
@@ -874,6 +884,370 @@ router.delete('/holidays/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (
   db.rhh_holidays.splice(idx, 1);
   write(db);
   res.json({ ok: true });
+});
+
+// ── ROL Semanal ────────────────────────────────────────────────────────────────
+
+// GET /api/rhh/schedule/weekly-rol?week_start=YYYY-MM-DD
+router.get('/weekly-rol', rhhAuthRequired, (req, res) => {
+  const db = read();
+  let weekStart;
+  if (req.query.week_start) {
+    weekStart = req.query.week_start;
+  } else {
+    const now = new Date();
+    const d = new Date(now);
+    const day = d.getDay();
+    d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+    weekStart = d.toISOString().slice(0, 10);
+  }
+
+  const shifts = db.rhh_shifts || [];
+  const positions = db.rhh_positions || [];
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const weeklyRols = db.rhh_weekly_rol || [];
+  const rolSlots = db.rhh_rol_slots || [];
+  const rolAssignments = db.rhh_rol_assignments || [];
+
+  const result = shifts.map(shift => {
+    const rol = weeklyRols.find(r => r.week_start === weekStart && r.shift_id === shift.id) || null;
+    const slots = rol ? rolSlots.filter(s => s.rol_id === rol.id) : [];
+
+    const slotsWithAssignments = slots.map(slot => {
+      const assignments = rolAssignments.filter(a => a.rol_id === rol.id && a.slot_id === slot.id);
+      const position = positions.find(p => p.id === slot.position_id);
+      const assigned = assignments.map(a => {
+        const emp = employees.find(e => e.id === a.employee_id);
+        return {
+          assignment_id: a.id,
+          employee_id: a.employee_id,
+          full_name: emp?.full_name || 'Desconocido',
+          employee_number: emp?.employee_number || '',
+          shift_id: emp?.shift_id || null
+        };
+      });
+      return {
+        ...slot,
+        position_name: position?.name || 'Puesto desconocido',
+        assigned,
+        missing: Math.max(0, (slot.required_count || 1) - assigned.length)
+      };
+    });
+
+    const totalMissing = slotsWithAssignments.reduce((s, sl) => s + sl.missing, 0);
+    return { rol, shift, slots: slotsWithAssignments, total_missing: totalMissing };
+  });
+
+  res.json({ week_start: weekStart, shifts: result });
+});
+
+// POST /api/rhh/schedule/weekly-rol — crear ROL para semana/turno
+router.post('/weekly-rol', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { week_start, shift_id } = req.body || {};
+  if (!week_start || !shift_id) return res.status(400).json({ error: 'week_start y shift_id son requeridos' });
+
+  const weeklyRols = db.rhh_weekly_rol || [];
+  const existing = weeklyRols.find(r => r.week_start === week_start && r.shift_id === Number(shift_id));
+  if (existing) return res.json(existing);
+
+  const rol = {
+    id: nextId(weeklyRols),
+    week_start: String(week_start),
+    shift_id: Number(shift_id),
+    status: 'draft',
+    published_at: null,
+    published_by: null,
+    notes: null,
+    created_at: new Date().toISOString(),
+    created_by: req.rhhUser.id
+  };
+  weeklyRols.push(rol);
+  db.rhh_weekly_rol = weeklyRols;
+  write(db);
+  res.status(201).json(rol);
+});
+
+// POST /api/rhh/schedule/weekly-rol/:id/slots — agregar puesto requerido
+router.post('/weekly-rol/:id/slots', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const { position_id, required_count, days, notes } = req.body || {};
+  if (!position_id) return res.status(400).json({ error: 'position_id es requerido' });
+
+  const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
+  if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
+  if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+
+  const slots = db.rhh_rol_slots || [];
+  const slot = {
+    id: nextId(slots),
+    rol_id: rolId,
+    position_id: Number(position_id),
+    required_count: Number(required_count) || 1,
+    days: Array.isArray(days) ? days.map(Number) : [1, 2, 3, 4, 5],
+    notes: notes || null
+  };
+  slots.push(slot);
+  db.rhh_rol_slots = slots;
+  write(db);
+  res.status(201).json(slot);
+});
+
+// DELETE /api/rhh/schedule/weekly-rol/:id/slots/:slotId
+router.delete('/weekly-rol/:id/slots/:slotId', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const slotId = Number(req.params.slotId);
+
+  const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
+  if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
+  if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+
+  const slots = db.rhh_rol_slots || [];
+  const idx = slots.findIndex(s => s.id === slotId && s.rol_id === rolId);
+  if (idx === -1) return res.status(404).json({ error: 'Puesto no encontrado en ROL' });
+
+  slots.splice(idx, 1);
+  db.rhh_rol_slots = slots;
+  db.rhh_rol_assignments = (db.rhh_rol_assignments || []).filter(
+    a => !(a.rol_id === rolId && a.slot_id === slotId)
+  );
+  write(db);
+  res.json({ ok: true });
+});
+
+// POST /api/rhh/schedule/weekly-rol/:id/assign — asignar empleado a puesto
+router.post('/weekly-rol/:id/assign', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const { slot_id, employee_id } = req.body || {};
+  if (!slot_id || !employee_id) return res.status(400).json({ error: 'slot_id y employee_id son requeridos' });
+
+  const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
+  if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
+  if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+
+  const slot = (db.rhh_rol_slots || []).find(s => s.id === Number(slot_id) && s.rol_id === rolId);
+  if (!slot) return res.status(404).json({ error: 'Puesto no encontrado en ROL' });
+
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id) && e.status === 'active');
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  // Supervisor solo puede asignar sus reportes directos
+  if (req.rhhUser.role === 'supervisor' && req.rhhUser.employee_id) {
+    if (emp.supervisor_id !== req.rhhUser.employee_id && emp.id !== req.rhhUser.employee_id) {
+      return res.status(403).json({ error: 'Solo puedes asignar a tus reportes directos' });
+    }
+  }
+
+  const assignments = db.rhh_rol_assignments || [];
+  const dup = assignments.find(
+    a => a.rol_id === rolId && a.slot_id === Number(slot_id) && a.employee_id === Number(employee_id)
+  );
+  if (dup) return res.status(409).json({ error: 'Empleado ya asignado a este puesto' });
+
+  const assignment = {
+    id: nextId(assignments),
+    rol_id: rolId,
+    slot_id: Number(slot_id),
+    employee_id: Number(employee_id),
+    assigned_by: req.rhhUser.id,
+    created_at: new Date().toISOString()
+  };
+  assignments.push(assignment);
+  db.rhh_rol_assignments = assignments;
+  write(db);
+  res.status(201).json(assignment);
+});
+
+// DELETE /api/rhh/schedule/weekly-rol/:id/assign/:assignId
+router.delete('/weekly-rol/:id/assign/:assignId', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const assignId = Number(req.params.assignId);
+  const assignments = db.rhh_rol_assignments || [];
+  const idx = assignments.findIndex(a => a.id === assignId && a.rol_id === rolId);
+  if (idx === -1) return res.status(404).json({ error: 'Asignación no encontrada' });
+  assignments.splice(idx, 1);
+  db.rhh_rol_assignments = assignments;
+  write(db);
+  res.json({ ok: true });
+});
+
+// POST /api/rhh/schedule/weekly-rol/:id/publish — publicar ROL
+router.post('/weekly-rol/:id/publish', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const weeklyRols = db.rhh_weekly_rol || [];
+  const idx = weeklyRols.findIndex(r => r.id === rolId);
+  if (idx === -1) return res.status(404).json({ error: 'ROL no encontrado' });
+
+  const rol = weeklyRols[idx];
+  if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+
+  weeklyRols[idx] = {
+    ...rol,
+    status: 'published',
+    published_at: new Date().toISOString(),
+    published_by: req.rhhUser.id
+  };
+  db.rhh_weekly_rol = weeklyRols;
+
+  // Notificar empleados asignados
+  const assignments = (db.rhh_rol_assignments || []).filter(a => a.rol_id === rolId);
+  const empIds = [...new Set(assignments.map(a => a.employee_id))];
+  const shift = (db.rhh_shifts || []).find(s => s.id === rol.shift_id);
+  const shiftName = shift?.name || 'su turno';
+  const weekDate = new Date(rol.week_start + 'T12:00:00');
+  const MONTHS_ES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  const weekLabel = `semana del ${weekDate.getDate()} de ${MONTHS_ES[weekDate.getMonth()]}`;
+  const notifications = db.rhh_notifications || [];
+
+  for (const empId of empIds) {
+    notifications.push({
+      id: nextId(notifications),
+      employee_id: empId,
+      type: 'rol_published',
+      title: '📅 ROL publicado',
+      message: `Tu ROL para la ${weekLabel} (${shiftName}) ha sido publicado.`,
+      data: { rol_id: rolId, week_start: rol.week_start, shift_id: rol.shift_id },
+      read: false,
+      created_at: new Date().toISOString()
+    });
+  }
+  db.rhh_notifications = notifications;
+  write(db);
+  res.json({ ok: true, rol: weeklyRols[idx], notified: empIds.length });
+});
+
+// POST /api/rhh/schedule/weekly-rol/:id/copy-previous — copiar puestos de semana anterior
+router.post('/weekly-rol/:id/copy-previous', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const rolId = Number(req.params.id);
+  const weeklyRols = db.rhh_weekly_rol || [];
+  const rol = weeklyRols.find(r => r.id === rolId);
+  if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
+  if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+
+  const prevDate = new Date(rol.week_start + 'T12:00:00');
+  prevDate.setDate(prevDate.getDate() - 7);
+  const prevWeekStr = prevDate.toISOString().slice(0, 10);
+  const prevRol = weeklyRols.find(r => r.week_start === prevWeekStr && r.shift_id === rol.shift_id);
+  if (!prevRol) return res.status(404).json({ error: 'No hay ROL de la semana anterior para este turno' });
+
+  const prevSlots = (db.rhh_rol_slots || []).filter(s => s.rol_id === prevRol.id);
+  if (prevSlots.length === 0) return res.status(404).json({ error: 'La semana anterior no tiene puestos definidos' });
+
+  const slots = db.rhh_rol_slots || [];
+  const newSlots = [];
+  for (const ps of prevSlots) {
+    if (!slots.find(s => s.rol_id === rolId && s.position_id === ps.position_id)) {
+      const ns = { id: nextId(slots), rol_id: rolId, position_id: ps.position_id, required_count: ps.required_count, days: ps.days, notes: ps.notes };
+      slots.push(ns);
+      newSlots.push(ns);
+    }
+  }
+  db.rhh_rol_slots = slots;
+  write(db);
+  res.json({ ok: true, slots_copied: newSlots.length, slots: newSlots });
+});
+
+// ── Cálculo T.E. (LFT) ────────────────────────────────────────────────────────
+
+// GET /api/rhh/schedule/te-calc?week_start=YYYY-MM-DD
+router.get('/te-calc', rhhAuthRequired, (req, res) => {
+  const db = read();
+  let weekStart;
+  if (req.query.week_start) {
+    weekStart = req.query.week_start;
+  } else {
+    const now = new Date();
+    const d = new Date(now);
+    const day = d.getDay();
+    d.setDate(d.getDate() - day + (day === 0 ? -6 : 1));
+    weekStart = d.toISOString().slice(0, 10);
+  }
+
+  const weekDays = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart + 'T12:00:00');
+    d.setDate(d.getDate() + i);
+    weekDays.push(d.toISOString().slice(0, 10));
+  }
+
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const shifts = db.rhh_shifts || [];
+  const attendanceRecords = db.rhh_attendance || [];
+  const holidays = db.rhh_holidays || [];
+
+  const result = employees.map(emp => {
+    const shift = shifts.find(s => s.id === emp.shift_id);
+    const dailySalary = emp.daily_salary || 0;
+    const isT3 = shift?.code === 'T3';
+    const dailyHours = isT3 ? 7 : 8;
+    const hourlyRate = dailyHours > 0 ? dailySalary / dailyHours : 0;
+
+    const dayDetails = weekDays.map(dateStr => {
+      const dow = new Date(dateStr + 'T12:00:00').getDay();
+      const isSunday = dow === 0;
+      const isHoliday = holidays.some(h => h.date === dateStr);
+      const worksThisDay = shift ? shift.work_days.includes(dow) : false;
+      const attRecord = attendanceRecords.find(a => a.employee_id === emp.id && a.date === dateStr);
+      const teHours = attRecord?.te_hours || 0;
+      return {
+        date: dateStr,
+        day_of_week: dow,
+        is_sunday: isSunday,
+        is_holiday: isHoliday,
+        works_this_day: worksThisDay,
+        status: attRecord?.status || (worksThisDay ? 'labora' : 'descanso'),
+        te_hours: teHours,
+        cost_center: attRecord?.cost_center || null,
+        project_id: attRecord?.project_id || null
+      };
+    });
+
+    const weeklyTeTotal = dayDetails.reduce((s, d) => s + d.te_hours, 0);
+
+    // T3 default TE: turno de 45h reales, 42h legales → 3h de TE semanales incluidas
+    // Solo las horas ADICIONALES a las 3 built-in cuentan como horas extra LFT
+    const effectiveTeHours = isT3 ? Math.max(0, weeklyTeTotal - 3) : weeklyTeTotal;
+
+    // LFT: hrs 1-9 = 2x, hrs 10+ = 3x (sobre el salario/hora)
+    const te2x = Math.min(effectiveTeHours, 9);
+    const te3x = Math.max(0, effectiveTeHours - 9);
+    // Monto EXTRA sobre el salario regular (el doble/triple ya incluye el salario base)
+    const teExtraPay = te2x * hourlyRate + te3x * hourlyRate * 2;
+
+    // Séptimo día (domingo laboral) y prima dominical
+    const sundayWorked = dayDetails.filter(d => d.is_sunday && d.works_this_day && d.status !== 'falta' && d.status !== 'descanso');
+    const primaDomin = sundayWorked.length * dailySalary * 0.25;
+    const septimoSalary = sundayWorked.length > 0 ? sundayWorked.length * dailySalary * 2 : 0;
+
+    return {
+      employee_id: emp.id,
+      employee_number: emp.employee_number,
+      full_name: emp.full_name,
+      shift_code: shift?.code || '—',
+      shift_name: shift?.name || '—',
+      daily_salary: dailySalary,
+      hourly_rate: Math.round(hourlyRate * 100) / 100,
+      is_t3: isT3,
+      days: dayDetails,
+      weekly_te_total: weeklyTeTotal,
+      te_effective: effectiveTeHours,
+      te_2x_hours: te2x,
+      te_3x_hours: te3x,
+      te_extra_pay: Math.round(teExtraPay * 100) / 100,
+      prima_dominical: Math.round(primaDomin * 100) / 100,
+      septimo_dia_pay: Math.round(septimoSalary * 100) / 100,
+      total_extra: Math.round((teExtraPay + primaDomin) * 100) / 100
+    };
+  });
+
+  const withTE = result.filter(e => e.weekly_te_total > 0 || e.prima_dominical > 0);
+  res.json({ week_start: weekStart, week_end: weekDays[6], employees: withTE, total_employees: result.length });
 });
 
 module.exports = router;

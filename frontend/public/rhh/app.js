@@ -24,7 +24,7 @@ const MENU_BY_ROLE = {
     ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
   supervisor: [
-    ['lista-asistencia', '📋 Lista Asistencia'],
+    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['calendario', '📅 Calendario'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['ausencias-hoy', '🚨 Ausencias Hoy'],
@@ -32,7 +32,7 @@ const MENU_BY_ROLE = {
   ],
   rh: [
     ['dashboard', '📊 Dashboard'],
-    ['lista-asistencia', '📋 Lista Asistencia'],
+    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['empleados', '👥 Empleados'],
     ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
@@ -41,13 +41,12 @@ const MENU_BY_ROLE = {
     ['vacantes', '🔍 Vacantes'],
     ['evaluaciones', '⭐ Evaluaciones'],
     ['reportes', '📊 Reportes'],
-    ['programacion-te', '🔥 Prog. T.E.'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
   ],
   admin: [
     ['dashboard', '📊 Dashboard'],
-    ['lista-asistencia', '📋 Lista Asistencia'],
+    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['empleados', '👥 Empleados'],
     ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
@@ -58,7 +57,6 @@ const MENU_BY_ROLE = {
     ['catalogos', '📁 Catálogos'],
     ['plantillas', '📄 Plantillas'],
     ['reportes', '📊 Reportes'],
-    ['programacion-te', '🔥 Prog. T.E.'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
   ]
@@ -4235,6 +4233,9 @@ let attendanceWeekStart = null;
 let attendanceFilters = { area: '', project: '', shift: '' };
 let attendanceData = null;
 let totalsVisible = false;
+let activeRolTab = 0; // 0=ROL, 1=Asistencia, 2=T.E. Cálculo
+let rolWeekStart = null;
+let rolData = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getMonday(date) {
@@ -4471,56 +4472,104 @@ function closeTEModal() {
 
 // ── Click en celda TE ──────────────────────────────────────────────────────────
 function handleTEClick(empId, date, currentHours, empName, isLaborDay, cellEl) {
-  // Modo inline edit
-  const input = document.createElement('input');
-  input.type = 'number';
-  input.min = '-24';
-  input.max = '24';
-  input.step = '0.5';
-  input.value = currentHours || '';
-  input.style.cssText = 'width:44px;text-align:center;border:1px solid #059669;border-radius:4px;font-size:12px;padding:2px 4px;';
+  openTECCModal(empId, date, currentHours, empName, cellEl);
+}
 
-  cellEl.textContent = '';
-  cellEl.appendChild(input);
-  input.focus();
-
-  async function saveTE() {
-    const hours = parseFloat(input.value) || 0;
-    try {
-      await api('/api/rhh/schedule/attendance', {
-        method: 'POST',
-        body: JSON.stringify({ employee_id: empId, date, status: 'labora', te_hours: hours })
-      });
-      // Actualizar cache
-      if (attendanceData) {
-        for (const sg of attendanceData.shifts) {
-          const emp = sg.employees.find(e => e.id === empId);
-          if (emp) {
-            const day = emp.days.find(d => d.date === date);
-            if (day) { day.te_hours = hours; }
-            // Recalc total
-            const teTotal = emp.days.reduce((s, d) => s + (d.te_hours || 0), 0);
-            emp.totals.te_total = teTotal;
-            emp.totals.dias_pendientes = Math.round((teTotal / 8) * 100) / 100;
-            break;
-          }
-        }
+function openTECCModal(empId, date, currentHours, empName, cellEl) {
+  // Leer centro de costo actual del cache
+  let currentCC = null, currentProject = null;
+  if (attendanceData) {
+    for (const sg of attendanceData.shifts) {
+      const emp = sg.employees.find(e => e.id === empId);
+      if (emp) {
+        const day = emp.days.find(d => d.date === date);
+        if (day) { currentCC = day.cost_center || null; currentProject = day.project_id || null; }
+        break;
       }
-      cellEl.textContent = hours !== 0 ? hours : '';
-      if (hours < 0) cellEl.classList.add('te-negative');
-      else cellEl.classList.remove('te-negative');
-      toast('T.E. guardado');
-    } catch (err) {
-      cellEl.textContent = currentHours || '';
-      toast(err.message, 'error');
     }
   }
 
-  input.addEventListener('blur', saveTE);
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { input.blur(); }
-    if (e.key === 'Escape') { cellEl.textContent = currentHours || ''; }
-  });
+  let modal = document.getElementById('te-cc-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'te-cc-modal';
+    modal.style.cssText = 'display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;';
+    document.body.appendChild(modal);
+  }
+
+  const projOpts = (state.employees.find(e=>e.id===empId)?.project
+    ? `<option value="">— Sin proyecto —</option><option value="${state.employees.find(e=>e.id===empId)?.project}">${state.employees.find(e=>e.id===empId)?.project}</option>`
+    : `<option value="">— Sin proyecto —</option>`);
+  // Obtener proyectos del catálogo si disponibles
+  const allProjects = [...new Set((state.employees||[]).map(e=>e.project).filter(Boolean))];
+  const fullProjOpts = `<option value="">— Sin proyecto —</option>` + allProjects.map(p=>`<option value="${p}" ${currentProject===p?'selected':''}>${p}</option>`).join('');
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(380px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 4px;font-size:15px;">⏱ Tiempo Extra</h3>
+      <div style="color:var(--muted);font-size:12px;margin-bottom:16px;">${empName} · ${date}</div>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Horas T.E.</label>
+      <input id="te-cc-hours" type="number" min="0" max="24" step="0.5" value="${currentHours || ''}"
+        style="width:100%;margin-bottom:12px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;" placeholder="0" />
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Centro de costo</label>
+      <select id="te-cc-select" style="width:100%;margin-bottom:12px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;"
+        onchange="document.getElementById('te-cc-project-wrap').style.display=this.value==='cliente'?'block':'none'">
+        <option value="">— Sin asignar —</option>
+        <option value="rh" ${currentCC==='rh'?'selected':''}>RH (ausencias / ajustes)</option>
+        <option value="operaciones" ${currentCC==='operaciones'?'selected':''}>Operaciones (solicitud supervisor)</option>
+        <option value="cliente" ${currentCC==='cliente'?'selected':''}>Solicitud de Cliente</option>
+      </select>
+      <div id="te-cc-project-wrap" style="display:${currentCC==='cliente'?'block':'none'};margin-bottom:12px;">
+        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Proyecto / Cliente</label>
+        <select id="te-cc-project" style="width:100%;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">${fullProjOpts}</select>
+      </div>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Notas</label>
+      <textarea id="te-cc-notes" rows="2" style="width:100%;margin-bottom:16px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;resize:vertical;" placeholder="Motivo..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('te-cc-modal').style.display='none'">Cancelar</button>
+        <button class="btn-primary" onclick="saveTECC(${empId},'${date}',${JSON.stringify(empName).replace(/"/g,"'")})">Guardar</button>
+      </div>
+    </div>`;
+  modal.style.display = 'grid';
+}
+
+async function saveTECC(empId, date, empName) {
+  const hours = parseFloat(document.getElementById('te-cc-hours').value) || 0;
+  const costCenter = document.getElementById('te-cc-select').value || null;
+  const projectId = costCenter === 'cliente' ? (document.getElementById('te-cc-project').value || null) : null;
+  const notes = document.getElementById('te-cc-notes').value || null;
+
+  try {
+    await api('/api/rhh/schedule/attendance', {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: empId, date, status: 'labora', te_hours: hours, cost_center: costCenter, project_id: projectId, notes })
+    });
+    // Actualizar cache local
+    if (attendanceData) {
+      for (const sg of attendanceData.shifts) {
+        const emp = sg.employees.find(e => e.id === empId);
+        if (emp) {
+          const day = emp.days.find(d => d.date === date);
+          if (day) { day.te_hours = hours; day.cost_center = costCenter; day.project_id = projectId; }
+          emp.totals.te_total = emp.days.reduce((s, d) => s + (d.te_hours || 0), 0);
+          emp.totals.dias_pendientes = Math.round((emp.totals.te_total / 8) * 100) / 100;
+          break;
+        }
+      }
+    }
+    // Actualizar celda en DOM
+    const cellEl = document.querySelector(`.te-cell[data-empid="${empId}"][data-date="${date}"]`);
+    if (cellEl) {
+      const ccIcon = costCenter ? { rh: '🏥', operaciones: '⚙️', cliente: '🤝' }[costCenter] : '';
+      cellEl.textContent = hours !== 0 ? `${hours}${ccIcon}` : '';
+      if (hours < 0) cellEl.classList.add('te-negative');
+      else cellEl.classList.remove('te-negative');
+    }
+    document.getElementById('te-cc-modal').style.display = 'none';
+    toast(`T.E. guardado${costCenter ? ' · CC: ' + costCenter : ''}`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
 }
 
 // ── Dropdown de puestos ────────────────────────────────────────────────────────
@@ -4627,12 +4676,434 @@ async function saveHoliday() {
   }
 }
 
+// ── ROL SEMANAL ────────────────────────────────────────────────────────────────
+async function listaRolView(el) {
+  el.innerHTML = shell('<div class="loading-overlay">Cargando ROL semanal...</div>', 'lista-asistencia');
+  try {
+    const role = state.user?.role;
+    const canEdit = ['rh','admin'].includes(role);
+    const canAssign = ['supervisor','rh','admin'].includes(role);
+
+    const data = await api(`/api/rhh/schedule/weekly-rol?week_start=${rolWeekStart}`);
+    if (!data) return;
+    rolData = data;
+
+    // Build week label
+    const ws = new Date(rolWeekStart + 'T12:00:00');
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const weekLabel = `${ws.getDate()} ${MONTHS[ws.getMonth()]} – ${we.getDate()} ${MONTHS[we.getMonth()]} ${we.getFullYear()}`;
+
+    let shiftsHtml = '';
+    for (const sg of data.shifts) {
+      const shift = sg.shift;
+      const rol = sg.rol;
+      const isDraft = !rol || rol.status === 'draft';
+      const statusBadge = isDraft
+        ? `<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">BORRADOR</span>`
+        : `<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">✓ PUBLICADO ${fmtDateDisplay(rol.published_at?.slice(0,10)||'')}</span>`;
+      const missingAlert = sg.total_missing > 0
+        ? `<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">⚠ ${sg.total_missing} puesto${sg.total_missing!==1?'s':''} sin cubrir</span>`
+        : '';
+
+      const actionBtns = canEdit ? `
+        ${!rol ? `<button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="createRol('${rolWeekStart}',${shift.id})">+ Crear ROL</button>` : ''}
+        ${rol && isDraft ? `
+          <button class="btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="openAddSlotModal(${rol.id},${shift.id})">+ Puesto</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="copyPreviousRol(${rol.id})">Copiar anterior</button>
+          <button class="btn-primary" style="font-size:11px;padding:4px 10px;background:#059669;" onclick="publishRol(${rol.id})">Publicar ROL</button>
+        ` : ''}
+      ` : '';
+
+      let slotsHtml = '';
+      if (sg.slots.length === 0) {
+        slotsHtml = `<tr><td colspan="4" style="text-align:center;padding:16px;color:var(--muted);font-size:13px;">Sin puestos definidos — ${canEdit ? 'usa "+ Puesto" para agregar' : 'el administrador debe configurar el ROL'}</td></tr>`;
+      } else {
+        for (const slot of sg.slots) {
+          const filledCount = slot.assigned.length;
+          const reqCount = slot.required_count || 1;
+          const isFull = filledCount >= reqCount;
+          const assignedNames = slot.assigned.map(a =>
+            `<span class="pill active" style="font-size:11px;display:inline-flex;align-items:center;gap:4px;">
+              ${a.full_name}
+              ${(canAssign && isDraft) ? `<span onclick="removeRolAssignment(${rol.id},${a.assignment_id})" style="cursor:pointer;opacity:.6;font-weight:700;">✕</span>` : ''}
+            </span>`
+          ).join('');
+          const addBtn = (canAssign && isDraft && filledCount < reqCount)
+            ? `<button class="btn-ghost" style="font-size:11px;padding:3px 8px;" onclick="openAssignEmpModal(${rol.id},${slot.id},'${slot.position_name.replace(/'/g,"\\'")}',${ shift.id})">+ Asignar</button>`
+            : '';
+          const removeSlotBtn = (canEdit && isDraft)
+            ? `<button style="background:none;border:none;cursor:pointer;color:#ef4444;font-size:12px;" title="Quitar puesto" onclick="removeRolSlot(${rol.id},${slot.id})">✕</button>`
+            : '';
+          slotsHtml += `<tr>
+            <td style="padding:8px 12px;font-size:13px;">${removeSlotBtn} ${slot.position_name}</td>
+            <td style="padding:8px 12px;text-align:center;">
+              <span style="font-weight:700;color:${isFull?'#059669':'#dc2626'};">${filledCount}/${reqCount}</span>
+            </td>
+            <td style="padding:8px 12px;">${assignedNames} ${addBtn}</td>
+            <td style="padding:8px 12px;font-size:11px;color:var(--muted);">${(slot.days||[]).map(d=>['D','L','M','X','J','V','S'][d]||'?').join(' ')}</td>
+          </tr>`;
+        }
+      }
+
+      const shiftColor = attShiftColor(shift.code || shift.name || '?');
+      shiftsHtml += `
+        <div class="card section" style="margin-bottom:16px;border-left:4px solid ${shiftColor};">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+            <h3 style="margin:0;color:${shiftColor};">${shift.name}</h3>
+            ${statusBadge} ${missingAlert}
+            <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap;">${actionBtns}</div>
+          </div>
+          <table style="width:100%;border-collapse:collapse;">
+            <thead>
+              <tr style="background:#f9fafb;font-size:12px;color:var(--muted);">
+                <th style="padding:6px 12px;text-align:left;font-weight:600;">Puesto</th>
+                <th style="padding:6px 12px;text-align:center;font-weight:600;">Cobertura</th>
+                <th style="padding:6px 12px;text-align:left;font-weight:600;">Empleados</th>
+                <th style="padding:6px 12px;text-align:left;font-weight:600;">Días</th>
+              </tr>
+            </thead>
+            <tbody>${slotsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+
+    const content = `
+      <div class="module-title"><h2>📋 ROL / Asistencia Semanal</h2></div>
+      ${rolTabBar(0)}
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-ghost" onclick="rolNavWeek(-1)">‹ Semana anterior</button>
+        <span style="font-weight:700;font-size:14px;">${weekLabel}</span>
+        <button class="btn-ghost" onclick="rolNavWeek(1)">Semana siguiente ›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="rolWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
+      </div>
+      ${shiftsHtml}
+
+      <!-- Modal: agregar puesto al ROL -->
+      <div id="add-slot-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;display:none;">
+        <div style="background:#fff;border-radius:16px;padding:24px;width:min(400px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+          <h3 style="margin:0 0 16px;">+ Agregar puesto al ROL</h3>
+          <input type="hidden" id="slot-rol-id" />
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Puesto</label>
+          <select id="slot-position-id" style="width:100%;margin-bottom:12px;">
+            ${state.positions.map(p=>`<option value="${p.id}">${p.name}</option>`).join('')}
+          </select>
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Empleados requeridos</label>
+          <input id="slot-req-count" type="number" min="1" max="20" value="1" style="width:100%;margin-bottom:12px;" />
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Días (marcar los que aplican)</label>
+          <div id="slot-days-check" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+            ${['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'].map((d,i)=>`
+              <label style="display:flex;align-items:center;gap:4px;font-size:12px;">
+                <input type="checkbox" value="${i}" ${i>=1&&i<=5?'checked':''} /> ${d}
+              </label>`).join('')}
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn-ghost" onclick="closeSlotModal()">Cancelar</button>
+            <button class="btn-primary" onclick="saveRolSlot()">Agregar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: asignar empleado -->
+      <div id="assign-emp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;">
+        <div style="background:#fff;border-radius:16px;padding:24px;width:min(400px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+          <h3 style="margin:0 0 4px;">Asignar empleado</h3>
+          <div id="assign-emp-puesto" style="color:var(--muted);font-size:13px;margin-bottom:16px;"></div>
+          <input type="hidden" id="assign-rol-id" />
+          <input type="hidden" id="assign-slot-id" />
+          <input type="hidden" id="assign-shift-id" />
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Empleado</label>
+          <select id="assign-emp-select" style="width:100%;margin-bottom:16px;"></select>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn-ghost" onclick="closeAssignModal()">Cancelar</button>
+            <button class="btn-primary" onclick="saveRolAssignment()">Asignar</button>
+          </div>
+        </div>
+      </div>
+    `;
+    el.innerHTML = shell(content, 'lista-asistencia');
+  } catch(err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-asistencia');
+  }
+}
+
+function rolNavWeek(dir) {
+  const d = new Date(rolWeekStart + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  rolWeekStart = d.toISOString().slice(0, 10);
+  attendanceWeekStart = rolWeekStart; // mantener sincronizados
+  listaAsistenciaView();
+}
+
+function attNavWeek(dir) {
+  const d = new Date(attendanceWeekStart + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  attendanceWeekStart = d.toISOString().slice(0, 10);
+  rolWeekStart = attendanceWeekStart; // mantener sincronizados
+  listaAsistenciaView();
+}
+
+async function createRol(weekStart, shiftId) {
+  try {
+    const rol = await api('/api/rhh/schedule/weekly-rol', { method: 'POST', body: JSON.stringify({ week_start: weekStart, shift_id: shiftId }) });
+    toast('ROL creado');
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+function openAddSlotModal(rolId, shiftId) {
+  document.getElementById('slot-rol-id').value = rolId;
+  document.getElementById('add-slot-modal').style.display = 'grid';
+}
+
+function closeSlotModal() {
+  document.getElementById('add-slot-modal').style.display = 'none';
+}
+
+async function saveRolSlot() {
+  const rolId = Number(document.getElementById('slot-rol-id').value);
+  const positionId = Number(document.getElementById('slot-position-id').value);
+  const reqCount = Number(document.getElementById('slot-req-count').value) || 1;
+  const days = Array.from(document.querySelectorAll('#slot-days-check input:checked')).map(cb => Number(cb.value));
+  try {
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/slots`, {
+      method: 'POST', body: JSON.stringify({ position_id: positionId, required_count: reqCount, days })
+    });
+    closeSlotModal();
+    toast('Puesto agregado al ROL');
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function removeRolSlot(rolId, slotId) {
+  if (!confirm('¿Quitar este puesto del ROL? Se eliminarán las asignaciones.')) return;
+  try {
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/slots/${slotId}`, { method: 'DELETE' });
+    toast('Puesto eliminado');
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+function openAssignEmpModal(rolId, slotId, posName, shiftId) {
+  document.getElementById('assign-rol-id').value = rolId;
+  document.getElementById('assign-slot-id').value = slotId;
+  document.getElementById('assign-shift-id').value = shiftId;
+  document.getElementById('assign-emp-puesto').textContent = posName;
+
+  // Solo empleados activos del mismo turno (o todos si no hay turno)
+  const employees = state.employees.filter(e =>
+    e.status === 'active' &&
+    (!shiftId || e.shift_id === Number(shiftId))
+  ).sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const sel = document.getElementById('assign-emp-select');
+  if (employees.length === 0) {
+    sel.innerHTML = '<option value="">Sin empleados disponibles para este turno</option>';
+  } else {
+    sel.innerHTML = employees.map(e =>
+      `<option value="${e.id}">${e.full_name} (${e.employee_number || '—'})</option>`
+    ).join('');
+  }
+  document.getElementById('assign-emp-modal').style.display = 'grid';
+}
+
+function closeAssignModal() {
+  document.getElementById('assign-emp-modal').style.display = 'none';
+}
+
+async function saveRolAssignment() {
+  const rolId = Number(document.getElementById('assign-rol-id').value);
+  const slotId = Number(document.getElementById('assign-slot-id').value);
+  const empId = Number(document.getElementById('assign-emp-select').value);
+  try {
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/assign`, {
+      method: 'POST', body: JSON.stringify({ slot_id: slotId, employee_id: empId })
+    });
+    closeAssignModal();
+    toast('Empleado asignado al ROL');
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function removeRolAssignment(rolId, assignId) {
+  try {
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/assign/${assignId}`, { method: 'DELETE' });
+    toast('Asignación eliminada');
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function publishRol(rolId) {
+  if (!confirm('¿Publicar ROL? Los empleados recibirán una notificación.')) return;
+  try {
+    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/publish`, { method: 'POST', body: '{}' });
+    toast(`ROL publicado · ${result.notified} empleado${result.notified!==1?'s':''} notificado${result.notified!==1?'s':''}`);
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function copyPreviousRol(rolId) {
+  try {
+    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/copy-previous`, { method: 'POST', body: '{}' });
+    toast(`${result.slots_copied} puesto${result.slots_copied!==1?'s':''} copiado${result.slots_copied!==1?'s':''} de la semana anterior`);
+    listaAsistenciaView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── T.E. CÁLCULO ──────────────────────────────────────────────────────────────
+async function listaTeCalcView(el) {
+  el.innerHTML = shell('<div class="loading-overlay">Calculando T.E....</div>', 'lista-asistencia');
+  try {
+    const data = await api(`/api/rhh/schedule/te-calc?week_start=${attendanceWeekStart}`);
+    if (!data) return;
+
+    const ws = new Date(attendanceWeekStart + 'T12:00:00');
+    const we = new Date(ws); we.setDate(ws.getDate() + 6);
+    const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const weekLabel = `${ws.getDate()} ${MONTHS[ws.getMonth()]} – ${we.getDate()} ${MONTHS[we.getMonth()]} ${we.getFullYear()}`;
+
+    const fmt = (n) => n > 0 ? `$${n.toLocaleString('es-MX', {minimumFractionDigits:2,maximumFractionDigits:2})}` : '—';
+    const fmtH = (h) => h > 0 ? `${h}h` : '—';
+
+    let totalTeExtraPay = 0, totalPrima = 0, totalExtra = 0;
+
+    const CC_LABELS = { rh: '🏥 RH', operaciones: '⚙️ Ops', cliente: '🤝 Cliente' };
+    const CC_COLORS = { rh: '#7c3aed', operaciones: '#0369a1', cliente: '#059669' };
+
+    const rows = data.employees.map(emp => {
+      totalTeExtraPay += emp.te_extra_pay;
+      totalPrima += emp.prima_dominical;
+      totalExtra += emp.total_extra;
+
+      const t3note = emp.is_t3 && emp.weekly_te_total > 0
+        ? `<span title="T3: 3h incluidas en turno, ${emp.te_effective}h facturables" style="font-size:10px;color:#7c3aed;cursor:help;">⚡T3</span>`
+        : '';
+
+      // Desglose por CC
+      const ccMap = {};
+      (emp.days || []).forEach(d => {
+        if (d.te_hours > 0) {
+          const cc = d.cost_center || 'sin_cc';
+          if (!ccMap[cc]) ccMap[cc] = 0;
+          ccMap[cc] += d.te_hours;
+        }
+      });
+      const ccBreakdown = Object.entries(ccMap).map(([cc, hrs]) => {
+        const label = CC_LABELS[cc] || '— Sin CC';
+        const color = CC_COLORS[cc] || '#6b7280';
+        const proj = cc === 'cliente' ? (emp.days.find(d => d.cost_center === 'cliente' && d.project_id)?.project_id || '') : '';
+        return `<span style="font-size:10px;background:#f3f4f6;padding:2px 6px;border-radius:8px;color:${color};font-weight:700;">${label} ${hrs}h${proj?' · '+proj:''}</span>`;
+      }).join(' ');
+
+      return `<tr>
+        <td style="padding:8px 10px;font-size:12px;font-weight:600;">${emp.full_name}
+          ${ccBreakdown ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">${ccBreakdown}</div>` : ''}
+        </td>
+        <td style="padding:8px 10px;text-align:center;font-size:11px;font-weight:800;color:#4f46e5;">${emp.shift_code}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:12px;">${fmt(emp.daily_salary)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:12px;">${fmt(emp.hourly_rate)}/hr</td>
+        <td style="padding:8px 10px;text-align:center;font-size:12px;font-weight:700;">${fmtH(emp.weekly_te_total)} ${t3note}</td>
+        <td style="padding:8px 10px;text-align:center;font-size:12px;color:#059669;">${fmtH(emp.te_2x_hours)}</td>
+        <td style="padding:8px 10px;text-align:center;font-size:12px;color:#dc2626;">${fmtH(emp.te_3x_hours)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:12px;font-weight:700;">${fmt(emp.te_extra_pay)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:12px;">${fmt(emp.prima_dominical)}</td>
+        <td style="padding:8px 10px;text-align:right;font-size:13px;font-weight:800;color:#7c3aed;">${fmt(emp.total_extra)}</td>
+      </tr>`;
+    }).join('');
+
+    const totalRow = data.employees.length > 0 ? `
+      <tr style="background:#f9fafb;border-top:2px solid #e5e7eb;font-weight:700;">
+        <td colspan="7" style="padding:10px;text-align:right;font-size:12px;">TOTALES</td>
+        <td style="padding:10px;text-align:right;font-size:13px;color:#059669;">${fmt(totalTeExtraPay)}</td>
+        <td style="padding:10px;text-align:right;font-size:13px;">${fmt(totalPrima)}</td>
+        <td style="padding:10px;text-align:right;font-size:14px;color:#7c3aed;">${fmt(totalExtra)}</td>
+      </tr>` : '';
+
+    const emptyMsg = data.employees.length === 0
+      ? `<tr><td colspan="10" style="text-align:center;padding:32px;color:var(--muted);">Sin horas de T.E. registradas esta semana</td></tr>`
+      : '';
+
+    const content = `
+      <div class="module-title"><h2>📋 ROL / Asistencia Semanal</h2></div>
+      ${rolTabBar(2)}
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-ghost" onclick="attNavWeek(-1)">‹ Semana anterior</button>
+        <span style="font-weight:700;font-size:14px;">${weekLabel}</span>
+        <button class="btn-ghost" onclick="attNavWeek(1)">Semana siguiente ›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="attendanceWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
+      </div>
+
+      <div class="card section" style="margin-bottom:16px;background:#faf5ff;border-left:4px solid #7c3aed;">
+        <div style="font-size:12px;color:#6b7280;line-height:1.6;">
+          <strong>Reglas LFT:</strong>
+          Horas T.E. 1–9 por semana = <strong>2×</strong> tarifa por hora · Horas 10+ = <strong>3×</strong> ·
+          Turno 3: 3 horas semanales incluidas en el turno (no cuentan como extras) ·
+          Domingo (séptimo día): <strong>2× salario diario + prima dominical 25%</strong>
+        </div>
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:900px;">
+          <thead>
+            <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+              <th style="padding:10px;text-align:left;">Empleado</th>
+              <th style="padding:10px;text-align:center;">Turno</th>
+              <th style="padding:10px;text-align:right;">Salario/día</th>
+              <th style="padding:10px;text-align:right;">Tarifa/hr</th>
+              <th style="padding:10px;text-align:center;">T.E. total</th>
+              <th style="padding:10px;text-align:center;color:#059669;">Hrs 2×</th>
+              <th style="padding:10px;text-align:center;color:#dc2626;">Hrs 3×</th>
+              <th style="padding:10px;text-align:right;">Extra T.E.</th>
+              <th style="padding:10px;text-align:right;">Prima dom.</th>
+              <th style="padding:10px;text-align:right;color:#7c3aed;">Total extra</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+            ${emptyMsg}
+            ${totalRow}
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:12px;font-size:11px;color:var(--muted);">
+        * El monto "Total extra" es el importe adicional a pagar sobre el salario regular de esa semana.
+        Los valores dependen del salario diario registrado en el perfil del empleado.
+      </div>
+    `;
+    el.innerHTML = shell(content, 'lista-asistencia');
+  } catch(err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-asistencia');
+  }
+}
+
+// ── ROL / ASISTENCIA — TABS ────────────────────────────────────────────────────
+function rolTabBar(activeTab) {
+  const role = state.user?.role;
+  const tabs = [
+    [0, '📅 ROL Semanal'],
+    [1, '📋 Lista Asistencia'],
+    [2, '⏱ Cálculo T.E.']
+  ];
+  return `<div class="rol-tabs" style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:16px;">
+    ${tabs.map(([i, label]) => `
+      <button onclick="activeRolTab=${i};listaAsistenciaView()" style="
+        padding:10px 18px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;
+        border-bottom:${activeTab===i ? '3px solid #4f46e5' : '3px solid transparent'};
+        color:${activeTab===i ? '#4f46e5' : '#6b7280'};
+        margin-bottom:-2px;
+      ">${label}</button>
+    `).join('')}
+  </div>`;
+}
+
 // ── VISTA PRINCIPAL ────────────────────────────────────────────────────────────
 async function listaAsistenciaView() {
   const el = document.getElementById('app');
-  if (!attendanceWeekStart) {
-    attendanceWeekStart = getMonday(new Date());
-  }
+  if (!attendanceWeekStart) attendanceWeekStart = getMonday(new Date());
+  if (!rolWeekStart) rolWeekStart = attendanceWeekStart;
+
+  if (activeRolTab === 0) { await listaRolView(el); return; }
+  if (activeRolTab === 2) { await listaTeCalcView(el); return; }
 
   el.innerHTML = shell('<div class="loading-overlay">Cargando lista de asistencia...</div>', 'lista-asistencia');
 
@@ -4817,9 +5288,9 @@ async function listaAsistenciaView() {
 
     const content = `
       <div class="module-title">
-        <h2>📋 Lista de Asistencia Semanal</h2>
+        <h2>📋 ROL / Asistencia Semanal</h2>
       </div>
-
+      ${rolTabBar(1)}
       ${tePendingSummaryHtml}
 
       <div class="attendance-controls">
@@ -4871,22 +5342,6 @@ async function listaAsistenciaView() {
         </table>
       </div>
 
-      <div class="te-modal-overlay" id="te-modal-overlay">
-        <div class="te-modal-box">
-          <h3>Solicitar Tiempo Extra</h3>
-          <div id="te-modal-empname" style="font-weight:600;margin-bottom:8px;color:#064e3b;"></div>
-          <div id="te-modal-dateshow" style="font-size:13px;color:var(--muted);margin-bottom:8px;"></div>
-          <label>Horas solicitadas</label>
-          <input id="te-modal-hours" type="number" min="0.5" max="24" step="0.5" placeholder="4" />
-          <label>Notas</label>
-          <textarea id="te-modal-notes" rows="2" placeholder="Motivo del tiempo extra..."></textarea>
-          <div class="te-modal-actions">
-            <button class="btn-ghost" onclick="closeTEModal()">Cancelar</button>
-            <button class="btn-primary" id="te-modal-confirm">Solicitar autorización</button>
-          </div>
-        </div>
-      </div>
-
       <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;">
         <strong>Leyenda:</strong>
         <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;">Labora</span>
@@ -4905,13 +5360,6 @@ async function listaAsistenciaView() {
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-asistencia');
   }
-}
-
-function attNavWeek(offset) {
-  const d = new Date(attendanceWeekStart + 'T12:00:00');
-  d.setDate(d.getDate() + offset * 7);
-  attendanceWeekStart = d.toISOString().slice(0, 10);
-  listaAsistenciaView();
 }
 
 async function selectTEApplicant(appId) {
@@ -5161,10 +5609,16 @@ function render() {
     return;
   }
 
-  const hash = location.hash.slice(1) || 'dashboard';
+  let hash = location.hash.slice(1) || 'dashboard';
   // Keep notification badge current on every navigation
   setTimeout(() => loadNotifBadge(), 200);
   const role = state.user.role;
+
+  // Redirigir programacion-te → lista-asistencia en tab 2
+  if (hash === 'programacion-te') {
+    activeRolTab = 2;
+    hash = 'lista-asistencia';
+  }
 
   // Vista por hash
   const views = {
@@ -5183,7 +5637,7 @@ function render() {
     catalogos: catalogosView,
     reportes: reportesView,
     perfil: perfilView,
-    'programacion-te': programacionTEView,
+    'programacion-te': listaAsistenciaView,
     'queja-anonima': quejaAnonimView,
     'quejas-rh': quejasRHView,
     'aclaracion-nomina': aclaracionNominaView,

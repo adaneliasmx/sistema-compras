@@ -64,7 +64,9 @@
       "nss": "",
       "checker_number": "001",
       "primary_position_id": 16,
-      "enabled_positions": [16],
+      "enabled_positions": [
+        16
+      ],
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
@@ -94,7 +96,9 @@
       "nss": "",
       "checker_number": "002",
       "primary_position_id": 11,
-      "enabled_positions": [11],
+      "enabled_positions": [
+        11
+      ],
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
@@ -124,7 +128,9 @@
       "nss": "",
       "checker_number": "003",
       "primary_position_id": 4,
-      "enabled_positions": [4],
+      "enabled_positions": [
+        4
+      ],
       "project": "",
       "emergency_contact_name": "",
       "emergency_contact_phone": "",
@@ -134,37 +140,210 @@
     }
   ],
   "rhh_departments": [
-    {"id": 1, "name": "Operaciones", "code": "OPS", "manager_id": null},
-    {"id": 2, "name": "Producción", "code": "PROD", "manager_id": null},
-    {"id": 3, "name": "Calidad", "code": "CAL", "manager_id": null},
-    {"id": 4, "name": "Mantenimiento", "code": "MANT", "manager_id": null},
-    {"id": 5, "name": "Servicios", "code": "SERV", "manager_id": null},
-    {"id": 6, "name": "Administración", "code": "ADMIN", "manager_id": null}
+    {
+      "id": 1,
+      "name": "Operaciones",
+      "code": "OPS",
+      "manager_id": null
+    },
+    {
+      "id": 2,
+      "name": "Producción",
+      "code": "PROD",
+      "manager_id": null
+    },
+    {
+      "id": 3,
+      "name": "Calidad",
+      "code": "CAL",
+      "manager_id": null
+    },
+    {
+      "id": 4,
+      "name": "Mantenimiento",
+      "code": "MANT",
+      "manager_id": null
+    },
+    {
+      "id": 5,
+      "name": "Servicios",
+      "code": "SERV",
+      "manager_id": null
+    },
+    {
+      "id": 6,
+      "name": "Administración",
+      "code": "ADMIN",
+      "manager_id": null
+    }
   ],
   "rhh_positions": [
-    {"id": 1,  "name": "Aux. de almacén SKF",       "department_id": 1, "level": 2},
-    {"id": 2,  "name": "Aux. de almacén Amsted",     "department_id": 1, "level": 2},
-    {"id": 3,  "name": "Aux. Empaque",               "department_id": 1, "level": 2},
-    {"id": 4,  "name": "Fosfatador 1",               "department_id": 2, "level": 2},
-    {"id": 5,  "name": "Fosfatador 2",               "department_id": 2, "level": 2},
-    {"id": 6,  "name": "Fosfatador 3",               "department_id": 2, "level": 2},
-    {"id": 7,  "name": "Fosfatador Baker",            "department_id": 2, "level": 2},
-    {"id": 8,  "name": "Aux. de equipo vacío",        "department_id": 2, "level": 2},
-    {"id": 9,  "name": "Aux. de calidad",             "department_id": 3, "level": 2},
-    {"id": 10, "name": "Inspector de calidad",        "department_id": 3, "level": 3},
-    {"id": 11, "name": "Supervisor",                  "department_id": 1, "level": 4},
-    {"id": 12, "name": "Operador PTAR",               "department_id": 4, "level": 2},
-    {"id": 13, "name": "Técnico de mantenimiento",    "department_id": 4, "level": 3},
-    {"id": 14, "name": "Aux. limpieza",               "department_id": 5, "level": 1},
-    {"id": 15, "name": "Administrador",               "department_id": 6, "level": 5},
-    {"id": 16, "name": "Recursos Humanos",            "department_id": 6, "level": 4},
-    {"id": 17, "name": "Jefe de área",                "department_id": 6, "level": 4}
+    {
+      "id": 1,
+      "name": "Aux. de almacén SKF",
+      "department_id": 1,
+      "level": 2
+    },
+    {
+      "id": 2,
+      "name": "Aux. de almacén Amsted",
+      "department_id": 1,
+      "level": 2
+    },
+    {
+      "id": 3,
+      "name": "Aux. Empaque",
+      "department_id": 1,
+      "level": 2
+    },
+    {
+      "id": 4,
+      "name": "Fosfatador 1",
+      "department_id": 2,
+      "level": 2
+    },
+    {
+      "id": 5,
+      "name": "Fosfatador 2",
+      "department_id": 2,
+      "level": 2
+    },
+    {
+      "id": 6,
+      "name": "Fosfatador 3",
+      "department_id": 2,
+      "level": 2
+    },
+    {
+      "id": 7,
+      "name": "Fosfatador Baker",
+      "department_id": 2,
+      "level": 2
+    },
+    {
+      "id": 8,
+      "name": "Aux. de equipo vacío",
+      "department_id": 2,
+      "level": 2
+    },
+    {
+      "id": 9,
+      "name": "Aux. de calidad",
+      "department_id": 3,
+      "level": 2
+    },
+    {
+      "id": 10,
+      "name": "Inspector de calidad",
+      "department_id": 3,
+      "level": 3
+    },
+    {
+      "id": 11,
+      "name": "Supervisor",
+      "department_id": 1,
+      "level": 4
+    },
+    {
+      "id": 12,
+      "name": "Operador PTAR",
+      "department_id": 4,
+      "level": 2
+    },
+    {
+      "id": 13,
+      "name": "Técnico de mantenimiento",
+      "department_id": 4,
+      "level": 3
+    },
+    {
+      "id": 14,
+      "name": "Aux. limpieza",
+      "department_id": 5,
+      "level": 1
+    },
+    {
+      "id": 15,
+      "name": "Administrador",
+      "department_id": 6,
+      "level": 5
+    },
+    {
+      "id": 16,
+      "name": "Recursos Humanos",
+      "department_id": 6,
+      "level": 4
+    },
+    {
+      "id": 17,
+      "name": "Jefe de área",
+      "department_id": 6,
+      "level": 4
+    }
   ],
   "rhh_shifts": [
-    {"id": 1, "name": "Turno 1", "code": "T1", "start_time": "06:30", "end_time": "14:30", "work_days": [1,2,3,4,5,6], "color": "#1d4ed8"},
-    {"id": 2, "name": "Turno 2", "code": "T2", "start_time": "14:30", "end_time": "21:30", "work_days": [1,2,3,4,5,6], "color": "#0f766e"},
-    {"id": 3, "name": "Turno 3", "code": "T3", "start_time": "21:30", "end_time": "06:30", "work_days": [1,2,3,4,5], "color": "#7c3aed"},
-    {"id": 4, "name": "Administrativo", "code": "ADM", "start_time": "09:00", "end_time": "17:00", "work_days": [1,2,3,4,5], "color": "#b45309"}
+    {
+      "id": 1,
+      "name": "Turno 1",
+      "code": "T1",
+      "start_time": "06:30",
+      "end_time": "14:30",
+      "work_days": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "color": "#1d4ed8"
+    },
+    {
+      "id": 2,
+      "name": "Turno 2",
+      "code": "T2",
+      "start_time": "14:30",
+      "end_time": "21:30",
+      "work_days": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "color": "#0f766e"
+    },
+    {
+      "id": 3,
+      "name": "Turno 3",
+      "code": "T3",
+      "start_time": "21:30",
+      "end_time": "06:30",
+      "work_days": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "color": "#7c3aed"
+    },
+    {
+      "id": 4,
+      "name": "Administrativo",
+      "code": "ADM",
+      "start_time": "09:00",
+      "end_time": "17:00",
+      "work_days": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "color": "#b45309"
+    }
   ],
   "rhh_schedule": [],
   "rhh_incidences": [],
@@ -181,9 +360,18 @@
       "evaluator_id": 1,
       "template_id": 1,
       "answers": [
-        {"field_id": 1, "value": 4},
-        {"field_id": 2, "value": 5},
-        {"field_id": 3, "value": 3}
+        {
+          "field_id": 1,
+          "value": 4
+        },
+        {
+          "field_id": 2,
+          "value": 5
+        },
+        {
+          "field_id": 3,
+          "value": 3
+        }
       ],
       "score": 82,
       "bonus_days": 2.82,
@@ -200,9 +388,27 @@
       "name": "Evaluación Operativo",
       "position_id": null,
       "fields": [
-        {"id": 1, "label": "Cumplimiento de tareas", "type": "score_1_5", "weight": 40, "description": ""},
-        {"id": 2, "label": "Trabajo en equipo", "type": "score_1_5", "weight": 30, "description": ""},
-        {"id": 3, "label": "Puntualidad", "type": "score_1_5", "weight": 30, "description": ""}
+        {
+          "id": 1,
+          "label": "Cumplimiento de tareas",
+          "type": "score_1_5",
+          "weight": 40,
+          "description": ""
+        },
+        {
+          "id": 2,
+          "label": "Trabajo en equipo",
+          "type": "score_1_5",
+          "weight": 30,
+          "description": ""
+        },
+        {
+          "id": 3,
+          "label": "Puntualidad",
+          "type": "score_1_5",
+          "weight": 30,
+          "description": ""
+        }
       ],
       "created_at": "2026-01-01T00:00:00.000Z"
     }
@@ -217,7 +423,12 @@
       "quality_met": true,
       "claims_met": true,
       "evaluations": [
-        {"evaluator_id": 1, "employee_id": 3, "template_id": 1, "completed": true}
+        {
+          "evaluator_id": 1,
+          "employee_id": 3,
+          "template_id": 1,
+          "completed": true
+        }
       ],
       "created_at": "2026-02-01T00:00:00.000Z"
     }
@@ -252,7 +463,17 @@
       "category": "contrato",
       "description": "Contrato laboral básico",
       "template_content": "<h2>CONTRATO DE TRABAJO</h2><p>Entre la empresa y <b>{{nombre}}</b>, con RFC <b>{{rfc}}</b>, CURP <b>{{curp}}</b>, NSS <b>{{nss}}</b>.</p><p>Puesto: <b>{{puesto}}</b> en el departamento de <b>{{departamento}}</b>.</p><p>Fecha de ingreso: <b>{{fecha_ingreso}}</b>. Salario diario: <b>${{salario_diario}}</b>.</p><p>Generado el {{fecha_actual}}.</p>",
-      "variables": ["nombre","rfc","curp","nss","puesto","departamento","fecha_ingreso","salario_diario","fecha_actual"],
+      "variables": [
+        "nombre",
+        "rfc",
+        "curp",
+        "nss",
+        "puesto",
+        "departamento",
+        "fecha_ingreso",
+        "salario_diario",
+        "fecha_actual"
+      ],
       "created_at": "2026-01-01T00:00:00.000Z"
     }
   ],
@@ -265,9 +486,21 @@
       "id": 1,
       "name": "Reglas de vacaciones",
       "rules": [
-        { "max_days": 1, "min_advance_days": 1, "label": "1 día: mínimo 1 día de anticipación" },
-        { "max_days": 3, "min_advance_days": 7, "label": "2-3 días: mínimo 1 semana de anticipación" },
-        { "max_days": 999, "min_advance_days": 14, "label": "4+ días: mínimo 2 semanas de anticipación" }
+        {
+          "max_days": 1,
+          "min_advance_days": 1,
+          "label": "1 día: mínimo 1 día de anticipación"
+        },
+        {
+          "max_days": 3,
+          "min_advance_days": 7,
+          "label": "2-3 días: mínimo 1 semana de anticipación"
+        },
+        {
+          "max_days": 999,
+          "min_advance_days": 14,
+          "label": "4+ días: mínimo 2 semanas de anticipación"
+        }
       ],
       "max_days_per_week": 1,
       "count_holidays": true,
@@ -276,12 +509,50 @@
     }
   ],
   "rhh_holidays": [
-    { "id": 1, "date": "2026-01-01", "name": "Año Nuevo", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 2, "date": "2026-02-02", "name": "Día de la Constitución", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 3, "date": "2026-03-16", "name": "Natalicio de Juárez", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 4, "date": "2026-05-01", "name": "Día del Trabajo", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 5, "date": "2026-09-16", "name": "Independencia", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 6, "date": "2026-11-02", "name": "Día de Muertos", "created_at": "2026-01-01T00:00:00.000Z" },
-    { "id": 7, "date": "2026-12-25", "name": "Navidad", "created_at": "2026-01-01T00:00:00.000Z" }
-  ]
+    {
+      "id": 1,
+      "date": "2026-01-01",
+      "name": "Año Nuevo",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "date": "2026-02-02",
+      "name": "Día de la Constitución",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "date": "2026-03-16",
+      "name": "Natalicio de Juárez",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "date": "2026-05-01",
+      "name": "Día del Trabajo",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 5,
+      "date": "2026-09-16",
+      "name": "Independencia",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 6,
+      "date": "2026-11-02",
+      "name": "Día de Muertos",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 7,
+      "date": "2026-12-25",
+      "name": "Navidad",
+      "created_at": "2026-01-01T00:00:00.000Z"
+    }
+  ],
+  "rhh_weekly_rol": [],
+  "rhh_rol_slots": [],
+  "rhh_rol_assignments": []
 }
