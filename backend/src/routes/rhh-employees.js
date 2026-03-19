@@ -1,5 +1,7 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const { read, write, nextId } = require('../db-rhh');
+const { read: readCompras } = require('../db');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
@@ -532,6 +534,93 @@ router.post('/:id/generate-doc', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
   const filename = `documento_${namePart}_${today}.html`;
 
   res.json({ html_content, filename, category: tpl.category });
+});
+
+// GET /api/rhh/employees/from-compras
+router.get('/from-compras', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const comprasDb = readCompras();
+  const rhhEmails = new Set((db.rhh_employees || []).map(e => e.email?.toLowerCase()));
+  const candidates = (comprasDb.users || []).filter(u =>
+    u.active !== false && !rhhEmails.has(u.email?.toLowerCase())
+  ).map(u => ({
+    id: u.id, full_name: u.full_name, email: u.email,
+    role_code: u.role_code, department: u.department || '',
+    from: 'compras', password_hash: u.password_hash
+  }));
+  res.json(candidates);
+});
+
+// POST /api/rhh/employees/import-csv
+router.post('/import-csv', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { rows } = req.body || {};
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'rows[] requerido' });
+
+  let created = 0, updated = 0;
+  const errors = [];
+  for (const row of rows) {
+    if (!row.full_name || !row.email) { errors.push(`Fila sin nombre o email: ${JSON.stringify(row)}`); continue; }
+    const idx = (db.rhh_employees || []).findIndex(e => e.email?.toLowerCase() === row.email.toLowerCase());
+    if (idx !== -1) {
+      db.rhh_employees[idx] = { ...db.rhh_employees[idx], ...row, id: db.rhh_employees[idx].id, updated_at: new Date().toISOString() };
+      updated++;
+    } else {
+      const employees = db.rhh_employees || [];
+      const dept = (db.rhh_departments || []).find(d => d.name?.toLowerCase() === String(row.department || '').toLowerCase());
+      const pos = (db.rhh_positions || []).find(p => p.name?.toLowerCase() === String(row.position || '').toLowerCase());
+      const shift = (db.rhh_shifts || []).find(s => s.code?.toLowerCase() === String(row.shift_code || '').toLowerCase() || s.name?.toLowerCase() === String(row.shift || '').toLowerCase());
+      const newId = nextId(employees);
+      const newEmp = {
+        id: newId,
+        employee_number: row.employee_number || 'EMP-' + String(newId).padStart(3, '0'),
+        full_name: row.full_name, email: row.email.toLowerCase(),
+        phone: row.phone || null, department_id: dept?.id || null,
+        position_id: pos?.id || null, shift_id: shift?.id || null,
+        supervisor_id: null, start_date: row.start_date || new Date().toISOString().slice(0, 10),
+        hire_date: row.hire_date || row.start_date || new Date().toISOString().slice(0, 10),
+        birth_date: row.birth_date || null, status: row.status || 'active',
+        contract_type: row.contract_type || 'indefinido',
+        base_salary: Number(row.base_salary) || 0, daily_salary: Number(row.daily_salary) || null,
+        rfc: row.rfc || '', curp: row.curp || '', nss: row.nss || '',
+        checker_number: row.checker_number || '',
+        primary_position_id: pos?.id || null, enabled_positions: pos ? [pos.id] : [],
+        project: row.project || '', total_vacation_days: Number(row.vacation_days) || 15,
+        photo: null, created_at: new Date().toISOString()
+      };
+      employees.push(newEmp);
+      db.rhh_employees = employees;
+      created++;
+    }
+  }
+  write(db);
+  res.json({ ok: true, created, updated, errors });
+});
+
+// POST /api/rhh/employees/:id/create-user
+router.post('/:id/create-user', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { role, password, password_hash } = req.body || {};
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const existing = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emp.email?.toLowerCase());
+  if (existing) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
+  if (!password && !password_hash) return res.status(400).json({ error: 'Contraseña requerida' });
+  const users = db.rhh_users || [];
+  const user = {
+    id: nextId(users),
+    full_name: emp.full_name,
+    email: emp.email,
+    password_hash: password_hash || bcrypt.hashSync(String(password), 10),
+    role: role || 'empleado',
+    employee_id: empId,
+    active: true,
+    created_at: new Date().toISOString()
+  };
+  db.rhh_users = [...users, user];
+  write(db);
+  res.status(201).json({ ok: true, user: { id: user.id, email: user.email, role: user.role } });
 });
 
 module.exports = router;

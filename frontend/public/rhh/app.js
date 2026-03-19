@@ -10,7 +10,8 @@ const state = {
   employees: [],
   departments: [],
   positions: [],
-  shifts: []
+  shifts: [],
+  rhhUsers: []
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -25,7 +26,6 @@ const MENU_BY_ROLE = {
   ],
   supervisor: [
     ['lista-asistencia', '📋 ROL / Asistencia'],
-    ['calendario', '📅 Calendario'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['ausencias-hoy', '🚨 Ausencias Hoy'],
     ['mis-evaluaciones', '⭐ Mi Evaluación']
@@ -34,7 +34,6 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['lista-asistencia', '📋 ROL / Asistencia'],
     ['empleados', '👥 Empleados'],
-    ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
@@ -48,7 +47,6 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['lista-asistencia', '📋 ROL / Asistencia'],
     ['empleados', '👥 Empleados'],
-    ['calendario', '📅 Calendario'],
     ['incidencias', '⚠️ Incidencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['prenomina', '💰 Prenómina'],
@@ -167,16 +165,18 @@ async function login(email, password) {
 // ── Cargar catálogos al inicio ────────────────────────────────────────────────
 async function loadCatalogs() {
   try {
-    const [emps, depts, pos, shifts] = await Promise.all([
+    const [emps, depts, pos, shifts, users] = await Promise.all([
       api('/api/rhh/employees'),
       api('/api/rhh/catalogs/departments'),
       api('/api/rhh/catalogs/positions'),
-      api('/api/rhh/catalogs/shifts')
+      api('/api/rhh/catalogs/shifts'),
+      api('/api/rhh/catalogs/users').catch(() => [])
     ]);
     state.employees = emps || [];
     state.departments = depts || [];
     state.positions = pos || [];
     state.shifts = shifts || [];
+    state.rhhUsers = users || [];
   } catch (_) {}
 }
 
@@ -759,13 +759,17 @@ async function empleadosView() {
           : `<table>
                <thead><tr>
                  <th>No. Emp</th><th>Nombre</th><th>Departamento</th>
-                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Vac.</th><th>Estatus</th><th>Acciones</th>
+                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Vac.</th><th>Estatus</th><th>Usuario</th><th>Acciones</th>
                </tr></thead>
                <tbody>
                  ${employees.map(emp => {
                    const vacRem = emp.vacation_remaining ?? (emp.total_vacation_days || 15);
                    const vacTotal = emp.total_vacation_days || 15;
                    const vacColor = vacRem <= 0 ? '#b91c1c' : vacRem <= 5 ? '#b45309' : '#059669';
+                   const hasUser = (state.rhhUsers || []).some(u => u.employee_id === emp.id);
+                   const userBadge = hasUser
+                     ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:8px;">👤 ${(state.rhhUsers.find(u => u.employee_id === emp.id))?.role || '—'}</span>`
+                     : `<button class="btn-ghost" style="font-size:11px;color:#7c3aed;" onclick="openCreateUserModal(${emp.id},'${(emp.full_name || '').replace(/'/g, "\\'")}','${emp.email || ''}')">+ Cuenta</button>`;
                    return `
                    <tr>
                      <td><span class="small muted">${emp.employee_number}</span>${emp.checker_number ? `<br><span class="small muted">Check: ${emp.checker_number}</span>` : ''}</td>
@@ -779,6 +783,7 @@ async function empleadosView() {
                      <td style="text-align:right;font-size:12px;">${emp.daily_salary ? `$${Number(emp.daily_salary).toLocaleString()}/día` : (emp.base_salary ? `$${Number(emp.base_salary).toLocaleString()}/mes` : '—')}</td>
                      <td style="text-align:center;font-weight:700;color:${vacColor};font-size:12px;" title="${vacRem} días restantes de ${vacTotal}">${vacRem}/${vacTotal}</td>
                      <td>${statusPill(emp.status)}</td>
+                     <td style="text-align:center;">${userBadge}</td>
                      <td>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showEditEmployee(${emp.id})">✏️ Editar</button>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showExpediente(${emp.id})">📁 Exp.</button>
@@ -799,22 +804,38 @@ async function empleadosView() {
       </div>
     `;
 
+    let tabContent = listContent;
+    if (empTab === 'expediente') tabContent = '<div id="expediente-wrap"><div class="loading-overlay">Cargando expediente...</div></div>';
+    else if (empTab === 'nuevo') tabContent = formContent;
+    else if (empTab === 'compras') tabContent = '<div id="compras-emp-tab"><div class="loading-overlay">Cargando usuarios de Compras...</div></div>';
+
     const content = `
       <div class="module-title">
         <h2>👥 Gestión de Empleados</h2>
-        <button class="btn-primary" onclick="empTab='nuevo';empEditId=null;empleadosView()">+ Nuevo empleado</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn-primary" onclick="empTab='nuevo';empEditId=null;empleadosView()">+ Nuevo empleado</button>
+          <button class="btn-ghost" onclick="exportEmpleadosCSV()">⬇ Exportar CSV</button>
+          <label class="btn-ghost" style="cursor:pointer;margin:0;">
+            ⬆ Importar CSV
+            <input type="file" accept=".csv" style="display:none;" onchange="importEmpleadosCSV(this)">
+          </label>
+        </div>
       </div>
       <div class="tabs">
         <button class="tab-btn ${empTab==='list'?'active':''}" onclick="empTab='list';empleadosView()">📋 Lista</button>
         <button class="tab-btn ${empTab==='nuevo'?'active':''}" onclick="empTab='nuevo';empleadosView()">➕ Nuevo/Editar</button>
         ${empEditId ? `<button class="tab-btn ${empTab==='expediente'?'active':''}" onclick="empTab='expediente';empleadosView()">📁 Expediente</button>` : ''}
+        <button class="tab-btn ${empTab==='compras'?'active':''}" onclick="empTab='compras';empleadosView()">🏪 De Compras</button>
       </div>
-      ${empTab === 'list' ? listContent : (empTab === 'expediente' ? '<div id="expediente-wrap"><div class="loading-overlay">Cargando expediente...</div></div>' : formContent)}
+      ${tabContent}
     `;
 
     el.innerHTML = shell(content, 'empleados');
     if (empTab === 'expediente' && empEditId) {
       loadExpediente(empEditId);
+    } else if (empTab === 'compras') {
+      const comprasEl = document.getElementById('compras-emp-tab');
+      if (comprasEl) loadComprasEmpTab(comprasEl);
     }
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'empleados');
@@ -1871,70 +1892,99 @@ async function loadCoverage() {
 // ── 12. Prenómina ─────────────────────────────────────────────────────────────
 let prenomYear = new Date().getFullYear();
 let prenomMonth = new Date().getMonth() + 1;
+let prenomWeekStart = null;
 
 async function prenominaView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Calculando prenómina...</div>', 'prenomina');
 
   try {
-    const [employees, incData] = await Promise.all([
-      api('/api/rhh/employees?status=active'),
-      api(`/api/rhh/incidences?date_from=${prenomYear}-${String(prenomMonth).padStart(2,'0')}-01&date_to=${prenomYear}-${String(prenomMonth).padStart(2,'0')}-${new Date(prenomYear, prenomMonth, 0).getDate()}`)
+    // Sincronizar semana con asistencia si está disponible, o usar lunes de hoy
+    if (!prenomWeekStart) {
+      prenomWeekStart = (typeof attendanceWeekStart !== 'undefined' && attendanceWeekStart)
+        ? attendanceWeekStart
+        : fmtDate(getWeekStart(new Date()));
+    }
+
+    const [attData, teData] = await Promise.all([
+      api(`/api/rhh/schedule/weekly-attendance?week_start=${prenomWeekStart}`),
+      api(`/api/rhh/schedule/te-calc?week_start=${prenomWeekStart}`).catch(() => ({ employees: [] }))
     ]);
-    if (!employees || !incData) return;
+    if (!attData) return;
 
-    const incidences = incData || [];
-    const lastDay = new Date(prenomYear, prenomMonth, 0).getDate();
+    // Calcular etiqueta de la semana
+    const weekStartDate = new Date(prenomWeekStart + 'T12:00:00');
+    const weekEndDate = new Date(weekStartDate);
+    weekEndDate.setDate(weekEndDate.getDate() + 6);
+    const weekLabel = `${weekStartDate.getDate()} ${MONTHS[weekStartDate.getMonth()].slice(0,3)} – ${weekEndDate.getDate()} ${MONTHS[weekEndDate.getMonth()].slice(0,3)} ${weekEndDate.getFullYear()}`;
 
-    const rows = (employees || []).map(emp => {
-      const empInc = incidences.filter(i => i.employee_id === emp.id && i.status !== 'rechazada');
-      const faltas = empInc.filter(i => i.type === 'falta').length;
-      const vacaciones = empInc.filter(i => i.type === 'vacacion').length;
-      const permisos = empInc.filter(i => i.type === 'permiso').length;
-      const incapacidades = empInc.filter(i => i.type === 'incapacidad').length;
-      const htExtra = empInc.filter(i => i.type === 'tiempo_extra').reduce((s, i) => s + (i.hours || 0), 0);
+    // Mapa de datos TE por employee_id
+    const teMap = {};
+    for (const te of (teData?.employees || [])) {
+      teMap[te.employee_id] = te;
+    }
 
-      // Cálculo de días trabajados (estimado)
-      const shift = state.shifts.find(s => s.id === emp.shift_id);
-      const workDays = shift ? shift.work_days : [1, 2, 3, 4, 5];
-      let laborDays = 0;
-      for (let d = 1; d <= lastDay; d++) {
-        const dow = new Date(`${prenomYear}-${String(prenomMonth).padStart(2,'0')}-${String(d).padStart(2,'0')}T12:00:00`).getDay();
-        if (workDays.includes(dow)) laborDays++;
+    let totalDiasTrab = 0, totalFaltas = 0, totalVac = 0, totalPermisos = 0, totalIncap = 0;
+    let totalTeHrs = 0, totalTeExtra = 0, totalSemana = 0;
+
+    const rows = [];
+    for (const shiftGroup of (attData.shifts || [])) {
+      for (const emp of (shiftGroup.employees || [])) {
+        const days = emp.days || [];
+        const diasTrabajados = days.filter(d => d.status === 'labora' || d.status === 'festivo').length;
+        const faltas = days.filter(d => d.status === 'falta').length;
+        const vacaciones = days.filter(d => d.status === 'vacaciones').length;
+        const permisos = days.filter(d => d.status === 'permiso').length;
+        const incapacidades = days.filter(d => d.status === 'incapacidad').length;
+        const te_hours = emp.totals?.te_total || 0;
+
+        const teEmp = teMap[emp.id] || {};
+        const te_extra_pay = teEmp.te_extra_pay || 0;
+        const prima_dominical = teEmp.prima_dominical || 0;
+        const total_extra = teEmp.total_extra || 0;
+
+        const daily_salary = state.employees.find(e => e.id === emp.id)?.daily_salary || 0;
+        const total_semanal = (diasTrabajados * daily_salary) + total_extra;
+
+        totalDiasTrab += diasTrabajados;
+        totalFaltas += faltas;
+        totalVac += vacaciones;
+        totalPermisos += permisos;
+        totalIncap += incapacidades;
+        totalTeHrs += Number(te_hours) || 0;
+        totalTeExtra += Number(te_extra_pay) + Number(prima_dominical);
+        totalSemana += total_semanal;
+
+        rows.push(`
+          <tr>
+            <td>
+              <strong>${emp.full_name}</strong><br>
+              <span class="small muted">${emp.employee_number || ''}</span>
+            </td>
+            <td>${emp.shift_code || shiftGroup.shift?.code || '—'}</td>
+            <td style="text-align:center;">${days.length}</td>
+            <td style="text-align:center;font-weight:700;">${diasTrabajados}</td>
+            <td style="text-align:center;color:#b91c1c;">${faltas || '—'}</td>
+            <td style="text-align:center;color:#1d4ed8;">${vacaciones || '—'}</td>
+            <td style="text-align:center;color:#854d0e;">${permisos || '—'}</td>
+            <td style="text-align:center;color:#7c3aed;">${incapacidades || '—'}</td>
+            <td style="text-align:center;color:#059669;font-weight:700;">${Number(te_hours) > 0 ? te_hours + 'h' : '—'}</td>
+            <td style="text-align:right;color:#059669;">${(te_extra_pay + prima_dominical) > 0 ? '$' + (te_extra_pay + prima_dominical).toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
+            <td style="text-align:right;">${daily_salary > 0 ? '$' + Number(daily_salary).toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
+            <td style="text-align:right;color:#059669;font-weight:700;">$${total_semanal.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+          </tr>`);
       }
-
-      const diasTrabajados = Math.max(0, laborDays - faltas - vacaciones - permisos - incapacidades);
-      const salarioDiario = (emp.base_salary || 0) / 30;
-      const totalEst = (diasTrabajados * salarioDiario).toFixed(2);
-
-      return `
-        <tr>
-          <td>
-            <strong>${emp.full_name}</strong><br>
-            <span class="small muted">${emp.employee_number}</span>
-          </td>
-          <td>${shiftDot(state.shifts.find(s => s.id === emp.shift_id) || null)}</td>
-          <td style="text-align:center;">${laborDays}</td>
-          <td style="text-align:center;color:#b91c1c;">${faltas}</td>
-          <td style="text-align:center;color:#1d4ed8;">${vacaciones}</td>
-          <td style="text-align:center;color:#854d0e;">${permisos}</td>
-          <td style="text-align:center;color:#7c3aed;">${incapacidades}</td>
-          <td style="text-align:center;color:#059669;font-weight:700;">${htExtra > 0 ? htExtra + 'h' : '—'}</td>
-          <td style="text-align:center;font-weight:700;">${diasTrabajados}</td>
-          <td style="text-align:right;font-weight:700;">$${Number(emp.base_salary || 0).toLocaleString()}</td>
-          <td style="text-align:right;color:#059669;font-weight:700;">$${Number(totalEst).toLocaleString()}</td>
-        </tr>`;
-    }).join('');
+    }
 
     const content = `
       <div class="module-title">
-        <h2>💰 Prenómina</h2>
+        <h2>💰 Prenómina Semanal</h2>
       </div>
 
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
-        <button class="btn-ghost" onclick="prenomMonth--;if(prenomMonth<1){prenomMonth=12;prenomYear--;}prenominaView()">‹</button>
-        <strong style="min-width:160px;text-align:center;">${MONTHS[prenomMonth-1]} ${prenomYear}</strong>
-        <button class="btn-ghost" onclick="prenomMonth++;if(prenomMonth>12){prenomMonth=1;prenomYear++;}prenominaView()">›</button>
+        <button class="btn-ghost" onclick="(()=>{const d=new Date(prenomWeekStart+'T12:00:00');d.setDate(d.getDate()-7);prenomWeekStart=fmtDate(d);prenominaView();})()">‹ Semana anterior</button>
+        <strong style="min-width:240px;text-align:center;">${weekLabel}</strong>
+        <button class="btn-ghost" onclick="(()=>{const d=new Date(prenomWeekStart+'T12:00:00');d.setDate(d.getDate()+7);prenomWeekStart=fmtDate(d);prenominaView();})()">Semana siguiente ›</button>
       </div>
 
       <div class="card section table-wrap">
@@ -1943,25 +1993,40 @@ async function prenominaView() {
             <tr>
               <th>Empleado</th>
               <th>Turno</th>
-              <th style="text-align:center;">Días hábiles</th>
+              <th style="text-align:center;">Días hab.</th>
+              <th style="text-align:center;">Trabajados</th>
               <th style="text-align:center;color:#b91c1c;">Faltas</th>
-              <th style="text-align:center;color:#1d4ed8;">Vacac.</th>
+              <th style="text-align:center;color:#1d4ed8;">Vac</th>
               <th style="text-align:center;color:#854d0e;">Permisos</th>
-              <th style="text-align:center;color:#7c3aed;">Incapac.</th>
-              <th style="text-align:center;color:#059669;">H. Extra</th>
-              <th style="text-align:center;">Días trab.</th>
-              <th style="text-align:right;">Salario base</th>
-              <th style="text-align:right;color:#059669;">Total est.</th>
+              <th style="text-align:center;color:#7c3aed;">Incap</th>
+              <th style="text-align:center;color:#059669;">T.E. hrs</th>
+              <th style="text-align:right;color:#059669;">T.E. extra</th>
+              <th style="text-align:right;">Salario/día</th>
+              <th style="text-align:right;color:#059669;">Total semana</th>
             </tr>
           </thead>
           <tbody>
-            ${rows || '<tr><td colspan="11" style="text-align:center;color:var(--muted);">Sin empleados activos</td></tr>'}
+            ${rows.join('') || '<tr><td colspan="12" style="text-align:center;color:var(--muted);">Sin empleados en esta semana</td></tr>'}
           </tbody>
+          <tfoot>
+            <tr style="background:#f0fdf4;font-weight:800;">
+              <td colspan="3"><strong>TOTALES</strong></td>
+              <td style="text-align:center;">${totalDiasTrab}</td>
+              <td style="text-align:center;color:#b91c1c;">${totalFaltas || '—'}</td>
+              <td style="text-align:center;color:#1d4ed8;">${totalVac || '—'}</td>
+              <td style="text-align:center;color:#854d0e;">${totalPermisos || '—'}</td>
+              <td style="text-align:center;color:#7c3aed;">${totalIncap || '—'}</td>
+              <td style="text-align:center;color:#059669;">${totalTeHrs > 0 ? totalTeHrs + 'h' : '—'}</td>
+              <td style="text-align:right;color:#059669;">${totalTeExtra > 0 ? '$' + totalTeExtra.toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
+              <td></td>
+              <td style="text-align:right;color:#059669;">$${totalSemana.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
       <div class="notice" style="margin-top:12px;">
-        <strong>Nota:</strong> Los valores mostrados son estimados basados en los días hábiles del mes, incidencias aprobadas y el salario base mensual. El cálculo real de nómina puede incluir bonos, deducciones y otros factores.
+        <strong>Nota:</strong> Los valores mostrados son basados en la asistencia registrada en el ROL semanal y el cálculo de tiempo extra. El total semanal = días trabajados × salario diario + T.E. extra.
       </div>
     `;
 
@@ -5109,9 +5174,25 @@ async function listaAsistenciaView() {
 
   try {
     const role = state.user?.role;
-    const data = await api(`/api/rhh/schedule/weekly-attendance?week_start=${attendanceWeekStart}`);
+    const [data, rolWeekData] = await Promise.all([
+      api(`/api/rhh/schedule/weekly-attendance?week_start=${attendanceWeekStart}`),
+      api(`/api/rhh/schedule/weekly-rol?week_start=${attendanceWeekStart}`).catch(() => null)
+    ]);
     if (!data) return;
     attendanceData = data;
+
+    // Construir mapa de posición por empleado desde el ROL
+    const rolPositionMap = {};
+    if (rolWeekData && Array.isArray(rolWeekData.shifts)) {
+      for (const sg of rolWeekData.shifts) {
+        for (const emp of (sg.employees || [])) {
+          if (emp.employee_id && !rolPositionMap[emp.employee_id]) {
+            rolPositionMap[emp.employee_id] = emp.position_name || emp.position || sg.shift?.name || null;
+          }
+        }
+      }
+    }
+    const rolIsPublished = !!(rolWeekData && rolWeekData.published);
 
     // Load TE postulants summary for supervisors/rh/admin (Automatización 6)
     let tePendingSummaryHtml = '';
@@ -5229,8 +5310,17 @@ async function listaAsistenciaView() {
       for (const emp of filtered) {
         // Celda puesto
         const hasPosWarn = !emp.enabled_positions || emp.enabled_positions.length === 0;
-        const posDisplay = hasPosWarn ? '⚠ Sin puesto' : (emp.position || '—');
+        const defaultPosDisplay = hasPosWarn ? '⚠ Sin puesto' : (emp.position || '—');
         const posCellCls = hasPosWarn ? 'col-position no-position-warn' : 'col-position';
+        const rolPos = rolPositionMap[emp.id];
+        let posDisplay;
+        if (rolPos) {
+          posDisplay = `<span style="background:#dbeafe;color:#1e40af;padding:2px 6px;border-radius:6px;font-size:11px;font-weight:700;">🗓️ ${rolPos}</span>`;
+        } else if (rolIsPublished) {
+          posDisplay = `${defaultPosDisplay}<br><span style="color:#b91c1c;font-size:10px;">⚠ Sin ROL</span>`;
+        } else {
+          posDisplay = defaultPosDisplay;
+        }
 
         // Celdas de días
         let dayCells = '';
@@ -5623,7 +5713,7 @@ function render() {
   // Vista por hash
   const views = {
     dashboard: dashboardView,
-    calendario: calendarioView,
+    calendario: () => { window.location.hash = '#dashboard'; },
     asignacion: asignacionView,
     'lista-asistencia': listaAsistenciaView,
     empleados: empleadosView,
@@ -5686,3 +5776,150 @@ async function init() {
 
 window.addEventListener('hashchange', render);
 document.addEventListener('DOMContentLoaded', init);
+
+// ── Exportar / Importar CSV de empleados ──────────────────────────────────────
+function exportEmpleadosCSV() {
+  const employees = state.employees;
+  if (!employees.length) { toast('Sin empleados para exportar', 'warning'); return; }
+  const headers = ['No. Empleado','Nombre','Email','Teléfono','Departamento','Puesto','Turno','Tipo Contrato','Salario Diario','Salario Base','RFC','CURP','NSS','Núm. Checador','Fecha Ingreso','Días Vacaciones','Estatus','Proyecto'];
+  const rows = employees.map(e => [
+    e.employee_number || '',
+    (e.full_name || '').replace(/,/g, ';'),
+    e.email || '',
+    e.phone || '',
+    e.department?.name || '',
+    e.position?.name || '',
+    e.shift?.code || '',
+    e.contract_type || '',
+    e.daily_salary || '',
+    e.base_salary || '',
+    e.rfc || '',
+    e.curp || '',
+    e.nss || '',
+    e.checker_number || '',
+    e.hire_date || e.start_date || '',
+    e.total_vacation_days || 15,
+    e.status || '',
+    e.project || ''
+  ].join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `empleados_${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  toast('CSV descargado');
+}
+
+async function importEmpleadosCSV(input) {
+  const file = input.files[0]; if (!file) return;
+  const text = await file.text();
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length < 2) { toast('CSV vacío o inválido', 'warning'); return; }
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase()
+    .replace('no. empleado', 'employee_number').replace('nombre', 'full_name')
+    .replace('email', 'email').replace('teléfono', 'phone').replace('departamento', 'department')
+    .replace('puesto', 'position').replace('turno', 'shift_code').replace('tipo contrato', 'contract_type')
+    .replace('salario diario', 'daily_salary').replace('salario base', 'base_salary')
+    .replace('rfc', 'rfc').replace('curp', 'curp').replace('nss', 'nss')
+    .replace('núm. checador', 'checker_number').replace('fecha ingreso', 'hire_date')
+    .replace('días vacaciones', 'vacation_days').replace('estatus', 'status').replace('proyecto', 'project')
+  );
+  const rows = lines.slice(1).map(line => {
+    const vals = line.split(',');
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
+    return obj;
+  }).filter(r => r.full_name || r.email);
+  if (!rows.length) { toast('Sin filas válidas en el CSV', 'warning'); return; }
+  try {
+    const result = await api('/api/rhh/employees/import-csv', { method: 'POST', body: JSON.stringify({ rows }) });
+    toast(`Importado: ${result.created} creados, ${result.updated} actualizados${result.errors.length ? ' · ' + result.errors.length + ' errores' : ''}`);
+    await loadCatalogs();
+    empleadosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Crear cuenta de usuario para empleado ─────────────────────────────────────
+function openCreateUserModal(empId, empName, empEmail) {
+  let modal = document.getElementById('create-user-modal');
+  if (modal) modal.remove();
+  modal = document.createElement('div');
+  modal.id = 'create-user-modal';
+  document.body.appendChild(modal);
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:grid;place-items:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(380px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 4px;">Crear cuenta de acceso</h3>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:16px;">${empName} · ${empEmail}</div>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Rol en el sistema</label>
+      <select id="cu-role" style="width:100%;margin-bottom:12px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;">
+        <option value="empleado">Empleado</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="rh">RH</option>
+        <option value="admin">Admin</option>
+      </select>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Contraseña inicial</label>
+      <input id="cu-password" type="text" placeholder="Mínimo 6 caracteres" value="${empEmail.split('@')[0]}123"
+        style="width:100%;margin-bottom:16px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('create-user-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="saveCreateUser(${empId})">Crear cuenta</button>
+      </div>
+    </div>`;
+}
+
+async function saveCreateUser(empId) {
+  const role = document.getElementById('cu-role').value;
+  const password = document.getElementById('cu-password').value;
+  if (!password || password.length < 6) { toast('Contraseña mínimo 6 caracteres', 'warning'); return; }
+  try {
+    await api(`/api/rhh/employees/${empId}/create-user`, { method: 'POST', body: JSON.stringify({ role, password }) });
+    document.getElementById('create-user-modal')?.remove();
+    toast('Cuenta creada exitosamente');
+    await loadCatalogs();
+    empleadosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Tab "De Compras" en empleados ─────────────────────────────────────────────
+async function loadComprasEmpTab(el) {
+  const candidates = await api('/api/rhh/employees/from-compras').catch(() => []);
+  if (!candidates || !candidates.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">🏪</div><p>Todos los usuarios de Compras ya tienen empleado en RHH</p></div>';
+    return;
+  }
+  el.innerHTML = `
+    <div class="notice" style="margin-bottom:12px;">
+      Usuarios del módulo Compras que aún no tienen empleado registrado en RHH.
+      Puedes crearles un expediente directamente.
+    </div>
+    <div class="card section table-wrap">
+      <table>
+        <thead><tr>
+          <th>Nombre</th><th>Email</th><th>Rol Compras</th><th>Acción</th>
+        </tr></thead>
+        <tbody>
+          ${candidates.map(c => `<tr>
+            <td>${c.full_name}</td>
+            <td style="font-size:12px;">${c.email}</td>
+            <td><span class="pill">${c.role_code || '—'}</span></td>
+            <td><button class="btn-primary" style="font-size:12px;" onclick="createEmpFromCompras(${JSON.stringify(c).replace(/"/g, '&quot;')})">+ Crear empleado</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+async function createEmpFromCompras(candidate) {
+  empTab = 'nuevo'; empEditId = null;
+  await empleadosView();
+  setTimeout(() => {
+    const nameEl = document.getElementById('ef-name');
+    const emailEl = document.getElementById('ef-email');
+    if (nameEl) nameEl.value = candidate.full_name;
+    if (emailEl) emailEl.value = candidate.email;
+    window._pendingComprasHash = candidate.password_hash;
+    toast('Completa los datos del empleado y guarda', 'info');
+  }, 300);
+}

@@ -204,4 +204,18 @@ router.delete('/shifts/:id', rhhAuthRequired, rhhRequireRole('admin'), (req, res
   res.json({ ok: true });
 });
 
+// ══════════════════════════════════════════════════════════════
+// USUARIOS RHH
+// ══════════════════════════════════════════════════════════════
+
+// GET /api/rhh/catalogs/users
+router.get('/users', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const users = (db.rhh_users || []).map(u => ({
+    id: u.id, full_name: u.full_name, email: u.email,
+    role: u.role, employee_id: u.employee_id, active: u.active
+  }));
+  res.json(users);
+});
+
 module.exports = router;
