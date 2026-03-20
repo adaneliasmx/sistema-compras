@@ -392,7 +392,10 @@ function renderModulePanel(m) {
       </table>
       <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
         ${m.url ? `<a href="${m.url}" target="_blank" style="font-size:13px;color:${color};font-weight:700">Ir al módulo →</a>` : '<span></span>'}
-        <button class="btn-add" onclick="openAddUser('${m.id}')">+ Agregar usuario</button>
+        <div style="display:flex;gap:8px;">
+          ${m.id === 'rhh' ? `<button style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer;" onclick="rhhReseed()" title="Sincroniza la base de datos online con el archivo JSON seed del repositorio">🔄 Sync DB desde JSON</button>` : ''}
+          <button class="btn-add" onclick="openAddUser('${m.id}')">+ Agregar usuario</button>
+        </div>
       </div>`;
   }
 
@@ -410,6 +413,16 @@ function renderModulePanel(m) {
       </div>
       <div class="module-body">${bodyContent}</div>
     </div>`;
+}
+
+async function rhhReseed() {
+  if (!confirm('⚠️ Esto reemplazará la base de datos RHH online con el contenido del archivo JSON del repositorio.\n\nTodos los datos ingresados en línea que no estén en el JSON local se PERDERÁN.\n\n¿Continuar?')) return;
+  try {
+    const r = await api('/api/super-admin/rhh-reseed', { method: 'POST' });
+    const lines = Object.entries(r.counts || {}).map(([k,v]) => `${k}: ${v}`).join('\n');
+    alert('✅ Sincronización completada\n\n' + lines);
+    loadModules();
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function toggleUser(module, userId, active) {

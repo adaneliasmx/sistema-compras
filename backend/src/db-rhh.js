@@ -118,4 +118,14 @@ function nextId(rows) {
   return Math.max(...rows.map(x => Number(x.id) || 0)) + 1;
 }
 
-module.exports = { dbPath, read, write, nextId, initDb };
+// Fuerza la carga del JSON seed al PostgreSQL (para sincronizar datos locales al servidor)
+async function forceSeedFromJson() {
+  if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
+  if (!fs.existsSync(dbPath)) throw new Error('Archivo JSON seed no encontrado: ' + dbPath);
+  const seed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  _cache = seed;
+  await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1', [JSON.stringify(seed)]);
+  return seed;
+}
+
+module.exports = { dbPath, read, write, nextId, initDb, forceSeedFromJson };

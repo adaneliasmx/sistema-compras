@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read: readCompras } = require('../db');
-const { read: readRhh } = require('../db-rhh');
+const { read: readRhh, forceSeedFromJson } = require('../db-rhh');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -258,6 +258,19 @@ router.patch('/rhh/users/:id', superAdminRequired, (req, res) => {
   if (req.body.role) user.role = req.body.role;
   write(db);
   res.json({ ok: true, user });
+});
+
+// POST /api/super-admin/rhh-reseed — sincroniza el JSON seed al PostgreSQL online
+router.post('/rhh-reseed', superAdminRequired, async (req, res) => {
+  try {
+    const data = await forceSeedFromJson();
+    const counts = Object.fromEntries(
+      Object.entries(data).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0])
+    );
+    res.json({ ok: true, message: 'Base de datos RHH sincronizada desde JSON seed', counts });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;
