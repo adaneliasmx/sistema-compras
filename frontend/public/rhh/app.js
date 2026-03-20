@@ -767,8 +767,10 @@ async function empleadosView() {
                    const vacTotal = emp.total_vacation_days || 15;
                    const vacColor = vacRem <= 0 ? '#b91c1c' : vacRem <= 5 ? '#b45309' : '#059669';
                    const hasUser = (state.rhhUsers || []).some(u => u.employee_id === emp.id);
+                   const empUser = state.rhhUsers?.find(u => u.employee_id === emp.id);
                    const userBadge = hasUser
-                     ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:8px;">👤 ${(state.rhhUsers.find(u => u.employee_id === emp.id))?.role || '—'}</span>`
+                     ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:8px;">👤 ${empUser?.role || '—'}</span>
+                        <button class="btn-ghost" style="font-size:10px;padding:2px 6px;color:#7c3aed;" title="Restablecer contraseña" onclick="openResetPwdModal(${empUser?.id},'${(emp.full_name||'').replace(/'/g,"\\'")}')">🔑</button>`
                      : `<button class="btn-ghost" style="font-size:11px;color:#7c3aed;" onclick="openCreateUserModal(${emp.id},'${(emp.full_name || '').replace(/'/g, "\\'")}','${emp.email || ''}')">+ Cuenta</button>`;
                    return `
                    <tr>
@@ -5404,6 +5406,10 @@ async function listaAsistenciaView() {
             ${totalsVisible ? '◀ Ocultar totales' : 'Expandir totales ▶'}
           </button>
           ${['rh','admin'].includes(state.user?.role) ? `<button class="btn-add-holiday" onclick="openHolidayModal()">🎌 + Festivo</button>` : ''}
+          ${['rh','admin'].includes(state.user?.role) ? `<label class="btn-ghost" style="cursor:pointer;margin:0;font-size:12px;" title="Importar lista de asistencia desde Excel (mismo formato)">
+            ⬆ Importar Excel
+            <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="importAsistenciaExcel(this)">
+          </label>` : ''}
         </div>
       </div>
 
@@ -5909,6 +5915,65 @@ async function loadComprasEmpTab(el) {
         </tbody>
       </table>
     </div>`;
+}
+
+// ── Restablecer contraseña (admin/rh) ─────────────────────────────────────────
+function openResetPwdModal(userId, empName) {
+  document.getElementById('reset-pwd-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'reset-pwd-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:340px;max-width:95vw;">
+      <h3 style="margin:0 0 4px;">🔑 Restablecer contraseña</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">${empName}</p>
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Nueva contraseña</label>
+      <input id="rp-password" type="text" placeholder="Mínimo 4 caracteres" value="0000"
+        style="width:100%;margin-bottom:16px;padding:8px;border:1px solid #e5e7eb;border-radius:8px;box-sizing:border-box;" />
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('reset-pwd-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="saveResetPwd(${userId})">Restablecer</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('rp-password').focus();
+}
+
+async function saveResetPwd(userId) {
+  const pwd = document.getElementById('rp-password')?.value || '';
+  if (pwd.length < 4) { toast('Contraseña mínimo 4 caracteres', 'warning'); return; }
+  try {
+    await api(`/api/rhh/auth/users/${userId}/reset-password`, {
+      method: 'PATCH',
+      body: JSON.stringify({ new_password: pwd })
+    });
+    document.getElementById('reset-pwd-modal')?.remove();
+    toast('Contraseña restablecida');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Importar lista de asistencia desde Excel ──────────────────────────────────
+async function importAsistenciaExcel(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const base64 = btoa(String.fromCharCode(...new Uint8Array(e.target.result)));
+    try {
+      toast('Procesando Excel...', 'info');
+      const result = await api('/api/rhh/schedule/import-excel', {
+        method: 'POST',
+        body: JSON.stringify({
+          excel_base64: base64,
+          week_start: attendanceWeekStart
+        })
+      });
+      toast(result.message || 'Importación completada');
+      await listaAsistenciaView();
+    } catch (err) { toast(err.message || 'Error al importar', 'error'); }
+  };
+  reader.readAsArrayBuffer(file);
 }
 
 async function createEmpFromCompras(candidate) {

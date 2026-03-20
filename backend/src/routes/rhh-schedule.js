@@ -1250,4 +1250,102 @@ router.get('/te-calc', rhhAuthRequired, (req, res) => {
   res.json({ week_start: weekStart, week_end: weekDays[6], employees: withTE, total_employees: result.length });
 });
 
+// POST /api/rhh/schedule/import-excel — admin/rh only
+// Body: { excel_base64: string, week_start: "YYYY-MM-DD" }
+router.post('/import-excel', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const XLSX = require('xlsx');
+  const { excel_base64, week_start } = req.body || {};
+  if (!excel_base64) return res.status(400).json({ error: 'Se requiere excel_base64' });
+  if (!week_start || !/^\d{4}-\d{2}-\d{2}$/.test(week_start)) {
+    return res.status(400).json({ error: 'week_start requerido (YYYY-MM-DD)' });
+  }
+
+  try {
+    const buf = Buffer.from(excel_base64, 'base64');
+    const wb = XLSX.read(buf, { type: 'buffer' });
+    const wsName = wb.SheetNames[0];
+    const ws = wb.Sheets[wsName];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Column mapping: status at [6,10,14,18,22], TE at [8,12,16,20,24] (Mon-Fri)
+    const STATUS_COLS = [6, 10, 14, 18, 22];
+    const TE_COLS    = [8, 12, 16, 20, 24];
+    const STATUS_MAP = {
+      'Labora': 'present', 'Falta': 'absent', 'Vacaciones': 'vacation',
+      'FESTIVO': 'holiday', 'Retardo': 'late', 'Incapacidad': 'medical_leave',
+      'Permiso CG': 'permission_paid', 'Permiso SG': 'permission_unpaid',
+      'Paro tecnico': 'technical_stop', 'Descanso': 'rest',
+      'Baja': 'terminated', 'TiempoXT': 'time_off'
+    };
+
+    const db = read();
+    const employees = db.rhh_employees || [];
+    if (!db.rhh_attendance) db.rhh_attendance = [];
+    const attendance = db.rhh_attendance;
+
+    // Build employee lookup by normalized name
+    const empByName = {};
+    for (const emp of employees) {
+      if (emp.full_name) {
+        empByName[emp.full_name.trim().toLowerCase().replace(/\s+/g, ' ')] = emp;
+      }
+    }
+
+    // Week Mon-Fri dates
+    const weekMon = new Date(week_start + 'T00:00:00');
+    const weekDates = [];
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(weekMon);
+      d.setDate(weekMon.getDate() + i);
+      weekDates.push(d.toISOString().slice(0, 10));
+    }
+
+    let created = 0, updated = 0, skipped = 0;
+
+    for (const row of rows) {
+      const rawName = String(row[1] || '').trim();
+      if (!rawName || typeof row[0] !== 'number') continue;
+
+      const emp = empByName[rawName.toLowerCase().replace(/\s+/g, ' ')];
+      if (!emp) { skipped++; continue; }
+
+      for (let di = 0; di < 5; di++) {
+        const date = weekDates[di];
+        const rawStatus = String(row[STATUS_COLS[di]] || '').trim();
+        if (!rawStatus || !STATUS_MAP[rawStatus]) continue;
+        const statusCode = STATUS_MAP[rawStatus];
+        const teHours = row[TE_COLS[di]];
+        const teNum = (typeof teHours === 'number' && teHours > 0) ? teHours : null;
+
+        const idx = attendance.findIndex(a => a.employee_id === emp.id && a.date === date);
+        if (idx >= 0) {
+          attendance[idx].status = statusCode;
+          if (teNum !== null) attendance[idx].te_hours = teNum;
+          attendance[idx].updated_at = new Date().toISOString();
+          updated++;
+        } else {
+          attendance.push({
+            id: nextId(db, 'rhh_attendance'),
+            employee_id: emp.id,
+            date,
+            status: statusCode,
+            te_hours: teNum,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          });
+          created++;
+        }
+      }
+    }
+
+    write(db);
+    res.json({
+      ok: true, created, updated, skipped,
+      message: `Importación completada: ${created} nuevos, ${updated} actualizados, ${skipped} empleados no encontrados`
+    });
+  } catch (err) {
+    res.status(500).json({ error: `Error al procesar el Excel: ${err.message}` });
+  }
+});
+
 module.exports = router;

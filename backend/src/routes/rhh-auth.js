@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read, write } = require('../db-rhh');
-const { rhhAuthRequired } = require('../middleware/rhh-auth');
+const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // POST /api/rhh/auth/login
@@ -47,6 +47,22 @@ router.get('/me', rhhAuthRequired, (req, res) => {
     employee = (db.rhh_employees || []).find(e => e.id === user.employee_id) || null;
   }
   res.json({ ...user, employee });
+});
+
+// PATCH /api/rhh/auth/users/:id/reset-password — admin/rh only
+router.patch('/users/:id/reset-password', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const { new_password } = req.body || {};
+  if (!new_password || String(new_password).length < 4) {
+    return res.status(400).json({ error: 'Contraseña mínimo 4 caracteres' });
+  }
+  const db = read();
+  const user = (db.rhh_users || []).find(u => u.id === Number(req.params.id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  user.updated_at = new Date().toISOString();
+  write(db);
+  res.json({ ok: true, message: 'Contraseña restablecida' });
 });
 
 // POST /api/rhh/auth/change-password
