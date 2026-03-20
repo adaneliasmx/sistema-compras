@@ -6,7 +6,7 @@
   <title>Super Administrador · Portal Empresarial</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
-    :root{--navy:#0f172a;--navy2:#1e293b;--purple:#7c3aed;--blue:#1d4ed8;--text:#1f2937;--muted:#64748b;--line:#e2e8f0;--bg:#f0f4f8}
+    :root{--navy:#0f172a;--navy2:#1e293b;--purple:#7c3aed;--blue:#1d4ed8;--teal:#0f766e;--text:#1f2937;--muted:#64748b;--line:#e2e8f0;--bg:#f0f4f8}
     body{min-height:100vh;background:var(--bg);color:var(--text)}
 
     /* LOGIN */
@@ -18,13 +18,11 @@
     .login-logo p{font-size:13px;color:var(--muted);margin-top:4px}
     .badge-restricted{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:4px 10px;border-radius:999px;background:#ede9fe;color:#6d28d9;margin-top:6px}
     label{display:block;margin:14px 0 5px;font-weight:700;font-size:13px;color:var(--text)}
-    input{width:100%;padding:11px 13px;border-radius:11px;border:1.5px solid var(--line);font-size:14px;background:#fff;color:var(--text);outline:none}
+    input[type=email],input[type=password],input[type=text]{width:100%;padding:11px 13px;border-radius:11px;border:1.5px solid var(--line);font-size:14px;background:#fff;color:var(--text);outline:none}
     input:focus{border-color:var(--purple)}
-    .btn-login{width:100%;margin-top:20px;padding:13px;border-radius:12px;font-size:15px;font-weight:800;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer;transition:filter .15s}
-    .btn-login:hover{filter:brightness(1.1)}
+    .btn-login{width:100%;margin-top:20px;padding:13px;border-radius:12px;font-size:15px;font-weight:800;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer}
     .err{color:#dc2626;font-size:13px;margin-top:10px;text-align:center;min-height:18px}
     .back-link{display:block;text-align:center;margin-top:16px;font-size:13px;color:var(--muted);text-decoration:none}
-    .back-link:hover{color:var(--purple)}
 
     /* APP */
     #appScreen{display:none}
@@ -38,46 +36,76 @@
     .btn-logout{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:rgba(255,255,255,.08);color:#cbd5e1;border:1px solid rgba(255,255,255,.12);cursor:pointer}
     .btn-portal{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:rgba(124,58,237,.3);color:#c4b5fd;border:1px solid rgba(124,58,237,.4);cursor:pointer;text-decoration:none}
 
-    main{padding:32px;max-width:1200px;margin:0 auto}
-    .page-title{font-size:22px;font-weight:800;margin-bottom:6px}
-    .page-sub{font-size:13px;color:var(--muted);margin-bottom:28px}
+    main{padding:28px 32px;max-width:1400px;margin:0 auto}
+
+    /* PAGE TABS */
+    .page-tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid var(--line);padding-bottom:0}
+    .page-tab{padding:10px 20px;font-size:14px;font-weight:700;border:0;background:none;cursor:pointer;color:var(--muted);border-bottom:3px solid transparent;margin-bottom:-2px}
+    .page-tab.active{color:var(--purple);border-bottom-color:var(--purple)}
+
+    /* CARD */
+    .card{background:#fff;border-radius:16px;border:1px solid var(--line);box-shadow:0 2px 12px rgba(0,0,0,.05);overflow:hidden}
+    .card-header{display:flex;align-items:center;justify-content:space-between;padding:16px 22px;border-bottom:1px solid var(--line)}
+    .card-header h2{font-size:17px;font-weight:800}
+    .card-body{padding:0}
+
+    /* SEARCH BAR */
+    .search-bar{padding:12px 22px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);background:#f9fafb}
+    .search-bar input{flex:1;min-width:200px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:13px;outline:none}
+    .search-bar input:focus{border-color:var(--purple)}
+
+    /* UNIFIED TABLE */
+    .u-table-wrap{overflow-x:auto}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px 12px;text-align:left;font-size:13px;border-bottom:1px solid var(--line)}
+    th{background:#f8fafc;font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap}
+    tr:hover td{background:#fafafa}
+    .name-cell strong{display:block;font-size:13px}
+    .name-cell span{font-size:11px;color:var(--muted)}
+
+    /* MODULE CELL */
+    .mod-cell{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+    .role-sel{font-size:11px;padding:3px 6px;border-radius:7px;border:1.5px solid #e2e8f0;background:#f8fafc;font-weight:700;cursor:pointer;color:#173b90}
+    .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+    .dot-on{background:#22c55e}.dot-off{background:#ef4444}
+    .btn-toggle{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:0}
+    .btn-on{background:#fee2e2;color:#dc2626}
+    .btn-off{background:#dcfce7;color:#15803d}
+    .btn-add-mod{padding:3px 8px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;border:1px dashed #94a3b8;background:#f8fafc;color:var(--muted)}
+    .btn-add-mod:hover{border-color:var(--purple);color:var(--purple)}
+    .no-mod{font-size:12px;color:#d1d5db}
+
+    /* ACTIONS */
+    .btn-pwd{padding:4px 8px;border-radius:7px;font-size:12px;font-weight:700;background:#ede9fe;color:#6d28d9;border:0;cursor:pointer}
+    .btn-primary{padding:8px 16px;border-radius:10px;font-size:13px;font-weight:700;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer}
+    .btn-ghost{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:#f1f5f9;color:var(--text);border:1px solid var(--line);cursor:pointer}
+
+    /* PILL */
+    .pill{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
+    .pill-active{background:#dcfce7;color:#15803d}
+    .pill-dev{background:#fef3c7;color:#b45309}
+    .pill-ext{background:#dbeafe;color:#1e40af}
 
     /* MODULE PANELS */
-    .modules-wrap{display:grid;gap:24px}
-    .module-panel{background:#fff;border-radius:16px;border:1px solid var(--line);box-shadow:0 2px 12px rgba(0,0,0,.05);overflow:hidden}
+    .module-panel{background:#fff;border-radius:16px;border:1px solid var(--line);box-shadow:0 2px 12px rgba(0,0,0,.05);overflow:hidden;margin-bottom:16px}
     .module-header{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line);cursor:pointer;user-select:none}
     .module-header-left{display:flex;align-items:center;gap:14px}
     .mod-h-icon{width:42px;height:42px;border-radius:11px;display:grid;place-items:center;font-size:22px;flex-shrink:0}
     .module-header h3{font-size:16px;font-weight:800;margin-bottom:3px}
     .mod-meta{font-size:12px;color:var(--muted)}
-    .pill{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
-    .pill-active{background:#dcfce7;color:#15803d}
-    .pill-dev{background:#fef3c7;color:#b45309}
     .toggle-icon{font-size:18px;color:var(--muted);transition:transform .2s}
     .module-body{display:none;padding:0 22px 18px}
     .module-body.open{display:block}
-
-    /* USERS TABLE */
-    table{width:100%;border-collapse:collapse;margin-top:12px}
-    th,td{padding:9px 10px;text-align:left;font-size:13px;border-bottom:1px solid var(--line)}
-    th{background:#f8fafc;font-weight:700;font-size:12px;color:var(--muted)}
-    .role-badge{font-size:11px;font-weight:700;padding:2px 8px;border-radius:6px;background:#e8eefc;color:#173b90}
-    .status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px}
-    .dot-green{background:#22c55e}.dot-red{background:#ef4444}
-    .btn-sm{padding:4px 10px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;border:0}
-    .btn-disable{background:#fee2e2;color:#dc2626}
-    .btn-enable{background:#dcfce7;color:#15803d}
     .dev-notice{text-align:center;padding:24px;color:var(--muted);font-size:13px}
     .dev-notice span{font-size:32px;display:block;margin-bottom:8px}
     .btn-add{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:#ede9fe;color:#6d28d9;border:0;cursor:pointer;margin-top:10px}
-    .btn-add:hover{background:#ddd6fe}
 
     /* MODAL */
     .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;place-items:center}
     .modal-overlay.open{display:grid}
-    .modal-box{background:#fff;border-radius:18px;padding:28px;width:min(440px,95vw);box-shadow:0 20px 60px rgba(0,0,0,.3)}
+    .modal-box{background:#fff;border-radius:18px;padding:28px;width:min(480px,95vw);box-shadow:0 20px 60px rgba(0,0,0,.3)}
     .modal-title{font-size:17px;font-weight:800;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between}
-    .modal-close{background:none;border:0;font-size:20px;cursor:pointer;color:var(--muted);line-height:1}
+    .modal-close{background:none;border:0;font-size:20px;cursor:pointer;color:var(--muted)}
     .modal-label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin:12px 0 4px;text-transform:uppercase;letter-spacing:.5px}
     .modal-input{width:100%;padding:10px 12px;border-radius:10px;border:1.5px solid var(--line);font-size:14px;outline:none}
     .modal-input:focus{border-color:var(--purple)}
@@ -85,6 +113,16 @@
     .btn-modal-cancel{padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;background:#f1f5f9;color:#64748b;border:0;cursor:pointer}
     .btn-modal-save{padding:9px 18px;border-radius:10px;font-size:13px;font-weight:700;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer}
     .modal-err{color:#dc2626;font-size:12px;margin-top:8px;min-height:16px}
+    .modules-check{display:flex;gap:16px;margin-top:6px;flex-wrap:wrap}
+    .mod-check-item{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:700}
+    .mod-check-item input{width:auto;margin:0}
+
+    /* DUPLICATES */
+    .dup-row td{background:#fefce8 !important}
+    .dup-badge{font-size:10px;background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:6px;border:1px solid #fcd34d}
+
+    /* EMPTY */
+    .empty{text-align:center;padding:48px;color:var(--muted);font-size:13px}
   </style>
 </head>
 <body>
@@ -126,92 +164,198 @@
   </header>
 
   <main>
-    <div class="page-title">Panel de módulos</div>
-    <div class="page-sub">Gestión de usuarios y accesos por módulo. Click en cada módulo para expandir.</div>
-    <div class="modules-wrap" id="modulesWrap">
-      <div style="text-align:center;padding:48px;color:#94a3b8">Cargando módulos...</div>
+    <div class="page-tabs">
+      <button class="page-tab active" id="tab-users" onclick="switchPageTab('users')">👥 Usuarios internos</button>
+      <button class="page-tab" id="tab-providers" onclick="switchPageTab('providers')">🚚 Proveedores externos</button>
+      <button class="page-tab" id="tab-modules" onclick="switchPageTab('modules')">🔧 Módulos</button>
+    </div>
+
+    <!-- USUARIOS INTERNOS -->
+    <div id="page-users">
+      <div class="card">
+        <div class="card-header">
+          <h2>👥 Usuarios del sistema</h2>
+          <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="userSearch" placeholder="Buscar por nombre o correo..." oninput="renderUsersTable()"/>
+          <span id="userCount" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+        </div>
+        <div class="u-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th style="min-width:200px;">Usuario</th>
+                <th style="min-width:200px;">🛒 Compras</th>
+                <th style="min-width:200px;">👥 RHH</th>
+                <th style="min-width:100px;">Contraseña</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="4" class="empty">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROVEEDORES -->
+    <div id="page-providers" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <h2>🚚 Proveedores externos</h2>
+          <button class="btn-primary" onclick="openCreateModal('proveedor')">+ Nuevo proveedor</button>
+        </div>
+        <div class="search-bar">
+          <input type="text" id="provSearch" placeholder="Buscar proveedor..." oninput="renderProvidersTable()"/>
+          <span id="provCount" style="font-size:12px;color:var(--muted);white-space:nowrap;"></span>
+        </div>
+        <div class="u-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Proveedor</th>
+                <th>Email</th>
+                <th>Estado Compras</th>
+                <th>Contraseña</th>
+              </tr>
+            </thead>
+            <tbody id="provTableBody">
+              <tr><td colspan="4" class="empty">Cargando...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- MÓDULOS -->
+    <div id="page-modules" style="display:none">
+      <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
+        <div>
+          <div style="font-size:18px;font-weight:800;">🔧 Estado de módulos</div>
+          <div style="font-size:13px;color:var(--muted);margin-top:2px;">Módulos activos y en desarrollo. Click para expandir usuarios.</div>
+        </div>
+      </div>
+      <div id="modulesWrap">
+        <div style="text-align:center;padding:48px;color:#94a3b8">Cargando módulos...</div>
+      </div>
     </div>
   </main>
 </div>
 
-<!-- MODAL AGREGAR USUARIO -->
-<div class="modal-overlay" id="userModal">
+<!-- MODAL CREAR USUARIO -->
+<div class="modal-overlay" id="createModal">
   <div class="modal-box">
     <div class="modal-title">
-      <span id="modalTitle">Agregar usuario</span>
-      <button class="modal-close" onclick="closeModal()">×</button>
+      <span>+ Nuevo usuario</span>
+      <button class="modal-close" onclick="closeCreateModal()">×</button>
     </div>
-
-    <!-- Tabs -->
-    <div style="display:flex;gap:0;border:1.5px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:16px">
-      <button id="tabNew" onclick="switchTab('new')"
-        style="flex:1;padding:8px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#ede9fe;color:#6d28d9">
-        + Nuevo usuario
-      </button>
-      <button id="tabExist" onclick="switchTab('exist')"
-        style="flex:1;padding:8px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#f8fafc;color:#64748b">
-        Asignar existente
-      </button>
-    </div>
-
-    <!-- Nuevo usuario -->
-    <div id="panelNew">
-      <label class="modal-label">Nombre completo</label>
-      <input class="modal-input" type="text" id="mName" placeholder="Ej. Juan Pérez"/>
-      <label class="modal-label">Correo electrónico</label>
-      <input class="modal-input" type="email" id="mEmail" placeholder="juan@empresa.com"/>
-      <label class="modal-label">Contraseña</label>
-      <input class="modal-input" type="password" id="mPass" placeholder="Mínimo 6 caracteres"/>
-      <label class="modal-label">Rol en este módulo</label>
-      <select class="modal-input" id="mRole"></select>
-    </div>
-
-    <!-- Asignar existente -->
-    <div id="panelExist" style="display:none">
-      <label class="modal-label">Seleccionar usuario</label>
-      <select class="modal-input" id="mExistUser" onchange="onExistUserChange()">
-        <option value="">— Cargando... —</option>
-      </select>
-      <div id="mExistInfo" style="display:none;margin-top:10px;padding:10px 12px;background:#f8fafc;border-radius:10px;font-size:13px">
-        <div><b id="mExistName"></b></div>
-        <div style="color:#64748b;font-size:12px" id="mExistEmail"></div>
-        <div style="color:#94a3b8;font-size:11px;margin-top:2px" id="mExistFrom"></div>
+    <label class="modal-label">Nombre completo</label>
+    <input class="modal-input" type="text" id="cmName" placeholder="Ej. Juan Pérez"/>
+    <label class="modal-label">Correo electrónico</label>
+    <input class="modal-input" type="email" id="cmEmail" placeholder="juan@empresa.com"/>
+    <label class="modal-label">Contraseña inicial</label>
+    <input class="modal-input" type="text" id="cmPass" placeholder="Mínimo 6 caracteres" value="0000"/>
+    <label class="modal-label">Agregar a módulos</label>
+    <div style="display:grid;gap:10px;margin-top:6px;">
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-compras-chk" onchange="document.getElementById('cm-compras-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          🛒 Compras
+        </label>
+        <select class="modal-input" id="cm-compras-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="cliente_requisicion">Requisición</option>
+          <option value="comprador">Comprador</option>
+          <option value="autorizador">Autorizador</option>
+          <option value="pagos">Pagos</option>
+          <option value="admin">Admin</option>
+        </select>
       </div>
-      <label class="modal-label">Rol en este módulo</label>
-      <select class="modal-input" id="mRoleExist"></select>
-      <div style="margin-top:10px;padding:10px 12px;background:#fefce8;border-radius:10px;font-size:12px;color:#92400e">
-        El usuario usará su contraseña actual del módulo de origen para acceder aquí.
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-rhh-chk" onchange="document.getElementById('cm-rhh-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          👥 RHH
+        </label>
+        <select class="modal-input" id="cm-rhh-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="empleado">Empleado</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="rh">RH</option>
+          <option value="admin">Admin</option>
+        </select>
       </div>
     </div>
-
-    <div class="modal-err" id="modalErr"></div>
+    <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
-      <button class="btn-modal-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="btn-modal-save" id="btnSaveUser" onclick="saveNewUser()">Crear usuario</button>
+      <button class="btn-modal-cancel" onclick="closeCreateModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="saveCreateUser()">Crear usuario</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONTRASEÑA -->
+<div class="modal-overlay" id="pwdModal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">
+      <span>🔑 Restablecer contraseña</span>
+      <button class="modal-close" onclick="closePwdModal()">×</button>
+    </div>
+    <p id="pwdModalName" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></p>
+    <label class="modal-label">Nueva contraseña</label>
+    <input class="modal-input" type="text" id="pwdNew" value="0000"/>
+    <div class="modal-err" id="pwdErr"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closePwdModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="savePwd()">Restablecer</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL ADD TO MODULE -->
+<div class="modal-overlay" id="addModModal">
+  <div class="modal-box" style="max-width:380px;">
+    <div class="modal-title">
+      <span id="addModTitle">Agregar a módulo</span>
+      <button class="modal-close" onclick="closeAddModModal()">×</button>
+    </div>
+    <p id="addModUser" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></p>
+    <label class="modal-label">Rol</label>
+    <select class="modal-input" id="addModRole"></select>
+    <div class="modal-err" id="addModErr"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeAddModModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="saveAddToModule()">Agregar</button>
     </div>
   </div>
 </div>
 
 <script>
 const TOKEN_KEY = 'sa_token';
+const ROLE_LABELS_COMPRAS = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
+const ROLE_LABELS_RHH = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', mantenimiento:'#b45309' };
 
+let _unifiedData = { internal: [], external: [] };
+let _currentPageTab = 'users';
+
+// ── API helper ────────────────────────────────────────────────────────────────
 async function api(url, opts = {}) {
   const token = localStorage.getItem(TOKEN_KEY);
   const res = await fetch(url, {
     ...opts,
-    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) }
+    headers: { 'Content-Type':'application/json', ...(token ? { Authorization:`Bearer ${token}` } : {}), ...(opts.headers||{}) }
   });
-  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.statusText); }
+  if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error || res.statusText); }
   return res.json();
 }
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const email = document.getElementById('saEmail').value.trim();
   const pass = document.getElementById('saPass').value;
   const errEl = document.getElementById('loginErr');
   errEl.textContent = '';
   try {
-    const data = await api('/api/super-admin/login', { method: 'POST', body: JSON.stringify({ email, password: pass }) });
+    const data = await api('/api/super-admin/login', { method:'POST', body: JSON.stringify({ email, password: pass }) });
     localStorage.setItem(TOKEN_KEY, data.token);
     showApp(data.name);
   } catch(e) { errEl.textContent = e.message; }
@@ -227,119 +371,249 @@ function showApp(name) {
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appScreen').style.display = 'block';
   document.getElementById('saUserName').textContent = name || '';
-  loadModules();
+  loadData();
 }
 
-const MODULE_COLORS = { compras: '#1d4ed8', rhh: '#0f766e', calidad: '#7c3aed', mantenimiento: '#b45309' };
-const ROLE_LABELS_COMPRAS = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
-const ROLE_LABELS_RHH = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
-const ROLES_COMPRAS = Object.entries(ROLE_LABELS_COMPRAS);
-const ROLES_RHH = Object.entries(ROLE_LABELS_RHH);
-
-let _modalModule = null;
-let _modalTab = 'new';
-let _candidates = [];
-
-function switchTab(tab) {
-  _modalTab = tab;
-  document.getElementById('panelNew').style.display    = tab === 'new'   ? 'block' : 'none';
-  document.getElementById('panelExist').style.display  = tab === 'exist' ? 'block' : 'none';
-  document.getElementById('tabNew').style.background   = tab === 'new'   ? '#ede9fe' : '#f8fafc';
-  document.getElementById('tabNew').style.color        = tab === 'new'   ? '#6d28d9' : '#64748b';
-  document.getElementById('tabExist').style.background = tab === 'exist' ? '#ede9fe' : '#f8fafc';
-  document.getElementById('tabExist').style.color      = tab === 'exist' ? '#6d28d9' : '#64748b';
-  document.getElementById('btnSaveUser').textContent   = tab === 'new'   ? 'Crear usuario' : 'Asignar usuario';
-  document.getElementById('modalErr').textContent = '';
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchPageTab(tab) {
+  _currentPageTab = tab;
+  ['users','providers','modules'].forEach(t => {
+    document.getElementById('page-' + t).style.display = t === tab ? 'block' : 'none';
+    document.getElementById('tab-' + t).classList.toggle('active', t === tab);
+  });
+  if (tab === 'modules') loadModules();
 }
 
-async function openAddUser(moduleId) {
-  _modalModule = moduleId;
-  const roles = moduleId === 'compras' ? ROLES_COMPRAS : ROLES_RHH;
-  const label = moduleId === 'compras' ? 'Compras' : 'RHH';
-  document.getElementById('modalTitle').textContent = `Agregar usuario · ${label}`;
-  document.getElementById('mRole').innerHTML     = roles.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-  document.getElementById('mRoleExist').innerHTML = roles.map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-  document.getElementById('mName').value = '';
-  document.getElementById('mEmail').value = '';
-  document.getElementById('mPass').value = '';
-  document.getElementById('modalErr').textContent = '';
-  document.getElementById('mExistInfo').style.display = 'none';
-  switchTab('new');
-
-  // Cargar candidatos en background
-  _candidates = [];
-  document.getElementById('mExistUser').innerHTML = '<option value="">— Cargando... —</option>';
-  api(`/api/super-admin/users/candidates/${moduleId}`)
-    .then(({ candidates }) => {
-      _candidates = candidates;
-      const sel = document.getElementById('mExistUser');
-      if (candidates.length === 0) {
-        sel.innerHTML = '<option value="">— Sin usuarios disponibles —</option>';
-      } else {
-        sel.innerHTML = '<option value="">— Selecciona un usuario —</option>' +
-          candidates.map((c, i) => `<option value="${i}">${c.name} · ${c.email} (${c.from})</option>`).join('');
-      }
-    })
-    .catch(() => {
-      document.getElementById('mExistUser').innerHTML = '<option value="">— Error al cargar —</option>';
-    });
-
-  document.getElementById('userModal').classList.add('open');
-  document.getElementById('mName').focus();
-}
-
-function onExistUserChange() {
-  const idx = document.getElementById('mExistUser').value;
-  const info = document.getElementById('mExistInfo');
-  if (idx === '' || !_candidates[idx]) { info.style.display = 'none'; return; }
-  const c = _candidates[idx];
-  document.getElementById('mExistName').textContent  = c.name;
-  document.getElementById('mExistEmail').textContent = c.email;
-  document.getElementById('mExistFrom').textContent  = `Origen: módulo ${c.from}`;
-  info.style.display = 'block';
-}
-
-function closeModal() {
-  document.getElementById('userModal').classList.remove('open');
-  _modalModule = null;
-}
-
-async function saveNewUser() {
-  const errEl = document.getElementById('modalErr');
-  errEl.textContent = '';
+// ── Load data ─────────────────────────────────────────────────────────────────
+async function loadData() {
   try {
-    let body;
-    if (_modalTab === 'new') {
-      const name  = document.getElementById('mName').value.trim();
-      const email = document.getElementById('mEmail').value.trim();
-      const pass  = document.getElementById('mPass').value;
-      const role  = document.getElementById('mRole').value;
-      if (!name || !email || !pass) { errEl.textContent = 'Todos los campos son requeridos'; return; }
-      if (pass.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
-      body = _modalModule === 'compras'
-        ? { full_name: name, email, password: pass, role_code: role }
-        : { full_name: name, email, password: pass, role };
-    } else {
-      const idx  = document.getElementById('mExistUser').value;
-      const role = document.getElementById('mRoleExist').value;
-      if (idx === '') { errEl.textContent = 'Selecciona un usuario'; return; }
-      const c = _candidates[idx];
-      body = _modalModule === 'compras'
-        ? { full_name: c.name, email: c.email, password_hash: c.password_hash, role_code: role }
-        : { full_name: c.name, email: c.email, password_hash: c.password_hash, role };
-    }
-    await api(`/api/super-admin/${_modalModule}/users`, { method: 'POST', body: JSON.stringify(body) });
-    closeModal();
-    loadModules();
+    _unifiedData = await api('/api/super-admin/unified-users');
+    renderUsersTable();
+    renderProvidersTable();
+  } catch(e) {
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="4" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+  }
+}
+
+// ── Render users table ────────────────────────────────────────────────────────
+function renderUsersTable() {
+  const q = (document.getElementById('userSearch')?.value || '').toLowerCase();
+  const users = _unifiedData.internal.filter(u =>
+    !q || u.full_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)
+  );
+  document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
+
+  if (!users.length) {
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="4" class="empty">Sin usuarios que coincidan</td></tr>`;
+    return;
+  }
+
+  document.getElementById('usersTableBody').innerHTML = users.map(u => {
+    const comprasCell = u.compras
+      ? `<div class="mod-cell">
+           <span class="dot ${u.compras.active ? 'dot-on' : 'dot-off'}"></span>
+           ${roleSelect('compras', u.compras.id, u.compras.role, ROLE_LABELS_COMPRAS)}
+           <button class="btn-toggle ${u.compras.active ? 'btn-on' : 'btn-off'}" onclick="toggleMod('compras',${u.compras.id},${!u.compras.active})">
+             ${u.compras.active ? 'Desactivar' : 'Activar'}
+           </button>
+         </div>`
+      : `<div class="mod-cell">
+           <span class="no-mod">— Sin cuenta</span>
+           <button class="btn-add-mod" onclick="openAddModModal('compras','${esc(u.full_name)}','${esc(u.email)}','${u.rhh ? u.rhh.id : ''}')">+ Agregar</button>
+         </div>`;
+
+    const rhhCell = u.rhh
+      ? `<div class="mod-cell">
+           <span class="dot ${u.rhh.active ? 'dot-on' : 'dot-off'}"></span>
+           ${roleSelect('rhh', u.rhh.id, u.rhh.role, ROLE_LABELS_RHH)}
+           <button class="btn-toggle ${u.rhh.active ? 'btn-on' : 'btn-off'}" onclick="toggleMod('rhh',${u.rhh.id},${!u.rhh.active})">
+             ${u.rhh.active ? 'Desactivar' : 'Activar'}
+           </button>
+         </div>`
+      : `<div class="mod-cell">
+           <span class="no-mod">— Sin cuenta</span>
+           <button class="btn-add-mod" onclick="openAddModModal('rhh','${esc(u.full_name)}','${esc(u.email)}','${u.compras ? u.compras.id : ''}')">+ Agregar</button>
+         </div>`;
+
+    const pwdCell = `<button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>`;
+
+    return `<tr>
+      <td class="name-cell">
+        <strong>${u.full_name}</strong>
+        <span>${u.email}</span>
+      </td>
+      <td>${comprasCell}</td>
+      <td>${rhhCell}</td>
+      <td>${pwdCell}</td>
+    </tr>`;
+  }).join('');
+}
+
+function esc(s) { return String(s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+
+function roleSelect(module, userId, currentRole, labels) {
+  const opts = Object.entries(labels).map(([v,l]) => `<option value="${v}" ${v===currentRole?'selected':''}>${l}</option>`).join('');
+  return `<select class="role-sel" onchange="changeRole('${module}',${userId},this.value,this)">${opts}</select>`;
+}
+
+// ── Render providers table ────────────────────────────────────────────────────
+function renderProvidersTable() {
+  const q = (document.getElementById('provSearch')?.value || '').toLowerCase();
+  const provs = _unifiedData.external.filter(u =>
+    !q || u.full_name?.toLowerCase().includes(q) || u.email?.toLowerCase().includes(q)
+  );
+  document.getElementById('provCount').textContent = `${provs.length} proveedor${provs.length !== 1 ? 'es' : ''}`;
+
+  if (!provs.length) {
+    document.getElementById('provTableBody').innerHTML = `<tr><td colspan="4" class="empty">Sin proveedores registrados</td></tr>`;
+    return;
+  }
+
+  document.getElementById('provTableBody').innerHTML = provs.map(u => `<tr>
+    <td class="name-cell"><strong>${u.full_name}</strong></td>
+    <td><span style="font-size:12px;color:var(--muted);">${u.email}</span></td>
+    <td>
+      <span class="dot ${u.compras?.active ? 'dot-on' : 'dot-off'}"></span>
+      ${u.compras?.active ? 'Activo' : 'Inactivo'}
+      ${u.compras ? `<button class="btn-toggle ${u.compras.active ? 'btn-on' : 'btn-off'}" style="margin-left:6px;" onclick="toggleMod('compras',${u.compras.id},${!u.compras.active})">${u.compras.active ? 'Desactivar' : 'Activar'}</button>` : ''}
+    </td>
+    <td><button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},null)">🔑 Reset</button></td>
+  </tr>`).join('');
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+async function toggleMod(module, userId, active) {
+  try {
+    await api('/api/super-admin/unified-users/toggle', { method:'PATCH', body: JSON.stringify({ module, user_id: userId, active }) });
+    await loadData();
+  } catch(e) { alert(e.message); }
+}
+
+async function changeRole(module, userId, role, sel) {
+  const prev = sel.dataset.prev || role;
+  sel.dataset.prev = role;
+  const field = module === 'compras' ? 'role_code' : 'role';
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/role', { method:'PATCH', body: JSON.stringify({ module, user_id: userId, role }) });
+    sel.style.borderColor = '#22c55e';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+    await loadData();
+  } catch(e) {
+    sel.value = prev;
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
+// ── Password modal ────────────────────────────────────────────────────────────
+let _pwdComprasId = null, _pwdRhhId = null;
+function openPwdModal(name, comprasId, rhhId) {
+  _pwdComprasId = comprasId; _pwdRhhId = rhhId;
+  document.getElementById('pwdModalName').textContent = name;
+  document.getElementById('pwdNew').value = '0000';
+  document.getElementById('pwdErr').textContent = '';
+  document.getElementById('pwdModal').classList.add('open');
+  document.getElementById('pwdNew').focus();
+}
+function closePwdModal() { document.getElementById('pwdModal').classList.remove('open'); }
+async function savePwd() {
+  const pwd = document.getElementById('pwdNew').value;
+  if (!pwd || pwd.length < 4) { document.getElementById('pwdErr').textContent = 'Mínimo 4 caracteres'; return; }
+  try {
+    await api('/api/super-admin/unified-users/password', {
+      method:'PATCH',
+      body: JSON.stringify({ compras_user_id: _pwdComprasId, rhh_user_id: _pwdRhhId, new_password: pwd })
+    });
+    closePwdModal();
+    alert('✅ Contraseña actualizada en todos los módulos vinculados');
+  } catch(e) { document.getElementById('pwdErr').textContent = e.message; }
+}
+
+// ── Create user modal ─────────────────────────────────────────────────────────
+function openCreateModal(forceRole) {
+  document.getElementById('cmName').value = '';
+  document.getElementById('cmEmail').value = '';
+  document.getElementById('cmPass').value = '0000';
+  document.getElementById('cmErr').textContent = '';
+  document.getElementById('cm-compras-chk').checked = false;
+  document.getElementById('cm-rhh-chk').checked = false;
+  document.getElementById('cm-compras-role').disabled = true;
+  document.getElementById('cm-rhh-role').disabled = true;
+  if (forceRole === 'proveedor') {
+    document.getElementById('cm-compras-chk').checked = true;
+    document.getElementById('cm-compras-role').disabled = false;
+    document.getElementById('cm-compras-role').value = 'proveedor';
+  }
+  document.getElementById('createModal').classList.add('open');
+  document.getElementById('cmName').focus();
+}
+function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
+async function saveCreateUser() {
+  const name = document.getElementById('cmName').value.trim();
+  const email = document.getElementById('cmEmail').value.trim();
+  const pass = document.getElementById('cmPass').value;
+  const comprasChk = document.getElementById('cm-compras-chk').checked;
+  const rhhChk = document.getElementById('cm-rhh-chk').checked;
+  const errEl = document.getElementById('cmErr');
+  errEl.textContent = '';
+  if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
+  if (!comprasChk && !rhhChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
+  try {
+    await api('/api/super-admin/unified-users', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: name, email, password: pass,
+        compras_role: comprasChk ? document.getElementById('cm-compras-role').value : null,
+        rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null
+      })
+    });
+    closeCreateModal();
+    await loadData();
   } catch(e) { errEl.textContent = e.message; }
 }
 
+// ── Add to module modal ───────────────────────────────────────────────────────
+let _addModData = {};
+function openAddModModal(module, name, email, existingUserId) {
+  _addModData = { module, name, email, existingUserId };
+  const labels = module === 'compras' ? ROLE_LABELS_COMPRAS : ROLE_LABELS_RHH;
+  document.getElementById('addModTitle').textContent = `Agregar a ${module === 'compras' ? '🛒 Compras' : '👥 RHH'}`;
+  document.getElementById('addModUser').textContent = `${name} · ${email}`;
+  document.getElementById('addModRole').innerHTML = Object.entries(labels).map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
+  document.getElementById('addModErr').textContent = '';
+  document.getElementById('addModModal').classList.add('open');
+}
+function closeAddModModal() { document.getElementById('addModModal').classList.remove('open'); }
+async function saveAddToModule() {
+  const role = document.getElementById('addModRole').value;
+  const errEl = document.getElementById('addModErr');
+  errEl.textContent = '';
+  try {
+    // Get password_hash from existing user in other module
+    const existingUser = _unifiedData.internal.find(u => u.email?.toLowerCase() === _addModData.email?.toLowerCase())
+      || _unifiedData.external.find(u => u.email?.toLowerCase() === _addModData.email?.toLowerCase());
+    await api('/api/super-admin/unified-users/add-to-module', {
+      method: 'POST',
+      body: JSON.stringify({
+        full_name: _addModData.name,
+        email: _addModData.email,
+        module: _addModData.module,
+        role
+      })
+    });
+    closeAddModModal();
+    await loadData();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+// ── Module panels (legacy) ────────────────────────────────────────────────────
 async function loadModules() {
   const wrap = document.getElementById('modulesWrap');
   try {
     const { modules } = await api('/api/super-admin/overview');
     wrap.innerHTML = modules.map(m => renderModulePanel(m)).join('');
-    // Toggle expand
     wrap.querySelectorAll('.module-header').forEach(hdr => {
       hdr.onclick = () => {
         const body = hdr.nextElementSibling;
@@ -359,42 +633,26 @@ function renderModulePanel(m) {
 
   let bodyContent = '';
   if (m.status === 'development') {
-    bodyContent = `<div class="dev-notice"><span>🚧</span>Este módulo está en desarrollo. No hay usuarios que gestionar aún.</div>`;
+    bodyContent = `<div class="dev-notice"><span>🚧</span>Módulo en desarrollo. Sin usuarios aún.</div>`;
   } else {
     const roleLabels = m.id === 'compras' ? ROLE_LABELS_COMPRAS : ROLE_LABELS_RHH;
-    const module = m.id;
-    const roleOptions = Object.entries(roleLabels)
-      .map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
     const rows = m.users.map(u => `
       <tr>
         <td><b>${u.name}</b></td>
         <td style="font-size:12px;color:#64748b">${u.email}</td>
-        <td>
-          <select class="role-select" data-module="${module}" data-id="${u.id}"
-            style="font-size:12px;padding:3px 6px;border-radius:7px;border:1.5px solid #e2e8f0;background:#f8fafc;font-weight:700;color:#173b90;cursor:pointer"
-            onchange="changeRole('${module}', ${u.id}, this.value, this)">
-            ${roleOptions.replace(`value="${u.role}"`, `value="${u.role}" selected`)}
-          </select>
-        </td>
-        <td><span class="status-dot ${u.active ? 'dot-green' : 'dot-red'}"></span>${u.active ? 'Activo' : 'Inactivo'}</td>
-        <td>
-          <button class="btn-sm ${u.active ? 'btn-disable' : 'btn-enable'}"
-            onclick="toggleUser('${module}', ${u.id}, ${!u.active})">
-            ${u.active ? 'Deshabilitar' : 'Habilitar'}
-          </button>
-        </td>
+        <td><span style="font-size:11px;font-weight:700;background:#e8eefc;color:#173b90;padding:2px 8px;border-radius:6px;">${roleLabels[u.role] || u.role}</span></td>
+        <td><span class="dot ${u.active ? 'dot-on' : 'dot-off'}"></span> ${u.active ? 'Activo' : 'Inactivo'}</td>
       </tr>`).join('');
 
     bodyContent = `
-      <table>
-        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th><th>Acción</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5" style="color:#94a3b8;text-align:center;padding:16px">Sin usuarios</td></tr>'}</tbody>
+      <table style="margin-top:0">
+        <thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Estado</th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="4" style="color:#94a3b8;text-align:center;padding:16px">Sin usuarios</td></tr>'}</tbody>
       </table>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:12px;flex-wrap:wrap;gap:8px;">
         ${m.url ? `<a href="${m.url}" target="_blank" style="font-size:13px;color:${color};font-weight:700">Ir al módulo →</a>` : '<span></span>'}
         <div style="display:flex;gap:8px;">
-          ${m.id === 'rhh' ? `<button style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer;" onclick="rhhReseed()" title="Sincroniza la base de datos online con el archivo JSON seed del repositorio">🔄 Sync DB desde JSON</button>` : ''}
-          <button class="btn-add" onclick="openAddUser('${m.id}')">+ Agregar usuario</button>
+          ${m.id === 'rhh' ? `<button style="padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;cursor:pointer;" onclick="rhhReseed()">🔄 Sync DB desde JSON</button>` : ''}
         </div>
       </div>`;
   }
@@ -416,50 +674,25 @@ function renderModulePanel(m) {
 }
 
 async function rhhReseed() {
-  if (!confirm('⚠️ Esto reemplazará la base de datos RHH online con el contenido del archivo JSON del repositorio.\n\nTodos los datos ingresados en línea que no estén en el JSON local se PERDERÁN.\n\n¿Continuar?')) return;
+  if (!confirm('⚠️ Esto reemplazará la base de datos RHH online con el JSON seed del repositorio.\n\n¿Continuar?')) return;
   try {
     const r = await api('/api/super-admin/rhh-reseed', { method: 'POST' });
-    const lines = Object.entries(r.counts || {}).map(([k,v]) => `${k}: ${v}`).join('\n');
-    alert('✅ Sincronización completada\n\n' + lines);
-    loadModules();
+    alert('✅ Sincronización completada');
+    loadData();
   } catch(e) { alert('Error: ' + e.message); }
 }
 
-async function toggleUser(module, userId, active) {
-  try {
-    await api(`/api/super-admin/${module}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ active }) });
-    loadModules();
-  } catch(e) { alert(e.message); }
-}
+// ── Modal close on outside click ─────────────────────────────────────────────
+['createModal','pwdModal','addModModal'].forEach(id => {
+  document.getElementById(id).addEventListener('click', e => { if (e.target === e.currentTarget) document.getElementById(id).classList.remove('open'); });
+});
 
-async function changeRole(module, userId, newRole, selectEl) {
-  const prev = selectEl.dataset.prev || selectEl.value;
-  selectEl.dataset.prev = newRole;
-  const field = module === 'compras' ? 'role_code' : 'role';
-  try {
-    selectEl.style.borderColor = '#f59e0b';
-    await api(`/api/super-admin/${module}/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ [field]: newRole }) });
-    selectEl.style.borderColor = '#22c55e';
-    setTimeout(() => { selectEl.style.borderColor = '#e2e8f0'; }, 1200);
-  } catch(e) {
-    selectEl.value = prev;
-    selectEl.style.borderColor = '#ef4444';
-    setTimeout(() => { selectEl.style.borderColor = '#e2e8f0'; }, 1500);
-    alert(e.message);
-  }
-}
-
-// Cerrar modal al hacer clic fuera
-document.getElementById('userModal').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
-
-// Auto-login si hay token
+// ── Auto-login ────────────────────────────────────────────────────────────────
 (async () => {
   const token = localStorage.getItem(TOKEN_KEY);
   if (token) {
-    try {
-      const me = await api('/api/super-admin/me');
-      showApp(me.name);
-    } catch { localStorage.removeItem(TOKEN_KEY); }
+    try { const me = await api('/api/super-admin/me'); showApp(me.name); }
+    catch { localStorage.removeItem(TOKEN_KEY); }
   }
 })();
 </script>
