@@ -772,12 +772,16 @@ async function empleadosView() {
                      ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:8px;">👤 ${empUser?.role || '—'}</span>
                         <button class="btn-ghost" style="font-size:10px;padding:2px 6px;color:#7c3aed;" title="Restablecer contraseña" onclick="openResetPwdModal(${empUser?.id},'${(emp.full_name||'').replace(/'/g,"\\'")}')">🔑</button>`
                      : `<button class="btn-ghost" style="font-size:11px;color:#7c3aed;" onclick="openCreateUserModal(${emp.id},'${(emp.full_name || '').replace(/'/g, "\\'")}','${emp.email || ''}')">+ Cuenta</button>`;
+                   const comprasLink = emp.compras_email
+                     ? `<br><span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:6px;" title="Vinculado a Compras: ${emp.compras_email}">🔗 ${emp.compras_email}</span>`
+                     : '';
                    return `
                    <tr>
                      <td><span class="small muted">${emp.employee_number}</span>${emp.checker_number ? `<br><span class="small muted">Check: ${emp.checker_number}</span>` : ''}</td>
                      <td>
                        <strong>${emp.full_name}</strong><br>
                        <span class="small muted">${emp.email}</span>
+                       ${comprasLink}
                      </td>
                      <td>${emp.department?.name || '—'}</td>
                      <td>${emp.position?.name || '—'}</td>
@@ -790,6 +794,7 @@ async function empleadosView() {
                        <button class="btn-ghost" style="font-size:12px;" onclick="showEditEmployee(${emp.id})">✏️ Editar</button>
                        <button class="btn-ghost" style="font-size:12px;" onclick="showExpediente(${emp.id})">📁 Exp.</button>
                        <button class="btn-ghost" style="font-size:12px;" onclick="historialEmpleadoView(${emp.id})">📋 Historial</button>
+                       <button class="btn-ghost" style="font-size:12px;color:#1d4ed8;" onclick="openLinkComprasModal(${emp.id},'${(emp.full_name||'').replace(/'/g,"\\'")}','${emp.compras_email||''}')">🔗 Vincular</button>
                        ${emp.status === 'active' ? `<button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="deactivateEmployee(${emp.id})">🗑️ Desactivar</button>` : ''}
                      </td>
                    </tr>`;
@@ -4336,7 +4341,7 @@ function fmtWeekLabel(startStr) {
 
 function statusColor(status) {
   const map = {
-    labora:               { bg: '#dcfce7', text: '#166534' },
+    labora:               { bg: '#dcfce7', text: '#166534' },  // "Asistió" — verde confirmado
     festivo:              { bg: '#e0e7ff', text: '#3730a3' },
     descanso:             { bg: '#f1f5f9', text: '#64748b' },
     vacaciones:           { bg: '#dbeafe', text: '#1e40af' },
@@ -4356,7 +4361,7 @@ function statusColor(status) {
 
 function statusLabel(status) {
   const map = {
-    labora: 'Labora', festivo: 'FESTIVO', descanso: 'Descanso',
+    labora: 'Asistió', festivo: 'FESTIVO', descanso: 'Descanso',
     vacaciones: 'Vacaciones', falta: 'Falta', retardo: 'Retardo',
     cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', incapacidad: 'Incapacidad',
     vacio: '',
@@ -4379,7 +4384,7 @@ function openStatusDropdown(empId, date, currentStatus, cellEl) {
   document.querySelectorAll('.status-dropdown').forEach(d => d.remove());
 
   const options = [
-    { value: 'labora',     label: 'Labora',          bg: '#dcfce7', text: '#166534' },
+    { value: 'labora',     label: 'Asistió',         bg: '#dcfce7', text: '#166534' },
     { value: 'falta',      label: 'Falta',            bg: '#fee2e2', text: '#991b1b' },
     { value: 'retardo',    label: 'Retardo',          bg: '#ffedd5', text: '#9a3412' },
     { value: 'vacaciones', label: 'Vacaciones',       bg: '#dbeafe', text: '#1e40af' },
@@ -5440,7 +5445,7 @@ async function listaAsistenciaView() {
 
       <div style="margin-top:12px;font-size:11px;color:var(--muted);display:flex;gap:10px;flex-wrap:wrap;">
         <strong>Leyenda:</strong>
-        <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;">Labora</span>
+        <span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-weight:700;">Asistió</span>
         <span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:4px;font-weight:700;">Falta</span>
         <span style="background:#ffedd5;color:#9a3412;padding:2px 8px;border-radius:4px;font-weight:700;">Retardo</span>
         <span style="background:#dbeafe;color:#1e40af;padding:2px 8px;border-radius:4px;font-weight:700;">Vacaciones</span>
@@ -5915,6 +5920,81 @@ async function loadComprasEmpTab(el) {
         </tbody>
       </table>
     </div>`;
+}
+
+// ── Vincular empleado RHH a usuario de Compras ────────────────────────────────
+async function openLinkComprasModal(empId, empName, currentEmail) {
+  document.getElementById('link-compras-modal')?.remove();
+  const users = await api('/api/rhh/employees/compras-users').catch(() => []);
+
+  const rows = (users || []).map(u => {
+    const isCurrent = u.email === currentEmail;
+    const isLinked = u.linked_to && u.linked_to !== empName;
+    return `<tr style="${isCurrent ? 'background:#eff6ff;' : ''}" onclick="selectComprasUser('${u.email}','${(u.full_name||'').replace(/'/g,"\\'")}')">
+      <td style="padding:6px 8px;cursor:pointer;">
+        <strong style="font-size:13px;">${u.full_name}</strong><br>
+        <span style="font-size:11px;color:var(--muted);">${u.email}</span>
+      </td>
+      <td style="padding:6px 8px;font-size:11px;"><span class="pill">${u.role_code||'—'}</span></td>
+      <td style="padding:6px 8px;font-size:11px;">${isCurrent ? '<span style="color:#1d4ed8;font-weight:700;">✓ Actual</span>' : (isLinked ? `<span style="color:#9ca3af">Vinc. a ${u.linked_to}</span>` : '')}</td>
+    </tr>`;
+  }).join('');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'link-compras-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:500px;max-width:95vw;max-height:80vh;display:flex;flex-direction:column;">
+      <h3 style="margin:0 0 4px;">🔗 Vincular cuenta de Compras</h3>
+      <p style="font-size:13px;color:var(--muted);margin:0 0 12px;"><strong>${empName}</strong> — selecciona su usuario en el módulo Compras</p>
+      <input id="lc-search" type="text" placeholder="Buscar por nombre o correo..." oninput="filterLcUsers(this.value)"
+        style="padding:8px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;" />
+      <div style="overflow-y:auto;flex:1;border:1px solid #e5e7eb;border-radius:8px;">
+        <table id="lc-table" style="width:100%;border-collapse:collapse;">
+          <thead style="background:#f9fafb;position:sticky;top:0;">
+            <tr><th style="padding:6px 8px;font-size:12px;text-align:left;">Usuario Compras</th><th style="padding:6px 8px;font-size:12px;">Rol</th><th style="padding:6px 8px;font-size:12px;">Estado</th></tr>
+          </thead>
+          <tbody id="lc-rows">${rows || '<tr><td colspan="3" style="padding:16px;text-align:center;color:var(--muted);">Sin usuarios en Compras</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:space-between;margin-top:12px;">
+        <button class="btn-ghost" style="color:#b91c1c;" onclick="saveLinkCompras(${empId},null)">✕ Desvincular</button>
+        <div style="display:flex;gap:8px;">
+          <button class="btn-ghost" onclick="document.getElementById('link-compras-modal').remove()">Cancelar</button>
+          <button class="btn-primary" id="lc-save-btn" disabled onclick="saveLinkCompras(${empId},document.getElementById('lc-selected').value)">Vincular</button>
+        </div>
+      </div>
+      <input type="hidden" id="lc-selected" value="${currentEmail||''}" />
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+function filterLcUsers(q) {
+  const rows = document.querySelectorAll('#lc-rows tr');
+  const ql = q.toLowerCase();
+  rows.forEach(row => {
+    row.style.display = row.textContent.toLowerCase().includes(ql) ? '' : 'none';
+  });
+}
+
+function selectComprasUser(email, name) {
+  document.getElementById('lc-selected').value = email;
+  document.getElementById('lc-save-btn').disabled = false;
+  document.querySelectorAll('#lc-rows tr').forEach(r => r.style.background = '');
+  const rows = document.querySelectorAll('#lc-rows tr');
+  rows.forEach(r => { if (r.textContent.includes(email)) r.style.background = '#eff6ff'; });
+}
+
+async function saveLinkCompras(empId, comprasEmail) {
+  try {
+    await api(`/api/rhh/employees/${empId}/link-compras`, {
+      method: 'POST',
+      body: JSON.stringify({ compras_email: comprasEmail || null })
+    });
+    document.getElementById('link-compras-modal')?.remove();
+    toast(comprasEmail ? `Vinculado a ${comprasEmail}` : 'Vínculo removido');
+    empleadosView();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── Restablecer contraseña (admin/rh) ─────────────────────────────────────────

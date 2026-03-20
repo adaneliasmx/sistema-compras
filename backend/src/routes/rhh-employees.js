@@ -623,4 +623,31 @@ router.post('/:id/create-user', rhhAuthRequired, rhhRequireRole('rh', 'admin'), 
   res.status(201).json({ ok: true, user: { id: user.id, email: user.email, role: user.role } });
 });
 
+// GET /api/rhh/employees/compras-users — lista todos los usuarios de Compras (para vincular)
+router.get('/compras-users', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const comprasDb = readCompras();
+  const rhhDb = read();
+  const rhhEmps = rhhDb.rhh_employees || [];
+  const users = (comprasDb.users || []).map(u => ({
+    id: u.id,
+    full_name: u.full_name,
+    email: u.email,
+    role_code: u.role_code,
+    linked_to: rhhEmps.find(e => e.compras_email === u.email)?.full_name || null
+  }));
+  res.json(users);
+});
+
+// POST /api/rhh/employees/:id/link-compras — vincula empleado a cuenta de Compras
+router.post('/:id/link-compras', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { compras_email } = req.body || {};
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  emp.compras_email = compras_email || null;
+  emp.updated_at = new Date().toISOString();
+  write(db);
+  res.json({ ok: true, compras_email: emp.compras_email });
+});
+
 module.exports = router;
