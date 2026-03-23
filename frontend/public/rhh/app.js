@@ -4445,10 +4445,10 @@ async function saveAttendance(empId, date, status, cellEl) {
 
     // Actualizar cache en memoria
     if (attendanceData) {
-      for (const sg of attendanceData.shifts) {
-        const emp = sg.employees.find(e => e.id === empId);
+      for (const sg of (attendanceData.shifts || [])) {
+        const emp = (sg.employees || []).find(e => e.id === empId);
         if (emp) {
-          const day = emp.days.find(d => d.date === date);
+          const day = (emp.days || []).find(d => d.date === date);
           if (day) day.status = status;
           break;
         }
@@ -4518,9 +4518,9 @@ function openTEModal(empId, date, empName) {
     // Buscar shift_id del empleado
     let shiftId = null;
     if (attendanceData) {
-      for (const sg of attendanceData.shifts) {
-        const emp = sg.employees.find(e => e.id === empId);
-        if (emp) { shiftId = sg.shift.id; break; }
+      for (const sg of (attendanceData.shifts || [])) {
+        const emp = (sg.employees || []).find(e => e.id === empId);
+        if (emp) { shiftId = sg.shift?.id || null; break; }
       }
     }
 
@@ -4543,18 +4543,88 @@ function closeTEModal() {
 }
 
 // ── Click en celda TE ──────────────────────────────────────────────────────────
-function handleTEClick(empId, date, currentHours, empName, isLaborDay, cellEl) {
-  openTECCModal(empId, date, currentHours, empName, cellEl);
+function handleTEClick(empId, date, currentHours, empName, isFuture, cellEl) {
+  const role = state.user?.role;
+  const canManageTE = ['rh', 'admin', 'supervisor'].includes(role);
+  if (isFuture) {
+    if (!canManageTE) { alert('Solo supervisores y RHH pueden crear solicitudes de tiempo extra.'); return; }
+    openTEAuthModal(empId, date, empName);
+    return;
+  }
+  if (canManageTE) {
+    openTECCModal(empId, date, currentHours, empName, cellEl);
+  } else {
+    alert('Solo supervisores y RHH pueden registrar tiempo extra.');
+  }
+}
+
+function openTEAuthModal(empId, date, empName) {
+  const existing = document.getElementById('te-auth-modal');
+  if (existing) existing.remove();
+
+  // Obtener shift_id del empleado desde attendanceData
+  let shiftId = null;
+  if (attendanceData) {
+    for (const sg of attendanceData.shifts || []) {
+      const emp = (sg.employees || []).find(e => e.id === empId);
+      if (emp) { shiftId = sg.shift?.id || null; break; }
+    }
+  }
+
+  const modal = document.createElement('div');
+  modal.id = 'te-auth-modal';
+  modal.setAttribute('data-shift-id', shiftId || '');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;min-width:360px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <h3 style="margin:0 0 4px;font-size:16px;">⏱️ Solicitud de Tiempo Extra</h3>
+      <p style="margin:0 0 16px;font-size:13px;color:#64748b;">${empName} · ${date}</p>
+      ${!shiftId ? '<p style="color:#dc2626;font-size:12px;margin:0 0 12px;padding:8px;background:#fee2e2;border-radius:6px;">⚠ No se encontró turno para este empleado. La solicitud se creará sin turno específico.</p>' : ''}
+      <div style="display:grid;gap:10px;">
+        <label style="font-size:12px;font-weight:600;color:#374151;">Motivo / Notas
+          <textarea id="te-auth-notes" rows="3" placeholder="Describe el motivo del tiempo extra..."
+            style="display:block;width:100%;margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;box-sizing:border-box;"></textarea>
+        </label>
+      </div>
+      <p style="font-size:11px;color:#94a3b8;margin:8px 0 0;">La autorización abarcará el turno completo. Los empleados elegibles recibirán notificación.</p>
+      <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;">
+        <button onclick="document.getElementById('te-auth-modal').remove()"
+          style="padding:8px 18px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;">Cancelar</button>
+        <button onclick="saveTEAuthRequest('${date}')"
+          style="padding:8px 18px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Crear autorización</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveTEAuthRequest(date) {
+  const notes = document.getElementById('te-auth-notes').value.trim();
+  const modal = document.getElementById('te-auth-modal');
+  const shiftId = modal?.getAttribute('data-shift-id') || null;
+
+  if (!shiftId) { alert('No hay turno asociado a este empleado. No se puede crear la solicitud.'); return; }
+
+  try {
+    await api('/api/rhh/schedule/te-authorizations', {
+      method: 'POST',
+      body: JSON.stringify({ date, shift_id: Number(shiftId), notes: notes || null, positions: [] })
+    });
+    modal.remove();
+    toast('Solicitud de TE creada correctamente.');
+    listaAsistenciaView();
+  } catch (err) {
+    alert('Error al crear solicitud: ' + err.message);
+  }
 }
 
 function openTECCModal(empId, date, currentHours, empName, cellEl) {
   // Leer centro de costo actual del cache
   let currentCC = null, currentProject = null;
   if (attendanceData) {
-    for (const sg of attendanceData.shifts) {
-      const emp = sg.employees.find(e => e.id === empId);
+    for (const sg of (attendanceData.shifts || [])) {
+      const emp = (sg.employees || []).find(e => e.id === empId);
       if (emp) {
-        const day = emp.days.find(d => d.date === date);
+        const day = (emp.days || []).find(d => d.date === date);
         if (day) { currentCC = day.cost_center || null; currentProject = day.project_id || null; }
         break;
       }
@@ -4618,10 +4688,10 @@ async function saveTECC(empId, date, empName) {
     });
     // Actualizar cache local
     if (attendanceData) {
-      for (const sg of attendanceData.shifts) {
-        const emp = sg.employees.find(e => e.id === empId);
+      for (const sg of (attendanceData.shifts || [])) {
+        const emp = (sg.employees || []).find(e => e.id === empId);
         if (emp) {
-          const day = emp.days.find(d => d.date === date);
+          const day = (emp.days || []).find(d => d.date === date);
           if (day) { day.te_hours = hours; day.cost_center = costCenter; day.project_id = projectId; }
           emp.totals.te_total = emp.days.reduce((s, d) => s + (d.te_hours || 0), 0);
           emp.totals.dias_pendientes = Math.round((emp.totals.te_total / 8) * 100) / 100;
@@ -4767,10 +4837,25 @@ async function listaRolView(el) {
     const weekLabel = `${ws.getDate()} ${MONTHS[ws.getMonth()]} – ${we.getDate()} ${MONTHS[we.getMonth()]} ${we.getFullYear()}`;
 
     let shiftsHtml = '';
+    const shiftsWithoutRol = data.shifts.filter(sg => !sg.rol);
     for (const sg of data.shifts) {
       const shift = sg.shift;
       const rol = sg.rol;
-      const isDraft = !rol || rol.status === 'draft';
+      // Si no hay ROL para este turno, solo admins/rh ven el botón de crear; los demás lo saltan
+      if (!rol) {
+        if (canEdit) {
+          shiftsHtml += `
+            <div class="card section" style="margin-bottom:12px;border-left:4px solid #d1d5db;opacity:.7;">
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                <h3 style="margin:0;color:#6b7280;">${shift.name}</h3>
+                <span style="background:#f3f4f6;color:#6b7280;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">Sin ROL programado</span>
+                <button class="btn-primary" style="font-size:11px;padding:4px 10px;margin-left:auto;" onclick="createRol('${rolWeekStart}',${shift.id})">+ Crear ROL</button>
+              </div>
+            </div>`;
+        }
+        continue;
+      }
+      const isDraft = rol.status === 'draft';
       const statusBadge = isDraft
         ? `<span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">BORRADOR</span>`
         : `<span style="background:#d1fae5;color:#065f46;padding:2px 10px;border-radius:12px;font-size:11px;font-weight:700;">✓ PUBLICADO ${fmtDateDisplay(rol.published_at?.slice(0,10)||'')}</span>`;
@@ -4779,8 +4864,7 @@ async function listaRolView(el) {
         : '';
 
       const actionBtns = canEdit ? `
-        ${!rol ? `<button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="createRol('${rolWeekStart}',${shift.id})">+ Crear ROL</button>` : ''}
-        ${rol && isDraft ? `
+        ${isDraft ? `
           <button class="btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="openAddSlotModal(${rol.id},${shift.id})">+ Puesto</button>
           <button class="btn-ghost" style="font-size:11px;padding:4px 10px;" onclick="copyPreviousRol(${rol.id})">Copiar anterior</button>
           <button class="btn-primary" style="font-size:11px;padding:4px 10px;background:#059669;" onclick="publishRol(${rol.id})">Publicar ROL</button>
@@ -5336,17 +5420,23 @@ async function listaAsistenciaView() {
           const label = statusLabel(day.status);
           const editable = day.is_editable;
           const editCls = editable ? 'att-cell' : 'att-cell no-editable';
+          const isFuture = !!day.is_future;
           const bdayIcon = day.birthday ? `<span class="bday-icon" style="font-size:13px;"> 🎂</span>` : '';
-          const clickHandler = editable
-            ? `onclick="openStatusDropdown(${emp.id},'${day.date}','${day.status}',this)"`
-            : '';
+          const bdayDouble = day.birthday_work ? `<span style="font-size:10px;font-weight:800;color:#b45309;display:block;line-height:1;"> ×2</span>` : '';
+          let clickHandler = '';
+          if (isFuture) {
+            clickHandler = `onclick="alert('Esta fecha es futura. Solo se pueden registrar incidencias programadas (vacaciones, permisos, incapacidades).')"`;
+          } else if (editable) {
+            clickHandler = `onclick="openStatusDropdown(${emp.id},'${day.date}','${day.status}',this)"`;
+          }
           const borderStyle = colors.border ? `border:${colors.border};` : '';
+          const attCellStyle = day.birthday_work ? `background:${colors.bg};color:${colors.text};${borderStyle}outline:2px solid #f59e0b;` : `background:${colors.bg};color:${colors.text};${borderStyle}`;
 
           dayCells += `<td style="padding:2px 3px;">
             <div class="${editCls}" data-empid="${emp.id}" data-date="${day.date}"
-              style="background:${colors.bg};color:${colors.text};${borderStyle}"
+              style="${attCellStyle}"
               ${clickHandler}>
-              ${label}${bdayIcon}
+              ${label}${bdayIcon}${bdayDouble}
             </div>
           </td>`;
 
@@ -5355,8 +5445,8 @@ async function listaAsistenciaView() {
           const teCls = teVal < 0 ? 'te-cell te-negative' : 'te-cell';
           dayCells += `<td style="padding:2px 3px;">
             <div class="${teCls}" data-empid="${emp.id}" data-date="${day.date}"
-              onclick="handleTEClick(${emp.id},'${day.date}',${teVal},'${emp.full_name.replace(/'/g,"\\'")}',${editable},this)">
-              ${teVal !== 0 ? teVal : ''}
+              onclick="handleTEClick(${emp.id},'${day.date}',${teVal},'${emp.full_name.replace(/'/g,"\\'")}',${isFuture},this)">
+              ${teVal !== 0 ? teVal : (isFuture ? '<span style="font-size:9px;color:#94a3b8;">+TE</span>' : '')}
             </div>
           </td>`;
         });

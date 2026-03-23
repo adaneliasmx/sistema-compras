@@ -221,9 +221,15 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
 
   const emp = { ...db.rhh_employees[idx] };
   const wasActive = emp.status === 'active';
+  const numericFields = new Set(['department_id', 'position_id', 'shift_id', 'supervisor_id', 'primary_position_id']);
   for (const key of allowed) {
     if (req.body[key] !== undefined) {
-      emp[key] = req.body[key];
+      const val = req.body[key];
+      if (numericFields.has(key)) {
+        emp[key] = val !== null && val !== '' ? Number(val) : null;
+      } else {
+        emp[key] = val;
+      }
     }
   }
   // Si start_date/hire_date cambia, sincronizar ambos

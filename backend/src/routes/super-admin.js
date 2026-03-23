@@ -310,6 +310,61 @@ router.post('/unified-users/add-to-module', superAdminRequired, (req, res) => {
   res.status(400).json({ error: 'Módulo no soportado' });
 });
 
+// PUT /api/super-admin/unified-users/edit — editar nombre/email en un módulo
+router.put('/unified-users/edit', superAdminRequired, (req, res) => {
+  const { module, user_id, full_name, email } = req.body || {};
+  if (!module || !user_id) return res.status(400).json({ error: 'module y user_id requeridos' });
+  const emailLow = email ? email.toLowerCase() : null;
+
+  if (module === 'compras') {
+    const db = readCompras();
+    const user = (db.users || []).find(u => u.id === Number(user_id));
+    if (!user) return res.status(404).json({ error: 'No encontrado en Compras' });
+    if (full_name) user.full_name = full_name;
+    if (emailLow) user.email = emailLow;
+    writeCompras(db);
+    return res.json({ ok: true });
+  }
+  if (module === 'rhh') {
+    const db = readRhh();
+    const user = (db.rhh_users || []).find(u => u.id === Number(user_id));
+    if (!user) return res.status(404).json({ error: 'No encontrado en RHH' });
+    if (full_name) user.full_name = full_name;
+    if (emailLow) user.email = emailLow;
+    if (user.employee_id) {
+      const emp = (db.rhh_employees || []).find(e => e.id === user.employee_id);
+      if (emp) { if (full_name) emp.full_name = full_name; if (emailLow) emp.email = emailLow; }
+    }
+    writeRhh(db);
+    return res.json({ ok: true });
+  }
+  res.status(400).json({ error: 'Módulo inválido' });
+});
+
+// DELETE /api/super-admin/unified-users/remove — eliminar usuario de un módulo
+router.delete('/unified-users/remove', superAdminRequired, (req, res) => {
+  const { module, user_id } = req.body || {};
+  if (!module || !user_id) return res.status(400).json({ error: 'module y user_id requeridos' });
+
+  if (module === 'compras') {
+    const db = readCompras();
+    const idx = (db.users || []).findIndex(u => u.id === Number(user_id));
+    if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+    db.users.splice(idx, 1);
+    writeCompras(db);
+    return res.json({ ok: true });
+  }
+  if (module === 'rhh') {
+    const db = readRhh();
+    const idx = (db.rhh_users || []).findIndex(u => u.id === Number(user_id));
+    if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+    db.rhh_users.splice(idx, 1);
+    writeRhh(db);
+    return res.json({ ok: true });
+  }
+  res.status(400).json({ error: 'Módulo inválido' });
+});
+
 // ── Endpoints legacy (compatibilidad) ─────────────────────────────────────────
 router.get('/users/candidates/:module', superAdminRequired, (req, res) => {
   const { module } = req.params;

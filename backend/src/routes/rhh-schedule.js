@@ -35,6 +35,15 @@ function fmtDate(d) {
   return d instanceof Date ? d.toISOString().slice(0, 10) : String(d).slice(0, 10);
 }
 
+// Devuelve la fecha de hoy en zona horaria local del servidor (YYYY-MM-DD)
+function localToday() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
 // GET /api/rhh/schedule — asignaciones de la semana
 router.get('/', rhhAuthRequired, (req, res) => {
   const db = read();
@@ -531,6 +540,39 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
     );
   }
 
+  // ── Filtrar empleados según contexto de semana ─────────────────────────────
+  const todayStr = localToday();
+  const isPastWeek    = weekEndDate < todayStr;
+  const isFutureWeek  = weekStart > todayStr;
+  const isCurrentWeek = !isPastWeek && !isFutureWeek;
+
+  if (!isCurrentWeek) {
+    const allAttendance = db.rhh_attendance || [];
+    const allIncidences = db.rhh_incidences || [];
+    const empWithActivity = new Set();
+
+    // Empleados con registros de asistencia en la semana
+    for (const a of allAttendance) {
+      if (a.date >= weekStart && a.date <= weekEndDate) empWithActivity.add(a.employee_id);
+    }
+    // Empleados con incidencias no rechazadas que cubren la semana
+    for (const inc of allIncidences) {
+      if (inc.status === 'rechazada') continue;
+      const iStart = inc.date;
+      const iEnd   = inc.date_end || inc.date;
+      if (iStart <= weekEndDate && iEnd >= weekStart) empWithActivity.add(inc.employee_id);
+    }
+    // Empleados en el ROL publicado para esta semana
+    const weekRol = (db.rhh_weekly_rol || []).find(r => r.week_start === weekStart && r.status === 'publicado');
+    if (weekRol) {
+      const slotIds = new Set((db.rhh_rol_slots || []).filter(s => s.rol_id === weekRol.id).map(s => s.id));
+      for (const a of (db.rhh_rol_assignments || [])) {
+        if (slotIds.has(a.slot_id)) empWithActivity.add(a.employee_id);
+      }
+    }
+    employees = employees.filter(e => empWithActivity.has(e.id));
+  }
+
   const shifts = db.rhh_shifts || [];
   const departments = db.rhh_departments || [];
   const positions = db.rhh_positions || [];
@@ -587,9 +629,10 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
 
       // 1. Status base
       let status = 'vacio';
-      let isEditable = false;
+      const isFutureDate = dateStr > todayStr;
+      let isEditable = !isFutureDate; // fechas futuras no son editables para asistencia
 
-      if (shift) {
+      if (shift && !isFutureDate) {
         const workDays = Array.isArray(shift.work_days) ? shift.work_days : [];
         if (day.is_holiday) {
           status = 'festivo';
@@ -611,7 +654,7 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
         status = attRecord.status;
         teHours = attRecord.te_hours || 0;
         notes = attRecord.notes || null;
-        isEditable = true;
+        if (!isFutureDate) isEditable = true;
       }
 
       // 3. Incidencias APROBADAS que cubren esta fecha
@@ -648,21 +691,22 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
 
       // 4. Cumpleaños
       let birthday = false;
+      let birthday_work = false;
       if (emp.birth_date) {
-        const bParts = emp.birth_date.split('-');
-        const dParts = dateStr.split('-');
-        if (bParts[1] === dParts[1] && bParts[2] === dParts[2]) {
+        const bMD = emp.birth_date.slice(5); // MM-DD
+        if (bMD === dateStr.slice(5)) {
           birthday = true;
+          if (!isFutureDate && status === 'labora') birthday_work = true;
         }
       }
 
-      // Si tiene TE autorizada para ese turno en día no laboral → editable
+      // Si tiene TE autorizada para ese turno → TE cell siempre clickeable
       const teAuth = (db.rhh_te_authorizations || []).find(
         t => t.date === dateStr && t.shift_id === emp.shift_id && t.status === 'approved'
       );
-      if (teAuth && !isEditable) isEditable = true;
+      if (teAuth && !isEditable && !isFutureDate) isEditable = true;
 
-      return { date: dateStr, status, te_hours: teHours, notes, is_editable: isEditable, birthday };
+      return { date: dateStr, status, te_hours: teHours, notes, is_editable: isEditable, is_future: isFutureDate, birthday, birthday_work };
     });
 
     // Totales
@@ -1195,16 +1239,21 @@ router.get('/te-calc', rhhAuthRequired, (req, res) => {
       const worksThisDay = shift ? shift.work_days.includes(dow) : false;
       const attRecord = attendanceRecords.find(a => a.employee_id === emp.id && a.date === dateStr);
       const teHours = attRecord?.te_hours || 0;
+      const actualStatus = attRecord?.status || (worksThisDay ? 'labora' : 'descanso');
+      const isBirthdayWork = !!(emp.birth_date &&
+        emp.birth_date.slice(5) === dateStr.slice(5) &&
+        (actualStatus === 'labora' || actualStatus === 'present'));
       return {
         date: dateStr,
         day_of_week: dow,
         is_sunday: isSunday,
         is_holiday: isHoliday,
         works_this_day: worksThisDay,
-        status: attRecord?.status || (worksThisDay ? 'labora' : 'descanso'),
+        status: actualStatus,
         te_hours: teHours,
         cost_center: attRecord?.cost_center || null,
-        project_id: attRecord?.project_id || null
+        project_id: attRecord?.project_id || null,
+        birthday_work: isBirthdayWork
       };
     });
 
@@ -1225,6 +1274,10 @@ router.get('/te-calc', rhhAuthRequired, (req, res) => {
     const primaDomin = sundayWorked.length * dailySalary * 0.25;
     const septimoSalary = sundayWorked.length > 0 ? sundayWorked.length * dailySalary * 2 : 0;
 
+    // Cumpleaños laborado → pago doble (extra = 1× salario diario por día trabajado en cumpleaños)
+    const birthdayDays = dayDetails.filter(d => d.birthday_work);
+    const birthdayExtraPay = birthdayDays.length * dailySalary;
+
     return {
       employee_id: emp.id,
       employee_number: emp.employee_number,
@@ -1242,7 +1295,9 @@ router.get('/te-calc', rhhAuthRequired, (req, res) => {
       te_extra_pay: Math.round(teExtraPay * 100) / 100,
       prima_dominical: Math.round(primaDomin * 100) / 100,
       septimo_dia_pay: Math.round(septimoSalary * 100) / 100,
-      total_extra: Math.round((teExtraPay + primaDomin) * 100) / 100
+      birthday_extra_pay: Math.round(birthdayExtraPay * 100) / 100,
+      birthday_days: birthdayDays.map(d => d.date),
+      total_extra: Math.round((teExtraPay + primaDomin + birthdayExtraPay) * 100) / 100
     };
   });
 

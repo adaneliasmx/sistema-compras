@@ -77,6 +77,8 @@
 
     /* ACTIONS */
     .btn-pwd{padding:4px 8px;border-radius:7px;font-size:12px;font-weight:700;background:#ede9fe;color:#6d28d9;border:0;cursor:pointer}
+    .btn-edit{padding:4px 8px;border-radius:7px;font-size:12px;font-weight:700;background:#dbeafe;color:#1d4ed8;border:0;cursor:pointer}
+    .btn-del{padding:4px 8px;border-radius:7px;font-size:12px;font-weight:700;background:#fee2e2;color:#dc2626;border:0;cursor:pointer}
     .btn-primary{padding:8px 16px;border-radius:10px;font-size:13px;font-weight:700;background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border:0;cursor:pointer}
     .btn-ghost{padding:7px 14px;border-radius:9px;font-size:13px;font-weight:700;background:#f1f5f9;color:var(--text);border:1px solid var(--line);cursor:pointer}
 
@@ -435,7 +437,12 @@ function renderUsersTable() {
            <button class="btn-add-mod" onclick="openAddModModal('rhh','${esc(u.full_name)}','${esc(u.email)}','${u.compras ? u.compras.id : ''}')">+ Agregar</button>
          </div>`;
 
-    const pwdCell = `<button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>`;
+    const actionsCell = `
+      <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
+        <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>
+        <button class="btn-edit" onclick="openEditUserModal(${JSON.stringify(u).replace(/"/g,'&quot;')})">✏️ Editar</button>
+        <button class="btn-del" onclick="confirmDeleteUser('${esc(u.full_name)}','${esc(u.email)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🗑️ Eliminar</button>
+      </div>`;
 
     return `<tr>
       <td class="name-cell">
@@ -444,12 +451,12 @@ function renderUsersTable() {
       </td>
       <td>${comprasCell}</td>
       <td>${rhhCell}</td>
-      <td>${pwdCell}</td>
+      <td>${actionsCell}</td>
     </tr>`;
   }).join('');
 }
 
-function esc(s) { return String(s||'').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function esc(s) { return String(s||'').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
 
 function roleSelect(module, userId, currentRole, labels) {
   const opts = Object.entries(labels).map(([v,l]) => `<option value="${v}" ${v===currentRole?'selected':''}>${l}</option>`).join('');
@@ -606,6 +613,95 @@ async function saveAddToModule() {
     closeAddModModal();
     await loadData();
   } catch(e) { errEl.textContent = e.message; }
+}
+
+// ── Edit user modal ───────────────────────────────────────────────────────────
+let _editUserData = {};
+function openEditUserModal(u) {
+  _editUserData = u;
+  const existing = document.getElementById('edit-user-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'edit-user-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;min-width:360px;max-width:480px;box-shadow:0 8px 32px rgba(0,0,0,.18);">
+      <h3 style="margin:0 0 16px;font-size:16px;">✏️ Editar usuario</h3>
+      <div style="display:grid;gap:10px;">
+        <label style="font-size:12px;font-weight:600;color:#374151;">Nombre completo
+          <input id="edit-user-name" type="text" value="${esc(u.full_name)}"
+            style="display:block;width:100%;margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;">
+        </label>
+        <label style="font-size:12px;font-weight:600;color:#374151;">Correo electrónico
+          <input id="edit-user-email" type="email" value="${esc(u.email)}"
+            style="display:block;width:100%;margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;">
+        </label>
+        <p style="font-size:11px;color:#94a3b8;margin:0;">El cambio de nombre y correo se aplicará en todos los módulos vinculados.</p>
+      </div>
+      <div id="edit-user-err" style="color:#dc2626;font-size:12px;margin-top:8px;"></div>
+      <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;">
+        <button onclick="document.getElementById('edit-user-modal').remove()"
+          style="padding:8px 18px;border:1px solid #d1d5db;border-radius:8px;background:#fff;cursor:pointer;font-size:13px;">Cancelar</button>
+        <button onclick="saveEditUser()"
+          style="padding:8px 18px;border:none;border-radius:8px;background:#2563eb;color:#fff;cursor:pointer;font-size:13px;font-weight:600;">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function saveEditUser() {
+  const name = document.getElementById('edit-user-name').value.trim();
+  const email = document.getElementById('edit-user-email').value.trim();
+  const errEl = document.getElementById('edit-user-err');
+  errEl.textContent = '';
+  if (!name) { errEl.textContent = 'El nombre no puede estar vacío.'; return; }
+  if (!email) { errEl.textContent = 'El correo no puede estar vacío.'; return; }
+  try {
+    const calls = [];
+    if (_editUserData.compras?.id) {
+      calls.push(api('/api/super-admin/unified-users/edit', {
+        method: 'PUT',
+        body: JSON.stringify({ module: 'compras', user_id: _editUserData.compras.id, full_name: name, email })
+      }));
+    }
+    if (_editUserData.rhh?.id) {
+      calls.push(api('/api/super-admin/unified-users/edit', {
+        method: 'PUT',
+        body: JSON.stringify({ module: 'rhh', user_id: _editUserData.rhh.id, full_name: name, email })
+      }));
+    }
+    await Promise.all(calls);
+    document.getElementById('edit-user-modal').remove();
+    await loadData();
+  } catch(e) { errEl.textContent = e.message; }
+}
+
+// ── Delete user ───────────────────────────────────────────────────────────────
+async function confirmDeleteUser(name, email, comprasId, rhhId) {
+  const modules = [];
+  if (comprasId) modules.push('Compras');
+  if (rhhId) modules.push('RHH');
+  const modStr = modules.join(' y ') || 'ningún módulo';
+
+  const confirmed = confirm(`¿Eliminar a "${name}" de ${modStr}?\n\nEsta acción no se puede deshacer.`);
+  if (!confirmed) return;
+
+  try {
+    if (comprasId) {
+      await api('/api/super-admin/unified-users/remove', {
+        method: 'DELETE',
+        body: JSON.stringify({ module: 'compras', user_id: comprasId })
+      });
+    }
+    if (rhhId) {
+      await api('/api/super-admin/unified-users/remove', {
+        method: 'DELETE',
+        body: JSON.stringify({ module: 'rhh', user_id: rhhId })
+      });
+    }
+    await loadData();
+  } catch(e) { alert('Error al eliminar: ' + e.message); }
 }
 
 // ── Module panels (legacy) ────────────────────────────────────────────────────
