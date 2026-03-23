@@ -244,17 +244,19 @@ router.patch('/unified-users/password', superAdminRequired, (req, res) => {
   const hash = bcrypt.hashSync(String(new_password), 10);
   const now = new Date().toISOString();
 
-  if (compras_user_id) {
+  const updated = [];
+  if (compras_user_id && Number(compras_user_id) > 0) {
     const db = readCompras();
     const u = (db.users || []).find(u => u.id === Number(compras_user_id));
-    if (u) { u.password_hash = hash; u.updated_at = now; writeCompras(db); }
+    if (u) { u.password_hash = hash; u.updated_at = now; writeCompras(db); updated.push('compras'); }
   }
-  if (rhh_user_id) {
+  if (rhh_user_id && Number(rhh_user_id) > 0) {
     const db = readRhh();
     const u = (db.rhh_users || []).find(u => u.id === Number(rhh_user_id));
-    if (u) { u.password_hash = hash; u.updated_at = now; writeRhh(db); }
+    if (u) { u.password_hash = hash; u.updated_at = now; writeRhh(db); updated.push('rhh'); }
   }
-  res.json({ ok: true, message: 'Contraseña actualizada' });
+  if (updated.length === 0) return res.status(404).json({ error: 'No se encontró ningún usuario con los IDs proporcionados' });
+  res.json({ ok: true, message: `Contraseña actualizada en: ${updated.join(', ')}` });
 });
 
 // POST /api/super-admin/unified-users/add-to-module — añadir usuario existente a un módulo

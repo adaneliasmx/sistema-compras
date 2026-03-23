@@ -637,7 +637,12 @@ function openEditUserModal(u) {
           <input id="edit-user-email" type="email" value="${esc(u.email)}"
             style="display:block;width:100%;margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;">
         </label>
-        <p style="font-size:11px;color:#94a3b8;margin:0;">El cambio de nombre y correo se aplicará en todos los módulos vinculados.</p>
+        <label style="font-size:12px;font-weight:600;color:#374151;">Nueva contraseña
+          <span style="font-weight:400;color:#94a3b8;">(dejar vacío para no cambiar)</span>
+          <input id="edit-user-password" type="password" placeholder="••••••••"
+            style="display:block;width:100%;margin-top:4px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:14px;box-sizing:border-box;">
+        </label>
+        <p style="font-size:11px;color:#94a3b8;margin:0;">Los cambios se aplicarán en todos los módulos vinculados.</p>
       </div>
       <div id="edit-user-err" style="color:#dc2626;font-size:12px;margin-top:8px;"></div>
       <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;">
@@ -651,27 +656,44 @@ function openEditUserModal(u) {
 }
 
 async function saveEditUser() {
-  const name = document.getElementById('edit-user-name').value.trim();
-  const email = document.getElementById('edit-user-email').value.trim();
-  const errEl = document.getElementById('edit-user-err');
+  const name     = document.getElementById('edit-user-name').value.trim();
+  const email    = document.getElementById('edit-user-email').value.trim();
+  const password = document.getElementById('edit-user-password').value;
+  const errEl    = document.getElementById('edit-user-err');
   errEl.textContent = '';
-  if (!name) { errEl.textContent = 'El nombre no puede estar vacío.'; return; }
+  if (!name)  { errEl.textContent = 'El nombre no puede estar vacío.'; return; }
   if (!email) { errEl.textContent = 'El correo no puede estar vacío.'; return; }
+  if (password && password.length < 4) { errEl.textContent = 'La contraseña debe tener al menos 4 caracteres.'; return; }
+
   try {
-    const calls = [];
+    // 1. Actualizar nombre y correo en todos los módulos
+    const editCalls = [];
     if (_editUserData.compras?.id) {
-      calls.push(api('/api/super-admin/unified-users/edit', {
+      editCalls.push(api('/api/super-admin/unified-users/edit', {
         method: 'PUT',
         body: JSON.stringify({ module: 'compras', user_id: _editUserData.compras.id, full_name: name, email })
       }));
     }
     if (_editUserData.rhh?.id) {
-      calls.push(api('/api/super-admin/unified-users/edit', {
+      editCalls.push(api('/api/super-admin/unified-users/edit', {
         method: 'PUT',
         body: JSON.stringify({ module: 'rhh', user_id: _editUserData.rhh.id, full_name: name, email })
       }));
     }
-    await Promise.all(calls);
+    await Promise.all(editCalls);
+
+    // 2. Si se ingresó contraseña, actualizarla en todos los módulos
+    if (password) {
+      await api('/api/super-admin/unified-users/password', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          compras_user_id: _editUserData.compras?.id || null,
+          rhh_user_id:     _editUserData.rhh?.id     || null,
+          new_password:    password
+        })
+      });
+    }
+
     document.getElementById('edit-user-modal').remove();
     await loadData();
   } catch(e) { errEl.textContent = e.message; }
