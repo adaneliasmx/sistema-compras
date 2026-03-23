@@ -100,6 +100,14 @@ const VALID_COMPLAINT_CATEGORIES = [
   'acoso', 'seguridad', 'condiciones_trabajo', 'trato_injusto', 'otro'
 ];
 
+// Genera código de seguimiento único: formato "QJA-XXXXXX"
+function generateTrackingCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // sin O,0,1,I para evitar confusión
+  let code = 'QJA-';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
 // POST /api/rhh/incidences/complaints — crear queja (NO guarda employee_id)
 router.post('/complaints', rhhAuthRequired, (req, res) => {
   const db = read();
@@ -116,6 +124,12 @@ router.post('/complaints', rhhAuthRequired, (req, res) => {
   }
 
   const complaints = db.rhh_anonymous_complaints || [];
+
+  // Generar código único
+  let trackingCode;
+  do { trackingCode = generateTrackingCode(); }
+  while (complaints.some(c => c.tracking_code === trackingCode));
+
   const complaint = {
     id: nextId(complaints),
     date: new Date().toISOString().slice(0, 10),
@@ -124,6 +138,7 @@ router.post('/complaints', rhhAuthRequired, (req, res) => {
     status: 'new',
     response: null,
     reviewed_by: null,
+    tracking_code: trackingCode,
     created_at: new Date().toISOString()
     // NO se guarda employee_id — es anónimo
   };
@@ -132,7 +147,38 @@ router.post('/complaints', rhhAuthRequired, (req, res) => {
   db.rhh_anonymous_complaints = complaints;
   write(db);
 
-  res.status(201).json({ ok: true, message: 'Tu queja ha sido registrada de forma anónima.' });
+  res.status(201).json({
+    ok: true,
+    message: 'Tu queja ha sido registrada de forma anónima.',
+    tracking_code: trackingCode
+  });
+});
+
+// GET /api/rhh/incidences/complaints/track/:code — consultar respuesta con código
+router.get('/complaints/track/:code', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const code = String(req.params.code).toUpperCase().trim();
+  const complaint = (db.rhh_anonymous_complaints || []).find(c => c.tracking_code === code);
+  if (!complaint) {
+    return res.status(404).json({ error: 'Código no encontrado. Verifica que lo hayas escrito correctamente.' });
+  }
+
+  const STATUS_LABELS = { new: 'Nueva — pendiente de revisión', reviewed: 'En revisión', closed: 'Resuelta' };
+  const CAT_LABELS = {
+    acoso: 'Acoso', seguridad: 'Seguridad', condiciones_trabajo: 'Condiciones de trabajo',
+    trato_injusto: 'Trato injusto', otro: 'Otro'
+  };
+
+  // Solo devolver lo necesario — sin datos internos
+  res.json({
+    tracking_code: complaint.tracking_code,
+    date: complaint.date,
+    category: CAT_LABELS[complaint.category] || complaint.category,
+    status: complaint.status,
+    status_label: STATUS_LABELS[complaint.status] || complaint.status,
+    response: complaint.response || null,
+    has_response: !!complaint.response
+  });
 });
 
 // GET /api/rhh/incidences/complaints — listar quejas (solo rh/admin)

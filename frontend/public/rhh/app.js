@@ -3026,33 +3026,66 @@ async function quejaAnonimView() {
       <h2>📢 Queja Anónima</h2>
     </div>
 
-    <div class="card section" style="max-width:600px;">
-      <div style="padding:12px;background:#fef9c3;border-radius:10px;border:1px solid #fcd34d;margin-bottom:20px;">
-        <strong>🔒 Tu identidad no será revelada.</strong><br>
-        <span class="small">Esta queja es completamente anónima. Solo el área de Recursos Humanos puede ver su contenido. No se registra ningún dato que te identifique.</span>
-      </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:900px;">
 
-      <div class="row">
-        <div>
-          <label>Categoría *</label>
-          <select id="qan-cat">${catOpts}</select>
+      <!-- Panel izquierdo: enviar queja -->
+      <div class="card section">
+        <h3 style="margin-bottom:14px;">📤 Enviar nueva queja</h3>
+        <div style="padding:10px 12px;background:#fef9c3;border-radius:10px;border:1px solid #fcd34d;margin-bottom:16px;font-size:13px;">
+          <strong>🔒 Tu identidad no será revelada.</strong><br>
+          No se registra ningún dato que te identifique. Solo RH puede ver el contenido.
+        </div>
+        <label>Categoría *</label>
+        <select id="qan-cat">${catOpts}</select>
+        <div style="margin-top:12px;">
+          <label>Descripción * <span class="small muted">(mínimo 20 caracteres)</span></label>
+          <textarea id="qan-desc" rows="5" placeholder="Describe la situación con el mayor detalle posible..."></textarea>
+          <div id="qan-count" class="small muted" style="text-align:right;margin-top:4px;">0 caracteres</div>
+        </div>
+        <div style="margin-top:14px;">
+          <button class="btn-primary" onclick="submitQueja()">📤 Enviar queja anónima</button>
+        </div>
+
+        <!-- Código mostrado tras enviar -->
+        <div id="qan-code-box" style="display:none;margin-top:20px;padding:16px;background:#f0fdf4;border:2px solid #86efac;border-radius:12px;">
+          <p style="font-size:13px;font-weight:700;color:#166534;margin-bottom:8px;">✅ Queja enviada correctamente</p>
+          <p style="font-size:12px;color:#166534;margin-bottom:10px;">
+            Guarda este código para consultar la respuesta de RH:
+          </p>
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span id="qan-code-val" style="font-size:22px;font-weight:900;letter-spacing:4px;color:#0f766e;font-family:monospace;"></span>
+            <button onclick="copyTrackingCode()" style="padding:4px 10px;font-size:11px;border:1px solid #0f766e;border-radius:6px;background:#fff;color:#0f766e;cursor:pointer;font-weight:700;">📋 Copiar</button>
+          </div>
+          <p style="font-size:11px;color:#6b7280;margin-top:8px;">
+            ⚠️ Este código no se volverá a mostrar. Guárdalo en un lugar seguro.
+          </p>
         </div>
       </div>
-      <div style="margin-top:12px;">
-        <label>Descripción * (mínimo 20 caracteres)</label>
-        <textarea id="qan-desc" rows="5" placeholder="Describe la situación con el mayor detalle posible..."></textarea>
-        <div id="qan-count" class="small muted" style="text-align:right;margin-top:4px;">0 caracteres</div>
-      </div>
-      <div style="margin-top:14px;">
-        <button class="btn-primary" onclick="submitQueja()">📤 Enviar queja anónima</button>
+
+      <!-- Panel derecho: consultar respuesta -->
+      <div class="card section">
+        <h3 style="margin-bottom:14px;">🔍 Consultar respuesta</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;">
+          Si ya enviaste una queja anteriormente, ingresa tu código de seguimiento para ver si RH ha respondido.
+        </p>
+        <label>Código de seguimiento</label>
+        <div style="display:flex;gap:8px;margin-top:6px;">
+          <input id="qan-track-input" type="text" placeholder="QJA-XXXXXX"
+            style="flex:1;padding:8px 12px;border:1.5px solid var(--line);border-radius:8px;font-size:15px;font-family:monospace;font-weight:700;text-transform:uppercase;letter-spacing:2px;"
+            oninput="this.value=this.value.toUpperCase()"
+            onkeydown="if(event.key==='Enter')consultarQueja()"/>
+          <button class="btn-primary" onclick="consultarQueja()">Buscar</button>
+        </div>
+        <div id="qan-track-err" style="color:#b91c1c;font-size:12px;margin-top:6px;"></div>
+
+        <!-- Resultado de la consulta -->
+        <div id="qan-track-result" style="display:none;margin-top:16px;"></div>
       </div>
     </div>
   `;
 
-  const role = state.user?.role || 'empleado';
   el.innerHTML = shell(content, 'queja-anonima');
 
-  // Contador de caracteres
   setTimeout(() => {
     const desc = document.getElementById('qan-desc');
     const count = document.getElementById('qan-count');
@@ -3066,6 +3099,8 @@ async function quejaAnonimView() {
   }, 100);
 }
 
+let _lastTrackingCode = null;
+
 async function submitQueja() {
   const category = document.getElementById('qan-cat')?.value;
   const description = document.getElementById('qan-desc')?.value?.trim();
@@ -3073,11 +3108,20 @@ async function submitQueja() {
   if (description.length < 20) { toast('La descripción debe tener al menos 20 caracteres', 'warning'); return; }
 
   try {
-    await api('/api/rhh/incidences/complaints', {
+    const result = await api('/api/rhh/incidences/complaints', {
       method: 'POST',
       body: JSON.stringify({ category, description })
     });
-    toast('Tu queja ha sido enviada de forma anónima. Gracias por reportar.');
+
+    // Mostrar código de seguimiento
+    _lastTrackingCode = result.tracking_code;
+    const codeBox = document.getElementById('qan-code-box');
+    const codeVal = document.getElementById('qan-code-val');
+    if (codeBox && codeVal && result.tracking_code) {
+      codeVal.textContent = result.tracking_code;
+      codeBox.style.display = 'block';
+    }
+
     // Limpiar form
     const cat = document.getElementById('qan-cat');
     const desc = document.getElementById('qan-desc');
@@ -3087,6 +3131,57 @@ async function submitQueja() {
     if (count) count.textContent = '0 caracteres';
   } catch (err) {
     toast(err.message, 'error');
+  }
+}
+
+function copyTrackingCode() {
+  if (!_lastTrackingCode) return;
+  navigator.clipboard.writeText(_lastTrackingCode).then(() => toast('Código copiado al portapapeles'));
+}
+
+async function consultarQueja() {
+  const code = document.getElementById('qan-track-input')?.value?.trim().toUpperCase();
+  const errEl = document.getElementById('qan-track-err');
+  const resultEl = document.getElementById('qan-track-result');
+  errEl.textContent = '';
+  resultEl.style.display = 'none';
+
+  if (!code || code.length < 4) { errEl.textContent = 'Ingresa el código de seguimiento.'; return; }
+
+  try {
+    const data = await api(`/api/rhh/incidences/complaints/track/${encodeURIComponent(code)}`);
+    const statusColors = {
+      new:      { bg:'#eff6ff', text:'#1e40af', label:'Nueva — pendiente de revisión' },
+      reviewed: { bg:'#fef9c3', text:'#854d0e', label:'En revisión por RH' },
+      closed:   { bg:'#f0fdf4', text:'#166534', label:'Resuelta' }
+    };
+    const sc = statusColors[data.status] || { bg:'#f3f4f6', text:'#374151', label: data.status };
+
+    resultEl.innerHTML = `
+      <div style="padding:14px;border-radius:10px;border:1px solid ${sc.bg === '#f0fdf4' ? '#86efac' : '#e2e8f0'};background:${sc.bg};">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
+          <span style="font-size:12px;font-weight:700;color:${sc.text};background:${sc.bg};padding:3px 10px;border-radius:20px;border:1px solid currentColor;">
+            ${sc.label}
+          </span>
+          <span style="font-size:11px;color:var(--muted);">${data.date}</span>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:${data.has_response ? 12 : 0}px;">
+          Categoría: <strong>${data.category}</strong>
+        </p>
+        ${data.has_response ? `
+          <div style="background:#fff;border-left:3px solid ${sc.text};padding:10px 14px;border-radius:0 8px 8px 0;">
+            <p style="font-size:11px;font-weight:700;color:${sc.text};margin-bottom:6px;">💬 Respuesta de RH:</p>
+            <p style="font-size:13px;color:#1f2937;">${data.response}</p>
+          </div>
+        ` : `
+          <p style="font-size:12px;color:var(--muted);font-style:italic;">
+            RH aún no ha respondido. Vuelve a consultar más tarde.
+          </p>
+        `}
+      </div>`;
+    resultEl.style.display = 'block';
+  } catch (err) {
+    errEl.textContent = err.message;
   }
 }
 
