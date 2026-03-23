@@ -118,6 +118,49 @@ function nextId(rows) {
   return Math.max(...rows.map(x => Number(x.id) || 0)) + 1;
 }
 
+/**
+ * Calcula el balance de vacaciones de un empleado para un año dado.
+ * Fuente única: rhh_incidences (type='vacacion').
+ * Usado por: /schedule/weekly-attendance y /employees/vacation-balance/:id
+ */
+function calcVacBalance(db, empId, year) {
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return null;
+  const yearStart = `${year}-01-01`;
+  const yearEnd   = `${year}-12-31`;
+  // Normalizar nombre del campo (puede ser total_vacation_days o vacation_days_per_year)
+  const totalDays = emp.total_vacation_days || emp.vacation_days_per_year || 15;
+
+  const vacIncs = (db.rhh_incidences || []).filter(i =>
+    i.employee_id === empId &&
+    i.type === 'vacacion' &&
+    i.date >= yearStart && i.date <= yearEnd
+  );
+
+  function countDays(inc) {
+    const end = inc.date_end || inc.date;
+    if (end !== inc.date) {
+      const s = new Date(inc.date + 'T12:00:00');
+      const e = new Date(end + 'T12:00:00');
+      return Math.round((e - s) / (24 * 60 * 60 * 1000)) + 1;
+    }
+    return 1;
+  }
+
+  const used    = vacIncs.filter(i => i.status === 'aprobada').reduce((a, i) => a + countDays(i), 0);
+  const pending = vacIncs.filter(i => i.status === 'pendiente').reduce((a, i) => a + countDays(i), 0);
+  return {
+    employee_id: empId,
+    employee_name: emp.full_name,
+    year,
+    total_vacation_days: totalDays,
+    vacation_used: used,
+    vacation_pending: pending,
+    vacation_remaining: Math.max(0, totalDays - used),
+    detail: vacIncs.map(i => ({ start_date: i.date, end_date: i.date_end || i.date, days: countDays(i), status: i.status }))
+  };
+}
+
 // Fuerza la carga del JSON seed al PostgreSQL (para sincronizar datos locales al servidor)
 async function forceSeedFromJson() {
   if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
@@ -128,4 +171,4 @@ async function forceSeedFromJson() {
   return seed;
 }
 
-module.exports = { dbPath, read, write, nextId, initDb, forceSeedFromJson };
+module.exports = { dbPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance };

@@ -1765,13 +1765,18 @@ async function autorizacionesView() {
     const incidences = await api('/api/rhh/incidences?status=pendiente');
     if (!incidences) return;
 
-    const rows = incidences.map(inc => `
+    const rows = incidences.map(inc => {
+      const isRetardo = inc.type === 'retardo';
+      const retardoNote = isRetardo
+        ? `<br><span style="color:#d97706;font-size:11px;">⚠️ Genera descuento en prenómina</span>`
+        : '';
+      return `
       <tr>
         <td>
           <strong>${inc.employee?.full_name || '—'}</strong><br>
           <span class="small muted">${inc.employee?.employee_number || ''}</span>
         </td>
-        <td>${incTypePill(inc.type)}</td>
+        <td>${incTypePill(inc.type)}${retardoNote}</td>
         <td>${fmtDateDisplay(inc.date)}${inc.date_end && inc.date_end !== inc.date ? ` → ${fmtDateDisplay(inc.date_end)}` : ''}</td>
         <td>${inc.department?.name || '—'}</td>
         <td>${inc.notes || '—'}</td>
@@ -1780,13 +1785,24 @@ async function autorizacionesView() {
           <button class="btn-primary" style="font-size:11px;padding:5px 10px;" onclick="approveIncidence(${inc.id},'aprobada')">✅ Aprobar</button>
           <button class="btn-ghost" style="font-size:11px;padding:5px 10px;color:#b91c1c;margin-top:4px;" onclick="approveIncidence(${inc.id},'rechazada')">✗ Rechazar</button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
+
+    // Contar por tipo para resumen
+    const retardosPend = incidences.filter(i => i.type === 'retardo').length;
+    const otrosPend    = incidences.length - retardosPend;
 
     const content = `
       <div class="module-title">
         <h2>✅ Solicitudes Pendientes</h2>
         <span class="badge">${incidences.length} pendientes</span>
       </div>
+
+      ${incidences.length > 0 ? `
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
+        ${otrosPend > 0 ? `<span style="background:#eff6ff;color:#1e40af;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">${otrosPend} vacaciones / permisos / faltas</span>` : ''}
+        ${retardosPend > 0 ? `<span style="background:#fffbeb;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">${retardosPend} retardos</span>` : ''}
+      </div>` : ''}
 
       <div class="card section table-wrap">
         ${incidences.length === 0

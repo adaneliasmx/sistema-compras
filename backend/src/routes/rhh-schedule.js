@@ -1,5 +1,5 @@
 const express = require('express');
-const { read, write, nextId } = require('../db-rhh');
+const { read, write, nextId, calcVacBalance } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
@@ -597,23 +597,9 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
     const dept = departments.find(d => d.id === emp.department_id) || null;
     const pos = positions.find(p => p.id === emp.position_id) || null;
 
-    // Calcular vacaciones restantes (año actual)
-    const vacUsedInYear = incidences.filter(i =>
-      i.employee_id === emp.id &&
-      i.type === 'vacacion' &&
-      i.status === 'aprobada' &&
-      i.date >= yearStart && i.date <= yearEnd
-    ).reduce((acc, i) => {
-      if (i.date_end && i.date_end !== i.date) {
-        const start = new Date(i.date + 'T12:00:00');
-        const end = new Date(i.date_end + 'T12:00:00');
-        const diffDays = Math.round((end - start) / (24 * 60 * 60 * 1000)) + 1;
-        return acc + diffDays;
-      }
-      return acc + 1;
-    }, 0);
-    const totalVac = emp.vacation_days_per_year || 15;
-    const vacRestantes = totalVac - vacUsedInYear;
+    // Calcular vacaciones restantes (fuente única: calcVacBalance)
+    const vacBalance = calcVacBalance(db, emp.id, currentYear);
+    const vacRestantes = vacBalance ? vacBalance.vacation_remaining : 0;
 
     // Retardos acumulados en el año
     const retardosAcum = incidences.filter(i =>

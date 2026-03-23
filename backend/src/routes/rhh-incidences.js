@@ -527,8 +527,8 @@ router.post('/', rhhAuthRequired, (req, res) => {
   if (['rh', 'admin'].includes(req.rhhUser.role)) {
     initialStatus = 'aprobada';
   }
-  // Faltas registradas por supervisor se aprueban automáticamente
-  if (req.rhhUser.role === 'supervisor' && type === 'falta') {
+  // Faltas y retardos registrados por supervisor se aprueban automáticamente
+  if (req.rhhUser.role === 'supervisor' && ['falta', 'retardo'].includes(type)) {
     initialStatus = 'aprobada';
   }
 
