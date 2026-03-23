@@ -764,7 +764,7 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     return res.status(400).json({ error: 'employee_id, date y status son requeridos' });
   }
 
-  const VALID_STATUS = ['labora', 'festivo', 'descanso', 'vacaciones', 'falta', 'retardo', 'cumpleanos', 'vacio', 'permiso', 'incapacidad'];
+  const VALID_STATUS = ['labora', 'festivo', 'descanso', 'vacaciones', 'falta', 'retardo', 'cumpleanos', 'vacio', 'permiso', 'permiso_sin_goce', 'incapacidad'];
   if (!VALID_STATUS.includes(status)) {
     return res.status(400).json({ error: 'Status inválido' });
   }

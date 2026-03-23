@@ -1942,7 +1942,9 @@ async function prenominaView() {
         const faltas = days.filter(d => d.status === 'falta').length;
         const vacaciones = days.filter(d => d.status === 'vacaciones').length;
         const permisos = days.filter(d => d.status === 'permiso').length;
+        const permisosSinGoce = days.filter(d => d.status === 'permiso_sin_goce').length;
         const incapacidades = days.filter(d => d.status === 'incapacidad').length;
+        const retardos = days.filter(d => d.status === 'retardo').length;
         const te_hours = emp.totals?.te_total || 0;
 
         const teEmp = teMap[emp.id] || {};
@@ -1951,7 +1953,11 @@ async function prenominaView() {
         const total_extra = teEmp.total_extra || 0;
 
         const daily_salary = state.employees.find(e => e.id === emp.id)?.daily_salary || 0;
-        const total_semanal = (diasTrabajados * daily_salary) + total_extra;
+        // Retardo = 30 min = 0.0625 días (30/480). 3 retardos acumulados en semana = falta completa
+        const retardoDeduccion = retardos >= 3 ? Math.floor(retardos / 3) * daily_salary : (retardos * daily_salary * 0.0625);
+        const total_semanal = (diasTrabajados * daily_salary) + total_extra
+          - (permisosSinGoce * daily_salary)
+          - retardoDeduccion;
 
         totalDiasTrab += diasTrabajados;
         totalFaltas += faltas;
@@ -1961,6 +1967,13 @@ async function prenominaView() {
         totalTeHrs += Number(te_hours) || 0;
         totalTeExtra += Number(te_extra_pay) + Number(prima_dominical);
         totalSemana += total_semanal;
+
+        const permSinGoceCell = permisosSinGoce > 0
+          ? `<span style="color:#dc2626;font-weight:700;">${permisosSinGoce}</span>`
+          : '—';
+        const retardoCell = retardos > 0
+          ? `<span style="color:#d97706;font-weight:700;" title="-$${retardoDeduccion.toFixed(2)}">${retardos}${retardos >= 3 ? ' ⚠️' : ''}</span>`
+          : '—';
 
         rows.push(`
           <tr>
@@ -1974,7 +1987,9 @@ async function prenominaView() {
             <td style="text-align:center;color:#b91c1c;">${faltas || '—'}</td>
             <td style="text-align:center;color:#1d4ed8;">${vacaciones || '—'}</td>
             <td style="text-align:center;color:#854d0e;">${permisos || '—'}</td>
+            <td style="text-align:center;">${permSinGoceCell}</td>
             <td style="text-align:center;color:#7c3aed;">${incapacidades || '—'}</td>
+            <td style="text-align:center;">${retardoCell}</td>
             <td style="text-align:center;color:#059669;font-weight:700;">${Number(te_hours) > 0 ? te_hours + 'h' : '—'}</td>
             <td style="text-align:right;color:#059669;">${(te_extra_pay + prima_dominical) > 0 ? '$' + (te_extra_pay + prima_dominical).toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
             <td style="text-align:right;">${daily_salary > 0 ? '$' + Number(daily_salary).toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
@@ -2004,8 +2019,10 @@ async function prenominaView() {
               <th style="text-align:center;">Trabajados</th>
               <th style="text-align:center;color:#b91c1c;">Faltas</th>
               <th style="text-align:center;color:#1d4ed8;">Vac</th>
-              <th style="text-align:center;color:#854d0e;">Permisos</th>
+              <th style="text-align:center;color:#854d0e;">Permisos c/g</th>
+              <th style="text-align:center;color:#dc2626;">Perm s/g</th>
               <th style="text-align:center;color:#7c3aed;">Incap</th>
+              <th style="text-align:center;color:#d97706;">Retardos</th>
               <th style="text-align:center;color:#059669;">T.E. hrs</th>
               <th style="text-align:right;color:#059669;">T.E. extra</th>
               <th style="text-align:right;">Salario/día</th>
@@ -2013,7 +2030,7 @@ async function prenominaView() {
             </tr>
           </thead>
           <tbody>
-            ${rows.join('') || '<tr><td colspan="12" style="text-align:center;color:var(--muted);">Sin empleados en esta semana</td></tr>'}
+            ${rows.join('') || '<tr><td colspan="14" style="text-align:center;color:var(--muted);">Sin empleados en esta semana</td></tr>'}
           </tbody>
           <tfoot>
             <tr style="background:#f0fdf4;font-weight:800;">
@@ -2022,7 +2039,9 @@ async function prenominaView() {
               <td style="text-align:center;color:#b91c1c;">${totalFaltas || '—'}</td>
               <td style="text-align:center;color:#1d4ed8;">${totalVac || '—'}</td>
               <td style="text-align:center;color:#854d0e;">${totalPermisos || '—'}</td>
+              <td></td>
               <td style="text-align:center;color:#7c3aed;">${totalIncap || '—'}</td>
+              <td></td>
               <td style="text-align:center;color:#059669;">${totalTeHrs > 0 ? totalTeHrs + 'h' : '—'}</td>
               <td style="text-align:right;color:#059669;">${totalTeExtra > 0 ? '$' + totalTeExtra.toLocaleString('es-MX', {minimumFractionDigits:2}) : '—'}</td>
               <td></td>
@@ -2291,7 +2310,7 @@ async function reportesView() {
     const [employees, incidences, otSummary] = await Promise.all([
       api('/api/rhh/employees?status=active'),
       api(`/api/rhh/incidences?date_from=${dateFrom}&date_to=${dateTo}`),
-      api('/api/rhh/dashboard/overtime-summary')
+      api(`/api/rhh/dashboard/overtime-summary?date_from=${dateFrom}&date_to=${dateTo}`)
     ]);
     if (!employees) return;
 
@@ -4349,6 +4368,7 @@ function statusColor(status) {
     retardo:              { bg: '#ffedd5', text: '#9a3412' },
     cumpleanos:           { bg: '#f3e8ff', text: '#6b21a8' },
     permiso:              { bg: '#fef9c3', text: '#854d0e' },
+    permiso_sin_goce:     { bg: '#fee2e2', text: '#991b1b', border: '1px solid #fca5a5' },
     incapacidad:          { bg: '#ede9fe', text: '#5b21b6' },
     vacio:                { bg: '#e5e7eb', text: '#9ca3af' },
     // Estados pendientes (Automatización 3)
@@ -4363,8 +4383,8 @@ function statusLabel(status) {
   const map = {
     labora: 'Asistió', festivo: 'FESTIVO', descanso: 'Descanso',
     vacaciones: 'Vacaciones', falta: 'Falta', retardo: 'Retardo',
-    cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', incapacidad: 'Incapacidad',
-    vacio: '',
+    cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', permiso_sin_goce: 'Perm s/g',
+    incapacidad: 'Incapacidad', vacio: '',
     // Estados pendientes (Automatización 3)
     vacaciones_pendiente: 'Vac. ⏳',
     permiso_pendiente: 'Permiso ⏳',
@@ -4388,8 +4408,9 @@ function openStatusDropdown(empId, date, currentStatus, cellEl) {
     { value: 'falta',      label: 'Falta',            bg: '#fee2e2', text: '#991b1b' },
     { value: 'retardo',    label: 'Retardo',          bg: '#ffedd5', text: '#9a3412' },
     { value: 'vacaciones', label: 'Vacaciones',       bg: '#dbeafe', text: '#1e40af' },
-    { value: 'permiso',    label: 'Permiso',          bg: '#fef9c3', text: '#854d0e' },
-    { value: 'descanso',   label: 'Descanso',         bg: '#f1f5f9', text: '#64748b' },
+    { value: 'permiso',          label: 'Permiso c/goce',   bg: '#fef9c3', text: '#854d0e' },
+    { value: 'permiso_sin_goce', label: 'Permiso s/goce',   bg: '#fee2e2', text: '#991b1b' },
+    { value: 'descanso',         label: 'Descanso',         bg: '#f1f5f9', text: '#64748b' },
     { value: 'festivo',    label: 'Festivo',          bg: '#e0e7ff', text: '#3730a3' },
     { value: 'cumpleanos', label: 'CUMPLEAÑOS',       bg: '#f3e8ff', text: '#6b21a8' }
   ];

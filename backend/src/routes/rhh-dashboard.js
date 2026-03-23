@@ -98,12 +98,16 @@ router.get('/', rhhAuthRequired, (req, res) => {
 });
 
 // GET /api/rhh/dashboard/overtime-summary — resumen de tiempo extra
+// Soporta: ?week=YYYY-W## | ?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD | sin params (semana actual)
 router.get('/overtime-summary', rhhAuthRequired, (req, res) => {
   const db = read();
-  const { week } = req.query;
+  const { week, date_from, date_to } = req.query;
 
   let startDate, endDate;
-  if (week) {
+  if (date_from && date_to) {
+    startDate = date_from;
+    endDate   = date_to;
+  } else if (week) {
     const [year, weekNum] = week.split('-W').map(Number);
     const jan4 = new Date(year, 0, 4);
     const startOfWeek1 = new Date(jan4);
@@ -128,6 +132,18 @@ router.get('/overtime-summary', rhhAuthRequired, (req, res) => {
     endDate = end.toISOString().slice(0, 10);
   }
 
+  // Leer TE desde rhh_attendance (fuente unificada) y también de incidences para compatibilidad
+  // Primero se toman las horas de rhh_attendance; si no hay registro, se busca en incidencias
+  const attTE = (db.rhh_attendance || []).filter(a =>
+    a.te_hours > 0 && a.date >= startDate && a.date <= endDate
+  );
+  // Mapa employee_id → total TE hours desde attendance
+  const attTeMap = {};
+  for (const a of attTE) {
+    attTeMap[a.employee_id] = (attTeMap[a.employee_id] || 0) + (a.te_hours || 0);
+  }
+
+  // También sumar TE de incidencias aprobadas que NO tienen registro en attendance
   const overtimeIncidences = (db.rhh_incidences || []).filter(i =>
     i.type === 'tiempo_extra' &&
     i.status !== 'rechazada' &&
@@ -138,27 +154,33 @@ router.get('/overtime-summary', rhhAuthRequired, (req, res) => {
   const employees = db.rhh_employees || [];
   const departments = db.rhh_departments || [];
 
+  // Consolidar horas TE: preferir rhh_attendance, complementar con incidencias
+  const empTeHours = { ...attTeMap };
+  for (const inc of overtimeIncidences) {
+    if (!empTeHours[inc.employee_id]) {
+      empTeHours[inc.employee_id] = (empTeHours[inc.employee_id] || 0) + (inc.hours || 0);
+    }
+  }
+
   // Agrupar por departamento
   const byDept = {};
-  for (const inc of overtimeIncidences) {
-    const emp = employees.find(e => e.id === inc.employee_id);
+  for (const [empIdStr, hours] of Object.entries(empTeHours)) {
+    const empId = Number(empIdStr);
+    const emp = employees.find(e => e.id === empId);
     if (!emp) continue;
     const dept = departments.find(d => d.id === emp.department_id);
     const deptKey = dept?.name || 'Sin departamento';
     if (!byDept[deptKey]) byDept[deptKey] = { department: deptKey, employees: [], total_hours: 0 };
-    byDept[deptKey].total_hours += (inc.hours || 0);
-    const empEntry = byDept[deptKey].employees.find(e => e.id === emp.id);
-    if (empEntry) {
-      empEntry.hours += (inc.hours || 0);
-    } else {
-      byDept[deptKey].employees.push({ id: emp.id, full_name: emp.full_name, hours: inc.hours || 0 });
-    }
+    byDept[deptKey].total_hours += hours;
+    byDept[deptKey].employees.push({ id: emp.id, full_name: emp.full_name, hours });
   }
+
+  const totalHours = Object.values(empTeHours).reduce((s, h) => s + h, 0);
 
   res.json({
     period: { start: startDate, end: endDate },
     by_department: Object.values(byDept),
-    total_hours: overtimeIncidences.reduce((s, i) => s + (i.hours || 0), 0)
+    total_hours: totalHours
   });
 });
 

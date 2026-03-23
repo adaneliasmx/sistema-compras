@@ -5,6 +5,79 @@ const router = express.Router();
 
 const VALID_TYPES = ['falta', 'vacacion', 'incapacidad', 'permiso', 'permiso_con_goce', 'permiso_sin_goce', 'tiempo_extra', 'cumpleanos'];
 
+// ── Mapeo incidencia → estado de asistencia ───────────────────────────────────
+const INC_TO_ATT_STATUS = {
+  falta:             'falta',
+  vacacion:          'vacaciones',
+  incapacidad:       'incapacidad',
+  permiso:           'permiso',
+  permiso_con_goce:  'permiso',
+  permiso_sin_goce:  'permiso_sin_goce', // sin goce → descuento en prenomina
+  retardo:           'retardo',
+  cumpleanos:        'cumpleanos',
+  // tiempo_extra: solo actualiza te_hours, no el status del día
+};
+
+/**
+ * Sincroniza una incidencia aprobada hacia rhh_attendance.
+ * Si remove=true, revierte los registros que esta incidencia creó/sobreescribió.
+ */
+function syncIncToAttendance(db, inc, remove) {
+  if (!db.rhh_attendance) db.rhh_attendance = [];
+  const attStatus   = INC_TO_ATT_STATUS[inc.type];
+  const isTiempoExtra = inc.type === 'tiempo_extra';
+  if (!attStatus && !isTiempoExtra) return;
+
+  const cur = new Date(inc.date + 'T12:00:00');
+  const end = new Date((inc.date_end || inc.date) + 'T12:00:00');
+
+  while (cur <= end) {
+    const dateStr = cur.toISOString().slice(0, 10);
+    const idx = db.rhh_attendance.findIndex(
+      a => a.employee_id === inc.employee_id && a.date === dateStr
+    );
+
+    if (remove) {
+      // Solo elimina los registros que esta incidencia generó
+      if (idx !== -1 && db.rhh_attendance[idx].incidence_id === inc.id) {
+        db.rhh_attendance.splice(idx, 1);
+      }
+    } else if (isTiempoExtra) {
+      // Para TE solo actualiza te_hours si ya existe un registro ese día
+      if (idx !== -1) {
+        db.rhh_attendance[idx].te_hours = inc.hours || 0;
+        db.rhh_attendance[idx].updated_at = new Date().toISOString();
+      }
+    } else {
+      const now = new Date().toISOString();
+      if (idx !== -1) {
+        db.rhh_attendance[idx] = {
+          ...db.rhh_attendance[idx],
+          status: attStatus,
+          incidence_id: inc.id,
+          updated_at: now,
+        };
+      } else {
+        db.rhh_attendance.push({
+          id: nextId(db.rhh_attendance),
+          employee_id: inc.employee_id,
+          date: dateStr,
+          status: attStatus,
+          te_hours: 0,
+          incidence_id: inc.id,
+          notes: inc.notes || null,
+          cost_center: null,
+          project_id: null,
+          created_at: now,
+          updated_at: now,
+        });
+      }
+    }
+
+    cur.setDate(cur.getDate() + 1);
+  }
+}
+
 // ── Utilidad: días hábiles entre dos fechas ────────────────────────────────────
 function workDaysBetween(fromDate, toDate, holidayDates, workDays) {
   let count = 0;
@@ -477,6 +550,12 @@ router.post('/', rhhAuthRequired, (req, res) => {
 
   incidences.push(inc);
   db.rhh_incidences = incidences;
+
+  // Si se aprueba al crear (rh/admin), sincronizar a asistencia de inmediato
+  if (initialStatus === 'aprobada') {
+    syncIncToAttendance(db, inc, false);
+  }
+
   write(db);
 
   res.status(201).json(inc);
@@ -502,6 +581,7 @@ router.patch('/:id', rhhAuthRequired, (req, res) => {
     if (!['aprobada', 'rechazada', 'pendiente'].includes(newStatus)) {
       return res.status(400).json({ error: 'Estado inválido' });
     }
+    const prevStatus = inc.status;
     inc.status = newStatus;
     if (newStatus === 'aprobada') {
       inc.approved_by = req.rhhUser.id;
@@ -510,6 +590,13 @@ router.patch('/:id', rhhAuthRequired, (req, res) => {
       inc.rejected_by = req.rhhUser.id;
       inc.rejected_at = new Date().toISOString();
       inc.rejection_reason = req.body.rejection_reason || null;
+    }
+    // Guardar incidencia antes de sincronizar para que incidence_id esté disponible
+    db.rhh_incidences[idx] = inc;
+    if (newStatus === 'aprobada' && prevStatus !== 'aprobada') {
+      syncIncToAttendance(db, inc, false);
+    } else if (newStatus === 'rechazada' && prevStatus === 'aprobada') {
+      syncIncToAttendance(db, inc, true);
     }
   }
 
@@ -536,6 +623,12 @@ router.delete('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
   const db = read();
   const idx = (db.rhh_incidences || []).findIndex(i => i.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Incidencia no encontrada' });
+
+  const inc = db.rhh_incidences[idx];
+  // Si estaba aprobada, revertir los registros de asistencia que creó
+  if (inc.status === 'aprobada') {
+    syncIncToAttendance(db, inc, true);
+  }
 
   db.rhh_incidences.splice(idx, 1);
   write(db);
