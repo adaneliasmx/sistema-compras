@@ -19,6 +19,10 @@ const notificationsRoutes = require('./routes/notifications');
 // ── Super Admin ───────────────────────────────────────────────────────────────
 const superAdminRoutes = require('./routes/super-admin');
 
+// ── Módulo Vales de Adición ───────────────────────────────────────────────────
+const valesAuthRoutes = require('./routes/vales-auth');
+const valesRoutes     = require('./routes/vales');
+
 // ── Módulo RHH ────────────────────────────────────────────────────────────────
 const rhhAuthRoutes = require('./routes/rhh-auth');
 const rhhEmployeesRoutes = require('./routes/rhh-employees');
@@ -32,6 +36,7 @@ const rhhNotificationsRoutes = require('./routes/rhh-notifications');
 
 const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
+const { initDb: initValesDb } = require('./db-vales');
 
 const app = express();
 app.use(cors());
@@ -56,6 +61,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+
+// ── API Vales ─────────────────────────────────────────────────────────────────
+app.use('/api/vales/auth', valesAuthRoutes);
+app.use('/api/vales',      valesRoutes);
 
 // ── API Super Admin ───────────────────────────────────────────────────────────
 app.use('/api/super-admin', superAdminRoutes);
@@ -101,6 +110,14 @@ app.get('/rhh/*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/rhh/index.html'));
 });
 
+// Módulo Vales
+app.get('/vales', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
+});
+app.get('/vales/*', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
+});
+
 // Fallback
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
@@ -108,7 +125,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);
