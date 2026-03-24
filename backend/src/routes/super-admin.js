@@ -60,7 +60,7 @@ function buildUnifiedList() {
       key: emailLow,
       full_name: cu.full_name,
       email: cu.email,
-      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false },
+      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false, vales_role: cu.vales_role || null },
       rhh: rhhUser ? { id: rhhUser.id, role: rhhUser.role, active: rhhUser.active !== false } : null,
       is_external: cu.role_code === 'proveedor'
     });
@@ -124,7 +124,11 @@ router.get('/overview', superAdminRequired, (req, res) => {
       users: (rhh.rhh_users || []).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.role, active: u.active !== false })),
       total_users: (rhh.rhh_users || []).length
     },
-    { id: 'calidad', name: 'Registros de Calidad', icon: '📋', status: 'development', url: null, users: [], total_users: 0 },
+    {
+      id: 'calidad', name: 'Registros de Calidad', icon: '📋', status: 'active', url: '/vales',
+      users: (compras.users || []).filter(u => u.vales_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.vales_role, active: u.active !== false })),
+      total_users: (compras.users || []).filter(u => u.vales_role).length
+    },
     { id: 'mantenimiento', name: 'Órdenes de Mantenimiento', icon: '🔧', status: 'development', url: null, users: [], total_users: 0 }
   ];
   res.json({ modules });
@@ -155,7 +159,8 @@ router.post('/unified-users', superAdminRequired, (req, res) => {
     const user = {
       id: nextIdCompras(db.users), full_name, email: emailLow,
       password_hash: pwdHash, role_code: compras_role, department: '',
-      supplier_id: null, default_cost_center_id: null, default_sub_cost_center_id: null, active: true
+      supplier_id: null, default_cost_center_id: null, default_sub_cost_center_id: null,
+      active: true, vales_role: (req.body.vales_role) || null
     };
     db.users = [...(db.users || []), user];
     writeCompras(db);
@@ -451,6 +456,111 @@ router.patch('/rhh/users/:id', superAdminRequired, (req, res) => {
   if (req.body.role) user.role = req.body.role;
   writeRhh(db);
   res.json({ ok: true, user });
+});
+
+// PATCH /api/super-admin/unified-users/vales-role — asignar rol Calidad
+router.patch('/unified-users/vales-role', superAdminRequired, (req, res) => {
+  const { user_id, vales_role } = req.body || {};
+  if (vales_role && !['admin', 'operador', 'consulta'].includes(vales_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta o null' });
+  const db = readCompras();
+  const user = (db.users || []).find(u => u.id === Number(user_id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  user.vales_role = vales_role || null;
+  writeCompras(db);
+  res.json({ ok: true });
+});
+
+// GET /api/super-admin/export-accesos — descargar base de accesos como JSON
+router.get('/export-accesos', superAdminRequired, (req, res) => {
+  const list = buildUnifiedList();
+  const all = [...list.internal, ...list.external];
+  const exported = all.map(u => ({
+    full_name:      u.full_name,
+    email:          u.email,
+    compras_role:   u.compras?.role   || null,
+    compras_active: u.compras?.active !== false,
+    vales_role:     u.compras?.vales_role || null,
+    rhh_role:       u.rhh?.role       || null,
+    rhh_active:     u.rhh?.active     !== false
+  }));
+  const json = JSON.stringify({ exported_at: new Date().toISOString(), users: exported }, null, 2);
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="accesos-${new Date().toISOString().slice(0,10)}.json"`);
+  res.send(json);
+});
+
+// POST /api/super-admin/import-accesos — cargar base de accesos desde JSON
+router.post('/import-accesos', superAdminRequired, (req, res) => {
+  const users = req.body.users || req.body;
+  if (!Array.isArray(users) || users.length === 0)
+    return res.status(400).json({ error: 'Se esperaba un array de usuarios' });
+
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  const results = { created_compras: 0, updated_compras: 0, created_rhh: 0, updated_rhh: 0 };
+
+  for (const u of users) {
+    if (!u.email) continue;
+    const emailLow = u.email.toLowerCase();
+
+    if (u.compras_role) {
+      const existing = (comprasDb.users || []).find(x => x.email?.toLowerCase() === emailLow);
+      if (existing) {
+        existing.role_code = u.compras_role;
+        if (typeof u.compras_active === 'boolean') existing.active = u.compras_active;
+        if (u.vales_role !== undefined) existing.vales_role = u.vales_role || null;
+        results.updated_compras++;
+      } else {
+        comprasDb.users = comprasDb.users || [];
+        comprasDb.users.push({
+          id: nextIdCompras(comprasDb.users), full_name: u.full_name || emailLow,
+          email: emailLow, password_hash: bcrypt.hashSync('0000', 10),
+          role_code: u.compras_role, department: '', supplier_id: null,
+          default_cost_center_id: null, default_sub_cost_center_id: null,
+          active: u.compras_active !== false, vales_role: u.vales_role || null
+        });
+        results.created_compras++;
+      }
+    }
+
+    if (u.rhh_role) {
+      const existingRhh = (rhhDb.rhh_users || []).find(x => x.email?.toLowerCase() === emailLow);
+      if (existingRhh) {
+        existingRhh.role = u.rhh_role;
+        if (typeof u.rhh_active === 'boolean') existingRhh.active = u.rhh_active;
+        results.updated_rhh++;
+      } else {
+        const employees = rhhDb.rhh_employees || [];
+        const empId = nextIdRhh(employees);
+        const today = new Date().toISOString().slice(0, 10);
+        employees.push({
+          id: empId, employee_number: 'EMP-' + String(empId).padStart(3, '0'),
+          full_name: u.full_name || emailLow, email: emailLow, phone: null,
+          department_id: null, position_id: null, shift_id: u.rhh_role === 'empleado' ? 1 : 4,
+          supervisor_id: null, start_date: today, hire_date: today, birth_date: null,
+          status: 'active', contract_type: 'indefinido', base_salary: 0, daily_salary: null,
+          rfc: '', curp: '', nss: '', checker_number: '', primary_position_id: null,
+          enabled_positions: [], project: '', emergency_contact_name: '',
+          emergency_contact_phone: '', total_vacation_days: 15, photo: null,
+          created_at: new Date().toISOString()
+        });
+        rhhDb.rhh_employees = employees;
+        rhhDb.rhh_users = rhhDb.rhh_users || [];
+        rhhDb.rhh_users.push({
+          id: nextIdRhh(rhhDb.rhh_users), full_name: u.full_name || emailLow,
+          email: emailLow, password_hash: bcrypt.hashSync('0000', 10),
+          role: u.rhh_role, employee_id: empId, active: u.rhh_active !== false,
+          created_at: new Date().toISOString()
+        });
+        results.created_rhh++;
+      }
+    }
+  }
+
+  writeCompras(comprasDb);
+  writeRhh(rhhDb);
+  res.json({ ok: true, results });
 });
 
 // POST /api/super-admin/rhh-reseed

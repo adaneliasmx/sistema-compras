@@ -177,7 +177,11 @@
       <div class="card">
         <div class="card-header">
           <h2>👥 Usuarios del sistema</h2>
-          <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn-ghost" onclick="importAccesos()" title="Cargar accesos desde JSON">📤 Importar</button>
+            <button class="btn-ghost" onclick="exportAccesos()" title="Descargar base de accesos como JSON">📥 Exportar</button>
+            <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
+          </div>
         </div>
         <div class="search-bar">
           <input type="text" id="userSearch" placeholder="Buscar por nombre o correo..." oninput="renderUsersTable()"/>
@@ -190,11 +194,12 @@
                 <th style="min-width:200px;">Usuario</th>
                 <th style="min-width:200px;">🛒 Compras</th>
                 <th style="min-width:200px;">👥 RHH</th>
-                <th style="min-width:100px;">Contraseña</th>
+                <th style="min-width:190px;">📋 Registros de Calidad</th>
+                <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="4" class="empty">Cargando...</td></tr>
+              <tr><td colspan="5" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -285,6 +290,18 @@
           <option value="admin">Admin</option>
         </select>
       </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-calidad-chk" onchange="document.getElementById('cm-calidad-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          📋 Registros de Calidad
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Requiere también activar Compras</small>
+        <select class="modal-input" id="cm-calidad-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="consulta">Consulta (solo lectura)</option>
+          <option value="operador">Operador (crear vales)</option>
+          <option value="admin">Admin (acceso total)</option>
+        </select>
+      </div>
     </div>
     <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
@@ -298,7 +315,7 @@
 <div class="modal-overlay" id="pwdModal">
   <div class="modal-box" style="max-width:380px;">
     <div class="modal-title">
-      <span>🔑 Restablecer contraseña</span>
+      <span>🔑 Restablecer contraseña (todos los módulos)</span>
       <button class="modal-close" onclick="closePwdModal()">×</button>
     </div>
     <p id="pwdModalName" style="font-size:13px;color:var(--muted);margin-bottom:12px;"></p>
@@ -332,8 +349,9 @@
 
 <script>
 const TOKEN_KEY = 'sa_token';
-const ROLE_LABELS_COMPRAS = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
-const ROLE_LABELS_RHH = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const ROLE_LABELS_COMPRAS  = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', admin:'Admin' };
+const ROLE_LABELS_RHH      = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const ROLE_LABELS_CALIDAD  = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
 const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', mantenimiento:'#b45309' };
 
 let _unifiedData = { internal: [], external: [] };
@@ -393,7 +411,7 @@ async function loadData() {
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="4" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="5" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -406,7 +424,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="4" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="5" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -437,6 +455,19 @@ function renderUsersTable() {
            <button class="btn-add-mod" onclick="openAddModModal('rhh','${esc(u.full_name)}','${esc(u.email)}','${u.compras ? u.compras.id : ''}')">+ Agregar</button>
          </div>`;
 
+    const calidadCell = u.compras
+      ? `<div class="mod-cell">
+           <span class="dot ${u.compras.vales_role ? 'dot-on' : 'dot-off'}" id="dot-cal-${u.compras.id}"></span>
+           <select class="role-sel" style="color:${u.compras.vales_role ? '#6d28d9' : '#9ca3af'}"
+             onchange="changeValesRole(${u.compras.id}, this.value, this)">
+             <option value="">— Sin acceso —</option>
+             <option value="consulta"  ${u.compras.vales_role==='consulta' ?'selected':''}>Consulta</option>
+             <option value="operador"  ${u.compras.vales_role==='operador' ?'selected':''}>Operador</option>
+             <option value="admin"     ${u.compras.vales_role==='admin'    ?'selected':''}>Admin</option>
+           </select>
+         </div>`
+      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
         <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>
@@ -451,6 +482,7 @@ function renderUsersTable() {
       </td>
       <td>${comprasCell}</td>
       <td>${rhhCell}</td>
+      <td>${calidadCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -494,6 +526,22 @@ async function toggleMod(module, userId, active) {
     await api('/api/super-admin/unified-users/toggle', { method:'PATCH', body: JSON.stringify({ module, user_id: userId, active }) });
     await loadData();
   } catch(e) { alert(e.message); }
+}
+
+async function changeValesRole(userId, valesRole, sel) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/vales-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, vales_role: valesRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = valesRole ? '#6d28d9' : '#9ca3af';
+    const dot = document.getElementById('dot-cal-' + userId);
+    if (dot) { dot.className = 'dot ' + (valesRole ? 'dot-on' : 'dot-off'); }
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
 }
 
 async function changeRole(module, userId, role, sel) {
@@ -546,8 +594,10 @@ function openCreateModal(forceRole) {
   document.getElementById('cmErr').textContent = '';
   document.getElementById('cm-compras-chk').checked = false;
   document.getElementById('cm-rhh-chk').checked = false;
+  document.getElementById('cm-calidad-chk').checked = false;
   document.getElementById('cm-compras-role').disabled = true;
   document.getElementById('cm-rhh-role').disabled = true;
+  document.getElementById('cm-calidad-role').disabled = true;
   if (forceRole === 'proveedor') {
     document.getElementById('cm-compras-chk').checked = true;
     document.getElementById('cm-compras-role').disabled = false;
@@ -563,22 +613,61 @@ async function saveCreateUser() {
   const pass = document.getElementById('cmPass').value;
   const comprasChk = document.getElementById('cm-compras-chk').checked;
   const rhhChk = document.getElementById('cm-rhh-chk').checked;
+  const calidadChk = document.getElementById('cm-calidad-chk').checked;
   const errEl = document.getElementById('cmErr');
   errEl.textContent = '';
   if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
-  if (!comprasChk && !rhhChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
+  if (!comprasChk && !rhhChk) { errEl.textContent = 'Selecciona al menos un módulo (Compras o RHH)'; return; }
+  if (calidadChk && !comprasChk) { errEl.textContent = 'Registros de Calidad requiere activar también Compras'; return; }
   try {
     await api('/api/super-admin/unified-users', {
       method: 'POST',
       body: JSON.stringify({
         full_name: name, email, password: pass,
         compras_role: comprasChk ? document.getElementById('cm-compras-role').value : null,
-        rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null
+        rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null,
+        vales_role: (calidadChk && comprasChk) ? document.getElementById('cm-calidad-role').value : null
       })
     });
     closeCreateModal();
     await loadData();
   } catch(e) { errEl.textContent = e.message; }
+}
+
+// ── Export / Import accesos ───────────────────────────────────────────────────
+function exportAccesos() {
+  const token = localStorage.getItem(TOKEN_KEY);
+  fetch('/api/super-admin/export-accesos', { headers: { Authorization: `Bearer ${token}` } })
+    .then(r => { if (!r.ok) throw new Error('Error al exportar'); return r.blob(); })
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `accesos-${new Date().toISOString().slice(0,10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }).catch(e => alert('Error: ' + e.message));
+}
+
+function importAccesos() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      const users = Array.isArray(data) ? data : (data.users || []);
+      if (!users.length) throw new Error('El archivo no contiene usuarios válidos');
+      if (!confirm(`¿Importar ${users.length} usuario(s)?\n\nSe actualizarán los roles de usuarios existentes y se crearán los nuevos con contraseña "0000".`)) return;
+      const result = await api('/api/super-admin/import-accesos', { method:'POST', body: JSON.stringify({ users }) });
+      const r = result.results;
+      alert(`✅ Importación completada:\n• Compras: ${r.created_compras} creados, ${r.updated_compras} actualizados\n• RHH: ${r.created_rhh} creados, ${r.updated_rhh} actualizados`);
+      await loadData();
+    } catch(e) { alert('Error al importar: ' + e.message); }
+  };
+  input.click();
 }
 
 // ── Add to module modal ───────────────────────────────────────────────────────
