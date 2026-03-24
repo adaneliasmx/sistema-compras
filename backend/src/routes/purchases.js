@@ -444,6 +444,7 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
   const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
   const ccEmails = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
+  const baseUrl = `${req.protocol}://${req.get('host')}`;
   const poMailtos = purchaseOrders.map(po => {
     const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
     const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
@@ -458,6 +459,7 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     const requester = reqRow ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
     const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
     const subject = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
+    const trackingUrl = `${baseUrl}/compras#/seguimiento`;
     const body = [
       `Estimado ${supplier.contact_name || supplier.business_name},`,
       ``,
@@ -472,6 +474,11 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
       `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
       ``,
       `Por favor confirme la recepción de esta orden y la fecha estimada de entrega.`,
+      ``,
+      `── Seguimiento de la orden ──────────────────────`,
+      `Puede consultar el estado de esta orden en cualquier momento en el siguiente enlace:`,
+      `${trackingUrl}`,
+      `Folio a buscar: ${po.folio}`,
       ``,
       `Gracias.`
     ].join('\n');

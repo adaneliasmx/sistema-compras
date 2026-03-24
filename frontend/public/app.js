@@ -1832,6 +1832,7 @@ async function approvalsView() {
               <tr><td class="muted">Proveedor</td><td>${ctx.supplier?.business_name || '-'}</td></tr>
               <tr><td class="muted">C. Costo</td><td>${cc}${sub ? ` › ${sub}` : ''}</td></tr>
               <tr><td class="muted">Solicitante</td><td>${ctx.requester?.full_name || '-'}</td></tr>
+              ${ctx.item.web_link ? `<tr><td class="muted">Liga web</td><td><a href="${escapeHtml(ctx.item.web_link)}" target="_blank" rel="noopener" style="color:#2563eb;word-break:break-all">${escapeHtml(ctx.item.web_link)}</a></td></tr>` : ''}
               ${ctx.item.comments ? `<tr><td class="muted">Comentarios</td><td style="font-style:italic">${escapeHtml(ctx.item.comments)}</td></tr>` : ''}
             </table>
           </div>
@@ -2401,7 +2402,12 @@ async function purchasesView() {
     return `<tr style="${rowBg}" data-id="${i.id}">
       <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
-      <td><b>${i.item_name}</b>${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}${i.cancelled_by_name ? ` · por ${i.cancelled_by_name}` : ''}</small>` : ''}</td>
+      <td>
+        <b>${i.item_name}</b>
+        ${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}${i.cancelled_by_name ? ` · por ${i.cancelled_by_name}` : ''}</small>` : ''}
+        ${i.web_link ? `<br><a href="${escapeHtml(i.web_link)}" target="_blank" rel="noopener" style="font-size:11px;color:#2563eb">🔗 Liga</a>` : ''}
+        ${i.comments ? `<br><small style="color:#6b7280;font-style:italic" title="${escapeHtml(i.comments)}">💬 ${escapeHtml(i.comments.length > 60 ? i.comments.slice(0,60) + '…' : i.comments)}</small>` : ''}
+      </td>
       <td>
         <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}>
           <option value="">Sin proveedor</option>
