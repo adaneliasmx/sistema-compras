@@ -692,94 +692,239 @@ window.verVale = async function(folio) {
 };
 
 // ── Reportes de Consumo (admin) ───────────────────────────────────────────────
-async function viewReportes() {
-  const [data, lineas] = await Promise.all([
-    GET('/reportes/consumos'),
-    GET('/lineas').catch(()=>[])
-  ]);
-  const { periodos, byItem, byLinea } = data;
-  const fmtKg = v => v > 0 ? `<span style="font-weight:600">${v.toFixed(1)}</span>` : `<span style="color:#a8a29e">—</span>`;
+// Estado del navegador de períodos
+const RPS = { tipo: 'semana', fecha: today(), linea: '', _data: null, _charts: {} };
 
-  const tablaItems = `
-  <div class="table-card" style="margin-bottom:20px">
-    <div class="table-header">
-      <h3>📦 Consumo por Producto</h3>
-      <div style="font-size:12px;color:#78716c">Semana desde ${periodos.fSem} · Mes desde ${periodos.fMes} · Año ${periodos.fAnio.slice(0,4)}</div>
+function navFecha(dir) {
+  const d = new Date(RPS.fecha + 'T12:00:00Z');
+  if (RPS.tipo === 'semana') {
+    d.setUTCDate(d.getUTCDate() + dir * 7);
+  } else if (RPS.tipo === 'mes') {
+    d.setUTCMonth(d.getUTCMonth() + dir);
+    d.setUTCDate(1);
+  } else {
+    d.setUTCFullYear(d.getUTCFullYear() + dir);
+  }
+  RPS.fecha = d.toISOString().slice(0, 10);
+}
+
+async function viewReportes() {
+  const lineas = await GET('/lineas').catch(() => []);
+  return `
+  <!-- Barra de navegación -->
+  <div class="rpt-nav">
+    <div class="rpt-tipo-btns">
+      <button class="rpt-tipo-btn${RPS.tipo==='semana'?' active':''}" onclick="rptSetTipo('semana')">Semana</button>
+      <button class="rpt-tipo-btn${RPS.tipo==='mes'   ?' active':''}" onclick="rptSetTipo('mes')">Mes</button>
+      <button class="rpt-tipo-btn${RPS.tipo==='anio'  ?' active':''}" onclick="rptSetTipo('anio')">Año</button>
     </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th>Producto</th><th style="text-align:right">Esta semana (kg)</th><th style="text-align:right">Este mes (kg)</th><th style="text-align:right">Este año (kg)</th></tr></thead>
-        <tbody>${byItem.map(r=>`<tr>
-          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
-          <td style="text-align:right">${fmtKg(r.sem)}</td>
-          <td style="text-align:right">${fmtKg(r.mes)}</td>
-          <td style="text-align:right">${fmtKg(r.anio)}</td>
-        </tr>`).join('')}</tbody>
-        <tfoot><tr style="background:#fef3c7;font-weight:700">
-          <td>TOTAL</td>
-          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.sem,0).toFixed(1)}</td>
-          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.mes,0).toFixed(1)}</td>
-          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.anio,0).toFixed(1)}</td>
-        </tr></tfoot>
-      </table>
+    <div class="rpt-period-nav">
+      <button class="rpt-arrow" onclick="rptNav(-1)">◀</button>
+      <span id="rpt-label" style="font-weight:700;font-size:14px;min-width:260px;text-align:center">—</span>
+      <button class="rpt-arrow" onclick="rptNav(1)">▶</button>
     </div>
-    <div style="padding:10px 16px;text-align:right">
-      <button class="btn btn-outline btn-sm" onclick="exportReportesItems()">📥 Exportar CSV</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <select id="rpt-linea" style="font-size:13px" onchange="rptSetLinea(this.value)">
+        <option value="">Todas las líneas</option>
+        ${lineas.map(l=>`<option value="${l}"${RPS.linea===l?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <button class="btn btn-outline btn-sm" onclick="rptExport()">📥 CSV</button>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div id="rpt-kpis" class="rpt-kpis"></div>
+
+  <!-- Alerta de subida -->
+  <div id="rpt-alertas"></div>
+
+  <!-- Gráficas -->
+  <div class="rpt-charts-grid">
+    <div class="table-card">
+      <div class="table-header"><h3>📈 Tendencia</h3><span id="rpt-vs-label" style="font-size:12px;color:#78716c"></span></div>
+      <div style="padding:12px"><canvas id="chart-tendencia" height="200"></canvas></div>
+    </div>
+    <div class="table-card">
+      <div class="table-header"><h3>🏆 Top productos (kg)</h3></div>
+      <div style="padding:12px"><canvas id="chart-productos" height="200"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tablas -->
+  <div class="rpt-tables-grid">
+    <div class="table-card">
+      <div class="table-header"><h3>📦 Por Producto</h3></div>
+      <div class="table-scroll" id="rpt-tabla-productos"></div>
+    </div>
+    <div class="table-card">
+      <div class="table-header"><h3>🏭 Por Línea</h3></div>
+      <div class="table-scroll" id="rpt-tabla-lineas"></div>
     </div>
   </div>`;
-
-  const tablaLineas = byLinea.map(l=>`
-  <div class="table-card" style="margin-bottom:16px">
-    <div class="table-header"><h3>🏭 ${l.linea}</h3>
-      <div style="font-size:12px;color:#78716c">Año: ${l.anio.toFixed(1)} kg · Mes: ${l.mes.toFixed(1)} kg · Semana: ${l.sem.toFixed(1)} kg</div>
-    </div>
-    <div class="table-scroll">
-      <table>
-        <thead><tr><th>Producto</th><th style="text-align:right">Semana (kg)</th><th style="text-align:right">Mes (kg)</th><th style="text-align:right">Año (kg)</th></tr></thead>
-        <tbody>${l.byItem.map(r=>`<tr>
-          <td title="${r.item}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.item}</td>
-          <td style="text-align:right">${fmtKg(r.sem)}</td>
-          <td style="text-align:right">${fmtKg(r.mes)}</td>
-          <td style="text-align:right">${fmtKg(r.anio)}</td>
-        </tr>`).join('')}</tbody>
-      </table>
-    </div>
-  </div>`).join('');
-
-  return `
-  <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
-    <button class="tab-btn tab-active" id="rtab-item" onclick="switchReportesTab('item')">📦 Por Producto</button>
-    <button class="tab-btn" id="rtab-linea" onclick="switchReportesTab('linea')">🏭 Por Línea</button>
-  </div>
-  <div id="rpanel-item">${tablaItems}</div>
-  <div id="rpanel-linea" style="display:none">${tablaLineas}</div>`;
 }
 
 function bindReportes() {
-  window._reportesData = null;
-  GET('/reportes/consumos').then(d => { window._reportesData = d; });
-
-  window.switchReportesTab = function(tab) {
-    document.getElementById('rpanel-item').style.display  = tab === 'item'  ? '' : 'none';
-    document.getElementById('rpanel-linea').style.display = tab === 'linea' ? '' : 'none';
-    document.getElementById('rtab-item').classList.toggle('tab-active',  tab === 'item');
-    document.getElementById('rtab-linea').classList.toggle('tab-active', tab === 'linea');
+  window.rptSetTipo = function(t) {
+    RPS.tipo = t;
+    RPS.fecha = today();
+    rptLoad();
   };
-
-  window.exportReportesItems = function() {
-    const d = window._reportesData;
-    if (!d) { alert('Cargando datos...'); return; }
-    const headers = ['Producto','Semana (kg)','Mes (kg)','Año (kg)'];
-    const rows = d.byItem.map(r=>[
-      `"${r.item}"`, r.sem.toFixed(3), r.mes.toFixed(3), r.anio.toFixed(3)
+  window.rptNav = function(dir) {
+    navFecha(dir);
+    rptLoad();
+  };
+  window.rptSetLinea = function(l) {
+    RPS.linea = l;
+    rptLoad();
+  };
+  window.rptExport = function() {
+    const d = RPS._data;
+    if (!d) return;
+    const hdr = ['Producto', `${d.periodoActual.label} (kg)`, `${d.periodoAnterior.label} (kg)`, 'Δ kg', 'Δ %'];
+    const rows = d.byProducto.map(r => [
+      `"${r.item}"`, r.actual.toFixed(3), r.anterior.toFixed(3),
+      r.delta.toFixed(3), r.pct.toFixed(1)+'%'
     ].join(','));
-    const csv = [headers.join(','), ...rows].join('\r\n');
-    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const csv = [hdr.join(','), ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF'+csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `consumos_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `consumos_${RPS.tipo}_${RPS.fecha}.csv`;
     a.click();
   };
+
+  rptLoad();
+}
+
+async function rptLoad() {
+  // Actualizar botones tipo activo
+  document.querySelectorAll('.rpt-tipo-btn').forEach(b => {
+    b.classList.toggle('active', b.textContent.toLowerCase().includes(
+      RPS.tipo === 'semana' ? 'sem' : RPS.tipo === 'mes' ? 'mes' : 'año'
+    ));
+  });
+
+  const el = id => document.getElementById(id);
+  if (el('rpt-label')) el('rpt-label').textContent = 'Cargando...';
+
+  try {
+    let q = `/reportes/periodo?tipo=${RPS.tipo}&fecha=${RPS.fecha}`;
+    if (RPS.linea) q += `&linea=${encodeURIComponent(RPS.linea)}`;
+    const d = await GET(q);
+    RPS._data = d;
+
+    // Label del período
+    if (el('rpt-label')) el('rpt-label').textContent = d.periodoActual.label;
+    if (el('rpt-vs-label')) el('rpt-vs-label').textContent = `vs ${d.periodoAnterior.label}`;
+
+    // KPIs
+    const t = d.totales;
+    const kgDelta = t.actual - t.anterior;
+    const kgPct   = t.anterior > 0 ? ((kgDelta/t.anterior)*100).toFixed(1) : '—';
+    const vDelta  = t.vales_actual - t.vales_anterior;
+    const kgClr   = kgDelta >= 0 ? '#dc2626' : '#16a34a';
+    const vClr    = vDelta  >= 0 ? '#dc2626' : '#16a34a';
+    if (el('rpt-kpis')) el('rpt-kpis').innerHTML = `
+      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.actual.toFixed(1)}</div><div class="rpt-kpi-lbl">kg despachados</div>
+        <div class="rpt-kpi-sub" style="color:${kgClr}">${kgDelta>=0?'+':''}${kgDelta.toFixed(1)} kg (${kgDelta>=0?'+':''}${kgPct}%) vs anterior</div></div>
+      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.vales_actual}</div><div class="rpt-kpi-lbl">vales emitidos</div>
+        <div class="rpt-kpi-sub" style="color:${vClr}">${vDelta>=0?'+':''}${vDelta} vs anterior</div></div>
+      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.anterior.toFixed(1)}</div><div class="rpt-kpi-lbl">kg período anterior</div>
+        <div class="rpt-kpi-sub" style="color:#78716c">${d.periodoAnterior.label}</div></div>`;
+
+    // Alertas
+    if (el('rpt-alertas')) {
+      el('rpt-alertas').innerHTML = d.alertas.length > 0 ? `
+        <div class="alert alert-warn" style="margin-bottom:16px">
+          ⚠️ <strong>Alerta de consumo elevado:</strong>
+          ${d.alertas.map(a=>`<strong>${a.item.length>40?a.item.slice(0,40)+'…':a.item}</strong> (+${a.pct.toFixed(0)}%)`).join(' · ')}
+        </div>` : '';
+    }
+
+    // Gráfica tendencia
+    const COLORS = { actual: '#d97706', anterior: '#a8a29e' };
+    const ctxT = el('chart-tendencia');
+    if (ctxT) {
+      if (RPS._charts.tendencia) RPS._charts.tendencia.destroy();
+      RPS._charts.tendencia = new Chart(ctxT, {
+        type: 'bar',
+        data: {
+          labels: d.tendencia.map(b => b.label),
+          datasets: [
+            { label: d.periodoActual.label,   data: d.tendencia.map(b=>b.actual),   backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5 },
+            { label: d.periodoAnterior.label, data: d.tendencia.map(b=>b.anterior), backgroundColor: '#a8a29e66', borderColor: '#a8a29e', borderWidth: 1.5 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+          scales: { y: { beginAtZero: true, ticks: { font: { size: 11 } } }, x: { ticks: { font: { size: 11 } } } }
+        }
+      });
+      ctxT.parentElement.style.height = '220px';
+    }
+
+    // Gráfica top productos (horizontal)
+    const top10 = d.byProducto.slice(0, 10);
+    const ctxP = el('chart-productos');
+    if (ctxP) {
+      if (RPS._charts.productos) RPS._charts.productos.destroy();
+      RPS._charts.productos = new Chart(ctxP, {
+        type: 'bar',
+        data: {
+          labels: top10.map(r => r.item.length > 30 ? r.item.slice(0,30)+'…' : r.item),
+          datasets: [
+            { label: d.periodoActual.label,   data: top10.map(r=>r.actual),   backgroundColor: '#d97706cc' },
+            { label: d.periodoAnterior.label, data: top10.map(r=>r.anterior), backgroundColor: '#a8a29e66' }
+          ]
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } },
+          scales: { x: { beginAtZero: true, ticks: { font: { size: 11 } } }, y: { ticks: { font: { size: 10 } } } }
+        }
+      });
+      ctxP.parentElement.style.height = Math.max(180, top10.length * 28 + 50) + 'px';
+    }
+
+    // Tabla productos
+    const fmtDelta = (d, p) => {
+      if (d === 0) return '<span style="color:#a8a29e">—</span>';
+      const clr = d > 0 ? '#dc2626' : '#16a34a';
+      return `<span style="color:${clr};font-weight:700">${d>0?'+':''}${d.toFixed(1)} kg (${d>0?'+':''}${p.toFixed(1)}%)</span>`;
+    };
+    if (el('rpt-tabla-productos')) el('rpt-tabla-productos').innerHTML = d.byProducto.length === 0
+      ? '<div class="empty-state"><div class="icon">📦</div><p>Sin datos</p></div>'
+      : `<table><thead><tr><th>Producto</th><th style="text-align:right">Actual (kg)</th><th style="text-align:right">Anterior (kg)</th><th>Variación</th></tr></thead>
+         <tbody>${d.byProducto.map(r=>`<tr>
+           <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
+           <td style="text-align:right;font-weight:700">${r.actual.toFixed(1)}</td>
+           <td style="text-align:right;color:#78716c">${r.anterior.toFixed(1)}</td>
+           <td>${fmtDelta(r.delta,r.pct)}</td>
+         </tr>`).join('')}</tbody>
+         <tfoot><tr style="background:#fef3c7;font-weight:700">
+           <td>TOTAL</td>
+           <td style="text-align:right">${d.totales.actual.toFixed(1)}</td>
+           <td style="text-align:right">${d.totales.anterior.toFixed(1)}</td>
+           <td>${fmtDelta(d.totales.actual-d.totales.anterior, d.totales.anterior>0?((d.totales.actual-d.totales.anterior)/d.totales.anterior)*100:0)}</td>
+         </tr></tfoot></table>`;
+
+    // Tabla líneas
+    if (el('rpt-tabla-lineas')) el('rpt-tabla-lineas').innerHTML = d.byLinea.length === 0
+      ? '<div class="empty-state"><div class="icon">🏭</div><p>Sin datos</p></div>'
+      : `<table><thead><tr><th>Línea</th><th style="text-align:right">Actual (kg)</th><th style="text-align:right">Anterior (kg)</th><th>Variación</th></tr></thead>
+         <tbody>${d.byLinea.map(r=>`<tr>
+           <td style="font-weight:600">${r.linea}</td>
+           <td style="text-align:right;font-weight:700">${r.actual.toFixed(1)}</td>
+           <td style="text-align:right;color:#78716c">${r.anterior.toFixed(1)}</td>
+           <td>${fmtDelta(r.delta,r.pct)}</td>
+         </tr>`).join('')}</tbody></table>`;
+
+  } catch(e) {
+    const el2 = document.getElementById('rpt-kpis');
+    if (el2) el2.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+  }
 }
 
 // ── Correcciones ──────────────────────────────────────────────────────────────

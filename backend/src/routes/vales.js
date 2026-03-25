@@ -524,72 +524,170 @@ router.get('/detalles', (req, res) => {
   res.json(rows);
 });
 
-// ── Reportes de consumo (admin) ───────────────────────────────────────────────
-router.get('/reportes/consumos', valesAllowRoles('admin'), (req, res) => {
+// ── Helpers para reportes de período ─────────────────────────────────────────
+const MESES_FULL  = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MESES_SHORT = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const DIAS_SHORT  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+
+function getPeriodBounds(tipo, fecha) {
+  const d = new Date(fecha + 'T12:00:00Z');
+  let ini, fin, prevIni, prevFin, label, prevLabel;
+
+  if (tipo === 'semana') {
+    const dow = d.getUTCDay(); // 0=Dom
+    const toMon = dow === 0 ? -6 : 1 - dow;
+    const mon = new Date(d); mon.setUTCDate(d.getUTCDate() + toMon);
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    ini  = mon.toISOString().slice(0, 10);
+    fin  = sun.toISOString().slice(0, 10);
+    const pMon = new Date(mon); pMon.setUTCDate(mon.getUTCDate() - 7);
+    const pSun = new Date(sun); pSun.setUTCDate(sun.getUTCDate() - 7);
+    prevIni = pMon.toISOString().slice(0, 10);
+    prevFin = pSun.toISOString().slice(0, 10);
+    const startOfYear = new Date(Date.UTC(mon.getUTCFullYear(), 0, 1));
+    const weekNum = Math.ceil(((mon - startOfYear) / 86400000 + startOfYear.getUTCDay() + 1) / 7);
+    const fmt = x => `${x.getUTCDate()} ${MESES_SHORT[x.getUTCMonth()]}`;
+    label     = `Semana ${weekNum} · ${fmt(mon)}-${fmt(sun)} ${sun.getUTCFullYear()}`;
+    prevLabel = `Semana ${weekNum - 1} · ${fmt(pMon)}-${fmt(pSun)}`;
+
+  } else if (tipo === 'mes') {
+    const y = d.getUTCFullYear(), m = d.getUTCMonth();
+    ini  = `${y}-${String(m + 1).padStart(2,'0')}-01`;
+    fin  = new Date(Date.UTC(y, m + 1, 0)).toISOString().slice(0, 10);
+    const py = m === 0 ? y - 1 : y, pm = m === 0 ? 11 : m - 1;
+    prevIni = `${py}-${String(pm + 1).padStart(2,'0')}-01`;
+    prevFin = new Date(Date.UTC(py, pm + 1, 0)).toISOString().slice(0, 10);
+    label     = `${MESES_FULL[m]} ${y}`;
+    prevLabel = `${MESES_FULL[pm]} ${py}`;
+
+  } else { // anio
+    const y = d.getUTCFullYear();
+    ini = `${y}-01-01`; fin = `${y}-12-31`;
+    prevIni = `${y-1}-01-01`; prevFin = `${y-1}-12-31`;
+    label = `Año ${y}`; prevLabel = `Año ${y - 1}`;
+  }
+  return { ini, fin, prevIni, prevFin, label, prevLabel };
+}
+
+function generateBuckets(tipo, ini, fin, prevIni) {
+  if (tipo === 'semana') {
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(ini + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + i);
+      const ds = d.toISOString().slice(0, 10);
+      const pd = new Date(prevIni + 'T12:00:00Z'); pd.setUTCDate(pd.getUTCDate() + i);
+      const ps = pd.toISOString().slice(0, 10);
+      return { label: `${DIAS_SHORT[d.getUTCDay()]} ${d.getUTCDate()}`, ini: ds, fin: ds, prevIni: ps, prevFin: ps };
+    });
+  } else if (tipo === 'mes') {
+    const buckets = [];
+    let cur = new Date(ini + 'T12:00:00Z');
+    const end = new Date(fin + 'T12:00:00Z');
+    let w = 1;
+    while (cur <= end) {
+      const ws = cur.toISOString().slice(0, 10);
+      const we_d = new Date(cur); we_d.setUTCDate(cur.getUTCDate() + 6);
+      if (we_d > end) we_d.setTime(end.getTime());
+      const we = we_d.toISOString().slice(0, 10);
+      const pc = new Date(prevIni + 'T12:00:00Z'); pc.setUTCDate(pc.getUTCDate() + (w-1)*7);
+      const pe = new Date(pc); pe.setUTCDate(pc.getUTCDate() + 6);
+      buckets.push({ label: `S${w}`, ini: ws, fin: we, prevIni: pc.toISOString().slice(0,10), prevFin: pe.toISOString().slice(0,10) });
+      cur.setUTCDate(cur.getUTCDate() + 7);
+      w++;
+    }
+    return buckets;
+  } else { // anio
+    const y = parseInt(ini.slice(0, 4));
+    return MESES_SHORT.map((m, i) => {
+      const mi = String(i+1).padStart(2,'0');
+      const ini2 = `${y}-${mi}-01`;
+      const fin2 = new Date(Date.UTC(y, i+1, 0)).toISOString().slice(0,10);
+      const pIni = `${y-1}-${mi}-01`;
+      const pFin = new Date(Date.UTC(y-1, i+1, 0)).toISOString().slice(0,10);
+      return { label: m, ini: ini2, fin: fin2, prevIni: pIni, prevFin: pFin };
+    });
+  }
+}
+
+// ── Reporte por período (admin) ───────────────────────────────────────────────
+router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
+  const tipo  = req.query.tipo  || 'semana';
+  const fecha = req.query.fecha || new Date().toISOString().slice(0, 10);
+  const filtLinea = req.query.linea || '';
+
   const db = readVales();
-  const headers = db.vales_header || [];
+  const headers  = db.vales_header  || [];
   const detalles = db.vales_detalle || [];
 
   const hdrMap = {};
   headers.forEach(h => { hdrMap[h.folio_vale] = h; });
 
-  const now = new Date();
-  // Rangos de fechas
-  const hoy = now.toISOString().slice(0, 10);
-  const semIni  = new Date(now); semIni.setDate(now.getDate() - now.getDay()); // domingo
-  const mesIni  = new Date(now.getFullYear(), now.getMonth(), 1);
-  const anioIni = new Date(now.getFullYear(), 0, 1);
-  const fSem  = semIni.toISOString().slice(0, 10);
-  const fMes  = mesIni.toISOString().slice(0, 10);
-  const fAnio = anioIni.toISOString().slice(0, 10);
+  const bounds = getPeriodBounds(tipo, fecha);
+  const { ini, fin, prevIni, prevFin, label, prevLabel } = bounds;
 
-  // Fecha ini/fin opcionales para rango personalizado
-  const fechaIni = req.query.fecha_ini || '';
-  const fechaFin = req.query.fecha_fin || hoy;
-
-  // Acumular por item
-  const byItem = {};
-  detalles.forEach(d => {
+  // Aplanar detalles con header
+  const rows = detalles.map(d => {
     const h = hdrMap[d.folio_vale] || {};
-    const fecha = h.fecha || '';
-    const linea = h.linea || '';
-    const kg = parseFloat(d.kg_equivalentes) || 0;
-    if (!byItem[d.item]) byItem[d.item] = { item: d.item, sem: 0, mes: 0, anio: 0, total: 0, byLinea: {} };
-    const r = byItem[d.item];
-    if (fecha >= fSem  && fecha <= hoy) r.sem  += kg;
-    if (fecha >= fMes  && fecha <= hoy) r.mes  += kg;
-    if (fecha >= fAnio && fecha <= hoy) r.anio += kg;
-    if (!fechaIni || (fecha >= fechaIni && fecha <= fechaFin)) r.total += kg;
-    if (!r.byLinea[linea]) r.byLinea[linea] = 0;
-    if (fecha >= fAnio && fecha <= hoy) r.byLinea[linea] += kg;
-  });
+    return {
+      folio_vale: d.folio_vale,
+      fecha:  h.fecha  || '',
+      linea:  h.linea  || '',
+      item:   d.item   || '',
+      kg:     parseFloat(d.kg_equivalentes) || 0
+    };
+  }).filter(r => !filtLinea || r.linea === filtLinea);
 
-  // Acumular por linea
-  const byLinea = {};
-  detalles.forEach(d => {
-    const h = hdrMap[d.folio_vale] || {};
-    const fecha = h.fecha || '';
-    const linea = h.linea || '';
-    const kg = parseFloat(d.kg_equivalentes) || 0;
-    if (!byLinea[linea]) byLinea[linea] = { linea, sem: 0, mes: 0, anio: 0, byItem: {} };
-    const r = byLinea[linea];
-    if (fecha >= fSem  && fecha <= hoy) r.sem  += kg;
-    if (fecha >= fMes  && fecha <= hoy) r.mes  += kg;
-    if (fecha >= fAnio && fecha <= hoy) r.anio += kg;
-    if (!r.byItem[d.item]) r.byItem[d.item] = { item: d.item, sem: 0, mes: 0, anio: 0 };
-    const ri = r.byItem[d.item];
-    if (fecha >= fSem  && fecha <= hoy) ri.sem  += kg;
-    if (fecha >= fMes  && fecha <= hoy) ri.mes  += kg;
-    if (fecha >= fAnio && fecha <= hoy) ri.anio += kg;
-  });
+  const sumKg = arr => arr.reduce((s, r) => s + r.kg, 0);
+  const actual   = rows.filter(r => r.fecha >= ini    && r.fecha <= fin);
+  const anterior = rows.filter(r => r.fecha >= prevIni && r.fecha <= prevFin);
+
+  // ── Tendencia (buckets)
+  const buckets = generateBuckets(tipo, ini, fin, prevIni);
+  const tendencia = buckets.map(b => ({
+    label:    b.label,
+    actual:   sumKg(actual.filter(r => r.fecha >= b.ini && r.fecha <= b.fin)),
+    anterior: sumKg(anterior.filter(r => r.fecha >= b.prevIni && r.fecha <= b.prevFin))
+  }));
+
+  // ── Por producto
+  const acc = (arr) => {
+    const m = {};
+    arr.forEach(r => { m[r.item] = (m[r.item] || 0) + r.kg; });
+    return m;
+  };
+  const iAct = acc(actual), iAnt = acc(anterior);
+  const allItems = [...new Set([...Object.keys(iAct), ...Object.keys(iAnt)])];
+  const byProducto = allItems.map(item => {
+    const act = iAct[item] || 0, ant = iAnt[item] || 0;
+    const delta = act - ant;
+    const pct   = ant > 0 ? (delta / ant) * 100 : (act > 0 ? 100 : 0);
+    return { item, actual: act, anterior: ant, delta, pct };
+  }).sort((a, b) => b.actual - a.actual);
+
+  // ── Por línea
+  const lAct = acc(actual.map(r => ({ ...r, item: r.linea })));
+  const lAnt = acc(anterior.map(r => ({ ...r, item: r.linea })));
+  const allLineas = [...new Set([...Object.keys(lAct), ...Object.keys(lAnt)])];
+  const byLinea = allLineas.map(linea => {
+    const act = lAct[linea] || 0, ant = lAnt[linea] || 0;
+    return { linea, actual: act, anterior: ant, delta: act - ant, pct: ant > 0 ? ((act-ant)/ant)*100 : (act>0?100:0) };
+  }).sort((a, b) => b.actual - a.actual);
+
+  // ── Alertas: productos con subida ≥ 20%
+  const alertas = byProducto.filter(r => r.pct >= 20 && r.actual > 0 && r.anterior > 0);
 
   res.json({
-    periodos: { fSem, fMes, fAnio, hoy },
-    byItem:  Object.values(byItem).sort((a,b) => b.anio - a.anio),
-    byLinea: Object.values(byLinea).map(l => ({
-      ...l,
-      byItem: Object.values(l.byItem).sort((a,b) => b.anio - a.anio)
-    })).sort((a,b) => b.anio - a.anio)
+    periodoActual:   { label, ini, fin },
+    periodoAnterior: { label: prevLabel, ini: prevIni, fin: prevFin },
+    tendencia,
+    byProducto,
+    byLinea,
+    totales: {
+      actual:          sumKg(actual),
+      anterior:        sumKg(anterior),
+      vales_actual:    new Set(actual.map(r => r.folio_vale)).size,
+      vales_anterior:  new Set(anterior.map(r => r.folio_vale)).size
+    },
+    alertas
   });
 });
 
