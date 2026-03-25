@@ -62,6 +62,25 @@ app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
 
+// ── Seed temporal (migración SQLite → PostgreSQL) ─────────────────────────────
+const { write: writeValesDb } = require('./db-vales');
+app.post('/api/vales-seed', (req, res) => {
+  const secret = req.headers['x-seed-secret'];
+  if (!secret || secret !== (process.env.SEED_SECRET || 'vales-seed-2026')) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  try {
+    const seedPath = path.resolve(process.cwd(), 'database/vales.json');
+    const data = JSON.parse(require('fs').readFileSync(seedPath, 'utf8'));
+    writeValesDb(data);
+    const summary = Object.fromEntries(Object.entries(data).map(([k,v]) => [k, v.length]));
+    console.log('[seed] Datos cargados en PostgreSQL:', summary);
+    res.json({ ok: true, summary });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── API Vales ─────────────────────────────────────────────────────────────────
 app.use('/api/vales/auth', valesAuthRoutes);
 app.use('/api/vales',      valesRoutes);
