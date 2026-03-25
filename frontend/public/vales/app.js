@@ -36,6 +36,7 @@ const MENU = {
   admin: [
     ['crear-vale',         '➕', 'Crear Vale'],
     ['consulta-vales',     '📋', 'Consulta Vales'],
+    ['reportes',           '📊', 'Reportes'],
     ['correcciones',       '🔧', 'Correcciones'],
     ['entrada-inventario', '📥', 'Recepción'],
     ['inventario',         '📦', 'Inventario'],
@@ -51,6 +52,7 @@ const SECTION_TITLES = {
   'dashboard':         'Inicio',
   'crear-vale':        'Crear Vale',
   'consulta-vales':    'Consulta de Vales',
+  'reportes':          'Reportes de Consumo',
   'correcciones':      'Correcciones',
   'entrada-inventario':'Recepción de Material',
   'inventario':        'Inventario Actual',
@@ -226,6 +228,7 @@ async function renderMain() {
       case 'correcciones':      el.innerHTML = await viewCorrecciones(); bindCorrecciones(); return;
       case 'entrada-inventario':el.innerHTML = viewEntradaInventario(); bindEntradaInventario(); return;
       case 'inventario':        el.innerHTML = await viewInventario(); bindInventario(); return;
+      case 'reportes':          el.innerHTML = await viewReportes(); bindReportes(); return;
       case 'kardex':            el.innerHTML = await viewKardex(); bindKardex(); return;
       case 'items':             el.innerHTML = await viewItems(); bindItems(); return;
       case 'tanques':           el.innerHTML = await viewTanques(); bindTanques(); return;
@@ -488,34 +491,73 @@ async function guardarVale() {
 
 // ── Consulta Vales ────────────────────────────────────────────────────────────
 async function viewConsultaVales() {
-  const lineas = await GET('/lineas').catch(() => []);
+  const [lineas, items] = await Promise.all([
+    GET('/lineas').catch(() => []),
+    GET('/items').catch(() => [])
+  ]);
   const ini = monthStart();
   const fin = today();
-  let html = `
-  <div class="filters-bar">
-    <div><label style="font-size:12px;font-weight:600;color:#78716c">Desde</label><br><input type="date" id="f-ini" value="${ini}" /></div>
-    <div><label style="font-size:12px;font-weight:600;color:#78716c">Hasta</label><br><input type="date" id="f-fin" value="${fin}" /></div>
-    <div><label style="font-size:12px;font-weight:600;color:#78716c">Folio</label><br><input type="text" id="f-folio" placeholder="VA-..." style="width:150px" /></div>
-    <div><label style="font-size:12px;font-weight:600;color:#78716c">Línea</label><br>
-      <select id="f-linea"><option value="">Todas</option>${lineas.map(l => `<option>${l}</option>`).join('')}</select>
-    </div>
-    <div style="align-self:flex-end"><button class="btn btn-primary" id="btn-buscar">🔍 Buscar</button></div>
+  return `
+  <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
+    <button class="tab-btn tab-active" id="tab-porvale" onclick="switchConsultaTab('porvale')">📋 Por Vale</button>
+    <button class="tab-btn" id="tab-poritem" onclick="switchConsultaTab('poritem')">🧪 Por Item</button>
   </div>
-  <div id="vales-result"></div>`;
-  return html;
+
+  <!-- Tab: Por Vale -->
+  <div id="panel-porvale">
+    <div class="filters-bar">
+      <div><label class="flabel">Desde</label><br><input type="date" id="fv-ini" value="${ini}" /></div>
+      <div><label class="flabel">Hasta</label><br><input type="date" id="fv-fin" value="${fin}" /></div>
+      <div><label class="flabel">Folio</label><br><input type="text" id="fv-folio" placeholder="VA-..." style="width:150px" /></div>
+      <div><label class="flabel">Línea</label><br>
+        <select id="fv-linea"><option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
+      </div>
+      <div style="align-self:flex-end"><button class="btn btn-primary" id="btn-buscar-vale">🔍 Buscar</button></div>
+    </div>
+    <div id="result-porvale"></div>
+  </div>
+
+  <!-- Tab: Por Item -->
+  <div id="panel-poritem" style="display:none">
+    <div class="filters-bar">
+      <div><label class="flabel">Desde</label><br><input type="date" id="fi-ini" value="${ini}" /></div>
+      <div><label class="flabel">Hasta</label><br><input type="date" id="fi-fin" value="${fin}" /></div>
+      <div><label class="flabel">Producto</label><br>
+        <select id="fi-item" style="min-width:200px"><option value="">Todos</option>${items.map(i=>`<option value="${i.item}">${i.item}</option>`).join('')}</select>
+      </div>
+      <div><label class="flabel">Línea</label><br>
+        <select id="fi-linea"><option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
+      </div>
+      <div style="align-self:flex-end;display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-buscar-item">🔍 Buscar</button>
+        <button class="btn btn-outline" id="btn-export-item">📥 Exportar CSV</button>
+      </div>
+    </div>
+    <div id="result-poritem"></div>
+  </div>`;
 }
+
 function bindConsultaVales() {
-  const buscar = async () => {
-    const ini   = document.getElementById('f-ini').value;
-    const fin   = document.getElementById('f-fin').value;
-    const folio = document.getElementById('f-folio').value.trim();
-    const linea = document.getElementById('f-linea').value;
+  // ── Tab switcher ──
+  window.switchConsultaTab = function(tab) {
+    document.getElementById('panel-porvale').style.display = tab === 'porvale' ? '' : 'none';
+    document.getElementById('panel-poritem').style.display = tab === 'poritem'  ? '' : 'none';
+    document.getElementById('tab-porvale').classList.toggle('tab-active', tab === 'porvale');
+    document.getElementById('tab-poritem').classList.toggle('tab-active', tab === 'poritem');
+  };
+
+  // ── Búsqueda por Vale ──
+  const buscarVale = async () => {
+    const ini   = document.getElementById('fv-ini').value;
+    const fin   = document.getElementById('fv-fin').value;
+    const folio = document.getElementById('fv-folio').value.trim();
+    const linea = document.getElementById('fv-linea').value;
     let q = '?';
     if (ini)   q += `fecha_ini=${ini}&`;
     if (fin)   q += `fecha_fin=${fin}&`;
     if (folio) q += `folio=${encodeURIComponent(folio)}&`;
     if (linea) q += `linea=${encodeURIComponent(linea)}&`;
-    const el = document.getElementById('vales-result');
+    const el = document.getElementById('result-porvale');
     el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Buscando...</p></div>';
     try {
       const vales = await GET('/vales' + q);
@@ -527,7 +569,7 @@ function bindConsultaVales() {
           <table>
             <thead><tr><th>Folio</th><th>Fecha</th><th>Hora</th><th>Turno</th><th>Línea</th><th>Solicita</th><th>Items</th><th>kg total</th><th></th></tr></thead>
             <tbody>${vales.map(v => {
-              const kgT = (v.detalle || []).reduce((s, d) => s + (d.kg_equivalentes || 0), 0);
+              const kgT = (v.detalle||[]).reduce((s,d) => s+(d.kg_equivalentes||0),0);
               return `<tr>
                 <td class="mono">${v.folio_vale}</td>
                 <td>${v.fecha}</td><td>${v.hora||'-'}</td><td>${v.turno||'-'}</td>
@@ -542,8 +584,71 @@ function bindConsultaVales() {
       </div>`;
     } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
-  document.getElementById('btn-buscar').addEventListener('click', buscar);
-  buscar();
+  document.getElementById('btn-buscar-vale').addEventListener('click', buscarVale);
+  buscarVale();
+
+  // ── Búsqueda por Item ──
+  let _detallesData = [];
+  const buscarItem = async () => {
+    const ini   = document.getElementById('fi-ini').value;
+    const fin   = document.getElementById('fi-fin').value;
+    const item  = document.getElementById('fi-item').value;
+    const linea = document.getElementById('fi-linea').value;
+    let q = '?';
+    if (ini)   q += `fecha_ini=${ini}&`;
+    if (fin)   q += `fecha_fin=${fin}&`;
+    if (item)  q += `item=${encodeURIComponent(item)}&`;
+    if (linea) q += `linea=${encodeURIComponent(linea)}&`;
+    const el = document.getElementById('result-poritem');
+    el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Buscando...</p></div>';
+    try {
+      const rows = await GET('/detalles' + q);
+      _detallesData = rows;
+      if (rows.length === 0) { el.innerHTML = '<div class="empty-state"><div class="icon">🧪</div><p>Sin resultados</p></div>'; return; }
+      const totalKg = rows.reduce((s,r)=>s+(r.kg||0),0);
+      el.innerHTML = `
+      <div class="table-card">
+        <div class="table-header">
+          <h3>${rows.length} adición(es) · ${totalKg.toFixed(3)} kg total</h3>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Fecha</th><th>Hora</th><th>Turno</th><th>Folio Vale</th><th>Línea</th><th>Tanque</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>kg</th><th>Titulación</th><th>Solicita</th><th>Adiciona</th></tr></thead>
+            <tbody>${rows.map(r=>`<tr>
+              <td>${r.fecha}</td><td>${r.hora||'-'}</td><td>${r.turno||'-'}</td>
+              <td class="mono">${r.folio_vale}</td>
+              <td>${r.linea}</td><td title="${r.nombre_tanque}">${r.no_tanque}</td>
+              <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
+              <td>${r.tipo_adicion}</td>
+              <td style="text-align:right">${r.cantidad}</td>
+              <td class="kg-value">${(r.kg||0).toFixed(3)}</td>
+              <td>${r.titulacion||'-'}</td>
+              <td>${r.solicita||'-'}</td>
+              <td>${r.adiciona||'-'}</td>
+            </tr>`).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  };
+  document.getElementById('btn-buscar-item').addEventListener('click', buscarItem);
+
+  // ── Export CSV ──
+  document.getElementById('btn-export-item').addEventListener('click', () => {
+    if (!_detallesData.length) { alert('Primero realiza una búsqueda'); return; }
+    const headers = ['Fecha','Hora','Turno','Folio Vale','Línea','No. Tanque','Nombre Tanque','Producto','Tipo Adición','Cantidad','kg','Titulación','Solicita','Adiciona','Coordinador','Comentarios'];
+    const rows = _detallesData.map(r => [
+      r.fecha, r.hora, r.turno, r.folio_vale, r.linea, r.no_tanque, r.nombre_tanque,
+      r.item, r.tipo_adicion, r.cantidad, (r.kg||0).toFixed(3), r.titulacion,
+      r.solicita, r.adiciona, r.coordinador, r.comentarios
+    ].map(v => `"${String(v||'').replace(/"/g,'""')}"`).join(','));
+    const csv = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `adiciones_${document.getElementById('fi-ini').value}_${document.getElementById('fi-fin').value}.csv`;
+    a.click();
+  });
 }
 window.verVale = async function(folio) {
   try {
@@ -585,6 +690,97 @@ window.verVale = async function(folio) {
       </div>`);
   } catch(e) { alert('Error: ' + e.message); }
 };
+
+// ── Reportes de Consumo (admin) ───────────────────────────────────────────────
+async function viewReportes() {
+  const [data, lineas] = await Promise.all([
+    GET('/reportes/consumos'),
+    GET('/lineas').catch(()=>[])
+  ]);
+  const { periodos, byItem, byLinea } = data;
+  const fmtKg = v => v > 0 ? `<span style="font-weight:600">${v.toFixed(1)}</span>` : `<span style="color:#a8a29e">—</span>`;
+
+  const tablaItems = `
+  <div class="table-card" style="margin-bottom:20px">
+    <div class="table-header">
+      <h3>📦 Consumo por Producto</h3>
+      <div style="font-size:12px;color:#78716c">Semana desde ${periodos.fSem} · Mes desde ${periodos.fMes} · Año ${periodos.fAnio.slice(0,4)}</div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Producto</th><th style="text-align:right">Esta semana (kg)</th><th style="text-align:right">Este mes (kg)</th><th style="text-align:right">Este año (kg)</th></tr></thead>
+        <tbody>${byItem.map(r=>`<tr>
+          <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
+          <td style="text-align:right">${fmtKg(r.sem)}</td>
+          <td style="text-align:right">${fmtKg(r.mes)}</td>
+          <td style="text-align:right">${fmtKg(r.anio)}</td>
+        </tr>`).join('')}</tbody>
+        <tfoot><tr style="background:#fef3c7;font-weight:700">
+          <td>TOTAL</td>
+          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.sem,0).toFixed(1)}</td>
+          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.mes,0).toFixed(1)}</td>
+          <td style="text-align:right">${byItem.reduce((s,r)=>s+r.anio,0).toFixed(1)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+    <div style="padding:10px 16px;text-align:right">
+      <button class="btn btn-outline btn-sm" onclick="exportReportesItems()">📥 Exportar CSV</button>
+    </div>
+  </div>`;
+
+  const tablaLineas = byLinea.map(l=>`
+  <div class="table-card" style="margin-bottom:16px">
+    <div class="table-header"><h3>🏭 ${l.linea}</h3>
+      <div style="font-size:12px;color:#78716c">Año: ${l.anio.toFixed(1)} kg · Mes: ${l.mes.toFixed(1)} kg · Semana: ${l.sem.toFixed(1)} kg</div>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Producto</th><th style="text-align:right">Semana (kg)</th><th style="text-align:right">Mes (kg)</th><th style="text-align:right">Año (kg)</th></tr></thead>
+        <tbody>${l.byItem.map(r=>`<tr>
+          <td title="${r.item}" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.item}</td>
+          <td style="text-align:right">${fmtKg(r.sem)}</td>
+          <td style="text-align:right">${fmtKg(r.mes)}</td>
+          <td style="text-align:right">${fmtKg(r.anio)}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>
+  </div>`).join('');
+
+  return `
+  <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
+    <button class="tab-btn tab-active" id="rtab-item" onclick="switchReportesTab('item')">📦 Por Producto</button>
+    <button class="tab-btn" id="rtab-linea" onclick="switchReportesTab('linea')">🏭 Por Línea</button>
+  </div>
+  <div id="rpanel-item">${tablaItems}</div>
+  <div id="rpanel-linea" style="display:none">${tablaLineas}</div>`;
+}
+
+function bindReportes() {
+  window._reportesData = null;
+  GET('/reportes/consumos').then(d => { window._reportesData = d; });
+
+  window.switchReportesTab = function(tab) {
+    document.getElementById('rpanel-item').style.display  = tab === 'item'  ? '' : 'none';
+    document.getElementById('rpanel-linea').style.display = tab === 'linea' ? '' : 'none';
+    document.getElementById('rtab-item').classList.toggle('tab-active',  tab === 'item');
+    document.getElementById('rtab-linea').classList.toggle('tab-active', tab === 'linea');
+  };
+
+  window.exportReportesItems = function() {
+    const d = window._reportesData;
+    if (!d) { alert('Cargando datos...'); return; }
+    const headers = ['Producto','Semana (kg)','Mes (kg)','Año (kg)'];
+    const rows = d.byItem.map(r=>[
+      `"${r.item}"`, r.sem.toFixed(3), r.mes.toFixed(3), r.anio.toFixed(3)
+    ].join(','));
+    const csv = [headers.join(','), ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `consumos_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+}
 
 // ── Correcciones ──────────────────────────────────────────────────────────────
 async function viewCorrecciones() {

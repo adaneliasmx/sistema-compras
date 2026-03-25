@@ -478,4 +478,119 @@ router.patch('/usuarios/:id/vales-role', valesAllowRoles('admin'), (req, res) =>
   res.json({ id: user.id, full_name: user.full_name, email: user.email, vales_role: user.vales_role });
 });
 
+// ── Detalles aplanados (por item) ─────────────────────────────────────────────
+router.get('/detalles', (req, res) => {
+  const db = readVales();
+  const headers = db.vales_header || [];
+  let detalles = db.vales_detalle || [];
+
+  // Construir mapa de headers para lookup rápido
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+
+  // Join detalle + header
+  let rows = detalles.map(d => {
+    const h = hdrMap[d.folio_vale] || {};
+    return {
+      folio_vale:    d.folio_vale,
+      fecha:         h.fecha || '',
+      hora:          h.hora  || '',
+      turno:         h.turno || '',
+      linea:         h.linea || '',
+      no_tanque:     d.no_tanque    || '',
+      nombre_tanque: d.nombre_tanque|| '',
+      item:          d.item         || '',
+      tipo_adicion:  d.tipo_adicion || '',
+      cantidad:      d.cantidad     || 0,
+      kg:            d.kg_equivalentes || 0,
+      titulacion:    d.titulacion   || '',
+      solicita:      h.solicita     || '',
+      adiciona:      h.adiciona     || '',
+      coordinador:   h.coordinador  || '',
+      comentarios:   h.comentarios  || '',
+      usuario:       h.usuario      || ''
+    };
+  });
+
+  // Filtros
+  if (req.query.fecha_ini) rows = rows.filter(r => r.fecha >= req.query.fecha_ini);
+  if (req.query.fecha_fin) rows = rows.filter(r => r.fecha <= req.query.fecha_fin);
+  if (req.query.item)      rows = rows.filter(r => r.item === req.query.item);
+  if (req.query.linea)     rows = rows.filter(r => r.linea === req.query.linea);
+  if (req.query.turno)     rows = rows.filter(r => r.turno === req.query.turno);
+
+  // Ordenar por fecha desc
+  rows.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora));
+  res.json(rows);
+});
+
+// ── Reportes de consumo (admin) ───────────────────────────────────────────────
+router.get('/reportes/consumos', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const headers = db.vales_header || [];
+  const detalles = db.vales_detalle || [];
+
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+
+  const now = new Date();
+  // Rangos de fechas
+  const hoy = now.toISOString().slice(0, 10);
+  const semIni  = new Date(now); semIni.setDate(now.getDate() - now.getDay()); // domingo
+  const mesIni  = new Date(now.getFullYear(), now.getMonth(), 1);
+  const anioIni = new Date(now.getFullYear(), 0, 1);
+  const fSem  = semIni.toISOString().slice(0, 10);
+  const fMes  = mesIni.toISOString().slice(0, 10);
+  const fAnio = anioIni.toISOString().slice(0, 10);
+
+  // Fecha ini/fin opcionales para rango personalizado
+  const fechaIni = req.query.fecha_ini || '';
+  const fechaFin = req.query.fecha_fin || hoy;
+
+  // Acumular por item
+  const byItem = {};
+  detalles.forEach(d => {
+    const h = hdrMap[d.folio_vale] || {};
+    const fecha = h.fecha || '';
+    const linea = h.linea || '';
+    const kg = parseFloat(d.kg_equivalentes) || 0;
+    if (!byItem[d.item]) byItem[d.item] = { item: d.item, sem: 0, mes: 0, anio: 0, total: 0, byLinea: {} };
+    const r = byItem[d.item];
+    if (fecha >= fSem  && fecha <= hoy) r.sem  += kg;
+    if (fecha >= fMes  && fecha <= hoy) r.mes  += kg;
+    if (fecha >= fAnio && fecha <= hoy) r.anio += kg;
+    if (!fechaIni || (fecha >= fechaIni && fecha <= fechaFin)) r.total += kg;
+    if (!r.byLinea[linea]) r.byLinea[linea] = 0;
+    if (fecha >= fAnio && fecha <= hoy) r.byLinea[linea] += kg;
+  });
+
+  // Acumular por linea
+  const byLinea = {};
+  detalles.forEach(d => {
+    const h = hdrMap[d.folio_vale] || {};
+    const fecha = h.fecha || '';
+    const linea = h.linea || '';
+    const kg = parseFloat(d.kg_equivalentes) || 0;
+    if (!byLinea[linea]) byLinea[linea] = { linea, sem: 0, mes: 0, anio: 0, byItem: {} };
+    const r = byLinea[linea];
+    if (fecha >= fSem  && fecha <= hoy) r.sem  += kg;
+    if (fecha >= fMes  && fecha <= hoy) r.mes  += kg;
+    if (fecha >= fAnio && fecha <= hoy) r.anio += kg;
+    if (!r.byItem[d.item]) r.byItem[d.item] = { item: d.item, sem: 0, mes: 0, anio: 0 };
+    const ri = r.byItem[d.item];
+    if (fecha >= fSem  && fecha <= hoy) ri.sem  += kg;
+    if (fecha >= fMes  && fecha <= hoy) ri.mes  += kg;
+    if (fecha >= fAnio && fecha <= hoy) ri.anio += kg;
+  });
+
+  res.json({
+    periodos: { fSem, fMes, fAnio, hoy },
+    byItem:  Object.values(byItem).sort((a,b) => b.anio - a.anio),
+    byLinea: Object.values(byLinea).map(l => ({
+      ...l,
+      byItem: Object.values(l.byItem).sort((a,b) => b.anio - a.anio)
+    })).sort((a,b) => b.anio - a.anio)
+  });
+});
+
 module.exports = router;

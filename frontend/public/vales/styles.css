@@ -244,3 +244,15 @@ tbody tr:hover { background: #fafaf9; }
   .stat-grid { grid-template-columns: 1fr 1fr; }
   .form-grid { grid-template-columns: 1fr; }
 }
+
+/* ── TABS ────────────────────────────────────────────────────────── */
+.tab-bar { padding-bottom: 0; }
+.tab-btn {
+  padding: 8px 20px; border: none; background: none; cursor: pointer;
+  font-size: 13px; font-weight: 600; color: #78716c;
+  border-bottom: 3px solid transparent; margin-bottom: -2px;
+  border-radius: 6px 6px 0 0; transition: color .15s, border-color .15s;
+}
+.tab-btn:hover { color: var(--v-primary); }
+.tab-btn.tab-active { color: var(--v-primary); border-bottom-color: var(--v-primary); }
+.flabel { font-size: 12px; font-weight: 600; color: #78716c; }
