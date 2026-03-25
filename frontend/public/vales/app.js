@@ -69,6 +69,7 @@ async function api(method, path, body) {
   if (body !== undefined) opts.body = JSON.stringify(body);
   const res = await fetch('/api/vales' + path, opts);
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout(); return; }
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
   return data;
 }
