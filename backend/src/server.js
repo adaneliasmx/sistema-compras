@@ -48,6 +48,26 @@ app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), { index: 
 // ── API Health ────────────────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => res.json({ ok: true, now: new Date().toISOString() }));
 
+// ── Seed temporal inventarios (BORRAR DESPUÉS DE USAR) ────────────────────────
+app.post('/api/inventory-seed', async (req, res) => {
+  if (req.headers['x-seed-secret'] !== 'inv-seed-2026') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const { read, write } = require('./db');
+    const seedData = require('../../database/app.json');
+    const db = read();
+    db.inventory_catalogs = seedData.inventory_catalogs || [];
+    db.inventory_items    = seedData.inventory_items    || [];
+    db.inventory_weekly   = seedData.inventory_weekly   || [];
+    // Merge catalog_items: add new ones not already present
+    const existing = new Set((db.catalog_items || []).map(c => String(c.id)));
+    (seedData.catalog_items || []).forEach(c => { if (!existing.has(String(c.id))) db.catalog_items.push(c); });
+    write(db);
+    res.json({ ok: true, catalogs: db.inventory_catalogs.length, items: db.inventory_items.length, weekly: db.inventory_weekly.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── API Compras ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/dashboard', dashboardRoutes);
