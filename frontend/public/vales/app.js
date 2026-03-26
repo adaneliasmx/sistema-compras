@@ -711,6 +711,14 @@ function navFecha(dir) {
 async function viewReportes() {
   const lineas = await GET('/lineas').catch(() => []);
   return `
+  <!-- Tabs principales de Reportes -->
+  <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
+    <button class="tab-btn tab-active" id="rpt-main-tab-consumo" onclick="switchRptMainTab('consumo')">📊 Consumo</button>
+    <button class="tab-btn" id="rpt-main-tab-comp" onclick="switchRptMainTab('comp')">🔬 Real vs Teórico</button>
+  </div>
+
+  <!-- Panel: Consumo (existing content) -->
+  <div id="rpt-panel-consumo">
   <!-- Barra de navegación -->
   <div class="rpt-nav">
     <div class="rpt-tipo-btns">
@@ -760,6 +768,21 @@ async function viewReportes() {
       <div class="table-header"><h3>🏭 Por Línea</h3></div>
       <div class="table-scroll" id="rpt-tabla-lineas"></div>
     </div>
+  </div>
+  </div><!-- end rpt-panel-consumo -->
+
+  <!-- Panel: Comparativo Real vs Teórico -->
+  <div id="rpt-panel-comp" style="display:none">
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+      <div><label class="flabel">Año</label><br>
+        <select id="comp-year" style="font-size:13px">${[2025,2026,2027].map(y=>`<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}</select>
+      </div>
+      <div><label class="flabel">Semana inicio</label><br><input type="number" id="comp-w-ini" value="1" min="1" max="52" style="width:70px;font-size:13px"/></div>
+      <div><label class="flabel">Semana fin</label><br><input type="number" id="comp-w-fin" value="${new Date().getMonth()*4+4}" min="1" max="52" style="width:70px;font-size:13px"/></div>
+      <button class="btn btn-primary" id="comp-btn">🔍 Calcular</button>
+      <button class="btn btn-outline" id="comp-export-btn">📥 CSV</button>
+    </div>
+    <div id="comp-result"></div>
   </div>`;
 }
 
@@ -792,6 +815,84 @@ function bindReportes() {
     a.download = `consumos_${RPS.tipo}_${RPS.fecha}.csv`;
     a.click();
   };
+
+  window.switchRptMainTab = function(tab) {
+    document.getElementById('rpt-panel-consumo').style.display = tab === 'consumo' ? '' : 'none';
+    document.getElementById('rpt-panel-comp').style.display    = tab === 'comp'    ? '' : 'none';
+    document.getElementById('rpt-main-tab-consumo').classList.toggle('tab-active', tab === 'consumo');
+    document.getElementById('rpt-main-tab-comp').classList.toggle('tab-active',    tab === 'comp');
+  };
+
+  const runComparativo = async () => {
+    const year  = document.getElementById('comp-year').value;
+    const wIni  = document.getElementById('comp-w-ini').value;
+    const wFin  = document.getElementById('comp-w-fin').value;
+    const res   = document.getElementById('comp-result');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Calculando...</p></div>';
+    try {
+      const d = await GET(`/reportes/comparativo?year=${year}&week_ini=${wIni}&week_fin=${wFin}`);
+      if (!d.items || d.items.length === 0) {
+        res.innerHTML = '<div class="empty-state"><div class="icon">🔬</div><p>Sin datos para comparar. Asegúrate de que los ítems de Compras tengan el campo "Ítem en Vales" configurado y haya capturas semanales registradas.</p></div>';
+        return;
+      }
+      window._compData = d;
+      res.innerHTML = d.items.map(item => {
+        const totalReal = item.weeks.reduce((s,w) => s + (w.consumo_real_kg||0), 0);
+        const totalTeo  = item.weeks.reduce((s,w) => s + (w.consumo_teorico_kg||0), 0);
+        const diff = totalReal - totalTeo;
+        const pct  = totalTeo > 0 ? (diff/totalTeo)*100 : null;
+        const alerta = pct !== null && Math.abs(pct) > 15;
+        return `
+        <div class="table-card" style="margin-bottom:16px">
+          <div class="table-header">
+            <h3>${item.item}</h3>
+            <div style="display:flex;gap:8px;align-items:center;font-size:12px">
+              ${alerta ? `<span style="background:#fef3c7;color:#92400e;padding:3px 8px;border-radius:6px;font-weight:700">⚠️ Diferencia ${pct!==null?pct.toFixed(1)+'%':''}</span>` : ''}
+              <span style="color:#78716c">Real: <strong>${totalReal.toFixed(1)} kg</strong></span>
+              <span style="color:#78716c">Teórico: <strong>${totalTeo.toFixed(1)} kg</strong></span>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Semana</th><th style="text-align:right">Stock (${item.unidad})</th><th style="text-align:right">Pedido recibido</th><th style="text-align:right">Consumo Real (kg)</th><th style="text-align:right">Consumo Vales (kg)</th><th style="text-align:right">Diferencia (kg)</th><th>Estado</th></tr></thead>
+              <tbody>${item.weeks.map(w => {
+                const d2 = w.diferencia;
+                const p2 = w.pct_diferencia;
+                const clr = d2===null?'#a8a29e':Math.abs(p2||0)>15?'#dc2626':'#16a34a';
+                return `<tr>
+                  <td>S${w.week}</td>
+                  <td style="text-align:right">${w.stock_actual!==null?w.stock_actual:'—'}</td>
+                  <td style="text-align:right;color:#16a34a">${w.pedido_recibido||0}</td>
+                  <td style="text-align:right;font-weight:600">${w.consumo_real_kg!==null?w.consumo_real_kg.toFixed(2):'—'}</td>
+                  <td style="text-align:right">${w.consumo_teorico_kg.toFixed(2)}</td>
+                  <td style="text-align:right;font-weight:600;color:${clr}">${d2!==null?(d2>0?'+':'')+d2.toFixed(2):'—'}</td>
+                  <td><span style="font-size:11px;padding:2px 6px;border-radius:4px;background:${Math.abs(p2||0)>15?'#fef3c7':'#f0fff4'};color:${clr}">${p2!==null?(Math.abs(p2)>15?'⚠️ ':'')+p2.toFixed(1)+'%':'—'}</span></td>
+                </tr>`;
+              }).join('')}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('');
+    } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  };
+
+  document.getElementById('comp-btn').addEventListener('click', runComparativo);
+  document.getElementById('comp-export-btn').addEventListener('click', () => {
+    const d = window._compData;
+    if (!d) { alert('Primero calcula el comparativo'); return; }
+    const hdr = ['Producto','Semana','Stock','Pedido recibido','Consumo Real kg','Consumo Teórico kg','Diferencia kg','Diferencia %'];
+    const rows = d.items.flatMap(item => item.weeks.map(w => [
+      `"${item.item}"`, w.week, w.stock_actual??'', w.pedido_recibido||0,
+      w.consumo_real_kg!==null?w.consumo_real_kg.toFixed(3):'',
+      w.consumo_teorico_kg.toFixed(3),
+      w.diferencia!==null?w.diferencia.toFixed(3):'',
+      w.pct_diferencia!==null?w.pct_diferencia.toFixed(1)+'%':''
+    ].join(',')));
+    const csv = [hdr.join(','), ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `comparativo_${d.year}_s${d.week_ini}-s${d.week_fin}.csv`; a.click();
+  });
 
   rptLoad();
 }

@@ -35,6 +35,7 @@ const MENU_BY_ROLE = {
   autorizador: ['dashboard', 'autorizaciones', 'seguimiento'],
   proveedor: ['cotizaciones', 'facturacion'],
   pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones'],
+  inventarios: ['dashboard', 'inventarios'],
   admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'inventarios', 'admin']
 };
 
@@ -4367,6 +4368,7 @@ async function inventoryView() {
   };
 
   const belowMin = invItems.filter(x => x.current_stock <= x.min_stock);
+  const canManage = state.user?.role_code === 'admin' || state.user?.role_code === 'comprador';
 
   app.innerHTML = shell(`
     <div class="grid grid-4">
@@ -4399,31 +4401,71 @@ async function inventoryView() {
     </div>`}
 
     <div class="card section" style="margin-top:16px">
-      <div class="module-title">
-        <h3>Inventario completo</h3>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:4px;border-bottom:2px solid #e5e7eb;margin-bottom:16px">
+        <button class="inv-tab-btn inv-tab-active" data-tab="actual">📋 Inventario Actual</button>
+        <button class="inv-tab-btn" data-tab="semanal">📝 Captura Semanal</button>
+        <button class="inv-tab-btn" data-tab="historial">📈 Historial</button>
+      </div>
+
+      <!-- TAB: Inventario Actual -->
+      <div id="inv-tab-actual">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
           <select id="filterInvCat"><option value="">Todos los inventarios</option>${invCats.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}</select>
           <button class="btn-secondary" id="printInvBtn">🖨 Imprimir formato</button>
           <button class="btn-secondary" id="expInvBtn">Exportar CSV</button>
         </div>
+        <div id="invTableWrap"></div>
+        ${canManage ? `
+        <div style="margin-top:20px;border-top:1px solid #e5e7eb;padding-top:16px">
+          <h4 style="margin-bottom:12px">Agregar ítem al inventario</h4>
+          <div class="row-3">
+            <div><label>Inventario *</label><select id="iCat"><option value="">Selecciona</option>${invCats.map(x => `<option value="${x.id}">${x.name}</option>`).join('')}</select></div>
+            <div><label>Ítem del catálogo *</label><select id="iItem"><option value="">Selecciona</option>${items.filter(x => x.active !== false).map(x => `<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}</select></div>
+            <div><label>Unidad</label><input id="iUnit" value="pza" placeholder="pza"/></div>
+          </div>
+          <div class="row-3">
+            <div><label>Stock mínimo</label><input id="iMin" type="number" value="0"/></div>
+            <div><label>Stock máximo</label><input id="iMax" type="number" value="0"/></div>
+            <div><label>Stock actual</label><input id="iStock" type="number" value="0"/></div>
+          </div>
+          <div class="row-3">
+            <div><label>Ítem en Vales (nombre exacto)</label><input id="iValesItem" placeholder="Ej: Bonderite C-AK 2074"/></div>
+            <div><label>Peso kg por unidad</label><input id="iPesoKg" type="number" step="0.001" value="0" placeholder="Ej: 25"/></div>
+            <div></div>
+          </div>
+          <button class="btn-primary" id="saveInvItemBtn">Agregar al inventario</button>
+          <div id="invItemMsg" class="small muted" style="margin-top:6px"></div>
+        </div>` : ''}
       </div>
-      <div id="invTableWrap"></div>
-    </div>
 
-    <div class="card section" style="margin-top:16px">
-      <h3>Agregar ítem al inventario</h3>
-      <div class="row-3">
-        <div><label>Inventario *</label><select id="iCat"><option value="">Selecciona</option>${invCats.map(x => `<option value="${x.id}">${x.name}</option>`).join('')}</select></div>
-        <div><label>Ítem del catálogo *</label><select id="iItem"><option value="">Selecciona</option>${items.filter(x => x.active !== false).map(x => `<option value="${x.id}">${x.code} · ${x.name}</option>`).join('')}</select></div>
-        <div><label>Unidad</label><input id="iUnit" value="pza" placeholder="pza"/></div>
+      <!-- TAB: Captura Semanal -->
+      <div id="inv-tab-semanal" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <button class="btn-secondary" id="sem-prev">◀</button>
+          <span id="sem-label" style="font-weight:700;font-size:14px;min-width:200px;text-align:center">—</span>
+          <button class="btn-secondary" id="sem-next">▶</button>
+          <select id="sem-cat" style="margin-left:8px">
+            <option value="">Todos los inventarios</option>
+            ${invCats.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+          </select>
+        </div>
+        <div id="sem-form"></div>
       </div>
-      <div class="row-3">
-        <div><label>Stock mínimo</label><input id="iMin" type="number" value="0"/></div>
-        <div><label>Stock máximo</label><input id="iMax" type="number" value="0"/></div>
-        <div><label>Stock actual</label><input id="iStock" type="number" value="0"/></div>
+
+      <!-- TAB: Historial -->
+      <div id="inv-tab-historial" style="display:none">
+        <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+          <select id="hist-item" style="min-width:250px">
+            <option value="">Selecciona un ítem</option>
+            ${invItems.map(x => `<option value="${x.id}">${x.item_name} (${x.inventory_name})</option>`).join('')}
+          </select>
+          <select id="hist-year">
+            ${[2025,2026,2027].map(y => `<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}
+          </select>
+          <button class="btn-primary" id="hist-btn">Ver historial</button>
+        </div>
+        <div id="hist-result"></div>
       </div>
-      <button class="btn-primary" id="saveInvItemBtn">Agregar al inventario</button>
-      <div id="invItemMsg" class="small muted" style="margin-top:6px"></div>
     </div>
   `, 'inventarios');
 
@@ -4504,22 +4546,213 @@ async function inventoryView() {
     };
   }
 
-  saveInvItemBtn.onclick = async () => {
+  if (canManage && document.getElementById('saveInvItemBtn')) {
+    saveInvItemBtn.onclick = async () => {
+      try {
+        if (!iCat.value) throw new Error('Selecciona un inventario');
+        if (!iItem.value) throw new Error('Selecciona un ítem del catálogo');
+        await api('/api/catalogs/inventory-items', { method: 'POST', body: JSON.stringify({
+          inventory_catalog_id: Number(iCat.value),
+          catalog_item_id: Number(iItem.value),
+          min_stock: Number(iMin.value || 0),
+          max_stock: Number(iMax.value || 0),
+          current_stock: Number(iStock.value || 0),
+          unit: iUnit.value || 'pza',
+          vales_item: iValesItem.value || '',
+          peso_kg_por_unidad: Number(iPesoKg.value || 0)
+        })});
+        invItemMsg.textContent = '✅ Ítem agregado al inventario';
+        invItemMsg.style.color = '#16a34a';
+        setTimeout(render, 800);
+      } catch (e) { invItemMsg.textContent = e.message; invItemMsg.style.color = '#dc2626'; }
+    };
+  }
+
+  // ── Tab switching ──
+  document.querySelectorAll('.inv-tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      document.querySelectorAll('.inv-tab-btn').forEach(b => b.classList.remove('inv-tab-active'));
+      btn.classList.add('inv-tab-active');
+      ['actual','semanal','historial'].forEach(t => {
+        const el = document.getElementById('inv-tab-' + t);
+        if (el) el.style.display = t === btn.dataset.tab ? '' : 'none';
+      });
+    };
+  });
+
+  // ── Semana ISO helpers ──
+  function getISOWeek(date) {
+    const d = new Date(date); d.setUTCHours(0,0,0,0);
+    d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  }
+  function getWeekMonday(year, week) {
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const dow = jan4.getUTCDay() || 7;
+    const mon = new Date(jan4); mon.setUTCDate(jan4.getUTCDate() - dow + 1 + (week - 1) * 7);
+    return mon;
+  }
+  function fmtWeekLabel(year, week) {
+    const mon = getWeekMonday(year, week);
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    const fmt = d => d.toLocaleDateString('es-MX', { day:'numeric', month:'short', timeZone:'UTC' });
+    return `Semana ${week} · ${fmt(mon)} – ${fmt(sun)} ${year}`;
+  }
+
+  let semYear = new Date().getFullYear();
+  let semWeek = getISOWeek(new Date());
+
+  const renderSemForm = async () => {
+    const semLabel = document.getElementById('sem-label');
+    const semForm  = document.getElementById('sem-form');
+    if (!semLabel || !semForm) return;
+    semLabel.textContent = fmtWeekLabel(semYear, semWeek);
+    const catFilter = document.getElementById('sem-cat').value;
+    const filtered = catFilter ? invItems.filter(x => Number(x.inventory_catalog_id) === Number(catFilter)) : invItems;
+    if (filtered.length === 0) { semForm.innerHTML = '<p class="muted" style="text-align:center;padding:20px">Sin ítems en este inventario</p>'; return; }
+    // Load existing captures for this week
+    let existing = [];
+    try { existing = await api(`/api/catalogs/inventory-weekly?year=${semYear}&week=${semWeek}`); } catch(_) {}
+    const prevWeek = semWeek > 1 ? semWeek - 1 : 52;
+    const prevYear = semWeek > 1 ? semYear : semYear - 1;
+    let prevData = [];
+    try { prevData = await api(`/api/catalogs/inventory-weekly?year=${prevYear}&week=${prevWeek}`); } catch(_) {}
+    semForm.innerHTML = `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Inventario</th><th>Ítem</th><th>Unidad</th><th>Stock anterior</th><th>Stock actual *</th><th>Pedido recibido</th><th>Consumo calc.</th></tr></thead>
+        <tbody>${filtered.map(x => {
+          const cap = existing.find(e => Number(e.inventory_item_id) === x.id);
+          const prev = prevData.find(e => Number(e.inventory_item_id) === x.id);
+          const stockActual = cap ? cap.stock_actual : x.current_stock;
+          const pedido = cap ? (cap.pedido_recibido || 0) : 0;
+          const prevStock = prev ? prev.stock_actual : null;
+          const consumo = prevStock !== null ? (prevStock - stockActual + Number(pedido)) : '—';
+          return `<tr>
+            <td style="font-size:11px">${x.inventory_name}</td>
+            <td><b>${x.item_name}</b>${x.vales_item ? `<br><span style="font-size:10px;color:#d97706">↔ ${x.vales_item}</span>` : ''}</td>
+            <td>${x.unit||'pza'}</td>
+            <td style="text-align:right;color:#6b7280">${prevStock !== null ? prevStock : '—'}</td>
+            <td><input type="number" class="sem-stock" data-id="${x.id}" value="${stockActual}" style="width:70px;border:1px solid #e5e7eb;border-radius:4px;padding:3px 6px" step="0.01"/></td>
+            <td><input type="number" class="sem-pedido" data-id="${x.id}" value="${pedido}" style="width:70px;border:1px solid #e5e7eb;border-radius:4px;padding:3px 6px" step="0.01"/></td>
+            <td class="sem-consumo-${x.id}" style="text-align:right;font-weight:600;color:${typeof consumo==='number'&&consumo<0?'#dc2626':'#374151'}">${typeof consumo==='number'?consumo.toFixed(2):consumo}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px;gap:8px">
+        <button class="btn-secondary" id="sem-print-btn">🖨 Imprimir formato</button>
+        <button class="btn-primary" id="sem-save-btn">💾 Guardar semana ${semWeek}</button>
+        <span id="sem-msg" class="small muted" style="align-self:center"></span>
+      </div>`;
+    // Update consumo on input change
+    semForm.querySelectorAll('.sem-stock, .sem-pedido').forEach(inp => {
+      inp.oninput = () => {
+        const id = inp.dataset.id;
+        const stockEl = semForm.querySelector(`.sem-stock[data-id="${id}"]`);
+        const pedEl   = semForm.querySelector(`.sem-pedido[data-id="${id}"]`);
+        const prev2 = prevData.find(e => Number(e.inventory_item_id) === Number(id));
+        const prevS = prev2 ? prev2.stock_actual : null;
+        const consEl = semForm.querySelector(`.sem-consumo-${id}`);
+        if (consEl && prevS !== null) {
+          const c = prevS - Number(stockEl.value||0) + Number(pedEl.value||0);
+          consEl.textContent = c.toFixed(2);
+          consEl.style.color = c < 0 ? '#dc2626' : '#374151';
+        }
+      };
+    });
+    document.getElementById('sem-save-btn').onclick = async () => {
+      const entries = filtered.map(x => ({
+        inventory_item_id: x.id,
+        stock_actual: Number(semForm.querySelector(`.sem-stock[data-id="${x.id}"]`)?.value || 0),
+        pedido_recibido: Number(semForm.querySelector(`.sem-pedido[data-id="${x.id}"]`)?.value || 0)
+      }));
+      try {
+        await api('/api/catalogs/inventory-weekly', { method: 'POST', body: JSON.stringify({ year: semYear, week: semWeek, entries }) });
+        document.getElementById('sem-msg').textContent = '✅ Guardado';
+        document.getElementById('sem-msg').style.color = '#16a34a';
+      } catch(e) { document.getElementById('sem-msg').textContent = e.message; document.getElementById('sem-msg').style.color = '#dc2626'; }
+    };
+    document.getElementById('sem-print-btn').onclick = () => {
+      const catName = document.getElementById('sem-cat').options[document.getElementById('sem-cat').selectedIndex]?.text || 'Inventario';
+      openPrintPreview(`Captura Inventario — ${fmtWeekLabel(semYear, semWeek)}`,
+        `<h1>Formato de Captura Semanal</h1>
+         <div class="small">Inventario: <b>${escapeHtml(catName)}</b> &nbsp;&nbsp; ${fmtWeekLabel(semYear, semWeek)} &nbsp;&nbsp; Realizado por: _________________</div>
+         <table>
+           <thead><tr><th>Ítem</th><th>Unidad</th><th>Stock anterior</th><th>Stock físico</th><th>Pedido recibido</th><th>Consumo</th><th>Firma</th></tr></thead>
+           <tbody>${filtered.map(x => {
+             const prev2 = prevData.find(e => Number(e.inventory_item_id) === x.id);
+             return `<tr><td>${escapeHtml(x.item_name)}</td><td>${escapeHtml(x.unit||'pza')}</td><td style="text-align:center">${prev2 ? prev2.stock_actual : '—'}</td><td style="text-align:center">_____</td><td style="text-align:center">_____</td><td style="text-align:center">_____</td><td>_____</td></tr>`;
+           }).join('')}</tbody>
+         </table>`
+      );
+    };
+  };
+
+  document.getElementById('sem-prev').onclick = () => {
+    if (semWeek > 1) { semWeek--; } else { semWeek = 52; semYear--; }
+    renderSemForm();
+  };
+  document.getElementById('sem-next').onclick = () => {
+    if (semWeek < 52) { semWeek++; } else { semWeek = 1; semYear++; }
+    renderSemForm();
+  };
+  document.getElementById('sem-cat').onchange = renderSemForm;
+  renderSemForm();
+
+  // ── Historial ──
+  document.getElementById('hist-btn').onclick = async () => {
+    const itemId = document.getElementById('hist-item').value;
+    const year   = document.getElementById('hist-year').value;
+    if (!itemId) { alert('Selecciona un ítem'); return; }
+    const histResult = document.getElementById('hist-result');
+    histResult.innerHTML = '<p class="muted">Cargando...</p>';
     try {
-      if (!iCat.value) throw new Error('Selecciona un inventario');
-      if (!iItem.value) throw new Error('Selecciona un ítem del catálogo');
-      await api('/api/catalogs/inventory-items', { method: 'POST', body: JSON.stringify({
-        inventory_catalog_id: Number(iCat.value),
-        catalog_item_id: Number(iItem.value),
-        min_stock: Number(iMin.value || 0),
-        max_stock: Number(iMax.value || 0),
-        current_stock: Number(iStock.value || 0),
-        unit: iUnit.value || 'pza'
-      })});
-      invItemMsg.textContent = '✅ Ítem agregado al inventario';
-      invItemMsg.style.color = '#16a34a';
-      setTimeout(render, 800);
-    } catch (e) { invItemMsg.textContent = e.message; invItemMsg.style.color = '#dc2626'; }
+      const rows = await api(`/api/catalogs/inventory-weekly?item_id=${itemId}&year=${year}`);
+      const item = invItems.find(x => x.id === Number(itemId));
+      if (rows.length === 0) { histResult.innerHTML = '<p class="muted" style="text-align:center;padding:20px">Sin capturas para este ítem/año</p>'; return; }
+      // Build chart data
+      const sorted = rows.sort((a,b) => a.week - b.week);
+      const labels = sorted.map(r => `S${r.week}`);
+      const stocks = sorted.map(r => r.stock_actual);
+      const pedidos = sorted.map(r => r.pedido_recibido || 0);
+      const consumos = sorted.map((r, i) => {
+        if (i === 0) return null;
+        return sorted[i-1].stock_actual - r.stock_actual + (r.pedido_recibido || 0);
+      });
+      histResult.innerHTML = `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;margin-bottom:16px">
+          <h4 style="margin-bottom:12px">${item?.item_name} — ${year}</h4>
+          <div style="height:220px"><canvas id="hist-chart"></canvas></div>
+        </div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>Semana</th><th style="text-align:right">Stock actual</th><th style="text-align:right">Pedido recibido</th><th style="text-align:right">Consumo real</th><th>Capturado por</th><th>Fecha</th></tr></thead>
+          <tbody>${sorted.map((r,i) => {
+            const c = i > 0 ? sorted[i-1].stock_actual - r.stock_actual + (r.pedido_recibido || 0) : null;
+            return `<tr>
+              <td>S${r.week}</td>
+              <td style="text-align:right;font-weight:600">${r.stock_actual}</td>
+              <td style="text-align:right;color:#16a34a">${r.pedido_recibido || 0}</td>
+              <td style="text-align:right;font-weight:600;color:${c!==null&&c<0?'#dc2626':'#374151'}">${c !== null ? c.toFixed(2) : '—'}</td>
+              <td style="font-size:11px">${r.capturado_por || '-'}</td>
+              <td style="font-size:11px">${r.fecha_captura ? r.fecha_captura.slice(0,10) : '-'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table></div>`;
+      if (typeof Chart !== 'undefined') {
+        new Chart(document.getElementById('hist-chart'), {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: 'Stock', data: stocks, backgroundColor: '#3b82f680', borderColor: '#3b82f6', borderWidth: 1.5, type: 'bar' },
+              { label: 'Consumo real', data: consumos, backgroundColor: '#d9770680', borderColor: '#d97706', borderWidth: 1.5, type: 'bar' },
+              { label: 'Pedido recibido', data: pedidos, backgroundColor: '#16a34a80', borderColor: '#16a34a', borderWidth: 1.5, type: 'bar' }
+            ]
+          },
+          options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true } } }
+        });
+      }
+    } catch(e) { histResult.innerHTML = `<div style="color:#dc2626">Error: ${e.message}</div>`; }
   };
 
   bindCommon();

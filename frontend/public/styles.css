@@ -23,3 +23,6 @@ table{width:100%;border-collapse:collapse} th,td{padding:10px;border-bottom:1px 
 .error{color:var(--danger);margin-top:10px}.small{font-size:12px}.module-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
 .item-box{border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0;background:#fafcff}
 @media (max-width:1000px){.layout{grid-template-columns:1fr}.sidebar{position:sticky;top:0;z-index:10}.grid-4,.grid-2,.row,.row-3{grid-template-columns:1fr}}
+
+.inv-tab-btn { padding: 7px 16px; border: none; background: none; cursor: pointer; font-size: 13px; font-weight: 600; color: #6b7280; border-bottom: 3px solid transparent; margin-bottom: -2px; }
+.inv-tab-btn.inv-tab-active { color: #2563eb; border-bottom-color: #2563eb; }

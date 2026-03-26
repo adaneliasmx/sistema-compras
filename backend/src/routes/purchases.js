@@ -630,6 +630,58 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
       recalcRequisition(db, reqItem.requisition_id);
     }
   });
+  // ── Trigger ENTRADA en Vales cuando PO se marca Entregado ─────────────────
+  if (newStatus === 'Entregado' && oldStatus !== 'Entregado') {
+    try {
+      const { read: readVales, write: writeVales, nextId: nextIdVales } = require('../db-vales');
+      const dbVales = readVales();
+      let valesUpdated = false;
+      poItems.forEach(poLine => {
+        const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+        if (!reqItem) return;
+        const catItem = db.catalog_items.find(c => c.id === Number(reqItem.catalog_item_id));
+        if (!catItem || !catItem.vales_item) return;
+        const valesItem = (dbVales.items_vales || []).find(v => v.item === catItem.vales_item);
+        if (!valesItem) return;
+        const invItem = (db.inventory_items || []).find(x => Number(x.catalog_item_id) === Number(catItem.id));
+        const pesoKg = invItem && invItem.peso_kg_por_unidad ? Number(invItem.peso_kg_por_unidad) : 1;
+        const qty = parseFloat(reqItem.quantity) || 1;
+        const kg = qty * pesoKg;
+        const now = new Date();
+        dbVales.kardex_vales = dbVales.kardex_vales || [];
+        dbVales.kardex_vales.push({
+          id: nextIdVales(dbVales.kardex_vales),
+          fecha: now.toISOString().slice(0, 10),
+          tipo: 'ENTRADA',
+          referencia: po.folio || ('PO-' + po.id),
+          item: catItem.vales_item,
+          cantidad: qty,
+          unidad: reqItem.unit || 'TAMBO',
+          kg: Math.round(kg * 1000) / 1000,
+          linea: '',
+          no_tanque: '',
+          nombre_tanque: '',
+          comentario: `Recepción PO ${po.folio}`,
+          usuario: req.user.full_name || req.user.email,
+          detalle_id: null,
+          created_at: now.toISOString()
+        });
+        // Update inventario_vales
+        dbVales.inventario_vales = dbVales.inventario_vales || [];
+        let inv = dbVales.inventario_vales.find(i => i.item === catItem.vales_item);
+        if (!inv) {
+          inv = { id: nextIdVales(dbVales.inventario_vales), item: catItem.vales_item, existencia_kg: 0, ultima_actualizacion: now.toISOString() };
+          dbVales.inventario_vales.push(inv);
+        }
+        inv.existencia_kg = Math.round(((parseFloat(inv.existencia_kg) || 0) + kg) * 1000) / 1000;
+        inv.ultima_actualizacion = now.toISOString();
+        valesUpdated = true;
+      });
+      if (valesUpdated) writeVales(dbVales);
+    } catch (valesErr) {
+      console.error('[purchases] Error al sincronizar ENTRADA en Vales:', valesErr.message);
+    }
+  }
   write(db);
   const response = { ...po };
   if (newStatus === 'Entregado' && Number(po.advance_paid || 0) > 0) {

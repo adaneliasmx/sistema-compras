@@ -19,7 +19,7 @@ let _cache = null;
 
 const EMPTY_DB = {
   users: [], suppliers: [], cost_centers: [], sub_cost_centers: [],
-  catalog_items: [], inventory_catalogs: [], inventory_items: [],
+  catalog_items: [], inventory_catalogs: [], inventory_items: [], inventory_weekly: [],
   requisitions: [], requisition_items: [], quotations: [],
   purchase_orders: [], purchase_order_items: [],
   invoices: [], invoice_items: [], payments: [],

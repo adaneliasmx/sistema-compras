@@ -691,4 +691,74 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
   });
 });
 
+// ── Comparativo real vs teórico (admin) ───────────────────────────────────────
+router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
+  const dbVales = readVales();
+  const dbMain  = readUsers(); // full Compras DB
+  const kardex  = dbVales.kardex_vales  || [];
+  const items   = dbVales.items_vales   || [];
+  const invItems = dbMain.inventory_items || [];
+  const invWeekly = dbMain.inventory_weekly || [];
+
+  const yearQ  = req.query.year  ? Number(req.query.year)  : new Date().getFullYear();
+  const wIni   = req.query.week_ini ? Number(req.query.week_ini) : 1;
+  const wFin   = req.query.week_fin ? Number(req.query.week_fin) : 53;
+
+  // Build map: vales_item name → inventory_item (for peso_kg_por_unidad)
+  const invMap = {};
+  invItems.forEach(x => { if (x.vales_item) invMap[x.vales_item] = x; });
+
+  // Get week boundaries helper
+  function weekBounds(year, week) {
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const dow = jan4.getUTCDay() || 7;
+    const mon = new Date(jan4);
+    mon.setUTCDate(jan4.getUTCDate() - dow + 1 + (week - 1) * 7);
+    const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+    return { ini: mon.toISOString().slice(0,10), fin: sun.toISOString().slice(0,10) };
+  }
+
+  // For each Vales item that has a linked inventory_item
+  const result = items
+    .filter(item => invMap[item.item])
+    .map(item => {
+      const invItem = invMap[item.item];
+      const pesoKg  = Number(invItem.peso_kg_por_unidad) || 1;
+
+      const weeks = [];
+      for (let w = wIni; w <= wFin; w++) {
+        const { ini, fin } = weekBounds(yearQ, w);
+        // Real consumption from inventory_weekly
+        const curr = invWeekly.find(r => Number(r.inventory_item_id) === invItem.id && Number(r.year) === yearQ && Number(r.week) === w);
+        const prev = invWeekly.find(r => Number(r.inventory_item_id) === invItem.id && Number(r.year) === yearQ && Number(r.week) === w - 1);
+        const consumoReal = (prev && curr)
+          ? (Number(prev.stock_actual) - Number(curr.stock_actual) + Number(curr.pedido_recibido || 0)) * pesoKg
+          : null;
+        // Theoretical consumption from kardex SALIDA
+        const consumoTeorico = kardex
+          .filter(k => {
+            if (k.item !== item.item || k.tipo !== 'SALIDA') return false;
+            const kFecha = k.fecha || (k.created_at ? k.created_at.slice(0, 10) : '');
+            return kFecha >= ini && kFecha <= fin;
+          })
+          .reduce((s, k) => s + (parseFloat(k.kg) || 0), 0);
+        if (curr || consumoTeorico > 0) {
+          weeks.push({
+            week: w, year: yearQ, ini, fin,
+            stock_actual: curr ? Number(curr.stock_actual) : null,
+            pedido_recibido: curr ? Number(curr.pedido_recibido || 0) : 0,
+            consumo_real_kg: consumoReal,
+            consumo_teorico_kg: consumoTeorico,
+            diferencia: consumoReal !== null ? consumoReal - consumoTeorico : null,
+            pct_diferencia: (consumoReal !== null && consumoTeorico > 0) ? ((consumoReal - consumoTeorico) / consumoTeorico) * 100 : null
+          });
+        }
+      }
+      return { item: item.item, unidad: invItem.unit || 'TAMBO', peso_kg_por_unidad: pesoKg, weeks };
+    })
+    .filter(r => r.weeks.length > 0);
+
+  res.json({ year: yearQ, week_ini: wIni, week_fin: wFin, items: result });
+});
+
 module.exports = router;

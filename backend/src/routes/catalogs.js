@@ -7,6 +7,7 @@ router.use(authRequired);
 
 const canManageCatalogs = user => ['admin', 'comprador'].includes(user.role_code);
 const canManageRules = user => ['admin', 'comprador'].includes(user.role_code);
+const canAccessInventory = user => ['admin', 'comprador', 'inventarios'].includes(user.role_code);
 
 function providerCodeFromName(name = '', existing = []) {
   const letters = String(name).toUpperCase().replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0, 3).map(x => x[0]).join('') || 'PRV';
@@ -269,7 +270,7 @@ router.patch('/cost-centers/:id', (req, res) => { if (!canManageCatalogs(req.use
 router.post('/sub-cost-centers', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = { id: nextId(db.sub_cost_centers), cost_center_id: Number(req.body.cost_center_id), code: req.body.code, name: req.body.name, active: req.body.active !== false }; if (!row.cost_center_id || !row.code || !row.name) return res.status(400).json({ error: 'Centro, código y nombre requeridos' }); db.sub_cost_centers.push(row); write(db); res.status(201).json(row); });
 router.patch('/sub-cost-centers/:id', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = db.sub_cost_centers.find(x => x.id === Number(req.params.id)); if (!row) return res.status(404).json({ error: 'Subcentro no encontrado' }); row.cost_center_id = Number(req.body.cost_center_id || row.cost_center_id); row.code = req.body.code || row.code; row.name = req.body.name || row.name; row.active = req.body.active ?? row.active; write(db); res.json(row); });
 router.post('/inventory-catalogs', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = { id: nextId(db.inventory_catalogs), name: req.body.name, description: req.body.description || '', active: true }; if (!row.name) return res.status(400).json({ error: 'Nombre requerido' }); db.inventory_catalogs.push(row); write(db); res.status(201).json(row); });
-router.post('/inventory-items', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = { id: nextId(db.inventory_items), inventory_catalog_id: Number(req.body.inventory_catalog_id), catalog_item_id: Number(req.body.catalog_item_id), unit: req.body.unit || 'pza', min_stock: Number(req.body.min_stock || 0), max_stock: Number(req.body.max_stock || 0), current_stock: Number(req.body.current_stock || 0), active: true }; if (!row.inventory_catalog_id || !row.catalog_item_id) return res.status(400).json({ error: 'Inventario e ítem requeridos' }); db.inventory_items.push(row); write(db); res.status(201).json(row); });
+router.post('/inventory-items', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = { id: nextId(db.inventory_items), inventory_catalog_id: Number(req.body.inventory_catalog_id), catalog_item_id: Number(req.body.catalog_item_id), unit: req.body.unit || 'pza', min_stock: Number(req.body.min_stock || 0), max_stock: Number(req.body.max_stock || 0), current_stock: Number(req.body.current_stock || 0), vales_item: req.body.vales_item || '', peso_kg_por_unidad: Number(req.body.peso_kg_por_unidad || 0), active: true }; if (!row.inventory_catalog_id || !row.catalog_item_id) return res.status(400).json({ error: 'Inventario e ítem requeridos' }); db.inventory_items.push(row); write(db); res.status(201).json(row); });
 router.patch('/inventory-items/:id', (req, res) => {
   if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
   const db = read();
@@ -279,6 +280,8 @@ router.patch('/inventory-items/:id', (req, res) => {
   if (req.body.min_stock !== undefined) row.min_stock = Number(req.body.min_stock);
   if (req.body.max_stock !== undefined) row.max_stock = Number(req.body.max_stock);
   if (req.body.active !== undefined) row.active = !!req.body.active;
+  if (req.body.vales_item !== undefined) row.vales_item = req.body.vales_item || '';
+  if (req.body.peso_kg_por_unidad !== undefined) row.peso_kg_por_unidad = Number(req.body.peso_kg_por_unidad || 0);
   row.updated_at = new Date().toISOString();
   write(db);
   res.json(row);
@@ -289,5 +292,62 @@ router.delete('/sub-cost-centers/:id', (req, res) => { if (!canManageCatalogs(re
 
 router.post('/approval-rules', (req, res) => { if (!canManageRules(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = { id: nextId(db.approval_rules), name: req.body.name, min_amount: Number(req.body.min_amount || 0), max_amount: Number(req.body.max_amount || 0), auto_approve: !!req.body.auto_approve, approver_role: req.body.approver_role || null, active: req.body.active !== false }; if (!row.name) return res.status(400).json({ error: 'Nombre requerido' }); db.approval_rules.push(row); write(db); res.status(201).json(row); });
 router.patch('/approval-rules/:id', (req, res) => { if (!canManageRules(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const row = db.approval_rules.find(x => x.id === Number(req.params.id)); if (!row) return res.status(404).json({ error: 'Regla no encontrada' }); Object.assign(row, { name: req.body.name || row.name, min_amount: req.body.min_amount !== undefined ? Number(req.body.min_amount) : row.min_amount, max_amount: req.body.max_amount !== undefined ? Number(req.body.max_amount) : row.max_amount, auto_approve: req.body.auto_approve !== undefined ? !!req.body.auto_approve : row.auto_approve, approver_role: req.body.approver_role !== undefined ? req.body.approver_role : row.approver_role, active: req.body.active !== undefined ? !!req.body.active : row.active }); write(db); res.json(row); });
+
+// ── Inventario semanal ─────────────────────────────────────────────────────
+router.get('/inventory-weekly', (req, res) => {
+  if (!canAccessInventory(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  let rows = db.inventory_weekly || [];
+  if (req.query.catalog_id) rows = rows.filter(r => Number(r.inventory_catalog_id) === Number(req.query.catalog_id));
+  if (req.query.item_id)    rows = rows.filter(r => Number(r.inventory_item_id) === Number(req.query.item_id));
+  if (req.query.year)       rows = rows.filter(r => Number(r.year) === Number(req.query.year));
+  if (req.query.week)       rows = rows.filter(r => Number(r.week) === Number(req.query.week));
+  res.json(rows);
+});
+
+router.post('/inventory-weekly', (req, res) => {
+  if (!canAccessInventory(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  const { year, week, entries } = req.body; // entries = [{ inventory_item_id, stock_actual, pedido_recibido }]
+  if (!year || !week || !Array.isArray(entries)) return res.status(400).json({ error: 'year, week y entries requeridos' });
+  db.inventory_weekly = db.inventory_weekly || [];
+  const saved = [];
+  entries.forEach(e => {
+    const existing = db.inventory_weekly.find(r =>
+      Number(r.year) === Number(year) &&
+      Number(r.week) === Number(week) &&
+      Number(r.inventory_item_id) === Number(e.inventory_item_id)
+    );
+    const invItem = (db.inventory_items || []).find(x => x.id === Number(e.inventory_item_id));
+    if (existing) {
+      existing.stock_actual = Number(e.stock_actual);
+      existing.pedido_recibido = Number(e.pedido_recibido || 0);
+      existing.capturado_por = req.user.full_name || req.user.email;
+      existing.fecha_captura = new Date().toISOString();
+      saved.push(existing);
+    } else {
+      const row = {
+        id: nextId(db.inventory_weekly),
+        inventory_catalog_id: invItem ? invItem.inventory_catalog_id : null,
+        inventory_item_id: Number(e.inventory_item_id),
+        year: Number(year),
+        week: Number(week),
+        stock_actual: Number(e.stock_actual),
+        pedido_recibido: Number(e.pedido_recibido || 0),
+        capturado_por: req.user.full_name || req.user.email,
+        fecha_captura: new Date().toISOString()
+      };
+      db.inventory_weekly.push(row);
+      saved.push(row);
+    }
+    // Update current_stock on inventory_item
+    if (invItem) {
+      invItem.current_stock = Number(e.stock_actual);
+      invItem.updated_at = new Date().toISOString();
+    }
+  });
+  write(db);
+  res.json({ ok: true, saved: saved.length });
+});
 
 module.exports = router;
