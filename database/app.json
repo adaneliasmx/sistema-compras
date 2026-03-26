@@ -12023,6 +12023,118 @@
       "inventoried": false,
       "cost_center_id": null,
       "sub_cost_center_id": null
+    },
+    {
+      "id": 708,
+      "name": "Floculante",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 709,
+      "name": "Coagulante",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 710,
+      "name": "Acido sulfurico",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 711,
+      "name": "Hidroxido de sodio (Sosa liquida)",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 712,
+      "name": "Cryscoat ultraseal (Gardolone D 6870)",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 713,
+      "name": "Bonderite S-AD HT 50",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 714,
+      "name": "Bonderite S-AD HT 15",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 715,
+      "name": "DUPONT ROBOND TR7021D",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 716,
+      "name": "Sulfato ferroso",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 717,
+      "name": "Gardobond R. 4828",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 718,
+      "name": "Gardobond H. 7212",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 719,
+      "name": "Bonderite M-MN 2 (Porrón 60 Kg)",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 720,
+      "name": "Gardoclean A. 9513",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 721,
+      "name": "Gardolone G. 4040",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 722,
+      "name": "Gardolone V.6560 B",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
+    },
+    {
+      "id": 723,
+      "name": "Gardobond H. 7203",
+      "unit": "kg",
+      "category": "químico",
+      "active": true
     }
   ],
   "inventory_catalogs": [
@@ -12043,18 +12155,389 @@
       "name": "Inventario Mantenimiento",
       "description": "",
       "active": true
+    },
+    {
+      "id": 4,
+      "name": "PTAR",
+      "description": "",
+      "active": true
+    },
+    {
+      "id": 5,
+      "name": "Quiicos para linea Baker y Linea 1",
+      "description": "",
+      "active": true
+    },
+    {
+      "id": 6,
+      "name": "Linea 3",
+      "description": "",
+      "active": true
+    },
+    {
+      "id": 7,
+      "name": "Manganesso Bridge",
+      "description": "",
+      "active": true
+    },
+    {
+      "id": 8,
+      "name": "Quimicos para Tenneco",
+      "description": "",
+      "active": true
     }
   ],
   "inventory_items": [
     {
       "id": 1,
-      "inventory_catalog_id": 2,
-      "catalog_item_id": 1,
+      "inventory_catalog_id": 4,
+      "catalog_item_id": 708,
       "unit": "kg",
-      "min_stock": 100,
-      "max_stock": 500,
-      "current_stock": 180,
-      "active": true
+      "min_stock": 2,
+      "max_stock": 4,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 2,
+      "inventory_catalog_id": 4,
+      "catalog_item_id": 709,
+      "unit": "kg",
+      "min_stock": 3,
+      "max_stock": 6,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 3,
+      "inventory_catalog_id": 4,
+      "catalog_item_id": 710,
+      "unit": "kg",
+      "min_stock": 5,
+      "max_stock": 12,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 4,
+      "inventory_catalog_id": 4,
+      "catalog_item_id": 711,
+      "unit": "kg",
+      "min_stock": 4,
+      "max_stock": 6,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 5,
+      "inventory_catalog_id": 4,
+      "catalog_item_id": 72,
+      "unit": "kg",
+      "min_stock": 20,
+      "max_stock": 40,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 6,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 25,
+      "unit": "kg",
+      "min_stock": 16,
+      "max_stock": 42,
+      "current_stock": 0,
+      "vales_item": "BONDERITE C-AK 2074",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 7,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 24,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 5,
+      "current_stock": 0,
+      "vales_item": "BONDERITE C-AK 907",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 8,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 712,
+      "unit": "kg",
+      "min_stock": 5,
+      "max_stock": 21,
+      "current_stock": 0,
+      "vales_item": "Gardolene D6870 (cryscoat)",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 9,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 713,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 4,
+      "current_stock": 0,
+      "vales_item": "Bonderite S-ST HT 50 Hot Stripper",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 10,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 714,
+      "unit": "kg",
+      "min_stock": 0.5,
+      "max_stock": 1,
+      "current_stock": 0,
+      "vales_item": "BONDERITE S-AD ADD 18",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 11,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 21,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 4,
+      "current_stock": 0,
+      "vales_item": "Acido Fosforico GA 85%",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 12,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 218,
+      "unit": "kg",
+      "min_stock": 0.5,
+      "max_stock": 1,
+      "current_stock": 0,
+      "vales_item": "Bonderite M-ZN 16 HC TB290KG",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 13,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 155,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 3,
+      "current_stock": 0,
+      "vales_item": "BONDERITE M-ZN 16 HCR",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 14,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 27,
+      "unit": "kg",
+      "min_stock": 2,
+      "max_stock": 7,
+      "current_stock": 0,
+      "vales_item": "BONDERITE M-ZN 1048 R",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 15,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 28,
+      "unit": "kg",
+      "min_stock": 3,
+      "max_stock": 17,
+      "current_stock": 0,
+      "vales_item": "BONDERITE M-AD 748",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 16,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 715,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 2,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 17,
+      "inventory_catalog_id": 5,
+      "catalog_item_id": 716,
+      "unit": "kg",
+      "min_stock": 0.5,
+      "max_stock": 1,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 18,
+      "inventory_catalog_id": 6,
+      "catalog_item_id": 717,
+      "unit": "kg",
+      "min_stock": 2,
+      "max_stock": 4,
+      "current_stock": 0,
+      "vales_item": "Gardobond R 4828",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 19,
+      "inventory_catalog_id": 6,
+      "catalog_item_id": 718,
+      "unit": "kg",
+      "min_stock": 2,
+      "max_stock": 4,
+      "current_stock": 0,
+      "vales_item": "Gardobond H 7212",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 20,
+      "inventory_catalog_id": 6,
+      "catalog_item_id": 219,
+      "unit": "kg",
+      "min_stock": 3,
+      "max_stock": 5,
+      "current_stock": 0,
+      "vales_item": "",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 21,
+      "inventory_catalog_id": 7,
+      "catalog_item_id": 719,
+      "unit": "kg",
+      "min_stock": 0,
+      "max_stock": 0,
+      "current_stock": 0,
+      "vales_item": "BONDERITE M MN2",
+      "peso_kg_por_unidad": 1,
+      "active": false,
+      "comment": "QUIMICO DE CONTENCION"
+    },
+    {
+      "id": 22,
+      "inventory_catalog_id": 7,
+      "catalog_item_id": 314,
+      "unit": "kg",
+      "min_stock": 0,
+      "max_stock": 0,
+      "current_stock": 0,
+      "vales_item": "BONDERITE M AC M",
+      "peso_kg_por_unidad": 1,
+      "active": false,
+      "comment": "QUIMICO DE CONTENCION"
+    },
+    {
+      "id": 23,
+      "inventory_catalog_id": 8,
+      "catalog_item_id": 720,
+      "unit": "kg",
+      "min_stock": 1.5,
+      "max_stock": 3,
+      "current_stock": 0,
+      "vales_item": "Gardoclean A 9513",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 24,
+      "inventory_catalog_id": 8,
+      "catalog_item_id": 721,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 2,
+      "current_stock": 0,
+      "vales_item": "Gardobond G 4040",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 25,
+      "inventory_catalog_id": 8,
+      "catalog_item_id": 257,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 2,
+      "current_stock": 0,
+      "vales_item": "Gardolene V 6560 A",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 26,
+      "inventory_catalog_id": 8,
+      "catalog_item_id": 722,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 2,
+      "current_stock": 0,
+      "vales_item": "Gardolene V 6561 B",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
+    },
+    {
+      "id": 27,
+      "inventory_catalog_id": 8,
+      "catalog_item_id": 723,
+      "unit": "kg",
+      "min_stock": 1,
+      "max_stock": 2,
+      "current_stock": 0,
+      "vales_item": "Gardobond H 7203",
+      "peso_kg_por_unidad": 1,
+      "active": true,
+      "comment": ""
     }
   ],
   "requisitions": [],
@@ -12097,6 +12580,4868 @@
       "auto_approve": false,
       "approver_role": "pagos",
       "active": true
+    }
+  ],
+  "inventory_weekly": [
+    {
+      "id": 1,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.506Z"
+    },
+    {
+      "id": 2,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 3,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 4,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 5,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 6,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 7,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 8,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 9,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 10,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 11,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 12,
+      "inventory_item_id": 1,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 13,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 14,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 15,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 16,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 17,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 18,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 19,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 20,
+      "inventory_item_id": 1,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.512Z"
+    },
+    {
+      "id": 21,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 22,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 23,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 24,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 25,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 26,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 27,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 28,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 29,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 30,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 31,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 32,
+      "inventory_item_id": 2,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 33,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 34,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 35,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 36,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 37,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 38,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 39,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 40,
+      "inventory_item_id": 2,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 41,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 12,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 42,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 43,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 44,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 45,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 46,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 47,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 48,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 49,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 50,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 51,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 52,
+      "inventory_item_id": 3,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 53,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 54,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 10,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 55,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 56,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 57,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 58,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 59,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 60,
+      "inventory_item_id": 3,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 61,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 62,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 63,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 64,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 65,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 10,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 66,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 67,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 68,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 69,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 70,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 71,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 72,
+      "inventory_item_id": 4,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 73,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 74,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 75,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 76,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 77,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 78,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 79,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 80,
+      "inventory_item_id": 4,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 81,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 82,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 83,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 84,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 85,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 86,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 87,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 88,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 89,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 90,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 91,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 92,
+      "inventory_item_id": 5,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 93,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 94,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 95,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 96,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 97,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 98,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 99,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 40,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 100,
+      "inventory_item_id": 5,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 101,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 44,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 102,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 36,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 103,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 45,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 104,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 56,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 105,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 53,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 106,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 48,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 107,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 108,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 30,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 109,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 41,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 110,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 18,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 111,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 12,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 112,
+      "inventory_item_id": 6,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 22,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 113,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 30,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 114,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 30,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 115,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 34,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 116,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 117,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 118,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 12,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 119,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 30,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 120,
+      "inventory_item_id": 6,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 45,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 121,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 122,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 123,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 124,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 125,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 126,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 127,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 128,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 129,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 130,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 131,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 132,
+      "inventory_item_id": 7,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 133,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 134,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 135,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 136,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 137,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 138,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 139,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 140,
+      "inventory_item_id": 7,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 141,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 31,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 142,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 21,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 143,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 29,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 144,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 40,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 145,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 42,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 146,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 38,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 147,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 34,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 148,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 39,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 149,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 42,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 150,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 42,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 151,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 35,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 152,
+      "inventory_item_id": 8,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 49,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 153,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 26,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 154,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 20,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 155,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 18,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 156,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 157,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 158,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 30,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 159,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 38,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 160,
+      "inventory_item_id": 8,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 33,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 161,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 162,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 163,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 164,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 165,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 166,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 167,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 168,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 169,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 170,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 171,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 172,
+      "inventory_item_id": 9,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 173,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 174,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 175,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 176,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 177,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 178,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 179,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 180,
+      "inventory_item_id": 9,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 181,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 182,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 183,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 184,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 185,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 186,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 187,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 188,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 189,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 190,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 191,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 192,
+      "inventory_item_id": 10,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 193,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 194,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 195,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 196,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 197,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 198,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 199,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 200,
+      "inventory_item_id": 10,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 201,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 202,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 203,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 204,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 205,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 206,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 207,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 208,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 209,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 210,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 211,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 212,
+      "inventory_item_id": 11,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 213,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 214,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 215,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 216,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 217,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 218,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 219,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 220,
+      "inventory_item_id": 11,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 221,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 222,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 223,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 224,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 225,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 226,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 227,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 228,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 229,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 230,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 231,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 232,
+      "inventory_item_id": 12,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 233,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 234,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 0.75,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 235,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 236,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 237,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 238,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 239,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 240,
+      "inventory_item_id": 12,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 241,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 242,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 243,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 244,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 245,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 246,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 247,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 248,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 249,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 250,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 251,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 252,
+      "inventory_item_id": 13,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 253,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 254,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.513Z"
+    },
+    {
+      "id": 255,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 256,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 257,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 258,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 259,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 260,
+      "inventory_item_id": 13,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 261,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 262,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 263,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 264,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 265,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 266,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 267,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 268,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 269,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 270,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 271,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 272,
+      "inventory_item_id": 14,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 273,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 274,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 6,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 275,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 276,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 277,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 278,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 279,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 280,
+      "inventory_item_id": 14,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 281,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 21,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 282,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 283,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 23,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 284,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 18,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 285,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 286,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 287,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 10,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 288,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 8,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 289,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 12,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 290,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 291,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 292,
+      "inventory_item_id": 15,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 10,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 293,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 7,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 294,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 295,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 10,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 296,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 13,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 297,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 15,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 298,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 9,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 299,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 11,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 300,
+      "inventory_item_id": 15,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 22,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 301,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 302,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 303,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 304,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 305,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1.25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 306,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 307,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 308,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 309,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 0.75,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 310,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 311,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 312,
+      "inventory_item_id": 16,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 313,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 314,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 315,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 316,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 317,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 0.25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 318,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0.25,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 319,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 320,
+      "inventory_item_id": 16,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 321,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 322,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 323,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 324,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 325,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 326,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 327,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 328,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 329,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 330,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 331,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 332,
+      "inventory_item_id": 17,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 333,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 334,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 335,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 336,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 337,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 338,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 339,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 340,
+      "inventory_item_id": 17,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 341,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 342,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 343,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 344,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 345,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 346,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 347,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 348,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 349,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 350,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 351,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 352,
+      "inventory_item_id": 18,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 353,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 354,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 355,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 356,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 357,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 358,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 359,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 360,
+      "inventory_item_id": 18,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 361,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 362,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 363,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 364,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 365,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 366,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 367,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 368,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 369,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 370,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 371,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 372,
+      "inventory_item_id": 19,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 373,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 374,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 375,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 376,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 377,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 378,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 379,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 380,
+      "inventory_item_id": 19,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 381,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 382,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 383,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 384,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 385,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 386,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 387,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 388,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 389,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 390,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 391,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 392,
+      "inventory_item_id": 20,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 393,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 394,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 395,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 396,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 397,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 398,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 399,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 400,
+      "inventory_item_id": 20,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 401,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 402,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 403,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 404,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 405,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 406,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 407,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 408,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 409,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 410,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 411,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 412,
+      "inventory_item_id": 21,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 413,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 414,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 415,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 416,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 417,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 418,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 419,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 420,
+      "inventory_item_id": 21,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 421,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 422,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 423,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 424,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 425,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 426,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 427,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 428,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 429,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 430,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 431,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 432,
+      "inventory_item_id": 22,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 433,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 434,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 435,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 436,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 437,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 438,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 439,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 440,
+      "inventory_item_id": 22,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 441,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 442,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 443,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 444,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 445,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 0.5,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 446,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 447,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 448,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 449,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 450,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 451,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 452,
+      "inventory_item_id": 23,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 453,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 454,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 455,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 456,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 457,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 458,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 459,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 460,
+      "inventory_item_id": 23,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 461,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 462,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 463,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 464,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 465,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 466,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 467,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 468,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 469,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 470,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 471,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 472,
+      "inventory_item_id": 24,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 473,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 474,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 475,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 476,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 477,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 478,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 479,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 480,
+      "inventory_item_id": 24,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 481,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 482,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 483,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 484,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 485,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 486,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 487,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 488,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 489,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 490,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 491,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 492,
+      "inventory_item_id": 25,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 493,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 494,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 495,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 496,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 497,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 498,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 499,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 500,
+      "inventory_item_id": 25,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 501,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 502,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 503,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 504,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 505,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 506,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 507,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 508,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 509,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 510,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 511,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 512,
+      "inventory_item_id": 26,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 4,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 513,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 514,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 515,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 516,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 517,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 518,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 2,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 519,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 520,
+      "inventory_item_id": 26,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 3,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.514Z"
+    },
+    {
+      "id": 521,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 1,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 522,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 2,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 523,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 3,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 524,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 4,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 525,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 5,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 526,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 6,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 527,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 7,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 528,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 8,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 529,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 9,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 530,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 10,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 531,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 11,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 532,
+      "inventory_item_id": 27,
+      "year": 2026,
+      "week": 12,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 533,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 45,
+      "stock_kg": 0,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 534,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 46,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 535,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 47,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 536,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 48,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 537,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 49,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 538,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 50,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 539,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 51,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
+    },
+    {
+      "id": 540,
+      "inventory_item_id": 27,
+      "year": 2025,
+      "week": 52,
+      "stock_kg": 1,
+      "captured_by": "Excel import",
+      "captured_at": "2026-03-26T20:54:02.515Z"
     }
   ]
 }
