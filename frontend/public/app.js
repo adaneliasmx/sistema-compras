@@ -4353,15 +4353,18 @@ async function paymentsView() {
 }
 
 async function inventoryView() {
-  const [invCats, invItems, items] = await Promise.all([
+  const [invCats, invItems, items, valesItems] = await Promise.all([
     api('/api/catalogs/inventory-catalogs'),
     api('/api/catalogs/inventory-items'),
-    api('/api/catalogs/items')
+    api('/api/catalogs/items'),
+    api('/api/catalogs/vales-items').catch(() => [])
   ]);
 
   const stockStatus = (item) => {
     if (item.current_stock <= 0) return { label: 'Sin stock', color: '#dc2626', bg: '#fef2f2' };
     if (item.current_stock <= item.min_stock) return { label: 'Crítico', color: '#dc2626', bg: '#fef2f2' };
+    const rp = item.reorder_point || 0;
+    if (rp > 0 && item.current_stock <= rp) return { label: 'Reordenar', color: '#d97706', bg: '#fffbeb' };
     if (item.current_stock <= item.min_stock * 1.3) return { label: 'Bajo', color: '#d97706', bg: '#fffbeb' };
     if (item.max_stock > 0 && item.current_stock > item.max_stock * 1.3) return { label: 'Exceso', color: '#7c3aed', bg: '#f5f3ff' };
     return { label: 'OK', color: '#16a34a', bg: '#f0fff4' };
@@ -4469,28 +4472,141 @@ async function inventoryView() {
     </div>
   `, 'inventarios');
 
+  // ── Modal edición ítem inventario ──────────────────────────────────────────
+  const showInvEditModal = (x) => {
+    const catItem = items.find(i => i.id === x.catalog_item_id);
+    const modalEl = document.createElement('div');
+    modalEl.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
+    modalEl.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:28px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+        <h3 style="margin:0 0 18px">✏️ Editar ítem de inventario</h3>
+        <div class="small muted" style="margin-bottom:14px">Inventario: <b>${escapeHtml(x.inventory_name)}</b></div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="grid-column:1/-1">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Ítem del catálogo *</label>
+            <select id="ei-catalog-item" style="width:100%">
+              <option value="">— Sin vincular —</option>
+              ${items.filter(i => i.active !== false).map(i => `<option value="${i.id}"${i.id === x.catalog_item_id ? ' selected':''}>${i.code ? i.code+' · ':'' }${escapeHtml(i.name)}</option>`).join('')}
+            </select>
+          </div>
+
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unidad</label>
+            <input id="ei-unit" value="${escapeHtml(x.unit||'pza')}" style="width:100%"/>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Stock actual</label>
+            <input id="ei-stock" type="number" step="0.001" value="${x.current_stock}" style="width:100%"/>
+          </div>
+
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Stock mínimo</label>
+            <input id="ei-min" type="number" step="0.001" value="${x.min_stock}" style="width:100%"/>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Stock máximo</label>
+            <input id="ei-max" type="number" step="0.001" value="${x.max_stock}" style="width:100%"/>
+          </div>
+
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Punto de reorden</label>
+            <input id="ei-reorder" type="number" step="0.001" value="${x.reorder_point||0}" style="width:100%"/>
+            <div class="small muted">Stock al que se genera alerta de compra</div>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Peso kg / unidad</label>
+            <input id="ei-peso" type="number" step="0.001" value="${x.peso_kg_por_unidad||1}" style="width:100%"/>
+            <div class="small muted">Para convertir a kg en Vales</div>
+          </div>
+
+          <div style="grid-column:1/-1">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Ítem en Vales de Adición</label>
+            <select id="ei-vales-item" style="width:100%">
+              <option value="">— Sin vincular —</option>
+              ${valesItems.map(v => `<option value="${escapeHtml(v.item)}"${v.item === x.vales_item ? ' selected':''}>${escapeHtml(v.item)} (${v.unidad_base})</option>`).join('')}
+            </select>
+            ${x.vales_item && !valesItems.find(v => v.item === x.vales_item)
+              ? `<div class="small" style="color:#d97706;margin-top:4px">⚠ Vínculo actual "${escapeHtml(x.vales_item)}" no encontrado en la lista</div>`
+              : ''}
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end">
+          <button class="btn-secondary" id="ei-cancel">Cancelar</button>
+          <button class="btn-primary" id="ei-save">Guardar cambios</button>
+        </div>
+        <div id="ei-msg" class="small" style="margin-top:8px;text-align:right"></div>
+      </div>`;
+    document.body.appendChild(modalEl);
+
+    modalEl.querySelector('#ei-cancel').onclick = () => modalEl.remove();
+    modalEl.onclick = (e) => { if (e.target === modalEl) modalEl.remove(); };
+
+    modalEl.querySelector('#ei-save').onclick = async () => {
+      const btn = modalEl.querySelector('#ei-save');
+      const msg = modalEl.querySelector('#ei-msg');
+      btn.disabled = true;
+      try {
+        const updated = await api(`/api/catalogs/inventory-items/${x.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            catalog_item_id:    Number(modalEl.querySelector('#ei-catalog-item').value) || x.catalog_item_id,
+            unit:               modalEl.querySelector('#ei-unit').value.trim() || 'pza',
+            current_stock:      Number(modalEl.querySelector('#ei-stock').value),
+            min_stock:          Number(modalEl.querySelector('#ei-min').value),
+            max_stock:          Number(modalEl.querySelector('#ei-max').value),
+            reorder_point:      Number(modalEl.querySelector('#ei-reorder').value),
+            peso_kg_por_unidad: Number(modalEl.querySelector('#ei-peso').value),
+            vales_item:         modalEl.querySelector('#ei-vales-item').value
+          })
+        });
+        // Update local cache
+        const local = invItems.find(i => i.id === x.id);
+        if (local) Object.assign(local, updated, {
+          item_name:      (items.find(i => i.id === updated.catalog_item_id)||{}).name || local.item_name,
+          inventory_name: local.inventory_name
+        });
+        msg.textContent = '✅ Guardado';
+        msg.style.color = '#16a34a';
+        setTimeout(() => { modalEl.remove(); renderInvTable(document.getElementById('filterInvCat')?.value || ''); }, 600);
+      } catch (e) {
+        msg.textContent = e.message;
+        msg.style.color = '#dc2626';
+        btn.disabled = false;
+      }
+    };
+  };
+
   const renderInvTable = (filterCatId = '') => {
     const filtered = filterCatId
       ? invItems.filter(x => Number(x.inventory_catalog_id) === Number(filterCatId))
       : invItems;
 
     invTableWrap.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Inventario</th><th>Código</th><th>Ítem</th><th>Unidad</th><th>Stock actual</th><th>Mínimo</th><th>Máximo</th><th>Estado</th><th>Guardar</th></tr></thead>
+      <thead><tr><th>Inventario</th><th>Ítem</th><th>Unidad</th><th>Stock actual</th><th>Mínimo</th><th>Máx</th><th>P.Reorden</th><th>Vales</th><th>Estado</th><th style="min-width:80px"></th></tr></thead>
       <tbody>${filtered.length ? filtered.map(x => {
         const st = stockStatus(x);
-        const catItem = items.find(i => i.id === x.catalog_item_id);
+        const rp = x.reorder_point || 0;
+        const atReorder = rp > 0 && x.current_stock <= rp && x.current_stock > x.min_stock;
         return `<tr style="background:${st.bg}">
-          <td style="font-size:12px">${x.inventory_name}</td>
-          <td style="font-size:11px">${catItem?.code || '-'}</td>
+          <td style="font-size:11px">${x.inventory_name}</td>
           <td><b>${x.item_name}</b></td>
-          <td>${x.unit||'pza'}</td>
-          <td><input type="number" class="stock-input" data-id="${x.id}" value="${x.current_stock}" style="width:70px;border:1px solid ${x.current_stock <= x.min_stock ? '#fca5a5':'#e5e7eb'};border-radius:4px;padding:3px 6px"/></td>
-          <td>${x.min_stock}</td>
-          <td>${x.max_stock}</td>
+          <td style="font-size:12px">${x.unit||'pza'}</td>
+          <td><input type="number" class="stock-input" data-id="${x.id}" value="${x.current_stock}" style="width:72px;border:1px solid ${x.current_stock <= x.min_stock ? '#fca5a5':'#e5e7eb'};border-radius:4px;padding:3px 6px"/></td>
+          <td style="font-size:12px">${x.min_stock}</td>
+          <td style="font-size:12px">${x.max_stock}</td>
+          <td style="font-size:12px">${rp > 0 ? `<span style="color:${atReorder?'#d97706':'inherit'}">${rp}</span>` : '<span class="muted">—</span>'}</td>
+          <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(x.vales_item||'')}">
+            ${x.vales_item ? `<span style="color:#d97706">↔</span> ${escapeHtml(x.vales_item)}` : '<span class="muted">—</span>'}
+          </td>
           <td><span style="background:${st.color};color:white;border-radius:10px;padding:2px 8px;font-size:11px">${st.label}</span></td>
-          <td><button class="btn-secondary update-stock-btn" data-id="${x.id}" style="padding:2px 8px;font-size:12px">💾</button></td>
+          <td style="white-space:nowrap">
+            <button class="btn-secondary update-stock-btn" data-id="${x.id}" style="padding:2px 7px;font-size:12px" title="Guardar stock">💾</button>
+            ${canManage ? `<button class="btn-secondary edit-inv-btn" data-id="${x.id}" style="padding:2px 7px;font-size:12px;margin-left:4px" title="Editar">✏️</button>` : ''}
+          </td>
         </tr>`;
-      }).join('') : '<tr><td colspan="9" class="muted" style="text-align:center;padding:16px">Sin ítems en este inventario</td></tr>'}
+      }).join('') : '<tr><td colspan="10" class="muted" style="text-align:center;padding:16px">Sin ítems en este inventario</td></tr>'}
       </tbody></table></div>`;
 
     invTableWrap.querySelectorAll('.update-stock-btn').forEach(btn => btn.onclick = async () => {
@@ -4502,9 +4618,16 @@ async function inventoryView() {
         input.style.background = '#f0fff4';
         const local = invItems.find(x => x.id === Number(id));
         if (local) local.current_stock = Number(input.value);
-        setTimeout(() => { btn.textContent = '💾'; }, 1500);
+        setTimeout(() => { btn.textContent = '💾'; input.style.background = ''; }, 1500);
       } catch (e) { alert(e.message); }
     });
+
+    if (canManage) {
+      invTableWrap.querySelectorAll('.edit-inv-btn').forEach(btn => btn.onclick = () => {
+        const x = invItems.find(i => i.id === Number(btn.dataset.id));
+        if (x) showInvEditModal(x);
+      });
+    }
   };
 
   renderInvTable();

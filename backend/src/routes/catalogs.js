@@ -279,12 +279,27 @@ router.patch('/inventory-items/:id', (req, res) => {
   if (req.body.current_stock !== undefined) row.current_stock = Number(req.body.current_stock);
   if (req.body.min_stock !== undefined) row.min_stock = Number(req.body.min_stock);
   if (req.body.max_stock !== undefined) row.max_stock = Number(req.body.max_stock);
+  if (req.body.reorder_point !== undefined) row.reorder_point = Number(req.body.reorder_point);
+  if (req.body.unit !== undefined) row.unit = req.body.unit || 'pza';
+  if (req.body.catalog_item_id !== undefined) row.catalog_item_id = Number(req.body.catalog_item_id);
   if (req.body.active !== undefined) row.active = !!req.body.active;
   if (req.body.vales_item !== undefined) row.vales_item = req.body.vales_item || '';
   if (req.body.peso_kg_por_unidad !== undefined) row.peso_kg_por_unidad = Number(req.body.peso_kg_por_unidad || 0);
   row.updated_at = new Date().toISOString();
   write(db);
   res.json(row);
+});
+
+// Devuelve los items_vales para poder vincularlos desde inventario
+router.get('/vales-items', (req, res) => {
+  if (!canAccessInventory(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  try {
+    const { read: readVales } = require('../db-vales');
+    const vdb = readVales();
+    res.json((vdb.items_vales || []).map(v => ({ item: v.item, unidad_base: v.unidad_base })));
+  } catch (e) {
+    res.json([]);
+  }
 });
 
 router.delete('/cost-centers/:id', (req, res) => { if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' }); const db = read(); const idx = db.cost_centers.findIndex(x => x.id === Number(req.params.id)); if (idx < 0) return res.status(404).json({ error: 'No encontrado' }); db.cost_centers.splice(idx, 1); write(db); res.json({ ok: true }); });
