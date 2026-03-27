@@ -3712,8 +3712,30 @@ async function quotationsView() {
               ${cotizacionesPendientes.map(i => `<option value="${i.id}" data-supplier="${i.supplier_id||''}">${i.requisition_folio} · ${i.item_name}</option>`).join('')}
             </select>
           </div>
-          <div class="row-3" style="margin-top:8px">
-            <div><label>Proveedor</label><select id="quoteSupplier"><option value="">Proveedor</option>${suppliers.map(s => `<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div>
+          <div style="margin-top:8px">
+            <label>Proveedor</label>
+            <div style="display:flex;gap:6px;align-items:center">
+              <select id="quoteSupplier" style="flex:1"><option value="">— Selecciona proveedor —</option><option value="__new__">➕ Crear proveedor nuevo…</option>${suppliers.map(s => `<option value="${s.id}">${s.business_name}</option>`).join('')}</select>
+            </div>
+            <div id="newSupplierForm" style="display:none;margin-top:8px;background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px">
+              <div style="font-weight:600;font-size:13px;margin-bottom:8px">➕ Nuevo proveedor</div>
+              <div class="row-2" style="margin-bottom:6px">
+                <div><label style="font-size:12px">Nombre / Razón social *</label><input id="ns-name" placeholder="Ej. Quimicos del Norte SA"/></div>
+                <div><label style="font-size:12px">RFC</label><input id="ns-rfc" placeholder="Ej. QDN850101XXX"/></div>
+              </div>
+              <div class="row-3" style="margin-bottom:6px">
+                <div><label style="font-size:12px">Contacto</label><input id="ns-contact" placeholder="Nombre contacto"/></div>
+                <div><label style="font-size:12px">Email</label><input id="ns-email" type="email" placeholder="contacto@empresa.com"/></div>
+                <div><label style="font-size:12px">Teléfono</label><input id="ns-phone" placeholder="55 1234 5678"/></div>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button class="btn-primary" id="saveNewSupplierBtn" style="font-size:13px">Guardar proveedor</button>
+                <button class="btn-secondary" id="cancelNewSupplierBtn" style="font-size:13px">Cancelar</button>
+                <span id="nsMsg" class="small muted"></span>
+              </div>
+            </div>
+          </div>
+          <div class="row-2" style="margin-top:8px">
             <div><label>No. cotización</label><input id="quoteNumber" placeholder="COT-001"/></div>
             <div><label>Días entrega</label><input id="quoteDays" type="number" placeholder="0"/></div>
           </div>
@@ -3828,7 +3850,7 @@ async function quotationsView() {
 
       if (!quoteItem.value) {
         // Sin ítem: mostrar todos los proveedores
-        quoteSupplier.innerHTML = `<option value="">Proveedor</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}`;
+        quoteSupplier.innerHTML = `<option value="">— Selecciona proveedor —</option><option value="__new__">➕ Crear proveedor nuevo…</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}`;
         return;
       }
 
@@ -3840,8 +3862,9 @@ async function quotationsView() {
 
       quoteSupplier.innerHTML = `
         <option value="">— Selecciona proveedor —</option>
+        <option value="__new__">➕ Crear proveedor nuevo…</option>
         ${requestedSuppliers.length ? `<optgroup label="Proveedores solicitados">${requestedSuppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</optgroup>` : ''}
-        <optgroup label="➕ Agregar cotización de otro proveedor">${otherSuppliers.map(s=>`<option value="${s.id}" data-extra="1">${s.business_name}</option>`).join('')}</optgroup>
+        <optgroup label="Otros proveedores">${otherSuppliers.map(s=>`<option value="${s.id}" data-extra="1">${s.business_name}</option>`).join('')}</optgroup>
       `;
 
       // Auto-proponer número de cotización
@@ -3850,16 +3873,52 @@ async function quotationsView() {
       // Auto-llenar nombre
       if (item) quoteName.value = item.item_name || '';
     };
-    // Auto-llenar código proveedor al seleccionar proveedor
+    // Mostrar/ocultar form de nuevo proveedor
     quoteSupplier.onchange = () => {
-      const sup = suppliers.find(s => s.id === Number(quoteSupplier.value));
-      if (sup && sup.provider_code) quoteCode.value = sup.provider_code;
+      const nf = document.getElementById('newSupplierForm');
+      if (quoteSupplier.value === '__new__') {
+        nf.style.display = '';
+        document.getElementById('ns-name').focus();
+      } else {
+        nf.style.display = 'none';
+        const sup = suppliers.find(s => s.id === Number(quoteSupplier.value));
+        if (sup && sup.provider_code) quoteCode.value = sup.provider_code;
+      }
+    };
+
+    // Guardar nuevo proveedor
+    document.getElementById('saveNewSupplierBtn').onclick = async () => {
+      const nsMsg = document.getElementById('nsMsg');
+      const name = document.getElementById('ns-name').value.trim();
+      if (!name) { nsMsg.textContent = 'Nombre requerido'; nsMsg.style.color = '#dc2626'; return; }
+      try {
+        const ns = await api('/api/catalogs/suppliers', { method: 'POST', body: JSON.stringify({
+          business_name: name,
+          rfc: document.getElementById('ns-rfc').value.trim(),
+          contact_name: document.getElementById('ns-contact').value.trim(),
+          email: document.getElementById('ns-email').value.trim(),
+          phone: document.getElementById('ns-phone').value.trim()
+        })});
+        suppliers.push(ns);
+        // Agregar opción al select y seleccionarla
+        const opt = document.createElement('option');
+        opt.value = ns.id; opt.textContent = ns.business_name;
+        quoteSupplier.appendChild(opt);
+        quoteSupplier.value = ns.id;
+        document.getElementById('newSupplierForm').style.display = 'none';
+        if (quoteCode && ns.provider_code) quoteCode.value = ns.provider_code;
+        nsMsg.textContent = '';
+      } catch(e) { nsMsg.textContent = e.message; nsMsg.style.color = '#dc2626'; }
+    };
+    document.getElementById('cancelNewSupplierBtn').onclick = () => {
+      document.getElementById('newSupplierForm').style.display = 'none';
+      quoteSupplier.value = '';
     };
 
     saveQuoteBtn.onclick = async () => {
       try {
         if (!quoteItem.value) throw new Error('Selecciona un ítem');
-        if (!quoteSupplier.value) throw new Error('Selecciona un proveedor');
+        if (!quoteSupplier.value || quoteSupplier.value === '__new__') throw new Error('Selecciona o guarda primero un proveedor');
         if (!quoteUnitCost.value || Number(quoteUnitCost.value) <= 0) throw new Error('Ingresa costo mayor a cero');
         const qFile = document.getElementById('quoteFile');
         let quoteResult;
@@ -4224,12 +4283,15 @@ async function paymentsView() {
             <div>
               <label>Tipo de pago</label>
               <select id="payType">
-                <option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>SPEI</option><option>Otro</option>
+                <option>Transferencia</option><option>Cheque</option><option>Efectivo</option><option>SPEI</option><option>Caja chica</option><option>Otro</option>
               </select>
             </div>
           </div>
+          <div id="cajachicaInfo" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-bottom:8px;font-size:13px">
+            💵 <b>Caja chica</b> — Ingresa el No. de recibo y el concepto en los campos de abajo.
+          </div>
           <div class="row-2" style="margin-bottom:8px">
-            <div><label>Referencia / No. operación</label><input id="payRef" placeholder="Ej. SPEI-00123456"/></div>
+            <div><label>Referencia / No. recibo</label><input id="payRef" placeholder="Ej. RCC-0045"/></div>
             <div><label>Fecha de entrega del material</label><input id="payDelivery" type="date"/></div>
           </div>
           <div class="row-2" style="margin-bottom:8px">
@@ -4322,12 +4384,22 @@ async function paymentsView() {
     };
   });
 
+  // Mostrar aviso caja chica
+  document.getElementById('payType').addEventListener('change', function() {
+    const cc = document.getElementById('cajachicaInfo');
+    if (cc) cc.style.display = this.value === 'Caja chica' ? '' : 'none';
+    if (this.value === 'Caja chica') document.getElementById('payRef').placeholder = 'No. recibo caja chica';
+    else document.getElementById('payRef').placeholder = 'Ej. SPEI-00123456';
+  });
+
   // Guardar pago
   savePayBtn.onclick = async () => {
     if (!selectedInv) { payMsg.textContent = 'Selecciona una factura primero'; payMsg.style.color = '#dc2626'; return; }
     try {
       if (!payAmount.value || Number(payAmount.value) <= 0) throw new Error('Ingresa un monto mayor a cero');
-      if (!payRef.value) throw new Error('Ingresa la referencia de pago');
+      const payTypeVal = document.getElementById('payType').value;
+      if (payTypeVal !== 'Caja chica' && !payRef.value) throw new Error('Ingresa la referencia de pago');
+      if (payTypeVal === 'Caja chica' && !payRef.value) throw new Error('Ingresa el No. de recibo de caja chica');
       savePayBtn.disabled = true;
       const fd = new FormData();
       fd.append('invoice_id', selectedInv.id);
