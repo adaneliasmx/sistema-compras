@@ -4371,7 +4371,7 @@ async function inventoryView() {
   };
 
   const belowMin = invItems.filter(x => x.current_stock <= x.min_stock);
-  const canManage = state.user?.role_code === 'admin' || state.user?.role_code === 'comprador';
+  const canManage = ['admin', 'comprador', 'inventarios'].includes(state.user?.role_code);
 
   app.innerHTML = shell(`
     <div class="grid grid-4">
