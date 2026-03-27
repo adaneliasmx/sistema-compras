@@ -701,8 +701,8 @@ router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
   const invWeekly = dbMain.inventory_weekly || [];
 
   const yearQ  = req.query.year  ? Number(req.query.year)  : new Date().getFullYear();
-  const wIni   = req.query.week_ini ? Number(req.query.week_ini) : 1;
-  const wFin   = req.query.week_fin ? Number(req.query.week_fin) : 53;
+  const wIni   = Math.max(1, req.query.week_ini ? Number(req.query.week_ini) : 1);
+  const wFin   = Math.min(53, req.query.week_fin ? Number(req.query.week_fin) : 53);
 
   // Build map: vales_item name → inventory_item (for peso_kg_por_unidad)
   const invMap = {};
@@ -730,7 +730,9 @@ router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
         const { ini, fin } = weekBounds(yearQ, w);
         // Real consumption from inventory_weekly
         const curr = invWeekly.find(r => Number(r.inventory_item_id) === invItem.id && Number(r.year) === yearQ && Number(r.week) === w);
-        const prev = invWeekly.find(r => Number(r.inventory_item_id) === invItem.id && Number(r.year) === yearQ && Number(r.week) === w - 1);
+        const prevWeek = w > 1 ? w - 1 : 52;
+        const prevYear = w > 1 ? yearQ : yearQ - 1;
+        const prev = invWeekly.find(r => Number(r.inventory_item_id) === invItem.id && Number(r.year) === prevYear && Number(r.week) === prevWeek);
         const consumoReal = (prev && curr)
           ? (Number(prev.stock_actual) - Number(curr.stock_actual) + Number(curr.pedido_recibido || 0)) * pesoKg
           : null;

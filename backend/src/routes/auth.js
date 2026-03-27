@@ -13,7 +13,7 @@ router.post('/login', (req, res) => {
   if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
   const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
-  const token = jwt.sign({ sub: user.id, role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
+  const token = jwt.sign({ sub: user.id, module: 'compras', role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
   res.json({
     token,
     user: {

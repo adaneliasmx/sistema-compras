@@ -20,7 +20,7 @@ router.post('/login', (req, res) => {
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
   const token = jwt.sign(
-    { sub: user.id, role: user.role, employee_id: user.employee_id },
+    { sub: user.id, module: 'rhh', role: user.role, employee_id: user.employee_id },
     process.env.JWT_SECRET || 'cambia-esta-clave',
     { expiresIn: '8h' }
   );
