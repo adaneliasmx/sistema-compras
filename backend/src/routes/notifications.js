@@ -6,6 +6,12 @@ router.use(authRequired);
 
 router.get('/', (req, res) => {
   const db = read();
+  if (!db.requisition_items) db.requisition_items = [];
+  if (!db.requisitions) db.requisitions = [];
+  if (!db.invoices) db.invoices = [];
+  if (!db.payments) db.payments = [];
+  if (!db.purchase_orders) db.purchase_orders = [];
+  if (!db.users) db.users = [];
   const user = req.user;
   const role = user.role_code;
   const notes = [];

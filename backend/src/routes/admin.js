@@ -130,9 +130,11 @@ router.post('/password-requests/:id/approve', (req, res) => {
   request.approved_by = req.user.id;
   write(db);
 
-  // Construir URL del sistema desde el header
-  const origin = req.headers.origin || req.headers.referer?.replace(/\/$/, '') || '';
-  const baseUrl = origin || 'http://localhost:3000';
+  // Construir URL del sistema (prioridad: var de entorno > origin header > host con protocolo)
+  const envUrl = process.env.FRONTEND_URL || '';
+  const originHeader = req.headers.origin || req.headers.referer?.replace(/\/[^/]*$/, '') || '';
+  const hostProto = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+  const baseUrl = (envUrl || originHeader || hostProto).replace(/\/$/, '');
   const resetUrl = `${baseUrl}/#/reset-password?token=${token}`;
 
   const subject = `Cambio de contraseña autorizado · Sistema de Compras`;

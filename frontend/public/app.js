@@ -12,7 +12,8 @@ function clearDraftStorage() {
 const state = {
   token: localStorage.getItem('token'),
   user: JSON.parse(localStorage.getItem('user') || 'null'),
-  itemsDraft: []
+  itemsDraft: [],
+  pendingRoute: null
 };
 
 const navItems = [
@@ -111,6 +112,7 @@ function shell(content, active = 'dashboard') {
 
 // ── Sistema de notificaciones ──────────────────────────────────────────────
 let _notifInterval = null;
+let _notifClickBound = false;
 const priorityColor = { urgent: '#dc2626', high: '#d97706', medium: '#3b82f6', low: '#6b7280' };
 const priorityBg = { urgent: '#fef2f2', high: '#fffbeb', medium: '#eff6ff', low: '#f9fafb' };
 
@@ -147,17 +149,20 @@ function initNotifications() {
   loadNotifications();
   _notifInterval = setInterval(loadNotifications, 60000); // refrescar cada 60s
 
-  document.addEventListener('click', e => {
-    const panel = document.getElementById('notifPanel');
-    const bell = document.getElementById('notifBellBtn');
-    if (!panel || !bell) return;
-    if (bell.contains(e.target)) {
-      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-      if (panel.style.display === 'block') loadNotifications();
-    } else if (!panel.contains(e.target)) {
-      panel.style.display = 'none';
-    }
-  });
+  if (!_notifClickBound) {
+    _notifClickBound = true;
+    document.addEventListener('click', e => {
+      const panel = document.getElementById('notifPanel');
+      const bell = document.getElementById('notifBellBtn');
+      if (!panel || !bell) return;
+      if (bell.contains(e.target)) {
+        panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        if (panel.style.display === 'block') loadNotifications();
+      } else if (!panel.contains(e.target)) {
+        panel.style.display = 'none';
+      }
+    });
+  }
   document.getElementById('notifCloseBtn')?.addEventListener('click', () => {
     const panel = document.getElementById('notifPanel');
     if (panel) panel.style.display = 'none';
@@ -221,8 +226,10 @@ async function loginView() {
       const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: email.value, password: password.value }) });
       setAuth(data.token, data.user);
       initInactivityWatcher();
-      location.hash = `#/${getDefaultRouteByRole()}`;
-      render();
+      const dest = state.pendingRoute;
+      state.pendingRoute = null;
+      location.hash = `#/${dest || getDefaultRouteByRole()}`;
+      render().then(() => initNotifications());
     } catch (e) { err.textContent = e.message; }
   };
   document.getElementById('forgotPwBtn').onclick = () => {
@@ -5455,9 +5462,17 @@ async function render() {
     const token = params.get('token');
     if (token) return resetPasswordView(token);
   }
-  if (!state.token || !state.user) return loginView();
+  if (!state.token || !state.user) {
+    if (route && route !== 'login') state.pendingRoute = route;
+    return loginView();
+  }
   const defaultRoute = getDefaultRouteByRole();
   if (!route || route === 'login') { location.hash = `#/${defaultRoute}`; return; }
+  // Vista previa de requisición: accesible para todos los roles operativos aunque no tengan 'requisiciones' en menú
+  if (route.startsWith('requisiciones/') && !route.startsWith('requisiciones/editar/')) {
+    const canPreview = ['comprador', 'autorizador', 'pagos', 'inventarios', 'cliente_requisicion', 'admin'].includes(state.user?.role);
+    if (canPreview) return requisitionPreviewView(route.split('/')[1]);
+  }
   if (!canAccess(requestedModule)) { location.hash = `#/${defaultRoute}`; return; }
   if (route === 'dashboard') return dashboardView();
   if (route === 'catalogos') return catalogsView();

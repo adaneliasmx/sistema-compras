@@ -213,12 +213,29 @@ router.post('/:id/send', (req, res) => {
   const buyerCc = buyerEmails.slice(1).join(',');
   const requesterEmail = (db.users.find(u => u.id === reqRow.requester_user_id) || {}).email || req.user.email || '';
   const subject = req.body.email_subject || `Requisición ${reqRow.folio}`;
-  const previewUrl = `${req.protocol}://${req.get('host')}/#/requisiciones/${reqRow.id}`;
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const previewUrl = `${process.env.FRONTEND_URL || `${proto}://${req.get('host')}`}/#/requisiciones/${reqRow.id}`;
+  const itemLines = lines.map(item => {
+    const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
+    const supplier = (db.suppliers.find(s => s.id === item.supplier_id) || {}).business_name || '';
+    const subtotal = (Number(item.quantity) * Number(item.unit_cost)).toFixed(2);
+    let line = `  ${item.line_no}. ${name}   Cant: ${item.quantity} ${item.unit}   P.U.: $${Number(item.unit_cost).toFixed(2)}   Subtotal: $${subtotal} ${item.currency || reqRow.currency || 'MXN'}`;
+    if (supplier) line += `   Proveedor: ${supplier}`;
+    if (item.comments) line += `\n     Nota: ${item.comments}`;
+    if (item.web_link) line += `\n     Referencia: ${item.web_link}`;
+    return line;
+  }).join('\n');
   const body = [
     `Se generó la requisición ${reqRow.folio}.`,
     `Solicitante: ${req.user.name || req.user.full_name || ''}`,
     `Departamento: ${reqRow.department}`,
+    `Fecha: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}`,
+    ``,
+    `── Materiales solicitados ──────────────────────`,
+    itemLines,
+    `────────────────────────────────────────────────`,
     `Total: ${Number(reqRow.total_amount || 0).toFixed(2)} ${reqRow.currency || 'MXN'}`,
+    ``,
     `Vista previa / PDF: ${previewUrl}`
   ].join('\n');
   reqRow.email_to = buyerEmail;
@@ -232,7 +249,12 @@ router.post('/:id/send', (req, res) => {
   if (authItems.length && authorizers.length) {
     const authEmails = authorizers.map(u => u.email).filter(Boolean).join(',');
     const authSubject = `Solicitud de autorización · ${reqRow.folio}`;
-    const authBody = `Estimado autorizador,\n\nSe requiere su autorización para la siguiente requisición:\n\nFolio: ${reqRow.folio}\nSolicitante: ${(db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name||''}\nTotal: $${Number(reqRow.total_amount||0).toFixed(2)} ${reqRow.currency||'MXN'}\nÍtems pendientes de autorización: ${authItems.length}\n\nVer en sistema: ${previewUrl.replace('requisiciones','autorizaciones')}`;
+    const authItemLines = authItems.map((item, idx) => {
+      const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
+      const subtotal = (Number(item.quantity) * Number(item.unit_cost)).toFixed(2);
+      return `  ${idx + 1}. ${name}   Cant: ${item.quantity} ${item.unit}   P.U.: $${Number(item.unit_cost).toFixed(2)}   Subtotal: $${subtotal} ${item.currency || reqRow.currency || 'MXN'}`;
+    }).join('\n');
+    const authBody = `Estimado autorizador,\n\nSe requiere su autorización para la siguiente requisición:\n\nFolio: ${reqRow.folio}\nSolicitante: ${(db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name||''}\nDepartamento: ${reqRow.department}\n\n── Ítems pendientes de autorización ──\n${authItemLines}\n──────────────────────────────────────\nTotal: $${Number(reqRow.total_amount||0).toFixed(2)} ${reqRow.currency||'MXN'}\n\nVer en sistema: ${previewUrl.replace('requisiciones','autorizaciones')}`;
     mailto_authorizer = `mailto:${encodeURIComponent(authEmails)}?subject=${encodeURIComponent(authSubject)}&body=${encodeURIComponent(authBody)}`;
   }
   const allBuyersCc = [buyerCc, requesterEmail].filter(Boolean).join(',');
