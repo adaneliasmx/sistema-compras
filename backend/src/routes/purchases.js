@@ -444,7 +444,7 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
   const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
   const ccEmails = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
-  const baseUrl = `${req.protocol}://${req.get('host')}`;
+  const baseUrl = (process.env.FRONTEND_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}/compras`).replace(/\/$/, '');
   const poMailtos = purchaseOrders.map(po => {
     const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
     const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);

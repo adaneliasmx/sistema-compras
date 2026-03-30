@@ -214,7 +214,7 @@ router.post('/:id/send', (req, res) => {
   const requesterEmail = (db.users.find(u => u.id === reqRow.requester_user_id) || {}).email || req.user.email || '';
   const subject = req.body.email_subject || `Requisición ${reqRow.folio}`;
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const previewUrl = `${process.env.FRONTEND_URL || `${proto}://${req.get('host')}`}/#/requisiciones/${reqRow.id}`;
+  const previewUrl = `${(process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '')}#/requisiciones/${reqRow.id}`;
   const itemLines = lines.map(item => {
     const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
     const supplier = (db.suppliers.find(s => s.id === item.supplier_id) || {}).business_name || '';
