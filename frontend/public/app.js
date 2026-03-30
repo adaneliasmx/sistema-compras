@@ -4649,6 +4649,7 @@ async function inventoryView() {
         <button class="inv-tab-btn inv-tab-active" data-tab="actual">📋 Inventario Actual</button>
         <button class="inv-tab-btn" data-tab="semanal">📝 Captura Semanal</button>
         <button class="inv-tab-btn" data-tab="historial">📈 Historial</button>
+        ${state.user?.role === 'admin' ? `<button class="inv-tab-btn" data-tab="gestionar">⚙ Gestionar listas</button>` : ''}
       </div>
 
       <!-- TAB: Inventario Actual -->
@@ -4710,6 +4711,51 @@ async function inventoryView() {
         </div>
         <div id="hist-result"></div>
       </div>
+
+      <!-- TAB: Gestionar listas (solo admin) -->
+      ${state.user?.role === 'admin' ? `
+      <div id="inv-tab-gestionar" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start">
+          <!-- Lista actual de inventarios -->
+          <div>
+            <h4 style="margin:0 0 12px">Listas de inventario</h4>
+            <div id="invCatList">
+              ${invCats.length ? invCats.map(c => `
+                <div id="invcat-row-${c.id}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;background:white">
+                  <div style="flex:1">
+                    <div id="invcat-view-${c.id}" style="display:flex;align-items:center;gap:6px">
+                      <b style="font-size:14px">${escapeHtml(c.name)}</b>
+                      ${c.description ? `<span class="muted" style="font-size:12px">· ${escapeHtml(c.description)}</span>` : ''}
+                      <span class="muted" style="font-size:11px">(${invItems.filter(x=>x.inventory_catalog_id===c.id).length} ítems)</span>
+                    </div>
+                    <div id="invcat-edit-${c.id}" style="display:none;gap:6px;align-items:center">
+                      <input id="invcat-name-${c.id}" value="${escapeHtml(c.name)}" style="flex:1;padding:4px 8px;font-size:13px"/>
+                      <input id="invcat-desc-${c.id}" value="${escapeHtml(c.description||'')}" placeholder="Descripción" style="flex:1;padding:4px 8px;font-size:13px"/>
+                    </div>
+                  </div>
+                  <div id="invcat-actions-${c.id}" style="display:flex;gap:4px">
+                    <button class="btn-secondary invcat-edit-btn" data-id="${c.id}" style="padding:2px 8px;font-size:12px">✏ Editar</button>
+                    <button class="btn-danger invcat-del-btn" data-id="${c.id}" data-name="${escapeHtml(c.name)}" data-count="${invItems.filter(x=>x.inventory_catalog_id===c.id).length}" style="padding:2px 8px;font-size:12px">🗑</button>
+                  </div>
+                  <div id="invcat-save-${c.id}" style="display:none;gap:4px">
+                    <button class="btn-primary invcat-save-btn" data-id="${c.id}" style="padding:2px 8px;font-size:12px">Guardar</button>
+                    <button class="btn-secondary invcat-cancel-btn" data-id="${c.id}" style="padding:2px 8px;font-size:12px">Cancelar</button>
+                  </div>
+                </div>`).join('')
+              : '<div class="muted small">No hay listas de inventario todavía.</div>'}
+            </div>
+            <div id="invCatListMsg" class="small muted" style="margin-top:6px"></div>
+          </div>
+          <!-- Formulario nueva lista -->
+          <div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:10px;padding:16px">
+            <h4 style="margin:0 0 12px">Nueva lista de inventario</h4>
+            <div style="margin-bottom:8px"><label style="font-size:13px;font-weight:600">Nombre *</label><input id="newInvCatName" placeholder="Ej: Almacén General"/></div>
+            <div style="margin-bottom:12px"><label style="font-size:13px;font-weight:600">Descripción</label><input id="newInvCatDesc" placeholder="Opcional"/></div>
+            <button class="btn-primary" id="saveNewInvCatBtn">Crear inventario</button>
+            <div id="newInvCatMsg" class="small muted" style="margin-top:6px"></div>
+          </div>
+        </div>
+      </div>` : ''}
     </div>
   `, 'inventarios');
 
@@ -4937,12 +4983,89 @@ async function inventoryView() {
     btn.onclick = () => {
       document.querySelectorAll('.inv-tab-btn').forEach(b => b.classList.remove('inv-tab-active'));
       btn.classList.add('inv-tab-active');
-      ['actual','semanal','historial'].forEach(t => {
+      ['actual','semanal','historial','gestionar'].forEach(t => {
         const el = document.getElementById('inv-tab-' + t);
         if (el) el.style.display = t === btn.dataset.tab ? '' : 'none';
       });
     };
   });
+
+  // ── Gestionar listas de inventario (solo admin) ──
+  if (state.user?.role === 'admin') {
+    // Crear nueva lista
+    document.getElementById('saveNewInvCatBtn')?.addEventListener('click', async () => {
+      const msgEl = document.getElementById('newInvCatMsg');
+      const name = document.getElementById('newInvCatName').value.trim();
+      if (!name) { msgEl.textContent = 'El nombre es requerido'; msgEl.style.color = '#dc2626'; return; }
+      try {
+        msgEl.textContent = 'Guardando...'; msgEl.style.color = '#6b7280';
+        await api('/api/catalogs/inventory-catalogs', { method: 'POST', body: JSON.stringify({ name, description: document.getElementById('newInvCatDesc').value.trim() }) });
+        msgEl.textContent = '✅ Inventario creado';
+        msgEl.style.color = '#16a34a';
+        setTimeout(render, 700);
+      } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+    });
+
+    // Editar: mostrar inputs
+    document.querySelectorAll('.invcat-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        document.getElementById(`invcat-view-${id}`).style.display = 'none';
+        document.getElementById(`invcat-edit-${id}`).style.display = 'flex';
+        document.getElementById(`invcat-actions-${id}`).style.display = 'none';
+        document.getElementById(`invcat-save-${id}`).style.display = 'flex';
+      });
+    });
+
+    // Cancelar edición
+    document.querySelectorAll('.invcat-cancel-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        document.getElementById(`invcat-view-${id}`).style.display = 'flex';
+        document.getElementById(`invcat-edit-${id}`).style.display = 'none';
+        document.getElementById(`invcat-actions-${id}`).style.display = 'flex';
+        document.getElementById(`invcat-save-${id}`).style.display = 'none';
+      });
+    });
+
+    // Guardar edición
+    document.querySelectorAll('.invcat-save-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const msgEl = document.getElementById('invCatListMsg');
+        const name = document.getElementById(`invcat-name-${id}`).value.trim();
+        const desc = document.getElementById(`invcat-desc-${id}`).value.trim();
+        if (!name) { msgEl.textContent = 'El nombre no puede estar vacío'; msgEl.style.color = '#dc2626'; return; }
+        try {
+          btn.disabled = true;
+          await api(`/api/catalogs/inventory-catalogs/${id}`, { method: 'PATCH', body: JSON.stringify({ name, description: desc }) });
+          msgEl.textContent = '✅ Guardado'; msgEl.style.color = '#16a34a';
+          setTimeout(render, 600);
+        } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; btn.disabled = false; }
+      });
+    });
+
+    // Eliminar lista
+    document.querySelectorAll('.invcat-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.dataset.id;
+        const name = btn.dataset.name;
+        const count = Number(btn.dataset.count);
+        const msgEl = document.getElementById('invCatListMsg');
+        if (count > 0) {
+          if (!confirm(`"${name}" tiene ${count} ítem(s) en inventario.\n¿Eliminar la lista y todos sus ítems?`)) return;
+        } else {
+          if (!confirm(`¿Eliminar la lista "${name}"?`)) return;
+        }
+        try {
+          btn.disabled = true;
+          await api(`/api/catalogs/inventory-catalogs/${id}${count > 0 ? '?force=1' : ''}`, { method: 'DELETE' });
+          msgEl.textContent = '✅ Lista eliminada'; msgEl.style.color = '#16a34a';
+          setTimeout(render, 600);
+        } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; btn.disabled = false; }
+      });
+    });
+  }
 
   // ── Semana ISO helpers ──
   function getISOWeek(date) {
