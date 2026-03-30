@@ -4612,7 +4612,7 @@ async function inventoryView() {
   };
 
   const belowMin = invItems.filter(x => x.current_stock <= x.min_stock);
-  const canManage = ['admin', 'comprador', 'inventarios'].includes(state.user?.role_code);
+  const canManage = ['admin', 'comprador', 'inventarios'].includes(state.user?.role);
 
   app.innerHTML = shell(`
     <div class="grid grid-4">
