@@ -2572,6 +2572,7 @@ async function purchasesView() {
                     ${i.quote_sub_status === 'por_solicitar' || i.quote_sub_status === 'rechazado_proveedor'
                       ? `<button class="btn-secondary re-quote-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">📩 ${i.quote_sub_status === 'rechazado_proveedor' ? 'Nuevo proveedor' : 'Solicitar'}</button>`
                       : ''}
+                    <button class="btn-primary register-quote-btn" data-id="${i.id}" style="padding:2px 8px;font-size:12px">📋 Registrar cotización</button>
                     <button class="btn-secondary view-quotes-btn" data-id="${i.id}" style="padding:2px 8px;font-size:12px">🔍 Ver cotizaciones</button>
                     <button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">✖</button>
                   </td>
@@ -2587,6 +2588,167 @@ async function purchasesView() {
         });
         tabContent.querySelectorAll('.cancel-item').forEach(btn => {
           btn.onclick = () => openCancelItem(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id)));
+        });
+
+        tabContent.querySelectorAll('.register-quote-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const item = itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id));
+            if (!item) return;
+            const suppliersData = await api('/api/catalogs/suppliers').catch(() => []);
+
+            const overlay = document.createElement('div');
+            overlay.id = 'registerQuoteOverlay';
+            overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;z-index:10000;overflow-y:auto;padding:32px 16px';
+            overlay.innerHTML = `<div style="background:white;border-radius:12px;padding:24px;width:100%;max-width:540px;box-shadow:0 16px 48px rgba(0,0,0,.18)">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <h3 style="margin:0;font-size:16px">📋 Registrar cotización</h3>
+                <button id="closeRegisterModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+              </div>
+              <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px">
+                <b>${escapeHtml(item.item_name)}</b><br>
+                <span class="muted">${item.requisition_folio||'-'} · Cant: ${Number(item.quantity||0)} ${item.unit||''}</span>
+              </div>
+              <div style="margin-bottom:10px">
+                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Proveedor *</label>
+                <select id="rqSupplier" style="width:100%">
+                  <option value="">— Selecciona proveedor —</option>
+                  <option value="__new__">➕ Crear proveedor nuevo…</option>
+                  ${suppliersData.map(s => `<option value="${s.id}">${escapeHtml(s.business_name)}</option>`).join('')}
+                </select>
+                <div id="rqNewSupplierForm" style="display:none;margin-top:8px;background:#f8faff;border:1px solid #bae6fd;border-radius:8px;padding:12px">
+                  <div style="font-weight:600;font-size:13px;margin-bottom:8px">➕ Nuevo proveedor</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+                    <div><label style="font-size:12px">Nombre / Razón social *</label><input id="rq-ns-name" placeholder="Razón social" style="width:100%"/></div>
+                    <div><label style="font-size:12px">RFC</label><input id="rq-ns-rfc" placeholder="RFC" style="width:100%"/></div>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:8px">
+                    <div><label style="font-size:12px">Contacto</label><input id="rq-ns-contact" placeholder="Nombre" style="width:100%"/></div>
+                    <div><label style="font-size:12px">Email</label><input id="rq-ns-email" type="email" placeholder="correo@empresa.com" style="width:100%"/></div>
+                    <div><label style="font-size:12px">Teléfono</label><input id="rq-ns-phone" placeholder="55 1234 5678" style="width:100%"/></div>
+                  </div>
+                  <div style="display:flex;gap:8px;align-items:center">
+                    <button id="rqSaveNewSupplierBtn" class="btn-primary" style="font-size:12px">Guardar proveedor</button>
+                    <button id="rqCancelNewSupplierBtn" class="btn-secondary" style="font-size:12px">Cancelar</button>
+                    <span id="rqNsMsg" class="small muted"></span>
+                  </div>
+                </div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">No. cotización</label><input id="rqNumber" placeholder="COT-001" style="width:100%"/></div>
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Días entrega</label><input id="rqDays" type="number" placeholder="0" style="width:100%"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Costo unitario *</label><input id="rqUnitCost" type="number" placeholder="0.00" style="width:100%"/></div>
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Moneda</label><select id="rqCurrency" style="width:100%"><option>MXN</option><option>USD</option></select></div>
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Cond. de pago</label><input id="rqPayTerms" placeholder="30 días" style="width:100%"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Código proveedor</label><input id="rqCode" placeholder="SKU" style="width:100%"/></div>
+                <div><label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Nombre oficial del ítem</label><input id="rqName" placeholder="Nombre oficial" value="${escapeHtml(item.item_name||'')}" style="width:100%"/></div>
+              </div>
+              <div style="margin-bottom:16px">
+                <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">📎 Adjuntar cotización (PDF/imagen, máx 10 MB)</label>
+                <input type="file" id="rqFile" accept=".pdf,.jpg,.jpeg,.png" style="font-size:12px;display:block"/>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center">
+                <button id="rqSaveBtn" class="btn-primary">Guardar cotización</button>
+                <button id="rqCancelBtn" class="btn-secondary">Cancelar</button>
+                <span id="rqMsg" class="small muted" style="flex:1"></span>
+              </div>
+            </div>`;
+            document.body.appendChild(overlay);
+
+            const closeModal = () => overlay.remove();
+            document.getElementById('closeRegisterModal').onclick = closeModal;
+            document.getElementById('rqCancelBtn').onclick = closeModal;
+            overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+
+            // Mostrar / ocultar form nuevo proveedor
+            const rqSupplier = document.getElementById('rqSupplier');
+            rqSupplier.onchange = () => {
+              const nf = document.getElementById('rqNewSupplierForm');
+              if (rqSupplier.value === '__new__') {
+                nf.style.display = '';
+                document.getElementById('rq-ns-name').focus();
+              } else {
+                nf.style.display = 'none';
+                const sup = suppliersData.find(s => s.id === Number(rqSupplier.value));
+                if (sup?.provider_code) document.getElementById('rqCode').value = sup.provider_code;
+              }
+            };
+
+            // Guardar nuevo proveedor
+            document.getElementById('rqSaveNewSupplierBtn').onclick = async () => {
+              const nsMsg = document.getElementById('rqNsMsg');
+              const name = document.getElementById('rq-ns-name').value.trim();
+              if (!name) { nsMsg.textContent = 'Nombre requerido'; nsMsg.style.color = '#dc2626'; return; }
+              try {
+                nsMsg.textContent = 'Guardando...'; nsMsg.style.color = '#6b7280';
+                const ns = await api('/api/catalogs/suppliers', { method: 'POST', body: JSON.stringify({
+                  business_name: name,
+                  rfc: document.getElementById('rq-ns-rfc').value.trim(),
+                  contact_name: document.getElementById('rq-ns-contact').value.trim(),
+                  email: document.getElementById('rq-ns-email').value.trim(),
+                  phone: document.getElementById('rq-ns-phone').value.trim()
+                })});
+                suppliersData.push(ns);
+                const opt = document.createElement('option');
+                opt.value = ns.id; opt.textContent = ns.business_name;
+                rqSupplier.appendChild(opt);
+                rqSupplier.value = ns.id;
+                document.getElementById('rqNewSupplierForm').style.display = 'none';
+                nsMsg.textContent = '';
+              } catch(e) { nsMsg.textContent = e.message; nsMsg.style.color = '#dc2626'; }
+            };
+            document.getElementById('rqCancelNewSupplierBtn').onclick = () => {
+              document.getElementById('rqNewSupplierForm').style.display = 'none';
+              rqSupplier.value = '';
+            };
+
+            // Guardar cotización
+            document.getElementById('rqSaveBtn').onclick = async () => {
+              const msgEl = document.getElementById('rqMsg');
+              const saveBtn = document.getElementById('rqSaveBtn');
+              const unitCost = document.getElementById('rqUnitCost');
+              if (!rqSupplier.value || rqSupplier.value === '__new__') { msgEl.textContent = 'Selecciona o guarda primero un proveedor'; msgEl.style.color = '#dc2626'; return; }
+              if (!unitCost.value || Number(unitCost.value) <= 0) { msgEl.textContent = 'Ingresa costo mayor a cero'; msgEl.style.color = '#dc2626'; return; }
+              msgEl.textContent = 'Guardando...'; msgEl.style.color = '#6b7280';
+              saveBtn.disabled = true;
+              try {
+                const rqFile = document.getElementById('rqFile');
+                if (rqFile && rqFile.files[0]) {
+                  const fd = new FormData();
+                  fd.append('requisition_item_id', item.id);
+                  fd.append('supplier_id', rqSupplier.value);
+                  fd.append('quote_number', document.getElementById('rqNumber').value);
+                  fd.append('delivery_days', document.getElementById('rqDays').value || 0);
+                  fd.append('unit_cost', unitCost.value);
+                  fd.append('currency', document.getElementById('rqCurrency').value || 'MXN');
+                  fd.append('payment_terms', document.getElementById('rqPayTerms').value);
+                  fd.append('provider_code', document.getElementById('rqCode').value);
+                  fd.append('official_item_name', document.getElementById('rqName').value);
+                  fd.append('attachment', rqFile.files[0]);
+                  const res = await fetch('/api/quotations', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+                  if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+                } else {
+                  await api('/api/quotations', { method: 'POST', body: JSON.stringify({
+                    requisition_item_id: Number(item.id),
+                    supplier_id: Number(rqSupplier.value),
+                    quote_number: document.getElementById('rqNumber').value,
+                    delivery_days: Number(document.getElementById('rqDays').value || 0),
+                    unit_cost: Number(unitCost.value),
+                    currency: document.getElementById('rqCurrency').value || 'MXN',
+                    payment_terms: document.getElementById('rqPayTerms').value,
+                    provider_code: document.getElementById('rqCode').value,
+                    official_item_name: document.getElementById('rqName').value
+                  })});
+                }
+                msgEl.textContent = '✅ Cotización guardada';
+                msgEl.style.color = '#16a34a';
+                setTimeout(() => { closeModal(); renderCotizTab(); }, 900);
+              } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; saveBtn.disabled = false; }
+            };
+          };
         });
 
         tabContent.querySelectorAll('.view-quotes-btn').forEach(btn => {
