@@ -192,6 +192,45 @@ router.delete('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// Cancelar requisición completa por el solicitante
+router.post('/:id/cancel-by-requester', (req, res) => {
+  const db = read();
+  const reqRow = db.requisitions.find(r => r.id === Number(req.params.id));
+  if (!reqRow) return res.status(404).json({ error: 'Requisición no encontrada' });
+  if (req.user.role !== 'admin' && req.user.id !== reqRow.requester_user_id) {
+    return res.status(403).json({ error: 'Sin permiso para cancelar esta requisición' });
+  }
+  if (['Cancelada', 'Cerrada'].includes(reqRow.status)) {
+    return res.status(400).json({ error: `La requisición ya está ${reqRow.status}` });
+  }
+  const items = db.requisition_items.filter(i => i.requisition_id === reqRow.id);
+  const hasActivePO = items.some(i => {
+    if (!i.purchase_order_id) return false;
+    const po = db.purchase_orders.find(p => p.id === i.purchase_order_id);
+    return po && !['Cancelada', 'Rechazada por proveedor'].includes(po.status);
+  });
+  if (hasActivePO) return res.status(400).json({ error: 'No se puede cancelar: hay órdenes de compra activas vinculadas a esta requisición' });
+  const reason = req.body.reason || 'Cancelada por el solicitante';
+  const now = new Date().toISOString();
+  items.forEach(item => {
+    if (!['Cancelado', 'Cerrado'].includes(item.status)) {
+      const old = item.status;
+      item.status = 'Cancelado';
+      item.cancel_reason = reason;
+      item.cancelled_at = now;
+      item.cancelled_by = req.user.id;
+      item.updated_at = now;
+      addHistory(db, { module: 'requisitions', requisition_id: reqRow.id, requisition_item_id: item.id, old_status: old, new_status: 'Cancelado', changed_by_user_id: req.user.id, comment: reason });
+    }
+  });
+  reqRow.status = 'Cancelada';
+  reqRow.cancel_reason = reason;
+  reqRow.cancelled_at = now;
+  reqRow.cancelled_by_user_id = req.user.id;
+  write(db);
+  res.json({ ok: true });
+});
+
 router.post('/:id/send', (req, res) => {
   const db = read();
   const reqRow = db.requisitions.find(r => r.id === Number(req.params.id));

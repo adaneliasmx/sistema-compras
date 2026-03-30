@@ -73,9 +73,16 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
   if (!includeRejected) excluded.push('Rechazado');
   const rows = db.requisition_items
     .filter(i => !excluded.includes(i.status))
-    .map(i => ({
+    .map(i => {
+      const reqRow = db.requisitions.find(r => r.id === i.requisition_id) || {};
+      const requester = reqRow.requester_user_id ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
+      const cc = i.cost_center_id ? (db.cost_centers || []).find(c => c.id === i.cost_center_id) : null;
+      return {
       ...i,
-      requisition_folio: (db.requisitions.find(r => r.id === i.requisition_id) || {}).folio,
+      requisition_folio: reqRow.folio,
+      requester_name: requester ? requester.full_name : '',
+      cost_center_name: cc ? cc.name : '',
+      request_date: String(reqRow.request_date || reqRow.created_at || '').slice(0, 10),
       supplier_name: (db.suppliers.find(s => s.id === i.supplier_id) || {}).business_name || '-',
       item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '',
       po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
@@ -96,7 +103,7 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       quotation_request_supplier_ids: (db.quotation_requests || [])
         .filter(r => r.requisition_item_id === i.id)
         .map(r => r.supplier_id)
-    }));
+    };});
   res.json(rows);
 });
 
@@ -569,11 +576,19 @@ router.get('/purchase-orders', allowRoles('comprador', 'proveedor', 'admin'), (r
         ...i,
         item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '-'
       }));
+      const firstPoItem = db.purchase_order_items.find(i => i.purchase_order_id === po.id);
+      const firstReqItem = firstPoItem ? db.requisition_items.find(ri => ri.id === firstPoItem.requisition_item_id) : null;
+      const reqRow = firstReqItem ? db.requisitions.find(r => r.id === firstReqItem.requisition_id) : null;
+      const requester = reqRow ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
+      const cc = firstReqItem?.cost_center_id ? (db.cost_centers || []).find(c => c.id === firstReqItem.cost_center_id) : null;
       return {
         ...po,
         supplier_name: (db.suppliers.find(s => s.id === po.supplier_id) || {}).business_name || '',
         items: poItems.length,
-        po_items: poItems
+        po_items: poItems,
+        requester_name: requester ? requester.full_name : '',
+        cost_center_name: cc ? cc.name : '',
+        request_date: reqRow ? String(reqRow.request_date || reqRow.created_at || '').slice(0, 10) : ''
       };
     });
   res.json(rows);

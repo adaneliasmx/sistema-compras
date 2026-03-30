@@ -1524,10 +1524,14 @@ async function trackingDetailView(id) {
         <div class="small muted">POs<br><b>${poFolios.join(', ')||'-'}</b></div>
         <div class="small muted">Estatus<br>${statusPill(d.requisition.status)}</div>
       </div>
-      <div style="display:flex;gap:8px;margin-top:12px">
+      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
         <button id="viewByItemBtn" class="btn-primary" style="font-size:12px;padding:5px 14px">📦 Vista por ítem</button>
         <button id="viewByPoBtn" class="btn-secondary" style="font-size:12px;padding:5px 14px">🧾 Vista por PO</button>
+        ${state.user?.role === 'cliente_requisicion' && !['Cancelada','Cerrada'].includes(d.requisition.status) && !d.items.some(i => i.po_folio)
+          ? `<button id="cancelReqByRequesterBtn" class="btn-danger" style="font-size:12px;padding:5px 14px">✖ Cancelar requisición</button>`
+          : ''}
       </div>
+      <div id="cancelReqMsg" class="small muted" style="margin-top:6px"></div>
     </div>
 
     <!-- Cadena Req → PO → Factura → Pago -->
@@ -1697,6 +1701,19 @@ async function trackingDetailView(id) {
     document.getElementById('viewByPoSection').style.display = 'block';
     document.getElementById('viewByPoBtn').className = 'btn-primary';
     document.getElementById('viewByItemBtn').className = 'btn-secondary';
+  });
+
+  document.getElementById('cancelReqByRequesterBtn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('cancelReqMsg');
+    const reason = prompt('Motivo de cancelación (opcional):');
+    if (reason === null) return; // usuario cerró el prompt
+    if (!confirm('¿Cancelar la requisición? Esta acción no se puede deshacer.')) return;
+    try {
+      msgEl.textContent = 'Cancelando...'; msgEl.style.color = '#6b7280';
+      await api(`/api/requisitions/${id}/cancel-by-requester`, { method: 'POST', body: JSON.stringify({ reason: reason.trim() || 'Cancelada por el solicitante' }) });
+      msgEl.textContent = '✅ Requisición cancelada.'; msgEl.style.color = '#16a34a';
+      setTimeout(() => { location.hash = '#/seguimiento'; render(); }, 1200);
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
   });
 
   bindCommon();
@@ -2428,6 +2445,9 @@ async function purchasesView() {
       <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}/></td>
       <td><b>$${Number(total).toFixed(2)}</b></td>
       <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
+      <td style="font-size:11px;white-space:nowrap">${escapeHtml(i.requester_name||'-')}</td>
+      <td style="font-size:11px;white-space:nowrap">${escapeHtml(i.cost_center_name||'-')}</td>
+      <td style="font-size:11px;white-space:nowrap">${i.request_date||'-'}</td>
       <td>${statusPill(i.status)}</td>
       <td style="font-size:11px">${i.po_folio||'-'}</td>
       <td style="white-space:nowrap">
@@ -2492,6 +2512,7 @@ async function purchasesView() {
     <th style="width:32px"><input type="checkbox" id="selectAllCheck"/></th>
     <th>Req.</th><th>Ítem</th><th>Proveedor</th>
     <th>Cant.</th><th>Unidad</th><th>Costo U.</th><th>Total</th><th>Mon.</th>
+    <th>Solicitado por</th><th>C. Costo</th><th>Fecha</th>
     <th>Estatus</th><th>PO</th><th>Acciones</th>
   </tr></thead>`;
 
@@ -2900,7 +2921,42 @@ async function purchasesView() {
       const STATUS_NEXT = { 'Enviada': 'En proceso', 'Aceptada': 'En proceso', 'En proceso': 'Entregado' };
       const STATUS_LABEL_BTN = { 'Enviada': '▶ Marcar En proceso', 'Aceptada': '▶ Marcar En proceso', 'En proceso': '✅ Marcar Entregado' };
 
-      const visiblePos = pos.filter(p => p.status !== 'Cancelada'); tabContent.innerHTML = visiblePos.length ? visiblePos.map(p => {
+      // Filtros y ordenamiento de POs
+      tabContent.innerHTML = `
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <input id="poFiltSolicitante" placeholder="🔍 Solicitante" style="flex:1;min-width:130px"/>
+          <input id="poFiltCC" placeholder="🔍 Centro de costo" style="flex:1;min-width:130px"/>
+          <input id="poFiltDesde" type="date" title="Desde" style="width:130px"/>
+          <input id="poFiltHasta" type="date" title="Hasta" style="width:130px"/>
+          <select id="poFiltOrden" style="min-width:140px">
+            <option value="date_desc">Fecha más reciente</option>
+            <option value="date_asc">Fecha más antigua</option>
+            <option value="requester">Solicitante A-Z</option>
+            <option value="cc">C. Costo A-Z</option>
+          </select>
+          <button class="btn-primary" id="poFiltBtn" style="font-size:12px;padding:5px 12px">Filtrar</button>
+        </div>
+        <div id="posContainer"></div>`;
+
+      const renderPos = () => {
+        let filtered = pos.filter(p => p.status !== 'Cancelada');
+        const sol = document.getElementById('poFiltSolicitante')?.value.trim().toLowerCase();
+        const cc  = document.getElementById('poFiltCC')?.value.trim().toLowerCase();
+        const desde = document.getElementById('poFiltDesde')?.value;
+        const hasta = document.getElementById('poFiltHasta')?.value;
+        if (sol)   filtered = filtered.filter(p => (p.requester_name||'').toLowerCase().includes(sol));
+        if (cc)    filtered = filtered.filter(p => (p.cost_center_name||'').toLowerCase().includes(cc));
+        if (desde) filtered = filtered.filter(p => String(p.created_at||'').slice(0,10) >= desde);
+        if (hasta) filtered = filtered.filter(p => String(p.created_at||'').slice(0,10) <= hasta);
+        const orden = document.getElementById('poFiltOrden')?.value || 'date_desc';
+        filtered.sort((a,b) => {
+          if (orden === 'date_asc')  return String(a.created_at||'').localeCompare(String(b.created_at||''));
+          if (orden === 'date_desc') return String(b.created_at||'').localeCompare(String(a.created_at||''));
+          if (orden === 'requester') return (a.requester_name||'').localeCompare(b.requester_name||'');
+          if (orden === 'cc')        return (a.cost_center_name||'').localeCompare(b.cost_center_name||'');
+          return 0;
+        });
+        document.getElementById('posContainer').innerHTML = filtered.length ? filtered.map(p => {
         const nextS = STATUS_NEXT[p.status];
         const btnLabel = STATUS_LABEL_BTN[p.status];
         const canRequestInvoice = p.status === 'Entregado' && !p.invoice_requested;
@@ -2922,6 +2978,11 @@ async function purchasesView() {
               <b style="font-size:15px">${p.folio}</b>
               <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
               ${respTag}${reqTag}${advanceTag}
+              <div style="font-size:11px;color:#6b7280;margin-top:3px">
+                ${p.requester_name ? `👤 ${escapeHtml(p.requester_name)}` : ''}
+                ${p.cost_center_name ? ` · 🏷 ${escapeHtml(p.cost_center_name)}` : ''}
+                ${p.request_date ? ` · 📅 ${p.request_date}` : ''}
+              </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
               ${statusPill(p.status)}
@@ -2935,7 +2996,9 @@ async function purchasesView() {
             ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
             ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
             <button class="btn-secondary po-print-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">🖨 Ver/Imprimir PO</button>
+            <button class="btn-secondary po-items-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📦 Ver ítems</button>
           </div>
+          <div id="po-items-detail-${p.id}" style="display:none;margin-top:10px;padding:10px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb"></div>
           <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
           <div id="invoice-form-${p.id}" style="display:none;margin-top:12px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb">
             <h4 style="margin:0 0 4px">Registrar factura manualmente · ${p.folio}</h4>
@@ -3146,7 +3209,10 @@ async function purchasesView() {
           try {
             const poData = await api(`/api/purchases/purchase-orders/${poId}`).catch(() => ({ items: [] }));
             const poItems = (poData.items || []).map(l => ({ ...l, name: (l.name || l.manual_item_name || '-') }));
-            const supplier = { business_name: po.supplier_name, email: po.supplier_email || '' };
+            let pdfSubtotal = 0;
+            poItems.forEach(l => { pdfSubtotal += Number(l.quantity||0) * Number(l.unit_cost||0); });
+            const pdfIva = pdfSubtotal * 0.16;
+            const pdfTotal = pdfSubtotal + pdfIva;
             const linesHtml = poItems.length
               ? poItems.map(l => `<tr><td>${escapeHtml(l.name||'-')}</td><td style="text-align:right">${l.quantity} ${l.unit||''}</td><td style="text-align:right">$${Number(l.unit_cost||0).toFixed(2)}</td><td style="text-align:right"><b>$${(Number(l.quantity||0)*Number(l.unit_cost||0)).toFixed(2)}</b></td></tr>`).join('')
               : `<tr><td colspan="4" style="color:#9ca3af">Sin ítems disponibles — verifica en el sistema</td></tr>`;
@@ -3157,11 +3223,15 @@ async function purchasesView() {
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;font-size:13px">
                 <div><b>Proveedor:</b><br>${escapeHtml(po.supplier_name||'-')}</div>
-                <div><b>Moneda:</b> ${po.currency||'MXN'}<br><b>Total:</b> $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                <div><b>Moneda:</b> ${po.currency||'MXN'}</div>
               </div>
-              <table><thead><tr><th>Ítem</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio unit.</th><th style="text-align:right">Total</th></tr></thead>
+              <table><thead><tr><th>Ítem</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
               <tbody>${linesHtml}</tbody>
-              <tfoot><tr><td colspan="3" style="text-align:right;font-weight:700;padding:8px 4px">Total</td><td style="text-align:right;font-weight:700;font-size:15px;padding:8px 4px">$${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr></tfoot></table>
+              <tfoot>
+                <tr><td colspan="3" style="text-align:right;padding:6px 4px;color:#6b7280">Subtotal:</td><td style="text-align:right;padding:6px 4px;color:#6b7280">$${pdfSubtotal.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
+                <tr><td colspan="3" style="text-align:right;padding:4px 4px;color:#6b7280">IVA (16%):</td><td style="text-align:right;padding:4px 4px;color:#6b7280">$${pdfIva.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
+                <tr><td colspan="3" style="text-align:right;font-weight:700;padding:8px 4px;border-top:2px solid #e5e7eb">Total c/IVA:</td><td style="text-align:right;font-weight:700;font-size:15px;padding:8px 4px;border-top:2px solid #e5e7eb">$${pdfTotal.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
+              </tfoot></table>
               <div style="margin-top:20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:8px">Impreso el ${new Date().toLocaleString('es-MX')} · Sistema de Compras</div>
             `);
           } catch(e) { alert('Error al generar vista de impresión: ' + e.message); }
@@ -3199,6 +3269,54 @@ async function purchasesView() {
           } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
         };
       });
+      // Ver ítems de la PO (toggle expandible)
+      tabContent.querySelectorAll('.po-items-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const id = btn.dataset.id;
+          const detailDiv = document.getElementById(`po-items-detail-${id}`);
+          if (detailDiv.style.display !== 'none') { detailDiv.style.display = 'none'; btn.textContent = '📦 Ver ítems'; return; }
+          detailDiv.innerHTML = '<div class="small muted">Cargando ítems...</div>';
+          detailDiv.style.display = 'block';
+          btn.textContent = '▲ Ocultar ítems';
+          try {
+            const poData = await api(`/api/purchases/purchase-orders/${id}`);
+            const items = poData.po_items || poData.items || [];
+            if (!items.length) { detailDiv.innerHTML = '<div class="small muted">Sin ítems registrados.</div>'; return; }
+            let subtotal = 0;
+            items.forEach(i => { subtotal += Number(i.quantity||0) * Number(i.unit_cost||0); });
+            const iva = subtotal * 0.16;
+            detailDiv.innerHTML = `
+              <div style="overflow-x:auto">
+                <table style="width:100%;font-size:12px;border-collapse:collapse">
+                  <thead><tr style="background:#f3f4f6">
+                    <th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Descripción</th>
+                    <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Cant.</th>
+                    <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Precio unit.</th>
+                    <th style="padding:4px 8px;text-align:right;border-bottom:1px solid #e5e7eb">Subtotal</th>
+                  </tr></thead>
+                  <tbody>${items.map(i => {
+                    const sub = Number(i.quantity||0) * Number(i.unit_cost||0);
+                    return `<tr style="border-bottom:1px solid #f3f4f6">
+                      <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}</td>
+                      <td style="padding:4px 8px;text-align:right">${Number(i.quantity||0)} ${i.unit||''}</td>
+                      <td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td>
+                      <td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td>
+                    </tr>`;
+                  }).join('')}</tbody>
+                  <tfoot>
+                    <tr><td colspan="3" style="padding:4px 8px;text-align:right;font-size:11px;color:#6b7280">Subtotal:</td><td style="padding:4px 8px;text-align:right;font-size:11px;color:#6b7280">$${subtotal.toFixed(2)}</td></tr>
+                    <tr><td colspan="3" style="padding:4px 8px;text-align:right;font-size:11px;color:#6b7280">IVA (16%):</td><td style="padding:4px 8px;text-align:right;font-size:11px;color:#6b7280">$${iva.toFixed(2)}</td></tr>
+                    <tr style="font-weight:700"><td colspan="3" style="padding:6px 8px;text-align:right">Total c/IVA:</td><td style="padding:6px 8px;text-align:right">$${(subtotal+iva).toFixed(2)}</td></tr>
+                  </tfoot>
+                </table>
+              </div>`;
+          } catch(e) { detailDiv.innerHTML = `<div class="small" style="color:#dc2626">Error: ${e.message}</div>`; }
+        };
+      });
+      };  // close renderPos
+
+      renderPos();
+      document.getElementById('poFiltBtn').onclick = renderPos;
 
     } else if (tab === 'requisiciones') {
       poActions.style.display = 'none';

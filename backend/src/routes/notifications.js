@@ -32,6 +32,22 @@ router.get('/', (req, res) => {
 
   // ── Comprador ──────────────────────────────────────────────────────────────
   if (role === 'comprador' || role === 'admin') {
+    const since48h = new Date(Date.now() - 48 * 3600000).toISOString();
+    const cancelledByRequester = db.requisitions.filter(r => {
+      if (r.status !== 'Cancelada' || !r.cancelled_at || r.cancelled_at < since48h || !r.cancelled_by_user_id) return false;
+      const u = db.users.find(u => u.id === r.cancelled_by_user_id);
+      return u && u.role_code === 'cliente_requisicion';
+    });
+    if (cancelledByRequester.length) notes.push({
+      id: 'cancelled_by_requester',
+      priority: 'medium',
+      icon: '🚫',
+      title: `${cancelledByRequester.length} requisición(es) cancelada(s) por solicitante`,
+      body: cancelledByRequester.map(r => r.folio).join(', '),
+      route: '#/compras',
+      count: cancelledByRequester.length
+    });
+
     const newReqs = db.requisitions.filter(r => r.status === 'Enviada');
     if (newReqs.length) notes.push({
       id: 'new_requisitions',
