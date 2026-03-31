@@ -582,13 +582,17 @@ function bindConsultaVales() {
             <thead><tr><th>Folio</th><th>Fecha</th><th>Hora</th><th>Turno</th><th>Línea</th><th>Solicita</th><th>Items</th><th>kg total</th><th></th></tr></thead>
             <tbody>${vales.map(v => {
               const kgT = (v.detalle||[]).reduce((s,d) => s+(d.kg_equivalentes||0),0);
+              const isAdmin = state.user?.vales_role === 'admin';
               return `<tr>
                 <td class="mono">${v.folio_vale}</td>
                 <td>${v.fecha}</td><td>${v.hora||'-'}</td><td>${v.turno||'-'}</td>
                 <td>${v.linea}</td><td>${v.solicita||'-'}</td>
                 <td>${(v.detalle||[]).length}</td>
                 <td class="kg-value">${kgT.toFixed(3)}</td>
-                <td><button class="btn btn-outline btn-sm" onclick="verVale('${v.folio_vale}')">Ver</button></td>
+                <td style="display:flex;gap:4px">
+                  <button class="btn btn-outline btn-sm" onclick="verVale('${v.folio_vale}')">Ver</button>
+                  ${isAdmin ? `<button class="btn btn-outline btn-sm" onclick="editVale('${v.folio_vale}')">✏️</button>` : ''}
+                </td>
               </tr>`;
             }).join('')}</tbody>
           </table>
@@ -647,7 +651,7 @@ function bindConsultaVales() {
         </div>
         <div class="table-scroll">
           <table>
-            <thead><tr><th>Fecha</th><th>Hora</th><th>Turno</th><th>Folio Vale</th><th>Línea</th><th>Tanque</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>kg</th><th>Titulación</th><th>Solicita</th><th>Adiciona</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Hora</th><th>Turno</th><th>Folio Vale</th><th>Línea</th><th>Tanque</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>kg</th><th>Titulación</th><th>Solicita</th><th>Adiciona</th>${state.user?.vales_role==='admin'?'<th></th>':''}</tr></thead>
             <tbody>${rows.map(r=>`<tr>
               <td>${r.fecha}</td><td>${r.hora||'-'}</td><td>${r.turno||'-'}</td>
               <td class="mono">${r.folio_vale}</td>
@@ -659,6 +663,7 @@ function bindConsultaVales() {
               <td>${r.titulacion||'-'}</td>
               <td>${r.solicita||'-'}</td>
               <td>${r.adiciona||'-'}</td>
+              ${state.user?.vales_role==='admin'?`<td><button class="btn btn-outline btn-xs" onclick="editDetalle('${r.folio_vale}',${r.id})">✏️</button></td>`:''}
             </tr>`).join('')}</tbody>
           </table>
         </div>
@@ -706,6 +711,7 @@ window.verVale = async function(folio) {
   try {
     const v = await GET('/vales/' + folio);
     const kgT = (v.detalle || []).reduce((s, d) => s + (d.kg_equivalentes || 0), 0);
+    const isAdmin = state.user?.vales_role === 'admin';
     showModal(`
       <h3>📋 ${v.folio_vale}</h3>
       <div class="vale-meta">
@@ -721,10 +727,11 @@ window.verVale = async function(folio) {
       ${v.comentarios ? `<div class="alert alert-info mt-2">💬 ${v.comentarios}</div>` : ''}
       <h4 style="margin:16px 0 8px;font-size:13px;font-weight:700">Detalle (${(v.detalle||[]).length} línea(s) · ${kgT.toFixed(3)} kg total)</h4>
       <table class="detail-table">
-        <thead><tr><th>Tanque</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>kg</th><th>Titulación</th></tr></thead>
+        <thead><tr><th>Tanque</th><th>Producto</th><th>Tipo</th><th>Cantidad</th><th>kg</th><th>Titulación</th>${isAdmin?'<th></th>':''}</tr></thead>
         <tbody>${(v.detalle||[]).map(d => `
           <tr><td>${d.no_tanque} ${d.nombre_tanque}</td><td>${d.item}</td><td>${d.tipo_adicion}</td>
-          <td>${d.cantidad}</td><td class="kg-value">${(d.kg_equivalentes||0).toFixed(3)}</td><td>${d.titulacion||'-'}</td></tr>`).join('')}
+          <td>${d.cantidad}</td><td class="kg-value">${(d.kg_equivalentes||0).toFixed(3)}</td><td>${d.titulacion||'-'}</td>
+          ${isAdmin?`<td><button class="btn btn-outline btn-xs" onclick="editDetalle('${v.folio_vale}',${d.id})">✏️</button></td>`:''}</tr>`).join('')}
         </tbody>
       </table>
       ${(v.correcciones||[]).length > 0 ? `
@@ -737,9 +744,104 @@ window.verVale = async function(folio) {
           </tbody>
         </table>` : ''}
       <div class="modal-actions">
+        ${isAdmin ? `<button class="btn btn-outline" onclick="editVale('${v.folio_vale}')">✏️ Editar encabezado</button>` : ''}
         <button class="btn btn-outline" onclick="window.print()">🖨️ Imprimir</button>
         <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
       </div>`);
+  } catch(e) { alert('Error: ' + e.message); }
+};
+
+// ── Editar encabezado de vale (admin) ─────────────────────────────────────────
+window.editVale = async function(folio) {
+  try {
+    const [v, lineas] = await Promise.all([GET('/vales/' + folio), GET('/lineas').catch(()=>[])]);
+    showModal(`
+      <h3>✏️ Editar Vale ${v.folio_vale}</h3>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group"><label>Fecha</label><input type="date" id="ev-fecha" value="${v.fecha||''}" /></div>
+        <div class="form-group"><label>Hora</label><input type="time" id="ev-hora" value="${v.hora||''}" /></div>
+        <div class="form-group"><label>Turno</label>
+          <select id="ev-turno">
+            ${['','1','2','3'].map(t=>`<option value="${t}" ${v.turno===t?'selected':''}>${t||'—'}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Línea</label>
+          <select id="ev-linea">
+            ${lineas.map(l=>`<option value="${l}" ${v.linea===l?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Solicita</label><input type="text" id="ev-solicita" value="${v.solicita||''}" /></div>
+        <div class="form-group"><label>Adiciona</label><input type="text" id="ev-adiciona" value="${v.adiciona||''}" /></div>
+        <div class="form-group"><label>Coordinador</label><input type="text" id="ev-coord" value="${v.coordinador||''}" /></div>
+        <div class="form-group" style="grid-column:1/-1"><label>Comentarios</label><input type="text" id="ev-coments" value="${v.comentarios||''}" /></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="btn-ev-save">Guardar cambios</button>
+      </div>`);
+    document.getElementById('btn-ev-save').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-ev-save');
+      btn.disabled = true; btn.textContent = 'Guardando...';
+      try {
+        await PATCH('/vales/' + folio, {
+          fecha:       document.getElementById('ev-fecha').value,
+          hora:        document.getElementById('ev-hora').value,
+          turno:       document.getElementById('ev-turno').value,
+          linea:       document.getElementById('ev-linea').value,
+          solicita:    document.getElementById('ev-solicita').value,
+          adiciona:    document.getElementById('ev-adiciona').value,
+          coordinador: document.getElementById('ev-coord').value,
+          comentarios: document.getElementById('ev-coments').value
+        });
+        closeModal();
+        navigate('consulta-vales');
+      } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+    });
+  } catch(e) { alert('Error: ' + e.message); }
+};
+
+// ── Editar línea de detalle (admin) ───────────────────────────────────────────
+window.editDetalle = async function(folio, detalleId) {
+  try {
+    const v = await GET('/vales/' + folio);
+    const d = (v.detalle || []).find(x => x.id === detalleId);
+    if (!d) { alert('Línea no encontrada'); return; }
+    const TIPOS = ['KG','TAMBO','PORRON_15L','LITRO'];
+    showModal(`
+      <h3>✏️ Editar línea — ${folio}</h3>
+      <p style="color:#78716c;font-size:13px;margin-bottom:14px">
+        <strong>${d.item}</strong> · ${d.no_tanque} ${d.nombre_tanque}
+      </p>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div class="form-group"><label>Tipo de adición</label>
+          <select id="ed-tipo">
+            ${TIPOS.map(t=>`<option value="${t}" ${d.tipo_adicion===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label>Cantidad</label>
+          <input type="number" id="ed-cant" step="0.001" min="0" value="${d.cantidad||0}" />
+        </div>
+        <div class="form-group" style="grid-column:1/-1"><label>Titulación</label>
+          <input type="text" id="ed-tit" value="${d.titulacion||''}" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="btn-ed-save">Guardar cambios</button>
+      </div>`);
+    document.getElementById('btn-ed-save').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-ed-save');
+      btn.disabled = true; btn.textContent = 'Guardando...';
+      try {
+        await PATCH('/vales/' + folio + '/detalle/' + detalleId, {
+          tipo_adicion: document.getElementById('ed-tipo').value,
+          cantidad:     parseFloat(document.getElementById('ed-cant').value) || 0,
+          titulacion:   document.getElementById('ed-tit').value
+        });
+        closeModal();
+        verVale(folio);
+      } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = 'Guardar cambios'; }
+    });
   } catch(e) { alert('Error: ' + e.message); }
 };
 

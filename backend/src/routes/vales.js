@@ -180,6 +180,74 @@ router.get('/vales/:folio', (req, res) => {
   });
 });
 
+// Editar encabezado de vale (admin)
+router.patch('/vales/:folio', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const header = (db.vales_header || []).find(h => h.folio_vale === req.params.folio);
+  if (!header) return res.status(404).json({ error: 'Vale no encontrado' });
+  const b = req.body;
+  const editables = ['fecha','hora','turno','linea','solicita','adiciona','coordinador','comentarios'];
+  editables.forEach(f => { if (b[f] !== undefined) header[f] = b[f]; });
+  // Si cambia la línea, actualizar kardex relacionados
+  if (b.linea !== undefined) {
+    (db.kardex_vales || []).filter(k => k.referencia === header.folio_vale).forEach(k => { k.linea = b.linea; });
+  }
+  header.updated_at = new Date().toISOString();
+  header.updated_by = req.valesUser.full_name;
+  writeVales(db);
+  res.json({ ...header, detalle: (db.vales_detalle || []).filter(d => d.folio_vale === header.folio_vale) });
+});
+
+// Editar línea de detalle (admin) — recalcula kg y actualiza kardex
+router.patch('/vales/:folio/detalle/:id', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const det = (db.vales_detalle || []).find(d => d.folio_vale === req.params.folio && d.id === Number(req.params.id));
+  if (!det) return res.status(404).json({ error: 'Línea no encontrada' });
+  const b = req.body;
+  const oldKg       = det.kg_equivalentes;
+  const oldCantidad = det.cantidad;
+  const oldTipo     = det.tipo_adicion;
+
+  if (b.titulacion  !== undefined) det.titulacion  = b.titulacion;
+  if (b.tipo_adicion !== undefined) det.tipo_adicion = b.tipo_adicion;
+  if (b.cantidad    !== undefined) det.cantidad    = parseFloat(b.cantidad) || 0;
+
+  // Recalcular kg si cambió cantidad o tipo
+  if (b.cantidad !== undefined || b.tipo_adicion !== undefined) {
+    const itemRec = (db.items_vales || []).find(i => i.item === det.item);
+    if (itemRec) {
+      det.kg_equivalentes = calcKg(det.tipo_adicion, det.cantidad, itemRec);
+    }
+  }
+  const newKg = det.kg_equivalentes;
+  det.updated_at = new Date().toISOString();
+
+  // Actualizar kardex: buscar por detalle_id o por referencia+item+oldCantidad+oldTipo
+  const kardex = (db.kardex_vales || []).find(k =>
+    k.referencia === req.params.folio && k.item === det.item &&
+    (k.detalle_id === det.id || (k.cantidad === oldCantidad && k.unidad === oldTipo))
+  );
+  if (kardex) {
+    kardex.cantidad = det.cantidad;
+    kardex.unidad   = det.tipo_adicion;
+    kardex.kg       = newKg;
+    kardex.updated_at = new Date().toISOString();
+  }
+
+  // Ajustar inventario con la diferencia de kg
+  const diff = newKg - oldKg;
+  if (diff !== 0) {
+    const inv = (db.inventario_vales || []).find(i => i.item === det.item);
+    if (inv) {
+      inv.existencia_kg = (parseFloat(inv.existencia_kg) || 0) - diff;
+      inv.ultima_actualizacion = new Date().toISOString();
+    }
+  }
+
+  writeVales(db);
+  res.json(det);
+});
+
 router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
   const db = readVales();
   const body = req.body;
@@ -217,9 +285,10 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
     if (!itemRec) return res.status(400).json({ error: `Item no encontrado: ${det.item}` });
 
     const kg = calcKg(det.tipo_adicion, det.cantidad, itemRec);
+    const detalleId = nextId(db.vales_detalle);
 
     db.vales_detalle.push({
-      id: nextId(db.vales_detalle),
+      id: detalleId,
       folio_vale,
       titulacion: det.titulacion || '',
       no_tanque: det.no_tanque || '',
@@ -244,6 +313,7 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
       nombre_tanque: det.nombre_tanque || '',
       usuario: req.valesUser.full_name,
       comentario: '',
+      detalle_id: detalleId,
       created_at: now.toISOString()
     });
 
