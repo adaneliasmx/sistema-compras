@@ -61,7 +61,7 @@ function buildUnifiedList() {
       key: emailLow,
       full_name: cu.full_name,
       email: cu.email,
-      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false, vales_role: cu.vales_role || null, produccion_role: cu.produccion_role || null },
+      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false, vales_role: cu.vales_role || null, produccion_role: cu.produccion_role || null, mant_role: cu.mant_role || null },
       rhh: rhhUser ? { id: rhhUser.id, role: rhhUser.role, active: rhhUser.active !== false } : null,
       is_external: cu.role_code === 'proveedor'
     });
@@ -135,7 +135,11 @@ router.get('/overview', superAdminRequired, (req, res) => {
       users: (compras.users || []).filter(u => u.produccion_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.produccion_role, active: u.active !== false })),
       total_users: (compras.users || []).filter(u => u.produccion_role).length
     },
-    { id: 'mantenimiento', name: 'Órdenes de Mantenimiento', icon: '🔧', status: 'development', url: null, users: [], total_users: 0 }
+    {
+      id: 'mantenimiento', name: 'Órdenes de Mantenimiento', icon: '🔧', status: 'development', url: null,
+      users: (compras.users || []).filter(u => u.mant_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.mant_role, active: u.active !== false })),
+      total_users: (compras.users || []).filter(u => u.mant_role).length
+    }
   ];
   res.json({ modules });
 });
@@ -166,7 +170,8 @@ router.post('/unified-users', superAdminRequired, (req, res) => {
       id: nextIdCompras(db.users), full_name, email: emailLow,
       password_hash: pwdHash, role_code: compras_role, department: '',
       supplier_id: null, default_cost_center_id: null, default_sub_cost_center_id: null,
-      active: true, vales_role: (req.body.vales_role) || null
+      active: true, vales_role: (req.body.vales_role) || null,
+      produccion_role: req.body.produccion_role || null, mant_role: req.body.mant_role || null
     };
     db.users = [...(db.users || []), user];
     writeCompras(db);
@@ -567,6 +572,19 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
   writeCompras(comprasDb);
   writeRhh(rhhDb);
   res.json({ ok: true, results });
+});
+
+// PATCH /api/super-admin/unified-users/mant-role
+router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
+  const { user_id, mant_role } = req.body || {};
+  if (mant_role && !['admin'].includes(mant_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: admin o null' });
+  const db = readCompras();
+  const user = (db.users || []).find(u => u.id === Number(user_id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  user.mant_role = mant_role || null;
+  writeCompras(db);
+  res.json({ ok: true });
 });
 
 // PATCH /api/super-admin/unified-users/produccion-role

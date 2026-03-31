@@ -195,11 +195,13 @@
                 <th style="min-width:200px;">🛒 Compras</th>
                 <th style="min-width:200px;">👥 RHH</th>
                 <th style="min-width:190px;">📋 Registros de Calidad</th>
+                <th style="min-width:170px;">🏭 Producción</th>
+                <th style="min-width:170px;">🔧 Mantenimiento</th>
                 <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="5" class="empty">Cargando...</td></tr>
+              <tr><td colspan="7" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -303,6 +305,26 @@
           <option value="admin">Admin (acceso total)</option>
         </select>
       </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-produccion-chk" onchange="document.getElementById('cm-produccion-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          🏭 Registros de Producción
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Requiere también activar Compras</small>
+        <select class="modal-input" id="cm-produccion-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="admin">Admin (acceso total)</option>
+        </select>
+      </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-mant-chk" onchange="document.getElementById('cm-mant-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          🔧 Órdenes de Mantenimiento
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Requiere también activar Compras</small>
+        <select class="modal-input" id="cm-mant-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="admin">Admin (acceso total)</option>
+        </select>
+      </div>
     </div>
     <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
@@ -350,10 +372,12 @@
 
 <script>
 const TOKEN_KEY = 'sa_token';
-const ROLE_LABELS_COMPRAS  = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin' };
-const ROLE_LABELS_RHH      = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
-const ROLE_LABELS_CALIDAD  = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
-const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', mantenimiento:'#b45309' };
+const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin' };
+const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
+const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
+const ROLE_LABELS_MANT       = { admin:'Admin' };
+const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', produccion:'#b45309', mantenimiento:'#92400e' };
 
 let _unifiedData = { internal: [], external: [] };
 let _currentPageTab = 'users';
@@ -412,7 +436,7 @@ async function loadData() {
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="5" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="7" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -425,7 +449,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="5" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="7" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -469,6 +493,28 @@ function renderUsersTable() {
          </div>`
       : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
 
+    const produccionCell = u.compras
+      ? `<div class="mod-cell">
+           <span class="dot ${u.compras.produccion_role ? 'dot-on' : 'dot-off'}" id="dot-prod-${u.compras.id}"></span>
+           <select class="role-sel" style="color:${u.compras.produccion_role ? '#b45309' : '#9ca3af'}"
+             onchange="changeProduccionRole(${u.compras.id}, this.value, this)">
+             <option value="">— Sin acceso —</option>
+             <option value="admin" ${u.compras.produccion_role==='admin' ?'selected':''}>Admin</option>
+           </select>
+         </div>`
+      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+
+    const mantCell = u.compras
+      ? `<div class="mod-cell">
+           <span class="dot ${u.compras.mant_role ? 'dot-on' : 'dot-off'}" id="dot-mant-${u.compras.id}"></span>
+           <select class="role-sel" style="color:${u.compras.mant_role ? '#b45309' : '#9ca3af'}"
+             onchange="changeMantRole(${u.compras.id}, this.value, this)">
+             <option value="">— Sin acceso —</option>
+             <option value="admin" ${u.compras.mant_role==='admin' ?'selected':''}>Admin</option>
+           </select>
+         </div>`
+      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
         <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>
@@ -484,6 +530,8 @@ function renderUsersTable() {
       <td>${comprasCell}</td>
       <td>${rhhCell}</td>
       <td>${calidadCell}</td>
+      <td>${produccionCell}</td>
+      <td>${mantCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -545,6 +593,38 @@ async function changeValesRole(userId, valesRole, sel) {
   }
 }
 
+async function changeProduccionRole(userId, produccionRole, sel) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/produccion-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, produccion_role: produccionRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = produccionRole ? '#b45309' : '#9ca3af';
+    const dot = document.getElementById('dot-prod-' + userId);
+    if (dot) { dot.className = 'dot ' + (produccionRole ? 'dot-on' : 'dot-off'); }
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
+async function changeMantRole(userId, mantRole, sel) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/mant-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, mant_role: mantRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = mantRole ? '#b45309' : '#9ca3af';
+    const dot = document.getElementById('dot-mant-' + userId);
+    if (dot) { dot.className = 'dot ' + (mantRole ? 'dot-on' : 'dot-off'); }
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
 async function changeRole(module, userId, role, sel) {
   const prev = sel.dataset.prev || role;
   sel.dataset.prev = role;
@@ -596,9 +676,13 @@ function openCreateModal(forceRole) {
   document.getElementById('cm-compras-chk').checked = false;
   document.getElementById('cm-rhh-chk').checked = false;
   document.getElementById('cm-calidad-chk').checked = false;
+  document.getElementById('cm-produccion-chk').checked = false;
+  document.getElementById('cm-mant-chk').checked = false;
   document.getElementById('cm-compras-role').disabled = true;
   document.getElementById('cm-rhh-role').disabled = true;
   document.getElementById('cm-calidad-role').disabled = true;
+  document.getElementById('cm-produccion-role').disabled = true;
+  document.getElementById('cm-mant-role').disabled = true;
   if (forceRole === 'proveedor') {
     document.getElementById('cm-compras-chk').checked = true;
     document.getElementById('cm-compras-role').disabled = false;
@@ -615,11 +699,15 @@ async function saveCreateUser() {
   const comprasChk = document.getElementById('cm-compras-chk').checked;
   const rhhChk = document.getElementById('cm-rhh-chk').checked;
   const calidadChk = document.getElementById('cm-calidad-chk').checked;
+  const produccionChk = document.getElementById('cm-produccion-chk').checked;
+  const mantChk = document.getElementById('cm-mant-chk').checked;
   const errEl = document.getElementById('cmErr');
   errEl.textContent = '';
   if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
   if (!comprasChk && !rhhChk) { errEl.textContent = 'Selecciona al menos un módulo (Compras o RHH)'; return; }
   if (calidadChk && !comprasChk) { errEl.textContent = 'Registros de Calidad requiere activar también Compras'; return; }
+  if (produccionChk && !comprasChk) { errEl.textContent = 'Registros de Producción requiere activar también Compras'; return; }
+  if (mantChk && !comprasChk) { errEl.textContent = 'Órdenes de Mantenimiento requiere activar también Compras'; return; }
   try {
     await api('/api/super-admin/unified-users', {
       method: 'POST',
@@ -627,7 +715,9 @@ async function saveCreateUser() {
         full_name: name, email, password: pass,
         compras_role: comprasChk ? document.getElementById('cm-compras-role').value : null,
         rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null,
-        vales_role: (calidadChk && comprasChk) ? document.getElementById('cm-calidad-role').value : null
+        vales_role: (calidadChk && comprasChk) ? document.getElementById('cm-calidad-role').value : null,
+        produccion_role: (produccionChk && comprasChk) ? document.getElementById('cm-produccion-role').value : null,
+        mant_role: (mantChk && comprasChk) ? document.getElementById('cm-mant-role').value : null
       })
     });
     closeCreateModal();
