@@ -377,9 +377,11 @@ function bindCrearVale() {
     const tanque = JSON.parse(this.value);
     const allItems = await GET('/items?vigente=true');
     const autorizados = tanque.items_autorizados || [];
-    const items = autorizados.length > 0
-      ? allItems.filter(i => autorizados.includes(i.item))
-      : allItems;
+    if (autorizados.length === 0) {
+      selItem.innerHTML = '<option value="">— Sin productos asignados —</option>';
+      return;
+    }
+    const items = allItems.filter(i => autorizados.includes(i.item));
     items.forEach(i => selItem.add(new Option(`${i.item} — ${i.presentacion}`, JSON.stringify(i))));
   });
 
@@ -516,7 +518,10 @@ async function viewConsultaVales() {
       <div><label class="flabel">Línea</label><br>
         <select id="fv-linea"><option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
       </div>
-      <div style="align-self:flex-end"><button class="btn btn-primary" id="btn-buscar-vale">🔍 Buscar</button></div>
+      <div style="align-self:flex-end;display:flex;gap:8px">
+        <button class="btn btn-primary" id="btn-buscar-vale">🔍 Buscar</button>
+        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-export-vale">⬇️ Excel</button>` : ''}
+      </div>
     </div>
     <div id="result-porvale"></div>
   </div>
@@ -534,7 +539,8 @@ async function viewConsultaVales() {
       </div>
       <div style="align-self:flex-end;display:flex;gap:8px">
         <button class="btn btn-primary" id="btn-buscar-item">🔍 Buscar</button>
-        <button class="btn btn-outline" id="btn-export-item">📥 Exportar CSV</button>
+        <button class="btn btn-outline" id="btn-export-item">📥 CSV</button>
+        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-export-item-xlsx">⬇️ Excel</button>` : ''}
       </div>
     </div>
     <div id="result-poritem"></div>
@@ -551,6 +557,7 @@ function bindConsultaVales() {
   };
 
   // ── Búsqueda por Vale ──
+  let _valesData = [];
   const buscarVale = async () => {
     const ini   = document.getElementById('fv-ini').value;
     const fin   = document.getElementById('fv-fin').value;
@@ -565,6 +572,7 @@ function bindConsultaVales() {
     el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Buscando...</p></div>';
     try {
       const vales = await GET('/vales' + q);
+      _valesData = vales;
       if (vales.length === 0) { el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin resultados</p></div>'; return; }
       el.innerHTML = `
       <div class="table-card">
@@ -590,6 +598,28 @@ function bindConsultaVales() {
   };
   document.getElementById('btn-buscar-vale').addEventListener('click', buscarVale);
   buscarVale();
+
+  // ── Export Excel — Por Vale (solo admin) ──
+  document.getElementById('btn-export-vale')?.addEventListener('click', () => {
+    if (!_valesData.length) { alert('Primero realiza una búsqueda'); return; }
+    const rows = [];
+    _valesData.forEach(v => {
+      const detalles = v.detalle || [];
+      if (detalles.length === 0) {
+        rows.push({ Folio: v.folio_vale, Fecha: v.fecha, Hora: v.hora||'', Turno: v.turno||'', Línea: v.linea, Solicita: v.solicita||'', Adiciona: v.adiciona||'', Coordinador: v.coordinador||'', Comentarios: v.comentarios||'', 'No. Tanque': '', 'Nombre Tanque': '', Producto: '', 'Tipo Adición': '', Cantidad: '', 'kg Equiv.': '', Titulación: '' });
+      } else {
+        detalles.forEach(d => {
+          rows.push({ Folio: v.folio_vale, Fecha: v.fecha, Hora: v.hora||'', Turno: v.turno||'', Línea: v.linea, Solicita: v.solicita||'', Adiciona: v.adiciona||'', Coordinador: v.coordinador||'', Comentarios: v.comentarios||'', 'No. Tanque': d.no_tanque||'', 'Nombre Tanque': d.nombre_tanque||'', Producto: d.item||'', 'Tipo Adición': d.tipo_adicion||'', Cantidad: d.cantidad||0, 'kg Equiv.': d.kg_equivalentes||0, Titulación: d.titulacion||'' });
+        });
+      }
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vales');
+    const ini = document.getElementById('fv-ini').value;
+    const fin = document.getElementById('fv-fin').value;
+    XLSX.writeFile(wb, `vales_${ini}_${fin}.xlsx`);
+  });
 
   // ── Búsqueda por Item ──
   let _detallesData = [];
@@ -652,6 +682,24 @@ function bindConsultaVales() {
     a.href = URL.createObjectURL(blob);
     a.download = `adiciones_${document.getElementById('fi-ini').value}_${document.getElementById('fi-fin').value}.csv`;
     a.click();
+  });
+
+  // ── Export Excel — Por Item (solo admin) ──
+  document.getElementById('btn-export-item-xlsx')?.addEventListener('click', () => {
+    if (!_detallesData.length) { alert('Primero realiza una búsqueda'); return; }
+    const rows = _detallesData.map(r => ({
+      Fecha: r.fecha, Hora: r.hora||'', Turno: r.turno||'', 'Folio Vale': r.folio_vale,
+      Línea: r.linea, 'No. Tanque': r.no_tanque||'', 'Nombre Tanque': r.nombre_tanque||'',
+      Producto: r.item, 'Tipo Adición': r.tipo_adicion, Cantidad: r.cantidad,
+      kg: r.kg||0, Titulación: r.titulacion||'', Solicita: r.solicita||'',
+      Adiciona: r.adiciona||'', Coordinador: r.coordinador||'', Comentarios: r.comentarios||''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Por Producto');
+    const ini = document.getElementById('fi-ini').value;
+    const fin = document.getElementById('fi-fin').value;
+    XLSX.writeFile(wb, `adiciones_${ini}_${fin}.xlsx`);
   });
 }
 window.verVale = async function(folio) {
@@ -1377,7 +1425,7 @@ function showModalTanque(tanque, items) {
       ${isEdit?`<div class="form-group"><label>Activo</label><select id="tk-activo"><option value="true" ${tanque?.activo?'selected':''}>Sí</option><option value="false" ${!tanque?.activo?'selected':''}>No</option></select></div>`:''}
     </div>
     <div class="form-group" style="margin-top:12px">
-      <label>Productos autorizados <small style="color:#78716c">(ninguno = todos permitidos)</small></label>
+      <label>Productos autorizados <small style="color:#78716c">(ninguno = tanque sin productos asignados)</small></label>
       <div style="max-height:160px;overflow-y:auto;border:1.5px solid #e7e5e4;border-radius:8px;padding:8px;margin-top:4px">
         ${items.map(i=>`
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;cursor:pointer">
