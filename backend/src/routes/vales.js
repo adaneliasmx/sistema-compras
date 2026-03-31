@@ -763,4 +763,309 @@ router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
   res.json({ year: yearQ, week_ini: wIni, week_fin: wFin, items: result });
 });
 
+// ── IMPORTACIÓN DESDE SQLITE (base sistema antiguo) ───────────────────────────
+
+const DEFAULT_SQLITE_PATH = "C:/Users/proye/OneDrive 2026/OneDrive - Corporativo Cuesto, S de RL de CV/Vales de adicion/cuestoquimicos/_internal/materiales.sqlite";
+
+router.get('/import-sqlite/default-path', valesAllowRoles('admin'), (req, res) => {
+  res.json({ path: DEFAULT_SQLITE_PATH });
+});
+
+router.post('/import-sqlite', valesAllowRoles('admin'), (req, res) => {
+  const {
+    sqlite_path = DEFAULT_SQLITE_PATH,
+    mode = 'preview',        // 'preview' | 'execute'
+    import_items      = true,
+    import_tanques    = true,
+    import_vales      = true,
+    import_kardex     = true,
+    import_correcciones = true
+  } = req.body;
+
+  let SqliteDb;
+  try {
+    SqliteDb = require('better-sqlite3');
+  } catch (e) {
+    return res.status(500).json({ error: 'better-sqlite3 no disponible: ' + e.message });
+  }
+
+  let src;
+  try {
+    src = new SqliteDb(sqlite_path, { readonly: true });
+  } catch (e) {
+    return res.status(400).json({ error: 'No se pudo abrir el SQLite: ' + e.message });
+  }
+
+  try {
+    const db = readVales();
+
+    // ── Leer tablas del SQLite ──────────────────────────────────────────────
+    const srcItems      = src.prepare('SELECT * FROM items').all();
+    const srcAdiciones  = src.prepare('SELECT * FROM item_adiciones').all();
+    const srcTanques    = src.prepare('SELECT * FROM tanques').all();
+    const srcHeaders    = src.prepare('SELECT * FROM vales_header').all();
+    const srcDetalles   = src.prepare('SELECT * FROM vales_detalle').all();
+    const srcKardex     = src.prepare('SELECT * FROM kardex').all();
+    const srcCorrec     = src.prepare('SELECT * FROM vales_correccion').all();
+    const srcInv        = src.prepare('SELECT * FROM inventario').all();
+    src.close();
+
+    const stats = {
+      items:       { total: srcItems.length,   nuevos: 0, actualizados: 0, sin_cambios: 0 },
+      tanques:     { total: srcTanques.length,  nuevos: 0, actualizados: 0, sin_cambios: 0 },
+      adiciones:   { total: srcAdiciones.length,nuevos: 0, sin_cambios: 0 },
+      vales:       { total: srcHeaders.length,  nuevos: 0, omitidos: 0 },
+      kardex:      { total: srcKardex.length,   nuevos: 0, omitidos: 0 },
+      correcciones:{ total: srcCorrec.length,   nuevos: 0, omitidos: 0 }
+    };
+
+    if (mode === 'preview') {
+      // Solo contar, no modificar
+      if (import_items) {
+        srcItems.forEach(si => {
+          const exist = (db.items_vales || []).find(i => i.item === si.item);
+          if (!exist) stats.items.nuevos++;
+          else {
+            const changed = exist.peso_kg !== si.peso_kg || exist.densidad !== si.densidad || exist.precio_kg !== si.precio_kg;
+            if (changed) stats.items.actualizados++; else stats.items.sin_cambios++;
+          }
+        });
+      }
+      if (import_tanques) {
+        srcTanques.forEach(st => {
+          const exist = (db.tanques_vales || []).find(t => t.linea === st.linea && t.no_tanque === st.no_tanque);
+          if (!exist) stats.tanques.nuevos++;
+          else stats.tanques.sin_cambios++;
+        });
+      }
+      if (import_items) {
+        srcAdiciones.forEach(sa => {
+          const destItem = (db.items_vales || []).find(i => i.item === sa.item);
+          if (!destItem) return;
+          const exist = (db.item_adiciones || []).find(a => a.item_id === destItem.id && a.tipo_adicion === sa.tipo_adicion);
+          if (!exist) stats.adiciones.nuevos++; else stats.adiciones.sin_cambios++;
+        });
+      }
+      if (import_vales) {
+        srcHeaders.forEach(sh => {
+          const exist = (db.vales_header || []).find(h => h.folio_vale === sh.folio_vale);
+          if (!exist) stats.vales.nuevos++; else stats.vales.omitidos++;
+        });
+      }
+      if (import_kardex) {
+        srcKardex.forEach(sk => {
+          const exist = (db.kardex_vales || []).find(k =>
+            k.fecha === (sk.fecha || '').slice(0, 10) && k.referencia === sk.referencia && k.item === sk.item);
+          if (!exist) stats.kardex.nuevos++; else stats.kardex.omitidos++;
+        });
+      }
+      if (import_correcciones) {
+        srcCorrec.forEach(sc => {
+          const exist = (db.vales_correccion || []).find(c => c.folio_correccion === sc.folio_correccion);
+          if (!exist) stats.correcciones.nuevos++; else stats.correcciones.omitidos++;
+        });
+      }
+      return res.json({ mode: 'preview', stats });
+    }
+
+    // ── Modo execute ─────────────────────────────────────────────────────────
+    if (!db.items_vales)       db.items_vales = [];
+    if (!db.item_adiciones)    db.item_adiciones = [];
+    if (!db.tanques_vales)     db.tanques_vales = [];
+    if (!db.vales_header)      db.vales_header = [];
+    if (!db.vales_detalle)     db.vales_detalle = [];
+    if (!db.kardex_vales)      db.kardex_vales = [];
+    if (!db.vales_correccion)  db.vales_correccion = [];
+    if (!db.inventario_vales)  db.inventario_vales = [];
+
+    // Items
+    if (import_items) {
+      srcItems.forEach(si => {
+        const idx = db.items_vales.findIndex(i => i.item === si.item);
+        const mapped = {
+          item:            si.item,
+          id_proveedor:    si.id_proveedor || '',
+          proveedor:       si.proveedor || '',
+          codigo:          si.codigo || '',
+          presentacion:    si.presentacion || '',
+          peso_kg:         si.peso_kg || 0,
+          densidad:        si.densidad || 1,
+          precio_kg:       si.precio_kg || 0,
+          precio_item:     si.precio_item || 0,
+          moneda:          si.moneda || 'MXN',
+          fecha_cotizacion: si.fecha_cotizacion ? si.fecha_cotizacion.slice(0, 10) : '',
+          no_cotizacion:   si.no_cotizacion || '',
+          vigencia_dias:   si.vigencia_dias || null,
+          vigente:         si.vigente === 1 || si.vigente === true,
+          unidad_base:     si.unidad_base || 'kg',
+          activo:          si.activo === 1 || si.activo === true,
+          updated_at:      new Date().toISOString()
+        };
+        if (idx === -1) {
+          mapped.id = nextId(db.items_vales);
+          mapped.created_at = si.created_at || new Date().toISOString();
+          db.items_vales.push(mapped);
+          stats.items.nuevos++;
+        } else {
+          const changed = db.items_vales[idx].peso_kg !== mapped.peso_kg ||
+                          db.items_vales[idx].densidad !== mapped.densidad ||
+                          db.items_vales[idx].precio_kg !== mapped.precio_kg;
+          Object.assign(db.items_vales[idx], mapped);
+          if (changed) stats.items.actualizados++; else stats.items.sin_cambios++;
+        }
+      });
+
+      // item_adiciones — después de haber actualizado items para tener los IDs correctos
+      srcAdiciones.forEach(sa => {
+        const destItem = db.items_vales.find(i => i.item === sa.item);
+        if (!destItem) return;
+        const exist = db.item_adiciones.find(a => a.item_id === destItem.id && a.tipo_adicion === sa.tipo_adicion);
+        if (!exist) {
+          db.item_adiciones.push({
+            id: nextId(db.item_adiciones),
+            item_id: destItem.id,
+            tipo_adicion: sa.tipo_adicion,
+            activo: sa.activo === 1 || sa.activo === true,
+            created_at: sa.created_at || new Date().toISOString()
+          });
+          stats.adiciones.nuevos++;
+        } else {
+          stats.adiciones.sin_cambios++;
+        }
+      });
+    }
+
+    // Tanques
+    if (import_tanques) {
+      srcTanques.forEach(st => {
+        const idx = db.tanques_vales.findIndex(t => t.linea === st.linea && t.no_tanque === st.no_tanque);
+        const mapped = {
+          linea:         st.linea,
+          no_tanque:     st.no_tanque,
+          nombre_tanque: st.nombre_tanque || '',
+          tipo:          st.tipo || '',
+          descripcion:   st.descripcion || '',
+          item1: st.item1 || '', item2: st.item2 || '', item3: st.item3 || '',
+          item4: st.item4 || '', item5: st.item5 || '', item6: st.item6 || '',
+          activo: st.activo === 1 || st.activo === true
+        };
+        if (idx === -1) {
+          mapped.id = nextId(db.tanques_vales);
+          mapped.created_at = st.created_at || new Date().toISOString();
+          db.tanques_vales.push(mapped);
+          stats.tanques.nuevos++;
+        } else {
+          Object.assign(db.tanques_vales[idx], mapped);
+          stats.tanques.sin_cambios++;
+        }
+      });
+    }
+
+    // Vales (header + detalle)
+    if (import_vales) {
+      srcHeaders.forEach(sh => {
+        const exist = db.vales_header.find(h => h.folio_vale === sh.folio_vale);
+        if (exist) { stats.vales.omitidos++; return; }
+        db.vales_header.push({
+          id:           nextId(db.vales_header),
+          folio_vale:   sh.folio_vale,
+          fecha:        sh.fecha ? sh.fecha.slice(0, 10) : '',
+          hora:         sh.hora || '',
+          turno:        sh.turno || '',
+          linea:        sh.linea || '',
+          solicita:     sh.solicita || '',
+          adiciona:     sh.adiciona || '',
+          coordinador:  sh.coordinador || '',
+          comentarios:  sh.comentarios || '',
+          usuario:      sh.usuario || '',
+          created_at:   sh.created_at || new Date().toISOString()
+        });
+        stats.vales.nuevos++;
+        // Detalles de este vale
+        srcDetalles.filter(d => d.folio_vale === sh.folio_vale).forEach(sd => {
+          db.vales_detalle.push({
+            id:             nextId(db.vales_detalle),
+            folio_vale:     sd.folio_vale,
+            titulacion:     sd.titulacion || '',
+            no_tanque:      sd.no_tanque || '',
+            nombre_tanque:  sd.nombre_tanque || '',
+            item:           sd.item || '',
+            tipo_adicion:   sd.tipo_adicion || '',
+            cantidad:       sd.cantidad || 0,
+            kg_equivalentes: sd.kg_equivalentes || 0,
+            created_at:     sd.created_at || new Date().toISOString()
+          });
+        });
+      });
+    }
+
+    // Kardex
+    if (import_kardex) {
+      srcKardex.forEach(sk => {
+        const fecha = (sk.fecha || '').slice(0, 10);
+        const exist = db.kardex_vales.find(k =>
+          k.fecha === fecha && k.referencia === sk.referencia && k.item === sk.item);
+        if (exist) { stats.kardex.omitidos++; return; }
+        db.kardex_vales.push({
+          id:           nextId(db.kardex_vales),
+          fecha,
+          tipo:         sk.tipo || '',
+          referencia:   sk.referencia || '',
+          item:         sk.item || '',
+          cantidad:     sk.cantidad || 0,
+          unidad:       sk.unidad || '',
+          kg:           sk.kg || 0,
+          linea:        sk.linea || '',
+          no_tanque:    sk.no_tanque || '',
+          nombre_tanque: sk.nombre_tanque || '',
+          comentario:   sk.comentario || '',
+          usuario:      sk.usuario || '',
+          detalle_id:   sk.detalle_id || null,
+          created_at:   sk.created_at || new Date().toISOString()
+        });
+        stats.kardex.nuevos++;
+      });
+    }
+
+    // Correcciones
+    if (import_correcciones) {
+      srcCorrec.forEach(sc => {
+        const exist = db.vales_correccion.find(c => c.folio_correccion === sc.folio_correccion);
+        if (exist) { stats.correcciones.omitidos++; return; }
+        db.vales_correccion.push({
+          id:               nextId(db.vales_correccion),
+          folio_origen:     sc.folio_origen || '',
+          folio_correccion: sc.folio_correccion || '',
+          tipo:             sc.tipo || '',
+          item:             sc.item || '',
+          unidad:           sc.unidad || '',
+          cantidad:         sc.cantidad || 0,
+          kg:               sc.kg || 0,
+          usuario:          sc.usuario || '',
+          comentario:       sc.comentario || '',
+          created_at:       sc.created_at || new Date().toISOString()
+        });
+        stats.correcciones.nuevos++;
+      });
+    }
+
+    // Inventario (sólo si hay datos)
+    if (import_items && srcInv.length > 0) {
+      srcInv.forEach(si => {
+        const idx = db.inventario_vales.findIndex(i => i.item === si.item);
+        const mapped = { item: si.item, existencia_kg: si.existencia_kg || 0, ultima_actualizacion: si.ultima_actualizacion || new Date().toISOString() };
+        if (idx === -1) { mapped.id = nextId(db.inventario_vales); db.inventario_vales.push(mapped); }
+        else Object.assign(db.inventario_vales[idx], mapped);
+      });
+    }
+
+    writeVales(db);
+    return res.json({ mode: 'execute', stats, ok: true });
+
+  } catch (e) {
+    try { src.close(); } catch (_) {}
+    return res.status(500).json({ error: 'Error durante importación: ' + e.message });
+  }
+});
+
 module.exports = router;
