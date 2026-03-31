@@ -196,19 +196,17 @@ router.get('/operadores/:linea', produccionAllowRoles('admin'), (req, res) => {
 router.post('/operadores/:linea', produccionAllowRoles('admin'), (req, res) => {
   const { linea } = req.params;
   const key = `operadores_${lineaKey(linea)}`;
-  const { nombre, pin } = req.body || {};
-  if (!nombre || !pin) return res.status(400).json({ error: 'nombre y pin son requeridos' });
+  const { nombre } = req.body || {};
+  if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
 
   const pdb = dbProd.read();
   if (!pdb[key]) pdb[key] = [];
 
-  const pin_hash = bcrypt.hashSync(String(pin), 10);
-  const id = dbProd.nextId(pdb[key]);
-  const item = { id, nombre, pin_hash, activo: true, created_at: new Date().toISOString() };
-  pdb[key].push(item);
+  const op = { id: dbProd.nextId(pdb[key]), nombre, compras_user_id: req.body.compras_user_id || null, activo: true, created_at: new Date().toISOString() };
+  pdb[key].push(op);
   dbProd.write(pdb);
 
-  const { pin_hash: _, ...safe } = item;
+  const safe = op;
   res.status(201).json(safe);
 });
 
@@ -223,11 +221,20 @@ router.patch('/operadores/:linea/:id', produccionAllowRoles('admin'), (req, res)
   const body = req.body || {};
   if (body.nombre !== undefined) list[idx].nombre = body.nombre;
   if (body.activo !== undefined) list[idx].activo = body.activo;
-  if (body.pin) list[idx].pin_hash = bcrypt.hashSync(String(body.pin), 10);
+  if (body.compras_user_id !== undefined) list[idx].compras_user_id = body.compras_user_id;
 
   dbProd.write(pdb);
-  const { pin_hash, ...safe } = list[idx];
+  const safe = list[idx];
   res.json(safe);
+});
+
+// ─── Usuarios del sistema disponibles como operadores ────────────────────────
+router.get('/usuarios-sistema', produccionAllowRoles('produccion'), (req, res) => {
+  const mainDb = require('../db').read();
+  const users = (mainDb.users || [])
+    .filter(u => u.active !== false)
+    .map(u => ({ id: u.id, full_name: u.full_name, email: u.email }));
+  res.json(users);
 });
 
 // ─── Cargas ───────────────────────────────────────────────────────────────────

@@ -96,8 +96,16 @@ function tryRestore() {
   const t = localStorage.getItem('prod_token');
   const u = localStorage.getItem('prod_user');
   if (t && u) {
-    try { state.token = t; state.user = JSON.parse(u); return true; }
-    catch { return false; }
+    try {
+      const user = JSON.parse(u);
+      const validRoles = ['admin', 'produccion', 'pizarron'];
+      if (!validRoles.includes(user.role)) {
+        localStorage.removeItem('prod_token');
+        localStorage.removeItem('prod_user');
+        return false;
+      }
+      state.token = t; state.user = user; return true;
+    } catch { return false; }
   }
   return false;
 }
@@ -1278,27 +1286,30 @@ function collectCatalogoFields(tipo) {
 
 async function viewOperadores(el) {
   async function loadAndRender() {
-    let operadoresL3 = [], operadoresL4 = [];
+    let operadoresL3 = [], operadoresL4 = [], usuariosSistema = [];
     try {
-      const [dL3, dL4] = await Promise.all([
+      const [dL3, dL4, dUsers] = await Promise.all([
         GET('/operadores/L3'),
-        GET('/operadores/L4')
+        GET('/operadores/L4'),
+        GET('/usuarios-sistema')
       ]);
       operadoresL3 = Array.isArray(dL3) ? dL3 : (dL3?.operadores || []);
       operadoresL4 = Array.isArray(dL4) ? dL4 : (dL4?.operadores || []);
+      usuariosSistema = Array.isArray(dUsers) ? dUsers : [];
     } catch (e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
       return;
     }
 
     const tableHtml = (ops, linea) => ops.length === 0
-      ? '<div class="empty-state"><div class="icon">👤</div><p>Sin operadores registrados.</p></div>'
+      ? '<div class="empty-state"><div class="icon">👤</div><p>Sin operadores asignados.</p></div>'
       : `<table>
-          <thead><tr><th>#</th><th>Nombre</th><th>Activo</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>Nombre</th><th>Correo</th><th>Activo</th><th></th></tr></thead>
           <tbody>
             ${ops.map(op => `<tr>
               <td class="mono">${op.id}</td>
               <td>${escHtml(op.nombre)}</td>
+              <td style="font-size:11px;color:var(--p-muted)">${escHtml(op.email || '—')}</td>
               <td>
                 <div class="toggle-wrap" data-toggle-op="${op.id}" data-linea="${linea}" data-activo="${op.activo ? '1' : '0'}">
                   <div class="toggle-switch${op.activo ? ' on' : ''}"></div>
@@ -1306,7 +1317,8 @@ async function viewOperadores(el) {
                 </div>
               </td>
               <td>
-                <button class="btn btn-outline btn-xs" data-edit-op="${op.id}" data-linea="${linea}">✏️ Editar</button>
+                <button class="btn btn-outline btn-xs" data-edit-op="${op.id}" data-linea="${linea}">✏️</button>
+                <button class="btn btn-xs" style="background:#fee2e2;color:#dc2626;border:0;" data-del-op="${op.id}" data-linea="${linea}">🗑️</button>
               </td>
             </tr>`).join('')}
           </tbody>
@@ -1317,14 +1329,14 @@ async function viewOperadores(el) {
         <div class="table-card">
           <div class="table-header">
             <h3>Línea 3</h3>
-            <button class="btn btn-primary btn-sm" data-nuevo-op="L3">+ Nuevo</button>
+            <button class="btn btn-primary btn-sm" data-nuevo-op="L3">+ Agregar</button>
           </div>
           <div class="table-scroll">${tableHtml(operadoresL3, 'L3')}</div>
         </div>
         <div class="table-card">
           <div class="table-header">
             <h3>Línea 4</h3>
-            <button class="btn btn-primary btn-sm" data-nuevo-op="L4">+ Nuevo</button>
+            <button class="btn btn-primary btn-sm" data-nuevo-op="L4">+ Agregar</button>
           </div>
           <div class="table-scroll">${tableHtml(operadoresL4, 'L4')}</div>
         </div>
@@ -1346,18 +1358,36 @@ async function viewOperadores(el) {
     // Editar
     el.querySelectorAll('[data-edit-op]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const id     = btn.dataset.editOp;
-        const linea  = btn.dataset.linea;
-        const lista  = linea === 'L3' ? operadoresL3 : operadoresL4;
-        const op     = lista.find(o => String(o.id) === String(id));
-        openOperadorModal(linea, op, loadAndRender);
+        const id    = btn.dataset.editOp;
+        const linea = btn.dataset.linea;
+        const lista = linea === 'L3' ? operadoresL3 : operadoresL4;
+        const op    = lista.find(o => String(o.id) === String(id));
+        openOperadorModal(linea, op, usuariosSistema, loadAndRender);
+      });
+    });
+
+    // Eliminar
+    el.querySelectorAll('[data-del-op]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id    = btn.dataset.delOp;
+        const linea = btn.dataset.linea;
+        if (!confirm('¿Quitar este operador de la línea?')) return;
+        try {
+          await PATCH(`/operadores/${linea}/${id}`, { activo: false });
+          loadAndRender();
+        } catch (e) { alert('Error: ' + e.message); }
       });
     });
 
     // Nuevo
     el.querySelectorAll('[data-nuevo-op]').forEach(btn => {
       btn.addEventListener('click', () => {
-        openOperadorModal(btn.dataset.nuevoOp, null, loadAndRender);
+        const linea = btn.dataset.nuevoOp;
+        const yaAsignados = linea === 'L3'
+          ? operadoresL3.map(o => o.compras_user_id).filter(Boolean)
+          : operadoresL4.map(o => o.compras_user_id).filter(Boolean);
+        const disponibles = usuariosSistema.filter(u => !yaAsignados.includes(u.id));
+        openOperadorModal(linea, null, disponibles, loadAndRender);
       });
     });
   }
@@ -1365,19 +1395,27 @@ async function viewOperadores(el) {
   await loadAndRender();
 }
 
-function openOperadorModal(linea, op, onDone) {
+function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
   const isNew = op == null;
+  const optsHtml = usuariosDisponibles.map(u =>
+    `<option value="${u.id}" data-nombre="${escHtml(u.full_name)}" data-email="${escHtml(u.email || '')}">${escHtml(u.full_name)} — ${escHtml(u.email || '')}</option>`
+  ).join('');
+
   showModal(`
-    <h3>${isNew ? 'Nuevo Operador' : 'Editar Operador'} — Línea ${linea.replace('L','')}</h3>
+    <h3>${isNew ? 'Agregar Operador' : 'Editar Operador'} — Línea ${linea.replace('L','')}</h3>
     <div class="form-grid">
+      ${isNew ? `
       <div class="form-group full">
-        <label>Nombre completo</label>
+        <label>Seleccionar usuario del sistema</label>
+        <select id="op-usuario-sel" style="width:100%;padding:8px 10px;border:1.5px solid #e2e8f0;border-radius:8px;font-size:13px;">
+          <option value="">— Seleccionar —</option>
+          ${optsHtml}
+        </select>
+        <span class="form-hint">Solo usuarios activos del sistema</span>
+      </div>` : ''}
+      <div class="form-group full">
+        <label>Nombre (para el tarjetero)</label>
         <input type="text" id="op-nombre" value="${escHtml(op?.nombre || '')}" placeholder="Nombre del operador" />
-      </div>
-      <div class="form-group full">
-        <label>PIN (4 dígitos)</label>
-        <input type="password" id="op-pin" maxlength="4" placeholder="${isNew ? '1234' : 'Dejar vacío para no cambiar'}" />
-        <span class="form-hint">Mínimo 4 dígitos numéricos</span>
       </div>
     </div>
     <div class="modal-actions">
@@ -1385,13 +1423,24 @@ function openOperadorModal(linea, op, onDone) {
       <button class="btn btn-primary" id="op-save">💾 Guardar</button>
     </div>`, { size: 'sm' });
 
+  // Auto-fill nombre when user is selected
+  if (isNew) {
+    document.getElementById('op-usuario-sel')?.addEventListener('change', function() {
+      const opt = this.options[this.selectedIndex];
+      if (opt.value) {
+        document.getElementById('op-nombre').value = opt.dataset.nombre || '';
+      }
+    });
+  }
+
   document.getElementById('op-save').addEventListener('click', async () => {
-    const nombre = document.getElementById('op-nombre').value.trim();
-    const pin    = document.getElementById('op-pin').value.trim();
+    const nombre   = document.getElementById('op-nombre').value.trim();
+    const selEl    = document.getElementById('op-usuario-sel');
+    const userId   = selEl ? selEl.value : null;
     if (!nombre) { alert('Ingresa el nombre del operador'); return; }
-    if (isNew && !pin) { alert('Ingresa un PIN para el nuevo operador'); return; }
+    if (isNew && !userId) { alert('Selecciona un usuario del sistema'); return; }
     const payload = { nombre };
-    if (pin) payload.pin = pin;
+    if (userId) payload.compras_user_id = Number(userId);
     const btn = document.getElementById('op-save');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {

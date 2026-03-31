@@ -937,7 +937,13 @@ function renderModulePanel(m) {
   if (m.status === 'development') {
     bodyContent = `<div class="dev-notice"><span>🚧</span>Módulo en desarrollo. Sin usuarios aún.</div>`;
   } else {
-    const roleLabels = m.id === 'compras' ? ROLE_LABELS_COMPRAS : ROLE_LABELS_RHH;
+    const roleLabels =
+      m.id === 'compras'      ? ROLE_LABELS_COMPRAS :
+      m.id === 'rhh'          ? ROLE_LABELS_RHH :
+      m.id === 'calidad'      ? ROLE_LABELS_CALIDAD :
+      m.id === 'produccion'   ? ROLE_LABELS_PRODUCCION :
+      m.id === 'mantenimiento'? ROLE_LABELS_MANT :
+      ROLE_LABELS_COMPRAS;
     const rows = m.users.map(u => `
       <tr>
         <td><b>${u.name}</b></td>
