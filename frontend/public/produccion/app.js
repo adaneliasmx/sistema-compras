@@ -37,10 +37,14 @@ const MENU = {
     ['operadores',     '👤', 'Operadores'],
     ['configuracion',  '⚙️', 'Configuración']
   ],
-  operador: [
-    ['dashboard',  '📊', 'Mi Pizarrón'],
-    ['linea-op',   '🏭', 'Mi Línea'],
-    ['pizarron',   '📋', 'Pizarrón']
+  produccion: [
+    ['dashboard',  '📊', 'Dashboard'],
+    ['linea-3',    '🏭', 'Línea 3'],
+    ['linea-4',    '🏭', 'Línea 4'],
+    ['pizarron',   '📋', 'Pizarrón KPI']
+  ],
+  pizarron: [
+    ['pizarron',   '📋', 'Pizarrón KPI']
   ]
 };
 
@@ -174,15 +178,12 @@ function lineaFromSection(section) {
 function render() {
   const app = document.getElementById('app');
   if (!state.user) { app.innerHTML = renderLogin(); bindLogin(); return; }
+  // Ajustar sección inicial según rol
+  const role = state.user.role;
+  if (role === 'pizarron') state.section = 'pizarron';
+  else if (role === 'produccion' && state.section === 'pizarron') state.section = 'dashboard';
   app.innerHTML = renderLayout();
   bindNav();
-  // Si el operador entra, ajustar la sección de línea
-  if (state.user.prod_role === 'operador') {
-    const linea = state.user.linea || 'L3';
-    // actualizar la etiqueta del menú de línea dinámicamente
-    const navEl = document.querySelector('[data-nav="linea-op"]');
-    if (navEl) navEl.textContent = '🏭 Línea ' + linea.replace('L', '');
-  }
   renderMain();
   resetTimer();
 }
@@ -197,17 +198,10 @@ function renderLogin() {
         <h1>Registros de Producción</h1>
         <p>Control de cargas · Pizarrón KPI</p>
       </div>
-      <label>Nombre o correo</label>
-      <input type="text" id="l-user" placeholder="Nombre de operador o correo" autocomplete="username" />
-      <label>PIN / Contraseña</label>
-      <input type="password" id="l-pass" placeholder="••••" autocomplete="current-password" />
-      <label>Línea</label>
-      <select id="l-linea">
-        <option value="">— Seleccionar línea —</option>
-        <option value="L3">Línea 3</option>
-        <option value="L4">Línea 4</option>
-        <option value="admin">Administrador</option>
-      </select>
+      <label>Correo electrónico</label>
+      <input type="email" id="l-email" placeholder="usuario@empresa.com" autocomplete="username" />
+      <label>Contraseña</label>
+      <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" />
       <button class="btn-login" id="btn-login">Ingresar</button>
       <p class="login-error" id="login-err"></p>
     </div>
@@ -217,17 +211,16 @@ function renderLogin() {
 function bindLogin() {
   const btn = document.getElementById('btn-login');
   const doLogin = async () => {
-    const usuario = document.getElementById('l-user').value.trim();
-    const pass    = document.getElementById('l-pass').value;
-    const linea   = document.getElementById('l-linea').value;
-    const err     = document.getElementById('login-err');
-    if (!usuario || !pass) { err.textContent = 'Ingresa usuario y contraseña'; return; }
+    const email = document.getElementById('l-email').value.trim();
+    const pass  = document.getElementById('l-pass').value;
+    const err   = document.getElementById('login-err');
+    if (!email || !pass) { err.textContent = 'Ingresa correo y contraseña'; return; }
     btn.disabled = true; btn.textContent = 'Verificando...';
     try {
       const res = await fetch('/api/produccion/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ usuario, password: pass, linea: linea || undefined })
+        body:    JSON.stringify({ email, password: pass })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -247,9 +240,11 @@ function bindLogin() {
 }
 
 // ── Layout (sidebar + main) ───────────────────────────────────────────────────
+const ROLE_LABELS_PROD = { admin: 'Admin', produccion: 'Producción', pizarron: 'Pizarrón' };
+
 function renderLayout() {
-  const role = state.user.prod_role || 'operador';
-  const rawMenu = MENU[role] || MENU.operador;
+  const role = state.user.role || 'pizarron';
+  const rawMenu = MENU[role] || MENU.pizarron;
   const menuHtml = rawMenu.map(([id, icon, label]) => {
     if (id === '---') return `<div class="p-nav-group">${label}</div>`;
     const active = state.section === id;
@@ -257,7 +252,7 @@ function renderLayout() {
   }).join('');
 
   const roleBadge = role === 'admin' ? 'badge-admin' : 'badge-operador';
-  const linea = state.user.linea ? ` · ${state.user.linea}` : '';
+  const linea = '';
 
   return `
   <div class="prod-layout">
@@ -273,7 +268,7 @@ function renderLayout() {
       <div class="p-sidebar-footer">
         <div class="p-user-info">
           <strong>${escHtml(state.user.nombre || state.user.full_name || state.user.email)}</strong>
-          <span class="badge-role ${roleBadge}">${role}${linea}</span>
+          <span class="badge-role ${roleBadge}">${ROLE_LABELS_PROD[role] || role}</span>
         </div>
         <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
       </div>

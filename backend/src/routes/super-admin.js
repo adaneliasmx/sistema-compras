@@ -590,8 +590,8 @@ router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/produccion-role
 router.patch('/unified-users/produccion-role', superAdminRequired, (req, res) => {
   const { user_id, produccion_role } = req.body || {};
-  if (produccion_role && !['admin'].includes(produccion_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: admin o null' });
+  if (produccion_role && !['pizarron', 'produccion', 'admin'].includes(produccion_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: pizarron, produccion, admin o null' });
   const db = readCompras();
   const user = (db.users || []).find(u => u.id === Number(user_id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });

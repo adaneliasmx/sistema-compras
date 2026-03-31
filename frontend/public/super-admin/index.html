@@ -312,6 +312,8 @@
         </label>
         <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Requiere también activar Compras</small>
         <select class="modal-input" id="cm-produccion-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="pizarron">Pizarrón (solo vista)</option>
+          <option value="produccion">Producción (operador)</option>
           <option value="admin">Admin (acceso total)</option>
         </select>
       </div>
@@ -499,7 +501,9 @@ function renderUsersTable() {
            <select class="role-sel" style="color:${u.compras.produccion_role ? '#b45309' : '#9ca3af'}"
              onchange="changeProduccionRole(${u.compras.id}, this.value, this)">
              <option value="">— Sin acceso —</option>
-             <option value="admin" ${u.compras.produccion_role==='admin' ?'selected':''}>Admin</option>
+             <option value="pizarron"  ${u.compras.produccion_role==='pizarron'  ?'selected':''}>Pizarrón</option>
+             <option value="produccion"${u.compras.produccion_role==='produccion'?'selected':''}>Producción</option>
+             <option value="admin"     ${u.compras.produccion_role==='admin'     ?'selected':''}>Admin</option>
            </select>
          </div>`
       : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;

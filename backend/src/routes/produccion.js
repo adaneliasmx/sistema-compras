@@ -87,75 +87,29 @@ function nextFolio(prefix, list, field = 'folio') {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 router.post('/auth/login', (req, res) => {
-  const { nombre_o_email, password, linea } = req.body || {};
-  if (!nombre_o_email || !password) {
-    return res.status(400).json({ error: 'nombre_o_email y password son requeridos' });
-  }
+  const { email, password } = req.body || {};
+  if (!email || !password)
+    return res.status(400).json({ error: 'Correo y contraseña son requeridos' });
 
-  const pdb = dbProd.read();
-
-  // Check operadores in L3 and L4
-  const lineas = ['l3', 'l4'];
-  for (const l of lineas) {
-    if (linea && linea.toLowerCase() !== l) continue;
-    const operadores = pdb[`operadores_${l}`] || [];
-    const op = operadores.find(o =>
-      o.activo !== false &&
-      o.nombre.toLowerCase() === nombre_o_email.toLowerCase()
-    );
-    if (op && bcrypt.compareSync(password, op.pin_hash)) {
-      const token = jwt.sign(
-        {
-          module: 'produccion',
-          sub: op.id,
-          nombre: op.nombre,
-          role: 'operador',
-          linea: l === 'l3' ? 'L3' : 'L4',
-          user_type: 'operador'
-        },
-        process.env.JWT_SECRET || 'cambia-esta-clave',
-        { expiresIn: '12h' }
-      );
-      return res.json({
-        token,
-        user: { id: op.id, nombre: op.nombre, role: 'operador', linea: l === 'l3' ? 'L3' : 'L4', user_type: 'operador' }
-      });
-    }
-  }
-
-  // Check compras users with produccion_role = 'admin'
   const mainDb = db.read();
   const user = (mainDb.users || []).find(u =>
-    u.active &&
-    u.produccion_role === 'admin' &&
-    (
-      (u.email && u.email.toLowerCase() === nombre_o_email.toLowerCase()) ||
-      (u.full_name && u.full_name.toLowerCase() === nombre_o_email.toLowerCase())
-    )
+    u.active !== false &&
+    u.produccion_role &&
+    u.email && u.email.toLowerCase() === email.toLowerCase()
   );
-  if (user) {
-    const validPass = bcrypt.compareSync(password, user.password_hash || user.password || '');
-    if (validPass) {
-      const token = jwt.sign(
-        {
-          module: 'produccion',
-          sub: user.id,
-          nombre: user.full_name,
-          role: 'admin',
-          linea: 'ambas',
-          user_type: 'admin'
-        },
-        process.env.JWT_SECRET || 'cambia-esta-clave',
-        { expiresIn: '12h' }
-      );
-      return res.json({
-        token,
-        user: { id: user.id, nombre: user.full_name, role: 'admin', linea: 'ambas', user_type: 'admin' }
-      });
-    }
-  }
 
-  return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!user || !bcrypt.compareSync(String(password), user.password_hash || ''))
+    return res.status(401).json({ error: 'Credenciales inválidas o sin acceso a Producción' });
+
+  const token = jwt.sign(
+    { module: 'produccion', sub: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role },
+    process.env.JWT_SECRET || 'cambia-esta-clave',
+    { expiresIn: '12h' }
+  );
+  return res.json({
+    token,
+    user: { id: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role }
+  });
 });
 
 // ─── Apply auth to all subsequent routes ─────────────────────────────────────
@@ -305,7 +259,7 @@ router.get('/cargas/:linea', (req, res) => {
   res.json(cargas);
 });
 
-router.post('/cargas/:linea', (req, res) => {
+router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const { linea } = req.params;
   const body = req.body || {};
   const { herramental_id, componente_id, proceso_id, acabado_id, varillas, piezas_por_varilla, operador_id, es_vacia } = body;
@@ -408,7 +362,7 @@ router.post('/cargas/:linea', (req, res) => {
   res.status(201).json(carga);
 });
 
-router.post('/cargas/:linea/:id/descargar', (req, res) => {
+router.post('/cargas/:linea/:id/descargar', produccionAllowRoles('produccion'), (req, res) => {
   const { linea, id } = req.params;
   const { salio_bien, defecto_id, defecto } = req.body || {};
 
@@ -443,7 +397,7 @@ router.post('/cargas/:linea/:id/descargar', (req, res) => {
   res.json(pdb.cargas[idx]);
 });
 
-router.post('/cargas/:linea/:id/reprocesar', (req, res) => {
+router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'), (req, res) => {
   const { linea, id } = req.params;
   const pdb = dbProd.read();
   const idx = (pdb.cargas || []).findIndex(c => String(c.id) === String(id) && c.linea === linea);
@@ -518,7 +472,7 @@ router.get('/paros/:linea', (req, res) => {
   res.json(paros);
 });
 
-router.post('/paros/:linea', (req, res) => {
+router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const { linea } = req.params;
   const { motivo_id, sub_motivo_id } = req.body || {};
   if (!motivo_id) return res.status(400).json({ error: 'motivo_id es requerido' });
@@ -570,7 +524,7 @@ router.post('/paros/:linea', (req, res) => {
   res.status(201).json(paro);
 });
 
-router.patch('/paros/:linea/:id/cerrar', (req, res) => {
+router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (req, res) => {
   const { linea, id } = req.params;
   const pdb = dbProd.read();
   const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id) && p.linea === linea);
