@@ -1494,8 +1494,6 @@ function calcKgFront(tipo, cant, item) {
 
 // ── Importar SQLite ────────────────────────────────────────────────────────────
 async function viewImportarSqlite() {
-  let defaultPath = '';
-  try { const r = await GET('/import-sqlite/default-path'); defaultPath = r.path || ''; } catch(_) {}
   return `
   <div class="table-card" style="max-width:820px">
     <div class="table-header">
@@ -1503,15 +1501,23 @@ async function viewImportarSqlite() {
     </div>
     <div style="padding:20px">
       <p style="color:#78716c;margin-bottom:16px">
-        Esta herramienta lee la base de datos SQLite del sistema anterior e importa o actualiza:
-        <strong>productos, tanques, tipos de adición, vales, kardex y correcciones</strong>.
-        Los registros que ya existen en el sistema actual se omiten o actualizan según corresponda.
+        Selecciona el archivo <strong>materiales.sqlite</strong> desde tu computadora. La herramienta
+        importará o actualizará: productos, tanques, tipos de adición, vales, kardex y correcciones.
+        Los registros que ya existen se omiten o actualizan según corresponda.
       </p>
 
-      <div class="form-group" style="margin-bottom:14px">
-        <label>Ruta del archivo SQLite</label>
-        <input type="text" id="sq-path" value="${defaultPath.replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;font-family:monospace" />
-        <small style="color:#78716c">Ruta predeterminada detectada automáticamente.</small>
+      <div class="form-group" style="margin-bottom:18px">
+        <label>Archivo SQLite</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <label class="btn btn-outline" style="cursor:pointer;margin:0">
+            📂 Examinar...
+            <input type="file" id="sq-file" accept=".sqlite,.sqlite3,.db" style="display:none" />
+          </label>
+          <span id="sq-filename" style="color:#78716c;font-size:13px">Ningún archivo seleccionado</span>
+        </div>
+        <small style="color:#78716c;display:block;margin-top:4px">
+          Ruta habitual: <code style="font-size:11px">...cuestoquimicos\_internal\materiales.sqlite</code>
+        </small>
       </div>
 
       <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:18px">
@@ -1543,22 +1549,39 @@ async function viewImportarSqlite() {
 }
 
 function bindImportarSqlite() {
-  function getPayload(mode) {
-    return {
-      sqlite_path:         document.getElementById('sq-path').value.trim(),
-      mode,
-      import_items:        document.getElementById('sq-items').checked,
-      import_tanques:      document.getElementById('sq-tanques').checked,
-      import_vales:        document.getElementById('sq-vales').checked,
-      import_kardex:       document.getElementById('sq-kardex').checked,
-      import_correcciones: document.getElementById('sq-correc').checked
-    };
+  document.getElementById('sq-file')?.addEventListener('change', function() {
+    const name = this.files[0]?.name || 'Ningún archivo seleccionado';
+    document.getElementById('sq-filename').textContent = name;
+  });
+
+  function buildFormData(mode) {
+    const file = document.getElementById('sq-file')?.files[0];
+    if (!file) return null;
+    const fd = new FormData();
+    fd.append('sqlite_file', file);
+    fd.append('mode', mode);
+    fd.append('import_items',        document.getElementById('sq-items').checked);
+    fd.append('import_tanques',      document.getElementById('sq-tanques').checked);
+    fd.append('import_vales',        document.getElementById('sq-vales').checked);
+    fd.append('import_kardex',       document.getElementById('sq-kardex').checked);
+    fd.append('import_correcciones', document.getElementById('sq-correc').checked);
+    return fd;
+  }
+
+  async function postFormData(fd) {
+    const res = await fetch('/api/vales/import-sqlite', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${state.token}` },
+      body: fd
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
   }
 
   function renderStats(data) {
     const s = data.stats;
     const isExec = data.mode === 'execute';
-    const label = isExec ? 'Importado' : 'Previsualización';
     const color = isExec ? '#16a34a' : '#2563eb';
 
     function row(name, stats) {
@@ -1578,7 +1601,7 @@ function bindImportarSqlite() {
     return `
     <div style="border:2px solid ${color};border-radius:8px;overflow:hidden">
       <div style="background:${color};color:#fff;padding:10px 16px;font-weight:600">
-        ${isExec ? '✅' : '🔍'} ${label} — ${new Date().toLocaleString('es-MX')}
+        ${isExec ? '✅ Importación completada' : '🔍 Vista previa'} — ${new Date().toLocaleString('es-MX')}
       </div>
       <table style="width:100%;border-collapse:collapse">
         <tbody>
@@ -1590,30 +1613,34 @@ function bindImportarSqlite() {
           ${row('Correcciones', s.correcciones)}
         </tbody>
       </table>
-      ${isExec ? '<div style="padding:12px 16px;background:#f0fdf4;color:#15803d;font-weight:500">✔ Datos guardados correctamente. Puedes navegar a las secciones para verificar.</div>' : '<div style="padding:12px 16px;color:#1e40af;font-size:13px">Para aplicar los cambios, haz clic en <strong>Importar ahora</strong>.</div>'}
+      ${isExec
+        ? '<div style="padding:12px 16px;background:#f0fdf4;color:#15803d;font-weight:500">✔ Datos guardados correctamente. Puedes navegar a las secciones para verificar.</div>'
+        : '<div style="padding:12px 16px;color:#1e40af;font-size:13px">Para aplicar los cambios, haz clic en <strong>Importar ahora</strong>.</div>'}
     </div>`;
   }
 
   document.getElementById('btn-sq-preview')?.addEventListener('click', async () => {
     const el = document.getElementById('sq-results');
+    const fd = buildFormData('preview');
+    if (!fd) { el.innerHTML = `<div class="alert alert-warn">⚠️ Selecciona primero el archivo SQLite.</div>`; return; }
     el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Analizando base de datos...</p></div>';
     try {
-      const data = await POST('/import-sqlite', getPayload('preview'));
-      el.innerHTML = renderStats(data);
+      el.innerHTML = renderStats(await postFormData(fd));
     } catch(e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;
     }
   });
 
   document.getElementById('btn-sq-execute')?.addEventListener('click', async () => {
-    if (!confirm('¿Confirmas la importación? Los datos nuevos se agregarán y los existentes en catálogos (productos/tanques) se actualizarán.')) return;
     const el = document.getElementById('sq-results');
+    const fd = buildFormData('execute');
+    if (!fd) { el.innerHTML = `<div class="alert alert-warn">⚠️ Selecciona primero el archivo SQLite.</div>`; return; }
+    if (!confirm('¿Confirmas la importación? Los datos nuevos se agregarán y los catálogos (productos/tanques) se actualizarán.')) return;
     el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Importando datos, por favor espera...</p></div>';
     try {
-      const data = await POST('/import-sqlite', getPayload('execute'));
+      const data = await postFormData(fd);
       el.innerHTML = renderStats(data);
-      // Refrescar cachés del estado
-      state.items = await GET('/items');
+      state.items  = await GET('/items');
       state.tanques = await GET('/tanques');
     } catch(e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;

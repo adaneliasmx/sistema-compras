@@ -1,4 +1,5 @@
 const express = require('express');
+const fs      = require('fs');
 const { read: readVales, write: writeVales, nextId } = require('../db-vales');
 const { read: readUsers, write: writeUsers } = require('../db');
 const { valesAuthRequired, valesAllowRoles } = require('../middleware/vales-auth');
@@ -765,35 +766,36 @@ router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
 
 // ── IMPORTACIÓN DESDE SQLITE (base sistema antiguo) ───────────────────────────
 
-const DEFAULT_SQLITE_PATH = "C:/Users/proye/OneDrive 2026/OneDrive - Corporativo Cuesto, S de RL de CV/Vales de adicion/cuestoquimicos/_internal/materiales.sqlite";
+const multer  = require('multer');
+const os      = require('os');
+const _upload = multer({ dest: os.tmpdir(), limits: { fileSize: 50 * 1024 * 1024 } });
 
-router.get('/import-sqlite/default-path', valesAllowRoles('admin'), (req, res) => {
-  res.json({ path: DEFAULT_SQLITE_PATH });
-});
+router.post('/import-sqlite', valesAllowRoles('admin'), _upload.single('sqlite_file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió ningún archivo.' });
 
-router.post('/import-sqlite', valesAllowRoles('admin'), (req, res) => {
-  const {
-    sqlite_path = DEFAULT_SQLITE_PATH,
-    mode = 'preview',        // 'preview' | 'execute'
-    import_items      = true,
-    import_tanques    = true,
-    import_vales      = true,
-    import_kardex     = true,
-    import_correcciones = true
-  } = req.body;
+  const mode               = req.body.mode || 'preview';
+  const import_items       = req.body.import_items       !== 'false';
+  const import_tanques     = req.body.import_tanques     !== 'false';
+  const import_vales       = req.body.import_vales       !== 'false';
+  const import_kardex      = req.body.import_kardex      !== 'false';
+  const import_correcciones= req.body.import_correcciones!== 'false';
+
+  const tmpPath = req.file.path;
 
   let SqliteDb;
   try {
     SqliteDb = require('better-sqlite3');
   } catch (e) {
+    fs.unlink(tmpPath, () => {});
     return res.status(500).json({ error: 'better-sqlite3 no disponible: ' + e.message });
   }
 
   let src;
   try {
-    src = new SqliteDb(sqlite_path, { readonly: true });
+    src = new SqliteDb(tmpPath, { readonly: true });
   } catch (e) {
-    return res.status(400).json({ error: 'No se pudo abrir el SQLite: ' + e.message });
+    fs.unlink(tmpPath, () => {});
+    return res.status(400).json({ error: 'No se pudo leer el archivo SQLite: ' + e.message });
   }
 
   try {
@@ -809,6 +811,7 @@ router.post('/import-sqlite', valesAllowRoles('admin'), (req, res) => {
     const srcCorrec     = src.prepare('SELECT * FROM vales_correccion').all();
     const srcInv        = src.prepare('SELECT * FROM inventario').all();
     src.close();
+    fs.unlink(tmpPath, () => {});
 
     const stats = {
       items:       { total: srcItems.length,   nuevos: 0, actualizados: 0, sin_cambios: 0 },
@@ -1064,6 +1067,7 @@ router.post('/import-sqlite', valesAllowRoles('admin'), (req, res) => {
 
   } catch (e) {
     try { src.close(); } catch (_) {}
+    fs.unlink(tmpPath, () => {});
     return res.status(500).json({ error: 'Error durante importación: ' + e.message });
   }
 });
