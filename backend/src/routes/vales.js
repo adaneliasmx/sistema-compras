@@ -857,8 +857,11 @@ router.post('/import-sqlite', valesAllowRoles('admin'), _upload.single('sqlite_f
       }
       if (import_kardex) {
         srcKardex.forEach(sk => {
+          // Primero por _sqlite_id (importaciones previas), luego por clave natural + cantidad para evitar falsos positivos
           const exist = (db.kardex_vales || []).find(k =>
-            k.fecha === (sk.fecha || '').slice(0, 10) && k.referencia === sk.referencia && k.item === sk.item);
+            k._sqlite_id === sk.id ||
+            (k.fecha === (sk.fecha || '').slice(0, 10) && k.referencia === sk.referencia &&
+             k.item === sk.item && k.cantidad === sk.cantidad && k.tipo === sk.tipo));
           if (!exist) stats.kardex.nuevos++; else stats.kardex.omitidos++;
         });
       }
@@ -1006,25 +1009,30 @@ router.post('/import-sqlite', valesAllowRoles('admin'), _upload.single('sqlite_f
     if (import_kardex) {
       srcKardex.forEach(sk => {
         const fecha = (sk.fecha || '').slice(0, 10);
+        // Usar _sqlite_id como clave exacta si ya fue importado antes;
+        // o clave natural ampliada (fecha+ref+item+cantidad+tipo) para registros manuales pre-existentes
         const exist = db.kardex_vales.find(k =>
-          k.fecha === fecha && k.referencia === sk.referencia && k.item === sk.item);
+          k._sqlite_id === sk.id ||
+          (k.fecha === fecha && k.referencia === sk.referencia &&
+           k.item === sk.item && k.cantidad === sk.cantidad && k.tipo === sk.tipo));
         if (exist) { stats.kardex.omitidos++; return; }
         db.kardex_vales.push({
-          id:           nextId(db.kardex_vales),
+          id:            nextId(db.kardex_vales),
+          _sqlite_id:    sk.id,          // clave de origen para deduplicación exacta
           fecha,
-          tipo:         sk.tipo || '',
-          referencia:   sk.referencia || '',
-          item:         sk.item || '',
-          cantidad:     sk.cantidad || 0,
-          unidad:       sk.unidad || '',
-          kg:           sk.kg || 0,
-          linea:        sk.linea || '',
-          no_tanque:    sk.no_tanque || '',
+          tipo:          sk.tipo || '',
+          referencia:    sk.referencia || '',
+          item:          sk.item || '',
+          cantidad:      sk.cantidad || 0,
+          unidad:        sk.unidad || '',
+          kg:            sk.kg || 0,
+          linea:         sk.linea || '',
+          no_tanque:     sk.no_tanque || '',
           nombre_tanque: sk.nombre_tanque || '',
-          comentario:   sk.comentario || '',
-          usuario:      sk.usuario || '',
-          detalle_id:   sk.detalle_id || null,
-          created_at:   sk.created_at || new Date().toISOString()
+          comentario:    sk.comentario || '',
+          usuario:       sk.usuario || '',
+          detalle_id:    sk.detalle_id || null,
+          created_at:    sk.created_at || new Date().toISOString()
         });
         stats.kardex.nuevos++;
       });
