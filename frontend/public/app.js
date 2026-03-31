@@ -3998,6 +3998,7 @@ async function quotationsView() {
               <option value="">Selecciona ítem</option>
               ${cotizacionesPendientes.map(i => `<option value="${i.id}" data-supplier="${i.supplier_id||''}">${i.requisition_folio} · ${i.item_name}</option>`).join('')}
             </select>
+            <div id="selectedItemIndicator" style="margin-top:4px;font-size:12px;color:#1d4ed8;font-weight:600;min-height:18px"></div>
           </div>
           <div style="margin-top:8px">
             <label>Proveedor</label>
@@ -4120,7 +4121,24 @@ async function quotationsView() {
   `, 'cotizaciones');
 
   // Listeners del formulario
+  const compareItemSel = document.getElementById('compareItemSel');
+  const compareTable = document.getElementById('compareTable');
+  const expQuoteBtn = document.getElementById('expQuoteBtn');
+
   if (document.getElementById('quoteItem')) {
+    const quoteItem = document.getElementById('quoteItem');
+    const quoteSupplier = document.getElementById('quoteSupplier');
+    const quoteNumber = document.getElementById('quoteNumber');
+    const quoteDays = document.getElementById('quoteDays');
+    const quoteUnitCost = document.getElementById('quoteUnitCost');
+    const quotePayTerms = document.getElementById('quotePayTerms');
+    const quoteCode = document.getElementById('quoteCode');
+    const quoteName = document.getElementById('quoteName');
+    const quoteCurrencyField = document.getElementById('quoteCurrencyField');
+    const saveQuoteBtn = document.getElementById('saveQuoteBtn');
+    const quoteMsg = document.getElementById('quoteMsg');
+    const declineQuoteBtn = document.getElementById('declineQuoteBtn');
+
     quoteItem.onchange = () => {
       // Limpiar todos los campos al cambiar de ítem
       quoteSupplier.value = '';
@@ -4134,6 +4152,10 @@ async function quotationsView() {
       if (qf) qf.value = '';
       const msgEl = document.getElementById('quoteMsg');
       if (msgEl) { msgEl.textContent = ''; }
+
+      // Actualizar indicador del ítem seleccionado
+      const selIndicator = document.getElementById('selectedItemIndicator');
+      if (selIndicator) selIndicator.textContent = quoteItem.value ? `📌 Ítem: ${quoteItem.options[quoteItem.selectedIndex]?.text || ''}` : '';
 
       if (!quoteItem.value) {
         // Sin ítem: mostrar todos los proveedores
@@ -4207,6 +4229,8 @@ async function quotationsView() {
         if (!quoteItem.value) throw new Error('Selecciona un ítem');
         if (!quoteSupplier.value || quoteSupplier.value === '__new__') throw new Error('Selecciona o guarda primero un proveedor');
         if (!quoteUnitCost.value || Number(quoteUnitCost.value) <= 0) throw new Error('Ingresa costo mayor a cero');
+        const selectedItemText = quoteItem.options[quoteItem.selectedIndex]?.text || '';
+        if (!confirm(`¿Guardar cotización para:\n"${selectedItemText}"?\n\nCosto: $${Number(quoteUnitCost.value).toFixed(2)} ${quoteCurrencyField.value||'MXN'}`)) return;
         const qFile = document.getElementById('quoteFile');
         let quoteResult;
         if (qFile && qFile.files[0]) {

@@ -121,6 +121,15 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
     return res.status(400).json({ error: 'Los días de entrega no pueden ser negativos.' });
   }
 
+  // Validar que el ítem exista y esté en cotización
+  const targetItem = db.requisition_items.find(i => i.id === row.requisition_item_id);
+  if (!targetItem) {
+    return res.status(404).json({ error: `Ítem de requisición ${row.requisition_item_id} no encontrado` });
+  }
+  if (targetItem.status !== 'En cotización') {
+    return res.status(400).json({ error: `El ítem "${targetItem.manual_item_name || targetItem.id}" no está en estado "En cotización" (estado actual: ${targetItem.status})` });
+  }
+
   db.quotation_requests = db.quotation_requests || [];
   const qr = db.quotation_requests.find(r =>
     r.requisition_item_id === row.requisition_item_id && r.supplier_id === supplierId
