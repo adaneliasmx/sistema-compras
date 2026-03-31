@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read: readCompras, write: writeCompras, nextId: nextIdCompras } = require('../db');
 const { read: readRhh, write: writeRhh, nextId: nextIdRhh, forceSeedFromJson } = require('../db-rhh');
+const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = require('../db-produccion');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -60,7 +61,7 @@ function buildUnifiedList() {
       key: emailLow,
       full_name: cu.full_name,
       email: cu.email,
-      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false, vales_role: cu.vales_role || null },
+      compras: { id: cu.id, role: cu.role_code, active: cu.active !== false, vales_role: cu.vales_role || null, produccion_role: cu.produccion_role || null },
       rhh: rhhUser ? { id: rhhUser.id, role: rhhUser.role, active: rhhUser.active !== false } : null,
       is_external: cu.role_code === 'proveedor'
     });
@@ -128,6 +129,11 @@ router.get('/overview', superAdminRequired, (req, res) => {
       id: 'calidad', name: 'Registros de Calidad', icon: '📋', status: 'active', url: '/vales',
       users: (compras.users || []).filter(u => u.vales_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.vales_role, active: u.active !== false })),
       total_users: (compras.users || []).filter(u => u.vales_role).length
+    },
+    {
+      id: 'produccion', name: 'Registros de Producción', icon: '🏭', status: 'active', url: '/produccion',
+      users: (compras.users || []).filter(u => u.produccion_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.produccion_role, active: u.active !== false })),
+      total_users: (compras.users || []).filter(u => u.produccion_role).length
     },
     { id: 'mantenimiento', name: 'Órdenes de Mantenimiento', icon: '🔧', status: 'development', url: null, users: [], total_users: 0 }
   ];
@@ -561,6 +567,57 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
   writeCompras(comprasDb);
   writeRhh(rhhDb);
   res.json({ ok: true, results });
+});
+
+// PATCH /api/super-admin/unified-users/produccion-role
+router.patch('/unified-users/produccion-role', superAdminRequired, (req, res) => {
+  const { user_id, produccion_role } = req.body || {};
+  if (produccion_role && !['admin'].includes(produccion_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: admin o null' });
+  const db = readCompras();
+  const user = (db.users || []).find(u => u.id === Number(user_id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  user.produccion_role = produccion_role || null;
+  writeCompras(db);
+  res.json({ ok: true });
+});
+
+// GET /api/super-admin/produccion/operadores/:linea
+router.get('/produccion/operadores/:linea', superAdminRequired, (req, res) => {
+  const db = readProduccion();
+  const key = `operadores_${req.params.linea.toLowerCase()}`;
+  const ops = (db[key] || []).map(({ pin_hash, ...o }) => o);
+  res.json(ops);
+});
+
+// POST /api/super-admin/produccion/operadores/:linea
+router.post('/produccion/operadores/:linea', superAdminRequired, (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const { nombre, pin } = req.body || {};
+  if (!nombre || !pin) return res.status(400).json({ error: 'Nombre y PIN requeridos' });
+  const db = readProduccion();
+  const key = `operadores_${req.params.linea.toLowerCase()}`;
+  db[key] = db[key] || [];
+  const op = { id: nextIdProd(db[key]), nombre, pin_hash: bcrypt.hashSync(String(pin), 10), activo: true, created_at: new Date().toISOString() };
+  db[key].push(op);
+  writeProduccion(db);
+  const { pin_hash, ...safe } = op;
+  res.status(201).json(safe);
+});
+
+// PATCH /api/super-admin/produccion/operadores/:linea/:id
+router.patch('/produccion/operadores/:linea/:id', superAdminRequired, (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const db = readProduccion();
+  const key = `operadores_${req.params.linea.toLowerCase()}`;
+  const op = (db[key] || []).find(o => o.id === Number(req.params.id));
+  if (!op) return res.status(404).json({ error: 'Operador no encontrado' });
+  if (req.body.nombre !== undefined) op.nombre = req.body.nombre;
+  if (req.body.pin) op.pin_hash = bcrypt.hashSync(String(req.body.pin), 10);
+  if (typeof req.body.activo === 'boolean') op.activo = req.body.activo;
+  writeProduccion(db);
+  const { pin_hash, ...safe } = op;
+  res.json(safe);
 });
 
 // POST /api/super-admin/rhh-reseed

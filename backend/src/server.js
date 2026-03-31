@@ -34,9 +34,13 @@ const rhhVacanciesRoutes = require('./routes/rhh-vacancies');
 const rhhEvaluationsRoutes = require('./routes/rhh-evaluations');
 const rhhNotificationsRoutes = require('./routes/rhh-notifications');
 
+// ── Módulo Producción ─────────────────────────────────────────────────────
+const produccionRoutes = require('./routes/produccion');
+
 const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
 const { initDb: initValesDb } = require('./db-vales');
+const { initDb: initProduccionDb } = require('./db-produccion');
 
 const app = express();
 app.use(cors());
@@ -68,6 +72,9 @@ app.use('/api/vales',      valesRoutes);
 
 // ── API Super Admin ───────────────────────────────────────────────────────────
 app.use('/api/super-admin', superAdminRoutes);
+
+// ── API Producción ────────────────────────────────────────────────────────
+app.use('/api/produccion', produccionRoutes);
 
 // ── API RHH ───────────────────────────────────────────────────────────────────
 app.use('/api/rhh/auth', rhhAuthRoutes);
@@ -118,6 +125,11 @@ app.get('/vales/*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
 });
 
+// Módulo Producción
+app.get('/produccion', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
+app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
+app.get('/pizarron', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/pizarron.html')));
+
 // Fallback
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
@@ -125,7 +137,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb(), initValesDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);
