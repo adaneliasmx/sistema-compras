@@ -1932,11 +1932,12 @@ async function approvalsView() {
 
   // ── Autorizar individual ──────────────────────────────────────────────────
   document.querySelectorAll('.approve-btn').forEach(btn => btn.onclick = async () => {
+    const orig = btn.textContent;
     try {
-      btn.disabled = true;
+      btn.disabled = true; btn.textContent = '⏳';
       await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado' }) });
-      render();
-    } catch(e) { alert(e.message); btn.disabled = false; }
+      await render();
+    } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = orig; }
   });
 
   // ── Rechazar individual con formulario de motivo ──────────────────────────

@@ -16,6 +16,7 @@ if (process.env.DATABASE_URL) {
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;
+let _writeQueue = Promise.resolve(); // Serializa escrituras a PostgreSQL para evitar race conditions
 
 const EMPTY_DB = {
   users: [], suppliers: [], cost_centers: [], sub_cost_centers: [],
@@ -77,12 +78,15 @@ function read() {
   return _cache;
 }
 
-// Escribe y persiste (actualiza caché + persiste en background)
+// Escribe y persiste (actualiza caché + persiste en cola para evitar race conditions)
 function write(data) {
   _cache = data;
   if (pool) {
-    pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [JSON.stringify(data)])
-      .catch(err => console.error('[db] Error persistiendo en PostgreSQL:', err.message));
+    const snapshot = JSON.stringify(data);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
+        .catch(err => console.error('[db] Error persistiendo en PostgreSQL:', err.message))
+    );
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
