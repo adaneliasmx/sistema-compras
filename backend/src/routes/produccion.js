@@ -119,9 +119,13 @@ router.use(produccionAuthRequired);
 // ─── Catálogos ────────────────────────────────────────────────────────────────
 
 // GET bulk — devuelve todos los catálogos de una línea en un solo objeto
-router.get('/catalogos/:linea', produccionAllowRoles('admin'), (req, res) => {
+router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const l = lineaKey(req.params.linea);
   const pdb = dbProd.read();
+  const operadores = (pdb[`operadores_${l}`] || []).map(o => {
+    const { pin_hash, ...rest } = o;
+    return rest;
+  });
   res.json({
     componentes:  pdb[`componentes_${l}`]     || [],
     procesos:     pdb[`procesos_${l}`]         || [],
@@ -129,7 +133,8 @@ router.get('/catalogos/:linea', produccionAllowRoles('admin'), (req, res) => {
     herramentales:pdb[`herramentales_${l}`]    || [],
     defectos:     pdb[`defectos_${l}`]         || [],
     motivos_paro: pdb[`motivos_paro_${l}`]     || [],
-    sub_motivos:  pdb[`sub_motivos_paro_${l}`] || []
+    sub_motivos:  pdb[`sub_motivos_paro_${l}`] || [],
+    operadores
   });
 });
 
@@ -495,6 +500,13 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
 });
 
 // ─── Paros ────────────────────────────────────────────────────────────────────
+
+router.get('/paros/:linea/activo', (req, res) => {
+  const { linea } = req.params;
+  const pdb = dbProd.read();
+  const paro = (pdb.paros || []).find(p => p.linea === linea && p.estado === 'activo') || null;
+  res.json({ paro });
+});
 
 router.get('/paros/:linea', (req, res) => {
   const { linea } = req.params;

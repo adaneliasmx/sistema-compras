@@ -568,7 +568,7 @@ async function openModalCarga(linea, catalogo) {
   const acabados      = catalogo.acabados      || [];
   const operadores    = catalogo.operadores    || [];
 
-  const htmlHerr = herramentales.map(h => `<option value="${escHtml(h.no || h.id)}">${escHtml(h.no || h.nombre)}</option>`).join('');
+  const htmlHerr = herramentales.map(h => `<option value="${h.id}">${escHtml(h.numero)}</option>`).join('');
   const htmlComp = componentes.map(c   => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-optima="${c.carga_optima_varillas||''}" data-pzobj="${c.piezas_objetivo||''}">${escHtml(c.nombre)}</option>`).join('');
   const htmlProc = procesos.map(p      => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
   const htmlAcab = acabados.map(a      => `<option value="${a.id}">${escHtml(a.nombre)}</option>`).join('');
@@ -654,18 +654,18 @@ async function openModalCarga(linea, catalogo) {
   document.getElementById('mc-submit').addEventListener('click', async () => {
     const vacia    = document.getElementById('mc-carga-vacia')?.checked || false;
     const payload  = {
-      herramental:    document.getElementById('mc-herramental').value,
-      componente_id:  vacia ? null : document.getElementById('mc-componente').value || null,
-      carga_vacia:    vacia,
-      cliente:        document.getElementById('mc-cliente').value.trim(),
-      proceso_id:     document.getElementById('mc-proceso').value || null,
-      acabado_id:     document.getElementById('mc-acabado').value || null,
-      varillas:       parseInt(document.getElementById('mc-varillas').value) || null,
-      pzs_varilla:    parseInt(document.getElementById('mc-pzs-varilla').value) || null,
-      cantidad:       parseInt(document.getElementById('mc-cantidad').textContent) || null,
-      operador_id:    document.getElementById('mc-operador').value || null
+      herramental_id:    document.getElementById('mc-herramental').value,
+      componente_id:     vacia ? null : document.getElementById('mc-componente').value || null,
+      es_vacia:          vacia,
+      cliente:           document.getElementById('mc-cliente').value.trim(),
+      proceso_id:        document.getElementById('mc-proceso').value || null,
+      acabado_id:        document.getElementById('mc-acabado').value || null,
+      varillas:          parseInt(document.getElementById('mc-varillas').value) || null,
+      piezas_por_varilla: parseInt(document.getElementById('mc-pzs-varilla').value) || null,
+      cantidad:          parseInt(document.getElementById('mc-cantidad').textContent) || null,
+      operador_id:       document.getElementById('mc-operador').value || null
     };
-    if (!payload.herramental) { alert('Selecciona un herramental'); return; }
+    if (!payload.herramental_id) { alert('Selecciona un herramental'); return; }
     const btn = document.getElementById('mc-submit');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
