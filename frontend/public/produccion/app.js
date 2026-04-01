@@ -572,8 +572,11 @@ async function openModalCarga(linea, catalogo) {
   const htmlComp = componentes.map(c   => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-optima="${c.carga_optima_varillas||''}" data-pzobj="${c.piezas_objetivo||''}">${escHtml(c.nombre)}</option>`).join('');
   const htmlProc = procesos.map(p      => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
   const htmlAcab = acabados.map(a      => `<option value="${a.id}">${escHtml(a.nombre)}</option>`).join('');
-  // Auto-detect si el usuario logueado tiene un operador vinculado en esta línea
-  const myOperador = operadores.find(o => o.compras_user_id && o.compras_user_id === state.user?.id);
+  // Auto-detect si el usuario logueado tiene un operador vinculado en esta línea (por RH o compras)
+  const myOperador = operadores.find(o =>
+    (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+    (o.compras_user_id && o.compras_user_id === state.user?.id)
+  );
   const htmlOper = operadores.map(o    => `<option value="${o.id}"${o.id === myOperador?.id ? ' selected' : ''}>${escHtml(o.nombre)}</option>`).join('');
 
   showModal(`
@@ -1393,8 +1396,8 @@ async function viewOperadores(el) {
       btn.addEventListener('click', () => {
         const linea = btn.dataset.nuevoOp;
         const yaAsignados = linea === 'L3'
-          ? operadoresL3.map(o => o.compras_user_id).filter(Boolean)
-          : operadoresL4.map(o => o.compras_user_id).filter(Boolean);
+          ? operadoresL3.map(o => o.rhh_employee_id).filter(Boolean)
+          : operadoresL4.map(o => o.rhh_employee_id).filter(Boolean);
         const disponibles = usuariosSistema.filter(u => !yaAsignados.includes(u.id));
         openOperadorModal(linea, null, disponibles, loadAndRender);
       });
@@ -1407,7 +1410,7 @@ async function viewOperadores(el) {
 function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
   const isNew = op == null;
   const optsHtml = usuariosDisponibles.map(u =>
-    `<option value="${u.id}" data-nombre="${escHtml(u.full_name)}" data-email="${escHtml(u.email || '')}">${escHtml(u.full_name)} — ${escHtml(u.email || '')}</option>`
+    `<option value="${u.id}" data-nombre="${escHtml(u.full_name)}" data-email="${escHtml(u.email || '')}">${escHtml(u.full_name)}${u.employee_number ? ' [' + escHtml(u.employee_number) + ']' : ''} — ${escHtml(u.email || '')}</option>`
   ).join('');
 
   showModal(`
@@ -1420,7 +1423,7 @@ function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
           <option value="">— Seleccionar —</option>
           ${optsHtml}
         </select>
-        <span class="form-hint">Solo usuarios activos del sistema</span>
+        <span class="form-hint">Empleados activos del sistema RH</span>
       </div>` : ''}
       <div class="form-group full">
         <label>Nombre (para el tarjetero)</label>
@@ -1449,7 +1452,7 @@ function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
     if (!nombre) { alert('Ingresa el nombre del operador'); return; }
     if (isNew && !userId) { alert('Selecciona un usuario del sistema'); return; }
     const payload = { nombre };
-    if (userId) payload.compras_user_id = Number(userId);
+    if (userId) payload.rhh_employee_id = Number(userId);
     const btn = document.getElementById('op-save');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {

@@ -5,6 +5,7 @@ const router = express.Router();
 
 const db = require('../db');
 const dbProd = require('../db-produccion');
+const dbRhh = require('../db-rhh');
 const { produccionAuthRequired, produccionAllowRoles } = require('../middleware/produccion-auth');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -101,14 +102,21 @@ router.post('/auth/login', (req, res) => {
   if (!user || !bcrypt.compareSync(String(password), user.password_hash || ''))
     return res.status(401).json({ error: 'Credenciales inválidas o sin acceso a Producción' });
 
+  // Buscar empleado RH por email para vinculación en operadores
+  const rhhDb = dbRhh.read();
+  const rhhEmp = (rhhDb.rhh_employees || []).find(e =>
+    e.status !== 'deleted' && e.email && e.email.toLowerCase() === email.toLowerCase()
+  );
+  const rhh_employee_id = rhhEmp ? rhhEmp.id : null;
+
   const token = jwt.sign(
-    { module: 'produccion', sub: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role },
+    { module: 'produccion', sub: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role, rhh_employee_id },
     process.env.JWT_SECRET || 'cambia-esta-clave',
     { expiresIn: '12h' }
   );
   return res.json({
     token,
-    user: { id: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role }
+    user: { id: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role, rhh_employee_id }
   });
 });
 
@@ -220,12 +228,18 @@ router.get('/operadores/:linea', produccionAllowRoles('admin'), (req, res) => {
   const { linea } = req.params;
   const key = `operadores_${lineaKey(linea)}`;
   const pdb = dbProd.read();
+  const rhhDb = dbRhh.read();
+  const rhhEmpMap = {};
+  (rhhDb.rhh_employees || []).forEach(e => { rhhEmpMap[e.id] = e; });
+  // fallback: compras users
   const mainDb = db.read();
   const usersMap = {};
   (mainDb.users || []).forEach(u => { usersMap[u.id] = u; });
   const list = (pdb[key] || []).map(o => {
     const { pin_hash, ...rest } = o;
-    if (rest.compras_user_id && usersMap[rest.compras_user_id]) {
+    if (rest.rhh_employee_id && rhhEmpMap[rest.rhh_employee_id]) {
+      rest.email = rhhEmpMap[rest.rhh_employee_id].email || null;
+    } else if (rest.compras_user_id && usersMap[rest.compras_user_id]) {
       rest.email = usersMap[rest.compras_user_id].email || null;
     }
     return rest;
@@ -242,7 +256,7 @@ router.post('/operadores/:linea', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
   if (!pdb[key]) pdb[key] = [];
 
-  const op = { id: dbProd.nextId(pdb[key]), nombre, compras_user_id: req.body.compras_user_id || null, activo: true, created_at: new Date().toISOString() };
+  const op = { id: dbProd.nextId(pdb[key]), nombre, rhh_employee_id: req.body.rhh_employee_id || null, compras_user_id: req.body.compras_user_id || null, activo: true, created_at: new Date().toISOString() };
   pdb[key].push(op);
   dbProd.write(pdb);
 
@@ -261,6 +275,7 @@ router.patch('/operadores/:linea/:id', produccionAllowRoles('admin'), (req, res)
   const body = req.body || {};
   if (body.nombre !== undefined) list[idx].nombre = body.nombre;
   if (body.activo !== undefined) list[idx].activo = body.activo;
+  if (body.rhh_employee_id !== undefined) list[idx].rhh_employee_id = body.rhh_employee_id;
   if (body.compras_user_id !== undefined) list[idx].compras_user_id = body.compras_user_id;
 
   dbProd.write(pdb);
@@ -268,13 +283,13 @@ router.patch('/operadores/:linea/:id', produccionAllowRoles('admin'), (req, res)
   res.json(safe);
 });
 
-// ─── Usuarios del sistema disponibles como operadores ────────────────────────
+// ─── Empleados RH disponibles como operadores ────────────────────────────────
 router.get('/usuarios-sistema', produccionAllowRoles('produccion'), (req, res) => {
-  const mainDb = require('../db').read();
-  const users = (mainDb.users || [])
-    .filter(u => u.active !== false)
-    .map(u => ({ id: u.id, full_name: u.full_name, email: u.email }));
-  res.json(users);
+  const rhhDb = dbRhh.read();
+  const employees = (rhhDb.rhh_employees || [])
+    .filter(e => e.status !== 'deleted' && e.status !== 'inactivo')
+    .map(e => ({ id: e.id, full_name: e.full_name, email: e.email || '', employee_number: e.employee_number || '' }));
+  res.json(employees);
 });
 
 // ─── Cargas ───────────────────────────────────────────────────────────────────
