@@ -572,7 +572,9 @@ async function openModalCarga(linea, catalogo) {
   const htmlComp = componentes.map(c   => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-optima="${c.carga_optima_varillas||''}" data-pzobj="${c.piezas_objetivo||''}">${escHtml(c.nombre)}</option>`).join('');
   const htmlProc = procesos.map(p      => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
   const htmlAcab = acabados.map(a      => `<option value="${a.id}">${escHtml(a.nombre)}</option>`).join('');
-  const htmlOper = operadores.map(o    => `<option value="${o.id}">${escHtml(o.nombre)}</option>`).join('');
+  // Auto-detect si el usuario logueado tiene un operador vinculado en esta línea
+  const myOperador = operadores.find(o => o.compras_user_id && o.compras_user_id === state.user?.id);
+  const htmlOper = operadores.map(o    => `<option value="${o.id}"${o.id === myOperador?.id ? ' selected' : ''}>${escHtml(o.nombre)}</option>`).join('');
 
   showModal(`
     <h3>Registrar Carga — Línea ${linea.replace('L','')}</h3>
@@ -617,6 +619,7 @@ async function openModalCarga(linea, catalogo) {
       <div class="form-group">
         <label>Operador</label>
         <select id="mc-operador"><option value="">— Seleccionar —</option>${htmlOper}</select>
+        ${!myOperador && state.user?.role === 'produccion' ? '<span style="font-size:11px;color:#dc2626">Tu usuario no está vinculado como operador en esta línea. Contacta al administrador.</span>' : ''}
       </div>
     </div>
     <div class="modal-actions">

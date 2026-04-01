@@ -122,10 +122,12 @@ router.use(produccionAuthRequired);
 router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const l = lineaKey(req.params.linea);
   const pdb = dbProd.read();
-  const operadores = (pdb[`operadores_${l}`] || []).map(o => {
-    const { pin_hash, ...rest } = o;
-    return rest;
-  });
+  const operadores = (pdb[`operadores_${l}`] || [])
+    .filter(o => o.activo !== false)
+    .map(o => {
+      const { pin_hash, ...rest } = o;
+      return rest;
+    });
   res.json({
     componentes:  pdb[`componentes_${l}`]     || [],
     procesos:     pdb[`procesos_${l}`]         || [],
@@ -218,8 +220,14 @@ router.get('/operadores/:linea', produccionAllowRoles('admin'), (req, res) => {
   const { linea } = req.params;
   const key = `operadores_${lineaKey(linea)}`;
   const pdb = dbProd.read();
+  const mainDb = db.read();
+  const usersMap = {};
+  (mainDb.users || []).forEach(u => { usersMap[u.id] = u; });
   const list = (pdb[key] || []).map(o => {
     const { pin_hash, ...rest } = o;
+    if (rest.compras_user_id && usersMap[rest.compras_user_id]) {
+      rest.email = usersMap[rest.compras_user_id].email || null;
+    }
     return rest;
   });
   res.json(list);
