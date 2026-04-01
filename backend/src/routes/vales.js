@@ -152,6 +152,19 @@ router.patch('/tanques/:id', valesAllowRoles('admin'), (req, res) => {
   res.json(tanque);
 });
 
+// ── REPARACIÓN: normaliza fechas corruptas en vales_header (admin) ────────────
+router.post('/repair-fechas', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  let fixed = 0;
+  (db.vales_header || []).forEach(h => {
+    const orig = h.fecha;
+    const norm = toDateStr(orig);
+    if (norm && norm !== orig) { h.fecha = norm; fixed++; }
+  });
+  if (fixed > 0) writeVales(db);
+  res.json({ ok: true, fixed, message: `${fixed} fecha(s) normalizadas` });
+});
+
 // ── VALES ─────────────────────────────────────────────────────────────────────
 
 router.get('/vales', (req, res) => {
@@ -335,6 +348,18 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
 
 // ── IMPORT EXCEL ──────────────────────────────────────────────────────────────
 
+// Convierte fecha que pudo llegar como serial Excel (número), ISO string, o string normal
+function toDateStr(v) {
+  if (v == null || v === '') return '';
+  if (typeof v === 'number') {
+    // Serial Excel: días desde 1899-12-30
+    const d = new Date(Math.round((v - 25569) * 86400000));
+    return d.toISOString().slice(0, 10);
+  }
+  // String ISO "2026-03-15T00:00:00.000Z" o "2026-03-15"
+  return String(v).trim().slice(0, 10);
+}
+
 router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
   const { rows } = req.body || {};
   if (!Array.isArray(rows) || rows.length === 0)
@@ -353,7 +378,7 @@ router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
   // Normalize rows — soporta formato "Por Vale" (col Folio) y "Por Item" (col Folio Vale)
   const norm = r => ({
     folio:         String(r['Folio'] || r['Folio Vale'] || '').trim(),
-    fecha:         String(r['Fecha']         || '').trim(),
+    fecha:         toDateStr(r['Fecha']),
     hora:          String(r['Hora']          || '').trim(),
     turno:         String(r['Turno']         || '').trim(),
     linea:         String(r['Línea'] || r['Linea'] || '').trim(),

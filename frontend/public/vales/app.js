@@ -521,7 +521,7 @@ async function viewConsultaVales() {
       <div style="align-self:flex-end;display:flex;gap:8px">
         <button class="btn btn-primary" id="btn-buscar-vale">🔍 Buscar</button>
         ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-export-vale">⬇️ Excel</button>` : ''}
-        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-import-vale">📤 Importar</button>` : ''}
+        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-import-vale">📤 Importar</button><button class="btn btn-outline" id="btn-repair-fechas" title="Corregir fechas mal importadas">🔧 Reparar fechas</button>` : ''}
       </div>
     </div>
     <div id="result-porvale"></div>
@@ -740,6 +740,14 @@ function bindConsultaVales() {
   };
   document.getElementById('btn-import-vale')?.addEventListener('click', doImportExcel);
   document.getElementById('btn-import-item')?.addEventListener('click', doImportExcel);
+  document.getElementById('btn-repair-fechas')?.addEventListener('click', async () => {
+    if (!confirm('¿Reparar fechas mal importadas en todos los vales?')) return;
+    try {
+      const r = await POST('/vales/repair-fechas', {});
+      alert(r.message || 'Listo');
+      await renderTab(state.activeTab);
+    } catch (e) { alert(e.message); }
+  });
 }
 window.verVale = async function(folio) {
   try {
