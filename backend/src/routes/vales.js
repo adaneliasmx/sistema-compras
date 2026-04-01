@@ -348,16 +348,26 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
 
 // ── IMPORT EXCEL ──────────────────────────────────────────────────────────────
 
-// Convierte fecha que pudo llegar como serial Excel (número), ISO string, o string normal
+// Convierte fecha a YYYY-MM-DD — maneja Date object, serial Excel, ISO string, DD/MM/YYYY, etc.
 function toDateStr(v) {
   if (v == null || v === '') return '';
+  // JS Date object (SheetJS cellDates:true, o JSON.parse de ISO string)
+  if (v instanceof Date) return isNaN(v) ? '' : v.toISOString().slice(0, 10);
+  // Serial Excel: número entero (e.g. 46114)
   if (typeof v === 'number') {
-    // Serial Excel: días desde 1899-12-30
+    if (v < 1) return '';
     const d = new Date(Math.round((v - 25569) * 86400000));
-    return d.toISOString().slice(0, 10);
+    return isNaN(d) ? '' : d.toISOString().slice(0, 10);
   }
-  // String ISO "2026-03-15T00:00:00.000Z" o "2026-03-15"
-  return String(v).trim().slice(0, 10);
+  const s = String(v).trim();
+  // YYYY-MM-DD o ISO "2026-03-15T00:00:00.000Z"
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  // DD/MM/YYYY (formato mexicano)
+  const ddmm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (ddmm) return `${ddmm[3]}-${ddmm[2].padStart(2, '0')}-${ddmm[1].padStart(2, '0')}`;
+  // Intento genérico (e.g. "Mar 15, 2026")
+  const parsed = new Date(s);
+  return isNaN(parsed) ? s.slice(0, 10) : parsed.toISOString().slice(0, 10);
 }
 
 router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
@@ -461,8 +471,8 @@ router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
 
         for (const det of data.detalles) {
           const itemRec = (db.items_vales || []).find(i => i.item === det.item);
-          if (!itemRec) { errors.push(`Item no encontrado: ${det.item} (${folio})`); continue; }
-          const kg = calcKg(det.tipo_adicion, det.cantidad, itemRec);
+          if (!itemRec) errors.push(`Producto no en catálogo (se guardó sin kg): ${det.item} (${folio})`);
+          const kg = itemRec ? calcKg(det.tipo_adicion, det.cantidad, itemRec) : (det.cantidad || 0);
           const did = nextId(db.vales_detalle);
           db.vales_detalle.push({ id: did, folio_vale: folio, titulacion: det.titulacion, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, item: det.item, tipo_adicion: det.tipo_adicion, cantidad: det.cantidad, kg_equivalentes: kg, created_at: now });
           db.kardex_vales.push({ id: nextId(db.kardex_vales), tipo: 'SALIDA', referencia: folio, item: det.item, kg, cantidad: det.cantidad, unidad: det.tipo_adicion, linea: hdr.linea, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, usuario: req.valesUser.full_name + ' (import)', comentario: 'Importado desde Excel', detalle_id: did, created_at: now });
@@ -478,8 +488,15 @@ router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
     }
   }
 
+  // Auto-reparar TODAS las fechas en la BD (incluyendo registros previos con formato incorrecto)
+  let fechasReparadas = 0;
+  (db.vales_header || []).forEach(h => {
+    const norm = toDateStr(h.fecha);
+    if (norm && norm !== h.fecha) { h.fecha = norm; fechasReparadas++; }
+  });
+
   writeVales(db);
-  res.json({ ok: true, created, updated, errors, total_folios: Object.keys(byFolio).length });
+  res.json({ ok: true, created, updated, fechas_reparadas: fechasReparadas, errors, total_folios: Object.keys(byFolio).length });
 });
 
 // ── CORRECCIONES ──────────────────────────────────────────────────────────────

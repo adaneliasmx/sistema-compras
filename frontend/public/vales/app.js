@@ -710,6 +710,23 @@ function bindConsultaVales() {
   });
 
   // ── Import Excel (admin) — ambos tabs usan la misma función ──
+  // Normaliza cualquier valor de fecha a YYYY-MM-DD
+  function normFecha(v) {
+    if (v == null || v === '') return '';
+    if (v instanceof Date) return isNaN(v) ? '' : v.toISOString().slice(0, 10);
+    if (typeof v === 'number') {
+      if (v < 1) return '';
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      return isNaN(d) ? '' : d.toISOString().slice(0, 10);
+    }
+    const s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+    const ddmm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (ddmm) return `${ddmm[3]}-${ddmm[2].padStart(2,'0')}-${ddmm[1].padStart(2,'0')}`;
+    const parsed = new Date(s);
+    return isNaN(parsed) ? s.slice(0, 10) : parsed.toISOString().slice(0, 10);
+  }
+
   const doImportExcel = () => {
     const input = document.createElement('input');
     input.type = 'file';
@@ -719,16 +736,21 @@ function bindConsultaVales() {
       if (!file) return;
       try {
         const arrayBuffer = await file.arrayBuffer();
-        const wb = XLSX.read(arrayBuffer, { type: 'array' });
+        // cellDates:true → SheetJS entrega fechas como objetos Date (más fiable)
+        const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
         if (!rows.length) { alert('El archivo está vacío'); return; }
+        // Normalizar fechas antes de enviar al servidor
+        rows.forEach(r => { if (r['Fecha'] !== undefined) r['Fecha'] = normFecha(r['Fecha']); });
         const isPorVale = rows[0]['Folio'] !== undefined;
         const folios = [...new Set(rows.map(r => String(r['Folio'] || r['Folio Vale'] || '')).filter(Boolean))];
         if (!folios.length) { alert('No se encontraron folios en el archivo'); return; }
         if (!confirm(`Importar ${rows.length} fila(s) de ${folios.length} folio(s)\nFormato detectado: ${isPorVale ? 'Por Vale' : 'Por Item'}\n\nSe sustituirá la información de cada folio incluido.\n¿Continuar?`)) return;
         const result = await POST('/import-excel', { rows });
-        const msg = `✅ Importación completada:\n• ${result.created} folio(s) creados\n• ${result.updated} folio(s) actualizados${result.errors?.length ? '\n\n⚠️ Advertencias:\n' + result.errors.slice(0,5).join('\n') : ''}`;
+        let msg = `✅ Importación completada:\n• ${result.created} folio(s) creados\n• ${result.updated} folio(s) actualizados`;
+        if (result.fechas_reparadas > 0) msg += `\n• ${result.fechas_reparadas} fecha(s) corregidas automáticamente`;
+        if (result.errors?.length) msg += `\n\n⚠️ Advertencias (${result.errors.length}):\n` + result.errors.slice(0, 8).join('\n');
         alert(msg);
         buscarVale();
         buscarItem();
@@ -743,7 +765,7 @@ function bindConsultaVales() {
   document.getElementById('btn-repair-fechas')?.addEventListener('click', async () => {
     if (!confirm('¿Reparar fechas mal importadas en todos los vales?')) return;
     try {
-      const r = await POST('/vales/repair-fechas', {});
+      const r = await POST('/repair-fechas', {});
       alert(r.message || 'Listo');
       await renderTab(state.activeTab);
     } catch (e) { alert(e.message); }
