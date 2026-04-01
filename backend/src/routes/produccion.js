@@ -118,6 +118,21 @@ router.use(produccionAuthRequired);
 
 // ─── Catálogos ────────────────────────────────────────────────────────────────
 
+// GET bulk — devuelve todos los catálogos de una línea en un solo objeto
+router.get('/catalogos/:linea', produccionAllowRoles('admin'), (req, res) => {
+  const l = lineaKey(req.params.linea);
+  const pdb = dbProd.read();
+  res.json({
+    componentes:  pdb[`componentes_${l}`]     || [],
+    procesos:     pdb[`procesos_${l}`]         || [],
+    acabados:     pdb[`acabados_${l}`]         || [],
+    herramentales:pdb[`herramentales_${l}`]    || [],
+    defectos:     pdb[`defectos_${l}`]         || [],
+    motivos_paro: pdb[`motivos_paro_${l}`]     || [],
+    sub_motivos:  pdb[`sub_motivos_paro_${l}`] || []
+  });
+});
+
 router.get('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res) => {
   const { linea, tipo } = req.params;
   const key = catalogCollection(linea, tipo);
@@ -178,6 +193,18 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
 
   dbProd.write(pdb);
   res.json(list[idx]);
+});
+
+router.delete('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req, res) => {
+  const { linea, tipo, id } = req.params;
+  const key = catalogCollection(linea, tipo);
+  if (!key) return res.status(400).json({ error: 'Tipo de catálogo inválido' });
+  const pdb = dbProd.read();
+  const idx = (pdb[key] || []).findIndex(x => String(x.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
+  pdb[key].splice(idx, 1);
+  dbProd.write(pdb);
+  res.json({ ok: true });
 });
 
 // ─── Operadores ───────────────────────────────────────────────────────────────

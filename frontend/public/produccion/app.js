@@ -1094,6 +1094,12 @@ const CATALOG_TABS = [
   { key: 'sub_motivos',  label: 'Sub-motivos' }
 ];
 
+// Mapea claves de frontend al nombre de tipo que usa la API
+function apiTipo(key) {
+  const map = { motivos_paro: 'motivos-paro', sub_motivos: 'sub-motivos-paro' };
+  return map[key] || key;
+}
+
 async function viewCatalogos(el, linea) {
   let activeTab = 'componentes';
   let catalogo  = {};
@@ -1145,7 +1151,7 @@ async function viewCatalogos(el, linea) {
       btn.addEventListener('click', async () => {
         if (!confirm('¿Eliminar este registro?')) return;
         try {
-          await DEL(`/catalogos/${linea}/${activeTab}/${id}`);
+          await DEL(`/catalogos/${linea}/${apiTipo(activeTab)}/${id}`);
           loadAndRender();
         } catch (e) { alert('Error: ' + e.message); }
       });
@@ -1164,7 +1170,7 @@ function renderCatalogoTable(tipo, items, linea) {
     componentes:   ['nombre', 'cliente', 'carga_optima_varillas', 'piezas_objetivo'],
     procesos:      ['nombre', 'descripcion'],
     acabados:      ['nombre', 'descripcion'],
-    herramentales: ['no', 'nombre', 'descripcion'],
+    herramentales: ['numero', 'nombre', 'descripcion'],
     defectos:      ['nombre', 'descripcion'],
     motivos_paro:  ['nombre', 'descripcion'],
     sub_motivos:   ['nombre', 'motivo_id', 'descripcion']
@@ -1217,9 +1223,9 @@ function openCatalogoModal(tipo, linea, item, onDone) {
     btn.disabled  = true; btn.textContent = 'Guardando...';
     try {
       if (isNew) {
-        await POST(`/catalogos/${linea}/${tipo}`, payload);
+        await POST(`/catalogos/${linea}/${apiTipo(tipo)}`, payload);
       } else {
-        await PUT(`/catalogos/${linea}/${tipo}/${item.id}`, payload);
+        await PATCH(`/catalogos/${linea}/${apiTipo(tipo)}/${item.id}`, payload);
       }
       closeModal();
       onDone();
@@ -1245,7 +1251,7 @@ function buildCatalogoFields(tipo, item) {
              inp('carga_optima_varillas', 'Carga óptima varillas', 'number') +
              inp('piezas_objetivo', 'Piezas objetivo/varilla', 'number');
     case 'herramentales':
-      return inp('no', 'No. Herramental') +
+      return inp('numero', 'No. Herramental') +
              inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción');
     case 'procesos':
@@ -1272,7 +1278,7 @@ function collectCatalogoFields(tipo) {
     case 'componentes':
       return { nombre: g('nombre'), cliente: g('cliente'), carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
     case 'herramentales':
-      return { no: g('no'), nombre: g('nombre'), descripcion: g('descripcion') };
+      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion') };
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
     default:
