@@ -333,6 +333,130 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
   });
 });
 
+// ── IMPORT EXCEL ──────────────────────────────────────────────────────────────
+
+router.post('/import-excel', valesAllowRoles('admin'), (req, res) => {
+  const { rows } = req.body || {};
+  if (!Array.isArray(rows) || rows.length === 0)
+    return res.status(400).json({ error: 'No se recibieron filas' });
+
+  const db = readVales();
+  db.vales_header     = db.vales_header     || [];
+  db.vales_detalle    = db.vales_detalle    || [];
+  db.kardex_vales     = db.kardex_vales     || [];
+  db.inventario_vales = db.inventario_vales || [];
+
+  const now = new Date().toISOString();
+  let created = 0, updated = 0;
+  const errors = [];
+
+  // Normalize rows — soporta formato "Por Vale" (col Folio) y "Por Item" (col Folio Vale)
+  const norm = r => ({
+    folio:         String(r['Folio'] || r['Folio Vale'] || '').trim(),
+    fecha:         String(r['Fecha']         || '').trim(),
+    hora:          String(r['Hora']          || '').trim(),
+    turno:         String(r['Turno']         || '').trim(),
+    linea:         String(r['Línea'] || r['Linea'] || '').trim(),
+    solicita:      String(r['Solicita']      || '').trim(),
+    adiciona:      String(r['Adiciona']      || '').trim(),
+    coordinador:   String(r['Coordinador']   || '').trim(),
+    comentarios:   String(r['Comentarios']   || '').trim(),
+    no_tanque:     String(r['No. Tanque']    || '').trim(),
+    nombre_tanque: String(r['Nombre Tanque'] || '').trim(),
+    item:          String(r['Producto']      || '').trim().toUpperCase(),
+    tipo_adicion:  String(r['Tipo Adición'] || r['Tipo Adicion'] || '').trim(),
+    cantidad:      parseFloat(r['Cantidad'])  || 0,
+    titulacion:    String(r['Titulación'] || r['Titulacion'] || '').trim()
+  });
+
+  // Agrupar por folio
+  const byFolio = {};
+  for (const raw of rows) {
+    const r = norm(raw);
+    if (!r.folio) continue;
+    if (!byFolio[r.folio]) byFolio[r.folio] = { header: null, detalles: [] };
+    if (!byFolio[r.folio].header) {
+      byFolio[r.folio].header = { fecha: r.fecha, hora: r.hora, turno: r.turno, linea: r.linea, solicita: r.solicita, adiciona: r.adiciona, coordinador: r.coordinador, comentarios: r.comentarios };
+    }
+    if (r.item) byFolio[r.folio].detalles.push(r);
+  }
+
+  for (const [folio, data] of Object.entries(byFolio)) {
+    try {
+      const existingHeader = db.vales_header.find(h => h.folio_vale === folio);
+
+      if (existingHeader) {
+        // Actualizar encabezado
+        const hdr = data.header;
+        if (hdr.fecha)       existingHeader.fecha       = hdr.fecha;
+        if (hdr.hora)        existingHeader.hora        = hdr.hora;
+        if (hdr.turno)       existingHeader.turno       = hdr.turno;
+        if (hdr.linea)       existingHeader.linea       = hdr.linea;
+        if (hdr.solicita)    existingHeader.solicita    = hdr.solicita;
+        if (hdr.adiciona)    existingHeader.adiciona    = hdr.adiciona;
+        if (hdr.coordinador) existingHeader.coordinador = hdr.coordinador;
+        if (hdr.comentarios) existingHeader.comentarios = hdr.comentarios;
+        existingHeader.updated_at = now;
+        existingHeader.updated_by = req.valesUser.full_name + ' (Excel import)';
+
+        if (data.detalles.length > 0) {
+          // Revertir efectos en inventario de detalle anterior
+          for (const od of db.vales_detalle.filter(d => d.folio_vale === folio)) {
+            const inv = db.inventario_vales.find(i => i.item === od.item);
+            if (inv) inv.existencia_kg = (parseFloat(inv.existencia_kg) || 0) + (od.kg_equivalentes || 0);
+          }
+          // Eliminar detalle y kardex anterior
+          db.vales_detalle = db.vales_detalle.filter(d => d.folio_vale !== folio);
+          db.kardex_vales  = db.kardex_vales.filter(k => !(k.referencia === folio && k.tipo === 'SALIDA'));
+
+          // Insertar nuevo detalle
+          for (const det of data.detalles) {
+            const itemRec = (db.items_vales || []).find(i => i.item === det.item);
+            const kg = itemRec ? calcKg(det.tipo_adicion, det.cantidad, itemRec) : (det.cantidad || 0);
+            const did = nextId(db.vales_detalle);
+            db.vales_detalle.push({ id: did, folio_vale: folio, titulacion: det.titulacion, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, item: det.item, tipo_adicion: det.tipo_adicion, cantidad: det.cantidad, kg_equivalentes: kg, created_at: now });
+            db.kardex_vales.push({ id: nextId(db.kardex_vales), tipo: 'SALIDA', referencia: folio, item: det.item, kg, cantidad: det.cantidad, unidad: det.tipo_adicion, linea: existingHeader.linea, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, usuario: req.valesUser.full_name + ' (import)', comentario: 'Importado desde Excel', detalle_id: did, created_at: now });
+            let inv = db.inventario_vales.find(i => i.item === det.item);
+            if (!inv) { inv = { id: nextId(db.inventario_vales), item: det.item, existencia_kg: 0, ultima_actualizacion: now }; db.inventario_vales.push(inv); }
+            inv.existencia_kg = (parseFloat(inv.existencia_kg) || 0) - kg;
+            inv.ultima_actualizacion = now;
+          }
+        }
+        updated++;
+      } else {
+        // Crear nuevo vale
+        const hdr = {
+          id: nextId(db.vales_header), folio_vale: folio,
+          fecha: data.header.fecha, hora: data.header.hora, turno: data.header.turno,
+          linea: data.header.linea, solicita: data.header.solicita, adiciona: data.header.adiciona,
+          coordinador: data.header.coordinador, comentarios: data.header.comentarios,
+          usuario: req.valesUser.full_name + ' (import)', usuario_id: req.valesUser.id, created_at: now
+        };
+        db.vales_header.push(hdr);
+
+        for (const det of data.detalles) {
+          const itemRec = (db.items_vales || []).find(i => i.item === det.item);
+          if (!itemRec) { errors.push(`Item no encontrado: ${det.item} (${folio})`); continue; }
+          const kg = calcKg(det.tipo_adicion, det.cantidad, itemRec);
+          const did = nextId(db.vales_detalle);
+          db.vales_detalle.push({ id: did, folio_vale: folio, titulacion: det.titulacion, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, item: det.item, tipo_adicion: det.tipo_adicion, cantidad: det.cantidad, kg_equivalentes: kg, created_at: now });
+          db.kardex_vales.push({ id: nextId(db.kardex_vales), tipo: 'SALIDA', referencia: folio, item: det.item, kg, cantidad: det.cantidad, unidad: det.tipo_adicion, linea: hdr.linea, no_tanque: det.no_tanque, nombre_tanque: det.nombre_tanque, usuario: req.valesUser.full_name + ' (import)', comentario: 'Importado desde Excel', detalle_id: did, created_at: now });
+          let inv = db.inventario_vales.find(i => i.item === det.item);
+          if (!inv) { inv = { id: nextId(db.inventario_vales), item: det.item, existencia_kg: 0, ultima_actualizacion: now }; db.inventario_vales.push(inv); }
+          inv.existencia_kg = (parseFloat(inv.existencia_kg) || 0) - kg;
+          inv.ultima_actualizacion = now;
+        }
+        created++;
+      }
+    } catch (e) {
+      errors.push(`Error en ${folio}: ${e.message}`);
+    }
+  }
+
+  writeVales(db);
+  res.json({ ok: true, created, updated, errors, total_folios: Object.keys(byFolio).length });
+});
+
 // ── CORRECCIONES ──────────────────────────────────────────────────────────────
 
 router.get('/correcciones', (req, res) => {

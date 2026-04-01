@@ -521,6 +521,7 @@ async function viewConsultaVales() {
       <div style="align-self:flex-end;display:flex;gap:8px">
         <button class="btn btn-primary" id="btn-buscar-vale">🔍 Buscar</button>
         ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-export-vale">⬇️ Excel</button>` : ''}
+        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-import-vale">📤 Importar</button>` : ''}
       </div>
     </div>
     <div id="result-porvale"></div>
@@ -541,6 +542,7 @@ async function viewConsultaVales() {
         <button class="btn btn-primary" id="btn-buscar-item">🔍 Buscar</button>
         <button class="btn btn-outline" id="btn-export-item">📥 CSV</button>
         ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-export-item-xlsx">⬇️ Excel</button>` : ''}
+        ${state.user?.vales_role === 'admin' ? `<button class="btn btn-outline" id="btn-import-item">📤 Importar</button>` : ''}
       </div>
     </div>
     <div id="result-poritem"></div>
@@ -706,6 +708,38 @@ function bindConsultaVales() {
     const fin = document.getElementById('fi-fin').value;
     XLSX.writeFile(wb, `adiciones_${ini}_${fin}.xlsx`);
   });
+
+  // ── Import Excel (admin) — ambos tabs usan la misma función ──
+  const doImportExcel = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls';
+    input.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const wb = XLSX.read(arrayBuffer, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+        if (!rows.length) { alert('El archivo está vacío'); return; }
+        const isPorVale = rows[0]['Folio'] !== undefined;
+        const folios = [...new Set(rows.map(r => String(r['Folio'] || r['Folio Vale'] || '')).filter(Boolean))];
+        if (!folios.length) { alert('No se encontraron folios en el archivo'); return; }
+        if (!confirm(`Importar ${rows.length} fila(s) de ${folios.length} folio(s)\nFormato detectado: ${isPorVale ? 'Por Vale' : 'Por Item'}\n\nSe sustituirá la información de cada folio incluido.\n¿Continuar?`)) return;
+        const result = await POST('/import-excel', { rows });
+        const msg = `✅ Importación completada:\n• ${result.created} folio(s) creados\n• ${result.updated} folio(s) actualizados${result.errors?.length ? '\n\n⚠️ Advertencias:\n' + result.errors.slice(0,5).join('\n') : ''}`;
+        alert(msg);
+        buscarVale();
+        buscarItem();
+      } catch (err) {
+        alert('Error al procesar el archivo: ' + err.message);
+      }
+    };
+    input.click();
+  };
+  document.getElementById('btn-import-vale')?.addEventListener('click', doImportExcel);
+  document.getElementById('btn-import-item')?.addEventListener('click', doImportExcel);
 }
 window.verVale = async function(folio) {
   try {
