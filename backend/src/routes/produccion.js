@@ -120,6 +120,29 @@ router.post('/auth/login', (req, res) => {
   });
 });
 
+// ─── Cambio de contraseña (requiere token propio) ─────────────────────────────
+
+router.patch('/auth/change-password', produccionAuthRequired, (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password)
+    return res.status(400).json({ error: 'Contraseña actual y nueva son requeridas' });
+  if (String(new_password).length < 4)
+    return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 4 caracteres' });
+
+  const mainDb = db.read();
+  const user = (mainDb.users || []).find(u => u.id === req.prodUser.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  if (!bcrypt.compareSync(String(current_password), user.password_hash || ''))
+    return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  user.updated_at = new Date().toISOString();
+  db.write(mainDb);
+
+  res.json({ ok: true, message: 'Contraseña actualizada correctamente' });
+});
+
 // ─── Apply auth to all subsequent routes ─────────────────────────────────────
 
 router.use(produccionAuthRequired);

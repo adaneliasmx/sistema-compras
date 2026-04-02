@@ -278,6 +278,7 @@ function renderLayout() {
           <strong>${escHtml(state.user.nombre || state.user.full_name || state.user.email)}</strong>
           <span class="badge-role ${roleBadge}">${ROLE_LABELS_PROD[role] || role}</span>
         </div>
+        <button class="btn-logout" id="btn-change-pwd" style="margin-bottom:6px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;">🔑 Cambiar contraseña</button>
         <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
       </div>
     </nav>
@@ -295,6 +296,54 @@ function bindNav() {
     el.addEventListener('click', () => navigate(el.dataset.nav));
   });
   document.getElementById('btn-logout')?.addEventListener('click', logout);
+  document.getElementById('btn-change-pwd')?.addEventListener('click', openChangePwdModal);
+}
+
+function openChangePwdModal() {
+  showModal(`
+    <h3>🔑 Cambiar contraseña</h3>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Contraseña actual</label>
+        <input type="password" id="cp-actual" placeholder="••••••••" autocomplete="current-password" />
+      </div>
+      <div class="form-group full">
+        <label>Nueva contraseña</label>
+        <input type="password" id="cp-nueva" placeholder="Mínimo 4 caracteres" autocomplete="new-password" />
+      </div>
+      <div class="form-group full">
+        <label>Confirmar nueva contraseña</label>
+        <input type="password" id="cp-confirma" placeholder="Repite la nueva contraseña" autocomplete="new-password" />
+      </div>
+      <p id="cp-error" style="color:#dc2626;font-size:13px;margin:0;display:none"></p>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="cp-save">Guardar contraseña</button>
+    </div>`, { size: 'sm' });
+
+  document.getElementById('cp-save').addEventListener('click', async () => {
+    const actual   = document.getElementById('cp-actual').value;
+    const nueva    = document.getElementById('cp-nueva').value;
+    const confirma = document.getElementById('cp-confirma').value;
+    const errEl    = document.getElementById('cp-error');
+    const showErr  = msg => { errEl.textContent = msg; errEl.style.display = ''; };
+
+    if (!actual || !nueva || !confirma) return showErr('Completa todos los campos');
+    if (nueva.length < 4) return showErr('La nueva contraseña debe tener al menos 4 caracteres');
+    if (nueva !== confirma) return showErr('Las contraseñas nuevas no coinciden');
+
+    const btn = document.getElementById('cp-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await PATCH('/auth/change-password', { current_password: actual, new_password: nueva });
+      closeModal();
+      alert('Contraseña actualizada correctamente');
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Guardar contraseña';
+      showErr(e.message);
+    }
+  });
 }
 
 // ── Render sección actual ─────────────────────────────────────────────────────
