@@ -1174,7 +1174,7 @@ async function viewCatalogos(el, linea) {
 
     const items    = Array.isArray(catalogo[activeTab]) ? catalogo[activeTab] : [];
     const tabEl    = CATALOG_TABS.find(t => t.key === activeTab);
-    const bodyHtml = renderCatalogoTable(activeTab, items, linea);
+    const bodyHtml = renderCatalogoTable(activeTab, items, linea, catalogo);
 
     el.innerHTML = `
       <div class="table-card">
@@ -1192,13 +1192,13 @@ async function viewCatalogos(el, linea) {
     });
 
     document.getElementById('cat-nuevo').addEventListener('click', () => {
-      openCatalogoModal(activeTab, linea, null, () => loadAndRender());
+      openCatalogoModal(activeTab, linea, null, () => loadAndRender(), catalogo);
     });
 
     el.querySelectorAll('[data-edit-cat]').forEach(btn => {
       const id   = btn.dataset.editCat;
       const item = items.find(i => String(i.id) === String(id));
-      btn.addEventListener('click', () => openCatalogoModal(activeTab, linea, item, () => loadAndRender()));
+      btn.addEventListener('click', () => openCatalogoModal(activeTab, linea, item, () => loadAndRender(), catalogo));
     });
 
     el.querySelectorAll('[data-del-cat]').forEach(btn => {
@@ -1216,7 +1216,7 @@ async function viewCatalogos(el, linea) {
   await loadAndRender();
 }
 
-function renderCatalogoTable(tipo, items, linea) {
+function renderCatalogoTable(tipo, items, linea, catalogo) {
   if (items.length === 0) {
     return '<div class="empty-state"><div class="icon">📦</div><p>Sin registros. Crea el primero.</p></div>';
   }
@@ -1228,22 +1228,38 @@ function renderCatalogoTable(tipo, items, linea) {
     herramentales: ['numero', 'nombre', 'descripcion'],
     defectos:      ['nombre', 'descripcion'],
     motivos_paro:  ['nombre', 'descripcion'],
-    sub_motivos:   ['nombre', 'motivo_id', 'descripcion']
+    sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion']
   };
 
   const cols = colsMap[tipo] || ['nombre'];
+
+  // Para sub_motivos: enriquecer cada item con el nombre del motivo padre
+  let displayItems = items;
+  if (tipo === 'sub_motivos') {
+    const motivosParo = catalogo?.motivos_paro || [];
+    displayItems = items.map(item => ({
+      ...item,
+      motivo_nombre: motivosParo.find(m => String(m.id) === String(item.motivo_id))?.nombre || `ID: ${item.motivo_id ?? '—'}`
+    }));
+  }
+
+  const colHeaders = {
+    motivo_nombre: 'Motivo padre',
+    carga_optima_varillas: 'Carga óptima',
+    piezas_objetivo: 'Pzas objetivo'
+  };
 
   return `
   <table>
     <thead>
       <tr>
         <th>#</th>
-        ${cols.map(c => `<th>${c.replace(/_/g,' ')}</th>`).join('')}
+        ${cols.map(c => `<th>${colHeaders[c] || c.replace(/_/g,' ')}</th>`).join('')}
         <th></th>
       </tr>
     </thead>
     <tbody>
-      ${items.map(item => `
+      ${displayItems.map(item => `
         <tr>
           <td class="mono">${item.id}</td>
           ${cols.map(c => `<td>${escHtml(item[c] ?? '')}</td>`).join('')}
@@ -1256,11 +1272,11 @@ function renderCatalogoTable(tipo, items, linea) {
   </table>`;
 }
 
-function openCatalogoModal(tipo, linea, item, onDone) {
+function openCatalogoModal(tipo, linea, item, onDone, catalogo) {
   const isNew    = item == null;
   const title    = isNew ? `Nuevo registro — ${tipo.replace(/_/g,' ')}` : `Editar — ${tipo.replace(/_/g,' ')}`;
 
-  const fields = buildCatalogoFields(tipo, item);
+  const fields = buildCatalogoFields(tipo, item, catalogo);
 
   showModal(`
     <h3>${title}</h3>
@@ -1291,7 +1307,7 @@ function openCatalogoModal(tipo, linea, item, onDone) {
   });
 }
 
-function buildCatalogoFields(tipo, item) {
+function buildCatalogoFields(tipo, item, catalogo) {
   const v   = (key) => escHtml(item?.[key] ?? '');
   const inp = (key, label, type = 'text', extra = '') =>
     `<div class="form-group">
@@ -1315,13 +1331,24 @@ function buildCatalogoFields(tipo, item) {
     case 'motivos_paro':
       return inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción');
-    case 'sub_motivos':
+    case 'sub_motivos': {
+      const motivosParo = (catalogo?.motivos_paro || []).filter(m => m.activo !== false);
+      const currentMotivoId = String(item?.motivo_id ?? '');
+      const motivoOpts = motivosParo.length > 0
+        ? motivosParo.map(m =>
+            `<option value="${m.id}" ${String(m.id) === currentMotivoId ? 'selected' : ''}>${escHtml(m.nombre)}</option>`
+          ).join('')
+        : '<option value="">— Sin motivos de paro —</option>';
       return inp('nombre', 'Nombre') +
              `<div class="form-group">
-               <label>Motivo ID (padre)</label>
-               <input type="number" id="cf-motivo_id" value="${v('motivo_id')}" />
+               <label>Motivo de paro (padre)</label>
+               <select id="cf-motivo_id" style="width:100%">
+                 <option value="">— Seleccionar motivo —</option>
+                 ${motivoOpts}
+               </select>
              </div>` +
              inp('descripcion', 'Descripción');
+    }
     default:
       return inp('nombre', 'Nombre');
   }
