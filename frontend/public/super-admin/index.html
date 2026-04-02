@@ -374,7 +374,7 @@
 
 <script>
 const TOKEN_KEY = 'sa_token';
-const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin' };
+const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin', sin_rol:'Solo módulos' };
 const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
 const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
 const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
@@ -482,42 +482,40 @@ function renderUsersTable() {
            <button class="btn-add-mod" onclick="openAddModModal('rhh','${esc(u.full_name)}','${esc(u.email)}','${u.compras ? u.compras.id : ''}')">+ Agregar</button>
          </div>`;
 
-    const calidadCell = u.compras
-      ? `<div class="mod-cell">
-           <span class="dot ${u.compras.vales_role ? 'dot-on' : 'dot-off'}" id="dot-cal-${u.compras.id}"></span>
-           <select class="role-sel" style="color:${u.compras.vales_role ? '#6d28d9' : '#9ca3af'}"
-             onchange="changeValesRole(${u.compras.id}, this.value, this)">
+    const uidKey = (u.email || '').replace(/[@.+]/g, '_');
+    const vr = u.compras?.vales_role || null;
+    const calidadCell = `<div class="mod-cell">
+           <span class="dot ${vr ? 'dot-on' : 'dot-off'}" id="dot-cal-${uidKey}"></span>
+           <select class="role-sel" style="color:${vr ? '#6d28d9' : '#9ca3af'}"
+             onchange="changeValesRole('${esc(u.email)}', this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
-             <option value="consulta"  ${u.compras.vales_role==='consulta' ?'selected':''}>Consulta</option>
-             <option value="operador"  ${u.compras.vales_role==='operador' ?'selected':''}>Operador</option>
-             <option value="admin"     ${u.compras.vales_role==='admin'    ?'selected':''}>Admin</option>
+             <option value="consulta"  ${vr==='consulta' ?'selected':''}>Consulta</option>
+             <option value="operador"  ${vr==='operador' ?'selected':''}>Operador</option>
+             <option value="admin"     ${vr==='admin'    ?'selected':''}>Admin</option>
            </select>
-         </div>`
-      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+         </div>`;
 
-    const produccionCell = u.compras
-      ? `<div class="mod-cell">
-           <span class="dot ${u.compras.produccion_role ? 'dot-on' : 'dot-off'}" id="dot-prod-${u.compras.id}"></span>
-           <select class="role-sel" style="color:${u.compras.produccion_role ? '#b45309' : '#9ca3af'}"
-             onchange="changeProduccionRole(${u.compras.id}, this.value, this)">
+    const pr = u.compras?.produccion_role || null;
+    const produccionCell = `<div class="mod-cell">
+           <span class="dot ${pr ? 'dot-on' : 'dot-off'}" id="dot-prod-${uidKey}"></span>
+           <select class="role-sel" style="color:${pr ? '#b45309' : '#9ca3af'}"
+             onchange="changeProduccionRole('${esc(u.email)}', this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
-             <option value="pizarron"  ${u.compras.produccion_role==='pizarron'  ?'selected':''}>Pizarrón</option>
-             <option value="produccion"${u.compras.produccion_role==='produccion'?'selected':''}>Producción</option>
-             <option value="admin"     ${u.compras.produccion_role==='admin'     ?'selected':''}>Admin</option>
+             <option value="pizarron"  ${pr==='pizarron'  ?'selected':''}>Pizarrón</option>
+             <option value="produccion"${pr==='produccion'?'selected':''}>Producción</option>
+             <option value="admin"     ${pr==='admin'     ?'selected':''}>Admin</option>
            </select>
-         </div>`
-      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+         </div>`;
 
-    const mantCell = u.compras
-      ? `<div class="mod-cell">
-           <span class="dot ${u.compras.mant_role ? 'dot-on' : 'dot-off'}" id="dot-mant-${u.compras.id}"></span>
-           <select class="role-sel" style="color:${u.compras.mant_role ? '#b45309' : '#9ca3af'}"
-             onchange="changeMantRole(${u.compras.id}, this.value, this)">
+    const mr = u.compras?.mant_role || null;
+    const mantCell = `<div class="mod-cell">
+           <span class="dot ${mr ? 'dot-on' : 'dot-off'}" id="dot-mant-${uidKey}"></span>
+           <select class="role-sel" style="color:${mr ? '#b45309' : '#9ca3af'}"
+             onchange="changeMantRole('${esc(u.email)}', this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
-             <option value="admin" ${u.compras.mant_role==='admin' ?'selected':''}>Admin</option>
+             <option value="admin" ${mr==='admin' ?'selected':''}>Admin</option>
            </select>
-         </div>`
-      : `<div class="mod-cell"><span class="no-mod" style="font-size:11px">Requiere Compras</span></div>`;
+         </div>`;
 
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
@@ -581,13 +579,13 @@ async function toggleMod(module, userId, active) {
   } catch(e) { alert(e.message); }
 }
 
-async function changeValesRole(userId, valesRole, sel) {
+async function changeValesRole(email, valesRole, sel, dotKey) {
   try {
     sel.style.borderColor = '#f59e0b';
-    await api('/api/super-admin/unified-users/vales-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, vales_role: valesRole || null }) });
+    await api('/api/super-admin/unified-users/vales-role', { method:'PATCH', body: JSON.stringify({ email, vales_role: valesRole || null }) });
     sel.style.borderColor = '#22c55e';
     sel.style.color = valesRole ? '#6d28d9' : '#9ca3af';
-    const dot = document.getElementById('dot-cal-' + userId);
+    const dot = document.getElementById('dot-cal-' + dotKey);
     if (dot) { dot.className = 'dot ' + (valesRole ? 'dot-on' : 'dot-off'); }
     setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
   } catch(e) {
@@ -597,13 +595,13 @@ async function changeValesRole(userId, valesRole, sel) {
   }
 }
 
-async function changeProduccionRole(userId, produccionRole, sel) {
+async function changeProduccionRole(email, produccionRole, sel, dotKey) {
   try {
     sel.style.borderColor = '#f59e0b';
-    await api('/api/super-admin/unified-users/produccion-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, produccion_role: produccionRole || null }) });
+    await api('/api/super-admin/unified-users/produccion-role', { method:'PATCH', body: JSON.stringify({ email, produccion_role: produccionRole || null }) });
     sel.style.borderColor = '#22c55e';
     sel.style.color = produccionRole ? '#b45309' : '#9ca3af';
-    const dot = document.getElementById('dot-prod-' + userId);
+    const dot = document.getElementById('dot-prod-' + dotKey);
     if (dot) { dot.className = 'dot ' + (produccionRole ? 'dot-on' : 'dot-off'); }
     setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
   } catch(e) {
@@ -613,13 +611,13 @@ async function changeProduccionRole(userId, produccionRole, sel) {
   }
 }
 
-async function changeMantRole(userId, mantRole, sel) {
+async function changeMantRole(email, mantRole, sel, dotKey) {
   try {
     sel.style.borderColor = '#f59e0b';
-    await api('/api/super-admin/unified-users/mant-role', { method:'PATCH', body: JSON.stringify({ user_id: userId, mant_role: mantRole || null }) });
+    await api('/api/super-admin/unified-users/mant-role', { method:'PATCH', body: JSON.stringify({ email, mant_role: mantRole || null }) });
     sel.style.borderColor = '#22c55e';
     sel.style.color = mantRole ? '#b45309' : '#9ca3af';
-    const dot = document.getElementById('dot-mant-' + userId);
+    const dot = document.getElementById('dot-mant-' + dotKey);
     if (dot) { dot.className = 'dot ' + (mantRole ? 'dot-on' : 'dot-off'); }
     setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
   } catch(e) {

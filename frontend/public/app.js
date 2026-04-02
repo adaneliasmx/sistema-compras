@@ -225,6 +225,11 @@ async function loginView() {
     try {
       const data = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email: email.value, password: password.value }) });
       setAuth(data.token, data.user);
+      if (data.user?.role === 'sin_rol') {
+        logout();
+        err.textContent = 'Tu cuenta no tiene acceso al módulo de Compras. Usa el módulo correspondiente a tu rol.';
+        return;
+      }
       initInactivityWatcher();
       const dest = state.pendingRoute;
       state.pendingRoute = null;
@@ -5893,6 +5898,10 @@ async function render() {
   }
   if (!state.token || !state.user) {
     if (route && route !== 'login') state.pendingRoute = route;
+    return loginView();
+  }
+  if (state.user?.role === 'sin_rol') {
+    logout();
     return loginView();
   }
   const defaultRoute = getDefaultRouteByRole();

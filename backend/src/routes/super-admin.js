@@ -22,6 +22,37 @@ function superAdminRequired(req, res, next) {
   } catch { res.status(401).json({ error: 'Token inválido' }); }
 }
 
+// ── Utilidad: auto-provisionar usuario en compras desde RHH ──────────────────
+function ensureComprasUser(email, comprasDb, rhhDb) {
+  const emailLow = (email || '').toLowerCase();
+  let user = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (user) return user;
+
+  // Buscar en rhh_users
+  const rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (!rhhUser) return null;
+
+  comprasDb.users = comprasDb.users || [];
+  const newUser = {
+    id: nextIdCompras(comprasDb.users),
+    full_name: rhhUser.full_name || emailLow,
+    email: emailLow,
+    password_hash: rhhUser.password_hash || bcrypt.hashSync('0000', 10),
+    role_code: 'sin_rol',
+    department: '',
+    supplier_id: null,
+    default_cost_center_id: null,
+    default_sub_cost_center_id: null,
+    active: true,
+    vales_role: null,
+    produccion_role: null,
+    mant_role: null,
+    created_at: new Date().toISOString()
+  };
+  comprasDb.users.push(newUser);
+  return newUser;
+}
+
 // ── Utilidad: lista unificada ─────────────────────────────────────────────────
 function buildUnifiedList() {
   const comprasDb = readCompras();
@@ -471,11 +502,14 @@ router.patch('/rhh/users/:id', superAdminRequired, (req, res) => {
 
 // PATCH /api/super-admin/unified-users/vales-role — asignar rol Calidad
 router.patch('/unified-users/vales-role', superAdminRequired, (req, res) => {
-  const { user_id, vales_role } = req.body || {};
+  const { user_id, email, vales_role } = req.body || {};
   if (vales_role && !['admin', 'operador', 'consulta'].includes(vales_role))
     return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta o null' });
   const db = readCompras();
-  const user = (db.users || []).find(u => u.id === Number(user_id));
+  const rhhDb = readRhh();
+  let user = email
+    ? ensureComprasUser(email, db, rhhDb)
+    : (db.users || []).find(u => u.id === Number(user_id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   user.vales_role = vales_role || null;
   writeCompras(db);
@@ -576,11 +610,14 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
 
 // PATCH /api/super-admin/unified-users/mant-role
 router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
-  const { user_id, mant_role } = req.body || {};
+  const { user_id, email, mant_role } = req.body || {};
   if (mant_role && !['admin'].includes(mant_role))
     return res.status(400).json({ error: 'Rol inválido. Use: admin o null' });
   const db = readCompras();
-  const user = (db.users || []).find(u => u.id === Number(user_id));
+  const rhhDb = readRhh();
+  let user = email
+    ? ensureComprasUser(email, db, rhhDb)
+    : (db.users || []).find(u => u.id === Number(user_id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   user.mant_role = mant_role || null;
   writeCompras(db);
@@ -589,11 +626,14 @@ router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
 
 // PATCH /api/super-admin/unified-users/produccion-role
 router.patch('/unified-users/produccion-role', superAdminRequired, (req, res) => {
-  const { user_id, produccion_role } = req.body || {};
+  const { user_id, email, produccion_role } = req.body || {};
   if (produccion_role && !['pizarron', 'produccion', 'admin'].includes(produccion_role))
     return res.status(400).json({ error: 'Rol inválido. Use: pizarron, produccion, admin o null' });
   const db = readCompras();
-  const user = (db.users || []).find(u => u.id === Number(user_id));
+  const rhhDb = readRhh();
+  let user = email
+    ? ensureComprasUser(email, db, rhhDb)
+    : (db.users || []).find(u => u.id === Number(user_id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   user.produccion_role = produccion_role || null;
   writeCompras(db);
