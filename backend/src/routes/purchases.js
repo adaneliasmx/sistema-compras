@@ -448,52 +448,77 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   write(db);
 
   // Generar mailto por PO con CC al solicitante y autorizadores
+  const { poToken } = require('./public-po');
   const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
   const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
   const ccEmails = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
-  const baseUrl = (process.env.FRONTEND_URL || `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}/compras`).replace(/\/$/, '');
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host = req.get('host');
+  const baseUrl = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
   const poMailtos = purchaseOrders.map(po => {
     const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
     const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
+
+    // Enriquecer cada línea con código, urgencia y fecha estimada desde requisición
     const lineDetails = poLines.map(l => {
-      const cat = db.catalog_items.find(c => c.id === l.catalog_item_id);
-      const name = cat?.name || l.manual_item_name || 'ítem';
-      return `  - ${name}: ${l.quantity} ${l.unit || ''} x $${Number(l.unit_cost||0).toFixed(2)} = $${(Number(l.quantity||0)*Number(l.unit_cost||0)).toFixed(2)}`;
-    }).join('\n');
+      const cat = db.catalog_items.find(c => c.id === l.catalog_item_id) || {};
+      const name = cat.name || l.description || l.manual_item_name || 'ítem';
+      const code = cat.code || '—';
+      const reqItem = db.requisition_items.find(ri => ri.id === l.requisition_item_id) || {};
+      const req = reqItem.requisition_id
+        ? db.requisitions.find(r => r.id === reqItem.requisition_id) || {}
+        : {};
+      const urgency = req.urgency || '—';
+      const estDate = req.programmed_date || '—';
+      const subtotal = (Number(l.quantity||0) * Number(l.unit_cost||0)).toFixed(2);
+      return [
+        `  ┌─ ${name} [${code}]`,
+        `  │  Cantidad: ${l.quantity} ${l.unit || ''}   Precio unit.: $${Number(l.unit_cost||0).toFixed(2)} ${l.currency||po.currency||'MXN'}   Subtotal: $${subtotal}`,
+        `  └─ Urgencia: ${urgency}   Fecha estimada de entrega: ${estDate}`
+      ].join('\n');
+    }).join('\n\n');
+
     // Buscar requisición para obtener solicitante
-    const reqItem = db.requisition_items.find(ri => ri.purchase_order_id === po.id);
-    const reqRow = reqItem ? db.requisitions.find(r => r.id === reqItem.requisition_id) : null;
+    const firstLine = poLines[0];
+    const firstReqItem = firstLine ? db.requisition_items.find(ri => ri.id === firstLine.requisition_item_id) : null;
+    const reqRow = firstReqItem ? db.requisitions.find(r => r.id === firstReqItem.requisition_id) : null;
     const requester = reqRow ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
     const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
+
     const subject = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
-    const trackingUrl = `${baseUrl}/compras#/seguimiento`;
+    const token = poToken(po);
+    const poViewUrl = `${baseUrl}/po-view?token=${token}`;
+
     const body = [
-      `Estimado ${supplier.contact_name || supplier.business_name},`,
+      `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
       ``,
-      `Le enviamos la Orden de Compra ${po.folio} con los siguientes detalles:`,
+      `Le enviamos la Orden de Compra ${po.folio}.`,
       ``,
-      `Proveedor: ${supplier.business_name}`,
-      `Fecha: ${String(po.created_at||'').slice(0,10)}`,
+      `Proveedor : ${supplier.business_name || '—'}`,
+      `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
       ``,
-      `Ítems solicitados:`,
+      `── Ítems solicitados ────────────────────────────`,
+      ``,
       lineDetails,
       ``,
+      `────────────────────────────────────────────────`,
       `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
       ``,
-      `Por favor confirme la recepción de esta orden y la fecha estimada de entrega.`,
+      `── Ver y confirmar esta orden ───────────────────`,
+      `Puede ver el PDF de esta orden y confirmar su fecha`,
+      `compromiso de entrega en el siguiente enlace:`,
       ``,
-      `── Seguimiento de la orden ──────────────────────`,
-      `Puede consultar el estado de esta orden en cualquier momento en el siguiente enlace:`,
-      `${trackingUrl}`,
-      `Folio a buscar: ${po.folio}`,
+      `${poViewUrl}`,
       ``,
       `Gracias.`
     ].join('\n');
+
     return {
       po_id: po.id,
       po_folio: po.folio,
       supplier_email: supplier.email || '',
       cc: allCc,
+      po_view_url: poViewUrl,
       mailto: `mailto:${encodeURIComponent(supplier.email||'')}?cc=${encodeURIComponent(allCc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
     };
   });

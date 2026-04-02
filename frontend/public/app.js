@@ -2965,6 +2965,7 @@ async function purchasesView() {
         const canManualInvoice = p.status === 'Entregado';
         const canCancel = !['Facturada','Facturación parcial','Cerrada','Cancelada','Rechazada por proveedor'].includes(p.status);
         const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
+        const commitTag = p.supplier_commitment_date ? `<span style="font-size:11px;margin-left:8px;padding:2px 8px;border-radius:10px;background:#d1fae5;color:#065f46">📅 Compromiso proveedor: ${p.supplier_commitment_date}</span>` : '';
         const reqTag = invoiceRequested ? `<span style="font-size:11px;color:#2563eb;margin-left:8px">📧 Factura solicitada al proveedor</span>` : '';
         // Anticipo
         const advancePct = Number(p.advance_percentage || 0);
@@ -2978,7 +2979,7 @@ async function purchasesView() {
             <div>
               <b style="font-size:15px">${p.folio}</b>
               <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
-              ${respTag}${reqTag}${advanceTag}
+              ${respTag}${commitTag}${reqTag}${advanceTag}
               <div style="font-size:11px;color:#6b7280;margin-top:3px">
                 ${p.requester_name ? `👤 ${escapeHtml(p.requester_name)}` : ''}
                 ${p.cost_center_name ? ` · 🏷 ${escapeHtml(p.cost_center_name)}` : ''}

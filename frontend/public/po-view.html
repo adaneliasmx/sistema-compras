@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Orden de Compra</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; }
+
+    .page { max-width: 820px; margin: 0 auto; padding: 24px 16px 48px; }
+
+    /* Header */
+    .po-header { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+    .po-header-left h1 { font-size: 22px; font-weight: 800; color: #1e293b; }
+    .po-header-left .folio { font-size: 16px; color: #2563eb; font-weight: 700; margin-top: 2px; }
+    .po-header-right { text-align: right; font-size: 13px; color: #64748b; }
+    .po-header-right strong { display: block; font-size: 15px; color: #1e293b; }
+
+    .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12px; font-weight: 600; }
+    .badge-enviada  { background: #dbeafe; color: #1d4ed8; }
+    .badge-aceptada { background: #d1fae5; color: #065f46; }
+    .badge-proceso  { background: #fef3c7; color: #92400e; }
+    .badge-entregado{ background: #e0e7ff; color: #3730a3; }
+    .badge-cancelada{ background: #fee2e2; color: #991b1b; }
+    .badge-default  { background: #f1f5f9; color: #475569; }
+
+    /* Sections */
+    .card { background: #fff; border-radius: 12px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .card h2 { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #64748b; margin-bottom: 14px; }
+
+    /* Table */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th { background: #f8fafc; padding: 8px 10px; text-align: left; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+    tbody td { padding: 10px 10px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
+    tbody tr:last-child td { border-bottom: none; }
+    .text-right { text-align: right; }
+    .mono { font-family: monospace; font-size: 12px; color: #2563eb; }
+    tfoot td { padding: 10px; font-weight: 700; border-top: 2px solid #e2e8f0; }
+
+    /* Urgency badges */
+    .urg-alto   { background: #fee2e2; color: #dc2626; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .urg-medio  { background: #fef3c7; color: #d97706; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .urg-bajo   { background: #d1fae5; color: #059669; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .urg-prog   { background: #e0e7ff; color: #4338ca; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+    .urg-na     { color: #94a3b8; font-size: 12px; }
+
+    /* Confirm form */
+    .confirm-card { background: #fff; border-radius: 12px; padding: 24px; box-shadow: 0 1px 4px rgba(0,0,0,.08); border-left: 4px solid #2563eb; }
+    .confirm-card h2 { font-size: 15px; font-weight: 700; color: #1e293b; margin-bottom: 6px; }
+    .confirm-card p { font-size: 13px; color: #64748b; margin-bottom: 16px; }
+    .confirm-row { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+    .confirm-row label { font-size: 13px; font-weight: 600; color: #374151; display: block; margin-bottom: 4px; }
+    .confirm-row input[type=date] { padding: 9px 12px; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 14px; color: #1e293b; outline: none; }
+    .confirm-row input[type=date]:focus { border-color: #2563eb; }
+    .btn-confirm { padding: 10px 24px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .btn-confirm:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-confirm:not(:disabled):hover { background: #1d4ed8; }
+    .confirm-success { background: #d1fae5; color: #065f46; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-top: 12px; }
+    .confirm-error   { background: #fee2e2; color: #991b1b; padding: 10px 16px; border-radius: 8px; font-size: 13px; margin-top: 12px; }
+    .already-confirmed { background: #e0e7ff; color: #3730a3; padding: 10px 16px; border-radius: 8px; font-size: 13px; font-weight: 600; margin-top: 4px; }
+
+    /* Print */
+    .btn-print { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #374151; cursor: pointer; }
+    .btn-print:hover { background: #e2e8f0; }
+    .actions-row { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+
+    /* Loading / error */
+    .center { text-align: center; padding: 60px 20px; }
+    .spinner { width: 40px; height: 40px; border: 4px solid #e2e8f0; border-top-color: #2563eb; border-radius: 50%; animation: spin .8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-box { background: #fee2e2; color: #991b1b; border-radius: 12px; padding: 24px; text-align: center; max-width: 480px; margin: 40px auto; }
+    .error-box h2 { margin-bottom: 8px; }
+
+    /* Print styles */
+    @media print {
+      body { background: #fff; }
+      .confirm-card, .btn-print, .actions-row { display: none !important; }
+      .card, .po-header { box-shadow: none; border: 1px solid #e2e8f0; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page" id="app">
+    <div class="center">
+      <div class="spinner"></div>
+      <p style="color:#64748b">Cargando orden de compra…</p>
+    </div>
+  </div>
+
+  <script>
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function esc(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function fmtMoney(v, cur) {
+      return '$' + Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' ' + (cur || 'MXN');
+    }
+
+    function fmtDate(d) {
+      if (!d || d === '—') return '—';
+      const [y, m, day] = d.split('-');
+      return `${day}/${m}/${y}`;
+    }
+
+    function badgeStatus(s) {
+      const map = {
+        'Enviada': 'enviada', 'Aceptada': 'aceptada',
+        'En proceso': 'proceso', 'Entregado': 'entregado', 'Cancelada': 'cancelada'
+      };
+      const cls = map[s] || 'default';
+      return `<span class="badge badge-${cls}">${esc(s)}</span>`;
+    }
+
+    function urgencyBadge(u) {
+      if (!u || u === '—') return '<span class="urg-na">—</span>';
+      const map = { 'Alto': 'urg-alto', 'Medio': 'urg-medio', 'Bajo': 'urg-bajo', 'Entrega programada': 'urg-prog' };
+      return `<span class="${map[u] || 'urg-na'}">${esc(u)}</span>`;
+    }
+
+    // ── Token desde URL ───────────────────────────────────────────────────────
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('token') || '';
+
+    if (!token) {
+      document.getElementById('app').innerHTML = `
+        <div class="error-box">
+          <h2>Enlace inválido</h2>
+          <p>Este enlace no contiene un token de acceso válido.<br>Solicita al comprador que te reenvíe el correo con la orden de compra.</p>
+        </div>`;
+    } else {
+      fetch(`/api/public/po/${encodeURIComponent(token)}`)
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+        .then(({ ok, data }) => {
+          if (!ok) {
+            document.getElementById('app').innerHTML = `
+              <div class="error-box">
+                <h2>Orden no encontrada</h2>
+                <p>${esc(data.error || 'El enlace es inválido o ha expirado.')}</p>
+              </div>`;
+            return;
+          }
+          render(data);
+        })
+        .catch(() => {
+          document.getElementById('app').innerHTML = `
+            <div class="error-box">
+              <h2>Error de conexión</h2>
+              <p>No se pudo cargar la orden. Verifica tu conexión a internet e intenta de nuevo.</p>
+            </div>`;
+        });
+    }
+
+    // ── Render principal ──────────────────────────────────────────────────────
+    function render(d) {
+      const { po, supplier, items, can_confirm } = d;
+      const total = items.reduce((s, i) => s + Number(i.subtotal || 0), 0);
+
+      const itemsHtml = items.map(item => `
+        <tr>
+          <td class="mono">${esc(item.code)}</td>
+          <td>${esc(item.name)}</td>
+          <td class="text-right">${Number(item.quantity || 0)} ${esc(item.unit)}</td>
+          <td class="text-right">${fmtMoney(item.unit_cost, item.currency)}</td>
+          <td class="text-right">${fmtMoney(item.subtotal, item.currency)}</td>
+          <td>${urgencyBadge(item.urgency)}</td>
+          <td style="white-space:nowrap">${fmtDate(item.estimated_date)}</td>
+        </tr>`).join('');
+
+      const confirmSection = can_confirm ? `
+        <div class="confirm-card" id="confirm-section">
+          <h2>📅 Confirmar fecha compromiso</h2>
+          <p>Por favor indique la fecha en que puede comprometerse a entregar esta orden.</p>
+          ${po.supplier_commitment_date ? `<div class="already-confirmed">✅ Fecha comprometida registrada: <strong>${fmtDate(po.supplier_commitment_date)}</strong> — Puede actualizarla abajo.</div>` : ''}
+          <div class="confirm-row" style="margin-top:${po.supplier_commitment_date ? '12px' : '0'}">
+            <div>
+              <label for="commitment-date">Fecha compromiso de entrega</label>
+              <input type="date" id="commitment-date" value="${esc(po.supplier_commitment_date || '')}" min="${new Date().toISOString().slice(0,10)}" />
+            </div>
+            <button class="btn-confirm" id="btn-confirm">Confirmar fecha</button>
+          </div>
+          <div id="confirm-msg"></div>
+        </div>` : `
+        <div class="card" style="border-left:4px solid #94a3b8">
+          <p style="color:#64748b;font-size:13px">Esta orden está en estado <strong>${esc(po.status)}</strong> y ya no permite confirmación de fecha.</p>
+        </div>`;
+
+      document.getElementById('app').innerHTML = `
+        <div class="po-header">
+          <div class="po-header-left">
+            <div style="font-size:12px;color:#64748b;margin-bottom:4px">ORDEN DE COMPRA</div>
+            <div class="folio">${esc(po.folio)}</div>
+            <div style="margin-top:8px">${badgeStatus(po.status)}</div>
+          </div>
+          <div class="po-header-right">
+            <strong>${esc(supplier.business_name)}</strong>
+            ${supplier.contact_name ? `<span>${esc(supplier.contact_name)}</span>` : ''}
+            <span style="margin-top:4px;display:block">Fecha: ${fmtDate(po.created_at)}</span>
+          </div>
+        </div>
+
+        <div class="actions-row">
+          <button class="btn-print" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
+        </div>
+
+        <div class="card">
+          <h2>Ítems de la orden</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Descripción</th>
+                  <th class="text-right">Cantidad</th>
+                  <th class="text-right">Precio unit.</th>
+                  <th class="text-right">Subtotal</th>
+                  <th>Urgencia</th>
+                  <th>Fecha estimada</th>
+                </tr>
+              </thead>
+              <tbody>${itemsHtml}</tbody>
+              <tfoot>
+                <tr>
+                  <td colspan="4" class="text-right">Total</td>
+                  <td class="text-right">${fmtMoney(total, po.currency)}</td>
+                  <td colspan="2"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+
+        ${confirmSection}`;
+
+      // Bind confirm button
+      document.getElementById('btn-confirm')?.addEventListener('click', submitDate);
+    }
+
+    // ── Confirmar fecha compromiso ─────────────────────────────────────────────
+    function submitDate() {
+      const dateVal = document.getElementById('commitment-date')?.value;
+      const msgEl   = document.getElementById('confirm-msg');
+      const btn     = document.getElementById('btn-confirm');
+
+      if (!dateVal) {
+        msgEl.innerHTML = '<div class="confirm-error">Selecciona una fecha antes de confirmar.</div>';
+        return;
+      }
+
+      const today = new Date().toISOString().slice(0, 10);
+      if (dateVal < today) {
+        msgEl.innerHTML = '<div class="confirm-error">La fecha debe ser hoy o una fecha futura.</div>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = 'Guardando…';
+      msgEl.innerHTML = '';
+
+      fetch(`/api/public/po/${encodeURIComponent(token)}/confirm-date`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commitment_date: dateVal })
+      })
+        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+        .then(({ ok, data }) => {
+          if (ok) {
+            msgEl.innerHTML = `<div class="confirm-success">✅ Fecha compromiso registrada: <strong>${fmtDate(dateVal)}</strong>. Gracias por su respuesta.</div>`;
+            btn.textContent = 'Confirmar fecha';
+            btn.disabled = false;
+          } else {
+            msgEl.innerHTML = `<div class="confirm-error">${esc(data.error || 'Error al guardar la fecha.')}</div>`;
+            btn.textContent = 'Confirmar fecha';
+            btn.disabled = false;
+          }
+        })
+        .catch(() => {
+          msgEl.innerHTML = '<div class="confirm-error">Error de red. Intenta de nuevo.</div>';
+          btn.textContent = 'Confirmar fecha';
+          btn.disabled = false;
+        });
+    }
+  </script>
+</body>
+</html>

@@ -37,6 +37,9 @@ const rhhNotificationsRoutes = require('./routes/rhh-notifications');
 // ── Módulo Producción ─────────────────────────────────────────────────────
 const produccionRoutes = require('./routes/produccion');
 
+// ── PO Pública (proveedor) ────────────────────────────────────────────────────
+const publicPoRoutes = require('./routes/public-po');
+
 const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
 const { initDb: initValesDb } = require('./db-vales');
@@ -75,6 +78,9 @@ app.use('/api/super-admin', superAdminRoutes);
 
 // ── API Producción ────────────────────────────────────────────────────────
 app.use('/api/produccion', produccionRoutes);
+
+// ── API Pública (sin auth) ────────────────────────────────────────────────────
+app.use('/api/public/po', publicPoRoutes);
 
 // ── API RHH ───────────────────────────────────────────────────────────────────
 app.use('/api/rhh/auth', rhhAuthRoutes);
@@ -129,6 +135,11 @@ app.get('/vales/*', (req, res) => {
 app.get('/produccion', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
 app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
 app.get('/pizarron', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/pizarron.html')));
+
+// Vista pública PO (proveedor)
+app.get('/po-view', (req, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'frontend/public/po-view.html'));
+});
 
 // Fallback
 app.get('*', (req, res) => {
