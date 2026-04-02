@@ -120,6 +120,17 @@ router.post('/auth/login', (req, res) => {
   });
 });
 
+// ─── Lista pública de usuarios con acceso a producción (para login dropdown) ──
+
+router.get('/auth/usuarios', (req, res) => {
+  const mainDb = db.read();
+  const users = (mainDb.users || [])
+    .filter(u => u.active !== false && u.produccion_role)
+    .map(u => ({ email: u.email, nombre: u.full_name }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  res.json(users);
+});
+
 // ─── Cambio de contraseña (requiere token propio) ─────────────────────────────
 
 router.patch('/auth/change-password', produccionAuthRequired, (req, res) => {
@@ -611,6 +622,63 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   };
 
   if (!pdb.paros) pdb.paros = [];
+  pdb.paros.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+// ─── Paro automático por cambio de turno ─────────────────────────────────────
+
+router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (req, res) => {
+  const { linea } = req.params;
+  const pdb = dbProd.read();
+  const l = lineaKey(linea);
+
+  // Si ya hay un paro activo, no crear otro
+  const yaActivo = (pdb.paros || []).find(p => p.linea === linea && p.estado === 'activo' && !p.fecha_fin);
+  if (yaActivo) return res.status(409).json({ error: 'Ya hay un paro activo', paro: yaActivo });
+
+  // Buscar o crear el motivo "Cambio de turno" en el catálogo de la línea
+  const motivoKey = `motivos_paro_${l}`;
+  pdb[motivoKey] = pdb[motivoKey] || [];
+  let motivo = pdb[motivoKey].find(m => m.nombre === 'Cambio de turno');
+  if (!motivo) {
+    motivo = {
+      id: dbProd.nextId(pdb[motivoKey]),
+      nombre: 'Cambio de turno',
+      descripcion: 'Paro automático generado al cerrar sesión por fin de turno',
+      activo: true,
+      created_at: new Date().toISOString()
+    };
+    pdb[motivoKey].push(motivo);
+  }
+
+  const fecha_inicio = nowDateStr();
+  const hora_inicio  = nowTimeStr();
+  const turno        = getTurno(hora_inicio);
+  pdb.paros          = pdb.paros || [];
+  const id           = dbProd.nextId(pdb.paros);
+  const dateStr      = fecha_inicio.replace(/-/g, '');
+  const prefix       = `PR-${linea.toUpperCase()}-${dateStr}-`;
+  const existentes   = pdb.paros.filter(p => p.folio && p.folio.startsWith(prefix));
+  const nextNum      = existentes.length > 0 ? Math.max(...existentes.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+  const folio        = `${prefix}${padNum(nextNum)}`;
+
+  const paro = {
+    id, folio, linea,
+    motivo_id: motivo.id,
+    motivo: motivo.nombre,
+    sub_motivo_id: null,
+    sub_motivo: null,
+    tipo: 'cambio_turno',
+    fecha_inicio, hora_inicio,
+    fecha_fin: null, hora_fin: null,
+    duracion_min: null,
+    turno,
+    registrado_por: req.prodUser?.nombre || 'Sistema',
+    created_at: new Date().toISOString()
+  };
+
   pdb.paros.push(paro);
   dbProd.write(pdb);
   res.status(201).json(paro);

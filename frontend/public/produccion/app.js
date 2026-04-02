@@ -17,10 +17,15 @@ const state = {
   catalogL4: {},
   // Paros activos por línea
   paroActivo: { L3: null, L4: null },
+  // Línea activa actualmente en vista
+  lineaActiva: null,
   // Polling pizarrón
   _pizarronTimer: null,
   // Inactividad
-  _actTimer: null
+  _actTimer: null,
+  // Watcher de fin de turno
+  _shiftTimer: null,
+  _shiftWarnShown: false
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -91,6 +96,67 @@ function resetTimer() {
 document.addEventListener('mousemove', resetTimer);
 document.addEventListener('keydown',   resetTimer);
 
+// ── Watcher de fin de turno ───────────────────────────────────────────────────
+// Turnos: T1 06:30-14:29, T2 14:30-21:29, T3 21:30-06:29
+// Fin de turno (inicio del siguiente): 14:30 (870 min), 21:30 (1290 min), 06:30 (390 min)
+const SHIFT_ENDS_MINS = [390, 870, 1290]; // 06:30, 14:30, 21:30
+const SHIFT_WARN_BEFORE = 10; // minutos de anticipación para la alerta
+
+function minsToNextShiftEnd() {
+  const now = new Date();
+  const cur = now.getHours() * 60 + now.getMinutes();
+  // Buscar el próximo fin de turno dentro de los próximos 60 minutos
+  for (const end of SHIFT_ENDS_MINS) {
+    const diff = end - cur;
+    if (diff >= -1 && diff <= 60) return diff;
+  }
+  return null;
+}
+
+function showShiftWarningBanner(minsLeft) {
+  let banner = document.getElementById('shift-warn-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'shift-warn-banner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#fff;font-weight:600;text-align:center;padding:10px 16px;font-size:15px;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    document.body.prepend(banner);
+  }
+  const mins = Math.max(0, minsLeft);
+  banner.innerHTML = `⏰ El turno termina en <strong>${mins} minuto${mins !== 1 ? 's' : ''}</strong>. La sesión se cerrará automáticamente al cambio de turno.`;
+}
+
+function hideShiftWarningBanner() {
+  const b = document.getElementById('shift-warn-banner');
+  if (b) b.remove();
+}
+
+function initShiftWatcher() {
+  clearInterval(state._shiftTimer);
+  state._shiftWarnShown = false;
+  state._shiftTimer = setInterval(async () => {
+    if (!state.token) { clearInterval(state._shiftTimer); return; }
+    const mins = minsToNextShiftEnd();
+    if (mins === null) {
+      // No cerca de un cambio de turno — ocultar banner si estaba visible
+      if (state._shiftWarnShown) { hideShiftWarningBanner(); state._shiftWarnShown = false; }
+      return;
+    }
+    if (mins <= 0) {
+      // ¡Fin de turno! Cerrar sesión y registrar paro
+      hideShiftWarningBanner();
+      clearInterval(state._shiftTimer);
+      state._shiftTimer = null;
+      state._shiftWarnShown = false;
+      await logoutShiftEnd();
+      return;
+    }
+    if (mins <= SHIFT_WARN_BEFORE) {
+      showShiftWarningBanner(mins);
+      state._shiftWarnShown = true;
+    }
+  }, 30_000); // checar cada 30 segundos
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function tryRestore() {
   const t = localStorage.getItem('prod_token');
@@ -104,7 +170,9 @@ function tryRestore() {
         localStorage.removeItem('prod_user');
         return false;
       }
-      state.token = t; state.user = user; return true;
+      state.token = t; state.user = user;
+      initShiftWatcher();
+      return true;
     } catch { return false; }
   }
   return false;
@@ -116,16 +184,34 @@ function saveSession(token, user) {
 }
 function logout() {
   clearInterval(state._pizarronTimer);
-  state.token = null; state.user = null;
+  clearInterval(state._shiftTimer);
+  state._shiftTimer = null;
+  state._shiftWarnShown = false;
+  state.token = null; state.user = null; state.lineaActiva = null;
   localStorage.removeItem('prod_token');
   localStorage.removeItem('prod_user');
   render();
+}
+
+async function logoutShiftEnd() {
+  // Si hay línea activa y usuario con rol produccion/admin, registrar paro cambio de turno
+  if (state.lineaActiva && state.token && ['produccion', 'admin'].includes(state.user?.role)) {
+    try {
+      await fetch(`/api/produccion/paros/${state.lineaActiva}/cambio-turno`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` }
+      });
+    } catch (_) { /* silencioso — cerrar sesión de todas formas */ }
+  }
+  logout();
 }
 
 // ── Navegación ────────────────────────────────────────────────────────────────
 function navigate(section) {
   clearInterval(state._pizarronTimer);
   state._pizarronTimer = null;
+  // Limpiar línea activa si se navega fuera de una línea
+  if (!section.startsWith('linea-')) state.lineaActiva = null;
   state.section = section;
   renderMain();
 }
@@ -206,8 +292,10 @@ function renderLogin() {
         <h1>Registros de Producción</h1>
         <p>Control de cargas · Pizarrón KPI</p>
       </div>
-      <label>Correo electrónico</label>
-      <input type="email" id="l-email" placeholder="usuario@empresa.com" autocomplete="username" />
+      <label>Usuario</label>
+      <select id="l-email-sel" style="width:100%;padding:10px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;background:#fff;color:#1e293b;margin-bottom:2px">
+        <option value="">— Cargando usuarios... —</option>
+      </select>
       <label>Contraseña</label>
       <input type="password" id="l-pass" placeholder="••••••••" autocomplete="current-password" />
       <button class="btn-login" id="btn-login">Ingresar</button>
@@ -218,11 +306,29 @@ function renderLogin() {
 
 function bindLogin() {
   const btn = document.getElementById('btn-login');
+  const sel = document.getElementById('l-email-sel');
+
+  // Cargar lista de usuarios
+  fetch('/api/produccion/auth/usuarios')
+    .then(r => r.json())
+    .then(usuarios => {
+      if (!Array.isArray(usuarios) || usuarios.length === 0) {
+        sel.innerHTML = '<option value="">— Sin usuarios registrados —</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">— Seleccionar usuario —</option>' +
+        usuarios.map(u => `<option value="${escHtml(u.email)}">${escHtml(u.nombre)} · ${escHtml(u.email)}</option>`).join('');
+    })
+    .catch(() => {
+      sel.innerHTML = '<option value="">— Error al cargar usuarios —</option>';
+    });
+
   const doLogin = async () => {
-    const email = document.getElementById('l-email').value.trim();
+    const email = sel.value.trim();
     const pass  = document.getElementById('l-pass').value;
     const err   = document.getElementById('login-err');
-    if (!email || !pass) { err.textContent = 'Ingresa correo y contraseña'; return; }
+    if (!email) { err.textContent = 'Selecciona un usuario'; return; }
+    if (!pass)  { err.textContent = 'Ingresa la contraseña'; return; }
     btn.disabled = true; btn.textContent = 'Verificando...';
     try {
       const res = await fetch('/api/produccion/auth/login', {
@@ -237,6 +343,7 @@ function bindLogin() {
         return;
       }
       saveSession(data.token, data.user);
+      initShiftWatcher();
       render();
     } catch (e) {
       err.textContent = 'Error de red: ' + e.message;
@@ -477,6 +584,7 @@ async function viewDashboard(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewLinea(el, linea) {
+  state.lineaActiva = linea; // Trackear línea activa para el watcher de turno
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando tarjetas...</p></div>';
   try {
     const [cargasData, catalogData, parosData] = await Promise.all([
@@ -486,21 +594,42 @@ async function viewLinea(el, linea) {
     ]);
     const cargas    = Array.isArray(cargasData) ? cargasData : (cargasData?.cargas || []);
     const catalogo  = catalogData || {};
-    const paroActivo = parosData?.paro || null;
+    let paroActivo  = parosData?.paro || null;
+
+    // Auto-cerrar paro de cambio de turno al entrar a la línea (nuevo usuario)
+    if (paroActivo && paroActivo.tipo === 'cambio_turno') {
+      try {
+        await PATCH(`/paros/${linea}/${paroActivo.id}/cerrar`, {});
+        paroActivo = null;
+      } catch (_) { /* si falla, mostrar el paro normalmente */ }
+    }
+
     state.paroActivo[linea] = paroActivo;
 
     // Banner de paro activo
-    const paroBanner = paroActivo ? `
-      <div class="paro-banner">
-        <div class="paro-info">
-          <span>🔴</span>
-          <span><strong>PARO ACTIVO:</strong> ${escHtml(paroActivo.motivo)} — ${escHtml(paroActivo.sub_motivo || '')}
-          &nbsp;<small>desde ${fmtTime(paroActivo.inicio)}</small></span>
-        </div>
-        <button class="btn btn-outline btn-sm" id="btn-cerrar-paro" data-id="${paroActivo.id}">
-          ✅ Cerrar Paro
-        </button>
-      </div>` : '';
+    const paroBanner = paroActivo
+      ? paroActivo.tipo === 'cambio_turno'
+        ? `<div class="paro-banner" style="background:#7c3aed">
+             <div class="paro-info">
+               <span>🔄</span>
+               <span><strong>PARO POR CAMBIO DE TURNO</strong>
+               &nbsp;<small>desde ${fmtTime(paroActivo.hora_inicio)}</small></span>
+             </div>
+             <button class="btn btn-outline btn-sm" id="btn-cerrar-paro" data-id="${paroActivo.id}">
+               ✅ Iniciar turno
+             </button>
+           </div>`
+        : `<div class="paro-banner">
+             <div class="paro-info">
+               <span>🔴</span>
+               <span><strong>PARO ACTIVO:</strong> ${escHtml(paroActivo.motivo)} — ${escHtml(paroActivo.sub_motivo || '')}
+               &nbsp;<small>desde ${fmtTime(paroActivo.hora_inicio)}</small></span>
+             </div>
+             <button class="btn btn-outline btn-sm" id="btn-cerrar-paro" data-id="${paroActivo.id}">
+               ✅ Cerrar Paro
+             </button>
+           </div>`
+      : '';
 
     const tarjetasHtml = cargas.length === 0
       ? '<div class="empty-state"><div class="icon">📭</div><p>No hay cargas activas en esta línea.</p></div>'
