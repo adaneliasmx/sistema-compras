@@ -731,7 +731,10 @@ function slotOverlap(ss, se, paroStart, paroEnd, paroFechaInicio, paroFechaFin, 
     return d * 1440 + toMins(t);
   }
   const ps = abs(paroFechaInicio, paroStart);
-  const pe = paroFechaFin ? abs(paroFechaFin, paroEnd) : se;
+  // Paro abierto: usar fecha+hora actual como fin, NO el límite del slot
+  const pe = paroFechaFin
+    ? abs(paroFechaFin, paroEnd)
+    : abs(nowDateStr(), paroEnd);   // paroEnd ya trae nowTimeStr() desde el caller
   return Math.max(0, Math.min(se, pe) - Math.max(ss, ps));
 }
 
@@ -785,8 +788,12 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
                                p.fecha_inicio, p.fecha_fin, slotDate);
     }
 
-    const disponibilidad = (60 - Math.min(paros_min, 60)) / 60;
-    const eficiencia     = ciclos_obj > 0 ? ciclos_totales / ciclos_obj : 0;
+    const tiempo_disp    = Math.max(0, 60 - Math.min(paros_min, 60)); // minutos disponibles
+    const disponibilidad = tiempo_disp / 60;
+    // Eficiencia = ciclos_reales / ciclos_esperados_en_tiempo_disponible
+    // ciclos_esperados = ciclos_obj/hr × (tiempo_disp/60)
+    const ciclos_esperados = ciclos_obj * (tiempo_disp / 60);
+    const eficiencia     = ciclos_esperados > 0 ? ciclos_totales / ciclos_esperados : 0;
     const capacidad      = ciclos_totales > 0 && pzobj_avg > 0
       ? cantidad_total / (ciclos_totales * pzobj_avg) : 0;
     const calidad        = piezas.length > 0
@@ -838,12 +845,24 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
 
 router.get('/pizarron', (req, res) => {
   const { linea = 'L3', fecha, turno = 'all' } = req.query;
-  const targetDate   = fecha || nowDateStr();
-  const pdb          = dbProd.read();
-  const config       = pdb.config || {};
-  const lineas       = linea === 'ambas' ? ['L3', 'L4'] : [linea];
-  const targetTurnos = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
-  const data         = buildPizarronResult(pdb, config, lineas, targetTurnos, targetDate);
+  const targetDate = fecha || nowDateStr();
+  const pdb        = dbProd.read();
+  const config     = pdb.config || {};
+  const lineas     = linea === 'ambas' ? ['L3', 'L4'] : [linea];
+
+  let targetTurnos = turno === 'all' ? ['T1', 'T2', 'T3'] : [turno];
+
+  // No incluir turnos que aún no han iniciado cuando se consulta el día de hoy.
+  // Regla T3: pertenece completamente al día en que inició (21:30).
+  // Si T3 no ha iniciado hoy, no se muestra aunque sean las 00:00-06:30
+  // (esas horas corresponden al T3 del día anterior).
+  if (targetDate === nowDateStr()) {
+    const nowMins = toMins(nowTimeStr());
+    const TURNO_INICIO = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
+    targetTurnos = targetTurnos.filter(t => nowMins >= TURNO_INICIO[t]);
+  }
+
+  const data = buildPizarronResult(pdb, config, lineas, targetTurnos, targetDate);
   res.json({ fecha: targetDate, linea, turno, data });
 });
 
