@@ -637,6 +637,7 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
     hora_fin: null,
     duracion_min: null,
     turno,
+    registrado_por: req.prodUser?.nombre || 'Operador',
     created_at: new Date().toISOString()
   };
 
@@ -713,17 +714,77 @@ router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (re
   if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya fue cerrado' });
 
   const fecha_fin = nowDateStr();
-  const hora_fin = nowTimeStr();
-  paro.fecha_fin = fecha_fin;
-  paro.hora_fin = hora_fin;
-
-  // Calculate duration in minutes
-  const inicio = new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`);
-  const fin = new Date(`${fecha_fin}T${hora_fin}:00`);
-  paro.duracion_min = Math.round((fin - inicio) / 60000);
+  const hora_fin  = nowTimeStr();
+  paro.fecha_fin  = fecha_fin;
+  paro.hora_fin   = hora_fin;
+  paro.duracion_min = Math.round(
+    (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
+  );
 
   dbProd.write(pdb);
   res.json(pdb.paros[idx]);
+});
+
+// Admin: cerrar paro por id (sin requerir linea en params)
+router.patch('/paros/:id/admin-cerrar', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+
+  const paro = pdb.paros[idx];
+  if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya fue cerrado' });
+
+  const fecha_fin = nowDateStr();
+  const hora_fin  = nowTimeStr();
+  paro.fecha_fin  = fecha_fin;
+  paro.hora_fin   = hora_fin;
+  paro.duracion_min = Math.round(
+    (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
+  );
+  paro.cerrado_por_admin = req.prodUser?.nombre || 'Admin';
+
+  dbProd.write(pdb);
+  res.json(pdb.paros[idx]);
+});
+
+// Admin: editar paro (marca como corregido)
+router.patch('/paros/:id/admin-editar', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+
+  const paro  = pdb.paros[idx];
+  const body  = req.body || {};
+  const campos = ['motivo', 'sub_motivo', 'fecha_inicio', 'hora_inicio', 'fecha_fin', 'hora_fin', 'turno'];
+  for (const f of campos) {
+    if (body[f] !== undefined) paro[f] = body[f] || null;
+  }
+  // Recalcular duración si hay fecha_fin
+  if (paro.fecha_fin && paro.hora_fin && paro.fecha_inicio && paro.hora_inicio) {
+    paro.duracion_min = Math.round(
+      (new Date(`${paro.fecha_fin}T${paro.hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
+    );
+  }
+  paro.corregido      = true;
+  paro.corregido_por  = req.prodUser?.nombre || 'Admin';
+  paro.corregido_at   = new Date().toISOString();
+
+  dbProd.write(pdb);
+  res.json(pdb.paros[idx]);
+});
+
+// Admin: eliminar paro
+router.delete('/paros/:id', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+
+  const [eliminado] = pdb.paros.splice(idx, 1);
+  dbProd.write(pdb);
+  res.json({ ok: true, eliminado });
 });
 
 // ─── Pizarrón helpers (módulo-nivel, reutilizables) ──────────────────────────

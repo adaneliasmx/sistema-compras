@@ -649,28 +649,19 @@ async function viewLinea(el, linea) {
 
     state.paroActivo[linea] = paroActivo;
 
-    // Banner de paro activo
-    const paroBanner = paroActivo
+    // Mini-tarjeta de paro activo (inline en el header, junto al contador)
+    const paroMiniCard = paroActivo
       ? paroActivo.tipo === 'cambio_turno'
-        ? `<div class="paro-banner" style="background:#7c3aed">
-             <div class="paro-info">
-               <span>🔄</span>
-               <span><strong>PARO POR CAMBIO DE TURNO</strong>
-               &nbsp;<small>desde ${fmtTime(paroActivo.hora_inicio)}</small></span>
-             </div>
-             <button class="btn btn-outline btn-sm" id="btn-cerrar-paro" data-id="${paroActivo.id}">
-               ✅ Iniciar turno
-             </button>
+        ? `<div style="display:flex;align-items:center;gap:8px;background:#ede9fe;border:1.5px solid #7c3aed;border-radius:8px;padding:6px 12px">
+             <span style="color:#7c3aed;font-weight:700">🔄 CAMBIO DE TURNO</span>
+             <span style="font-size:12px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio)}</span>
+             <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border:none" id="btn-cerrar-paro" data-id="${paroActivo.id}">✅ Iniciar turno</button>
            </div>`
-        : `<div class="paro-banner">
-             <div class="paro-info">
-               <span>🔴</span>
-               <span><strong>PARO ACTIVO:</strong> ${escHtml(paroActivo.motivo)} — ${escHtml(paroActivo.sub_motivo || '')}
-               &nbsp;<small>desde ${fmtTime(paroActivo.hora_inicio)}</small></span>
-             </div>
-             <button class="btn btn-outline btn-sm" id="btn-cerrar-paro" data-id="${paroActivo.id}">
-               ✅ Cerrar Paro
-             </button>
+        : `<div style="display:flex;align-items:center;gap:8px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;padding:6px 12px;flex-wrap:wrap">
+             <span style="color:#dc2626;font-weight:700;font-size:13px">🔴 PARO ACTIVO</span>
+             <span style="font-size:13px;font-weight:600">${escHtml(paroActivo.motivo)}${paroActivo.sub_motivo ? ' › ' + escHtml(paroActivo.sub_motivo) : ''}</span>
+             <span style="font-size:11px;color:#6b7280">desde ${escHtml(paroActivo.fecha_inicio)} ${escHtml(paroActivo.hora_inicio)}</span>
+             <button class="btn btn-sm btn-primary" id="btn-cerrar-paro" data-id="${paroActivo.id}" style="white-space:nowrap">✅ Cerrar Paro</button>
            </div>`
       : '';
 
@@ -679,15 +670,15 @@ async function viewLinea(el, linea) {
       : `<div class="tarjetero-grid">${cargas.map(c => renderTarjeta(c)).join('')}</div>`;
 
     el.innerHTML = `
-      ${paroBanner}
       <div class="tarjetero-header">
         <h3>Línea ${linea.replace('L','')} — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activas</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
             🔄 Ciclos ${turnoActual}: <span style="color:#38bdf8;font-size:16px">${ciclosTurno}</span>
           </div>
+          ${paroMiniCard}
           <div class="tarjetero-actions">
-            <button class="btn btn-danger btn-sm btn-paro" id="btn-nueva-paro">⏸ Registrar Paro</button>
+            ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-nueva-paro">⏸ Registrar Paro</button>' : ''}
             <button class="btn btn-primary" id="btn-nueva-carga">+ Registrar Carga</button>
           </div>
         </div>
@@ -696,6 +687,11 @@ async function viewLinea(el, linea) {
 
     // Bind events
     el.querySelector('#btn-nueva-carga')?.addEventListener('click', () => {
+      const pa = state.paroActivo[linea];
+      if (pa && pa.tipo !== 'cambio_turno') {
+        showCierreParoModal(linea, pa, el, () => openModalCarga(linea, catalogo));
+        return;
+      }
       openModalCarga(linea, catalogo);
     });
     el.querySelector('#btn-nueva-paro')?.addEventListener('click', () => {
@@ -715,6 +711,14 @@ async function viewLinea(el, linea) {
     // Bind tarjeta buttons
     el.querySelectorAll('[data-descargar]').forEach(btn => {
       btn.addEventListener('click', () => {
+        const pa = state.paroActivo[linea];
+        if (pa && pa.tipo !== 'cambio_turno') {
+          showCierreParoModal(linea, pa, el, () => {
+            const carga = cargas.find(c => String(c.id) === String(btn.dataset.descargar));
+            openModalDescargar(linea, carga, catalogo, () => viewLinea(el, linea));
+          });
+          return;
+        }
         const id = btn.dataset.descargar;
         const carga = cargas.find(c => String(c.id) === String(id));
         openModalDescargar(linea, carga, catalogo, () => viewLinea(el, linea));
@@ -728,6 +732,45 @@ async function viewLinea(el, linea) {
   } catch (e) {
     el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${escHtml(e.message)}</div>`;
   }
+}
+
+// ── Modal: cierre obligatorio de paro antes de continuar ──────────────────────
+function showCierreParoModal(linea, paro, elContainer, onClosed) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:460px">
+      <div class="modal-header">
+        <h3 class="modal-title">🔴 Paro activo — acción requerida</h3>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 12px">Hay un paro activo. Debes cerrarlo antes de registrar una carga o descarga.</p>
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px;font-size:13px">
+          <div><strong>Motivo:</strong> ${escHtml(paro.motivo || '—')}${paro.sub_motivo ? ' › ' + escHtml(paro.sub_motivo) : ''}</div>
+          <div style="margin-top:4px"><strong>Inicio:</strong> ${escHtml(paro.fecha_inicio || '')} ${escHtml(paro.hora_inicio || '')}</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="cpm-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="cpm-cerrar">✅ Cerrar Paro y continuar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#cpm-cancelar').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#cpm-cerrar').addEventListener('click', async () => {
+    try {
+      await PATCH(`/paros/${linea}/${paro.id}/cerrar`, {});
+      state.paroActivo[linea] = null;
+      overlay.remove();
+      // Refresh linea view then run callback
+      const elActual = document.getElementById('p-content');
+      if (elActual) await viewLinea(elActual, linea);
+      if (onClosed) onClosed();
+    } catch (e) {
+      alert('Error al cerrar paro: ' + e.message);
+    }
+  });
 }
 
 function renderTarjeta(c) {
@@ -1920,6 +1963,7 @@ async function viewParos(el) {
       <div class="empty-state"><div class="icon">⏸</div><p>Presiona Buscar para cargar los paros.</p></div>
     </div>`;
 
+  const isAdmin = state.user?.role === 'admin';
   let lastParos = [];
 
   async function buscar() {
@@ -1941,49 +1985,98 @@ async function viewParos(el) {
         res.innerHTML = '<div class="empty-state"><div class="icon">⏸</div><p>Sin paros para estos filtros.</p></div>';
         return;
       }
-      res.innerHTML = `
-        <div class="table-card">
-          <div class="table-header">
-            <h3>Paros registrados</h3>
-            <span class="badge badge-activo">${lastParos.length} registros</span>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Folio</th><th>Línea</th><th>Turno</th>
-                  <th>Fecha inicio</th><th>Hr inicio</th>
-                  <th>Fecha fin</th><th>Hr fin</th>
-                  <th>Duración (min)</th><th>Motivo</th><th>Sub-motivo</th><th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${lastParos.map(p => {
-                  const abierto = !p.fecha_fin;
-                  const estadoBadge = abierto
-                    ? '<span class="badge badge-activo">Activo</span>'
-                    : '<span class="badge badge-procesado">Cerrado</span>';
-                  const dur = p.duracion_min != null ? p.duracion_min + ' min' : (abierto ? '<em>en curso</em>' : '—');
-                  return `<tr>
-                    <td class="mono" style="font-size:11px">${escHtml(p.folio || p.id)}</td>
-                    <td><span class="badge ${p.linea==='L3'?'badge-t1':'badge-t2'}">${escHtml(p.linea)}</span></td>
-                    <td><span class="badge ${getTurnoColor(p.turno)}">${escHtml(p.turno||'—')}</span></td>
-                    <td>${escHtml(p.fecha_inicio||'—')}</td>
-                    <td class="mono">${escHtml(p.hora_inicio||'—')}</td>
-                    <td>${escHtml(p.fecha_fin||'—')}</td>
-                    <td class="mono">${escHtml(p.hora_fin||'—')}</td>
-                    <td style="text-align:center;font-weight:700">${dur}</td>
-                    <td>${escHtml(p.motivo||'—')}</td>
-                    <td>${escHtml(p.sub_motivo||'—')}</td>
-                    <td>${estadoBadge}</td>
-                  </tr>`;
-                }).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>`;
+      renderTablaParos(res);
     } catch (e) {
       res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  function renderTablaParos(res) {
+    res.innerHTML = `
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Paros registrados</h3>
+          <span class="badge badge-activo">${lastParos.length} registros</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Folio</th><th>Línea</th><th>Turno</th>
+                <th>Fecha inicio</th><th>Hr inicio</th>
+                <th>Fecha fin</th><th>Hr fin</th>
+                <th>Duración (min)</th><th>Motivo</th><th>Sub-motivo</th><th>Registrado por</th><th>Estado</th>
+                ${isAdmin ? '<th>Acciones</th>' : ''}
+              </tr>
+            </thead>
+            <tbody>
+              ${lastParos.map((p, idx) => {
+                const abierto = !p.fecha_fin;
+                let estadoBadge = abierto
+                  ? '<span class="badge badge-activo">Activo</span>'
+                  : '<span class="badge badge-procesado">Cerrado</span>';
+                if (p.corregido) estadoBadge += ` <span class="badge" style="background:#f59e0b;color:#fff" title="Editado por ${escHtml(p.corregido_por||'')}">✏️ Corregido</span>`;
+                const dur = p.duracion_min != null ? p.duracion_min + ' min' : (abierto ? '<em>en curso</em>' : '—');
+                const accionesTd = isAdmin ? `<td style="white-space:nowrap">
+                  ${abierto ? `<button class="btn btn-outline btn-sm" data-pa-cerrar="${idx}">✅ Cerrar</button> ` : ''}
+                  <button class="btn btn-outline btn-sm" data-pa-editar="${idx}">✏️ Editar</button>
+                  <button class="btn btn-danger btn-sm" data-pa-borrar="${idx}" style="margin-left:4px">🗑 Borrar</button>
+                </td>` : '';
+                return `<tr>
+                  <td class="mono" style="font-size:11px">${escHtml(p.folio || p.id)}</td>
+                  <td><span class="badge ${p.linea==='L3'?'badge-t1':'badge-t2'}">${escHtml(p.linea)}</span></td>
+                  <td><span class="badge ${getTurnoColor(p.turno)}">${escHtml(p.turno||'—')}</span></td>
+                  <td>${escHtml(p.fecha_inicio||'—')}</td>
+                  <td class="mono">${escHtml(p.hora_inicio||'—')}</td>
+                  <td>${escHtml(p.fecha_fin||'—')}</td>
+                  <td class="mono">${escHtml(p.hora_fin||'—')}</td>
+                  <td style="text-align:center;font-weight:700">${dur}</td>
+                  <td>${escHtml(p.motivo||'—')}</td>
+                  <td>${escHtml(p.sub_motivo||'—')}</td>
+                  <td style="font-size:11px;color:var(--p-muted)">${escHtml(p.registrado_por||'—')}</td>
+                  <td>${estadoBadge}</td>
+                  ${accionesTd}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+
+    if (isAdmin) {
+      // Cerrar paro
+      res.querySelectorAll('[data-pa-cerrar]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const p = lastParos[Number(btn.dataset.paCerrar)];
+          if (!p) return;
+          if (!confirm(`¿Cerrar el paro de ${p.linea} (${p.motivo})?`)) return;
+          try {
+            await PATCH(`/paros/${p.id}/admin-cerrar`, {});
+            await buscar();
+          } catch (e) { alert('Error: ' + e.message); }
+        });
+      });
+
+      // Editar paro
+      res.querySelectorAll('[data-pa-editar]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const p = lastParos[Number(btn.dataset.paEditar)];
+          if (p) openModalEditarParo(p, buscar);
+        });
+      });
+
+      // Borrar paro
+      res.querySelectorAll('[data-pa-borrar]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const p = lastParos[Number(btn.dataset.paBorrar)];
+          if (!p) return;
+          if (!confirm(`¿Borrar el paro ${escHtml(p.folio || p.id)} de ${p.linea}? Esta acción es irreversible.`)) return;
+          try {
+            await DEL(`/paros/${p.id}`);
+            await buscar();
+          } catch (e) { alert('Error: ' + e.message); }
+        });
+      });
     }
   }
 
@@ -2002,7 +2095,10 @@ async function viewParos(el) {
       Duración_min:    p.duracion_min ?? '',
       Motivo:          p.motivo || '',
       Sub_Motivo:      p.sub_motivo || '',
-      Estado:          p.fecha_fin ? 'Cerrado' : 'Activo'
+      Registrado_por:  p.registrado_por || '',
+      Estado:          p.fecha_fin ? 'Cerrado' : 'Activo',
+      Corregido:       p.corregido ? 'Sí' : 'No',
+      Corregido_por:   p.corregido_por || ''
     }));
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
@@ -2012,6 +2108,73 @@ async function viewParos(el) {
 
   // Carga inicial automática
   buscar();
+}
+
+// ── Modal: editar paro (admin) ─────────────────────────────────────────────────
+function openModalEditarParo(paro, onSaved) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <h3 class="modal-title">✏️ Editar Paro</h3>
+        <button class="modal-close" id="epm-close">✕</button>
+      </div>
+      <div class="modal-body" style="display:grid;gap:12px">
+        <div class="form-group">
+          <label>Motivo</label>
+          <input type="text" id="epm-motivo" class="form-control" value="${escHtml(paro.motivo||'')}"/>
+        </div>
+        <div class="form-group">
+          <label>Sub-motivo</label>
+          <input type="text" id="epm-submotivo" class="form-control" value="${escHtml(paro.sub_motivo||'')}"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group">
+            <label>Fecha inicio</label>
+            <input type="date" id="epm-fecha-ini" class="form-control" value="${paro.fecha_inicio||''}"/>
+          </div>
+          <div class="form-group">
+            <label>Hora inicio</label>
+            <input type="time" id="epm-hora-ini" class="form-control" value="${paro.hora_inicio||''}"/>
+          </div>
+          <div class="form-group">
+            <label>Fecha fin</label>
+            <input type="date" id="epm-fecha-fin" class="form-control" value="${paro.fecha_fin||''}"/>
+          </div>
+          <div class="form-group">
+            <label>Hora fin</label>
+            <input type="time" id="epm-hora-fin" class="form-control" value="${paro.hora_fin||''}"/>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="epm-cancelar">Cancelar</button>
+        <button class="btn btn-primary" id="epm-guardar">💾 Guardar cambios</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  overlay.querySelector('#epm-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#epm-cancelar').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('#epm-guardar').addEventListener('click', async () => {
+    const body = {
+      motivo:       document.getElementById('epm-motivo').value.trim(),
+      sub_motivo:   document.getElementById('epm-submotivo').value.trim(),
+      fecha_inicio: document.getElementById('epm-fecha-ini').value,
+      hora_inicio:  document.getElementById('epm-hora-ini').value,
+      fecha_fin:    document.getElementById('epm-fecha-fin').value || null,
+      hora_fin:     document.getElementById('epm-hora-fin').value || null
+    };
+    if (!body.motivo) { alert('El motivo es requerido.'); return; }
+    try {
+      await PATCH(`/paros/${paro.id}/admin-editar`, body);
+      overlay.remove();
+      if (onSaved) onSaved();
+    } catch (e) {
+      alert('Error al guardar: ' + e.message);
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
