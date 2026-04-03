@@ -58,7 +58,59 @@
       const url = `/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`;
       const res = await fetch(url);
       if (!res.ok) throw new Error('Error ' + res.status + ': ' + res.statusText);
-      state.data = await res.json();
+      const raw = await res.json();
+
+      // El backend devuelve { fecha, linea, turno, data: { L3: { T1: { slots, totals }, ... }, L4: {...} } }
+      // Transformar al formato que espera buildLineaBoard: { horas: { T1: [...], T2, T3 }, totales: { T1: {...}, dia: {...} } }
+      const backendData = raw?.data || {};
+      const transformed = {};
+
+      for (const [l, lineaData] of Object.entries(backendData)) {
+        const horas   = {};
+        const totales = {};
+
+        for (const t of ['T1', 'T2', 'T3']) {
+          const td    = lineaData[t] || {};
+          const slots = td.slots || [];
+
+          horas[t] = slots.map(s => ({
+            hora:           `${s.hora_inicio}–${s.hora_fin}`,
+            ciclos:         s.ciclos_totales,
+            eficiencia:     (s.eficiencia    || 0) * 100,
+            capacidad:      (s.capacidad      || 0) * 100,
+            calidad:        (s.calidad        || 0) * 100,
+            disponibilidad: (s.disponibilidad || 0) * 100
+          }));
+
+          const avg = key => slots.length
+            ? slots.reduce((a, s) => a + (s[key] || 0), 0) / slots.length * 100
+            : null;
+
+          totales[t] = {
+            eficiencia:     avg('eficiencia'),
+            capacidad:      avg('capacidad'),
+            calidad:        avg('calidad'),
+            disponibilidad: avg('disponibilidad')
+          };
+        }
+
+        // Total del día: promedio de todos los slots de todos los turnos
+        const allSlots = ['T1','T2','T3'].flatMap(t => (lineaData[t]?.slots || []));
+        const avgDay   = key => allSlots.length
+          ? allSlots.reduce((a, s) => a + (s[key] || 0), 0) / allSlots.length * 100
+          : null;
+
+        totales.dia = {
+          eficiencia:     avgDay('eficiencia'),
+          capacidad:      avgDay('capacidad'),
+          calidad:        avgDay('calidad'),
+          disponibilidad: avgDay('disponibilidad')
+        };
+
+        transformed[l] = { horas, totales };
+      }
+
+      state.data = transformed;
       state.error = null;
       state.lastRefresh = new Date();
     } catch (err) {
@@ -134,10 +186,10 @@
   }
 
   function buildBoards(turno) {
-    const lineas = ['linea3', 'linea4'];
-    const labels = { linea3: 'Línea 3', linea4: 'Línea 4' };
+    const lineas = ['L3', 'L4'];
+    const labels = { L3: 'Línea 3', L4: 'Línea 4' };
     return lineas.map(linea => {
-      const linData = state.data[linea] || {};
+      const linData = (state.data || {})[linea] || {};
       return buildLineaBoard(linea, labels[linea], linData, turno);
     }).join('');
   }
@@ -145,7 +197,7 @@
   function buildLineaBoard(linea, label, linData, currentTurnoStr) {
     const turnos = ['T1', 'T2', 'T3'];
     const visibleTurnos = state.turnoFilter === 'all' ? turnos : [state.turnoFilter];
-    const horas = linData.horas || {};
+    const horas   = linData.horas   || {};
     const totales = linData.totales || {};
 
     let rows = '';
@@ -157,11 +209,11 @@
       // Turno header row
       const turnoHighlight = isCurrentTurno ? ' turno-actual' : '';
       rows += `<tr class="turno-header-row${turnoHighlight}">
-        <td colspan="5"><strong>${t}${isCurrentTurno ? ' ← Turno actual' : ''}</strong></td>
+        <td colspan="6"><strong>${t}${isCurrentTurno ? ' ← Turno actual' : ''}</strong></td>
       </tr>`;
 
       if (horasT.length === 0) {
-        rows += `<tr class="no-data-row"><td colspan="5">Sin registros</td></tr>`;
+        rows += `<tr class="no-data-row"><td colspan="6">Sin registros</td></tr>`;
       } else {
         for (const hr of horasT) {
           rows += buildKpiRow(hr.hora || hr.label, hr);
@@ -171,7 +223,7 @@
       // Turno subtotal
       const subT = totales[t] || {};
       rows += `<tr class="subtotal-row">
-        <td><em>Subtotal ${t}</em></td>
+        <td colspan="2"><em>Subtotal ${t}</em></td>
         <td class="${kpiColor(subT.eficiencia)}">${fmtPct(subT.eficiencia)}</td>
         <td class="${kpiColor(subT.capacidad)}">${fmtPct(subT.capacidad)}</td>
         <td class="${kpiColor(subT.calidad)}">${fmtPct(subT.calidad)}</td>
@@ -184,7 +236,7 @@
     const hasDayTotal = Object.keys(dayTotal).length > 0;
     const dayTotalRow = hasDayTotal ? `
       <tr class="day-total-row">
-        <td><strong>Total día</strong></td>
+        <td colspan="2"><strong>Total día</strong></td>
         <td class="${kpiColor(dayTotal.eficiencia)}"><strong>${fmtPct(dayTotal.eficiencia)}</strong></td>
         <td class="${kpiColor(dayTotal.capacidad)}"><strong>${fmtPct(dayTotal.capacidad)}</strong></td>
         <td class="${kpiColor(dayTotal.calidad)}"><strong>${fmtPct(dayTotal.calidad)}</strong></td>
@@ -198,7 +250,8 @@
           <table class="pizarron-table">
             <thead>
               <tr>
-                <th>Hr</th>
+                <th>Slot</th>
+                <th>Ciclos</th>
                 <th>Eficiencia</th>
                 <th>Capacidad</th>
                 <th>Calidad</th>
@@ -218,6 +271,7 @@
   function buildKpiRow(label, kpi) {
     return `<tr class="kpi-row">
       <td class="hr-cell">${escHtml(String(label))}</td>
+      <td style="text-align:center;font-weight:700">${kpi.ciclos != null ? kpi.ciclos : '—'}</td>
       <td class="${kpiColor(kpi.eficiencia)}">${fmtPct(kpi.eficiencia)}</td>
       <td class="${kpiColor(kpi.capacidad)}">${fmtPct(kpi.capacidad)}</td>
       <td class="${kpiColor(kpi.calidad)}">${fmtPct(kpi.calidad)}</td>

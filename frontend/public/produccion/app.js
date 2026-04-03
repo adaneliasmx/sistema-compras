@@ -21,6 +21,10 @@ const state = {
   lineaActiva: null,
   // Polling pizarrón
   _pizarronTimer: null,
+  // Polling monitor admin
+  _monitorTimer: null,
+  // Polling línea (ciclos)
+  _lineaTimer: null,
   // Inactividad
   _actTimer: null,
   // Watcher de fin de turno
@@ -36,6 +40,7 @@ const MENU = {
     ['linea-4',        '🏭', 'Línea 4'],
     ['reportes',       '📈', 'Reportes'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
+    ['monitor',        '📡', 'Monitor en vivo'],
     ['---', '', 'Catálogos'],
     ['catalogos-l3',   '📦', 'Catálogos L3'],
     ['catalogos-l4',   '📦', 'Catálogos L4'],
@@ -60,6 +65,7 @@ const SECTION_TITLES = {
   'linea-op':       'Mi Línea — Tarjetero Activo',
   'reportes':       'Reportes de Producción',
   'pizarron':       'Pizarrón KPI',
+  'monitor':        'Monitor en vivo — L3 y L4',
   'catalogos-l3':   'Catálogos Línea 3',
   'catalogos-l4':   'Catálogos Línea 4',
   'operadores':     'Gestión de Operadores',
@@ -184,6 +190,8 @@ function saveSession(token, user) {
 }
 function logout() {
   clearInterval(state._pizarronTimer);
+  clearInterval(state._monitorTimer);
+  clearInterval(state._lineaTimer);
   clearInterval(state._shiftTimer);
   state._shiftTimer = null;
   state._shiftWarnShown = false;
@@ -210,6 +218,10 @@ async function logoutShiftEnd() {
 function navigate(section) {
   clearInterval(state._pizarronTimer);
   state._pizarronTimer = null;
+  clearInterval(state._monitorTimer);
+  state._monitorTimer = null;
+  clearInterval(state._lineaTimer);
+  state._lineaTimer = null;
   // Limpiar línea activa si se navega fuera de una línea
   if (!section.startsWith('linea-')) state.lineaActiva = null;
   state.section = section;
@@ -259,6 +271,14 @@ function fmtDateTime(str) {
 function escHtml(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getCurrentTurno() {
+  const now  = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  if (mins >= 6 * 60 + 30 && mins <= 14 * 60 + 29) return 'T1';
+  if (mins >= 14 * 60 + 30 && mins <= 21 * 60 + 29) return 'T2';
+  return 'T3';
 }
 
 function lineaFromSection(section) {
@@ -471,6 +491,7 @@ async function renderMain() {
       case 'linea-op':      await viewLinea(el, lineaFromSection('linea-op')); break;
       case 'reportes':      await viewReportes(el);      break;
       case 'pizarron':      await viewPizarron(el);      break;
+      case 'monitor':       await viewMonitor(el);       break;
       case 'catalogos-l3':  await viewCatalogos(el, 'L3'); break;
       case 'catalogos-l4':  await viewCatalogos(el, 'L4'); break;
       case 'operadores':    await viewOperadores(el);    break;
@@ -585,13 +606,29 @@ async function viewDashboard(el) {
 
 async function viewLinea(el, linea) {
   state.lineaActiva = linea; // Trackear línea activa para el watcher de turno
+
+  // Auto-refresh cada 20 segundos para mantener ciclos actualizados
+  clearInterval(state._lineaTimer);
+  state._lineaTimer = setInterval(() => {
+    const elActual = document.getElementById('p-content');
+    if (elActual) viewLinea(elActual, linea);
+  }, 20000);
+
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando tarjetas...</p></div>';
   try {
-    const [cargasData, catalogData, parosData] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+    const turnoActual = getCurrentTurno();
+
+    const [cargasData, catalogData, parosData, todasHoyData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
       GET(`/catalogos/${linea}`),
-      GET(`/paros/${linea}/activo`).catch(() => null)
+      GET(`/paros/${linea}/activo`).catch(() => null),
+      GET(`/cargas/${linea}?fecha_ini=${today}&fecha_fin=${today}`).catch(() => [])
     ]);
+
+    // Contar ciclos del turno vigente
+    const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
+    const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
     const cargas    = Array.isArray(cargasData) ? cargasData : (cargasData?.cargas || []);
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
@@ -639,9 +676,14 @@ async function viewLinea(el, linea) {
       ${paroBanner}
       <div class="tarjetero-header">
         <h3>Línea ${linea.replace('L','')} — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activas</span></h3>
-        <div class="tarjetero-actions">
-          <button class="btn btn-danger btn-sm btn-paro" id="btn-nueva-paro">⏸ Registrar Paro</button>
-          <button class="btn btn-primary" id="btn-nueva-carga">+ Registrar Carga</button>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+            🔄 Ciclos ${turnoActual}: <span style="color:#38bdf8;font-size:16px">${ciclosTurno}</span>
+          </div>
+          <div class="tarjetero-actions">
+            <button class="btn btn-danger btn-sm btn-paro" id="btn-nueva-paro">⏸ Registrar Paro</button>
+            <button class="btn btn-primary" id="btn-nueva-carga">+ Registrar Carga</button>
+          </div>
         </div>
       </div>
       ${tarjetasHtml}`;
@@ -719,7 +761,7 @@ function renderTarjeta(c) {
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Cargado</span>
-          <span class="meta-val">${fmtTime(c.fecha_carga || c.created_at)}</span>
+          <span class="meta-val">${c.hora_carga || fmtTime(c.created_at)}</span>
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Operador</span>
@@ -1031,18 +1073,47 @@ async function viewPizarron(el) {
     </div>`;
 
   async function cargarPizarron() {
-    const linea  = document.getElementById('pz-linea').value;
-    const fecha  = document.getElementById('pz-fecha').value;
-    const turno  = document.getElementById('pz-turno').value;
-    const res    = document.getElementById('pz-resultado');
+    const lineaSel = document.getElementById('pz-linea').value;
+    const fecha    = document.getElementById('pz-fecha').value;
+    const turno    = document.getElementById('pz-turno').value;
+    const res      = document.getElementById('pz-resultado');
+    if (!res) return;
     res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando KPI...</p></div>';
     try {
       const params = new URLSearchParams();
-      if (linea) params.set('linea', linea);
+      // Cuando no se selecciona línea específica, pedir ambas
+      params.set('linea', lineaSel || 'ambas');
       if (fecha) params.set('fecha', fecha);
-      if (turno) params.set('turno', turno);
+      params.set('turno', turno || 'all');
       const data = await GET(`/pizarron?${params}`);
-      const rows = data?.rows || [];
+
+      // El backend devuelve { fecha, linea, turno, data: { L3: { T1: { slots, totals }, ... }, L4: {...} } }
+      const backendData = data?.data || {};
+      const rows = [];
+
+      for (const [l, lineaData] of Object.entries(backendData)) {
+        const turnos = turno ? [turno] : ['T1', 'T2', 'T3'];
+        for (const t of turnos) {
+          const turnoData = lineaData[t];
+          if (!turnoData) continue;
+          for (const slot of turnoData.slots || []) {
+            // Solo incluir slots con al menos 1 ciclo o con paros
+            if (slot.ciclos_totales === 0 && slot.paros_min === 0) continue;
+            rows.push({
+              turno: t,
+              hora:  slot.hora_inicio,
+              linea: l,
+              eficiencia:     (slot.eficiencia    || 0) * 100,
+              capacidad:      (slot.capacidad      || 0) * 100,
+              calidad:        (slot.calidad        || 0) * 100,
+              disponibilidad: (slot.disponibilidad || 0) * 100,
+              ciclos:         slot.ciclos_totales,
+              ciclos_buenos:  slot.ciclos_buenos
+            });
+          }
+        }
+      }
+
       if (rows.length === 0) {
         res.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para los filtros seleccionados.</p></div>';
         return;
@@ -1095,7 +1166,7 @@ function renderPizarronTable(rows) {
     if (!grupo || grupo.length === 0) continue;
 
     const tLabel = turno ? `Turno ${turno}` : 'Sin turno';
-    bodyHtml += `<tr class="turno-row"><td colspan="6">${tLabel}</td></tr>`;
+    bodyHtml += `<tr class="turno-row"><td colspan="7">${tLabel}</td></tr>`;
 
     const tTotals = { eficiencia: [], calidad: [], disponibilidad: [], capacidad: [] };
 
@@ -1103,6 +1174,7 @@ function renderPizarronTable(rows) {
       bodyHtml += `<tr>
         <td>${escHtml(r.hora || r.hr || '—')}</td>
         <td>${escHtml(r.linea || '—')}</td>
+        <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
         <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
         <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
         <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
@@ -1120,7 +1192,7 @@ function renderPizarronTable(rows) {
     const cal = avg(tTotals.calidad);
     const dis = avg(tTotals.disponibilidad);
     bodyHtml += `<tr class="totals-row">
-      <td colspan="2">Total ${tLabel}</td>
+      <td colspan="3">Total ${tLabel}</td>
       <td class="${kpiColor(ef)}">${ef != null ? ef.toFixed(1)+'%' : '—'}</td>
       <td class="${kpiColor(ca)}">${ca != null ? ca.toFixed(1)+'%' : '—'}</td>
       <td class="${kpiColor(cal)}">${cal != null ? cal.toFixed(1)+'%' : '—'}</td>
@@ -1135,7 +1207,7 @@ function renderPizarronTable(rows) {
   const dcal= avg(dayTotals.calidad);
   const ddis= avg(dayTotals.disponibilidad);
   bodyHtml += `<tr class="day-total-row">
-    <td colspan="2">TOTAL DÍA</td>
+    <td colspan="3">TOTAL DÍA</td>
     <td>${def  != null ? def.toFixed(1)+'%' : '—'}</td>
     <td>${dcap != null ? dcap.toFixed(1)+'%' : '—'}</td>
     <td>${dcal != null ? dcal.toFixed(1)+'%' : '—'}</td>
@@ -1152,13 +1224,123 @@ function renderPizarronTable(rows) {
       <table class="pizarron-table">
         <thead>
           <tr>
-            <th>Hr</th><th>Línea</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
+            <th>Hr</th><th>Línea</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
           </tr>
         </thead>
         <tbody>${bodyHtml}</tbody>
       </table>
     </div>
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: MONITOR EN VIVO (solo admin)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewMonitor(el) {
+  if (state.user?.role !== 'admin') {
+    el.innerHTML = '<div class="alert alert-warn">Acceso restringido a administradores.</div>';
+    return;
+  }
+
+  function renderMonitorContent(cargasL3, cargasL4, paroL3, paroL4) {
+    const turno    = getCurrentTurno();
+    const today    = new Date().toISOString().slice(0, 10);
+    const now      = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    const todas    = [...cargasL3, ...cargasL4].sort((a, b) => {
+      const ta = `${a.fecha_carga}T${a.hora_carga || '00:00'}`;
+      const tb = `${b.fecha_carga}T${b.hora_carga || '00:00'}`;
+      return ta > tb ? -1 : ta < tb ? 1 : 0;
+    });
+
+    const ciclosL3 = cargasL3.filter(c => c.turno === turno).length;
+    const ciclosL4 = cargasL4.filter(c => c.turno === turno).length;
+
+    const paroHtml = (paro, label) => paro
+      ? `<div style="background:#dc2626;color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700">
+           ⛔ ${label} PARADA: ${escHtml(paro.motivo)} desde ${escHtml(paro.hora_inicio)}
+         </div>`
+      : `<div style="background:#16a34a;color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700">✅ ${label} en operación</div>`;
+
+    const filas = todas.map(c => {
+      const badgeClass = c.estado === 'procesado' ? 'badge-procesado' : c.estado === 'defecto' ? 'badge-defecto' : 'badge-activo';
+      return `<tr>
+        <td class="mono" style="font-size:11px">${escHtml(c.hora_carga || '—')}</td>
+        <td><span class="badge ${c.linea === 'L3' ? 'badge-t1' : 'badge-t2'}">${escHtml(c.linea)}</span></td>
+        <td><span class="badge ${getTurnoColor(c.turno)}">${escHtml(c.turno || '—')}</span></td>
+        <td class="mono">${escHtml(c.herramental_no || '—')}</td>
+        <td>${escHtml(c.componente || '—')}</td>
+        <td>${c.varillas ?? '—'} × ${c.piezas_por_varilla ?? '—'} = <strong>${c.cantidad ?? '—'}</strong></td>
+        <td>${escHtml(c.operador || '—')}</td>
+        <td><span class="badge ${badgeClass}">${escHtml(c.estado)}</span></td>
+      </tr>`;
+    }).join('');
+
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          ${paroHtml(paroL3, 'L3')}
+          ${paroHtml(paroL4, 'L4')}
+        </div>
+        <div style="display:flex;gap:10px;align-items:center">
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
+            L3 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL3}</span>
+          </div>
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
+            L4 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL4}</span>
+          </div>
+          <span style="font-size:11px;color:var(--p-muted)">Actualizado: ${now}</span>
+        </div>
+      </div>
+      <div class="table-card">
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Hora carga</th><th>Línea</th><th>Turno</th><th>Herramental</th>
+                <th>Componente</th><th>Piezas</th><th>Operador</th><th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filas || '<tr><td colspan="8" style="text-align:center;color:var(--p-muted)">Sin registros hoy</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  async function cargarMonitor() {
+    const today = new Date().toISOString().slice(0, 10);
+    const contenedor = document.getElementById('monitor-contenido');
+    if (!contenedor) return;
+    try {
+      const [dL3, dL4, paroL3Res, paroL4Res] = await Promise.all([
+        GET(`/cargas/L3?fecha_ini=${today}&fecha_fin=${today}`),
+        GET(`/cargas/L4?fecha_ini=${today}&fecha_fin=${today}`),
+        GET('/paros/L3/activo').catch(() => null),
+        GET('/paros/L4/activo').catch(() => null)
+      ]);
+      const cL3 = Array.isArray(dL3) ? dL3 : [];
+      const cL4 = Array.isArray(dL4) ? dL4 : [];
+      contenedor.innerHTML = renderMonitorContent(cL3, cL4, paroL3Res?.paro || null, paroL4Res?.paro || null);
+    } catch (e) {
+      contenedor.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del día de hoy (L3 + L4)</span>
+      <button class="btn btn-outline btn-sm" id="mon-refresh">↻ Actualizar</button>
+    </div>
+    <div id="monitor-contenido"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
+
+  document.getElementById('mon-refresh')?.addEventListener('click', cargarMonitor);
+
+  clearInterval(state._monitorTimer);
+  state._monitorTimer = setInterval(cargarMonitor, 15000);
+  cargarMonitor();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
