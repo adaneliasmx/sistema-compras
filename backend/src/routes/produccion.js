@@ -1057,6 +1057,38 @@ router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   res.json(pdb.config);
 });
 
+// ─── Slideshow config ─────────────────────────────────────────────────────────
+
+const DEFAULT_SLIDESHOW = {
+  default_duracion_seg: 120,
+  slides: [
+    {id:1, type:'kpi', scope:'turno', linea:'L3',    duracion_seg:null, activo:true},
+    {id:2, type:'kpi', scope:'turno', linea:'L4',    duracion_seg:null, activo:true},
+    {id:3, type:'kpi', scope:'turno', linea:'ambas', duracion_seg:null, activo:true},
+    {id:4, type:'kpi', scope:'dia',   linea:'L3',    duracion_seg:null, activo:true},
+    {id:5, type:'kpi', scope:'dia',   linea:'L4',    duracion_seg:null, activo:true},
+    {id:6, type:'kpi', scope:'dia',   linea:'ambas', duracion_seg:null, activo:true}
+  ]
+};
+
+router.get('/slideshow-config', (req, res) => {
+  const pdb = dbProd.read();
+  const slideshow = pdb.config?.slideshow || DEFAULT_SLIDESHOW;
+  res.json({ slideshow });
+});
+
+router.patch('/slideshow-config', produccionAllowRoles('admin'), (req, res) => {
+  const pdb  = dbProd.read();
+  if (!pdb.config) pdb.config = {};
+  const body = req.body || {};
+  pdb.config.slideshow = {
+    default_duracion_seg: Number(body.default_duracion_seg) || 120,
+    slides: Array.isArray(body.slides) ? body.slides : (pdb.config.slideshow?.slides || DEFAULT_SLIDESHOW.slides)
+  };
+  dbProd.write(pdb);
+  res.json({ slideshow: pdb.config.slideshow });
+});
+
 // ─── KPI Snapshots ────────────────────────────────────────────────────────────
 
 router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {

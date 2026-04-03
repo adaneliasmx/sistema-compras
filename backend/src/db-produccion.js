@@ -41,7 +41,21 @@ const EMPTY_DB = {
   // Registros de paros
   paros: [],             // {id, folio, linea, motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio, hora_inicio, fecha_fin, hora_fin, duracion_min, turno, created_at}
   // Configuración
-  config: { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 },
+  config: {
+    ciclos_objetivo_l3: 2,
+    ciclos_objetivo_l4: 2,
+    slideshow: {
+      default_duracion_seg: 120,
+      slides: [
+        {id:1, type:'kpi', scope:'turno', linea:'L3',    duracion_seg:null, activo:true},
+        {id:2, type:'kpi', scope:'turno', linea:'L4',    duracion_seg:null, activo:true},
+        {id:3, type:'kpi', scope:'turno', linea:'ambas', duracion_seg:null, activo:true},
+        {id:4, type:'kpi', scope:'dia',   linea:'L3',    duracion_seg:null, activo:true},
+        {id:5, type:'kpi', scope:'dia',   linea:'L4',    duracion_seg:null, activo:true},
+        {id:6, type:'kpi', scope:'dia',   linea:'ambas', duracion_seg:null, activo:true}
+      ]
+    }
+  },
   // KPI histórico (snapshots guardados por turno)
   kpi_snapshots: []
 };

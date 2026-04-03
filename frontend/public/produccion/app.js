@@ -1113,7 +1113,8 @@ async function viewPizarron(el) {
         </select>
       </div>
       <button class="btn btn-outline btn-sm" id="pz-buscar">🔍 Consultar</button>
-      ${state.user?.prod_role === 'admin' ? `
+      <button class="btn btn-outline btn-sm" id="pz-vista-ind" onclick="window.open('/pizarron/vista','_blank')">📺 Vista independiente</button>
+      ${state.user?.role === 'admin' ? `
         <button class="btn btn-primary btn-sm" id="pz-guardar-kpi">💾 Guardar KPI</button>
         <button class="btn btn-dark btn-sm" id="pz-export">📥 Exportar Excel</button>` : ''}
     </div>
@@ -1202,7 +1203,7 @@ async function viewPizarron(el) {
 
   document.getElementById('pz-buscar').addEventListener('click', cargarPizarron);
 
-  if (state.user?.prod_role === 'admin') {
+  if (state.user?.role === 'admin') {
     document.getElementById('pz-guardar-kpi')?.addEventListener('click', async () => {
       const fecha = document.getElementById('pz-fecha').value;
       const linea = document.getElementById('pz-linea').value || 'ambas';
@@ -2305,6 +2306,204 @@ async function viewConfiguracion(el) {
       msg.textContent = '⚠️ Error: ' + e.message;
     } finally {
       btn.disabled = false; btn.textContent = '💾 Guardar cambios';
+    }
+  });
+
+  // ─── Slideshow config section ─────────────────────────────────────────────
+  const ssCfgCard = document.createElement('div');
+  ssCfgCard.className = 'form-card config-section';
+  ssCfgCard.style.marginTop = '24px';
+  ssCfgCard.id = 'ss-cfg-card';
+  ssCfgCard.innerHTML = `
+    <h3>📺 Pizarrón Digital — Configuración</h3>
+    <p style="color:var(--p-muted);font-size:13px;margin:4px 0 20px">
+      Configura las diapositivas y duración del pizarrón digital.
+      <a href="/pizarron/vista" target="_blank" style="color:var(--p-primary);text-decoration:none;margin-left:12px">🔗 Abrir Pizarrón</a>
+    </p>
+
+    <div class="config-item">
+      <label>Duración por defecto</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="number" id="ss-default-dur" value="120" min="5" style="width:90px"/>
+        <span style="font-size:12px;color:var(--p-muted)">segundos por diapositiva</span>
+      </div>
+    </div>
+
+    <h4 style="margin:20px 0 12px">Diapositivas KPI</h4>
+    <div id="ss-kpi-slides-list"></div>
+
+    <h4 style="margin:20px 0 12px">Imágenes / Avisos</h4>
+    <div id="ss-img-slides-list"></div>
+    <div style="margin-top:12px">
+      <label style="display:inline-block;padding:8px 16px;background:var(--p-surface2);border:1px dashed var(--p-border);border-radius:8px;cursor:pointer;font-size:13px">
+        + Cargar imagen
+        <input type="file" id="ss-img-upload" accept="image/*" style="display:none"/>
+      </label>
+      <span style="font-size:12px;color:var(--p-muted);margin-left:12px">JPG, PNG, GIF · máx. 2MB</span>
+    </div>
+
+    <div style="margin-top:24px">
+      <button class="btn btn-primary" id="ss-cfg-save">💾 Guardar configuración pizarrón</button>
+      <span id="ss-cfg-msg" style="margin-left:12px;font-size:13px;color:var(--p-success)"></span>
+    </div>`;
+  el.appendChild(ssCfgCard);
+
+  function escHtmlCfg(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function renderImgSlides(imgSlides) {
+    const el2 = document.getElementById('ss-img-slides-list');
+    if (!imgSlides.length) {
+      el2.innerHTML = '<p style="font-size:13px;color:var(--p-muted)">Sin imágenes cargadas.</p>';
+      return;
+    }
+    el2.innerHTML = imgSlides.map(s => `
+      <div class="ss-img-row" data-img-id="${s.id}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--p-border)">
+        <img src="${escHtmlCfg(s.imagen_b64)}" style="width:64px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--p-border)"/>
+        <input type="text" class="form-control ss-img-titulo" data-img-id="${s.id}" value="${escHtmlCfg(s.titulo||'')}" placeholder="Título (opcional)" style="flex:1;font-size:13px"/>
+        <div style="display:flex;align-items:center;gap:4px">
+          <input type="number" class="ss-img-dur" data-img-id="${s.id}" value="${s.duracion_seg || ''}" placeholder="Default" min="5" style="width:72px"/>
+          <span style="font-size:11px;color:var(--p-muted)">seg</span>
+        </div>
+        <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer">
+          <input type="checkbox" class="ss-img-active" data-img-id="${s.id}" ${s.activo !== false ? 'checked' : ''}/>
+          Activa
+        </label>
+        <button class="btn btn-danger btn-sm ss-img-del" data-img-id="${s.id}">🗑</button>
+      </div>`).join('');
+
+    el2.querySelectorAll('.ss-img-del').forEach(btn => {
+      btn.addEventListener('click', () => {
+        btn.closest('.ss-img-row').remove();
+      });
+    });
+  }
+
+  async function loadSsConfig() {
+    let ssCfg = { default_duracion_seg: 120, slides: [] };
+    try {
+      const d = await GET('/slideshow-config');
+      ssCfg = d?.slideshow || ssCfg;
+    } catch {}
+
+    document.getElementById('ss-default-dur').value = ssCfg.default_duracion_seg || 120;
+
+    const KPI_LABELS = {
+      1: 'Turno actual · Línea 3',
+      2: 'Turno actual · Línea 4',
+      3: 'Turno actual · Todas las líneas',
+      4: 'Día acumulado · Línea 3',
+      5: 'Día acumulado · Línea 4',
+      6: 'Día acumulado · Todas las líneas'
+    };
+
+    // KPI slides
+    const kpiListEl = document.getElementById('ss-kpi-slides-list');
+    kpiListEl.innerHTML = [1,2,3,4,5,6].map(id => {
+      const slide = ssCfg.slides.find(s => s.id === id && s.type === 'kpi') || {id, type:'kpi', activo:true, duracion_seg:null};
+      return `
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--p-border)">
+          <label style="cursor:pointer;display:flex;align-items:center;gap:6px">
+            <input type="checkbox" class="ss-kpi-active" data-id="${id}" ${slide.activo !== false ? 'checked' : ''} style="cursor:pointer"/>
+            <span style="font-size:13px">${KPI_LABELS[id]}</span>
+          </label>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+            <span style="font-size:12px;color:var(--p-muted)">Duración:</span>
+            <input type="number" class="ss-kpi-dur" data-id="${id}" value="${slide.duracion_seg || ''}" placeholder="Default" min="5" style="width:80px"/>
+            <span style="font-size:11px;color:var(--p-muted)">seg</span>
+          </div>
+        </div>`;
+    }).join('');
+
+    // Image slides
+    renderImgSlides(ssCfg.slides.filter(s => s.type === 'imagen'));
+
+    // Store current config for save
+    el._ssCfg = ssCfg;
+  }
+
+  await loadSsConfig();
+
+  // Image upload
+  document.getElementById('ss-img-upload').addEventListener('change', async (ev) => {
+    const file = ev.target.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { alert('La imagen no puede superar 2MB'); return; }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const ssCfg = el._ssCfg || { slides: [] };
+      const maxId = Math.max(0, ...ssCfg.slides.map(s => s.id || 0));
+      const newSlide = { id: maxId + 1, type: 'imagen', imagen_b64: reader.result, titulo: '', duracion_seg: null, activo: true };
+      ssCfg.slides = [...ssCfg.slides, newSlide];
+      el._ssCfg = ssCfg;
+      renderImgSlides(ssCfg.slides.filter(s => s.type === 'imagen'));
+      ev.target.value = '';
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // Save slideshow config
+  document.getElementById('ss-cfg-save').addEventListener('click', async () => {
+    const btn = document.getElementById('ss-cfg-save');
+    const msg = document.getElementById('ss-cfg-msg');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+
+    const defaultDur = Number(document.getElementById('ss-default-dur').value) || 120;
+
+    const SCOPES = {1:'turno',2:'turno',3:'turno',4:'dia',5:'dia',6:'dia'};
+    const LINEAS  = {1:'L3',2:'L4',3:'ambas',4:'L3',5:'L4',6:'ambas'};
+
+    // Collect KPI slides
+    const kpiSlides = [1,2,3,4,5,6].map(id => {
+      const activeEl  = document.querySelector(`.ss-kpi-active[data-id="${id}"]`);
+      const durEl     = document.querySelector(`.ss-kpi-dur[data-id="${id}"]`);
+      const ssCfg = el._ssCfg || {};
+      const orig  = (ssCfg.slides || []).find(s => s.id === id && s.type === 'kpi') || {};
+      return {
+        id,
+        type: 'kpi',
+        scope: orig.scope || SCOPES[id],
+        linea: orig.linea || LINEAS[id],
+        activo: activeEl ? activeEl.checked : true,
+        duracion_seg: durEl && durEl.value ? Number(durEl.value) : null
+      };
+    });
+
+    // Collect image slides from DOM
+    const imgSlides = [];
+    document.querySelectorAll('.ss-img-row').forEach(row => {
+      const imgId   = row.dataset.imgId;
+      const ssCfg   = el._ssCfg || {};
+      const orig    = (ssCfg.slides || []).find(s => String(s.id) === String(imgId) && s.type === 'imagen');
+      if (!orig) return;
+      const titulo   = row.querySelector('.ss-img-titulo')?.value || '';
+      const durVal   = row.querySelector('.ss-img-dur')?.value;
+      const activo   = row.querySelector('.ss-img-active')?.checked !== false;
+      imgSlides.push({
+        id:          orig.id,
+        type:        'imagen',
+        imagen_b64:  orig.imagen_b64,
+        titulo,
+        duracion_seg: durVal ? Number(durVal) : null,
+        activo
+      });
+    });
+
+    try {
+      await PATCH('/slideshow-config', {
+        default_duracion_seg: defaultDur,
+        slides: [...kpiSlides, ...imgSlides]
+      });
+      msg.style.color = 'var(--p-success)';
+      msg.textContent = '✅ Guardado correctamente';
+      setTimeout(() => { msg.textContent = ''; }, 3000);
+      await loadSsConfig();
+    } catch (e) {
+      msg.style.color = 'var(--p-danger)';
+      msg.textContent = '⚠️ Error: ' + e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '💾 Guardar configuración pizarrón';
     }
   });
 }

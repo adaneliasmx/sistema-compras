@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Pizarrón Digital — Producción</title>
+  <link rel="stylesheet" href="/produccion/slideshow.css"/>
+</head>
+<body>
+  <!-- Login overlay (shown when not authenticated) -->
+  <div id="ss-login" class="ss-login-overlay">
+    <div class="ss-login-box">
+      <div class="ss-logo">🏭</div>
+      <h2>Pizarrón Digital</h2>
+      <p>Inicia sesión para continuar</p>
+      <div id="ss-error" class="ss-error" style="display:none"></div>
+      <select id="ss-user-sel" class="ss-input">
+        <option value="">— Seleccionar usuario —</option>
+      </select>
+      <input type="password" id="ss-pass" class="ss-input" placeholder="Contraseña"/>
+      <button id="ss-login-btn" class="ss-btn-primary">Entrar al Pizarrón</button>
+    </div>
+  </div>
+
+  <!-- Main slideshow app -->
+  <div id="ss-app" style="display:none">
+    <!-- Top bar: logo | clock | slide info | exit -->
+    <div class="ss-topbar">
+      <div class="ss-topbar-left">🏭 <strong>PRODUCCIÓN</strong></div>
+      <div class="ss-clock" id="ss-clock">00:00:00</div>
+      <div class="ss-topbar-right">
+        <span id="ss-turno-badge" class="ss-turno-badge"></span>
+        <button class="ss-exit" id="ss-exit" title="Cerrar sesión">✕</button>
+      </div>
+    </div>
+
+    <!-- Slide content area -->
+    <div class="ss-stage" id="ss-stage">
+      <div class="ss-loading-msg">Cargando datos...</div>
+    </div>
+
+    <!-- Bottom bar: progress + dots + prev/next -->
+    <div class="ss-bottombar">
+      <div class="ss-progress-track">
+        <div class="ss-progress-fill" id="ss-progress"></div>
+      </div>
+      <div class="ss-dots" id="ss-dots"></div>
+      <div class="ss-nav-btns">
+        <button class="ss-nav" id="ss-prev">‹</button>
+        <span id="ss-counter" class="ss-counter"></span>
+        <button class="ss-nav" id="ss-next">›</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/produccion/slideshow.js"></script>
+</body>
+</html>

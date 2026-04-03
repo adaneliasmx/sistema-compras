@@ -135,6 +135,7 @@ app.get('/vales/*', (req, res) => {
 app.get('/produccion', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
 app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
 app.get('/pizarron', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/pizarron.html')));
+app.get('/pizarron/vista', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/slideshow.html')));
 
 // Vista pública PO (proveedor)
 app.get('/po-view', (req, res) => {
