@@ -711,166 +711,140 @@ router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (re
   res.json(pdb.paros[idx]);
 });
 
-// ─── Pizarrón KPIs ────────────────────────────────────────────────────────────
+// ─── Pizarrón helpers (módulo-nivel, reutilizables) ──────────────────────────
 
-router.get('/pizarron', (req, res) => {
-  const { linea = 'L3', fecha, turno = 'all' } = req.query;
-  const targetDate = fecha || nowDateStr();
+const TURNOS_DEF = {
+  T1: { start: 6 * 60 + 30,  hours: 8 },  // 06:30–14:30
+  T2: { start: 14 * 60 + 30, hours: 7 },  // 14:30–21:30
+  T3: { start: 21 * 60 + 30, hours: 9 }   // 21:30–06:30+1
+};
 
-  const pdb = dbProd.read();
-  const config = pdb.config || { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 };
+function toMins(timeStr) {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+}
 
-  // Determine which lineas to include
-  let lineas = [];
-  if (linea === 'ambas') {
-    lineas = ['L3', 'L4'];
-  } else {
-    lineas = [linea];
+function slotOverlap(ss, se, paroStart, paroEnd, paroFechaInicio, paroFechaFin, slotDate) {
+  function abs(dateStr, t) {
+    const d = (new Date(dateStr) - new Date(slotDate)) / 86400000;
+    return d * 1440 + toMins(t);
   }
+  const ps = abs(paroFechaInicio, paroStart);
+  const pe = paroFechaFin ? abs(paroFechaFin, paroEnd) : se;
+  return Math.max(0, Math.min(se, pe) - Math.max(ss, ps));
+}
 
-  // Turno definitions in minutes from midnight
-  const TURNOS = {
-    T1: { start: 6 * 60 + 30, end: 14 * 60 + 30, hours: 8 },   // 06:30 – 14:30
-    T2: { start: 14 * 60 + 30, end: 21 * 60 + 30, hours: 7 },   // 14:30 – 21:30
-    T3: { start: 21 * 60 + 30, end: 6 * 60 + 30, hours: 9 }     // 21:30 – 06:30+1
-  };
+function addDays(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toLocaleDateString('en-CA', { timeZone: MX_TZ });
+}
 
-  function toMins(timeStr) {
-    const [h, m] = timeStr.split(':').map(Number);
-    return h * 60 + m;
-  }
+function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
+  const ciclos_obj = l === 'L3'
+    ? (config.ciclos_objetivo_l3 || 2)
+    : (config.ciclos_objetivo_l4 || 2);
+  const tDef     = TURNOS_DEF[t];
+  const nextDay  = addDays(targetDate, 1);
+  const slots    = [];
+  let curMins    = tDef.start;
 
-  function slotOverlap(slotStartMins, slotEndMins, paroStart, paroEnd, paroFechaInicio, paroFechaFin, slotDate) {
-    // Convert paro times to absolute minutes relative to slotDate midnight
-    function absMinutes(dateStr, timeStr) {
-      const diffDays = (new Date(dateStr) - new Date(slotDate)) / 86400000;
-      return diffDays * 24 * 60 + toMins(timeStr);
-    }
-    const ps = absMinutes(paroFechaInicio, paroStart);
-    const pe = paroFechaFin ? absMinutes(paroFechaFin, paroEnd) : slotEndMins;
-    const overlap = Math.max(0, Math.min(slotEndMins, pe) - Math.max(slotStartMins, ps));
-    return overlap;
-  }
+  for (let h = 0; h < tDef.hours; h++) {
+    const ss = curMins;
+    const se = curMins + 60;
+    const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
+    const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
 
-  // Build hourly slots for a given linea and turno on targetDate
-  function buildSlotsForLineaTurno(l, t) {
-    const ciclos_obj = l === 'L3' ? config.ciclos_objetivo_l3 : config.ciclos_objetivo_l4;
-    const tDef = TURNOS[t];
+    const slotDate    = (t === 'T3' && ss >= 1440) ? nextDay : targetDate;
+    const ssR         = ss % 1440;
+    const seR         = se % 1440;
+    const crossesMid  = se > ss && ssR > seR;
 
-    // Build list of 1-hour slots
-    const slots = [];
-    let curMins = tDef.start;
-    const totalHours = tDef.hours;
-
-    for (let h = 0; h < totalHours; h++) {
-      const slotStartMins = curMins;
-      const slotEndMins = curMins + 60;
-      const slotStartStr = `${String(Math.floor(slotStartMins / 60) % 24).padStart(2, '0')}:${String(slotStartMins % 60).padStart(2, '0')}`;
-      const slotEndStr = `${String(Math.floor(slotEndMins / 60) % 24).padStart(2, '0')}:${String(slotEndMins % 60).padStart(2, '0')}`;
-
-      // Determine the actual calendar date for this slot
-      // T3 early hours (after midnight) belong to the next calendar day
-      const nextDay = (() => { const d = new Date(targetDate + 'T00:00:00'); d.setDate(d.getDate() + 1); return d.toLocaleDateString('en-CA', { timeZone: MX_TZ }); })();
-      const slotActualDate = (t === 'T3' && slotStartMins >= 24 * 60) ? nextDay : targetDate;
-
-      const slotStartReal = slotStartMins % (24 * 60);
-      const slotEndReal   = slotEndMins   % (24 * 60);
-      const crossesMidnight = slotEndMins > slotStartMins && slotStartReal > slotEndReal;
-
-      // Cargas cargadas durante este slot (por hora_carga)
-      // Incluye activas + procesadas + defecto para visibilidad en tiempo real
-      const cargasEnSlot = (pdb.cargas || []).filter(c => {
-        if (c.linea !== l) return false;
-        if (!c.fecha_carga || !c.hora_carga) return false;
-        const cargaMins = toMins(c.hora_carga);
-        if (crossesMidnight) {
-          // Slot spans midnight: second half is on nextDay
-          return (c.fecha_carga === slotActualDate && cargaMins >= slotStartReal) ||
-                 (c.fecha_carga === nextDay        && cargaMins <  slotEndReal);
-        }
-        return c.fecha_carga === slotActualDate && cargaMins >= slotStartReal && cargaMins < slotEndReal;
-      });
-
-      const ciclos_totales = cargasEnSlot.length;
-      // Ciclos buenos: solo los ya descargados correctamente
-      const ciclos_buenos = cargasEnSlot.filter(c => c.estado === 'procesado').length;
-      const cargasPiezas = cargasEnSlot.filter(c => !c.es_vacia);
-      const cantidad_total = cargasPiezas.reduce((sum, c) => sum + (c.cantidad || 0), 0);
-      const piezas_obj_avg = cargasPiezas.length > 0
-        ? cargasPiezas.reduce((sum, c) => sum + (c.piezas_por_varilla || 0) * (c.varillas || 0), 0) / cargasPiezas.length
-        : 0;
-      const ciclos_en_hora = ciclos_totales; // including empty for cycle count
-
-      // Paros overlap in this slot (minutes)
-      const parosLinea = (pdb.paros || []).filter(p => p.linea === l);
-      let paros_min = 0;
-      for (const paro of parosLinea) {
-        const overlap = slotOverlap(
-          slotStartReal,
-          slotEndReal,
-          paro.hora_inicio,
-          paro.hora_fin || nowTimeStr(),
-          paro.fecha_inicio,
-          paro.fecha_fin,
-          slotActualDate
-        );
-        paros_min += overlap;
+    const cargasEnSlot = (pdb.cargas || []).filter(c => {
+      if (c.linea !== l || !c.fecha_carga || !c.hora_carga) return false;
+      const cm = toMins(c.hora_carga);
+      if (crossesMid) {
+        return (c.fecha_carga === slotDate && cm >= ssR) ||
+               (c.fecha_carga === nextDay  && cm <  seR);
       }
+      return c.fecha_carga === slotDate && cm >= ssR && cm < seR;
+    });
 
-      const slot_min = 60;
-      const disponibilidad = (slot_min - Math.min(paros_min, slot_min)) / slot_min;
-      const eficiencia = ciclos_obj > 0 ? ciclos_en_hora / ciclos_obj : 0;
-      const capacidad = (ciclos_en_hora > 0 && piezas_obj_avg > 0)
-        ? cantidad_total / (ciclos_en_hora * piezas_obj_avg)
-        : 0;
-      const calidad = ciclos_buenos > 0 || cargasPiezas.length > 0
-        ? (cargasPiezas.length > 0 ? cargasPiezas.filter(c => c.estado === 'procesado').length / cargasPiezas.length : 0)
-        : 0;
+    const ciclos_totales = cargasEnSlot.length;
+    const ciclos_buenos  = cargasEnSlot.filter(c => c.estado === 'procesado').length;
+    const piezas         = cargasEnSlot.filter(c => !c.es_vacia);
+    const cantidad_total = piezas.reduce((s, c) => s + (c.cantidad || 0), 0);
+    const pzobj_avg      = piezas.length
+      ? piezas.reduce((s, c) => s + (c.piezas_por_varilla||0)*(c.varillas||0), 0) / piezas.length
+      : 0;
 
-      slots.push({
-        slot: h + 1,
-        hora_inicio: slotStartStr,
-        hora_fin: slotEndStr,
-        ciclos_totales,
-        ciclos_buenos,
-        cantidad_total,
-        paros_min,
-        eficiencia: Math.round(eficiencia * 1000) / 1000,
-        capacidad: Math.round(capacidad * 1000) / 1000,
-        calidad: Math.round(calidad * 1000) / 1000,
-        disponibilidad: Math.round(disponibilidad * 1000) / 1000
-      });
-
-      curMins += 60;
+    let paros_min = 0;
+    for (const p of (pdb.paros || []).filter(p => p.linea === l)) {
+      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin||nowTimeStr(),
+                               p.fecha_inicio, p.fecha_fin, slotDate);
     }
 
-    return slots;
+    const disponibilidad = (60 - Math.min(paros_min, 60)) / 60;
+    const eficiencia     = ciclos_obj > 0 ? ciclos_totales / ciclos_obj : 0;
+    const capacidad      = ciclos_totales > 0 && pzobj_avg > 0
+      ? cantidad_total / (ciclos_totales * pzobj_avg) : 0;
+    const calidad        = piezas.length > 0
+      ? piezas.filter(c => c.estado === 'procesado').length / piezas.length : 0;
+
+    slots.push({
+      slot: h + 1,
+      hora_inicio:    ssStr,
+      hora_fin:       seStr,
+      ciclos_totales,
+      ciclos_buenos,
+      cantidad_total,
+      paros_min,
+      eficiencia:     Math.round(eficiencia     * 1000) / 1000,
+      capacidad:      Math.round(capacidad      * 1000) / 1000,
+      calidad:        Math.round(calidad        * 1000) / 1000,
+      disponibilidad: Math.round(disponibilidad * 1000) / 1000
+    });
+    curMins += 60;
   }
+  return slots;
+}
 
+function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
   const result = {};
-  const targetTurnos = turno === 'all' ? ['T1', 'T2', 'T3'] : [turno];
-
   for (const l of lineas) {
     result[l] = {};
     let dayTotals = { ciclos_totales: 0, ciclos_buenos: 0, cantidad_total: 0 };
-    for (const t of targetTurnos) {
-      const slots = buildSlotsForLineaTurno(l, t);
+    for (const t of turnos) {
+      const slots  = buildSlotsForLinTur(pdb, config, l, t, targetDate);
       const totals = {
-        ciclos_totales: slots.reduce((s, x) => s + x.ciclos_totales, 0),
-        ciclos_buenos: slots.reduce((s, x) => s + x.ciclos_buenos, 0),
-        cantidad_total: slots.reduce((s, x) => s + x.cantidad_total, 0),
-        eficiencia_avg: slots.length > 0 ? slots.reduce((s, x) => s + x.eficiencia, 0) / slots.length : 0,
-        disponibilidad_avg: slots.length > 0 ? slots.reduce((s, x) => s + x.disponibilidad, 0) / slots.length : 0
+        ciclos_totales:    slots.reduce((s, x) => s + x.ciclos_totales, 0),
+        ciclos_buenos:     slots.reduce((s, x) => s + x.ciclos_buenos, 0),
+        cantidad_total:    slots.reduce((s, x) => s + x.cantidad_total, 0),
+        eficiencia_avg:    slots.length ? slots.reduce((s, x) => s + x.eficiencia, 0) / slots.length : 0,
+        disponibilidad_avg:slots.length ? slots.reduce((s, x) => s + x.disponibilidad, 0) / slots.length : 0
       };
       result[l][t] = { slots, totals };
       dayTotals.ciclos_totales += totals.ciclos_totales;
-      dayTotals.ciclos_buenos += totals.ciclos_buenos;
+      dayTotals.ciclos_buenos  += totals.ciclos_buenos;
       dayTotals.cantidad_total += totals.cantidad_total;
     }
     result[l].totales_dia = dayTotals;
   }
+  return result;
+}
 
-  res.json({ fecha: targetDate, linea, turno, data: result });
+// ─── Pizarrón KPIs ────────────────────────────────────────────────────────────
+
+router.get('/pizarron', (req, res) => {
+  const { linea = 'L3', fecha, turno = 'all' } = req.query;
+  const targetDate   = fecha || nowDateStr();
+  const pdb          = dbProd.read();
+  const config       = pdb.config || {};
+  const lineas       = linea === 'ambas' ? ['L3', 'L4'] : [linea];
+  const targetTurnos = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
+  const data         = buildPizarronResult(pdb, config, lineas, targetTurnos, targetDate);
+  res.json({ fecha: targetDate, linea, turno, data });
 });
 
 // ─── Reportes ─────────────────────────────────────────────────────────────────
@@ -902,12 +876,81 @@ router.get('/config', produccionAllowRoles('admin'), (req, res) => {
 
 router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
-  if (!pdb.config) pdb.config = { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 };
-  const { ciclos_objetivo_l3, ciclos_objetivo_l4 } = req.body || {};
-  if (ciclos_objetivo_l3 !== undefined) pdb.config.ciclos_objetivo_l3 = Number(ciclos_objetivo_l3);
-  if (ciclos_objetivo_l4 !== undefined) pdb.config.ciclos_objetivo_l4 = Number(ciclos_objetivo_l4);
+  if (!pdb.config) pdb.config = {};
+  const campos = [
+    'ciclos_objetivo_l3', 'ciclos_objetivo_l4',
+    'eficiencia_obj_l3',  'eficiencia_obj_l4',
+    'capacidad_obj_l3',   'capacidad_obj_l4',
+    'calidad_obj_l3',     'calidad_obj_l4',
+    'disponibilidad_obj_l3', 'disponibilidad_obj_l4'
+  ];
+  const body = req.body || {};
+  for (const f of campos) {
+    if (body[f] !== undefined) pdb.config[f] = Number(body[f]);
+  }
   dbProd.write(pdb);
   res.json(pdb.config);
+});
+
+// ─── KPI Snapshots ────────────────────────────────────────────────────────────
+
+router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
+  const { fecha, linea = 'ambas', turno = 'all' } = req.body || {};
+  const targetDate   = fecha || nowDateStr();
+  const pdb          = dbProd.read();
+  const config       = pdb.config || {};
+  if (!pdb.kpi_snapshots) pdb.kpi_snapshots = [];
+
+  const lineas   = linea === 'ambas' ? ['L3', 'L4'] : [linea];
+  const turnos   = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
+  const guardados = [];
+
+  for (const l of lineas) {
+    for (const t of turnos) {
+      const slots          = buildSlotsForLinTur(pdb, config, l, t, targetDate);
+      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
+      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+      const semana = getISOWeek(new Date(targetDate + 'T12:00:00'));
+
+      const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === l && k.turno === t);
+      const snap = {
+        id:             existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+        fecha:          targetDate,
+        semana,
+        turno:          t,
+        linea:          l,
+        guardado_at:    new Date().toISOString(),
+        ciclos_totales,
+        ciclos_buenos,
+        paros_min_total,
+        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
+        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
+        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
+        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
+        slots
+      };
+      if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+      else pdb.kpi_snapshots.push(snap);
+      guardados.push(snap);
+    }
+  }
+  dbProd.write(pdb);
+  res.json({ guardados: guardados.length, snapshots: guardados });
+});
+
+router.get('/kpis', (req, res) => {
+  const { linea, turno, desde, hasta, semana } = req.query;
+  const pdb = dbProd.read();
+  let snaps = pdb.kpi_snapshots || [];
+  if (linea && linea !== 'ambas') snaps = snaps.filter(k => k.linea === linea);
+  if (turno)  snaps = snaps.filter(k => k.turno  === turno);
+  if (desde)  snaps = snaps.filter(k => k.fecha  >= desde);
+  if (hasta)  snaps = snaps.filter(k => k.fecha  <= hasta);
+  if (semana) snaps = snaps.filter(k => k.semana === Number(semana));
+  snaps = snaps.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.turno.localeCompare(a.turno));
+  res.json({ total: snaps.length, snapshots: snaps });
 });
 
 // ─── Export ───────────────────────────────────────────────────────────────────

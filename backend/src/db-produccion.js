@@ -41,7 +41,9 @@ const EMPTY_DB = {
   // Registros de paros
   paros: [],             // {id, folio, linea, motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio, hora_inicio, fecha_fin, hora_fin, duracion_min, turno, created_at}
   // Configuración
-  config: { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 }
+  config: { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 },
+  // KPI histórico (snapshots guardados por turno)
+  kpi_snapshots: []
 };
 
 async function initDb() {

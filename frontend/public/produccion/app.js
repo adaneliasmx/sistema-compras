@@ -40,6 +40,7 @@ const MENU = {
     ['linea-4',        '🏭', 'Línea 4'],
     ['reportes',       '📈', 'Reportes'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
+    ['kpi-historico',  '📊', 'KPI Histórico'],
     ['monitor',        '📡', 'Monitor en vivo'],
     ['---', '', 'Catálogos'],
     ['catalogos-l3',   '📦', 'Catálogos L3'],
@@ -65,6 +66,7 @@ const SECTION_TITLES = {
   'linea-op':       'Mi Línea — Tarjetero Activo',
   'reportes':       'Reportes de Producción',
   'pizarron':       'Pizarrón KPI',
+  'kpi-historico':  'KPI Histórico',
   'monitor':        'Monitor en vivo — L3 y L4',
   'catalogos-l3':   'Catálogos Línea 3',
   'catalogos-l4':   'Catálogos Línea 4',
@@ -491,6 +493,7 @@ async function renderMain() {
       case 'linea-op':      await viewLinea(el, lineaFromSection('linea-op')); break;
       case 'reportes':      await viewReportes(el);      break;
       case 'pizarron':      await viewPizarron(el);      break;
+      case 'kpi-historico': await viewKpiHistorico(el);  break;
       case 'monitor':       await viewMonitor(el);       break;
       case 'catalogos-l3':  await viewCatalogos(el, 'L3'); break;
       case 'catalogos-l4':  await viewCatalogos(el, 'L4'); break;
@@ -761,7 +764,7 @@ function renderTarjeta(c) {
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Cargado</span>
-          <span class="meta-val">${c.fecha_carga || ''} ${c.hora_carga || fmtTime(c.created_at)}</span>
+          <span class="meta-val">${c.fecha_carga || ''} ${fmtTime(c.created_at)}</span>
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Operador</span>
@@ -1064,7 +1067,9 @@ async function viewPizarron(el) {
         </select>
       </div>
       <button class="btn btn-outline btn-sm" id="pz-buscar">🔍 Consultar</button>
-      ${state.user?.prod_role === 'admin' ? '<button class="btn btn-dark btn-sm" id="pz-export">📥 Exportar Excel</button>' : ''}
+      ${state.user?.prod_role === 'admin' ? `
+        <button class="btn btn-primary btn-sm" id="pz-guardar-kpi">💾 Guardar KPI</button>
+        <button class="btn btn-dark btn-sm" id="pz-export">📥 Exportar Excel</button>` : ''}
     </div>
     <div id="pz-resultado">
       <div class="empty-state"><div class="icon">📋</div><p>Selecciona filtros y presiona Consultar.</p></div>
@@ -1125,6 +1130,19 @@ async function viewPizarron(el) {
   document.getElementById('pz-buscar').addEventListener('click', cargarPizarron);
 
   if (state.user?.prod_role === 'admin') {
+    document.getElementById('pz-guardar-kpi')?.addEventListener('click', async () => {
+      const fecha = document.getElementById('pz-fecha').value;
+      const linea = document.getElementById('pz-linea').value || 'ambas';
+      const turno = document.getElementById('pz-turno').value || 'all';
+      const btn   = document.getElementById('pz-guardar-kpi');
+      btn.disabled = true; btn.textContent = 'Guardando...';
+      try {
+        const r = await POST('/kpis/guardar', { fecha, linea, turno });
+        alert(`✅ KPI guardado: ${r.guardados} snapshot(s) para ${fecha}`);
+      } catch (e) { alert('Error: ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '💾 Guardar KPI'; }
+    });
+
     document.getElementById('pz-export')?.addEventListener('click', async () => {
       try {
         const linea = document.getElementById('pz-linea').value || 'ambas';
@@ -1862,38 +1880,87 @@ function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewConfiguracion(el) {
-  let config = { ciclos_obj_l3: 0, ciclos_obj_l4: 0 };
-  try {
-    const data = await GET('/config');
-    config = { ...config, ...(data?.config || data || {}) };
-  } catch {}
+  let cfg = {};
+  try { const d = await GET('/config'); cfg = d?.config || d || {}; } catch {}
+
+  const n = (k, def = 0) => cfg[k] ?? def;
+  const row = (id, label, val, unit = '') => `
+    <div class="config-item">
+      <label>${label}</label>
+      <div style="display:flex;align-items:center;gap:6px">
+        <input type="number" id="${id}" value="${val}" min="0" style="width:90px"/>
+        ${unit ? `<span style="font-size:12px;color:var(--p-muted)">${unit}</span>` : ''}
+      </div>
+    </div>`;
 
   el.innerHTML = `
     <div class="form-card config-section">
       <h3>Configuración General</h3>
-      <h4>Ciclos objetivo por hora</h4>
-      <div class="config-item">
-        <label>Línea 3</label>
-        <input type="number" id="cfg-l3" value="${config.ciclos_obj_l3 || 0}" min="0" />
+
+      <h4 style="margin-top:20px">Ciclos objetivo por hora</h4>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        ${row('cfg-ciclos-l3','Línea 3', n('ciclos_objetivo_l3',2), 'ciclos/hr')}
+        ${row('cfg-ciclos-l4','Línea 4', n('ciclos_objetivo_l4',2), 'ciclos/hr')}
       </div>
-      <div class="config-item">
-        <label>Línea 4</label>
-        <input type="number" id="cfg-l4" value="${config.ciclos_obj_l4 || 0}" min="0" />
-      </div>
-      <div style="margin-top:20px">
+
+      <h4 style="margin-top:24px">Objetivos KPI (%)</h4>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="text-align:left;color:var(--p-muted)">
+            <th style="padding:6px 10px">KPI</th>
+            <th style="padding:6px 10px">Línea 3 (%)</th>
+            <th style="padding:6px 10px">Línea 4 (%)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style="padding:6px 10px">Eficiencia</td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ef-l3" value="${n('eficiencia_obj_l3',85)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ef-l4" value="${n('eficiencia_obj_l4',85)}" min="0" max="100" style="width:80px"/></td>
+          </tr>
+          <tr>
+            <td style="padding:6px 10px">Capacidad</td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cap-l3" value="${n('capacidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cap-l4" value="${n('capacidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
+          </tr>
+          <tr>
+            <td style="padding:6px 10px">Calidad</td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cal-l3" value="${n('calidad_obj_l3',95)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cal-l4" value="${n('calidad_obj_l4',95)}" min="0" max="100" style="width:80px"/></td>
+          </tr>
+          <tr>
+            <td style="padding:6px 10px">Disponibilidad</td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-dis-l3" value="${n('disponibilidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-dis-l4" value="${n('disponibilidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:24px">
         <button class="btn btn-primary" id="cfg-save">💾 Guardar cambios</button>
         <span id="cfg-msg" style="margin-left:12px;font-size:13px;color:var(--p-success)"></span>
       </div>
     </div>`;
 
   document.getElementById('cfg-save').addEventListener('click', async () => {
-    const l3  = parseInt(document.getElementById('cfg-l3').value) || 0;
-    const l4  = parseInt(document.getElementById('cfg-l4').value) || 0;
+    const g = id => parseFloat(document.getElementById(id).value) || 0;
     const btn = document.getElementById('cfg-save');
     const msg = document.getElementById('cfg-msg');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
-      await PATCH('/config', { ciclos_obj_l3: l3, ciclos_obj_l4: l4 });
+      await PATCH('/config', {
+        ciclos_objetivo_l3:    g('cfg-ciclos-l3'),
+        ciclos_objetivo_l4:    g('cfg-ciclos-l4'),
+        eficiencia_obj_l3:     g('cfg-ef-l3'),
+        eficiencia_obj_l4:     g('cfg-ef-l4'),
+        capacidad_obj_l3:      g('cfg-cap-l3'),
+        capacidad_obj_l4:      g('cfg-cap-l4'),
+        calidad_obj_l3:        g('cfg-cal-l3'),
+        calidad_obj_l4:        g('cfg-cal-l4'),
+        disponibilidad_obj_l3: g('cfg-dis-l3'),
+        disponibilidad_obj_l4: g('cfg-dis-l4')
+      });
+      msg.style.color = 'var(--p-success)';
       msg.textContent = '✅ Guardado correctamente';
       setTimeout(() => { msg.textContent = ''; }, 3000);
     } catch (e) {
@@ -1903,6 +1970,160 @@ async function viewConfiguracion(el) {
       btn.disabled = false; btn.textContent = '💾 Guardar cambios';
     }
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: KPI HISTÓRICO
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewKpiHistorico(el) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const hace30 = new Date(Date.now() - 30*24*3600*1000).toLocaleDateString('en-CA');
+
+  el.innerHTML = `
+    <div class="filters-bar">
+      <div>
+        <span class="flabel">Línea</span>
+        <select id="kh-linea">
+          <option value="">Ambas</option>
+          <option value="L3">Línea 3</option>
+          <option value="L4">Línea 4</option>
+        </select>
+      </div>
+      <div>
+        <span class="flabel">Turno</span>
+        <select id="kh-turno">
+          <option value="">Todos</option>
+          <option value="T1">T1</option>
+          <option value="T2">T2</option>
+          <option value="T3">T3</option>
+        </select>
+      </div>
+      <div>
+        <span class="flabel">Desde</span>
+        <input type="date" id="kh-desde" value="${hace30}"/>
+      </div>
+      <div>
+        <span class="flabel">Hasta</span>
+        <input type="date" id="kh-hasta" value="${today}"/>
+      </div>
+      <button class="btn btn-outline btn-sm" id="kh-buscar">🔍 Buscar</button>
+      <button class="btn btn-dark btn-sm" id="kh-export">📥 Excel</button>
+    </div>
+    <div id="kh-resultado">
+      <div class="empty-state"><div class="icon">📊</div><p>Presiona Buscar para cargar KPIs guardados.</p></div>
+    </div>`;
+
+  let lastSnaps = [];
+
+  async function buscar() {
+    const params = new URLSearchParams();
+    const linea = document.getElementById('kh-linea').value;
+    const turno = document.getElementById('kh-turno').value;
+    const desde = document.getElementById('kh-desde').value;
+    const hasta = document.getElementById('kh-hasta').value;
+    if (linea) params.set('linea', linea);
+    if (turno) params.set('turno', turno);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const res = document.getElementById('kh-resultado');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+    try {
+      const data = await GET(`/kpis?${params}`);
+      lastSnaps = data?.snapshots || [];
+      if (!lastSnaps.length) {
+        res.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin KPIs guardados para estos filtros.</p></div>';
+        return;
+      }
+      res.innerHTML = renderKpiHistTable(lastSnaps);
+    } catch (e) {
+      res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  document.getElementById('kh-buscar').addEventListener('click', buscar);
+
+  document.getElementById('kh-export').addEventListener('click', () => {
+    if (!lastSnaps.length) { alert('Primero ejecuta una búsqueda.'); return; }
+    const rows = [];
+    for (const snap of lastSnaps) {
+      for (const s of (snap.slots || [])) {
+        rows.push({
+          Fecha:          snap.fecha,
+          Semana:         snap.semana,
+          Turno:          snap.turno,
+          Línea:          snap.linea,
+          Slot:           s.slot,
+          Hora_Inicio:    s.hora_inicio,
+          Hora_Fin:       s.hora_fin,
+          Ciclos_Totales: s.ciclos_totales,
+          Ciclos_Buenos:  s.ciclos_buenos,
+          Eficiencia_pct: +(s.eficiencia  * 100).toFixed(1),
+          Capacidad_pct:  +(s.capacidad   * 100).toFixed(1),
+          Calidad_pct:    +(s.calidad     * 100).toFixed(1),
+          Disponibilidad_pct: +(s.disponibilidad * 100).toFixed(1),
+          Tiempo_Paro_min: s.paros_min
+        });
+      }
+    }
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'KPI');
+    XLSX.writeFile(wb, `kpi_historico_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+  });
+}
+
+function renderKpiHistTable(snaps) {
+  const fmtPctR = v => v != null ? (v*100).toFixed(1)+'%' : '—';
+  let html = '';
+  for (const snap of snaps) {
+    html += `
+      <div class="table-card" style="margin-bottom:18px">
+        <div class="table-header">
+          <h3>${snap.linea} · Turno ${snap.turno} · ${snap.fecha} <span style="font-weight:400;font-size:12px;color:var(--p-muted)">Sem ${snap.semana}</span></h3>
+          <div style="display:flex;gap:16px;font-size:13px">
+            <span>Ciclos: <strong>${snap.ciclos_totales}</strong></span>
+            <span>Buenos: <strong>${snap.ciclos_buenos}</strong></span>
+            <span>Paros: <strong>${snap.paros_min_total}min</strong></span>
+          </div>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Slot</th><th>Hora</th>
+                <th>Ciclos</th><th>Buenos</th>
+                <th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>T.Paro(min)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(snap.slots||[]).map(s => `<tr>
+                <td style="text-align:center">${s.slot}</td>
+                <td class="mono">${s.hora_inicio}–${s.hora_fin}</td>
+                <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
+                <td style="text-align:center">${s.ciclos_buenos}</td>
+                <td class="${kpiColor(s.eficiencia*100)}">${fmtPctR(s.eficiencia)}</td>
+                <td class="${kpiColor(s.capacidad*100)}">${fmtPctR(s.capacidad)}</td>
+                <td class="${kpiColor(s.calidad*100)}">${fmtPctR(s.calidad)}</td>
+                <td class="${kpiColor(s.disponibilidad*100)}">${fmtPctR(s.disponibilidad)}</td>
+                <td style="text-align:center">${s.paros_min}</td>
+              </tr>`).join('')}
+              <tr class="totals-row">
+                <td colspan="2">TOTAL TURNO</td>
+                <td style="text-align:center;font-weight:700">${snap.ciclos_totales}</td>
+                <td style="text-align:center">${snap.ciclos_buenos}</td>
+                <td class="${kpiColor(snap.eficiencia*100)}">${fmtPctR(snap.eficiencia)}</td>
+                <td class="${kpiColor(snap.capacidad*100)}">${fmtPctR(snap.capacidad)}</td>
+                <td class="${kpiColor(snap.calidad*100)}">${fmtPctR(snap.calidad)}</td>
+                <td class="${kpiColor(snap.disponibilidad*100)}">${fmtPctR(snap.disponibilidad)}</td>
+                <td style="text-align:center">${snap.paros_min_total}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+  return html;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
