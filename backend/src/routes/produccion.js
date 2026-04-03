@@ -42,12 +42,16 @@ function getShiftDate(fecha, hora) {
   return fecha;
 }
 
+const MX_TZ = 'America/Mexico_City';
+
 function nowDateStr() {
-  return new Date().toISOString().slice(0, 10);
+  // YYYY-MM-DD en hora de México (el servidor puede correr en UTC)
+  return new Date().toLocaleDateString('en-CA', { timeZone: MX_TZ });
 }
 
 function nowTimeStr() {
-  return new Date().toTimeString().slice(0, 5);
+  // HH:MM en hora de México
+  return new Date().toLocaleTimeString('en-GB', { timeZone: MX_TZ, hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
 }
 
 function padNum(n, len = 3) {
@@ -766,20 +770,25 @@ router.get('/pizarron', (req, res) => {
 
       // Determine the actual calendar date for this slot
       // T3 early hours (after midnight) belong to the next calendar day
-      const slotActualDate = (t === 'T3' && slotStartMins >= 24 * 60)
-        ? (() => { const d = new Date(targetDate + 'T00:00:00'); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })()
-        : targetDate;
+      const nextDay = (() => { const d = new Date(targetDate + 'T00:00:00'); d.setDate(d.getDate() + 1); return d.toLocaleDateString('en-CA', { timeZone: MX_TZ }); })();
+      const slotActualDate = (t === 'T3' && slotStartMins >= 24 * 60) ? nextDay : targetDate;
 
       const slotStartReal = slotStartMins % (24 * 60);
-      const slotEndReal = slotEndMins % (24 * 60);
+      const slotEndReal   = slotEndMins   % (24 * 60);
+      const crossesMidnight = slotEndMins > slotStartMins && slotStartReal > slotEndReal;
 
-      // Cargas completed (descargadas) during this slot — eficiencia = ciclos completados
+      // Cargas cargadas durante este slot (por hora_carga)
+      // Incluye activas + procesadas + defecto para visibilidad en tiempo real
       const cargasEnSlot = (pdb.cargas || []).filter(c => {
         if (c.linea !== l) return false;
-        if (!c.fecha_descarga || !c.hora_descarga) return false;
-        if (c.fecha_descarga !== slotActualDate) return false;
-        const descMins = toMins(c.hora_descarga);
-        return descMins >= slotStartReal && descMins < slotEndReal;
+        if (!c.fecha_carga || !c.hora_carga) return false;
+        const cargaMins = toMins(c.hora_carga);
+        if (crossesMidnight) {
+          // Slot spans midnight: second half is on nextDay
+          return (c.fecha_carga === slotActualDate && cargaMins >= slotStartReal) ||
+                 (c.fecha_carga === nextDay        && cargaMins <  slotEndReal);
+        }
+        return c.fecha_carga === slotActualDate && cargaMins >= slotStartReal && cargaMins < slotEndReal;
       });
 
       const ciclos_totales = cargasEnSlot.length;
