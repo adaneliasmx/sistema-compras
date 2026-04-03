@@ -824,69 +824,92 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const ciclos_obj = l === 'L3'
     ? (config.ciclos_objetivo_l3 ?? 2)
     : (config.ciclos_objetivo_l4 ?? 2);
-  const tDef     = TURNOS_DEF[t];
-  const nextDay  = addDays(targetDate, 1);
-  const slots    = [];
-  let curMins    = tDef.start;
+  const tDef    = TURNOS_DEF[t];
+  const nextDay = addDays(targetDate, 1);
+  const slots   = [];
+  let curMins   = tDef.start;
+
+  // Mapa de componentes para calcular piezas_objetivo por ciclo
+  const compMap = {};
+  for (const c of (pdb[`componentes_${l.toLowerCase()}`] || [])) {
+    compMap[String(c.id)] = c;
+  }
 
   for (let h = 0; h < tDef.hours; h++) {
-    const ss = curMins;
-    const se = curMins + 60;
+    const ss    = curMins;
+    const se    = curMins + 60;
     const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
     const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
 
-    const slotDate    = (t === 'T3' && ss >= 1440) ? nextDay : targetDate;
-    const ssR         = ss % 1440;
-    const seR         = se % 1440;
-    const crossesMid  = se > ss && ssR > seR;
+    const slotDate   = (t === 'T3' && ss >= 1440) ? nextDay : targetDate;
+    const ssR        = ss % 1440;
+    const seR        = se % 1440;
+    const crossesMid = ssR > seR; // slot cruza la medianoche
 
+    // Solo ciclos COMPLETADOS (descargados) — se asignan por hora_descarga
     const cargasEnSlot = (pdb.cargas || []).filter(c => {
-      if (c.linea !== l || !c.fecha_carga || !c.hora_carga) return false;
-      const cm = toMins(c.hora_carga);
+      if (c.linea !== l || !c.fecha_descarga || !c.hora_descarga) return false;
+      const dm = toMins(c.hora_descarga);
       if (crossesMid) {
-        return (c.fecha_carga === slotDate && cm >= ssR) ||
-               (c.fecha_carga === nextDay  && cm <  seR);
+        return (c.fecha_descarga === slotDate && dm >= ssR) ||
+               (c.fecha_descarga === nextDay  && dm <  seR);
       }
-      return c.fecha_carga === slotDate && cm >= ssR && cm < seR;
+      return c.fecha_descarga === slotDate && dm >= ssR && dm < seR;
     });
 
-    const ciclos_totales = cargasEnSlot.length;
-    const ciclos_buenos  = cargasEnSlot.filter(c => c.estado === 'procesado').length;
-    const piezas         = cargasEnSlot.filter(c => !c.es_vacia);
-    const cantidad_total = piezas.reduce((s, c) => s + (c.cantidad || 0), 0);
-    const pzobj_avg      = piezas.length
-      ? piezas.reduce((s, c) => s + (c.piezas_por_varilla||0)*(c.varillas||0), 0) / piezas.length
-      : 0;
+    // Ciclos contados: todos los descargados (incl. vacios)
+    const ciclos_totales  = cargasEnSlot.length;
 
+    // Para calidad y capacidad: solo ciclos con material (no vacíos)
+    const cargasNoVacias  = cargasEnSlot.filter(c => !c.es_vacia);
+    const ciclos_no_vacios = cargasNoVacias.length;
+
+    // Ciclos buenos: no vacíos y sin defecto
+    const ciclos_buenos   = cargasNoVacias.filter(c => !c.defecto_id).length;
+
+    // Capacidad: piezas reales vs objetivo del catálogo
+    let piezas_total     = 0;
+    let piezas_obj_total = 0;
+    for (const c of cargasNoVacias) {
+      piezas_total += (c.cantidad || (Number(c.varillas || 0) * Number(c.piezas_por_varilla || 0)));
+      const comp    = c.componente_id ? compMap[String(c.componente_id)] : null;
+      piezas_obj_total += comp
+        ? (Number(comp.carga_optima_varillas || 0) * Number(comp.piezas_objetivo || 0))
+        : 0;
+    }
+
+    // Disponibilidad: tiempo disponible descontando paros
     let paros_min = 0;
     for (const p of (pdb.paros || []).filter(p => p.linea === l)) {
-      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin||nowTimeStr(),
+      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
                                p.fecha_inicio, p.fecha_fin, slotDate);
     }
 
-    const tiempo_disp    = Math.max(0, 60 - Math.min(paros_min, 60)); // minutos disponibles
-    const disponibilidad = tiempo_disp / 60;
-    // Eficiencia = ciclos_reales / ciclos_esperados_en_tiempo_disponible
-    // ciclos_esperados = ciclos_obj/hr × (tiempo_disp/60)
-    const ciclos_esperados = ciclos_obj * (tiempo_disp / 60);
-    const eficiencia     = ciclos_esperados > 0 ? ciclos_totales / ciclos_esperados : 0;
-    const capacidad      = ciclos_totales > 0 && pzobj_avg > 0
-      ? cantidad_total / (ciclos_totales * pzobj_avg) : 0;
-    const calidad        = piezas.length > 0
-      ? piezas.filter(c => c.estado === 'procesado').length / piezas.length : 0;
+    const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+
+    // Eficiencia = ciclos_descargados / ciclos_objetivo_por_hora (sin descuento de paros)
+    const eficiencia    = ciclos_obj > 0 ? r3(ciclos_totales / ciclos_obj) : 0;
+    // Calidad = buenos / no_vacios (null si no hay ciclos con material)
+    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
+    const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+    // Disponibilidad = (60 - paros) / 60
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
 
     slots.push({
       slot: h + 1,
-      hora_inicio:    ssStr,
-      hora_fin:       seStr,
+      hora_inicio:      ssStr,
+      hora_fin:         seStr,
       ciclos_totales,
+      ciclos_no_vacios,
       ciclos_buenos,
-      cantidad_total,
-      paros_min,
-      eficiencia:     Math.round(eficiencia     * 1000) / 1000,
-      capacidad:      Math.round(capacidad      * 1000) / 1000,
-      calidad:        Math.round(calidad        * 1000) / 1000,
-      disponibilidad: Math.round(disponibilidad * 1000) / 1000
+      piezas_total,
+      piezas_obj_total,
+      paros_min:        Math.round(paros_min * 10) / 10,
+      eficiencia,
+      calidad,
+      capacidad,
+      disponibilidad
     });
     curMins += 60;
   }
@@ -894,25 +917,72 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
 }
 
 function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
+  const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
   const result = {};
+
   for (const l of lineas) {
     result[l] = {};
-    let dayTotals = { ciclos_totales: 0, ciclos_buenos: 0, cantidad_total: 0 };
+    const ciclos_obj = l === 'L3'
+      ? (config.ciclos_objetivo_l3 ?? 2)
+      : (config.ciclos_objetivo_l4 ?? 2);
+
+    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, daySlots = 0;
+
     for (const t of turnos) {
-      const slots  = buildSlotsForLinTur(pdb, config, l, t, targetDate);
-      const totals = {
-        ciclos_totales:    slots.reduce((s, x) => s + x.ciclos_totales, 0),
-        ciclos_buenos:     slots.reduce((s, x) => s + x.ciclos_buenos, 0),
-        cantidad_total:    slots.reduce((s, x) => s + x.cantidad_total, 0),
-        eficiencia_avg:    slots.length ? slots.reduce((s, x) => s + x.eficiencia, 0) / slots.length : 0,
-        disponibilidad_avg:slots.length ? slots.reduce((s, x) => s + x.disponibilidad, 0) / slots.length : 0
+      const tDef  = TURNOS_DEF[t];
+      const slots = buildSlotsForLinTur(pdb, config, l, t, targetDate);
+
+      const tC     = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+      const tNV    = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const tB     = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+      const tPz    = slots.reduce((s, x) => s + x.piezas_total,     0);
+      const tPzObj = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const tParos = slots.reduce((s, x) => s + x.paros_min,        0);
+      const turnoMins = tDef.hours * 60;
+
+      result[l][t] = {
+        slots,
+        totals: {
+          ciclos_totales:   tC,
+          ciclos_no_vacios: tNV,
+          ciclos_buenos:    tB,
+          piezas_total:     tPz,
+          piezas_obj_total: tPzObj,
+          paros_min:        Math.round(tParos * 10) / 10,
+          // Eficiencia turno = ciclos / (ciclos_obj × horas_turno)
+          eficiencia:    r3((ciclos_obj * tDef.hours) > 0 ? tC / (ciclos_obj * tDef.hours) : 0),
+          // Calidad turno = buenos / no_vacios
+          calidad:       tNV > 0 ? r3(tB / tNV) : null,
+          // Capacidad turno = piezas_total / piezas_obj_total
+          capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
+          // Disponibilidad turno = (turno_min - paros) / turno_min
+          disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
+        }
       };
-      result[l][t] = { slots, totals };
-      dayTotals.ciclos_totales += totals.ciclos_totales;
-      dayTotals.ciclos_buenos  += totals.ciclos_buenos;
-      dayTotals.cantidad_total += totals.cantidad_total;
+
+      dayC     += tC;
+      dayNV    += tNV;
+      dayB     += tB;
+      dayPz    += tPz;
+      dayPzObj += tPzObj;
+      dayParos += tParos;
+      daySlots += tDef.hours;
     }
-    result[l].totales_dia = dayTotals;
+
+    const totalMins = daySlots * 60;
+    result[l].totales_dia = {
+      ciclos_totales:   dayC,
+      ciclos_no_vacios: dayNV,
+      ciclos_buenos:    dayB,
+      piezas_total:     dayPz,
+      piezas_obj_total: dayPzObj,
+      paros_min:        Math.round(dayParos * 10) / 10,
+      eficiencia:    r3(daySlots > 0 ? dayC / (ciclos_obj * daySlots) : 0),
+      calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
+      capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
+      disponibilidad: totalMins > 0
+        ? r3((totalMins - Math.min(dayParos, totalMins)) / totalMins) : 1
+    };
   }
   return result;
 }

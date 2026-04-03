@@ -69,6 +69,8 @@
         const horas   = {};
         const totales = {};
 
+        const pct = v => v != null ? v * 100 : null;
+
         for (const t of ['T1', 'T2', 'T3']) {
           const td    = lineaData[t] || {};
           const slots = td.slots || [];
@@ -76,35 +78,29 @@
           horas[t] = slots.map(s => ({
             hora:           `${s.hora_inicio}–${s.hora_fin}`,
             ciclos:         s.ciclos_totales,
-            eficiencia:     (s.eficiencia    || 0) * 100,
-            capacidad:      (s.capacidad      || 0) * 100,
-            calidad:        (s.calidad        || 0) * 100,
-            disponibilidad: (s.disponibilidad || 0) * 100
+            eficiencia:     pct(s.eficiencia),
+            capacidad:      pct(s.capacidad),
+            calidad:        pct(s.calidad),
+            disponibilidad: pct(s.disponibilidad)
           }));
 
-          const avg = key => slots.length
-            ? slots.reduce((a, s) => a + (s[key] || 0), 0) / slots.length * 100
-            : null;
-
+          // Usar totales calculados por el backend (no promediar slots)
+          const tot = td.totals || {};
           totales[t] = {
-            eficiencia:     avg('eficiencia'),
-            capacidad:      avg('capacidad'),
-            calidad:        avg('calidad'),
-            disponibilidad: avg('disponibilidad')
+            eficiencia:     pct(tot.eficiencia),
+            capacidad:      pct(tot.capacidad),
+            calidad:        pct(tot.calidad),
+            disponibilidad: pct(tot.disponibilidad)
           };
         }
 
-        // Total del día: promedio de todos los slots de todos los turnos
-        const allSlots = ['T1','T2','T3'].flatMap(t => (lineaData[t]?.slots || []));
-        const avgDay   = key => allSlots.length
-          ? allSlots.reduce((a, s) => a + (s[key] || 0), 0) / allSlots.length * 100
-          : null;
-
+        // Total del día: usar totales_dia del backend
+        const tdia = lineaData.totales_dia || {};
         totales.dia = {
-          eficiencia:     avgDay('eficiencia'),
-          capacidad:      avgDay('capacidad'),
-          calidad:        avgDay('calidad'),
-          disponibilidad: avgDay('disponibilidad')
+          eficiencia:     pct(tdia.eficiencia),
+          capacidad:      pct(tdia.capacidad),
+          calidad:        pct(tdia.calidad),
+          disponibilidad: pct(tdia.disponibilidad)
         };
 
         transformed[l] = { horas, totales };
