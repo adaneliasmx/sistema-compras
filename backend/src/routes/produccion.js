@@ -773,14 +773,13 @@ router.get('/pizarron', (req, res) => {
       const slotStartReal = slotStartMins % (24 * 60);
       const slotEndReal = slotEndMins % (24 * 60);
 
-      // Cargas loaded during this slot (count by hora_carga for real-time visibility)
+      // Cargas completed (descargadas) during this slot — eficiencia = ciclos completados
       const cargasEnSlot = (pdb.cargas || []).filter(c => {
         if (c.linea !== l) return false;
-        if (!c.fecha_carga || !c.hora_carga) return false;
-        const cargaDate = getShiftDate(c.fecha_carga, c.hora_carga);
-        const cargaMins = toMins(c.hora_carga);
-        if (cargaDate !== slotActualDate) return false;
-        return cargaMins >= slotStartReal && cargaMins < slotEndReal;
+        if (!c.fecha_descarga || !c.hora_descarga) return false;
+        if (c.fecha_descarga !== slotActualDate) return false;
+        const descMins = toMins(c.hora_descarga);
+        return descMins >= slotStartReal && descMins < slotEndReal;
       });
 
       const ciclos_totales = cargasEnSlot.length;

@@ -761,7 +761,7 @@ function renderTarjeta(c) {
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Cargado</span>
-          <span class="meta-val">${c.hora_carga || fmtTime(c.created_at)}</span>
+          <span class="meta-val">${c.fecha_carga || ''} ${c.hora_carga || fmtTime(c.created_at)}</span>
         </div>
         <div class="tarjeta-meta-item">
           <span class="meta-label">Operador</span>
@@ -829,7 +829,7 @@ async function openModalCarga(linea, catalogo) {
       </div>
       <div class="form-group">
         <label>Varillas <span id="mc-optima-hint" style="color:var(--p-accent);font-weight:700"></span></label>
-        <input type="number" id="mc-varillas" min="1" max="14" placeholder="1–14" />
+        <select id="mc-varillas"><option value="">— Cantidad —</option>${[...Array(14)].map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>
       </div>
       <div class="form-group">
         <label>Piezas por varilla <span id="mc-pzobj-hint" style="color:var(--p-muted)"></span></label>
@@ -850,10 +850,8 @@ async function openModalCarga(linea, catalogo) {
       <button class="btn btn-primary" id="mc-submit">⬆ Cargar Material</button>
     </div>`, { size: 'lg' });
 
-  // Mostrar checkbox carga vacía cuando no hay componentes
-  if (componentes.length === 0) {
-    document.getElementById('mc-vacia-wrap').style.display = '';
-  }
+  // Carga vacía siempre disponible
+  document.getElementById('mc-vacia-wrap').style.display = '';
 
   // Auto-fill cliente y hints desde componente
   document.getElementById('mc-componente').addEventListener('change', function() {
@@ -1401,8 +1399,8 @@ async function viewReportes(el) {
             <table>
               <thead>
                 <tr>
-                  <th>Folio</th><th>Línea</th><th>Fecha</th><th>Herramental</th>
-                  <th>Componente</th><th>Proceso</th><th>Cantidad</th>
+                  <th>Folio</th><th>Línea</th><th>Fecha</th><th>Carga</th><th>Descarga</th>
+                  <th>Herramental</th><th>Componente</th><th>Proceso</th><th>Cantidad</th>
                   <th>Operador</th><th>Estado</th>
                 </tr>
               </thead>
@@ -1411,6 +1409,8 @@ async function viewReportes(el) {
                   <td class="mono">${escHtml(c.folio || c.id)}</td>
                   <td>${escHtml(c.linea || '—')}</td>
                   <td>${fmtDate(c.fecha_carga || c.created_at)}</td>
+                  <td class="mono">${escHtml(c.hora_carga || '—')}</td>
+                  <td class="mono">${escHtml(c.hora_descarga || '—')}</td>
                   <td>${escHtml(c.herramental_no || c.herramental || '—')}</td>
                   <td>${escHtml(c.componente || '—')}</td>
                   <td>${escHtml(c.proceso || '—')}</td>
