@@ -580,7 +580,10 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
 router.get('/paros/:linea/activo', (req, res) => {
   const { linea } = req.params;
   const pdb = dbProd.read();
-  const paro = (pdb.paros || []).find(p => p.linea === linea && p.estado === 'activo') || null;
+  // Un paro es activo si tiene estado='activo' O simplemente no tiene fecha_fin
+  const paro = (pdb.paros || []).find(p =>
+    p.linea === linea && !p.fecha_fin && p.estado !== 'cerrado'
+  ) || null;
   res.json({ paro });
 });
 
@@ -636,6 +639,7 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
     fecha_fin: null,
     hora_fin: null,
     duracion_min: null,
+    estado: 'activo',
     turno,
     registrado_por: req.prodUser?.nombre || 'Operador',
     created_at: new Date().toISOString()
@@ -655,7 +659,7 @@ router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (r
   const l = lineaKey(linea);
 
   // Si ya hay un paro activo, no crear otro
-  const yaActivo = (pdb.paros || []).find(p => p.linea === linea && p.estado === 'activo' && !p.fecha_fin);
+  const yaActivo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado !== 'cerrado');
   if (yaActivo) return res.status(409).json({ error: 'Ya hay un paro activo', paro: yaActivo });
 
   // Buscar o crear el motivo "Cambio de turno" en el catálogo de la línea
@@ -691,6 +695,7 @@ router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (r
     sub_motivo_id: null,
     sub_motivo: null,
     tipo: 'cambio_turno',
+    estado: 'activo',
     fecha_inicio, hora_inicio,
     fecha_fin: null, hora_fin: null,
     duracion_min: null,
@@ -717,6 +722,7 @@ router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (re
   const hora_fin  = nowTimeStr();
   paro.fecha_fin  = fecha_fin;
   paro.hora_fin   = hora_fin;
+  paro.estado     = 'cerrado';
   paro.duracion_min = Math.round(
     (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
   );
@@ -739,6 +745,7 @@ router.patch('/paros/:id/admin-cerrar', produccionAllowRoles('admin'), (req, res
   const hora_fin  = nowTimeStr();
   paro.fecha_fin  = fecha_fin;
   paro.hora_fin   = hora_fin;
+  paro.estado     = 'cerrado';
   paro.duracion_min = Math.round(
     (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
   );
