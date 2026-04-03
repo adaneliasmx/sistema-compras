@@ -39,6 +39,7 @@ const MENU = {
     ['linea-3',        '🏭', 'Línea 3'],
     ['linea-4',        '🏭', 'Línea 4'],
     ['reportes',       '📈', 'Reportes'],
+    ['paros',          '⏸', 'Paros'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
     ['kpi-historico',  '📊', 'KPI Histórico'],
     ['monitor',        '📡', 'Monitor en vivo'],
@@ -65,6 +66,7 @@ const SECTION_TITLES = {
   'linea-4':        'Línea 4 — Tarjetero Activo',
   'linea-op':       'Mi Línea — Tarjetero Activo',
   'reportes':       'Reportes de Producción',
+  'paros':          'Registro de Paros',
   'pizarron':       'Pizarrón KPI',
   'kpi-historico':  'KPI Histórico',
   'monitor':        'Monitor en vivo — L3 y L4',
@@ -492,6 +494,7 @@ async function renderMain() {
       case 'linea-4':       await viewLinea(el, 'L4');   break;
       case 'linea-op':      await viewLinea(el, lineaFromSection('linea-op')); break;
       case 'reportes':      await viewReportes(el);      break;
+      case 'paros':         await viewParos(el);         break;
       case 'pizarron':      await viewPizarron(el);      break;
       case 'kpi-historico': await viewKpiHistorico(el);  break;
       case 'monitor':       await viewMonitor(el);       break;
@@ -1873,6 +1876,142 @@ function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
       alert('Error: ' + e.message);
     }
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: PAROS
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewParos(el) {
+  const today  = new Date().toLocaleDateString('en-CA');
+  const hace30 = new Date(Date.now() - 30*24*3600*1000).toLocaleDateString('en-CA');
+
+  el.innerHTML = `
+    <div class="filters-bar">
+      <div>
+        <span class="flabel">Línea</span>
+        <select id="pr-linea">
+          <option value="">Ambas</option>
+          <option value="L3">Línea 3</option>
+          <option value="L4">Línea 4</option>
+        </select>
+      </div>
+      <div>
+        <span class="flabel">Turno</span>
+        <select id="pr-turno">
+          <option value="">Todos</option>
+          <option value="T1">T1</option>
+          <option value="T2">T2</option>
+          <option value="T3">T3</option>
+        </select>
+      </div>
+      <div>
+        <span class="flabel">Desde</span>
+        <input type="date" id="pr-desde" value="${hace30}"/>
+      </div>
+      <div>
+        <span class="flabel">Hasta</span>
+        <input type="date" id="pr-hasta" value="${today}"/>
+      </div>
+      <button class="btn btn-outline btn-sm" id="pr-buscar">🔍 Buscar</button>
+      <button class="btn btn-dark btn-sm" id="pr-export">📥 Excel</button>
+    </div>
+    <div id="pr-resultado">
+      <div class="empty-state"><div class="icon">⏸</div><p>Presiona Buscar para cargar los paros.</p></div>
+    </div>`;
+
+  let lastParos = [];
+
+  async function buscar() {
+    const params = new URLSearchParams();
+    const linea = document.getElementById('pr-linea').value;
+    const turno = document.getElementById('pr-turno').value;
+    const desde = document.getElementById('pr-desde').value;
+    const hasta = document.getElementById('pr-hasta').value;
+    if (linea) params.set('linea', linea);
+    if (turno) params.set('turno', turno);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const res = document.getElementById('pr-resultado');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+    try {
+      const data = await GET(`/paros/reporte?${params}`);
+      lastParos = data?.paros || [];
+      if (!lastParos.length) {
+        res.innerHTML = '<div class="empty-state"><div class="icon">⏸</div><p>Sin paros para estos filtros.</p></div>';
+        return;
+      }
+      res.innerHTML = `
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Paros registrados</h3>
+            <span class="badge badge-activo">${lastParos.length} registros</span>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Folio</th><th>Línea</th><th>Turno</th>
+                  <th>Fecha inicio</th><th>Hr inicio</th>
+                  <th>Fecha fin</th><th>Hr fin</th>
+                  <th>Duración (min)</th><th>Motivo</th><th>Sub-motivo</th><th>Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${lastParos.map(p => {
+                  const abierto = !p.fecha_fin;
+                  const estadoBadge = abierto
+                    ? '<span class="badge badge-activo">Activo</span>'
+                    : '<span class="badge badge-procesado">Cerrado</span>';
+                  const dur = p.duracion_min != null ? p.duracion_min + ' min' : (abierto ? '<em>en curso</em>' : '—');
+                  return `<tr>
+                    <td class="mono" style="font-size:11px">${escHtml(p.folio || p.id)}</td>
+                    <td><span class="badge ${p.linea==='L3'?'badge-t1':'badge-t2'}">${escHtml(p.linea)}</span></td>
+                    <td><span class="badge ${getTurnoColor(p.turno)}">${escHtml(p.turno||'—')}</span></td>
+                    <td>${escHtml(p.fecha_inicio||'—')}</td>
+                    <td class="mono">${escHtml(p.hora_inicio||'—')}</td>
+                    <td>${escHtml(p.fecha_fin||'—')}</td>
+                    <td class="mono">${escHtml(p.hora_fin||'—')}</td>
+                    <td style="text-align:center;font-weight:700">${dur}</td>
+                    <td>${escHtml(p.motivo||'—')}</td>
+                    <td>${escHtml(p.sub_motivo||'—')}</td>
+                    <td>${estadoBadge}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    } catch (e) {
+      res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  document.getElementById('pr-buscar').addEventListener('click', buscar);
+
+  document.getElementById('pr-export').addEventListener('click', () => {
+    if (!lastParos.length) { alert('Primero ejecuta una búsqueda.'); return; }
+    const rows = lastParos.map(p => ({
+      Folio:           p.folio || p.id,
+      Línea:           p.linea,
+      Turno:           p.turno,
+      Fecha_Inicio:    p.fecha_inicio,
+      Hora_Inicio:     p.hora_inicio,
+      Fecha_Fin:       p.fecha_fin || '',
+      Hora_Fin:        p.hora_fin || '',
+      Duración_min:    p.duracion_min ?? '',
+      Motivo:          p.motivo || '',
+      Sub_Motivo:      p.sub_motivo || '',
+      Estado:          p.fecha_fin ? 'Cerrado' : 'Activo'
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Paros');
+    XLSX.writeFile(wb, `paros_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+  });
+
+  // Carga inicial automática
+  buscar();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

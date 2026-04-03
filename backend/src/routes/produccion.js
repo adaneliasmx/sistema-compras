@@ -562,6 +562,21 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
 
 // ─── Paros ────────────────────────────────────────────────────────────────────
 
+// Reporte general de paros (admin) — todas las líneas con filtros
+router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
+  const { linea, desde, hasta, turno } = req.query;
+  const pdb = dbProd.read();
+  let paros = pdb.paros || [];
+  if (linea && linea !== 'ambas') paros = paros.filter(p => p.linea === linea);
+  if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
+  if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
+  if (turno) paros = paros.filter(p => p.turno === turno);
+  paros = paros.sort((a, b) =>
+    (`${b.fecha_inicio}T${b.hora_inicio}`).localeCompare(`${a.fecha_inicio}T${a.hora_inicio}`)
+  );
+  res.json({ total: paros.length, paros });
+});
+
 router.get('/paros/:linea/activo', (req, res) => {
   const { linea } = req.params;
   const pdb = dbProd.read();
@@ -746,8 +761,8 @@ function addDays(dateStr, n) {
 
 function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const ciclos_obj = l === 'L3'
-    ? (config.ciclos_objetivo_l3 || 2)
-    : (config.ciclos_objetivo_l4 || 2);
+    ? (config.ciclos_objetivo_l3 ?? 2)
+    : (config.ciclos_objetivo_l4 ?? 2);
   const tDef     = TURNOS_DEF[t];
   const nextDay  = addDays(targetDate, 1);
   const slots    = [];
