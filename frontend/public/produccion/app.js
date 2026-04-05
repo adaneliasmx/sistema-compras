@@ -2513,8 +2513,13 @@ async function viewConfiguracion(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewKpiHistorico(el) {
-  const today = new Date().toLocaleDateString('en-CA');
-  const hace30 = new Date(Date.now() - 30*24*3600*1000).toLocaleDateString('en-CA');
+  const today   = new Date().toLocaleDateString('en-CA');
+  // Por defecto: semana actual (lunes de esta semana)
+  const lunes = (() => {
+    const d = new Date(); const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d.toLocaleDateString('en-CA');
+  })();
 
   el.innerHTML = `
     <div class="filters-bar">
@@ -2537,7 +2542,7 @@ async function viewKpiHistorico(el) {
       </div>
       <div>
         <span class="flabel">Desde</span>
-        <input type="date" id="kh-desde" value="${hace30}"/>
+        <input type="date" id="kh-desde" value="${lunes}"/>
       </div>
       <div>
         <span class="flabel">Hasta</span>
@@ -2547,7 +2552,7 @@ async function viewKpiHistorico(el) {
       <button class="btn btn-dark btn-sm" id="kh-export">📥 Excel</button>
     </div>
     <div id="kh-resultado">
-      <div class="empty-state"><div class="icon">📊</div><p>Presiona Buscar para cargar KPIs guardados.</p></div>
+      <div class="empty-state"><div class="icon">⏳</div><p>Cargando KPI de la semana...</p></div>
     </div>`;
 
   let lastSnaps = [];
@@ -2578,6 +2583,7 @@ async function viewKpiHistorico(el) {
   }
 
   document.getElementById('kh-buscar').addEventListener('click', buscar);
+  buscar(); // carga automática al abrir la vista
 
   document.getElementById('kh-export').addEventListener('click', () => {
     if (!lastSnaps.length) { alert('Primero ejecuta una búsqueda.'); return; }

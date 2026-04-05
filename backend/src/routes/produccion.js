@@ -1145,16 +1145,90 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 });
 
 router.get('/kpis', (req, res) => {
-  const { linea, turno, desde, hasta, semana } = req.query;
-  const pdb = dbProd.read();
-  let snaps = pdb.kpi_snapshots || [];
-  if (linea && linea !== 'ambas') snaps = snaps.filter(k => k.linea === linea);
-  if (turno)  snaps = snaps.filter(k => k.turno  === turno);
-  if (desde)  snaps = snaps.filter(k => k.fecha  >= desde);
-  if (hasta)  snaps = snaps.filter(k => k.fecha  <= hasta);
-  if (semana) snaps = snaps.filter(k => k.semana === Number(semana));
-  snaps = snaps.sort((a, b) => b.fecha.localeCompare(a.fecha) || b.turno.localeCompare(a.turno));
-  res.json({ total: snaps.length, snapshots: snaps });
+  const { linea, turno, desde, hasta } = req.query;
+  const pdb    = dbProd.read();
+  const config = pdb.config || {};
+
+  // Rango de fechas (máx. 90 días para no sobrecargar)
+  const endDate   = hasta || nowDateStr();
+  const startDate = desde || (() => {
+    const d = new Date(endDate + 'T12:00:00');
+    d.setDate(d.getDate() - 6);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  const dates = [];
+  let cur = new Date(startDate + 'T12:00:00');
+  const end = new Date(endDate   + 'T12:00:00');
+  const maxDays = 90;
+  while (cur <= end && dates.length < maxDays) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  const lineas  = linea && linea !== 'ambas' ? [linea] : ['L3', 'L4'];
+  const turnos  = turno ? [turno] : ['T1', 'T2', 'T3'];
+  const r3      = v => v != null ? Math.round(v * 1000) / 1000 : null;
+
+  const snapshots = [];
+
+  for (const date of dates) {
+    for (const l of lineas) {
+      const ciclos_obj = l === 'L3'
+        ? (config.ciclos_objetivo_l3 ?? 2)
+        : (config.ciclos_objetivo_l4 ?? 2);
+
+      for (const t of turnos) {
+        const tDef  = TURNOS_DEF[t];
+        const slots = buildSlotsForLinTur(pdb, config, l, t, date);
+
+        const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+        const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+        const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+        const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
+        const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+        const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+
+        // Sólo incluir si hay datos reales
+        if (ciclos_totales === 0 && paros_min_total === 0) continue;
+
+        const turnoMins      = tDef.hours * 60;
+        const eficiencia     = (ciclos_obj * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj * tDef.hours) : 0;
+        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
+        const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
+        const semana         = getISOWeek(new Date(date + 'T12:00:00'));
+
+        snapshots.push({
+          id:              `${date}-${l}-${t}`,
+          fecha:           date,
+          semana,
+          turno:           t,
+          linea:           l,
+          ciclos_totales,
+          ciclos_no_vacios,
+          ciclos_buenos,
+          piezas_total,
+          piezas_obj_total,
+          paros_min_total: Math.round(paros_min_total * 10) / 10,
+          eficiencia:      r3(eficiencia),
+          calidad:         r3(calidad),
+          capacidad:       r3(capacidad),
+          disponibilidad:  r3(disponibilidad),
+          slots
+        });
+      }
+    }
+  }
+
+  // Ordenar: fecha desc, linea asc, turno asc
+  snapshots.sort((a, b) =>
+    b.fecha.localeCompare(a.fecha) ||
+    a.linea.localeCompare(b.linea) ||
+    a.turno.localeCompare(b.turno)
+  );
+
+  res.json({ total: snapshots.length, snapshots });
 });
 
 // ─── Export ───────────────────────────────────────────────────────────────────
