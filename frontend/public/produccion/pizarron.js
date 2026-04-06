@@ -3,6 +3,8 @@
   'use strict';
 
   // ── State ─────────────────────────────────────────────────────────────────
+  const FONT_SIZES = { sm: '11px', md: '14px', lg: '18px', xl: '22px' };
+
   let state = {
     data: null,
     loading: false,
@@ -10,7 +12,8 @@
     fecha: todayStr(),
     turnoFilter: 'all',
     lastRefresh: null,
-    darkMode: localStorage.getItem('pizarron_theme') === 'dark'
+    darkMode: localStorage.getItem('pizarron_theme') === 'dark',
+    fontSize: localStorage.getItem('pizarron_font') || 'md'
   };
 
   let refreshTimer = null;
@@ -123,6 +126,7 @@
     const app = document.getElementById('pizarron-app');
     if (!app) return;
     document.body.classList.toggle('pizarron-dark', state.darkMode);
+    document.documentElement.style.setProperty('--pz-font', FONT_SIZES[state.fontSize] || '14px');
     app.innerHTML = buildHtml();
     bindEvents();
   }
@@ -155,9 +159,6 @@
           <div class="pizarron-datetime" id="pizarron-clock">${nowStr()}</div>
           <div class="pizarron-turno-badge">Turno actual: <strong>${turno}</strong></div>
           <div class="pizarron-refresh-info">Última actualización: ${refreshTime} · Auto-refresh 30s</div>
-          <button id="btn-theme-toggle" class="pizarron-btn-theme" title="Cambiar tema">
-            ${state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro'}
-          </button>
         </div>
       </div>
     `;
@@ -171,6 +172,16 @@
       return `<button class="pizarron-btn-turno${active}" data-turno="${t}">${labels[t]}</button>`;
     }).join('');
 
+    const fontSizes = [
+      { key: 'sm', label: 'A−' },
+      { key: 'md', label: 'A'  },
+      { key: 'lg', label: 'A+' },
+      { key: 'xl', label: 'A⁺⁺' }
+    ];
+    const fontBtns = fontSizes.map(f =>
+      `<button class="pizarron-btn-turno${state.fontSize === f.key ? ' active' : ''}" data-font="${f.key}" style="min-width:36px">${f.label}</button>`
+    ).join('');
+
     return `
       <div class="pizarron-controls">
         <div class="pizarron-control-group">
@@ -181,7 +192,14 @@
           <label class="pizarron-label" for="pizarron-fecha">Fecha:</label>
           <input type="date" id="pizarron-fecha" class="pizarron-date-input" value="${state.fecha}"/>
         </div>
+        <div class="pizarron-control-group">
+          <label class="pizarron-label">Texto:</label>
+          <div class="pizarron-turno-btns">${fontBtns}</div>
+        </div>
         <button class="pizarron-btn-refresh" id="btn-refresh-now">↻ Actualizar</button>
+        <button class="pizarron-btn-theme" id="btn-theme-toggle">
+          ${state.darkMode ? '☀️ Claro' : '🌙 Oscuro'}
+        </button>
       </div>
     `;
   }
@@ -312,6 +330,15 @@
     if (btnRefresh) {
       btnRefresh.addEventListener('click', fetchData);
     }
+
+    // Font size
+    document.querySelectorAll('[data-font]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.fontSize = btn.dataset.font;
+        localStorage.setItem('pizarron_font', state.fontSize);
+        render();
+      });
+    });
 
     // Theme toggle
     const btnTheme = document.getElementById('btn-theme-toggle');

@@ -506,6 +506,12 @@ tbody tr:hover { background: #f8fafc; }
 }
 .pizarron-table .no-data-row td { color: var(--p-muted); text-align: center; padding: 12px; }
 
+/* Tamaño de letra variable en tablas del pizarrón */
+:root { --pz-font: 14px; }
+.pizarron-table,
+.pizarron-table thead th,
+.pizarron-table tbody td { font-size: var(--pz-font) !important; }
+
 .pizarron-loading,
 .pizarron-empty,
 .pizarron-error { text-align: center; padding: 40px; color: var(--p-muted); font-size: 15px; }
