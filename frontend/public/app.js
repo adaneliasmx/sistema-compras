@@ -1729,6 +1729,75 @@ async function approvalsView() {
 
   const fmtMXN = v => Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
+  // ── Agrupar ítems por requisición ─────────────────────────────────────────
+  const groupMap = new Map();
+  rows.forEach(r => {
+    if (!groupMap.has(r.requisition_id)) {
+      groupMap.set(r.requisition_id, {
+        requisition_id: r.requisition_id,
+        folio: r.requisition_folio,
+        requester: r.requester_name,
+        total: r.requisition_total,
+        rule: r.approval_rule,
+        items: []
+      });
+    }
+    groupMap.get(r.requisition_id).items.push(r);
+  });
+  const groups = [...groupMap.values()];
+
+  const itemRows = groups.map(g => `
+    <tr class="req-group-header" style="background:#eff6ff;border-top:2px solid #bfdbfe">
+      <td style="padding:6px 8px">
+        <input type="checkbox" class="select-req-check" data-req-id="${g.requisition_id}" title="Seleccionar todos los ítems de esta requisición"/>
+      </td>
+      <td colspan="3" style="padding:6px 8px">
+        <b style="font-size:13px">📋 ${escapeHtml(g.folio)}</b>
+        <span class="muted" style="font-size:12px"> · ${escapeHtml(g.requester || '-')}</span>
+        ${g.rule ? `<span style="background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 6px;font-size:11px;margin-left:8px">${escapeHtml(g.rule)}</span>` : ''}
+        <span style="font-size:11px;color:#9ca3af;margin-left:6px">${g.items.length} ítem(s)</span>
+      </td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;font-size:13px">$${fmtMXN(g.total)}</td>
+      <td style="padding:6px 8px;white-space:nowrap">
+        <button class="btn-primary req-approve-all-btn" data-req-id="${g.requisition_id}" style="font-size:11px;padding:3px 8px">✅ Autorizar req.</button>
+        <button class="btn-danger req-reject-all-btn" data-req-id="${g.requisition_id}" style="font-size:11px;padding:3px 8px">✖ Rechazar req.</button>
+      </td>
+    </tr>
+    ${g.items.map(r => `
+      <tr data-rowid="${r.id}" style="background:white">
+        <td style="padding:5px 8px 5px 24px">
+          <input type="checkbox" class="approve-check" value="${r.id}" data-req-id="${r.requisition_id}"/>
+        </td>
+        <td style="padding:5px 8px">
+          <span style="display:inline-block;width:8px;border-left:2px solid #bfdbfe;height:14px;vertical-align:middle;margin-right:8px"></span>
+          <b>${escapeHtml(r.item_name)}</b>
+          ${r.quote_pdf ? `<br><a href="${r.quote_pdf}" target="_blank" style="font-size:11px;color:#2563eb;margin-left:16px">📄 Ver cotización PDF</a>` : ''}
+        </td>
+        <td style="font-size:12px;padding:5px 8px">${escapeHtml(r.supplier_name)}</td>
+        <td style="font-size:11px;color:#6b7280;padding:5px 8px">${escapeHtml(r.cost_center_name)}${r.sub_cost_center_name ? `<br>${escapeHtml(r.sub_cost_center_name)}` : ''}</td>
+        <td style="font-size:12px;text-align:right;padding:5px 8px">$${fmtMXN(Number(r.quantity||0)*Number(r.unit_cost||0))}</td>
+        <td style="padding:5px 8px;white-space:nowrap;min-width:200px">
+          <button class="btn-secondary detail-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Ver historial y gastos">🔍 Detalles</button>
+          <button class="btn-primary approve-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Autorizar">✅</button>
+          <button class="btn-danger reject-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Rechazar">✖</button>
+          <button class="btn-secondary pause-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Pausar / programar">⏸</button>
+        </td>
+      </tr>
+      <tr class="detail-row" id="detail-row-${r.id}" style="display:none">
+        <td colspan="6" style="padding:0;background:#f8fafc;border-top:none">
+          <div id="detail-content-${r.id}" style="padding:16px">
+            <div class="muted small">Cargando detalles...</div>
+          </div>
+        </td>
+      </tr>
+      <tr class="action-row" id="action-row-${r.id}" style="display:none">
+        <td colspan="6" style="padding:8px 16px;background:#fffbeb;border-top:1px solid #fde68a">
+          <div id="action-content-${r.id}"></div>
+        </td>
+      </tr>
+    `).join('')}
+  `).join('');
+
   app.innerHTML = shell(`
     <div class="card section">
       <div class="module-title">
@@ -1744,44 +1813,10 @@ async function approvalsView() {
         <table id="approveTable">
           <thead><tr>
             <th style="width:32px"><input type="checkbox" id="selectAllApprove" title="Seleccionar todos"/></th>
-            <th>Req.</th><th>Solicitante</th><th>Ítem</th><th>Proveedor</th><th>C. Costo</th>
-            <th style="text-align:right">Total req.</th><th>Regla</th><th>Acciones</th>
+            <th>Requisición / Ítem</th><th>Proveedor</th><th>C. Costo</th>
+            <th style="text-align:right">Importe</th><th>Acciones</th>
           </tr></thead>
-          <tbody>
-          ${rows.map(r => `
-            <tr data-rowid="${r.id}">
-              <td><input type="checkbox" class="approve-check" value="${r.id}"/></td>
-              <td style="font-size:12px"><b>${r.requisition_folio}</b></td>
-              <td style="font-size:12px">${escapeHtml(r.requester_name || '-')}</td>
-              <td>
-                <b>${escapeHtml(r.item_name)}</b>
-                ${r.quote_pdf ? `<br><a href="${r.quote_pdf}" target="_blank" style="font-size:11px;color:#2563eb">📄 Ver cotización PDF</a>` : ''}
-              </td>
-              <td style="font-size:12px">${escapeHtml(r.supplier_name)}</td>
-              <td style="font-size:11px;color:#6b7280">${escapeHtml(r.cost_center_name)}${r.sub_cost_center_name ? `<br>${escapeHtml(r.sub_cost_center_name)}` : ''}</td>
-              <td style="font-size:12px;text-align:right">$${fmtMXN(r.requisition_total)}</td>
-              <td style="font-size:12px">${r.approval_rule || '-'}</td>
-              <td style="white-space:nowrap;min-width:260px">
-                <button class="btn-secondary detail-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Ver historial y gastos">🔍 Detalles</button>
-                <button class="btn-primary approve-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px">✅</button>
-                <button class="btn-danger reject-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px">✖</button>
-                <button class="btn-secondary pause-btn" data-id="${r.id}" style="font-size:12px;padding:3px 8px" title="Pausar / programar">⏸</button>
-              </td>
-            </tr>
-            <tr class="detail-row" id="detail-row-${r.id}" style="display:none">
-              <td colspan="9" style="padding:0;background:#f8fafc;border-top:none">
-                <div id="detail-content-${r.id}" style="padding:16px">
-                  <div class="muted small">Cargando detalles...</div>
-                </div>
-              </td>
-            </tr>
-            <tr class="action-row" id="action-row-${r.id}" style="display:none">
-              <td colspan="9" style="padding:8px 16px;background:#fffbeb;border-top:1px solid #fde68a">
-                <div id="action-content-${r.id}"></div>
-              </td>
-            </tr>
-          `).join('')}
-          </tbody>
+          <tbody>${itemRows}</tbody>
         </table>
       </div>
       <div id="approveMsg" class="small muted" style="margin-top:6px"></div>` :
@@ -2052,9 +2087,46 @@ async function approvalsView() {
     };
   });
 
+  // ── Seleccionar ítems de una requisición ─────────────────────────────────
+  document.querySelectorAll('.select-req-check').forEach(chk => {
+    chk.onchange = () => {
+      document.querySelectorAll(`.approve-check[data-req-id="${chk.dataset.reqId}"]`)
+        .forEach(c => c.checked = chk.checked);
+    };
+  });
+
+  // ── Autorizar requisición completa ────────────────────────────────────────
+  document.querySelectorAll('.req-approve-all-btn').forEach(btn => btn.onclick = async () => {
+    const reqId = btn.dataset.reqId;
+    if (!confirm('¿Autorizar todos los ítems pendientes de esta requisición?')) return;
+    const orig = btn.textContent;
+    try {
+      btn.disabled = true; btn.textContent = '⏳';
+      const out = await api(`/api/approvals/requisitions/${reqId}/approve-all`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado (requisición completa)' }) });
+      approveMsg.textContent = `✅ ${out.authorized} ítem(s) autorizado(s)`;
+      setTimeout(approvalsView, 900);
+    } catch(e) { alert(e.message || 'Error al autorizar'); btn.disabled = false; btn.textContent = orig; }
+  });
+
+  // ── Rechazar requisición completa ─────────────────────────────────────────
+  document.querySelectorAll('.req-reject-all-btn').forEach(btn => btn.onclick = async () => {
+    const reqId = btn.dataset.reqId;
+    const reason = prompt('Motivo de rechazo para todos los ítems de esta requisición:');
+    if (reason === null) return;
+    const orig = btn.textContent;
+    try {
+      btn.disabled = true; btn.textContent = '⏳';
+      const out = await api(`/api/approvals/requisitions/${reqId}/reject-all`, { method: 'POST', body: JSON.stringify({ reason: reason || 'Rechazado (requisición completa)' }) });
+      if (out.mailto) { const a = document.createElement('a'); a.href = out.mailto; a.target = '_blank'; a.click(); }
+      approveMsg.textContent = `✖ ${out.rejected} ítem(s) rechazado(s)`;
+      setTimeout(approvalsView, 900);
+    } catch(e) { alert(e.message || 'Error al rechazar'); btn.disabled = false; btn.textContent = orig; }
+  });
+
   // ── Seleccionar todos ─────────────────────────────────────────────────────
   document.getElementById('selectAllApprove')?.addEventListener('change', e => {
     document.querySelectorAll('.approve-check').forEach(c => c.checked = e.target.checked);
+    document.querySelectorAll('.select-req-check').forEach(c => c.checked = e.target.checked);
   });
 
   // ── Autorizar masivo ──────────────────────────────────────────────────────

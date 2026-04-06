@@ -281,4 +281,63 @@ router.post('/items/:id/pause', allowRoles('autorizador', 'comprador', 'pagos', 
   res.json({ ok: true, paused_until: line.paused_until, pause_reason: line.pause_reason });
 });
 
+// ── Autorizar todos los ítems de una requisición ─────────────────────────────
+router.post('/requisitions/:id/approve-all', allowRoles('autorizador', 'comprador', 'pagos', 'admin'), (req, res) => {
+  const db = read();
+  const requisitionId = Number(req.params.id);
+  const reqRow = db.requisitions.find(r => r.id === requisitionId);
+  if (!reqRow) return res.status(404).json({ error: 'Requisición no encontrada' });
+  const rule = getApprovalRule(db, Number(reqRow.total_amount || 0));
+  if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No tienes permiso para autorizar esta requisición' });
+  if (req.user.role_code !== 'admin' && reqRow.requester_user_id === req.user.id)
+    return res.status(403).json({ error: 'No puedes autorizar una requisición que tú mismo solicitaste' });
+  const items = db.requisition_items.filter(i => i.requisition_id === requisitionId && i.status === 'En autorización');
+  if (!items.length) return res.status(400).json({ error: 'No hay ítems pendientes de autorización en esta requisición' });
+  items.forEach(line => {
+    const oldStatus = line.status;
+    line.status = 'Autorizado';
+    line.paused_until = null;
+    line.pause_reason = null;
+    line.updated_at = new Date().toISOString();
+    addHistory(db, { module: 'approvals', requisition_id: requisitionId, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Autorizado', changed_by_user_id: req.user.id, comment: req.body.comment || 'Autorizado (requisición completa)' });
+  });
+  recalcRequisition(db, requisitionId);
+  write(db);
+  res.json({ ok: true, authorized: items.length });
+});
+
+// ── Rechazar todos los ítems de una requisición ───────────────────────────────
+router.post('/requisitions/:id/reject-all', allowRoles('autorizador', 'comprador', 'pagos', 'admin'), (req, res) => {
+  const db = read();
+  const requisitionId = Number(req.params.id);
+  const reqRow = db.requisitions.find(r => r.id === requisitionId);
+  if (!reqRow) return res.status(404).json({ error: 'Requisición no encontrada' });
+  const rule = getApprovalRule(db, Number(reqRow.total_amount || 0));
+  if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No tienes permiso para rechazar esta requisición' });
+  if (req.user.role_code !== 'admin' && reqRow.requester_user_id === req.user.id)
+    return res.status(403).json({ error: 'No puedes rechazar una requisición que tú mismo solicitaste' });
+  const reason = (req.body.reason || '').trim() || 'Rechazado por el autorizador';
+  const items = db.requisition_items.filter(i => i.requisition_id === requisitionId && i.status === 'En autorización');
+  if (!items.length) return res.status(400).json({ error: 'No hay ítems pendientes de autorización en esta requisición' });
+  const requester = db.users.find(u => u.id === reqRow.requester_user_id);
+  const buyer = db.users.find(u => u.role_code === 'comprador');
+  items.forEach(line => {
+    const oldStatus = line.status;
+    line.status = 'Rechazado';
+    line.reject_reason = reason;
+    line.rejected_by = req.user.id;
+    line.rejected_at = new Date().toISOString();
+    line.paused_until = null;
+    line.updated_at = new Date().toISOString();
+    addHistory(db, { module: 'approvals', requisition_id: requisitionId, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Rechazado', changed_by_user_id: req.user.id, comment: reason });
+  });
+  recalcRequisition(db, requisitionId);
+  write(db);
+  const emails = [requester?.email, buyer?.email].filter(Boolean).join(';');
+  const subject = `Requisición rechazada · ${reqRow.folio}`;
+  const body = `Se han rechazado ${items.length} ítem(s) de la requisición ${reqRow.folio}.\n\nMotivo: ${reason}\n\nRechazado por: ${req.user.full_name || req.user.email}`;
+  const mailto = emails ? `mailto:${encodeURIComponent(emails)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` : null;
+  res.json({ ok: true, rejected: items.length, mailto });
+});
+
 module.exports = router;
