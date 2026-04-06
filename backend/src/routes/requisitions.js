@@ -124,6 +124,12 @@ router.post('/', (req, res) => {
   const lines = buildItems(db, requisition, payload.items, req.user.id, isDraft);
   db.requisition_items.push(...lines);
   recalcRequisition(db, requisition.id);
+  // Re-derivar estado de ítems con el total real (buildItems usa total=0 como placeholder)
+  if (!isDraft) {
+    lines.forEach(line => {
+      line.status = deriveItemStatus(db, requisition.total_amount, line);
+    });
+  }
   if (isDraft) requisition.status = 'Borrador';
   addHistory(db, { module: 'requisitions', requisition_id: requisition.id, old_status: null, new_status: requisition.status, changed_by_user_id: req.user.id, comment: isDraft ? 'Requisición guardada como borrador' : 'Requisición creada' });
   write(db);
@@ -151,6 +157,11 @@ router.patch('/:id', (req, res) => {
     const lines = buildItems(db, reqRow, payload.items, req.user.id, isDraft);
     db.requisition_items.push(...lines);
     recalcRequisition(db, reqRow.id);
+    if (!isDraft) {
+      lines.forEach(line => {
+        line.status = deriveItemStatus(db, reqRow.total_amount, line);
+      });
+    }
     if (isDraft) reqRow.status = 'Borrador';
   }
   addHistory(db, { module: 'requisitions', requisition_id: reqRow.id, old_status: reqRow.status, new_status: reqRow.status, changed_by_user_id: req.user.id, comment: 'Requisición actualizada' });
@@ -197,7 +208,7 @@ router.post('/:id/cancel-by-requester', (req, res) => {
   const db = read();
   const reqRow = db.requisitions.find(r => r.id === Number(req.params.id));
   if (!reqRow) return res.status(404).json({ error: 'Requisición no encontrada' });
-  if (req.user.role !== 'admin' && req.user.id !== reqRow.requester_user_id) {
+  if (req.user.role_code !== 'admin' && req.user.id !== reqRow.requester_user_id) {
     return res.status(403).json({ error: 'Sin permiso para cancelar esta requisición' });
   }
   if (['Cancelada', 'Cerrada'].includes(reqRow.status)) {

@@ -163,10 +163,16 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
     return res.status(400).json({ error: 'Factura, proveedor y monto son requeridos' });
   }
 
+  // Validar factura antes de registrar el pago
+  const invoice = db.invoices.find(i => i.id === row.invoice_id);
+  if (!invoice) return res.status(404).json({ error: 'Factura no encontrada' });
+  if (invoice.status === 'Pagada') {
+    return res.status(400).json({ error: 'Esta factura ya está completamente pagada' });
+  }
+
   db.payments.push(row);
 
   // Actualizar factura
-  const invoice = db.invoices.find(i => i.id === row.invoice_id);
   if (invoice) {
     if (row.delivery_date) invoice.delivery_date = row.delivery_date;
     if (row.credit_days) invoice.credit_days = row.credit_days;
@@ -192,17 +198,20 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
       po.status = (totalNormal > 0 && po.paid_amount >= totalNormal) ? 'Cerrada' : 'Pago parcial';
     }
 
-    const poItems = db.purchase_order_items.filter(x => x.purchase_order_id === invoice.purchase_order_id);
-    poItems.forEach(poLine => {
-      poLine.status = invoice.status === 'Pagada' ? 'Cerrado' : 'Pago parcial';
-      const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
-      if (!reqItem) return;
-      const oldStatus = reqItem.status;
-      reqItem.status = poLine.status;
-      reqItem.updated_at = new Date().toISOString();
-      addHistory(db, { module: 'payments', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, invoice_id: invoice.id, old_status: oldStatus, new_status: reqItem.status, changed_by_user_id: req.user.id, comment: `Pago ${row.reference || row.id}` });
-      recalcRequisition(db, reqItem.requisition_id);
-    });
+    // Los anticipos no cierran los ítems; solo las facturas normales actualizan el estado de ítems
+    if (invoice.invoice_type !== 'anticipo') {
+      const poItems = db.purchase_order_items.filter(x => x.purchase_order_id === invoice.purchase_order_id);
+      poItems.forEach(poLine => {
+        poLine.status = invoice.status === 'Pagada' ? 'Cerrado' : 'Pago parcial';
+        const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+        if (!reqItem) return;
+        const oldStatus = reqItem.status;
+        reqItem.status = poLine.status;
+        reqItem.updated_at = new Date().toISOString();
+        addHistory(db, { module: 'payments', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, invoice_id: invoice.id, old_status: oldStatus, new_status: reqItem.status, changed_by_user_id: req.user.id, comment: `Pago ${row.reference || row.id}` });
+        recalcRequisition(db, reqItem.requisition_id);
+      });
+    }
   }
 
   write(db);
