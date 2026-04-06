@@ -2595,6 +2595,30 @@ async function purchasesView() {
     <th>Estatus</th><th>PO</th><th>Acciones</th>
   </tr></thead>`;
 
+  // Agrupa ítems por requisición e inserta fila de encabezado por grupo
+  const renderGrouped = (items) => {
+    const gMap = new Map();
+    items.forEach(i => {
+      const key = i.requisition_folio || 'Sin requisición';
+      if (!gMap.has(key)) gMap.set(key, { folio: key, requester: i.requester_name, date: i.request_date, items: [] });
+      gMap.get(key).items.push(i);
+    });
+    return [...gMap.values()].map(g => {
+      const gTotal = g.items.reduce((s, i) => s + Number(i.quantity||0) * Number(i.unit_cost||0), 0);
+      return `
+        <tr style="background:#f1f5f9;border-top:2px solid #cbd5e1">
+          <td colspan="15" style="padding:5px 10px">
+            <b style="font-size:13px">📋 ${escapeHtml(g.folio)}</b>
+            <span class="muted" style="font-size:12px"> · ${escapeHtml(g.requester || '-')}</span>
+            <span style="font-size:11px;color:#9ca3af;margin-left:6px">${g.items.length} ítem(s)</span>
+            <b style="float:right;font-size:12px">$${gTotal.toLocaleString('es-MX',{minimumFractionDigits:2})}</b>
+          </td>
+        </tr>
+        ${g.items.map(i => itemRow(i, true)).join('')}
+      `;
+    }).join('');
+  };
+
   const renderTab = async (tab) => {
     activeTab = tab;
     sessionStorage.setItem('compras_active_tab', tab);
@@ -2969,7 +2993,7 @@ async function purchasesView() {
         </div>
         <div id="allItemsTable">
           <div class="table-wrap"><table>${THEAD}<tbody>
-            ${itemsSolicitados.map(i => itemRow(i, true)).join('')}
+            ${renderGrouped(itemsSolicitados)}
           </tbody></table></div>
         </div>
         ${rejectedSection}`;
@@ -2981,7 +3005,7 @@ async function purchasesView() {
         const inclCanc = document.getElementById('toggleCancelled')?.checked;
         const src = inclCanc ? allItems : itemsSolicitados;
         const filtered = src.filter(x => (!sid || Number(x.supplier_id) === sid) && (!statusVal || x.status === statusVal));
-        allItemsTable.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.map(i => itemRow(i, true)).join('')}</tbody></table></div>`;
+        allItemsTable.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${renderGrouped(filtered)}</tbody></table></div>`;
         bindTableActions(allItemsTable, src);
       };
       document.getElementById('filterSupplierItems').onchange = applyFilters;
