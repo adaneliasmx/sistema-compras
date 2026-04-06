@@ -35,7 +35,7 @@ router.get('/pending', allowRoles('autorizador', 'comprador', 'pagos', 'admin'),
         quote_unit_cost: winnerQuote?.unit_cost || null
       };
     })
-    .filter(r => req.user.role_code === 'admin' || !r.approver_role || r.approver_role === req.user.role_code);
+    .filter(r => req.user.role_code === 'admin' || r.approver_role === req.user.role_code);
   res.json(rows);
 });
 
@@ -175,9 +175,11 @@ router.post('/items/:id/approve', allowRoles('autorizador', 'comprador', 'pagos'
   const db = read();
   const line = db.requisition_items.find(i => i.id === Number(req.params.id));
   if (!line) return res.status(404).json({ error: 'Ítem no encontrado' });
+  if (line.status !== 'En autorización')
+    return res.status(400).json({ error: `Este ítem no está pendiente de autorización (estado actual: ${line.status})` });
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   const rule = getApprovalRule(db, Number(reqRow?.total_amount || 0));
-  if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No puedes autorizar esta solicitud' });
+  if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No tienes permiso para autorizar este ítem. Verifica que tu rol coincida con la regla de autorización asignada.' });
   if (req.user.role_code !== 'admin' && reqRow?.requester_user_id === req.user.id)
     return res.status(403).json({ error: 'No puedes autorizar una requisición que tú mismo solicitaste.' });
   const oldStatus = line.status;

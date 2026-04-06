@@ -1941,8 +1941,8 @@ async function approvalsView() {
     try {
       btn.disabled = true; btn.textContent = '⏳';
       await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado' }) });
-      await render();
-    } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = orig; }
+      await approvalsView();
+    } catch(e) { alert(e.message || 'Error al autorizar'); btn.disabled = false; btn.textContent = orig; }
   });
 
   // ── Rechazar individual con formulario de motivo ──────────────────────────
@@ -1985,7 +1985,7 @@ async function approvalsView() {
           const link = document.createElement('a');
           link.href = out.mailto; link.target = '_blank'; link.click();
         }
-        render();
+        approvalsView();
       } catch(err) { alert(err.message); e.target.disabled = false; }
     };
   });
@@ -2069,7 +2069,7 @@ async function approvalsView() {
       catch(_) { fail++; }
     }
     approveMsg.textContent = `✅ ${ok} autorizado(s)${fail ? `, ${fail} con error` : ''}`;
-    setTimeout(render, 900);
+    setTimeout(approvalsView, 900);
   });
 
   // ── Rechazar masivo (pide motivo) ─────────────────────────────────────────
@@ -2085,10 +2085,11 @@ async function approvalsView() {
       catch(_) { fail++; }
     }
     approveMsg.textContent = `✖ ${ok} rechazado(s)${fail ? `, ${fail} con error` : ''}`;
-    setTimeout(render, 900);
+    setTimeout(approvalsView, 900);
   });
 
-  expReqItemsBtn.onclick = () => downloadCsv('requisition_items', 'items_autorizacion.csv');
+  const expReqItemsBtn = document.getElementById('expReqItemsBtn');
+  if (expReqItemsBtn) expReqItemsBtn.onclick = () => downloadCsv('requisition_items', 'items_autorizacion.csv');
   bindCommon();
 }
 
