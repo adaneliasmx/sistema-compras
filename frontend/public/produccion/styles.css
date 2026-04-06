@@ -594,6 +594,30 @@ body.pizarron-dark .kpi-green { background: #14532d; color: #86efac; }
 body.pizarron-dark .kpi-amber { background: #78350f; color: #fcd34d; }
 body.pizarron-dark .kpi-red   { background: #7f1d1d; color: #fca5a5; }
 
+/* ── BAKER ─────────────────────────────────────────────────────── */
+.bk-cav-row {
+  background: #f8fafc;
+  border: 1px solid var(--p-line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.bk-cav-row input,
+.bk-cav-row select {
+  font-size: 12px;
+  padding: 4px 8px;
+}
+.bk-desc-cav {
+  background: #f8fafc;
+  border: 1px solid var(--p-line);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.bk-desc-cav[data-estado="buena"]    { background: #f0fdf4; border-color: #86efac; }
+.bk-desc-cav[data-estado="defecto"]  { background: #fef2f2; border-color: #fca5a5; }
+.bk-desc-cav[data-estado="reproceso"]{ background: #fefce8; border-color: #fde047; }
+
 /* ── PRINT ─────────────────────────────────────────────────────── */
 @media print {
   .p-sidebar, .p-topbar, .btn, .filters-bar, .modal-overlay { display: none !important; }

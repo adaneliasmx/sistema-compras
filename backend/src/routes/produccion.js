@@ -65,6 +65,21 @@ function lineaKey(linea) {
 
 function catalogCollection(linea, tipo) {
   // tipo: componentes | procesos | acabados | herramentales | defectos | motivos-paro | sub-motivos-paro
+  // linea: L3 | L4 | baker
+  if (linea === 'baker') {
+    const bakerMap = {
+      componentes:           'componentes_baker',
+      herramentales:         'herramentales_baker',
+      procesos:              'procesos_baker',
+      'sub-procesos':        'sub_procesos_baker',
+      defectos:              'defectos_baker',
+      clientes:              'clientes_baker',
+      'motivos-cavidad-vacia':'motivos_cavidad_vacia_baker',
+      'motivos-paro':        'motivos_paro_baker',
+      'sub-motivos-paro':    'sub_motivos_paro_baker'
+    };
+    return bakerMap[tipo] || null;
+  }
   const l = lineaKey(linea);
   const map = {
     componentes: `componentes_${l}`,
@@ -166,8 +181,29 @@ router.use(produccionAuthRequired);
 
 // GET bulk — devuelve todos los catálogos de una línea en un solo objeto
 router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) => {
-  const l = lineaKey(req.params.linea);
+  const { linea } = req.params;
   const pdb = dbProd.read();
+
+  // Baker tiene su propio conjunto de catálogos
+  if (linea === 'baker') {
+    const operadores = (pdb.operadores_baker || [])
+      .filter(o => o.activo !== false)
+      .map(o => { const { pin_hash, ...rest } = o; return rest; });
+    return res.json({
+      clientes:             (pdb.clientes_baker             || []).filter(x => x.activo !== false),
+      componentes:          (pdb.componentes_baker          || []).filter(x => x.activo !== false),
+      herramentales:        (pdb.herramentales_baker        || []).filter(x => x.activo !== false),
+      procesos:             (pdb.procesos_baker             || []).filter(x => x.activo !== false),
+      sub_procesos:         (pdb.sub_procesos_baker         || []).filter(x => x.activo !== false),
+      defectos:             (pdb.defectos_baker             || []).filter(x => x.activo !== false),
+      motivos_cavidad_vacia:(pdb.motivos_cavidad_vacia_baker|| []).filter(x => x.activo !== false),
+      motivos_paro:         (pdb.motivos_paro_baker         || []).filter(x => x.activo !== false),
+      sub_motivos:          (pdb.sub_motivos_paro_baker     || []).filter(x => x.activo !== false),
+      operadores
+    });
+  }
+
+  const l = lineaKey(linea);
   const operadores = (pdb[`operadores_${l}`] || [])
     .filter(o => o.activo !== false)
     .map(o => {
@@ -212,12 +248,19 @@ router.post('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res)
   if (tipo === 'componentes') {
     if (!body.nombre) return res.status(400).json({ error: 'nombre es requerido' });
     item = { ...item, nombre: body.nombre, cliente: body.cliente || '', carga_optima_varillas: body.carga_optima_varillas || 0, piezas_objetivo: body.piezas_objetivo || 0 };
+    if (linea === 'baker') item.no_skf = body.no_skf || '';
   } else if (tipo === 'herramentales') {
     if (!body.numero) return res.status(400).json({ error: 'numero es requerido' });
     item = { ...item, numero: body.numero, descripcion: body.descripcion || '' };
-  } else if (tipo === 'sub-motivos-paro') {
-    if (!body.nombre || !body.motivo_id) return res.status(400).json({ error: 'nombre y motivo_id son requeridos' });
-    item = { ...item, motivo_id: body.motivo_id, nombre: body.nombre };
+    if (linea === 'baker') {
+      item.tipo = body.tipo || 'rack'; // 'rack' | 'barril'
+      item.cavidades = body.cavidades ? Number(body.cavidades) : null;
+      item.piezas_por_varilla = body.piezas_por_varilla ? Number(body.piezas_por_varilla) : null;
+    }
+  } else if (tipo === 'sub-motivos-paro' || tipo === 'sub-procesos') {
+    const parentField = tipo === 'sub-procesos' ? 'proceso_id' : 'motivo_id';
+    if (!body.nombre || !body[parentField]) return res.status(400).json({ error: `nombre y ${parentField} son requeridos` });
+    item = { ...item, [parentField]: body[parentField], nombre: body.nombre };
   } else {
     if (!body.nombre) return res.status(400).json({ error: 'nombre es requerido' });
     item = { ...item, nombre: body.nombre };
@@ -239,7 +282,7 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
 
   const body = req.body || {};
-  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'descripcion', 'numero', 'motivo_id'];
+  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'piezas_por_varilla'];
   for (const field of allowed) {
     if (body[field] !== undefined) list[idx][field] = body[field];
   }
@@ -1113,6 +1156,47 @@ router.get('/pizarron', (req, res) => {
   }
 
   const data = buildPizarronResult(pdb, config, lineas, targetTurnos, targetDate);
+
+  // Incluir Baker si linea === 'ambas' o 'baker'
+  if (linea === 'ambas' || linea === 'baker') {
+    const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+    const bakerTurnos = {};
+    let bDayC = 0, bDayNV = 0, bDayB = 0, bDayPz = 0, bDayPzObj = 0, bDayParos = 0, bDaySlots = 0;
+    for (const t of targetTurnos) {
+      const tDef  = TURNOS_DEF[t];
+      const slots = buildSlotsForBaker(pdb, config, t, targetDate);
+      const tC   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+      const tNV  = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const tB   = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+      const tPz  = slots.reduce((s, x) => s + x.piezas_total,     0);
+      const tPzO = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const tParos = slots.reduce((s, x) => s + x.paros_min,      0);
+      const turnoMins = tDef.hours * 60;
+      const ciclos_obj = config.ciclos_objetivo_baker ?? 2;
+      bakerTurnos[t] = {
+        slots,
+        totals: {
+          eficiencia:    (ciclos_obj * tDef.hours) > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : 0,
+          calidad:       tNV > 0 ? r3(tB / tNV) : null,
+          capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
+          disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
+        }
+      };
+      bDayC += tC; bDayNV += tNV; bDayB += tB; bDayPz += tPz; bDayPzObj += tPzO;
+      bDayParos += tParos; bDaySlots += tDef.hours;
+    }
+    const ciclos_obj_baker = config.ciclos_objetivo_baker ?? 2;
+    data['Baker'] = {
+      ...bakerTurnos,
+      totales_dia: {
+        eficiencia:    (ciclos_obj_baker * bDaySlots) > 0 ? r3(bDayC / (ciclos_obj_baker * bDaySlots)) : 0,
+        calidad:       bDayNV > 0 ? r3(bDayB / bDayNV) : null,
+        capacidad:     bDayPzObj > 0 ? r3(bDayPz / bDayPzObj) : null,
+        disponibilidad: bDaySlots > 0 ? r3(Math.max(0, bDaySlots * 60 - Math.min(bDayParos, bDaySlots * 60)) / (bDaySlots * 60)) : null
+      }
+    };
+  }
+
   res.json({ fecha: targetDate, linea, turno, data });
 });
 
@@ -1147,11 +1231,11 @@ router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
   if (!pdb.config) pdb.config = {};
   const campos = [
-    'ciclos_objetivo_l3', 'ciclos_objetivo_l4',
-    'eficiencia_obj_l3',  'eficiencia_obj_l4',
-    'capacidad_obj_l3',   'capacidad_obj_l4',
-    'calidad_obj_l3',     'calidad_obj_l4',
-    'disponibilidad_obj_l3', 'disponibilidad_obj_l4'
+    'ciclos_objetivo_l3', 'ciclos_objetivo_l4', 'ciclos_objetivo_baker',
+    'eficiencia_obj_l3',  'eficiencia_obj_l4',  'eficiencia_obj_baker',
+    'capacidad_obj_l3',   'capacidad_obj_l4',   'capacidad_obj_baker',
+    'calidad_obj_l3',     'calidad_obj_l4',     'calidad_obj_baker',
+    'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker'
   ];
   const body = req.body || {};
   for (const f of campos) {
@@ -1326,6 +1410,417 @@ router.get('/kpis', (req, res) => {
   );
 
   res.json({ total: snapshots.length, snapshots });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── LÍNEA BAKER ──────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// KPI slots para Baker (análogo a buildSlotsForLinTur pero usa cargas_baker y paros_baker)
+function buildSlotsForBaker(pdb, config, t, targetDate) {
+  const ciclos_obj = config.ciclos_objetivo_baker ?? 2;
+  const tDef    = TURNOS_DEF[t];
+  const nextDay = addDays(targetDate, 1);
+  const slots   = [];
+  let curMins   = tDef.start;
+
+  for (let h = 0; h < tDef.hours; h++) {
+    const ss    = curMins;
+    const se    = curMins + 60;
+    const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
+    const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
+
+    const slotDate   = (t === 'T3' && ss >= 1440) ? nextDay : targetDate;
+    const ssR        = ss % 1440;
+    const seR        = se % 1440;
+    const crossesMid = ssR > seR;
+
+    const cargasEnSlot = (pdb.cargas_baker || []).filter(c => {
+      if (!c.fecha_descarga || !c.hora_descarga) return false;
+      const dm = toMins(c.hora_descarga);
+      if (crossesMid) {
+        return (c.fecha_descarga === slotDate && dm >= ssR) ||
+               (c.fecha_descarga === nextDay  && dm <  seR);
+      }
+      return c.fecha_descarga === slotDate && dm >= ssR && dm < seR;
+    });
+
+    const ciclos_totales = cargasEnSlot.length;
+
+    // Rack: calidad = buenos / no_vacios; Barril: sum cavidades_buenas / sum cavidades_cargadas
+    let ciclos_buenos = 0, ciclos_no_vacios = 0;
+    let piezas_total = 0, piezas_obj_total = 0;
+    for (const c of cargasEnSlot) {
+      if (c.herramental_tipo === 'barril') {
+        const carg = Number(c.cavidades_cargadas || 0);
+        const buen = Number(c.cavidades_buenas   || 0);
+        ciclos_no_vacios += carg;
+        ciclos_buenos    += buen;
+        piezas_total     += buen; // piezas = cavidades buenas (1 pieza por cavidad)
+        piezas_obj_total += Number(c.herramental_cavidades || 0);
+      } else {
+        // rack
+        if (!c.es_vacia) {
+          ciclos_no_vacios++;
+          if (!c.defecto_id) ciclos_buenos++;
+          piezas_total     += Number(c.cantidad || 0);
+          // For capacity: if herramental has piezas config, use it (stored on carga)
+          piezas_obj_total += Number(c.piezas_objetivo_carga || 0);
+        }
+      }
+    }
+
+    let paros_min = 0;
+    for (const p of (pdb.paros_baker || [])) {
+      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                               p.fecha_inicio, p.fecha_fin, slotDate);
+    }
+
+    const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+    const eficiencia    = ciclos_obj > 0 ? r3(ciclos_totales / ciclos_obj) : 0;
+    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
+
+    slots.push({
+      slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
+      ciclos_totales, ciclos_no_vacios, ciclos_buenos,
+      piezas_total, piezas_obj_total,
+      paros_min: Math.round(paros_min * 10) / 10,
+      eficiencia, calidad, capacidad, disponibilidad
+    });
+    curMins += 60;
+  }
+  return slots;
+}
+
+// GET /baker/cargas/activas
+router.get('/baker/cargas/activas', (req, res) => {
+  const pdb = dbProd.read();
+  const cargas = (pdb.cargas_baker || []).filter(c => c.estado === 'activo');
+  cargas.sort((a, b) => {
+    const ta = `${a.fecha_carga}T${a.hora_carga}`;
+    const tb = `${b.fecha_carga}T${b.hora_carga}`;
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+  res.json(cargas);
+});
+
+// GET /baker/cargas
+router.get('/baker/cargas', (req, res) => {
+  const { fecha_ini, fecha_fin, turno, estado } = req.query;
+  const pdb = dbProd.read();
+  let cargas = pdb.cargas_baker || [];
+  if (fecha_ini) cargas = cargas.filter(c => c.fecha_carga >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => c.fecha_carga <= fecha_fin);
+  if (turno)  cargas = cargas.filter(c => c.turno === turno);
+  if (estado) cargas = cargas.filter(c => c.estado === estado);
+  cargas = cargas.sort((a, b) => {
+    const ta = `${a.fecha_carga}T${a.hora_carga}`;
+    const tb = `${b.fecha_carga}T${b.hora_carga}`;
+    return ta > tb ? -1 : ta < tb ? 1 : 0;
+  });
+  res.json(cargas);
+});
+
+// POST /baker/cargas — registrar nueva carga Baker (rack o barril)
+router.post('/baker/cargas', (req, res) => {
+  const pdb = dbProd.read();
+  if (!pdb.cargas_baker) pdb.cargas_baker = [];
+  if (!pdb.herramentales_baker) pdb.herramentales_baker = [];
+
+  const body = req.body || {};
+  const { herramental_id, proceso_id, sub_proceso_id, operador_id } = body;
+  if (!herramental_id) return res.status(400).json({ error: 'herramental_id es requerido' });
+
+  // Validar máximo 7 herramentales activos simultáneos
+  const activos = (pdb.cargas_baker || []).filter(c => c.estado === 'activo');
+  if (activos.length >= 7) return res.status(409).json({ error: 'Máximo 7 herramentales activos simultáneamente en Baker' });
+
+  // Validar no duplicar herramental activo
+  const dupActivo = activos.find(c => String(c.herramental_id) === String(herramental_id));
+  if (dupActivo) return res.status(409).json({ error: `El herramental ya está activo (folio ${dupActivo.folio})` });
+
+  const herr = (pdb.herramentales_baker || []).find(h => String(h.id) === String(herramental_id));
+  if (!herr) return res.status(404).json({ error: 'Herramental no encontrado' });
+
+  const proceso    = (pdb.procesos_baker      || []).find(p => String(p.id) === String(proceso_id));
+  const subProceso = (pdb.sub_procesos_baker  || []).find(s => String(s.id) === String(sub_proceso_id));
+  const operador   = (pdb.operadores_baker    || []).find(o => String(o.id) === String(operador_id));
+
+  const now  = new Date().toISOString();
+  const fecha = nowDateStr();
+  const hora  = nowTimeStr();
+  const turno = getTurno(hora);
+  const semana = getISOWeek(new Date(fecha + 'T12:00:00'));
+  const folio = nextFolio('BKR', pdb.cargas_baker, 'folio');
+
+  let carga = {
+    id: dbProd.nextId(pdb.cargas_baker),
+    folio,
+    herramental_id: herr.id,
+    herramental_no: herr.numero,
+    herramental_tipo: herr.tipo || 'rack',
+    proceso_id:     proceso?.id    || null,
+    proceso:        proceso?.nombre || body.proceso || null,
+    sub_proceso_id: subProceso?.id    || null,
+    sub_proceso:    subProceso?.nombre || body.sub_proceso || null,
+    operador_id:    operador?.id    || null,
+    operador:       operador?.nombre || body.operador || null,
+    fecha_carga: fecha, hora_carga: hora, semana, turno,
+    fecha_descarga: null, hora_descarga: null,
+    estado: 'activo',
+    es_reproceso: body.es_reproceso || false,
+    folio_origen: body.folio_origen || null,
+    created_at: now
+  };
+
+  if (herr.tipo === 'barril') {
+    const cavidades = Array.isArray(body.cavidades) ? body.cavidades : [];
+    const cavTotales = herr.cavidades || cavidades.length;
+    carga.herramental_cavidades = cavTotales;
+    carga.cavidades = cavidades.map((cv, i) => ({
+      num: i + 1,
+      es_vacia: cv.es_vacia || false,
+      motivo_vacia_id: cv.motivo_vacia_id || null,
+      motivo_vacia: cv.motivo_vacia || null,
+      cliente: cv.cliente || null,
+      componente_id: cv.componente_id || null,
+      componente: cv.componente || null,
+      no_skf: cv.no_skf || null,
+      no_orden: cv.no_orden || null,
+      lote: cv.lote || null,
+      estado: null // se asigna al descargar
+    }));
+    carga.cavidades_totales  = cavTotales;
+    carga.cavidades_cargadas = cavidades.filter(cv => !cv.es_vacia).length;
+    carga.cavidades_buenas   = 0;
+    carga.cavidades_defecto  = 0;
+    carga.cavidades_vacias   = cavidades.filter(cv => cv.es_vacia).length;
+  } else {
+    // rack
+    const comp = (pdb.componentes_baker || []).find(c => String(c.id) === String(body.componente_id));
+    const compObj = comp?.piezas_objetivo || 0;
+    const compOptima = comp?.carga_optima_varillas || 0;
+    carga.cliente       = body.cliente || comp?.cliente || null;
+    carga.componente_id = comp?.id     || null;
+    carga.componente    = comp?.nombre || body.componente || null;
+    carga.no_skf        = body.no_skf  || comp?.no_skf  || null;
+    carga.no_orden      = body.no_orden || null;
+    carga.lote          = body.lote     || null;
+    carga.varillas      = body.varillas ? Number(body.varillas) : null;
+    carga.piezas_por_varilla = herr.piezas_por_varilla || body.piezas_por_varilla ? Number(body.piezas_por_varilla || herr.piezas_por_varilla) : null;
+    carga.cantidad      = carga.varillas && carga.piezas_por_varilla
+      ? carga.varillas * carga.piezas_por_varilla
+      : (body.cantidad ? Number(body.cantidad) : null);
+    carga.piezas_objetivo_carga = compOptima && compObj ? compOptima * compObj : 0;
+    carga.es_vacia      = body.es_vacia || false;
+  }
+
+  pdb.cargas_baker.push(carga);
+  dbProd.write(pdb);
+  res.status(201).json(carga);
+});
+
+// POST /baker/cargas/:id/descargar
+router.post('/baker/cargas/:id/descargar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.cargas_baker) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.cargas_baker.findIndex(c => String(c.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Carga Baker no encontrada' });
+  const carga = pdb.cargas_baker[idx];
+  if (carga.estado !== 'activo') return res.status(409).json({ error: 'La carga no está activa' });
+
+  const body = req.body || {};
+  const fecha = nowDateStr();
+  const hora  = nowTimeStr();
+  const turno = getTurno(hora);
+
+  if (carga.herramental_tipo === 'barril') {
+    // body.cavidades: [{num, estado:'buena'|'defecto'|'vacia', defecto_id, defecto}]
+    const cavResultados = Array.isArray(body.cavidades) ? body.cavidades : [];
+    carga.cavidades = (carga.cavidades || []).map(cv => {
+      const res = cavResultados.find(r => r.num === cv.num) || {};
+      return { ...cv, estado: res.estado || cv.estado || 'vacia', defecto_id: res.defecto_id || null, defecto: res.defecto || null };
+    });
+    carga.cavidades_buenas  = carga.cavidades.filter(cv => cv.estado === 'buena').length;
+    carga.cavidades_defecto = carga.cavidades.filter(cv => cv.estado === 'defecto').length;
+    carga.cavidades_vacias  = carga.cavidades.filter(cv => cv.estado === 'vacia' || cv.es_vacia).length;
+  } else {
+    // rack
+    if (body.defecto_id) {
+      carga.defecto_id = body.defecto_id;
+      const def = (pdb.defectos_baker || []).find(d => String(d.id) === String(body.defecto_id));
+      carga.defecto = def?.nombre || body.defecto || null;
+      carga.estado  = 'defecto';
+    } else {
+      carga.estado = 'descargado';
+    }
+  }
+
+  if (carga.herramental_tipo === 'barril') {
+    carga.estado = 'descargado';
+  }
+
+  carga.fecha_descarga = fecha;
+  carga.hora_descarga  = hora;
+  carga.turno          = turno;
+  pdb.cargas_baker[idx] = carga;
+  dbProd.write(pdb);
+  res.json(carga);
+});
+
+// POST /baker/cargas/:id/reprocesar — crear nueva carga de reproceso para rack Baker
+router.post('/baker/cargas/:id/reprocesar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.cargas_baker) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.cargas_baker.findIndex(c => String(c.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Carga Baker no encontrada' });
+  const original = pdb.cargas_baker[idx];
+
+  if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
+
+  if (original.estado === 'activo') {
+    original.estado = 'defecto';
+    original.fecha_descarga = nowDateStr();
+    original.hora_descarga  = nowTimeStr();
+  }
+
+  const activos = pdb.cargas_baker.filter(c => c.estado === 'activo');
+  if (activos.length >= 7) return res.status(409).json({ error: 'Máximo 7 herramentales activos' });
+
+  const folio = nextFolio('BKR', pdb.cargas_baker, 'folio');
+  const nueva = {
+    ...original,
+    id: dbProd.nextId(pdb.cargas_baker),
+    folio,
+    estado: 'activo',
+    fecha_carga: nowDateStr(), hora_carga: nowTimeStr(),
+    turno: getTurno(nowTimeStr()),
+    fecha_descarga: null, hora_descarga: null,
+    defecto_id: null, defecto: null,
+    es_reproceso: true, folio_origen: original.folio,
+    created_at: new Date().toISOString()
+  };
+  if (original.herramental_tipo === 'barril') {
+    nueva.cavidades = (original.cavidades || []).map(cv => ({ ...cv, estado: null }));
+    nueva.cavidades_buenas = 0; nueva.cavidades_defecto = 0;
+  }
+
+  original.reprocesado = true;
+  pdb.cargas_baker[idx] = original;
+  pdb.cargas_baker.push(nueva);
+  dbProd.write(pdb);
+  res.status(201).json(nueva);
+});
+
+// GET /baker/paros/activo
+router.get('/baker/paros/activo', (req, res) => {
+  const pdb = dbProd.read();
+  const paro = (pdb.paros_baker || []).find(p => !p.fecha_fin);
+  res.json({ paro: paro || null });
+});
+
+// POST /baker/paros
+router.post('/baker/paros', (req, res) => {
+  const pdb = dbProd.read();
+  if (!pdb.paros_baker) pdb.paros_baker = [];
+
+  const abierto = pdb.paros_baker.find(p => !p.fecha_fin);
+  if (abierto) return res.status(409).json({ error: 'Ya existe un paro activo en Baker' });
+
+  const body = req.body || {};
+  const fecha_inicio = body.fecha_inicio || nowDateStr();
+  const hora_inicio  = body.hora_inicio  || nowTimeStr();
+  const turno        = getTurno(hora_inicio);
+
+  let motivo_id = body.motivo_id, motivo = body.motivo;
+  if (!motivo_id && motivo) {
+    const existente = (pdb.motivos_paro_baker || []).find(m => m.nombre === motivo);
+    if (existente) { motivo_id = existente.id; }
+    else {
+      if (!pdb.motivos_paro_baker) pdb.motivos_paro_baker = [];
+      const newM = { id: dbProd.nextId(pdb.motivos_paro_baker), nombre: motivo, activo: true, created_at: new Date().toISOString() };
+      pdb.motivos_paro_baker.push(newM);
+      motivo_id = newM.id;
+    }
+  }
+
+  const folio = nextFolio('BKRP', pdb.paros_baker, 'folio');
+  const paro = {
+    id: dbProd.nextId(pdb.paros_baker), folio,
+    motivo_id, motivo,
+    sub_motivo_id: body.sub_motivo_id || null,
+    sub_motivo: body.sub_motivo || null,
+    fecha_inicio, hora_inicio, turno,
+    fecha_fin: null, hora_fin: null, duracion_min: null,
+    tipo: body.tipo || null,
+    created_at: new Date().toISOString()
+  };
+  pdb.paros_baker.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+// PATCH /baker/paros/:id/cerrar
+router.patch('/baker/paros/:id/cerrar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.paros_baker) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.paros_baker.findIndex(p => String(p.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+  const paro = pdb.paros_baker[idx];
+  if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya está cerrado' });
+
+  const fecha_fin = nowDateStr();
+  const hora_fin  = nowTimeStr();
+  const ini  = toMins(paro.hora_inicio);
+  const fin  = toMins(hora_fin);
+  const duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+
+  paro.fecha_fin = fecha_fin; paro.hora_fin = hora_fin; paro.duracion_min = duracion_min;
+  pdb.paros_baker[idx] = paro;
+  dbProd.write(pdb);
+  res.json(paro);
+});
+
+// POST /baker/paros/auto-sin-actividad (idempotente)
+router.post('/baker/paros/auto-sin-actividad', (req, res) => {
+  const { fecha, turno } = req.body || {};
+  if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
+
+  const pdb = dbProd.read();
+  const cargas = (pdb.cargas_baker || []).filter(c => c.fecha_carga === fecha && c.turno === turno);
+  if (cargas.length > 0) return res.json({ skipped: true, reason: 'Hay cargas en el turno' });
+
+  const paros = (pdb.paros_baker || []).filter(p => p.fecha_inicio === fecha && p.turno === turno);
+  if (paros.length > 0) return res.json({ skipped: true, reason: 'Ya hay paros en el turno' });
+
+  if (!pdb.motivos_paro_baker) pdb.motivos_paro_baker = [];
+  let motivoAuto = pdb.motivos_paro_baker.find(m => m.nombre === 'Turno no trabajado');
+  if (!motivoAuto) {
+    motivoAuto = { id: dbProd.nextId(pdb.motivos_paro_baker), nombre: 'Turno no trabajado', activo: true, created_at: new Date().toISOString() };
+    pdb.motivos_paro_baker.push(motivoAuto);
+  }
+
+  const SHIFT_TIMES = { T1: { hi:'06:30', hf:'14:30', dur:480 }, T2: { hi:'14:30', hf:'21:30', dur:420 }, T3: { hi:'21:30', hf:'06:30', dur:540 } };
+  const st = SHIFT_TIMES[turno] || SHIFT_TIMES.T1;
+  if (!pdb.paros_baker) pdb.paros_baker = [];
+  const folio = nextFolio('BKRP', pdb.paros_baker, 'folio');
+  const paro = {
+    id: dbProd.nextId(pdb.paros_baker), folio,
+    motivo_id: motivoAuto.id, motivo: motivoAuto.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio: fecha, hora_inicio: st.hi, turno,
+    fecha_fin: turno === 'T3' ? addDays(fecha, 1) : fecha,
+    hora_fin: st.hf, duracion_min: st.dur,
+    tipo: 'auto', created_at: new Date().toISOString()
+  };
+  pdb.paros_baker.push(paro);
+  dbProd.write(pdb);
+  res.json({ created: true, paro });
 });
 
 // ─── Export ───────────────────────────────────────────────────────────────────

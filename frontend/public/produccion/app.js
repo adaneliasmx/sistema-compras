@@ -40,6 +40,7 @@ const MENU = {
     ['dashboard',      '📊', 'Dashboard'],
     ['linea-3',        '🏭', 'Línea 3'],
     ['linea-4',        '🏭', 'Línea 4'],
+    ['linea-baker',    '🔧', 'Baker'],
     ['reportes',       '📈', 'Reportes'],
     ['paros',          '⏸', 'Paros'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
@@ -48,14 +49,16 @@ const MENU = {
     ['---', '', 'Catálogos'],
     ['catalogos-l3',   '📦', 'Catálogos L3'],
     ['catalogos-l4',   '📦', 'Catálogos L4'],
+    ['catalogos-baker','📦', 'Catálogos Baker'],
     ['operadores',     '👤', 'Operadores'],
     ['configuracion',  '⚙️', 'Configuración']
   ],
   produccion: [
-    ['dashboard',  '📊', 'Dashboard'],
-    ['linea-3',    '🏭', 'Línea 3'],
-    ['linea-4',    '🏭', 'Línea 4'],
-    ['pizarron',   '📋', 'Pizarrón KPI']
+    ['dashboard',    '📊', 'Dashboard'],
+    ['linea-3',      '🏭', 'Línea 3'],
+    ['linea-4',      '🏭', 'Línea 4'],
+    ['linea-baker',  '🔧', 'Baker'],
+    ['pizarron',     '📋', 'Pizarrón KPI']
   ],
   pizarron: [
     ['pizarron',   '📋', 'Pizarrón KPI']
@@ -63,19 +66,21 @@ const MENU = {
 };
 
 const SECTION_TITLES = {
-  'dashboard':      'Dashboard de Producción',
-  'linea-3':        'Línea 3 — Tarjetero Activo',
-  'linea-4':        'Línea 4 — Tarjetero Activo',
-  'linea-op':       'Mi Línea — Tarjetero Activo',
-  'reportes':       'Reportes de Producción',
-  'paros':          'Registro de Paros',
-  'pizarron':       'Pizarrón KPI',
-  'kpi-historico':  'KPI Histórico',
-  'monitor':        'Monitor en vivo — L3 y L4',
-  'catalogos-l3':   'Catálogos Línea 3',
-  'catalogos-l4':   'Catálogos Línea 4',
-  'operadores':     'Gestión de Operadores',
-  'configuracion':  'Configuración'
+  'dashboard':       'Dashboard de Producción',
+  'linea-3':         'Línea 3 — Tarjetero Activo',
+  'linea-4':         'Línea 4 — Tarjetero Activo',
+  'linea-op':        'Mi Línea — Tarjetero Activo',
+  'linea-baker':     'Baker — Tarjetero Activo',
+  'reportes':        'Reportes de Producción',
+  'paros':           'Registro de Paros',
+  'pizarron':        'Pizarrón KPI',
+  'kpi-historico':   'KPI Histórico',
+  'monitor':         'Monitor en vivo — L3 y L4',
+  'catalogos-l3':    'Catálogos Línea 3',
+  'catalogos-l4':    'Catálogos Línea 4',
+  'catalogos-baker': 'Catálogos Baker',
+  'operadores':      'Gestión de Operadores',
+  'configuracion':   'Configuración'
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -507,17 +512,19 @@ async function renderMain() {
     switch (state.section) {
       case 'dashboard':     await viewDashboard(el);     break;
       case 'linea-3':       await viewLinea(el, 'L3');   break;
-      case 'linea-4':       await viewLinea(el, 'L4');   break;
-      case 'linea-op':      await viewLinea(el, lineaFromSection('linea-op')); break;
-      case 'reportes':      await viewReportes(el);      break;
-      case 'paros':         await viewParos(el);         break;
-      case 'pizarron':      await viewPizarron(el);      break;
-      case 'kpi-historico': await viewKpiHistorico(el);  break;
-      case 'monitor':       await viewMonitor(el);       break;
-      case 'catalogos-l3':  await viewCatalogos(el, 'L3'); break;
-      case 'catalogos-l4':  await viewCatalogos(el, 'L4'); break;
-      case 'operadores':    await viewOperadores(el);    break;
-      case 'configuracion': await viewConfiguracion(el); break;
+      case 'linea-4':        await viewLinea(el, 'L4');      break;
+      case 'linea-op':       await viewLinea(el, lineaFromSection('linea-op')); break;
+      case 'linea-baker':    await viewBaker(el);             break;
+      case 'reportes':       await viewReportes(el);          break;
+      case 'paros':          await viewParos(el);             break;
+      case 'pizarron':       await viewPizarron(el);          break;
+      case 'kpi-historico':  await viewKpiHistorico(el);      break;
+      case 'monitor':        await viewMonitor(el);           break;
+      case 'catalogos-l3':   await viewCatalogos(el, 'L3');   break;
+      case 'catalogos-l4':   await viewCatalogos(el, 'L4');   break;
+      case 'catalogos-baker':await viewCatalogos(el, 'baker');break;
+      case 'operadores':     await viewOperadores(el);        break;
+      case 'configuracion':  await viewConfiguracion(el);     break;
       default:
         el.innerHTML = '<p class="empty-state">Sección no encontrada.</p>';
     }
@@ -779,6 +786,580 @@ async function viewLinea(el, linea) {
   } catch (e) {
     el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${escHtml(e.message)}</div>`;
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: BAKER (tarjetero activo)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewBaker(el) {
+  clearInterval(state._lineaTimer);
+  state._lineaTimer = setInterval(() => {
+    const elActual = document.getElementById('p-content');
+    if (elActual && state.section === 'linea-baker') viewBaker(elActual);
+  }, 20000);
+
+  el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Baker...</p></div>';
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const turnoActual = getCurrentTurno();
+
+    const [cargasData, catalogData, paroData, todasHoyData] = await Promise.all([
+      GET('/baker/cargas/activas'),
+      GET('/catalogos/baker'),
+      GET('/baker/paros/activo').catch(() => null),
+      GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`).catch(() => [])
+    ]);
+
+    const cargas   = Array.isArray(cargasData) ? cargasData : [];
+    const catalogo = catalogData || {};
+    let paroActivo = paroData?.paro || null;
+    const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
+    const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
+
+    // Check turno anterior sin actividad (idempotente)
+    try {
+      const prev = getPrevTurnoInfo();
+      await POST('/baker/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
+    } catch (_) {}
+
+    const capacidadBar = `
+      <div style="display:flex;align-items:center;gap:8px;background:#f1f5f9;border-radius:8px;padding:6px 14px">
+        <span style="font-size:13px;color:#64748b;font-weight:600">Herramentales:</span>
+        <span style="font-size:18px;font-weight:800;color:${cargas.length >= 7 ? '#dc2626' : cargas.length >= 5 ? '#f59e0b' : '#16a34a'}">${cargas.length}/7</span>
+        <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;max-width:80px">
+          <div style="width:${(cargas.length/7*100).toFixed(0)}%;background:${cargas.length >= 7 ? '#dc2626' : '#3b82f6'};height:8px;border-radius:4px"></div>
+        </div>
+      </div>`;
+
+    const paroMiniCard = paroActivo
+      ? `<div style="display:flex;align-items:center;gap:8px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;padding:6px 12px">
+           <span style="color:#dc2626;font-weight:700;font-size:13px">🔴 PARO ACTIVO</span>
+           <span style="font-size:13px;font-weight:600">${escHtml(paroActivo.motivo || '—')}</span>
+           <span style="font-size:11px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio || '')}</span>
+           <button class="btn btn-sm btn-primary" id="btn-baker-cerrar-paro" data-id="${paroActivo.id}">✅ Cerrar Paro</button>
+         </div>`
+      : '';
+
+    const tarjetasHtml = cargas.length === 0
+      ? '<div class="empty-state"><div class="icon">📭</div><p>No hay herramentales activos en Baker.</p></div>'
+      : `<div class="tarjetero-grid">${cargas.map(c => renderTarjetaBaker(c)).join('')}</div>`;
+
+    el.innerHTML = `
+      <div class="tarjetero-header">
+        <h3>Baker — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activos</span></h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+            🔄 Ciclos ${turnoActual}: <span style="color:#38bdf8;font-size:16px">${ciclosTurno}</span>
+          </div>
+          ${capacidadBar}
+          ${paroMiniCard}
+          <div class="tarjetero-actions">
+            ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-baker-paro">⏸ Registrar Paro</button>' : ''}
+            <button class="btn btn-primary" id="btn-baker-carga"${cargas.length >= 7 ? ' disabled title="Máx. 7 herramentales activos"' : ''}>+ Registrar Herramental</button>
+          </div>
+        </div>
+      </div>
+      ${tarjetasHtml}`;
+
+    el.querySelector('#btn-baker-carga')?.addEventListener('click', () => {
+      if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
+      openModalCargaBaker(catalogo, () => viewBaker(el));
+    });
+    el.querySelector('#btn-baker-paro')?.addEventListener('click', () => {
+      openModalParoBaker(catalogo, () => viewBaker(el));
+    });
+    el.querySelector('#btn-baker-cerrar-paro')?.addEventListener('click', async (ev) => {
+      const id = ev.currentTarget.dataset.id;
+      try {
+        await PATCH(`/baker/paros/${id}/cerrar`, {});
+        viewBaker(el);
+      } catch (e) { alert('Error al cerrar paro: ' + e.message); }
+    });
+    el.querySelectorAll('[data-baker-descargar]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (paroActivo) { alert('Cierra el paro activo antes de descargar.'); return; }
+        const carga = cargas.find(c => String(c.id) === String(btn.dataset.bakerDescargar));
+        openModalDescargaBaker(carga, catalogo, () => viewBaker(el));
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderTarjetaBaker(c) {
+  const esBarril = c.herramental_tipo === 'barril';
+  const cavInfo  = esBarril
+    ? `<div class="tarjeta-meta-item"><span class="meta-label">Cavidades</span><span class="meta-val">${c.cavidades_cargadas ?? '—'}/${c.herramental_cavidades ?? '—'}</span></div>`
+    : `<div class="tarjeta-meta-item"><span class="meta-label">Varillas</span><span class="meta-val">${c.varillas ?? '—'}</span></div>
+       <div class="tarjeta-meta-item"><span class="meta-label">Cantidad</span><span class="meta-val">${c.cantidad ?? '—'}</span></div>`;
+
+  return `
+  <div class="tarjeta-card">
+    <div class="tarjeta-header">
+      <span class="herramental-no">${escHtml(c.herramental_no || '—')}</span>
+      <span class="folio">#${escHtml(c.folio || c.id)}</span>
+    </div>
+    <div class="tarjeta-body">
+      <div class="tarjeta-componente">${esBarril ? '🛢 Barril' : ('🔩 Rack — ' + escHtml(c.componente || '— sin comp —'))}</div>
+      <div class="tarjeta-cliente">${escHtml(c.cliente || '')}</div>
+      <div class="tarjeta-meta">
+        ${cavInfo}
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Proceso</span>
+          <span class="meta-val">${escHtml(c.proceso || '—')}${c.sub_proceso ? ' › ' + escHtml(c.sub_proceso) : ''}</span>
+        </div>
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Cargado</span>
+          <span class="meta-val">${c.fecha_carga || ''} ${fmtTime(c.created_at)}</span>
+        </div>
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Operador</span>
+          <span class="meta-val">${escHtml(c.operador || '—')}</span>
+        </div>
+      </div>
+    </div>
+    <div class="tarjeta-footer">
+      <span class="badge badge-activo">activo</span>
+      <button class="btn-descargar" data-baker-descargar="${c.id}">⬇ Descargar</button>
+    </div>
+  </div>`;
+}
+
+// ── Modal: Registrar Herramental Baker ────────────────────────────────────────
+function openModalCargaBaker(catalogo, onDone) {
+  const herramentales = (catalogo.herramentales || []).filter(h => h.activo !== false);
+  const procesos      = (catalogo.procesos      || []).filter(p => p.activo !== false);
+  const subProcesos   = (catalogo.sub_procesos  || []).filter(s => s.activo !== false);
+  const componentes   = (catalogo.componentes   || []).filter(c => c.activo !== false);
+  const clientes      = (catalogo.clientes      || []).filter(c => c.activo !== false);
+  const operadores    = (catalogo.operadores    || []).filter(o => o.activo !== false);
+
+  const myOp = operadores.find(o =>
+    (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+    (o.compras_user_id && o.compras_user_id === state.user?.id)
+  );
+
+  const htmlHerr = herramentales.map(h => `<option value="${h.id}" data-tipo="${h.tipo||'rack'}" data-cav="${h.cavidades||0}" data-ppv="${h.piezas_por_varilla||0}">${escHtml(h.numero)}${h.tipo==='barril' ? ' (Barril '+(h.cavidades||'?')+'cav)' : ' (Rack)'}</option>`).join('');
+  const htmlProc = procesos.map(p => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
+  const htmlOper = operadores.map(o => `<option value="${o.id}"${o.id===myOp?.id?' selected':''}>${escHtml(o.nombre)}</option>`).join('');
+  const htmlComp = componentes.map(c => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-skf="${escHtml(c.no_skf||'')}">${escHtml(c.nombre)}</option>`).join('');
+  const htmlCli  = clientes.map(c   => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
+
+  showModal(`
+    <h3>Registrar Herramental — Baker</h3>
+    <div class="form-grid">
+      <div class="form-group full" style="display:flex;gap:8px;align-items:center">
+        <label style="white-space:nowrap">Modo registro:</label>
+        <button type="button" id="bk-mode-qr" class="btn btn-sm btn-primary">📷 Escanear QR (SKF)</button>
+        <button type="button" id="bk-mode-manual" class="btn btn-sm btn-outline">✏️ Manual</button>
+      </div>
+      <!-- QR zone -->
+      <div id="bk-qr-zone" class="form-group full" style="display:none">
+        <label>Pega o escribe el código QR SKF:</label>
+        <input type="text" id="bk-qr-input" placeholder='56832934"0815045"…' style="font-family:monospace;font-size:12px" />
+        <button type="button" id="bk-qr-parse" class="btn btn-sm btn-outline" style="margin-top:6px">🔍 Leer QR</button>
+        <div id="bk-qr-result" style="font-size:12px;color:#16a34a;margin-top:4px"></div>
+      </div>
+
+      <div class="form-group">
+        <label>Herramental</label>
+        <select id="bk-herramental"><option value="">— Seleccionar —</option>${htmlHerr}</select>
+      </div>
+      <div class="form-group">
+        <label>Proceso</label>
+        <select id="bk-proceso"><option value="">— Seleccionar —</option>${htmlProc}</select>
+      </div>
+      <div class="form-group">
+        <label>Sub-proceso</label>
+        <select id="bk-subproceso"><option value="">— Seleccionar —</option></select>
+      </div>
+      <div class="form-group">
+        <label>Operador</label>
+        <select id="bk-operador"><option value="">— Seleccionar —</option>${htmlOper}</select>
+      </div>
+
+      <!-- Campos rack (se muestran/ocultan según tipo herramental) -->
+      <div id="bk-rack-fields" style="display:contents">
+        <div class="form-group">
+          <label>Cliente</label>
+          <select id="bk-cliente-sel" style="width:100%"><option value="">— Seleccionar —</option>${htmlCli}<option value="__otro__">Otro (escribir)</option></select>
+          <input type="text" id="bk-cliente-txt" placeholder="Nombre del cliente" style="margin-top:6px;display:none" />
+        </div>
+        <div class="form-group">
+          <label>Componente (catálogo)</label>
+          <select id="bk-componente"><option value="">— Seleccionar —</option>${htmlComp}</select>
+        </div>
+        <div class="form-group">
+          <label>No. SKF</label>
+          <input type="text" id="bk-no-skf" placeholder="Auto de catálogo o QR" />
+        </div>
+        <div class="form-group">
+          <label>No. Orden</label>
+          <input type="text" id="bk-no-orden" />
+        </div>
+        <div class="form-group">
+          <label>Lote</label>
+          <input type="text" id="bk-lote" />
+        </div>
+        <div class="form-group">
+          <label>Varillas</label>
+          <input type="number" id="bk-varillas" min="1" />
+        </div>
+      </div>
+
+      <!-- Cavidades barril (hidden by default) -->
+      <div id="bk-barril-fields" style="display:none" class="form-group full">
+        <label style="font-weight:700;font-size:14px">Cavidades del barril</label>
+        <div id="bk-cavidades-container"></div>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="bk-save">✅ Registrar</button>
+    </div>`, { size: 'lg' });
+
+  // Poblar sub-procesos al cambiar proceso
+  const subProcesoSel = document.getElementById('bk-subproceso');
+  function updateSubProcesos(procesoId) {
+    const subs = subProcesos.filter(s => String(s.proceso_id) === String(procesoId));
+    subProcesoSel.innerHTML = '<option value="">— Ninguno —</option>' + subs.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
+  }
+  document.getElementById('bk-proceso').addEventListener('change', e => updateSubProcesos(e.target.value));
+
+  // Auto-fill from componente catalog
+  document.getElementById('bk-componente').addEventListener('change', e => {
+    const opt = e.target.selectedOptions[0];
+    if (!opt) return;
+    const cliente = opt.dataset.cliente || '';
+    const skf = opt.dataset.skf || '';
+    if (cliente) {
+      const sel = document.getElementById('bk-cliente-sel');
+      const match = [...sel.options].find(o => o.value === cliente);
+      if (match) sel.value = cliente;
+      document.getElementById('bk-cliente-txt').value = cliente;
+    }
+    if (skf) document.getElementById('bk-no-skf').value = skf;
+  });
+
+  // Cliente custom
+  document.getElementById('bk-cliente-sel').addEventListener('change', e => {
+    const txt = document.getElementById('bk-cliente-txt');
+    txt.style.display = e.target.value === '__otro__' ? '' : 'none';
+  });
+
+  // Herramental tipo toggle
+  document.getElementById('bk-herramental').addEventListener('change', e => {
+    const opt = e.target.selectedOptions[0];
+    const tipo = opt?.dataset.tipo || 'rack';
+    const cav  = parseInt(opt?.dataset.cav || '0');
+    document.getElementById('bk-rack-fields').style.display  = tipo === 'rack'   ? 'contents' : 'none';
+    document.getElementById('bk-barril-fields').style.display = tipo === 'barril' ? '' : 'none';
+    if (tipo === 'barril' && cav > 0) buildCavidadesForm(cav, componentes, clientes);
+  });
+
+  // QR mode
+  document.getElementById('bk-mode-qr').addEventListener('click', () => {
+    document.getElementById('bk-qr-zone').style.display = '';
+    document.getElementById('bk-qr-input').focus();
+  });
+  document.getElementById('bk-mode-manual').addEventListener('click', () => {
+    document.getElementById('bk-qr-zone').style.display = 'none';
+  });
+  document.getElementById('bk-qr-parse').addEventListener('click', () => {
+    const raw = document.getElementById('bk-qr-input').value;
+    const parts = raw.split('"');
+    // SKF: [0]=no_skf, [1]=dispatch(ignore), [2]=no_orden, [3]=componente, [4]=cantidad, [5]=lote
+    const no_skf   = parts[0]?.trim() || '';
+    const no_orden = parts[2]?.trim() || '';
+    const compName = parts[3]?.trim() || '';
+    const lote     = parts[5]?.trim() || '';
+    document.getElementById('bk-no-skf').value   = no_skf;
+    document.getElementById('bk-no-orden').value  = no_orden;
+    document.getElementById('bk-lote').value       = lote;
+    // Auto-select cliente SKF
+    const sklSel = document.getElementById('bk-cliente-sel');
+    const skfOpt = [...sklSel.options].find(o => o.value.toLowerCase().includes('skf'));
+    if (skfOpt) sklSel.value = skfOpt.value;
+    // Match componente by name or no_skf
+    const compSel = document.getElementById('bk-componente');
+    const compOpt = [...compSel.options].find(o =>
+      o.text.toLowerCase().includes(compName.toLowerCase()) || o.dataset.skf === no_skf
+    );
+    if (compOpt) { compSel.value = compOpt.value; compSel.dispatchEvent(new Event('change')); }
+    document.getElementById('bk-qr-result').textContent = `✅ SKF:${no_skf} Orden:${no_orden} Comp:${compName} Lote:${lote}`;
+  });
+
+  document.getElementById('bk-save').addEventListener('click', async () => {
+    const herrEl = document.getElementById('bk-herramental');
+    const herrId = herrEl.value;
+    const herrOpt = herrEl.selectedOptions[0];
+    const tipo = herrOpt?.dataset.tipo || 'rack';
+    if (!herrId) { alert('Selecciona un herramental'); return; }
+
+    const procesoId    = document.getElementById('bk-proceso').value || null;
+    const subProcesoId = document.getElementById('bk-subproceso').value || null;
+    const operadorId   = document.getElementById('bk-operador').value || null;
+
+    const payload = { herramental_id: herrId, proceso_id: procesoId, sub_proceso_id: subProcesoId, operador_id: operadorId };
+
+    if (tipo === 'rack') {
+      const clienteSel = document.getElementById('bk-cliente-sel').value;
+      payload.cliente      = clienteSel === '__otro__' ? document.getElementById('bk-cliente-txt').value : clienteSel;
+      payload.componente_id = document.getElementById('bk-componente').value || null;
+      payload.no_skf       = document.getElementById('bk-no-skf').value || null;
+      payload.no_orden     = document.getElementById('bk-no-orden').value || null;
+      payload.lote         = document.getElementById('bk-lote').value || null;
+      payload.varillas     = document.getElementById('bk-varillas').value || null;
+    } else {
+      // barril
+      const cavInputs = document.querySelectorAll('#bk-cavidades-container .bk-cav-row');
+      payload.cavidades = [...cavInputs].map((row, i) => {
+        const vacia = row.querySelector('.bk-cav-vacia')?.checked || false;
+        return {
+          es_vacia:      vacia,
+          motivo_vacia_id: vacia ? (row.querySelector('.bk-cav-motivo')?.value || null) : null,
+          motivo_vacia:    vacia ? (row.querySelector('.bk-cav-motivo')?.selectedOptions[0]?.text || null) : null,
+          cliente:       row.querySelector('.bk-cav-cliente')?.value || null,
+          componente_id: row.querySelector('.bk-cav-comp')?.value || null,
+          componente:    row.querySelector('.bk-cav-comp')?.selectedOptions[0]?.text || null,
+          no_skf:        row.querySelector('.bk-cav-skf')?.value || null,
+          no_orden:      row.querySelector('.bk-cav-orden')?.value || null,
+          lote:          row.querySelector('.bk-cav-lote')?.value || null
+        };
+      });
+    }
+
+    const btn = document.getElementById('bk-save');
+    btn.disabled = true; btn.textContent = 'Registrando...';
+    try {
+      await POST('/baker/cargas', payload);
+      closeModal();
+      if (onDone) onDone();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '✅ Registrar';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
+function buildCavidadesForm(n, componentes, clientes) {
+  const motivosCav = []; // could pass from catalogo; keep simple for now
+  const htmlComp = componentes.map(c => `<option value="${c.id}" data-skf="${escHtml(c.no_skf||'')}">${escHtml(c.nombre)}</option>`).join('');
+  const htmlCli  = clientes.map(c => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
+  let html = '';
+  for (let i = 1; i <= n; i++) {
+    html += `<div class="bk-cav-row" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Cavidad ${i}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+        <div>
+          <label style="font-size:12px">Cliente</label>
+          <select class="bk-cav-cliente" style="width:100%"><option value="">— —</option>${htmlCli}</select>
+        </div>
+        <div>
+          <label style="font-size:12px">Componente</label>
+          <select class="bk-cav-comp" style="width:100%"><option value="">— —</option>${htmlComp}</select>
+        </div>
+        <div>
+          <label style="font-size:12px">No. SKF</label>
+          <input class="bk-cav-skf" type="text" style="width:100%" />
+        </div>
+        <div>
+          <label style="font-size:12px">No. Orden</label>
+          <input class="bk-cav-orden" type="text" style="width:100%" />
+        </div>
+        <div>
+          <label style="font-size:12px">Lote</label>
+          <input class="bk-cav-lote" type="text" style="width:100%" />
+        </div>
+        <div style="display:flex;align-items:flex-end">
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
+            <input type="checkbox" class="bk-cav-vacia" /> Vacía
+          </label>
+        </div>
+      </div>
+    </div>`;
+  }
+  document.getElementById('bk-cavidades-container').innerHTML = html;
+}
+
+// ── Modal: Descargar Herramental Baker ────────────────────────────────────────
+function openModalDescargaBaker(carga, catalogo, onDone) {
+  if (!carga) return;
+  const defectos = (catalogo.defectos || []).filter(d => d.activo !== false);
+  const esBarril = carga.herramental_tipo === 'barril';
+
+  let bodyHtml = '';
+  if (esBarril) {
+    const defOpts = defectos.map(d => `<option value="${d.id}" data-nombre="${escHtml(d.nombre)}">${escHtml(d.nombre)}</option>`).join('');
+    const cavidades = carga.cavidades || [];
+    bodyHtml = `<div style="max-height:420px;overflow-y:auto">` +
+      cavidades.map((cv, i) => {
+        const compLabel = cv.componente || (cv.es_vacia ? '— vacía —' : '—');
+        return `<div class="bk-desc-cav" data-num="${cv.num || i+1}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">
+          <div style="font-weight:700;font-size:13px">Cavidad ${cv.num || i+1}: ${escHtml(compLabel)}</div>
+          ${cv.es_vacia ? '<div style="color:#9ca3af;font-size:12px">Cavidad vacía</div>' : `
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button type="button" class="bk-estado-btn btn btn-sm" data-est="buena" style="background:#dcfce7;color:#166534;border:2px solid transparent">✅ Buena</button>
+            <button type="button" class="bk-estado-btn btn btn-sm" data-est="defecto" style="background:#fef2f2;color:#dc2626;border:2px solid transparent">❌ Defecto</button>
+            <button type="button" class="bk-estado-btn btn btn-sm" data-est="reproceso" style="background:#fef9c3;color:#854d0e;border:2px solid transparent">🔄 Reproceso</button>
+          </div>
+          <div class="bk-defecto-sel" style="display:none;margin-top:8px">
+            <label style="font-size:12px">Defecto</label>
+            <select class="bk-cav-defecto-sel" style="width:100%"><option value="">— Seleccionar —</option>${defOpts}</select>
+          </div>`}
+        </div>`;
+      }).join('') + `</div>`;
+  } else {
+    // rack
+    const defOpts = defectos.map(d => `<option value="${d.id}" data-nombre="${escHtml(d.nombre)}">${escHtml(d.nombre)}</option>`).join('');
+    bodyHtml = `
+      <div style="background:#f1f5f9;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px">
+        <div><strong>Herramental:</strong> ${escHtml(carga.herramental_no || '—')}</div>
+        <div><strong>Componente:</strong> ${escHtml(carga.componente || '—')}</div>
+        <div><strong>Varillas:</strong> ${carga.varillas ?? '—'} · <strong>Cantidad:</strong> ${carga.cantidad ?? '—'}</div>
+      </div>
+      <div class="form-group">
+        <label>Resultado</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button type="button" class="bk-rack-est btn btn-sm" data-est="buena" style="background:#dcfce7;color:#166534">✅ Buena</button>
+          <button type="button" class="bk-rack-est btn btn-sm" data-est="defecto" style="background:#fef2f2;color:#dc2626">❌ Defecto</button>
+          <button type="button" class="bk-rack-est btn btn-sm" data-est="reproceso" style="background:#fef9c3;color:#854d0e">🔄 Reproceso</button>
+        </div>
+      </div>
+      <div id="bk-rack-defecto-wrap" style="display:none;margin-top:8px" class="form-group">
+        <label>Tipo de defecto</label>
+        <select id="bk-rack-defecto"><option value="">— Seleccionar —</option>${defOpts}</select>
+      </div>`;
+  }
+
+  showModal(`
+    <h3>Descargar Herramental Baker — ${escHtml(carga.herramental_no || carga.folio)}</h3>
+    ${bodyHtml}
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="bk-desc-save">⬇ Confirmar Descarga</button>
+    </div>`, { size: esBarril ? 'lg' : 'md' });
+
+  let rackEstado = null;
+  let rackDefectoId = null;
+
+  if (esBarril) {
+    // Bind estado buttons per cavity
+    document.querySelectorAll('.bk-desc-cav').forEach(cavEl => {
+      cavEl.querySelectorAll('.bk-estado-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          cavEl.querySelectorAll('.bk-estado-btn').forEach(b => b.style.border = '2px solid transparent');
+          btn.style.border = '2px solid #1d4ed8';
+          cavEl.dataset.estado = btn.dataset.est;
+          const defSel = cavEl.querySelector('.bk-defecto-sel');
+          if (defSel) defSel.style.display = btn.dataset.est === 'defecto' ? '' : 'none';
+        });
+      });
+    });
+  } else {
+    document.querySelectorAll('.bk-rack-est').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.bk-rack-est').forEach(b => b.style.outline = 'none');
+        btn.style.outline = '2px solid #1d4ed8';
+        rackEstado = btn.dataset.est;
+        document.getElementById('bk-rack-defecto-wrap').style.display = btn.dataset.est === 'defecto' ? '' : 'none';
+      });
+    });
+  }
+
+  document.getElementById('bk-desc-save').addEventListener('click', async () => {
+    const btn = document.getElementById('bk-desc-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      if (esBarril) {
+        const cavResultados = [];
+        document.querySelectorAll('.bk-desc-cav').forEach(cavEl => {
+          const num = parseInt(cavEl.dataset.num);
+          const estado = cavEl.dataset.estado;
+          if (!estado) return; // skip empty cavities (they stay vacía)
+          const defSel = cavEl.querySelector('.bk-cav-defecto-sel');
+          const defecto_id = defSel?.value || null;
+          const defecto = defSel?.selectedOptions[0]?.dataset?.nombre || null;
+          if (estado === 'reproceso') {
+            // Handle reproceso per cavity: mark defecto for now, reproceso requires separate flow
+            cavResultados.push({ num, estado: 'defecto', defecto_id, defecto, es_reproceso: true });
+          } else {
+            cavResultados.push({ num, estado, defecto_id, defecto });
+          }
+        });
+        await POST(`/baker/cargas/${carga.id}/descargar`, { cavidades: cavResultados });
+      } else {
+        if (!rackEstado) { alert('Selecciona el resultado'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
+        if (rackEstado === 'reproceso') {
+          // Crear reproceso directo
+          await POST(`/baker/cargas/${carga.id}/reprocesar`, {});
+          closeModal();
+          if (onDone) onDone();
+          return;
+        }
+        const defectoId = rackEstado === 'defecto' ? document.getElementById('bk-rack-defecto').value : null;
+        await POST(`/baker/cargas/${carga.id}/descargar`, { defecto_id: defectoId || null });
+      }
+      closeModal();
+      if (onDone) onDone();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
+// ── Modal: Registrar Paro Baker ───────────────────────────────────────────────
+function openModalParoBaker(catalogo, onDone) {
+  const motivos    = (catalogo.motivos_paro || []).filter(m => m.activo !== false);
+  const subMotivos = (catalogo.sub_motivos  || []).filter(s => s.activo !== false);
+  const htmlMotivos = motivos.map(m => `<option value="${m.id}">${escHtml(m.nombre)}</option>`).join('');
+
+  showModal(`
+    <h3>⏸ Registrar Paro — Baker</h3>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Motivo de paro</label>
+        <select id="bkp-motivo"><option value="">— Seleccionar —</option>${htmlMotivos}</select>
+      </div>
+      <div class="form-group full">
+        <label>Sub-motivo</label>
+        <select id="bkp-submotivo"><option value="">— Ninguno —</option></select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-danger" id="bkp-save">⏸ Iniciar Paro</button>
+    </div>`, { size: 'sm' });
+
+  document.getElementById('bkp-motivo').addEventListener('change', e => {
+    const id = e.target.value;
+    const subs = subMotivos.filter(s => String(s.motivo_id) === String(id));
+    const subSel = document.getElementById('bkp-submotivo');
+    subSel.innerHTML = '<option value="">— Ninguno —</option>' + subs.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
+  });
+
+  document.getElementById('bkp-save').addEventListener('click', async () => {
+    const motivoSel = document.getElementById('bkp-motivo');
+    const motivoId  = motivoSel.value;
+    const motivoNom = motivoSel.selectedOptions[0]?.text || '';
+    if (!motivoId) { alert('Selecciona un motivo'); return; }
+    const subSel    = document.getElementById('bkp-submotivo');
+    const subId     = subSel.value || null;
+    const subNom    = subId ? (subSel.selectedOptions[0]?.text || null) : null;
+    const btn = document.getElementById('bkp-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await POST('/baker/paros', { motivo_id: motivoId, motivo: motivoNom, sub_motivo_id: subId, sub_motivo: subNom });
+      closeModal();
+      if (onDone) onDone();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '⏸ Iniciar Paro';
+      alert('Error: ' + e.message);
+    }
+  });
 }
 
 // ── Modal: cierre obligatorio de paro antes de continuar ──────────────────────
@@ -1670,14 +2251,33 @@ const CATALOG_TABS = [
   { key: 'sub_motivos',  label: 'Sub-motivos' }
 ];
 
+const BAKER_CATALOG_TABS = [
+  { key: 'clientes',              label: 'Clientes' },
+  { key: 'componentes',           label: 'Componentes' },
+  { key: 'herramentales',         label: 'Herramentales' },
+  { key: 'procesos',              label: 'Procesos' },
+  { key: 'sub_procesos',          label: 'Sub-procesos' },
+  { key: 'defectos',              label: 'Defectos' },
+  { key: 'motivos_cavidad_vacia', label: 'Motivos Cav. Vacía' },
+  { key: 'motivos_paro',          label: 'Motivos Paro' },
+  { key: 'sub_motivos',           label: 'Sub-motivos' }
+];
+
 // Mapea claves de frontend al nombre de tipo que usa la API
 function apiTipo(key) {
-  const map = { motivos_paro: 'motivos-paro', sub_motivos: 'sub-motivos-paro' };
+  const map = {
+    motivos_paro: 'motivos-paro',
+    sub_motivos: 'sub-motivos-paro',
+    sub_procesos: 'sub-procesos',
+    motivos_cavidad_vacia: 'motivos-cavidad-vacia'
+  };
   return map[key] || key;
 }
 
 async function viewCatalogos(el, linea) {
-  let activeTab = 'componentes';
+  const isBaker = linea === 'baker';
+  const tabs = isBaker ? BAKER_CATALOG_TABS : CATALOG_TABS;
+  let activeTab = isBaker ? 'clientes' : 'componentes';
   let catalogo  = {};
 
   async function loadAndRender() {
@@ -1689,12 +2289,11 @@ async function viewCatalogos(el, linea) {
   }
 
   function renderCatalogoSection() {
-    const tabsHtml = CATALOG_TABS.map(t =>
+    const tabsHtml = tabs.map(t =>
       `<button class="tab-btn${activeTab === t.key ? ' tab-active' : ''}" data-tab="${t.key}">${t.label}</button>`
     ).join('');
 
     const items    = Array.isArray(catalogo[activeTab]) ? catalogo[activeTab] : [];
-    const tabEl    = CATALOG_TABS.find(t => t.key === activeTab);
     const bodyHtml = renderCatalogoTable(activeTab, items, linea, catalogo);
 
     el.innerHTML = `
@@ -1749,8 +2348,21 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     herramentales: ['numero', 'nombre', 'descripcion'],
     defectos:      ['nombre', 'descripcion'],
     motivos_paro:  ['nombre', 'descripcion'],
-    sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion']
+    sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion'],
+    // Baker-specific
+    clientes:              ['nombre'],
+    sub_procesos:          ['nombre', 'proceso_nombre'],
+    motivos_cavidad_vacia: ['nombre']
   };
+
+  // Baker herramentales: different columns
+  if (tipo === 'herramentales' && (catalogo?.clientes !== undefined || items.some(i => i.tipo))) {
+    colsMap.herramentales = ['numero', 'tipo', 'cavidades', 'descripcion'];
+  }
+  // Baker componentes: add no_skf
+  if (tipo === 'componentes' && items.some(i => i.no_skf !== undefined)) {
+    colsMap.componentes = ['nombre', 'cliente', 'no_skf', 'carga_optima_varillas', 'piezas_objetivo'];
+  }
 
   const cols = colsMap[tipo] || ['nombre'];
 
@@ -1763,11 +2375,22 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
       motivo_nombre: motivosParo.find(m => String(m.id) === String(item.motivo_id))?.nombre || `ID: ${item.motivo_id ?? '—'}`
     }));
   }
+  if (tipo === 'sub_procesos') {
+    const procesos = catalogo?.procesos || [];
+    displayItems = items.map(item => ({
+      ...item,
+      proceso_nombre: procesos.find(p => String(p.id) === String(item.proceso_id))?.nombre || `ID: ${item.proceso_id ?? '—'}`
+    }));
+  }
 
   const colHeaders = {
-    motivo_nombre: 'Motivo padre',
-    carga_optima_varillas: 'Carga óptima',
-    piezas_objetivo: 'Pzas objetivo'
+    motivo_nombre:        'Motivo padre',
+    proceso_nombre:       'Proceso padre',
+    carga_optima_varillas:'Carga óptima',
+    piezas_objetivo:      'Pzas objetivo',
+    no_skf:               'No. SKF',
+    tipo:                 'Tipo',
+    cavidades:            'Cavidades'
   };
 
   return `
@@ -1836,13 +2459,31 @@ function buildCatalogoFields(tipo, item, catalogo) {
       <input type="${type}" id="cf-${key}" value="${v(key)}" ${extra} />
     </div>`;
 
+  // Baker herramentales detect by presence of 'clientes' key in catalogo
+  const isBakerLinea = catalogo?.clientes !== undefined;
+
   switch (tipo) {
     case 'componentes':
       return inp('nombre', 'Nombre del componente') +
              inp('cliente', 'Cliente') +
+             (isBakerLinea ? inp('no_skf', 'No. SKF (para QR)') : '') +
              inp('carga_optima_varillas', 'Carga óptima varillas', 'number') +
              inp('piezas_objetivo', 'Piezas objetivo/varilla', 'number');
     case 'herramentales':
+      if (isBakerLinea) {
+        const tipoVal = item?.tipo || 'rack';
+        return inp('numero', 'No. Herramental') +
+               inp('descripcion', 'Descripción') +
+               `<div class="form-group">
+                 <label>Tipo</label>
+                 <select id="cf-tipo" style="width:100%">
+                   <option value="rack" ${tipoVal==='rack'?'selected':''}>Rack</option>
+                   <option value="barril" ${tipoVal==='barril'?'selected':''}>Barril</option>
+                 </select>
+               </div>` +
+               inp('cavidades', 'Cavidades (si barril)', 'number') +
+               inp('piezas_por_varilla', 'Piezas/varilla (si rack)', 'number');
+      }
       return inp('numero', 'No. Herramental') +
              inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción');
@@ -1850,6 +2491,8 @@ function buildCatalogoFields(tipo, item, catalogo) {
     case 'acabados':
     case 'defectos':
     case 'motivos_paro':
+    case 'clientes':
+    case 'motivos_cavidad_vacia':
       return inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción');
     case 'sub_motivos': {
@@ -1870,6 +2513,23 @@ function buildCatalogoFields(tipo, item, catalogo) {
              </div>` +
              inp('descripcion', 'Descripción');
     }
+    case 'sub_procesos': {
+      const procesos = (catalogo?.procesos || []).filter(p => p.activo !== false);
+      const currentProcesoId = String(item?.proceso_id ?? '');
+      const procesoOpts = procesos.length > 0
+        ? procesos.map(p =>
+            `<option value="${p.id}" ${String(p.id) === currentProcesoId ? 'selected' : ''}>${escHtml(p.nombre)}</option>`
+          ).join('')
+        : '<option value="">— Sin procesos —</option>';
+      return inp('nombre', 'Nombre') +
+             `<div class="form-group">
+               <label>Proceso (padre)</label>
+               <select id="cf-proceso_id" style="width:100%">
+                 <option value="">— Seleccionar proceso —</option>
+                 ${procesoOpts}
+               </select>
+             </div>`;
+    }
     default:
       return inp('nombre', 'Nombre');
   }
@@ -1879,11 +2539,13 @@ function collectCatalogoFields(tipo) {
   const g = (id) => document.getElementById(`cf-${id}`)?.value?.trim() || '';
   switch (tipo) {
     case 'componentes':
-      return { nombre: g('nombre'), cliente: g('cliente'), carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
+      return { nombre: g('nombre'), cliente: g('cliente'), no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
     case 'herramentales':
-      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion') };
+      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, piezas_por_varilla: g('piezas_por_varilla') || null };
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
+    case 'sub_procesos':
+      return { nombre: g('nombre'), proceso_id: g('proceso_id') || null };
     default:
       return { nombre: g('nombre'), descripcion: g('descripcion') };
   }
@@ -1895,15 +2557,17 @@ function collectCatalogoFields(tipo) {
 
 async function viewOperadores(el) {
   async function loadAndRender() {
-    let operadoresL3 = [], operadoresL4 = [], usuariosSistema = [];
+    let operadoresL3 = [], operadoresL4 = [], operadoresBaker = [], usuariosSistema = [];
     try {
-      const [dL3, dL4, dUsers] = await Promise.all([
+      const [dL3, dL4, dBaker, dUsers] = await Promise.all([
         GET('/operadores/L3'),
         GET('/operadores/L4'),
+        GET('/operadores/baker'),
         GET('/usuarios-sistema')
       ]);
-      operadoresL3 = Array.isArray(dL3) ? dL3 : (dL3?.operadores || []);
-      operadoresL4 = Array.isArray(dL4) ? dL4 : (dL4?.operadores || []);
+      operadoresL3    = Array.isArray(dL3)    ? dL3    : (dL3?.operadores    || []);
+      operadoresL4    = Array.isArray(dL4)    ? dL4    : (dL4?.operadores    || []);
+      operadoresBaker = Array.isArray(dBaker) ? dBaker : (dBaker?.operadores || []);
       usuariosSistema = Array.isArray(dUsers) ? dUsers : [];
     } catch (e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
@@ -1934,7 +2598,7 @@ async function viewOperadores(el) {
         </table>`;
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
         <div class="table-card">
           <div class="table-header">
             <h3>Línea 3</h3>
@@ -1948,6 +2612,13 @@ async function viewOperadores(el) {
             <button class="btn btn-primary btn-sm" data-nuevo-op="L4">+ Agregar</button>
           </div>
           <div class="table-scroll">${tableHtml(operadoresL4, 'L4')}</div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Baker</h3>
+            <button class="btn btn-primary btn-sm" data-nuevo-op="baker">+ Agregar</button>
+          </div>
+          <div class="table-scroll">${tableHtml(operadoresBaker, 'baker')}</div>
         </div>
       </div>`;
 
@@ -1969,7 +2640,7 @@ async function viewOperadores(el) {
       btn.addEventListener('click', () => {
         const id    = btn.dataset.editOp;
         const linea = btn.dataset.linea;
-        const lista = linea === 'L3' ? operadoresL3 : operadoresL4;
+        const lista = linea === 'L3' ? operadoresL3 : linea === 'baker' ? operadoresBaker : operadoresL4;
         const op    = lista.find(o => String(o.id) === String(id));
         openOperadorModal(linea, op, usuariosSistema, loadAndRender);
       });
@@ -2346,9 +3017,10 @@ async function viewConfiguracion(el) {
       <h3>Configuración General</h3>
 
       <h4 style="margin-top:20px">Ciclos objetivo por hora</h4>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
         ${row('cfg-ciclos-l3','Línea 3', n('ciclos_objetivo_l3',2), 'ciclos/hr')}
         ${row('cfg-ciclos-l4','Línea 4', n('ciclos_objetivo_l4',2), 'ciclos/hr')}
+        ${row('cfg-ciclos-baker','Baker',  n('ciclos_objetivo_baker',2), 'ciclos/hr')}
       </div>
 
       <h4 style="margin-top:24px">Objetivos KPI (%)</h4>
@@ -2358,6 +3030,7 @@ async function viewConfiguracion(el) {
             <th style="padding:6px 10px">KPI</th>
             <th style="padding:6px 10px">Línea 3 (%)</th>
             <th style="padding:6px 10px">Línea 4 (%)</th>
+            <th style="padding:6px 10px">Baker (%)</th>
           </tr>
         </thead>
         <tbody>
@@ -2365,21 +3038,25 @@ async function viewConfiguracion(el) {
             <td style="padding:6px 10px">Eficiencia</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-ef-l3" value="${n('eficiencia_obj_l3',85)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-ef-l4" value="${n('eficiencia_obj_l4',85)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ef-baker" value="${n('eficiencia_obj_baker',85)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Capacidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cap-l3" value="${n('capacidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cap-l4" value="${n('capacidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cap-baker" value="${n('capacidad_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Calidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cal-l3" value="${n('calidad_obj_l3',95)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cal-l4" value="${n('calidad_obj_l4',95)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cal-baker" value="${n('calidad_obj_baker',95)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Disponibilidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-l3" value="${n('disponibilidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-l4" value="${n('disponibilidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-dis-baker" value="${n('disponibilidad_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
           </tr>
         </tbody>
       </table>
@@ -2399,14 +3076,19 @@ async function viewConfiguracion(el) {
       await PATCH('/config', {
         ciclos_objetivo_l3:    g('cfg-ciclos-l3'),
         ciclos_objetivo_l4:    g('cfg-ciclos-l4'),
+        ciclos_objetivo_baker: g('cfg-ciclos-baker'),
         eficiencia_obj_l3:     g('cfg-ef-l3'),
         eficiencia_obj_l4:     g('cfg-ef-l4'),
+        eficiencia_obj_baker:  g('cfg-ef-baker'),
         capacidad_obj_l3:      g('cfg-cap-l3'),
         capacidad_obj_l4:      g('cfg-cap-l4'),
+        capacidad_obj_baker:   g('cfg-cap-baker'),
         calidad_obj_l3:        g('cfg-cal-l3'),
         calidad_obj_l4:        g('cfg-cal-l4'),
+        calidad_obj_baker:     g('cfg-cal-baker'),
         disponibilidad_obj_l3: g('cfg-dis-l3'),
-        disponibilidad_obj_l4: g('cfg-dis-l4')
+        disponibilidad_obj_l4: g('cfg-dis-l4'),
+        disponibilidad_obj_baker: g('cfg-dis-baker')
       });
       msg.style.color = 'var(--p-success)';
       msg.textContent = '✅ Guardado correctamente';

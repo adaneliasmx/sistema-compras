@@ -153,7 +153,7 @@
       <div class="pizarron-header">
         <div class="pizarron-title-block">
           <div class="pizarron-title">🏭 Pizarrón de Producción</div>
-          <div class="pizarron-subtitle">Líneas 3 y 4 · KPIs en tiempo real</div>
+          <div class="pizarron-subtitle">Líneas 3, 4 y Baker · KPIs en tiempo real</div>
         </div>
         <div class="pizarron-header-right">
           <div class="pizarron-datetime" id="pizarron-clock">${nowStr()}</div>
@@ -205,11 +205,13 @@
   }
 
   function buildBoards(turno) {
-    const lineas = ['L3', 'L4'];
-    const labels = { L3: 'Línea 3', L4: 'Línea 4' };
+    const allLineas = Object.keys(state.data || {});
+    const order = ['L3', 'L4', 'Baker'];
+    const lineas = [...order.filter(l => allLineas.includes(l)), ...allLineas.filter(l => !order.includes(l))];
+    const labels = { L3: 'Línea 3', L4: 'Línea 4', Baker: 'Baker' };
     return lineas.map(linea => {
       const linData = (state.data || {})[linea] || {};
-      return buildLineaBoard(linea, labels[linea], linData, turno);
+      return buildLineaBoard(linea, labels[linea] || linea, linData, turno);
     }).join('');
   }
 
