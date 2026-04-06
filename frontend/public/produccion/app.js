@@ -29,7 +29,9 @@ const state = {
   _actTimer: null,
   // Watcher de fin de turno
   _shiftTimer: null,
-  _shiftWarnShown: false
+  _shiftWarnShown: false,
+  // Guard para no mostrar el form de paro automático dos veces seguidas
+  _autoParoShown: { L3: false, L4: false }
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -283,6 +285,20 @@ function getCurrentTurno() {
   if (mins >= 6 * 60 + 30 && mins <= 14 * 60 + 29) return 'T1';
   if (mins >= 14 * 60 + 30 && mins <= 21 * 60 + 29) return 'T2';
   return 'T3';
+}
+
+// Retorna { turno, fecha } del turno inmediatamente anterior al actual
+function getPrevTurnoInfo() {
+  const now = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const today = now.toISOString().slice(0, 10);
+  const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+  const yesterday = yest.toISOString().slice(0, 10);
+  if (mins >= 6 * 60 + 30 && mins < 14 * 60 + 30) return { turno: 'T3', fecha: yesterday };
+  if (mins >= 14 * 60 + 30 && mins < 21 * 60 + 30) return { turno: 'T1', fecha: today };
+  // T3 (21:30-06:29)
+  if (mins >= 21 * 60 + 30) return { turno: 'T2', fecha: today };
+  return { turno: 'T2', fecha: yesterday }; // 00:00-06:29
 }
 
 function lineaFromSection(section) {
@@ -648,6 +664,37 @@ async function viewLinea(el, linea) {
     }
 
     state.paroActivo[linea] = paroActivo;
+
+    // ── Check A: turno anterior sin actividad → paro automático cerrado ───────
+    try {
+      const prev = getPrevTurnoInfo();
+      await POST(`/paros/${linea}/auto-sin-actividad`, { fecha: prev.fecha, turno: prev.turno });
+    } catch (_) { /* silencioso — no bloquear la vista */ }
+
+    // ── Check B: 15 min sin actividad en turno actual → abrir form de paro ───
+    if (!paroActivo) {
+      const cargasTurno = todasHoy.filter(c => c.turno === turnoActual);
+      if (cargasTurno.length > 0) {
+        const lastTs = cargasTurno.reduce((max, c) => {
+          const ts = c.updated_at || c.created_at || '';
+          return ts > max ? ts : max;
+        }, '');
+        if (lastTs) {
+          const minsInactive = (Date.now() - new Date(lastTs).getTime()) / 60000;
+          if (minsInactive > 15 && !state._autoParoShown[linea]) {
+            state._autoParoShown[linea] = true;
+            const lastDate = new Date(lastTs);
+            const horaIni = lastDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+            const fechaIni = lastDate.toLocaleDateString('en-CA');
+            setTimeout(() => openModalParoAuto(linea, catalogo, horaIni, fechaIni, () => {
+              state._autoParoShown[linea] = false;
+              const elActual = document.getElementById('p-content');
+              if (elActual) viewLinea(elActual, linea);
+            }), 500);
+          }
+        }
+      }
+    }
 
     // Mini-tarjeta de paro activo (inline en el header, junto al contador)
     const paroMiniCard = paroActivo
@@ -1074,6 +1121,69 @@ function openModalParo(linea, catalogo, onDone) {
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
       await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo });
+      closeModal();
+      onDone();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '⏸ Registrar Paro';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
+// ── Modal: Paro detectado automáticamente (15 min sin actividad) ───────────────
+function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
+  const motivosParo = catalogo.motivos_paro || [];
+  const subMotivos  = catalogo.sub_motivos  || [];
+  const htmlMotivos = motivosParo.map(m =>
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
+  ).join('');
+
+  showModal(`
+    <h3>⚠️ Paro detectado — Línea ${linea.replace('L', '')}</h3>
+    <div class="alert alert-warn" style="margin-bottom:16px">
+      Se detectó inactividad desde las <b>${escHtml(horaInicio)}</b>.<br>
+      Por favor indica el motivo del paro para continuar.
+    </div>
+    <div class="form-grid">
+      <div class="form-group full">
+        <label>Motivo de paro</label>
+        <select id="mpa-motivo">
+          <option value="">— Seleccionar motivo —</option>
+          ${htmlMotivos}
+        </select>
+      </div>
+      <div class="form-group full">
+        <label>Sub-motivo</label>
+        <select id="mpa-submotivo" disabled>
+          <option value="">— Primero selecciona motivo —</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="mpa-submit">⏸ Registrar Paro</button>
+    </div>`, { size: 'sm' });
+
+  document.getElementById('mpa-motivo').addEventListener('change', function() {
+    const subSel = document.getElementById('mpa-submotivo');
+    const filtrados = subMotivos.filter(s => String(s.motivo_id) === String(this.value));
+    subSel.innerHTML = filtrados.length > 0
+      ? '<option value="">— Seleccionar —</option>' + filtrados.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('')
+      : '<option value="">— Sin sub-motivos —</option>';
+    subSel.disabled = filtrados.length === 0;
+  });
+
+  document.getElementById('mpa-submit').addEventListener('click', async () => {
+    const motivoSel = document.getElementById('mpa-motivo');
+    const subSel    = document.getElementById('mpa-submotivo');
+    const motivo_id = motivoSel.value;
+    const motivo    = motivoSel.options[motivoSel.selectedIndex]?.dataset?.nombre || '';
+    const sub_motivo_id = subSel.value || null;
+    const sub_motivo    = sub_motivo_id ? (subSel.options[subSel.selectedIndex]?.text || '') : '';
+    if (!motivo_id) { alert('Selecciona el motivo de paro'); return; }
+    const btn = document.getElementById('mpa-submit');
+    btn.disabled = true; btn.textContent = 'Registrando...';
+    try {
+      await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: fechaInicio, hora_inicio: horaInicio });
       closeModal();
       onDone();
     } catch (e) {

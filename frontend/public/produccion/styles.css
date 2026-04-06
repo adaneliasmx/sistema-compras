@@ -446,6 +446,148 @@ tbody tr:hover { background: #f8fafc; }
 }
 .config-item input:focus { border-color: var(--p-accent); }
 
+/* ── PIZARRÓN STANDALONE: layout y controles ─────────────────────── */
+.pizarron-root { padding: 16px; max-width: 1400px; margin: 0 auto; }
+.pizarron-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: 12px;
+  background: #fff; border: 1px solid var(--p-line); border-radius: 14px;
+  padding: 18px 24px; margin-bottom: 16px;
+}
+.pizarron-title-block .pizarron-title  { font-size: 22px; font-weight: 800; color: var(--p-text); }
+.pizarron-title-block .pizarron-subtitle { font-size: 13px; color: var(--p-muted); margin-top: 2px; }
+.pizarron-header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.pizarron-datetime    { font-size: 13px; font-weight: 600; color: var(--p-text); }
+.pizarron-turno-badge { font-size: 12px; color: var(--p-muted); }
+.pizarron-refresh-info { font-size: 11px; color: var(--p-muted); }
+
+.pizarron-controls {
+  display: flex; gap: 16px; flex-wrap: wrap; align-items: center;
+  background: #fff; border: 1px solid var(--p-line); border-radius: 12px;
+  padding: 12px 20px; margin-bottom: 16px;
+}
+.pizarron-control-group { display: flex; align-items: center; gap: 8px; }
+.pizarron-label { font-size: 12px; font-weight: 600; color: var(--p-muted); }
+.pizarron-turno-btns { display: flex; gap: 4px; }
+.pizarron-btn-turno {
+  padding: 5px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--p-line); background: #f8fafc; color: var(--p-muted); cursor: pointer;
+}
+.pizarron-btn-turno.active { background: var(--p-accent); color: #fff; border-color: var(--p-accent); }
+.pizarron-date-input {
+  padding: 6px 10px; border: 1.5px solid var(--p-line); border-radius: 8px;
+  font-size: 13px; outline: none; background: #fff;
+}
+.pizarron-btn-refresh {
+  padding: 6px 16px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--p-line); background: var(--p-primary-dark); color: #fff; cursor: pointer;
+}
+.pizarron-btn-refresh:hover { filter: brightness(1.1); }
+
+.pizarron-linea-board {
+  background: #fff; border: 1px solid var(--p-line); border-radius: 14px;
+  margin-bottom: 16px; overflow: hidden;
+}
+.pizarron-linea-title {
+  font-size: 16px; font-weight: 800; padding: 14px 20px;
+  background: var(--p-primary-dark); color: #fff;
+  border-bottom: 1px solid var(--p-line);
+}
+.pizarron-table-wrap { overflow-x: auto; }
+
+.pizarron-table .turno-header-row td {
+  background: #f1f5f9; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px; color: var(--p-muted); padding: 5px 14px;
+}
+.turno-actual td { background: #dbeafe !important; color: #1d4ed8 !important; }
+.pizarron-table .subtotal-row td {
+  background: var(--p-primary-bg); border-top: 2px solid var(--p-primary);
+  font-weight: 800; font-size: 13px;
+}
+.pizarron-table .no-data-row td { color: var(--p-muted); text-align: center; padding: 12px; }
+
+.pizarron-loading,
+.pizarron-empty,
+.pizarron-error { text-align: center; padding: 40px; color: var(--p-muted); font-size: 15px; }
+.pizarron-error { color: var(--p-danger); }
+
+/* ── PIZARRÓN: botón de tema ─────────────────────────────────────── */
+.pizarron-btn-theme {
+  padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  border: 1.5px solid var(--p-line); background: #fff; color: var(--p-text);
+  cursor: pointer; transition: background .15s, color .15s;
+}
+.pizarron-btn-theme:hover { background: var(--p-primary-light); }
+
+/* ── DARK MODE (pizarrón standalone) ────────────────────────────── */
+body.pizarron-dark {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+body.pizarron-dark .pizarron-root { background: #0f172a; }
+
+body.pizarron-dark .pizarron-header {
+  background: #1e293b; border-color: #334155; color: #e2e8f0;
+}
+body.pizarron-dark .pizarron-title,
+body.pizarron-dark .pizarron-subtitle { color: #e2e8f0; }
+body.pizarron-dark .pizarron-datetime,
+body.pizarron-dark .pizarron-refresh-info,
+body.pizarron-dark .pizarron-turno-badge { color: #94a3b8; }
+
+body.pizarron-dark .pizarron-controls {
+  background: #1e293b; border-color: #334155;
+}
+body.pizarron-dark .pizarron-label { color: #94a3b8; }
+body.pizarron-dark .pizarron-date-input {
+  background: #0f172a; border-color: #334155; color: #e2e8f0;
+}
+body.pizarron-dark .pizarron-btn-turno {
+  background: #1e293b; color: #cbd5e1; border-color: #334155;
+}
+body.pizarron-dark .pizarron-btn-turno.active {
+  background: #d97706; color: #fff; border-color: #d97706;
+}
+body.pizarron-dark .pizarron-btn-refresh {
+  background: #334155; color: #e2e8f0; border-color: #475569;
+}
+body.pizarron-dark .pizarron-btn-theme {
+  background: #1e293b; color: #e2e8f0; border-color: #334155;
+}
+
+body.pizarron-dark .pizarron-linea-board {
+  background: #1e293b; border-color: #334155;
+}
+body.pizarron-dark .pizarron-linea-title { color: #e2e8f0; }
+
+body.pizarron-dark .pizarron-table thead th {
+  background: #334155; color: #f1f5f9;
+}
+body.pizarron-dark .pizarron-table tbody td {
+  border-bottom-color: #1e293b; color: #e2e8f0;
+}
+body.pizarron-dark .pizarron-table tbody tr:hover { background: #253347; }
+
+body.pizarron-dark .pizarron-table .turno-header-row td {
+  background: #253347; color: #94a3b8;
+}
+body.pizarron-dark .turno-actual td { background: #1c3a5e !important; color: #93c5fd; }
+body.pizarron-dark .pizarron-table .subtotal-row td {
+  background: #1e293b; border-top-color: #475569; color: #e2e8f0;
+}
+body.pizarron-dark .pizarron-table .day-total-row td {
+  background: #1e3a5f; color: #fff; border-top-color: #d97706;
+}
+body.pizarron-dark .pizarron-table .no-data-row td { color: #64748b; }
+
+body.pizarron-dark .pizarron-empty,
+body.pizarron-dark .pizarron-error { color: #94a3b8; }
+
+/* KPI colors retain semantic meaning in dark mode */
+body.pizarron-dark .kpi-green { background: #14532d; color: #86efac; }
+body.pizarron-dark .kpi-amber { background: #78350f; color: #fcd34d; }
+body.pizarron-dark .kpi-red   { background: #7f1d1d; color: #fca5a5; }
+
 /* ── PRINT ─────────────────────────────────────────────────────── */
 @media print {
   .p-sidebar, .p-topbar, .btn, .filters-bar, .modal-overlay { display: none !important; }

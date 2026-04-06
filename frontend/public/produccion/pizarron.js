@@ -9,7 +9,8 @@
     error: null,
     fecha: todayStr(),
     turnoFilter: 'all',
-    lastRefresh: null
+    lastRefresh: null,
+    darkMode: localStorage.getItem('pizarron_theme') === 'dark'
   };
 
   let refreshTimer = null;
@@ -121,6 +122,7 @@
   function render() {
     const app = document.getElementById('pizarron-app');
     if (!app) return;
+    document.body.classList.toggle('pizarron-dark', state.darkMode);
     app.innerHTML = buildHtml();
     bindEvents();
   }
@@ -153,6 +155,9 @@
           <div class="pizarron-datetime" id="pizarron-clock">${nowStr()}</div>
           <div class="pizarron-turno-badge">Turno actual: <strong>${turno}</strong></div>
           <div class="pizarron-refresh-info">Última actualización: ${refreshTime} · Auto-refresh 30s</div>
+          <button id="btn-theme-toggle" class="pizarron-btn-theme" title="Cambiar tema">
+            ${state.darkMode ? '☀️ Modo claro' : '🌙 Modo oscuro'}
+          </button>
         </div>
       </div>
     `;
@@ -306,6 +311,16 @@
     const btnRefresh = document.getElementById('btn-refresh-now');
     if (btnRefresh) {
       btnRefresh.addEventListener('click', fetchData);
+    }
+
+    // Theme toggle
+    const btnTheme = document.getElementById('btn-theme-toggle');
+    if (btnTheme) {
+      btnTheme.addEventListener('click', () => {
+        state.darkMode = !state.darkMode;
+        localStorage.setItem('pizarron_theme', state.darkMode ? 'dark' : 'light');
+        render();
+      });
     }
   }
 

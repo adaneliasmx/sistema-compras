@@ -504,8 +504,23 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   if (idx === -1) return res.status(404).json({ error: 'Carga no encontrada' });
 
   const original = pdb.cargas[idx];
-  if (original.estado !== 'defecto') {
-    return res.status(409).json({ error: 'Solo se puede reprocesar una carga con estado defecto' });
+  const { defecto_id, defecto } = req.body || {};
+  if (!['activo', 'defecto'].includes(original.estado)) {
+    return res.status(409).json({ error: 'Solo se puede reprocesar una carga activa o con defecto' });
+  }
+  // Si la carga está activa, marcarla como defecto de forma atómica
+  if (original.estado === 'activo') {
+    original.estado = 'defecto';
+    original.fecha_descarga = nowDateStr();
+    original.hora_descarga = nowTimeStr();
+    if (defecto_id !== undefined) original.defecto_id = defecto_id;
+    if (defecto !== undefined) original.defecto = defecto;
+    if (defecto_id && !defecto) {
+      const l2 = lineaKey(linea);
+      const defs = pdb[`defectos_${l2}`] || [];
+      const def = defs.find(d => String(d.id) === String(defecto_id));
+      if (def) original.defecto = def.nombre;
+    }
   }
 
   const now = new Date();
@@ -615,9 +630,9 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
     sub_motivo = sub_motivos.find(s => String(s.id) === String(sub_motivo_id) && String(s.motivo_id) === String(motivo_id));
   }
 
-  const fecha_inicio = nowDateStr();
-  const hora_inicio = nowTimeStr();
-  const turno = getTurno(hora_inicio);
+  const fecha_inicio = req.body.fecha_inicio || nowDateStr();
+  const hora_inicio  = req.body.hora_inicio  || nowTimeStr();
+  const turno        = getTurno(hora_inicio);
 
   const id = dbProd.nextId(pdb.paros || []);
   const dateStr = fecha_inicio.replace(/-/g, '');
@@ -707,6 +722,88 @@ router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (r
   pdb.paros.push(paro);
   dbProd.write(pdb);
   res.status(201).json(paro);
+});
+
+// ─── Paro automático por turno sin actividad ─────────────────────────────────
+router.post('/paros/:linea/auto-sin-actividad', produccionAllowRoles('produccion'), (req, res) => {
+  const { linea } = req.params;
+  const { fecha, turno } = req.body || {};
+  if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
+
+  const pdb = dbProd.read();
+
+  // Verificar que no hay cargas en ese turno/fecha/línea
+  const cargasEnTurno = (pdb.cargas || []).filter(c =>
+    c.linea === linea && c.turno === turno &&
+    (c.fecha_carga === fecha || c.fecha_descarga === fecha)
+  );
+  if (cargasEnTurno.length > 0) return res.json({ skipped: true, reason: 'hay_cargas' });
+
+  // Verificar que no hay paros ya registrados para ese turno/fecha/línea
+  const parosEnTurno = (pdb.paros || []).filter(p =>
+    p.linea === linea && p.turno === turno && p.fecha_inicio === fecha
+  );
+  if (parosEnTurno.length > 0) return res.json({ skipped: true, reason: 'hay_paros' });
+
+  // Horarios fijos por turno
+  const SHIFT_TIMES = {
+    T1: { h_ini: '06:30', h_fin: '14:30', dur: 480 },
+    T2: { h_ini: '14:30', h_fin: '21:30', dur: 420 },
+    T3: { h_ini: '21:30', h_fin: '06:30', dur: 540 }
+  };
+  const st = SHIFT_TIMES[turno];
+  if (!st) return res.status(400).json({ error: 'Turno inválido' });
+
+  // T3 termina al día siguiente
+  let fecha_fin = fecha;
+  if (turno === 'T3') {
+    const d = new Date(fecha + 'T12:00:00');
+    d.setDate(d.getDate() + 1);
+    fecha_fin = d.toISOString().slice(0, 10);
+  }
+
+  // Buscar o crear motivo "Turno no trabajado" en el catálogo de la línea
+  const l = lineaKey(linea);
+  const motivoKey = `motivos_paro_${l}`;
+  pdb[motivoKey] = pdb[motivoKey] || [];
+  let motivo = pdb[motivoKey].find(m => m.nombre === 'Turno no trabajado');
+  if (!motivo) {
+    motivo = {
+      id: dbProd.nextId(pdb[motivoKey]),
+      nombre: 'Turno no trabajado',
+      descripcion: 'Paro automático — turno completo sin registros de producción',
+      activo: true,
+      created_at: new Date().toISOString()
+    };
+    pdb[motivoKey].push(motivo);
+  }
+
+  pdb.paros = pdb.paros || [];
+  const id = dbProd.nextId(pdb.paros);
+  const dateStr = fecha.replace(/-/g, '');
+  const prefix = `PR-${linea.toUpperCase()}-${dateStr}-`;
+  const existentes = pdb.paros.filter(p => p.folio && p.folio.startsWith(prefix));
+  const nextNum = existentes.length > 0 ? Math.max(...existentes.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+  const folio = `${prefix}${padNum(nextNum)}`;
+
+  const paro = {
+    id, folio, linea,
+    motivo_id: motivo.id,
+    motivo: motivo.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    tipo: 'automatico',
+    estado: 'cerrado',
+    fecha_inicio: fecha, hora_inicio: st.h_ini,
+    fecha_fin, hora_fin: st.h_fin,
+    duracion_min: st.dur,
+    turno,
+    registrado_por: 'Sistema',
+    created_at: new Date().toISOString()
+  };
+
+  pdb.paros.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json({ created: true, paro });
 });
 
 router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (req, res) => {
