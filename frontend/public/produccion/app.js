@@ -2305,12 +2305,32 @@ async function viewCatalogos(el, linea) {
     renderCatalogoSection();
   }
 
+  let clienteFilter = '';
+
   function renderCatalogoSection() {
     const tabsHtml = tabs.map(t =>
       `<button class="tab-btn${activeTab === t.key ? ' tab-active' : ''}" data-tab="${t.key}">${t.label}</button>`
     ).join('');
 
-    const items    = Array.isArray(catalogo[activeTab]) ? catalogo[activeTab] : [];
+    let items = Array.isArray(catalogo[activeTab]) ? catalogo[activeTab] : [];
+
+    // Filtro por cliente (solo Baker componentes)
+    const showClienteFilter = isBaker && activeTab === 'componentes';
+    const clientes = showClienteFilter
+      ? [...new Set(items.map(i => i.cliente).filter(Boolean))].sort()
+      : [];
+    if (showClienteFilter && clienteFilter) {
+      items = items.filter(i => i.cliente === clienteFilter);
+    }
+    const filterHtml = showClienteFilter ? `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+        <span style="font-size:13px;color:var(--p-muted);font-weight:600">Cliente:</span>
+        <select id="cat-cliente-filter" style="min-width:160px">
+          <option value="">Todos</option>
+          ${clientes.map(c => `<option value="${escHtml(c)}" ${c === clienteFilter ? 'selected' : ''}>${escHtml(c)}</option>`).join('')}
+        </select>
+      </div>` : '';
+
     const bodyHtml = renderCatalogoTable(activeTab, items, linea, catalogo);
 
     el.innerHTML = `
@@ -2320,12 +2340,18 @@ async function viewCatalogos(el, linea) {
           <button class="btn btn-primary btn-sm" id="cat-nuevo">+ Nuevo</button>
         </div>
         <div style="padding:18px">
+          ${filterHtml}
           ${bodyHtml}
         </div>
       </div>`;
 
     document.querySelectorAll('#cat-tabs .tab-btn').forEach(btn => {
-      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; renderCatalogoSection(); });
+      btn.addEventListener('click', () => { activeTab = btn.dataset.tab; clienteFilter = ''; renderCatalogoSection(); });
+    });
+
+    document.getElementById('cat-cliente-filter')?.addEventListener('change', e => {
+      clienteFilter = e.target.value;
+      renderCatalogoSection();
     });
 
     document.getElementById('cat-nuevo').addEventListener('click', () => {
@@ -2450,6 +2476,22 @@ function openCatalogoModal(tipo, linea, item, onDone, catalogo) {
       <button class="btn btn-primary" id="cat-save">💾 Guardar</button>
     </div>`);
 
+  // Baker componentes: toggle campo libre de cliente
+  const clienteSelEl = document.getElementById('cf-cliente-sel');
+  if (clienteSelEl) {
+    clienteSelEl.addEventListener('change', () => {
+      const txt = document.getElementById('cf-cliente');
+      if (clienteSelEl.value === '__libre__') {
+        txt.style.display = '';
+        txt.value = '';
+        txt.focus();
+      } else {
+        txt.style.display = 'none';
+        txt.value = clienteSelEl.value;
+      }
+    });
+  }
+
   document.getElementById('cat-save').addEventListener('click', async () => {
     const payload = collectCatalogoFields(tipo);
     const btn     = document.getElementById('cat-save');
@@ -2481,12 +2523,32 @@ function buildCatalogoFields(tipo, item, catalogo) {
   const isBakerLinea = catalogo?.clientes !== undefined;
 
   switch (tipo) {
-    case 'componentes':
+    case 'componentes': {
+      const clienteField = isBakerLinea ? (() => {
+        const clientes = (catalogo?.clientes || []).filter(c => c.activo !== false);
+        const currentCliente = item?.cliente || '';
+        const enLista = clientes.some(c => c.nombre === currentCliente);
+        const opts = clientes.map(c =>
+          `<option value="${escHtml(c.nombre)}" ${c.nombre === currentCliente ? 'selected' : ''}>${escHtml(c.nombre)}</option>`
+        ).join('');
+        return `<div class="form-group">
+          <label>Cliente</label>
+          <select id="cf-cliente-sel" style="width:100%">
+            <option value="">— Seleccionar —</option>
+            ${opts}
+            <option value="__libre__" ${!enLista && currentCliente ? 'selected' : ''}>✏️ Escribir manualmente…</option>
+          </select>
+          <input type="text" id="cf-cliente" value="${escHtml(currentCliente)}"
+            placeholder="Escribe el nombre del cliente"
+            style="margin-top:6px;display:${!enLista && currentCliente ? '' : 'none'}" />
+        </div>`;
+      })() : inp('cliente', 'Cliente');
       return inp('nombre', 'Nombre del componente') +
-             inp('cliente', 'Cliente') +
+             clienteField +
              (isBakerLinea ? inp('no_skf', 'No. SKF (para QR)') : '') +
              inp('carga_optima_varillas', isBakerLinea ? 'Varillas por ciclo' : 'Carga óptima varillas', 'number') +
              inp('piezas_objetivo', isBakerLinea ? 'Piezas por varilla' : 'Piezas objetivo/varilla', 'number');
+    }
     case 'herramentales':
       if (isBakerLinea) {
         const tipoVal = item?.tipo || 'rack';
@@ -2556,8 +2618,18 @@ function buildCatalogoFields(tipo, item, catalogo) {
 function collectCatalogoFields(tipo) {
   const g = (id) => document.getElementById(`cf-${id}`)?.value?.trim() || '';
   switch (tipo) {
-    case 'componentes':
-      return { nombre: g('nombre'), cliente: g('cliente'), no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
+    case 'componentes': {
+      // Cliente: puede venir del select (cf-cliente-sel) o del texto libre (cf-cliente)
+      const clienteSel = document.getElementById('cf-cliente-sel');
+      const clienteTxt = document.getElementById('cf-cliente');
+      let cliente = g('cliente'); // fallback para L3/L4
+      if (clienteSel) {
+        cliente = clienteSel.value === '__libre__' || clienteSel.value === ''
+          ? (clienteTxt?.value?.trim() || '')
+          : clienteSel.value;
+      }
+      return { nombre: g('nombre'), cliente, no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
+    }
     case 'herramentales':
       return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null };
     case 'sub_motivos':
