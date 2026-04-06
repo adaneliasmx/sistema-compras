@@ -941,10 +941,10 @@ function openModalCargaBaker(catalogo, onDone) {
     (o.compras_user_id && o.compras_user_id === state.user?.id)
   );
 
-  const htmlHerr = herramentales.map(h => `<option value="${h.id}" data-tipo="${h.tipo||'rack'}" data-cav="${h.cavidades||0}" data-ppv="${h.piezas_por_varilla||0}">${escHtml(h.numero)}${h.tipo==='barril' ? ' (Barril '+(h.cavidades||'?')+'cav)' : ' (Rack)'}</option>`).join('');
+  const htmlHerr = herramentales.map(h => `<option value="${h.id}" data-tipo="${h.tipo||'rack'}" data-cav="${h.cavidades||0}" data-vtot="${h.varillas_totales||0}">${escHtml(h.numero)}${h.tipo==='barril' ? ' (Barril '+(h.cavidades||'?')+'cav)' : ' (Rack '+(h.varillas_totales||'?')+' var)'}</option>`).join('');
   const htmlProc = procesos.map(p => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
   const htmlOper = operadores.map(o => `<option value="${o.id}"${o.id===myOp?.id?' selected':''}>${escHtml(o.nombre)}</option>`).join('');
-  const htmlComp = componentes.map(c => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-skf="${escHtml(c.no_skf||'')}">${escHtml(c.nombre)}</option>`).join('');
+  const htmlComp = componentes.map(c => `<option value="${c.id}" data-cliente="${escHtml(c.cliente||'')}" data-skf="${escHtml(c.no_skf||'')}" data-var="${c.carga_optima_varillas||''}" data-ppv="${c.piezas_por_varilla||c.piezas_objetivo||''}">${escHtml(c.nombre)}</option>`).join('');
   const htmlCli  = clientes.map(c   => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
 
   showModal(`
@@ -1030,10 +1030,19 @@ function openModalCargaBaker(catalogo, onDone) {
 
   // Auto-fill from componente catalog
   document.getElementById('bk-componente').addEventListener('change', e => {
-    const opt = e.target.selectedOptions[0];
-    if (!opt) return;
+    const opt    = e.target.selectedOptions[0];
+    const herrEl = document.getElementById('bk-herramental');
+    const herrOpt= herrEl.selectedOptions[0];
+    const vtot   = herrOpt?.dataset.vtot || '';
+
+    if (!opt?.value) {
+      // Sin componente → varillas = varillas_totales del herramental
+      if (vtot) document.getElementById('bk-varillas').value = vtot;
+      return;
+    }
     const cliente = opt.dataset.cliente || '';
-    const skf = opt.dataset.skf || '';
+    const skf     = opt.dataset.skf     || '';
+    const varComp = opt.dataset.var     || '';  // carga_optima_varillas del componente
     if (cliente) {
       const sel = document.getElementById('bk-cliente-sel');
       const match = [...sel.options].find(o => o.value === cliente);
@@ -1041,6 +1050,8 @@ function openModalCargaBaker(catalogo, onDone) {
       document.getElementById('bk-cliente-txt').value = cliente;
     }
     if (skf) document.getElementById('bk-no-skf').value = skf;
+    // Si el componente tiene varillas_por_ciclo configuradas, úsalas; si no, usa varillas_totales
+    document.getElementById('bk-varillas').value = varComp || vtot || '';
   });
 
   // Cliente custom
@@ -1049,13 +1060,19 @@ function openModalCargaBaker(catalogo, onDone) {
     txt.style.display = e.target.value === '__otro__' ? '' : 'none';
   });
 
-  // Herramental tipo toggle
+  // Herramental tipo toggle + auto-fill varillas con varillas_totales
   document.getElementById('bk-herramental').addEventListener('change', e => {
-    const opt = e.target.selectedOptions[0];
+    const opt  = e.target.selectedOptions[0];
     const tipo = opt?.dataset.tipo || 'rack';
-    const cav  = parseInt(opt?.dataset.cav || '0');
-    document.getElementById('bk-rack-fields').style.display  = tipo === 'rack'   ? 'contents' : 'none';
+    const cav  = parseInt(opt?.dataset.cav  || '0');
+    const vtot = opt?.dataset.vtot || '';
+    document.getElementById('bk-rack-fields').style.display   = tipo === 'rack'   ? 'contents' : 'none';
     document.getElementById('bk-barril-fields').style.display = tipo === 'barril' ? '' : 'none';
+    if (tipo === 'rack' && vtot) {
+      // Default: varillas = varillas_totales si no hay componente seleccionado
+      const compSel = document.getElementById('bk-componente');
+      if (!compSel.value) document.getElementById('bk-varillas').value = vtot;
+    }
     if (tipo === 'barril' && cav > 0) buildCavidadesForm(cav, componentes, clientes);
   });
 
@@ -2356,8 +2373,8 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
   };
 
   // Baker herramentales: different columns
-  if (tipo === 'herramentales' && (catalogo?.clientes !== undefined || items.some(i => i.tipo))) {
-    colsMap.herramentales = ['numero', 'tipo', 'cavidades', 'descripcion'];
+  if (tipo === 'herramentales' && catalogo?.clientes !== undefined) {
+    colsMap.herramentales = ['numero', 'tipo', 'varillas_totales', 'cavidades', 'descripcion'];
   }
   // Baker componentes: add no_skf
   if (tipo === 'componentes' && items.some(i => i.no_skf !== undefined)) {
@@ -2386,11 +2403,12 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
   const colHeaders = {
     motivo_nombre:        'Motivo padre',
     proceso_nombre:       'Proceso padre',
-    carga_optima_varillas:'Carga óptima',
-    piezas_objetivo:      'Pzas objetivo',
+    carga_optima_varillas:'Varillas/ciclo',
+    piezas_objetivo:      'Pzas/varilla',
     no_skf:               'No. SKF',
     tipo:                 'Tipo',
-    cavidades:            'Cavidades'
+    cavidades:            'Cavidades',
+    varillas_totales:     'Varillas totales'
   };
 
   return `
@@ -2467,8 +2485,8 @@ function buildCatalogoFields(tipo, item, catalogo) {
       return inp('nombre', 'Nombre del componente') +
              inp('cliente', 'Cliente') +
              (isBakerLinea ? inp('no_skf', 'No. SKF (para QR)') : '') +
-             inp('carga_optima_varillas', 'Carga óptima varillas', 'number') +
-             inp('piezas_objetivo', 'Piezas objetivo/varilla', 'number');
+             inp('carga_optima_varillas', isBakerLinea ? 'Varillas por ciclo' : 'Carga óptima varillas', 'number') +
+             inp('piezas_objetivo', isBakerLinea ? 'Piezas por varilla' : 'Piezas objetivo/varilla', 'number');
     case 'herramentales':
       if (isBakerLinea) {
         const tipoVal = item?.tipo || 'rack';
@@ -2481,8 +2499,8 @@ function buildCatalogoFields(tipo, item, catalogo) {
                    <option value="barril" ${tipoVal==='barril'?'selected':''}>Barril</option>
                  </select>
                </div>` +
-               inp('cavidades', 'Cavidades (si barril)', 'number') +
-               inp('piezas_por_varilla', 'Piezas/varilla (si rack)', 'number');
+               inp('varillas_totales', 'Varillas totales del rack (si rack)', 'number') +
+               inp('cavidades', 'Cavidades totales (si barril)', 'number');
       }
       return inp('numero', 'No. Herramental') +
              inp('nombre', 'Nombre') +
@@ -2541,7 +2559,7 @@ function collectCatalogoFields(tipo) {
     case 'componentes':
       return { nombre: g('nombre'), cliente: g('cliente'), no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
     case 'herramentales':
-      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, piezas_por_varilla: g('piezas_por_varilla') || null };
+      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null };
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
     case 'sub_procesos':

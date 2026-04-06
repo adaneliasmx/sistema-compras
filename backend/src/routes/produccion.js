@@ -248,14 +248,19 @@ router.post('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res)
   if (tipo === 'componentes') {
     if (!body.nombre) return res.status(400).json({ error: 'nombre es requerido' });
     item = { ...item, nombre: body.nombre, cliente: body.cliente || '', carga_optima_varillas: body.carga_optima_varillas || 0, piezas_objetivo: body.piezas_objetivo || 0 };
-    if (linea === 'baker') item.no_skf = body.no_skf || '';
+    if (linea === 'baker') {
+      item.no_skf = body.no_skf || '';
+      // Baker: piezas_por_varilla se guarda directamente (alias de piezas_objetivo para claridad)
+      if (body.piezas_por_varilla !== undefined) item.piezas_por_varilla = Number(body.piezas_por_varilla) || 0;
+    }
   } else if (tipo === 'herramentales') {
     if (!body.numero) return res.status(400).json({ error: 'numero es requerido' });
     item = { ...item, numero: body.numero, descripcion: body.descripcion || '' };
     if (linea === 'baker') {
       item.tipo = body.tipo || 'rack'; // 'rack' | 'barril'
       item.cavidades = body.cavidades ? Number(body.cavidades) : null;
-      item.piezas_por_varilla = body.piezas_por_varilla ? Number(body.piezas_por_varilla) : null;
+      // Rack: varillas_totales = capacidad total del rack en varillas
+      item.varillas_totales = body.varillas_totales ? Number(body.varillas_totales) : null;
     }
   } else if (tipo === 'sub-motivos-paro' || tipo === 'sub-procesos') {
     const parentField = tipo === 'sub-procesos' ? 'proceso_id' : 'motivo_id';
@@ -282,7 +287,7 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
 
   const body = req.body || {};
-  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'piezas_por_varilla'];
+  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales'];
   for (const field of allowed) {
     if (body[field] !== undefined) list[idx][field] = body[field];
   }
@@ -1608,13 +1613,24 @@ router.post('/baker/cargas', (req, res) => {
     carga.no_skf        = body.no_skf  || comp?.no_skf  || null;
     carga.no_orden      = body.no_orden || null;
     carga.lote          = body.lote     || null;
-    carga.varillas      = body.varillas ? Number(body.varillas) : null;
-    carga.piezas_por_varilla = herr.piezas_por_varilla || body.piezas_por_varilla ? Number(body.piezas_por_varilla || herr.piezas_por_varilla) : null;
-    carga.cantidad      = carga.varillas && carga.piezas_por_varilla
+
+    // Varillas: si hay componente usa carga_optima_varillas del componente;
+    // si no hay componente, usa varillas_totales del herramental (capacidad total del rack)
+    const varillasDefault = comp ? (Number(comp.carga_optima_varillas) || null) : (Number(herr.varillas_totales) || null);
+    carga.varillas = body.varillas ? Number(body.varillas) : varillasDefault;
+
+    // piezas_por_varilla: del cuerpo del request, o del componente (piezas_por_varilla > piezas_objetivo)
+    const ppvComp = comp ? (Number(comp.piezas_por_varilla) || Number(comp.piezas_objetivo) || null) : null;
+    carga.piezas_por_varilla = body.piezas_por_varilla ? Number(body.piezas_por_varilla) : ppvComp;
+
+    carga.cantidad = carga.varillas && carga.piezas_por_varilla
       ? carga.varillas * carga.piezas_por_varilla
       : (body.cantidad ? Number(body.cantidad) : null);
-    carga.piezas_objetivo_carga = compOptima && compObj ? compOptima * compObj : 0;
-    carga.es_vacia      = body.es_vacia || false;
+
+    // Para KPI capacidad: objetivo = varillas_totales * piezas_por_varilla del componente
+    const ppvObj = ppvComp || 0;
+    carga.piezas_objetivo_carga = herr.varillas_totales && ppvObj ? Number(herr.varillas_totales) * ppvObj : 0;
+    carga.es_vacia = body.es_vacia || false;
   }
 
   pdb.cargas_baker.push(carga);
