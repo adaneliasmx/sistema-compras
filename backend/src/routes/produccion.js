@@ -1260,16 +1260,20 @@ router.get('/config', produccionAllowRoles('admin'), (req, res) => {
 router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
   if (!pdb.config) pdb.config = {};
-  const campos = [
+  const camposNum = [
     'ciclos_objetivo_l3', 'ciclos_objetivo_l4', 'ciclos_objetivo_baker',
     'eficiencia_obj_l3',  'eficiencia_obj_l4',  'eficiencia_obj_baker',
     'capacidad_obj_l3',   'capacidad_obj_l4',   'capacidad_obj_baker',
     'calidad_obj_l3',     'calidad_obj_l4',     'calidad_obj_baker',
     'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker'
   ];
+  const camposStr = ['planes_control_baker_url'];
   const body = req.body || {};
-  for (const f of campos) {
+  for (const f of camposNum) {
     if (body[f] !== undefined) pdb.config[f] = Number(body[f]);
+  }
+  for (const f of camposStr) {
+    if (body[f] !== undefined) pdb.config[f] = String(body[f] || '');
   }
   dbProd.write(pdb);
   res.json(pdb.config);
@@ -1633,6 +1637,18 @@ router.get('/baker/cargas', (req, res) => {
   res.json(cargas);
 });
 
+// GET /baker/cavidades — registros individuales de cavidades de barril
+router.get('/baker/cavidades', (req, res) => {
+  const { fecha_ini, fecha_fin, turno, folio_barril } = req.query;
+  const pdb = dbProd.read();
+  let cavs = pdb.cavidades_baker || [];
+  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_carga >= fecha_ini);
+  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_carga <= fecha_fin);
+  if (turno)        cavs = cavs.filter(c => c.turno === turno);
+  if (folio_barril) cavs = cavs.filter(c => c.folio_barril === folio_barril);
+  res.json(cavs);
+});
+
 // POST /baker/cargas — registrar nueva carga Baker (rack o barril)
 router.post('/baker/cargas', (req, res) => {
   const pdb = dbProd.read();
@@ -1700,6 +1716,7 @@ router.post('/baker/cargas', (req, res) => {
       no_skf: cv.no_skf || null,
       no_orden: cv.no_orden || null,
       lote: cv.lote || null,
+      cantidad: cv.cantidad ? Number(cv.cantidad) : null,
       estado: null // se asigna al descargar
     }));
     carga.cavidades_totales  = cavTotales;
@@ -1707,6 +1724,40 @@ router.post('/baker/cargas', (req, res) => {
     carga.cavidades_buenas   = 0;
     carga.cavidades_defecto  = 0;
     carga.cavidades_vacias   = cavidades.filter(cv => cv.es_vacia).length;
+
+    // ── Registros individuales por cavidad (un registro = una cavidad, folio_barril agrupa el ciclo)
+    if (!pdb.cavidades_baker) pdb.cavidades_baker = [];
+    cavidades.forEach((cv, i) => {
+      pdb.cavidades_baker.push({
+        id:              dbProd.nextId(pdb.cavidades_baker),
+        folio_barril:    folio,          // clave que une todas las cavidades del mismo ciclo
+        carga_id:        carga.id,
+        herramental_no:  herr.numero,
+        herramental_id:  herr.id,
+        cavidad_num:     i + 1,
+        es_vacia:        cv.es_vacia || false,
+        cliente:         cv.cliente   || null,
+        componente:      cv.componente || null,
+        no_skf:          cv.no_skf    || null,
+        no_orden:        cv.no_orden  || null,
+        lote:            cv.lote      || null,
+        cantidad:        cv.cantidad  ? Number(cv.cantidad) : null,
+        proceso:         proceso?.nombre    || null,
+        sub_proceso:     subProceso?.nombre || null,
+        operador:        operador?.nombre   || null,
+        fecha_carga:     fecha,
+        hora_carga:      hora,
+        turno,
+        semana,
+        estado:          cv.es_vacia ? 'vacia' : 'activo',
+        resultado:       null,
+        defecto_id:      null,
+        defecto:         null,
+        fecha_descarga:  null,
+        hora_descarga:   null,
+        created_at:      now
+      });
+    });
   } else {
     // rack
     const comp = (pdb.componentes_baker || []).find(c => String(c.id) === String(body.componente_id));
@@ -1762,12 +1813,29 @@ router.post('/baker/cargas/:id/descargar', (req, res) => {
     // body.cavidades: [{num, estado:'buena'|'defecto'|'vacia', defecto_id, defecto}]
     const cavResultados = Array.isArray(body.cavidades) ? body.cavidades : [];
     carga.cavidades = (carga.cavidades || []).map(cv => {
-      const res = cavResultados.find(r => r.num === cv.num) || {};
-      return { ...cv, estado: res.estado || cv.estado || 'vacia', defecto_id: res.defecto_id || null, defecto: res.defecto || null };
+      const r = cavResultados.find(r => r.num === cv.num) || {};
+      return { ...cv, estado: r.estado || cv.estado || 'vacia', defecto_id: r.defecto_id || null, defecto: r.defecto || null };
     });
     carga.cavidades_buenas  = carga.cavidades.filter(cv => cv.estado === 'buena').length;
     carga.cavidades_defecto = carga.cavidades.filter(cv => cv.estado === 'defecto').length;
     carga.cavidades_vacias  = carga.cavidades.filter(cv => cv.estado === 'vacia' || cv.es_vacia).length;
+
+    // Actualizar registros individuales de cavidades_baker
+    if (pdb.cavidades_baker) {
+      pdb.cavidades_baker = pdb.cavidades_baker.map(cav => {
+        if (String(cav.carga_id) !== String(carga.id)) return cav;
+        const r = cavResultados.find(r => r.num === cav.cavidad_num) || {};
+        return {
+          ...cav,
+          estado:        r.estado     || cav.estado     || (cav.es_vacia ? 'vacia' : 'descargado'),
+          resultado:     r.estado     || null,
+          defecto_id:    r.defecto_id || null,
+          defecto:       r.defecto    || null,
+          fecha_descarga: fecha,
+          hora_descarga:  hora
+        };
+      });
+    }
   } else {
     // rack
     if (body.defecto_id) {

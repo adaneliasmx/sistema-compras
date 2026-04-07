@@ -804,17 +804,19 @@ async function viewBaker(el) {
     const today = new Date().toISOString().slice(0, 10);
     const turnoActual = getCurrentTurno();
 
-    const [cargasData, catalogData, paroData, todasHoyData] = await Promise.all([
+    const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
       GET('/baker/cargas/activas'),
       GET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
-      GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`).catch(() => [])
+      GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`).catch(() => []),
+      GET('/config').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
+    const planesUrl = (cfgData?.config || cfgData)?.planes_control_baker_url || '';
     const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
 
     // Check turno anterior sin actividad (idempotente)
@@ -856,6 +858,7 @@ async function viewBaker(el) {
           ${paroMiniCard}
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-baker-paro">⏸ Registrar Paro</button>' : ''}
+            ${planesUrl ? `<a href="${escHtml(planesUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">📋 Consulta Planes de Control</a>` : ''}
             <button class="btn btn-primary" id="btn-baker-carga"${cargas.length >= 7 ? ' disabled title="Máx. 7 herramentales activos"' : ''}>+ Registrar Herramental</button>
           </div>
         </div>
@@ -895,7 +898,13 @@ function renderTarjetaBaker(c) {
     : `<div class="tarjeta-meta-item"><span class="meta-label">Varillas</span><span class="meta-val">${c.varillas ?? '—'}</span></div>
        <div class="tarjeta-meta-item"><span class="meta-label">Cantidad</span><span class="meta-val">${c.cantidad ?? '—'}</span></div>`;
 
-  const noComponente = escHtml(c.componente || '— sin comp —');
+  // Para barril: el componente se guarda por cavidad; derivar del primer slot no vacío
+  let noComponente = c.componente || '';
+  if (!noComponente && esBarril && Array.isArray(c.cavidades)) {
+    const compsCav = [...new Set(c.cavidades.filter(cv => !cv.es_vacia && cv.componente).map(cv => cv.componente))];
+    noComponente = compsCav.length === 1 ? compsCav[0] : compsCav.length > 1 ? 'Múltiples' : '';
+  }
+  noComponente = escHtml(noComponente || '— sin comp —');
 
   return `
   <div class="tarjeta-card">
@@ -3342,6 +3351,13 @@ async function viewConfiguracion(el) {
         </tbody>
       </table>
 
+      <h4 style="margin-top:24px">Baker — Botones de acceso rápido</h4>
+      <div class="config-item">
+        <label>URL Planes de Control Baker</label>
+        <input type="url" id="cfg-planes-url" value="${escHtml(cfg.planes_control_baker_url || '')}" placeholder="https://..." style="width:100%;max-width:480px"/>
+        <span style="font-size:11px;color:var(--p-muted)">Se muestra como botón "📋 Consulta Planes de Control" en el tarjetero Baker. Dejar vacío para ocultar.</span>
+      </div>
+
       <div style="margin-top:24px">
         <button class="btn btn-primary" id="cfg-save">💾 Guardar cambios</button>
         <span id="cfg-msg" style="margin-left:12px;font-size:13px;color:var(--p-success)"></span>
@@ -3369,7 +3385,8 @@ async function viewConfiguracion(el) {
         calidad_obj_baker:     g('cfg-cal-baker'),
         disponibilidad_obj_l3: g('cfg-dis-l3'),
         disponibilidad_obj_l4: g('cfg-dis-l4'),
-        disponibilidad_obj_baker: g('cfg-dis-baker')
+        disponibilidad_obj_baker: g('cfg-dis-baker'),
+        planes_control_baker_url: document.getElementById('cfg-planes-url')?.value?.trim() || ''
       });
       msg.style.color = 'var(--p-success)';
       msg.textContent = '✅ Guardado correctamente';
