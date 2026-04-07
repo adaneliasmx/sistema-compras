@@ -629,8 +629,17 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
 router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
   const { linea, desde, hasta, turno } = req.query;
   const pdb = dbProd.read();
-  let paros = pdb.paros || [];
-  if (linea && linea !== 'ambas') paros = paros.filter(p => p.linea === linea);
+  let paros = [];
+
+  if (!linea || linea === 'ambas') {
+    const bakerParos = (pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' }));
+    paros = [...(pdb.paros || []), ...bakerParos];
+  } else if (linea === 'Baker') {
+    paros = (pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' }));
+  } else {
+    paros = (pdb.paros || []).filter(p => p.linea === linea);
+  }
+
   if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
   if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
   if (turno) paros = paros.filter(p => p.turno === turno);
@@ -1217,9 +1226,18 @@ router.get('/pizarron', (req, res) => {
 router.get('/reportes', (req, res) => {
   const { linea, desde, hasta } = req.query;
   const pdb = dbProd.read();
-  let cargas = pdb.cargas || [];
+  let cargas = [];
 
-  if (linea && linea !== 'ambas') cargas = cargas.filter(c => c.linea === linea);
+  if (!linea || linea === 'ambas') {
+    // L3 + L4 + Baker
+    const bakerCargas = (pdb.cargas_baker || []).map(c => ({ ...c, linea: 'Baker' }));
+    cargas = [...(pdb.cargas || []), ...bakerCargas];
+  } else if (linea === 'Baker') {
+    cargas = (pdb.cargas_baker || []).map(c => ({ ...c, linea: 'Baker' }));
+  } else {
+    cargas = (pdb.cargas || []).filter(c => c.linea === linea);
+  }
+
   if (desde) cargas = cargas.filter(c => c.fecha_carga >= desde);
   if (hasta) cargas = cargas.filter(c => c.fecha_carga <= hasta);
 
@@ -1267,7 +1285,9 @@ const DEFAULT_SLIDESHOW = {
     {id:3, type:'kpi', scope:'turno', linea:'ambas', duracion_seg:null, activo:true},
     {id:4, type:'kpi', scope:'dia',   linea:'L3',    duracion_seg:null, activo:true},
     {id:5, type:'kpi', scope:'dia',   linea:'L4',    duracion_seg:null, activo:true},
-    {id:6, type:'kpi', scope:'dia',   linea:'ambas', duracion_seg:null, activo:true}
+    {id:6, type:'kpi', scope:'dia',   linea:'ambas', duracion_seg:null, activo:true},
+    {id:7, type:'kpi', scope:'turno', linea:'Baker', duracion_seg:null, activo:true},
+    {id:8, type:'kpi', scope:'dia',   linea:'Baker', duracion_seg:null, activo:true}
   ]
 };
 
@@ -1298,18 +1318,19 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
   const config       = pdb.config || {};
   if (!pdb.kpi_snapshots) pdb.kpi_snapshots = [];
 
-  const lineas   = linea === 'ambas' ? ['L3', 'L4'] : [linea];
+  const lineasL3L4 = linea === 'ambas' ? ['L3', 'L4'] : (linea === 'Baker' ? [] : [linea]);
+  const includeBakerG = linea === 'ambas' || linea === 'Baker';
   const turnos   = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
   const guardados = [];
+  const semana = getISOWeek(new Date(targetDate + 'T12:00:00'));
 
-  for (const l of lineas) {
+  for (const l of lineasL3L4) {
     for (const t of turnos) {
       const slots          = buildSlotsForLinTur(pdb, config, l, t, targetDate);
       const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
       const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
       const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
       const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
-      const semana = getISOWeek(new Date(targetDate + 'T12:00:00'));
 
       const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === l && k.turno === t);
       const snap = {
@@ -1318,6 +1339,37 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
         semana,
         turno:          t,
         linea:          l,
+        guardado_at:    new Date().toISOString(),
+        ciclos_totales,
+        ciclos_buenos,
+        paros_min_total,
+        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
+        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
+        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
+        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
+        slots
+      };
+      if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+      else pdb.kpi_snapshots.push(snap);
+      guardados.push(snap);
+    }
+  }
+
+  if (includeBakerG) {
+    for (const t of turnos) {
+      const slots          = buildSlotsForBaker(pdb, config, t, targetDate);
+      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
+      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+
+      const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'Baker' && k.turno === t);
+      const snap = {
+        id:             existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+        fecha:          targetDate,
+        semana,
+        turno:          t,
+        linea:          'Baker',
         guardado_at:    new Date().toISOString(),
         ciclos_totales,
         ciclos_buenos,
@@ -1359,14 +1411,16 @@ router.get('/kpis', (req, res) => {
     cur.setDate(cur.getDate() + 1);
   }
 
-  const lineas  = linea && linea !== 'ambas' ? [linea] : ['L3', 'L4'];
+  const lineasL3L4 = (!linea || linea === 'ambas') ? ['L3', 'L4'] : (linea === 'Baker' ? [] : [linea]);
+  const includeBaker = !linea || linea === 'ambas' || linea === 'Baker';
   const turnos  = turno ? [turno] : ['T1', 'T2', 'T3'];
   const r3      = v => v != null ? Math.round(v * 1000) / 1000 : null;
 
   const snapshots = [];
 
   for (const date of dates) {
-    for (const l of lineas) {
+    // L3 / L4
+    for (const l of lineasL3L4) {
       const ciclos_obj = l === 'L3'
         ? (config.ciclos_objetivo_l3 ?? 2)
         : (config.ciclos_objetivo_l4 ?? 2);
@@ -1382,7 +1436,6 @@ router.get('/kpis', (req, res) => {
         const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
         const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
 
-        // Sólo incluir si hay datos reales
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
@@ -1398,6 +1451,50 @@ router.get('/kpis', (req, res) => {
           semana,
           turno:           t,
           linea:           l,
+          ciclos_totales,
+          ciclos_no_vacios,
+          ciclos_buenos,
+          piezas_total,
+          piezas_obj_total,
+          paros_min_total: Math.round(paros_min_total * 10) / 10,
+          eficiencia:      r3(eficiencia),
+          calidad:         r3(calidad),
+          capacidad:       r3(capacidad),
+          disponibilidad:  r3(disponibilidad),
+          slots
+        });
+      }
+    }
+
+    // Baker
+    if (includeBaker) {
+      const ciclos_obj_baker = config.ciclos_objetivo_baker ?? 2;
+      for (const t of turnos) {
+        const tDef  = TURNOS_DEF[t];
+        const slots = buildSlotsForBaker(pdb, config, t, date);
+
+        const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+        const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+        const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+        const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
+        const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+        const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+
+        if (ciclos_totales === 0 && paros_min_total === 0) continue;
+
+        const turnoMins      = tDef.hours * 60;
+        const eficiencia     = (ciclos_obj_baker * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj_baker * tDef.hours) : 0;
+        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
+        const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
+        const semana         = getISOWeek(new Date(date + 'T12:00:00'));
+
+        snapshots.push({
+          id:              `${date}-Baker-${t}`,
+          fecha:           date,
+          semana,
+          turno:           t,
+          linea:           'Baker',
           ciclos_totales,
           ciclos_no_vacios,
           ciclos_buenos,

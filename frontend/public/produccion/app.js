@@ -75,7 +75,7 @@ const SECTION_TITLES = {
   'paros':           'Registro de Paros',
   'pizarron':        'Pizarrón KPI',
   'kpi-historico':   'KPI Histórico',
-  'monitor':         'Monitor en vivo — L3 y L4',
+  'monitor':         'Monitor en vivo — L3, L4 y Baker',
   'catalogos-l3':    'Catálogos Línea 3',
   'catalogos-l4':    'Catálogos Línea 4',
   'catalogos-baker': 'Catálogos Baker',
@@ -2214,19 +2214,21 @@ async function viewMonitor(el) {
     return;
   }
 
-  function renderMonitorContent(cargasL3, cargasL4, paroL3, paroL4) {
+  function renderMonitorContent(cargasL3, cargasL4, cargasBaker, paroL3, paroL4, paroBaker) {
     const turno    = getCurrentTurno();
     const today    = new Date().toISOString().slice(0, 10);
     const now      = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
-    const todas    = [...cargasL3, ...cargasL4].sort((a, b) => {
+    const cBakerNorm = cargasBaker.map(c => ({ ...c, linea: 'Baker' }));
+    const todas    = [...cargasL3, ...cargasL4, ...cBakerNorm].sort((a, b) => {
       const ta = `${a.fecha_carga}T${a.hora_carga || '00:00'}`;
       const tb = `${b.fecha_carga}T${b.hora_carga || '00:00'}`;
       return ta > tb ? -1 : ta < tb ? 1 : 0;
     });
 
-    const ciclosL3 = cargasL3.filter(c => c.turno === turno).length;
-    const ciclosL4 = cargasL4.filter(c => c.turno === turno).length;
+    const ciclosL3    = cargasL3.filter(c => c.turno === turno).length;
+    const ciclosL4    = cargasL4.filter(c => c.turno === turno).length;
+    const ciclosBaker = cargasBaker.filter(c => c.turno === turno).length;
 
     const paroHtml = (paro, label) => paro
       ? `<div style="background:#dc2626;color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700">
@@ -2236,13 +2238,18 @@ async function viewMonitor(el) {
 
     const filas = todas.map(c => {
       const badgeClass = c.estado === 'procesado' ? 'badge-procesado' : c.estado === 'defecto' ? 'badge-defecto' : 'badge-activo';
+      const lineaBadge = c.linea === 'L3' ? 'badge-t1' : c.linea === 'Baker' ? 'badge-t3' : 'badge-t2';
+      // Para Baker barril mostrar cavidades_cargadas; para rack mostrar varillas × ppv = cantidad
+      const piezasHtml = c.herramental_tipo === 'barril'
+        ? `${c.cavidades_cargadas ?? '—'} cav. (${c.cavidades_buenas ?? '—'} buenas)`
+        : `${c.varillas ?? '—'} × ${c.piezas_por_varilla ?? '—'} = <strong>${c.cantidad ?? '—'}</strong>`;
       return `<tr>
         <td class="mono" style="font-size:11px">${escHtml(c.hora_carga || '—')}</td>
-        <td><span class="badge ${c.linea === 'L3' ? 'badge-t1' : 'badge-t2'}">${escHtml(c.linea)}</span></td>
+        <td><span class="badge ${lineaBadge}">${escHtml(c.linea)}</span></td>
         <td><span class="badge ${getTurnoColor(c.turno)}">${escHtml(c.turno || '—')}</span></td>
         <td class="mono">${escHtml(c.herramental_no || '—')}</td>
-        <td>${escHtml(c.componente || '—')}</td>
-        <td>${c.varillas ?? '—'} × ${c.piezas_por_varilla ?? '—'} = <strong>${c.cantidad ?? '—'}</strong></td>
+        <td>${escHtml(c.componente || (c.herramental_tipo === 'barril' ? '(barril)' : '—'))}</td>
+        <td>${piezasHtml}</td>
         <td>${escHtml(c.operador || '—')}</td>
         <td><span class="badge ${badgeClass}">${escHtml(c.estado)}</span></td>
       </tr>`;
@@ -2253,13 +2260,17 @@ async function viewMonitor(el) {
         <div style="display:flex;gap:8px;flex-wrap:wrap">
           ${paroHtml(paroL3, 'L3')}
           ${paroHtml(paroL4, 'L4')}
+          ${paroHtml(paroBaker, 'Baker')}
         </div>
-        <div style="display:flex;gap:10px;align-items:center">
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
             L3 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL3}</span>
           </div>
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
             L4 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL4}</span>
+          </div>
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
+            Baker — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosBaker}</span>
           </div>
           <span style="font-size:11px;color:var(--p-muted)">Actualizado: ${now}</span>
         </div>
@@ -2286,15 +2297,18 @@ async function viewMonitor(el) {
     const contenedor = document.getElementById('monitor-contenido');
     if (!contenedor) return;
     try {
-      const [dL3, dL4, paroL3Res, paroL4Res] = await Promise.all([
+      const [dL3, dL4, dBaker, paroL3Res, paroL4Res, paroBakerRes] = await Promise.all([
         GET(`/cargas/L3?fecha_ini=${today}&fecha_fin=${today}`),
         GET(`/cargas/L4?fecha_ini=${today}&fecha_fin=${today}`),
+        GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`),
         GET('/paros/L3/activo').catch(() => null),
-        GET('/paros/L4/activo').catch(() => null)
+        GET('/paros/L4/activo').catch(() => null),
+        GET('/baker/paros/activo').catch(() => null)
       ]);
-      const cL3 = Array.isArray(dL3) ? dL3 : [];
-      const cL4 = Array.isArray(dL4) ? dL4 : [];
-      contenedor.innerHTML = renderMonitorContent(cL3, cL4, paroL3Res?.paro || null, paroL4Res?.paro || null);
+      const cL3    = Array.isArray(dL3)    ? dL3    : [];
+      const cL4    = Array.isArray(dL4)    ? dL4    : [];
+      const cBaker = Array.isArray(dBaker) ? dBaker : [];
+      contenedor.innerHTML = renderMonitorContent(cL3, cL4, cBaker, paroL3Res?.paro || null, paroL4Res?.paro || null, paroBakerRes?.paro || null);
     } catch (e) {
       contenedor.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
@@ -2302,7 +2316,7 @@ async function viewMonitor(el) {
 
   el.innerHTML = `
     <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del día de hoy (L3 + L4)</span>
+      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del día de hoy (L3 + L4 + Baker)</span>
       <button class="btn btn-outline btn-sm" id="mon-refresh">↻ Actualizar</button>
     </div>
     <div id="monitor-contenido"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
@@ -2325,9 +2339,10 @@ async function viewReportes(el) {
       <div>
         <span class="flabel">Línea</span>
         <select id="rpt-linea">
-          <option value="">Ambas</option>
+          <option value="">Todas</option>
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
+          <option value="Baker">Baker</option>
         </select>
       </div>
       <div>
@@ -3006,9 +3021,10 @@ async function viewParos(el) {
       <div>
         <span class="flabel">Línea</span>
         <select id="pr-linea">
-          <option value="">Ambas</option>
+          <option value="">Todas</option>
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
+          <option value="Baker">Baker</option>
         </select>
       </div>
       <div>
@@ -3096,7 +3112,7 @@ async function viewParos(el) {
                 </td>` : '';
                 return `<tr>
                   <td class="mono" style="font-size:11px">${escHtml(p.folio || p.id)}</td>
-                  <td><span class="badge ${p.linea==='L3'?'badge-t1':'badge-t2'}">${escHtml(p.linea)}</span></td>
+                  <td><span class="badge ${p.linea==='L3'?'badge-t1':p.linea==='Baker'?'badge-t3':'badge-t2'}">${escHtml(p.linea)}</span></td>
                   <td><span class="badge ${getTurnoColor(p.turno)}">${escHtml(p.turno||'—')}</span></td>
                   <td>${escHtml(p.fecha_inicio||'—')}</td>
                   <td class="mono">${escHtml(p.hora_inicio||'—')}</td>
@@ -3442,12 +3458,14 @@ async function viewConfiguracion(el) {
       3: 'Turno actual · Todas las líneas',
       4: 'Día acumulado · Línea 3',
       5: 'Día acumulado · Línea 4',
-      6: 'Día acumulado · Todas las líneas'
+      6: 'Día acumulado · Todas las líneas',
+      7: 'Turno actual · Baker',
+      8: 'Día acumulado · Baker'
     };
 
     // KPI slides
     const kpiListEl = document.getElementById('ss-kpi-slides-list');
-    kpiListEl.innerHTML = [1,2,3,4,5,6].map(id => {
+    kpiListEl.innerHTML = [1,2,3,4,5,6,7,8].map(id => {
       const slide = ssCfg.slides.find(s => s.id === id && s.type === 'kpi') || {id, type:'kpi', activo:true, duracion_seg:null};
       return `
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--p-border)">
@@ -3573,9 +3591,10 @@ async function viewKpiHistorico(el) {
       <div>
         <span class="flabel">Línea</span>
         <select id="kh-linea">
-          <option value="">Ambas</option>
+          <option value="">Todas</option>
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
+          <option value="Baker">Baker</option>
         </select>
       </div>
       <div>
