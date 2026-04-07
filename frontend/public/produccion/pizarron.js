@@ -1,29 +1,43 @@
-// Pizarron de Produccion - standalone, no auth required
+// Pizarrón Digital — Slideshow KPI
 (function () {
   'use strict';
 
-  // ── State ─────────────────────────────────────────────────────────────────
-  const FONT_SIZES = { sm: '11px', md: '14px', lg: '18px', xl: '22px' };
+  // ── Definición de diapositivas ────────────────────────────────────────────
+  const SLIDES = [
+    { id: 1, scope: 'turno', linea: 'L3'    },
+    { id: 2, scope: 'turno', linea: 'L4'    },
+    { id: 3, scope: 'turno', linea: 'Baker' },
+    { id: 4, scope: 'turno', linea: 'all'   },
+    { id: 5, scope: 'dia',   linea: 'L3'    },
+    { id: 6, scope: 'dia',   linea: 'L4'    },
+    { id: 7, scope: 'dia',   linea: 'Baker' },
+  ];
 
+  const LINEA_LABELS = { L3: 'Línea 3', L4: 'Línea 4', Baker: 'Baker' };
+  const FONT_SIZES   = { sm: '11px', md: '14px', lg: '18px', xl: '24px' };
+
+  // ── State ─────────────────────────────────────────────────────────────────
   let state = {
-    data: null,
-    loading: false,
-    error: null,
-    fecha: todayStr(),
-    turnoFilter: 'all',
-    lineaFilter: 'all',  // 'all' | 'L3' | 'L4' | 'Baker'
-    viewMode: 'hrs',     // 'hrs' = hora×hora | 'resumen' = solo subtotales
-    lastRefresh: null,
-    darkMode: localStorage.getItem('pizarron_theme') === 'dark',
-    fontSize: localStorage.getItem('pizarron_font') || 'md'
+    data:         null,
+    error:        null,
+    fecha:        todayStr(),
+    slideIdx:     0,
+    playing:      true,
+    slideDurSec:  30,
+    lastRefresh:  null,
+    darkMode:     localStorage.getItem('pizarron_theme') === 'dark',
+    fontSize:     localStorage.getItem('pizarron_font') || 'md'
   };
 
-  let refreshTimer = null;
+  let slideTimer    = null;
+  let progressTimer = null;
+  let dataTimer     = null;
+  let clockTimer    = null;
+  let progressStart = null;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function todayStr() {
-    const d = new Date();
-    return d.toISOString().slice(0, 10);
+    return new Date().toISOString().slice(0, 10);
   }
 
   function nowStr() {
@@ -34,9 +48,9 @@
   }
 
   function currentTurno() {
-    const h = new Date().getHours();
-    if (h >= 6 && h < 14) return 'T1';
-    if (h >= 14 && h < 22) return 'T2';
+    const t = new Date().getHours() * 60 + new Date().getMinutes();
+    if (t >= 6*60+30 && t < 14*60+30) return 'T1';
+    if (t >= 14*60+30 && t < 21*60+30) return 'T2';
     return 'T3';
   }
 
@@ -56,359 +70,357 @@
     return n.toFixed(1) + '%';
   }
 
-  // ── Fetch ─────────────────────────────────────────────────────────────────
+  function escHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Fetch & Transform ─────────────────────────────────────────────────────
   async function fetchData() {
-    state.loading = true;
-    render();
     try {
-      const url = `/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error('Error ' + res.status + ': ' + res.statusText);
+      const res = await fetch(`/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
       const raw = await res.json();
+      const pct = v => (v != null ? v * 100 : null);
 
-      // El backend devuelve { fecha, linea, turno, data: { L3: { T1: { slots, totals }, ... }, L4: {...} } }
-      // Transformar al formato que espera buildLineaBoard: { horas: { T1: [...], T2, T3 }, totales: { T1: {...}, dia: {...} } }
-      const backendData = raw?.data || {};
       const transformed = {};
-
-      for (const [l, lineaData] of Object.entries(backendData)) {
-        const horas   = {};
-        const totales = {};
-
-        const pct = v => v != null ? v * 100 : null;
-
+      for (const [l, ld] of Object.entries(raw?.data || {})) {
+        const horas = {}, totales = {};
         for (const t of ['T1', 'T2', 'T3']) {
-          const td    = lineaData[t] || {};
+          const td    = ld[t] || {};
           const slots = td.slots || [];
-
           horas[t] = slots.map(s => ({
             hora:           `${s.hora_inicio}–${s.hora_fin}`,
-            ciclos:         s.ciclos_totales,
+            ciclos:         s.ciclos_totales ?? 0,
             eficiencia:     pct(s.eficiencia),
             capacidad:      pct(s.capacidad),
             calidad:        pct(s.calidad),
             disponibilidad: pct(s.disponibilidad)
           }));
-
-          // Usar totales calculados por el backend (no promediar slots)
           const tot = td.totals || {};
           totales[t] = {
+            ciclos:         slots.reduce((acc, x) => acc + (x.ciclos_totales ?? 0), 0),
             eficiencia:     pct(tot.eficiencia),
             capacidad:      pct(tot.capacidad),
             calidad:        pct(tot.calidad),
             disponibilidad: pct(tot.disponibilidad)
           };
         }
-
-        // Total del día: usar totales_dia del backend
-        const tdia = lineaData.totales_dia || {};
+        const tdia = ld.totales_dia || {};
         totales.dia = {
           eficiencia:     pct(tdia.eficiencia),
           capacidad:      pct(tdia.capacidad),
           calidad:        pct(tdia.calidad),
           disponibilidad: pct(tdia.disponibilidad)
         };
-
         transformed[l] = { horas, totales };
       }
 
-      state.data = transformed;
-      state.error = null;
+      state.data        = transformed;
+      state.error       = null;
       state.lastRefresh = new Date();
-    } catch (err) {
-      state.error = err.message;
-      state.data = null;
+    } catch (e) {
+      state.error = e.message;
     }
-    state.loading = false;
-    render();
+    renderSlide();
+  }
+
+  // ── Slideshow timer ───────────────────────────────────────────────────────
+  function startSlideTimer() {
+    clearTimeout(slideTimer);
+    clearInterval(progressTimer);
+    progressStart = Date.now();
+
+    // Animate progress bar
+    progressTimer = setInterval(() => {
+      const bar = document.getElementById('pzs-progress-bar');
+      if (!bar) return;
+      const pct = Math.min(100, ((Date.now() - progressStart) / (state.slideDurSec * 1000)) * 100);
+      bar.style.width = pct + '%';
+    }, 120);
+
+    slideTimer = setTimeout(() => {
+      if (state.playing) {
+        state.slideIdx = (state.slideIdx + 1) % SLIDES.length;
+        renderSlide();
+        startSlideTimer();
+      }
+    }, state.slideDurSec * 1000);
+  }
+
+  function stopSlideTimer() {
+    clearTimeout(slideTimer);
+    clearInterval(progressTimer);
+  }
+
+  function goToSlide(idx) {
+    state.slideIdx = ((idx % SLIDES.length) + SLIDES.length) % SLIDES.length;
+    renderSlide();
+    if (state.playing) startSlideTimer();
+  }
+
+  // ── Clock ─────────────────────────────────────────────────────────────────
+  function startClock() {
+    if (clockTimer) return;
+    clockTimer = setInterval(() => {
+      const el = document.getElementById('pzs-clock');
+      if (el) el.textContent = nowStr();
+    }, 1000);
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
-  function render() {
+  function renderSlide() {
     const app = document.getElementById('pizarron-app');
     if (!app) return;
     document.body.classList.toggle('pizarron-dark', state.darkMode);
     document.documentElement.style.setProperty('--pz-font', FONT_SIZES[state.fontSize] || '14px');
     app.innerHTML = buildHtml();
     bindEvents();
+    startClock();
+  }
+
+  function slideTitle(slide, turno) {
+    if (slide.scope === 'turno') {
+      const label = slide.linea === 'all'
+        ? 'Todas las Líneas (L3, L4 y Baker)'
+        : LINEA_LABELS[slide.linea] || slide.linea;
+      return `${turno} · ${label}`;
+    } else {
+      return `${state.fecha} · ${LINEA_LABELS[slide.linea] || slide.linea}`;
+    }
   }
 
   function buildHtml() {
+    const slide = SLIDES[state.slideIdx];
     const turno = currentTurno();
-    return `
-      <div class="pizarron-root">
-        ${buildHeader(turno)}
-        ${buildControls()}
-        ${state.loading ? '<div class="pizarron-loading">Cargando datos...</div>' : ''}
-        ${state.error ? `<div class="pizarron-error">Error al cargar datos: ${escHtml(state.error)}</div>` : ''}
-        ${!state.loading && !state.error && state.data ? buildBoards(turno) : ''}
-        ${!state.loading && !state.error && !state.data ? '<div class="pizarron-empty">Sin datos disponibles para esta fecha.</div>' : ''}
-      </div>
-    `;
-  }
-
-  function buildHeader(turno) {
-    const refreshTime = state.lastRefresh
+    const n     = state.slideIdx;
+    const total = SLIDES.length;
+    const refreshTxt = state.lastRefresh
       ? state.lastRefresh.toLocaleTimeString('es-MX')
       : '—';
-    return `
-      <div class="pizarron-header">
-        <div class="pizarron-title-block">
-          <div class="pizarron-title">🏭 Pizarrón de Producción</div>
-          <div class="pizarron-subtitle">Líneas 3, 4 y Baker · KPIs en tiempo real</div>
-        </div>
-        <div class="pizarron-header-right">
-          <div class="pizarron-datetime" id="pizarron-clock">${nowStr()}</div>
-          <div class="pizarron-turno-badge">Turno actual: <strong>${turno}</strong></div>
-          <div class="pizarron-refresh-info">Última actualización: ${refreshTime} · Auto-refresh 30s</div>
-        </div>
-      </div>
-    `;
-  }
 
-  function buildControls() {
-    const turnos = ['all', 'T1', 'T2', 'T3'];
-    const turnoLabels = { all: 'Todos', T1: 'T1', T2: 'T2', T3: 'T3' };
-    const btnHtml = turnos.map(t => {
-      const active = state.turnoFilter === t ? ' active' : '';
-      return `<button class="pizarron-btn-turno${active}" data-turno="${t}">${turnoLabels[t]}</button>`;
-    }).join('');
-
-    const lineas = ['all', 'L3', 'L4', 'Baker'];
-    const lineaLabels = { all: 'Todas', L3: 'L3', L4: 'L4', Baker: 'Baker' };
-    const lineaBtns = lineas.map(l => {
-      const active = state.lineaFilter === l ? ' active' : '';
-      return `<button class="pizarron-btn-turno${active}" data-linea="${l}">${lineaLabels[l]}</button>`;
-    }).join('');
-
-    const fontSizes = [
-      { key: 'sm', label: 'A−' },
-      { key: 'md', label: 'A'  },
-      { key: 'lg', label: 'A+' },
-      { key: 'xl', label: 'A⁺⁺' }
-    ];
-    const fontBtns = fontSizes.map(f =>
-      `<button class="pizarron-btn-turno${state.fontSize === f.key ? ' active' : ''}" data-font="${f.key}" style="min-width:36px">${f.label}</button>`
+    const dots = SLIDES.map((_, i) =>
+      `<span class="pzs-dot${i === n ? ' pzs-dot-active' : ''}" data-idx="${i}"></span>`
     ).join('');
 
-    const viewLabel = state.viewMode === 'resumen' ? '📊 Hr×Hr' : '📋 Resumen';
-
-    return `
-      <div class="pizarron-controls">
-        <div class="pizarron-control-group">
-          <label class="pizarron-label">Turno:</label>
-          <div class="pizarron-turno-btns">${btnHtml}</div>
-        </div>
-        <div class="pizarron-control-group">
-          <label class="pizarron-label">Línea:</label>
-          <div class="pizarron-turno-btns">${lineaBtns}</div>
-        </div>
-        <div class="pizarron-control-group">
-          <label class="pizarron-label" for="pizarron-fecha">Fecha:</label>
-          <input type="date" id="pizarron-fecha" class="pizarron-date-input" value="${state.fecha}"/>
-        </div>
-        <div class="pizarron-control-group">
-          <label class="pizarron-label">Texto:</label>
-          <div class="pizarron-turno-btns">${fontBtns}</div>
-        </div>
-        <button class="pizarron-btn-refresh" id="btn-view-mode">${viewLabel}</button>
-        <button class="pizarron-btn-refresh" id="btn-refresh-now">↻ Actualizar</button>
-        <button class="pizarron-btn-theme" id="btn-theme-toggle">
-          ${state.darkMode ? '☀️ Claro' : '🌙 Oscuro'}
-        </button>
-      </div>
-    `;
-  }
-
-  function buildBoards(turno) {
-    const allLineas = Object.keys(state.data || {});
-    const order = ['L3', 'L4', 'Baker'];
-    let lineas = [...order.filter(l => allLineas.includes(l)), ...allLineas.filter(l => !order.includes(l))];
-    if (state.lineaFilter !== 'all') lineas = lineas.filter(l => l === state.lineaFilter);
-    const labels = { L3: 'Línea 3', L4: 'Línea 4', Baker: 'Baker' };
-    return lineas.map(linea => {
-      const linData = (state.data || {})[linea] || {};
-      return buildLineaBoard(linea, labels[linea] || linea, linData, turno);
+    const fontBtns = ['sm', 'md', 'lg', 'xl'].map(f => {
+      const lbl = { sm: 'A−', md: 'A', lg: 'A+', xl: 'A⁺⁺' }[f];
+      return `<button class="pzs-btn${state.fontSize === f ? ' pzs-btn-active' : ''}" data-font="${f}">${lbl}</button>`;
     }).join('');
-  }
-
-  function buildLineaBoard(linea, label, linData, currentTurnoStr) {
-    const turnos = ['T1', 'T2', 'T3'];
-    const visibleTurnos = state.turnoFilter === 'all' ? turnos : [state.turnoFilter];
-    const horas   = linData.horas   || {};
-    const totales = linData.totales || {};
-
-    let rows = '';
-
-    for (const t of visibleTurnos) {
-      const horasT = (horas[t] || []);
-      const isCurrentTurno = t === currentTurnoStr && state.fecha === todayStr();
-
-      // Turno header row
-      const turnoHighlight = isCurrentTurno ? ' turno-actual' : '';
-      rows += `<tr class="turno-header-row${turnoHighlight}">
-        <td colspan="6"><strong>${t}${isCurrentTurno ? ' ← Turno actual' : ''}</strong></td>
-      </tr>`;
-
-      if (state.viewMode === 'hrs') {
-        // Vista hora×hora
-        if (horasT.length === 0) {
-          rows += `<tr class="no-data-row"><td colspan="6">Sin registros</td></tr>`;
-        } else {
-          for (const hr of horasT) {
-            rows += buildKpiRow(hr.hora || hr.label, hr);
-          }
-        }
-      }
-
-      // Turno subtotal (siempre visible)
-      const subT = totales[t] || {};
-      rows += `<tr class="subtotal-row">
-        <td colspan="2"><em>${state.viewMode === 'resumen' ? `KPI ${t}` : `Subtotal ${t}`}</em></td>
-        <td class="${kpiColor(subT.eficiencia)}">${fmtPct(subT.eficiencia)}</td>
-        <td class="${kpiColor(subT.capacidad)}">${fmtPct(subT.capacidad)}</td>
-        <td class="${kpiColor(subT.calidad)}">${fmtPct(subT.calidad)}</td>
-        <td class="${kpiColor(subT.disponibilidad)}">${fmtPct(subT.disponibilidad)}</td>
-      </tr>`;
-    }
-
-    // Day total (only when showing all or single)
-    const dayTotal = totales.dia || totales.day || {};
-    const hasDayTotal = Object.keys(dayTotal).length > 0;
-    const dayTotalRow = hasDayTotal ? `
-      <tr class="day-total-row">
-        <td colspan="2"><strong>Total día</strong></td>
-        <td class="${kpiColor(dayTotal.eficiencia)}"><strong>${fmtPct(dayTotal.eficiencia)}</strong></td>
-        <td class="${kpiColor(dayTotal.capacidad)}"><strong>${fmtPct(dayTotal.capacidad)}</strong></td>
-        <td class="${kpiColor(dayTotal.calidad)}"><strong>${fmtPct(dayTotal.calidad)}</strong></td>
-        <td class="${kpiColor(dayTotal.disponibilidad)}"><strong>${fmtPct(dayTotal.disponibilidad)}</strong></td>
-      </tr>` : '';
 
     return `
-      <div class="pizarron-linea-board">
-        <div class="pizarron-linea-title">${label}</div>
-        <div class="pizarron-table-wrap">
-          <table class="pizarron-table">
+      <div class="pzs-root">
+
+        <!-- Progress bar -->
+        <div class="pzs-progress-track">
+          <div id="pzs-progress-bar" class="pzs-progress-bar" style="width:0%"></div>
+        </div>
+
+        <!-- Header -->
+        <div class="pzs-header">
+          <div class="pzs-header-left">
+            <div class="pzs-slide-title">${escHtml(slideTitle(slide, turno))}</div>
+            <div class="pzs-clock" id="pzs-clock">${nowStr()}</div>
+          </div>
+          <div class="pzs-header-right">
+            <div class="pzs-slide-counter">${n + 1} / ${total}</div>
+            <div class="pzs-refresh-lbl">Actualizado: ${refreshTxt} · Auto 60s</div>
+          </div>
+        </div>
+
+        <!-- Content -->
+        <div class="pzs-content">
+          ${state.error
+            ? `<div class="pzs-error">⚠️ Error al cargar datos: ${escHtml(state.error)}</div>`
+            : (!state.data
+              ? '<div class="pzs-loading">Cargando datos...</div>'
+              : buildSlideContent(slide, turno)
+            )
+          }
+        </div>
+
+        <!-- Controls bar -->
+        <div class="pzs-controls">
+          <div class="pzs-nav-group">
+            <button class="pzs-btn" id="pzs-prev">◀</button>
+            <button class="pzs-btn" id="pzs-play">${state.playing ? '⏸' : '▶'}</button>
+            <button class="pzs-btn" id="pzs-next">▶▶</button>
+          </div>
+          <div class="pzs-dots">${dots}</div>
+          <div class="pzs-settings-group">
+            ${fontBtns}
+            <button class="pzs-btn" id="pzs-theme" title="Cambiar tema">
+              ${state.darkMode ? '☀️ Claro' : '🌙 Oscuro'}
+            </button>
+            <button class="pzs-btn" id="pzs-refresh" title="Actualizar datos">↻</button>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Slide content builders ────────────────────────────────────────────────
+  function buildSlideContent(slide, turno) {
+    if (slide.scope === 'turno') {
+      if (slide.linea === 'all') return buildAllTurnoSlide(turno);
+      return buildTurnoSlide(slide.linea, turno);
+    }
+    return buildDiaSlide(slide.linea);
+  }
+
+  function kpiCard(label, val, big) {
+    const cls = big ? 'pzs-kpi-card pzs-kpi-big' : 'pzs-kpi-card';
+    return `
+      <div class="${cls} ${kpiColor(val)}">
+        <div class="pzs-kpi-label">${label}</div>
+        <div class="pzs-kpi-value">${fmtPct(val)}</div>
+      </div>`;
+  }
+
+  /* ── Diapositiva turno de una línea ───────────────────────────────────── */
+  function buildTurnoSlide(linea, turno) {
+    const tot   = state.data?.[linea]?.totales?.[turno] || {};
+    const horas = state.data?.[linea]?.horas?.[turno]   || [];
+
+    const hrRows = horas.map(h => `
+      <tr>
+        <td class="mono">${escHtml(h.hora)}</td>
+        <td style="text-align:center;font-weight:700">${h.ciclos ?? '—'}</td>
+        <td class="${kpiColor(h.eficiencia)}">${fmtPct(h.eficiencia)}</td>
+        <td class="${kpiColor(h.capacidad)}">${fmtPct(h.capacidad)}</td>
+        <td class="${kpiColor(h.calidad)}">${fmtPct(h.calidad)}</td>
+        <td class="${kpiColor(h.disponibilidad)}">${fmtPct(h.disponibilidad)}</td>
+      </tr>`).join('') || '<tr><td colspan="6" class="pzs-no-data">Sin registros en este turno</td></tr>';
+
+    return `
+      <div class="pzs-turno-slide">
+        <!-- KPI cards grandes -->
+        <div class="pzs-kpi-grid">
+          ${kpiCard('Eficiencia',     tot.eficiencia,     true)}
+          ${kpiCard('Capacidad',      tot.capacidad,      true)}
+          ${kpiCard('Calidad',        tot.calidad,        true)}
+          ${kpiCard('Disponibilidad', tot.disponibilidad, true)}
+        </div>
+        <div class="pzs-ciclos-badge">
+          Ciclos completados: <strong>${tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0)}</strong>
+        </div>
+        <!-- Tabla hora×hora -->
+        <div class="pzs-hr-table-wrap">
+          <table class="pzs-hr-table">
             <thead>
-              <tr>
-                <th>Slot</th>
-                <th>Ciclos</th>
-                <th>Eficiencia</th>
-                <th>Capacidad</th>
-                <th>Calidad</th>
-                <th>Disponibilidad</th>
-              </tr>
+              <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
             </thead>
-            <tbody>
-              ${rows || '<tr><td colspan="5">Sin datos</td></tr>'}
-              ${dayTotalRow}
-            </tbody>
+            <tbody>${hrRows}</tbody>
           </table>
         </div>
-      </div>
-    `;
+      </div>`;
   }
 
-  function buildKpiRow(label, kpi) {
-    return `<tr class="kpi-row">
-      <td class="hr-cell">${escHtml(String(label))}</td>
-      <td style="text-align:center;font-weight:700">${kpi.ciclos != null ? kpi.ciclos : '—'}</td>
-      <td class="${kpiColor(kpi.eficiencia)}">${fmtPct(kpi.eficiencia)}</td>
-      <td class="${kpiColor(kpi.capacidad)}">${fmtPct(kpi.capacidad)}</td>
-      <td class="${kpiColor(kpi.calidad)}">${fmtPct(kpi.calidad)}</td>
-      <td class="${kpiColor(kpi.disponibilidad)}">${fmtPct(kpi.disponibilidad)}</td>
-    </tr>`;
+  /* ── Diapositiva turno — TODAS las líneas ─────────────────────────────── */
+  function buildAllTurnoSlide(turno) {
+    const lineas = ['L3', 'L4', 'Baker'];
+
+    const blocks = lineas.map(l => {
+      const tot   = state.data?.[l]?.totales?.[turno] || {};
+      const horas = state.data?.[l]?.horas?.[turno]   || [];
+      const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
+      return `
+        <div class="pzs-all-linea-block">
+          <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
+          <div class="pzs-kpi-grid pzs-kpi-grid-compact">
+            ${kpiCard('Eficiencia',     tot.eficiencia)}
+            ${kpiCard('Capacidad',      tot.capacidad)}
+            ${kpiCard('Calidad',        tot.calidad)}
+            ${kpiCard('Disponibilidad', tot.disponibilidad)}
+          </div>
+          <div class="pzs-ciclos-badge-sm">Ciclos: <strong>${ciclos}</strong></div>
+        </div>`;
+    }).join('');
+
+    return `<div class="pzs-all-slide">${blocks}</div>`;
   }
 
-  function escHtml(str) {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  /* ── Diapositiva acumulado del día ────────────────────────────────────── */
+  function buildDiaSlide(linea) {
+    const ld  = state.data?.[linea];
+    const dia = ld?.totales?.dia || {};
+
+    const turnoRows = ['T1', 'T2', 'T3'].map(t => {
+      const tot    = ld?.totales?.[t] || {};
+      const horas  = ld?.horas?.[t]   || [];
+      const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
+      return `
+        <div class="pzs-dia-row">
+          <span class="pzs-dia-turno-lbl">${t}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.calidad)}">${fmtPct(tot.calidad)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.disponibilidad)}">${fmtPct(tot.disponibilidad)}</span>
+          <span class="pzs-dia-ciclos-cell">${ciclos} ciclos</span>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="pzs-dia-slide">
+        <!-- Subtotales por turno -->
+        <div class="pzs-dia-turnos">
+          <div class="pzs-dia-row pzs-dia-header">
+            <span class="pzs-dia-turno-lbl">Turno</span>
+            <span>Eficiencia</span><span>Capacidad</span><span>Calidad</span><span>Disponibilidad</span>
+            <span>Ciclos</span>
+          </div>
+          ${turnoRows}
+        </div>
+
+        <!-- Total del día (grande) -->
+        <div class="pzs-dia-total-label">Total del Día</div>
+        <div class="pzs-kpi-grid">
+          ${kpiCard('Eficiencia',     dia.eficiencia,     true)}
+          ${kpiCard('Capacidad',      dia.capacidad,      true)}
+          ${kpiCard('Calidad',        dia.calidad,        true)}
+          ${kpiCard('Disponibilidad', dia.disponibilidad, true)}
+        </div>
+      </div>`;
   }
 
   // ── Events ────────────────────────────────────────────────────────────────
   function bindEvents() {
-    // Turno filter buttons
-    document.querySelectorAll('[data-turno]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.turnoFilter = btn.dataset.turno;
-        render();
-      });
+    document.getElementById('pzs-prev')?.addEventListener('click', () => goToSlide(state.slideIdx - 1));
+    document.getElementById('pzs-next')?.addEventListener('click', () => goToSlide(state.slideIdx + 1));
+
+    document.getElementById('pzs-play')?.addEventListener('click', () => {
+      state.playing = !state.playing;
+      if (state.playing) startSlideTimer();
+      else stopSlideTimer();
+      renderSlide();
     });
 
-    // Linea filter buttons
-    document.querySelectorAll('[data-linea]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        state.lineaFilter = btn.dataset.linea;
-        render();
-      });
+    document.getElementById('pzs-theme')?.addEventListener('click', () => {
+      state.darkMode = !state.darkMode;
+      localStorage.setItem('pizarron_theme', state.darkMode ? 'dark' : 'light');
+      renderSlide();
     });
 
-    // View mode toggle (hrs / resumen)
-    const btnViewMode = document.getElementById('btn-view-mode');
-    if (btnViewMode) {
-      btnViewMode.addEventListener('click', () => {
-        state.viewMode = state.viewMode === 'hrs' ? 'resumen' : 'hrs';
-        render();
-      });
-    }
+    document.getElementById('pzs-refresh')?.addEventListener('click', fetchData);
 
-    // Date picker
-    const dateInput = document.getElementById('pizarron-fecha');
-    if (dateInput) {
-      dateInput.addEventListener('change', () => {
-        state.fecha = dateInput.value;
-        fetchData();
-      });
-    }
-
-    // Manual refresh
-    const btnRefresh = document.getElementById('btn-refresh-now');
-    if (btnRefresh) {
-      btnRefresh.addEventListener('click', fetchData);
-    }
-
-    // Font size
     document.querySelectorAll('[data-font]').forEach(btn => {
       btn.addEventListener('click', () => {
         state.fontSize = btn.dataset.font;
         localStorage.setItem('pizarron_font', state.fontSize);
-        render();
+        renderSlide();
       });
     });
 
-    // Theme toggle
-    const btnTheme = document.getElementById('btn-theme-toggle');
-    if (btnTheme) {
-      btnTheme.addEventListener('click', () => {
-        state.darkMode = !state.darkMode;
-        localStorage.setItem('pizarron_theme', state.darkMode ? 'dark' : 'light');
-        render();
-      });
-    }
-  }
-
-  // ── Clock tick ────────────────────────────────────────────────────────────
-  function startClock() {
-    setInterval(() => {
-      const el = document.getElementById('pizarron-clock');
-      if (el) el.textContent = nowStr();
-    }, 1000);
-  }
-
-  // ── Auto-refresh ──────────────────────────────────────────────────────────
-  function startAutoRefresh() {
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(fetchData, 30000);
+    document.querySelectorAll('.pzs-dot').forEach(dot => {
+      dot.addEventListener('click', () => goToSlide(Number(dot.dataset.idx)));
+    });
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
   function boot() {
     fetchData();
-    startClock();
-    startAutoRefresh();
+    if (state.playing) startSlideTimer();
+    dataTimer = setInterval(fetchData, 60000);
   }
 
   if (document.readyState === 'loading') {
