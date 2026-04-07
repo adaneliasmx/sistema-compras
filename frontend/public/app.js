@@ -2519,8 +2519,8 @@ async function purchasesView() {
         </select>
         ${i.winning_quote_id ? `<br><small style="color:#6b7280;font-size:10px" title="Asignado por cotización ganadora">🔒 cotización</small>` : ''}
       </td>
-      <td>${Number(i.quantity||0)}</td>
-      <td>${i.unit||'-'}</td>
+      <td><input type="number" class="edit-qty" data-id="${i.id}" value="${Number(i.quantity||0)}" style="width:60px" min="0.01" step="any" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}/></td>
+      <td><input type="text" class="edit-unit" data-id="${i.id}" value="${escapeHtml(i.unit||'')}" style="width:55px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}/></td>
       <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}/></td>
       <td><b>$${Number(total).toFixed(2)}</b></td>
       <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
@@ -2546,11 +2546,13 @@ async function purchasesView() {
       const supplier_id = tableEl.querySelector(`.edit-supplier[data-id="${id}"]`).value || null;
       const unit_cost = Number(tableEl.querySelector(`.edit-cost[data-id="${id}"]`).value || 0);
       const currency = tableEl.querySelector(`.edit-currency[data-id="${id}"]`).value || 'MXN';
+      const quantity = Number(tableEl.querySelector(`.edit-qty[data-id="${id}"]`)?.value || 0);
+      const unit = tableEl.querySelector(`.edit-unit[data-id="${id}"]`)?.value || '';
       try {
-        await api(`/api/purchases/items/${id}`, { method: 'PATCH', body: JSON.stringify({ supplier_id, unit_cost, currency }) });
+        await api(`/api/purchases/items/${id}`, { method: 'PATCH', body: JSON.stringify({ supplier_id, unit_cost, currency, quantity, unit }) });
         btn.textContent = '✅'; setTimeout(() => { btn.textContent = '💾'; }, 1500);
         const local = allItems.find(x => Number(x.id) === Number(id));
-        if (local) { local.supplier_id = supplier_id ? Number(supplier_id) : null; local.unit_cost = unit_cost; local.currency = currency; }
+        if (local) { local.supplier_id = supplier_id ? Number(supplier_id) : null; local.unit_cost = unit_cost; local.currency = currency; local.quantity = quantity; local.unit = unit; }
       } catch (e) { poMsg.textContent = e.message; }
     });
     tableEl.querySelectorAll('.register-item').forEach(btn => btn.onclick = () => {
@@ -2585,6 +2587,95 @@ async function purchasesView() {
     if (selAll) selAll.onchange = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = selAll.checked);
     const selAuth = tableEl.querySelector('#selectAllAuth');
     if (selAuth) selAuth.onclick = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = true);
+  };
+
+  const generarPOPdf = async (po, supplierName, poViewUrl) => {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+    const poData = await api(`/api/purchases/purchase-orders/${po.id}`).catch(() => ({ items: [] }));
+    const items = poData.items || [];
+    let subtotal = 0;
+    items.forEach(l => { subtotal += Number(l.quantity||0) * Number(l.unit_cost||0); });
+    const iva = subtotal * 0.16;
+    const total = subtotal + iva;
+    const pageW = doc.internal.pageSize.getWidth();
+    const margin = 18;
+    let y = 18;
+
+    doc.setFontSize(15); doc.setFont('helvetica', 'bold');
+    doc.text('Corporativo Cuesto', margin, y);
+    doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+    doc.text('ORDEN DE COMPRA', pageW - margin, y, { align: 'right' });
+    y += 7;
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+    doc.text(`No. ${po.folio}`, pageW - margin, y, { align: 'right' });
+    doc.setDrawColor(180, 180, 180);
+    y += 4; doc.line(margin, y, pageW - margin, y); y += 6;
+
+    const fecha = String(po.created_at || '').slice(0, 10);
+    const hora = String(po.created_at || '').slice(11, 16);
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold'); doc.text('Proveedor:', margin, y);
+    doc.setFont('helvetica', 'normal'); doc.text(supplierName || '—', margin + 28, y);
+    doc.setFont('helvetica', 'bold'); doc.text('Fecha:', pageW - margin - 60, y);
+    doc.setFont('helvetica', 'normal'); doc.text(`${fecha}  ${hora}`, pageW - margin - 40, y);
+    y += 6;
+    doc.setFont('helvetica', 'bold'); doc.text('Moneda:', margin, y);
+    doc.setFont('helvetica', 'normal'); doc.text(po.currency || 'MXN', margin + 22, y);
+    doc.setFont('helvetica', 'bold'); doc.text('Solicitó:', pageW - margin - 60, y);
+    doc.setFont('helvetica', 'normal'); doc.text(state.user?.name || '—', pageW - margin - 38, y);
+    y += 8;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Código', 'Cant.', 'Unidad', 'Descripción', 'Costo Unit.', 'Total']],
+      body: items.map(l => {
+        const tot = Number(l.quantity||0) * Number(l.unit_cost||0);
+        return [
+          l.code || '—',
+          String(Number(l.quantity||0)),
+          l.unit || '—',
+          l.name || l.description || '—',
+          `$${Number(l.unit_cost||0).toLocaleString('es-MX',{minimumFractionDigits:2})}`,
+          `$${tot.toLocaleString('es-MX',{minimumFractionDigits:2})}`
+        ];
+      }),
+      foot: [
+        ['','','','','Subtotal:', `$${subtotal.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`],
+        ['','','','','IVA (16%):', `$${iva.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`],
+        ['','','','','Total c/IVA:', `$${total.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`],
+      ],
+      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9 },
+      footStyles: { fontStyle: 'bold', fontSize: 9, fillColor: [241, 245, 249] },
+      columnStyles: { 0:{cellWidth:20}, 1:{cellWidth:14,halign:'right'}, 2:{cellWidth:18}, 3:{cellWidth:'auto'}, 4:{cellWidth:30,halign:'right'}, 5:{cellWidth:30,halign:'right'} },
+      showFoot: 'lastPage',
+    });
+
+    y = doc.lastAutoTable.finalY + 14;
+    const col1 = margin + 8;
+    const col2 = pageW - margin - 58;
+    doc.setDrawColor(80, 80, 80);
+    doc.line(col1, y, col1 + 50, y);
+    doc.line(col2, y, col2 + 50, y);
+    y += 4;
+    doc.setFontSize(9); doc.setFont('helvetica', 'normal');
+    doc.text('Autorizó', col1 + 25, y, { align: 'center' });
+    doc.text(`Solicitó: ${state.user?.name || '—'}`, col2 + 25, y, { align: 'center' });
+
+    if (poViewUrl) {
+      y += 10;
+      doc.setFontSize(8); doc.setTextColor(37, 99, 235);
+      doc.text(`Seguimiento proveedor: ${poViewUrl}`, margin, y);
+      doc.setTextColor(0, 0, 0);
+    }
+
+    const pageH = doc.internal.pageSize.getHeight();
+    doc.setFontSize(7); doc.setFont('helvetica', 'italic'); doc.setTextColor(160, 160, 160);
+    doc.text(`Generado: ${new Date().toLocaleString('es-MX')} · Sistema de Compras Corporativo Cuesto`, pageW / 2, pageH - 8, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    doc.save(`PO-${po.folio}.pdf`);
   };
 
   const THEAD = `<thead><tr>
@@ -3311,34 +3402,8 @@ async function purchasesView() {
           const po = pos.find(p => String(p.id) === String(poId));
           if (!po) return;
           try {
-            const poData = await api(`/api/purchases/purchase-orders/${poId}`).catch(() => ({ items: [] }));
-            const poItems = (poData.items || []).map(l => ({ ...l, name: (l.name || l.manual_item_name || '-') }));
-            let pdfSubtotal = 0;
-            poItems.forEach(l => { pdfSubtotal += Number(l.quantity||0) * Number(l.unit_cost||0); });
-            const pdfIva = pdfSubtotal * 0.16;
-            const pdfTotal = pdfSubtotal + pdfIva;
-            const linesHtml = poItems.length
-              ? poItems.map(l => `<tr><td>${escapeHtml(l.name||'-')}</td><td style="text-align:right">${l.quantity} ${l.unit||''}</td><td style="text-align:right">$${Number(l.unit_cost||0).toFixed(2)}</td><td style="text-align:right"><b>$${(Number(l.quantity||0)*Number(l.unit_cost||0)).toFixed(2)}</b></td></tr>`).join('')
-              : `<tr><td colspan="4" style="color:#9ca3af">Sin ítems disponibles — verifica en el sistema</td></tr>`;
-            openPrintPreview(`Orden de Compra ${po.folio}`, `
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
-                <div><h1 style="margin:0;font-size:20px">Orden de Compra</h1><h2 style="margin:4px 0;color:#1d4ed8">${po.folio}</h2></div>
-                <div style="text-align:right;font-size:12px;color:#6b7280">Fecha: ${String(po.created_at||'').slice(0,10)}<br>Estado: ${po.status}</div>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;font-size:13px">
-                <div><b>Proveedor:</b><br>${escapeHtml(po.supplier_name||'-')}</div>
-                <div><b>Moneda:</b> ${po.currency||'MXN'}</div>
-              </div>
-              <table><thead><tr><th>Ítem</th><th style="text-align:right">Cant.</th><th style="text-align:right">Precio unit.</th><th style="text-align:right">Subtotal</th></tr></thead>
-              <tbody>${linesHtml}</tbody>
-              <tfoot>
-                <tr><td colspan="3" style="text-align:right;padding:6px 4px;color:#6b7280">Subtotal:</td><td style="text-align:right;padding:6px 4px;color:#6b7280">$${pdfSubtotal.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
-                <tr><td colspan="3" style="text-align:right;padding:4px 4px;color:#6b7280">IVA (16%):</td><td style="text-align:right;padding:4px 4px;color:#6b7280">$${pdfIva.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
-                <tr><td colspan="3" style="text-align:right;font-weight:700;padding:8px 4px;border-top:2px solid #e5e7eb">Total c/IVA:</td><td style="text-align:right;font-weight:700;font-size:15px;padding:8px 4px;border-top:2px solid #e5e7eb">$${pdfTotal.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}</td></tr>
-              </tfoot></table>
-              <div style="margin-top:20px;font-size:12px;color:#6b7280;border-top:1px solid #e5e7eb;padding-top:8px">Impreso el ${new Date().toLocaleString('es-MX')} · Sistema de Compras</div>
-            `);
-          } catch(e) { alert('Error al generar vista de impresión: ' + e.message); }
+            await generarPOPdf(po, po.supplier_name, null);
+          } catch(e) { alert('Error al generar PDF: ' + e.message); }
         };
       });
 
@@ -3632,6 +3697,14 @@ async function purchasesView() {
   };
 
   closePreviewBtn.onclick = () => { poPreviewSection.style.display = 'none'; };
+  const generarPDFsPorPO = async (out) => {
+    const urlMap = new Map((out.po_mailtos || []).map(pm => [pm.po_id, pm.po_view_url]));
+    for (const po of (out.purchase_orders || [])) {
+      const sName = (suppliers.find(s => s.id === po.supplier_id) || {}).business_name || '—';
+      await generarPOPdf(po, sName, urlMap.get(po.id) || null);
+    }
+  };
+
   confirmGenPoBtn.onclick = async () => {
     try {
       poConfirmMsg.textContent = 'Generando...';
@@ -3642,6 +3715,7 @@ async function purchasesView() {
           if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
         });
       }
+      await generarPDFsPorPO(out);
       setTimeout(render, 1800);
     } catch (e) {
       poConfirmMsg.textContent = '';
@@ -3658,12 +3732,12 @@ async function purchasesView() {
       poMsg.textContent = 'Generando POs...';
       const out = await doGeneratePO(ids);
       poMsg.textContent = out.message;
-      // Abrir mailto: por cada PO generada (con pequeño delay entre ventanas)
       if (out.po_mailtos?.length) {
         out.po_mailtos.forEach((pm, i) => {
           if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
         });
       }
+      await generarPDFsPorPO(out);
       setTimeout(render, 1800);
     } catch (e) {
       poMsg.textContent = '';

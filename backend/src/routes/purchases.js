@@ -116,6 +116,8 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   if (req.body.catalog_item_id !== undefined) line.catalog_item_id = req.body.catalog_item_id ? Number(req.body.catalog_item_id) : null;
   if (req.body.manual_item_name !== undefined) line.manual_item_name = req.body.manual_item_name;
   if (req.body.unit_cost !== undefined) line.unit_cost = Number(req.body.unit_cost || 0);
+  if (req.body.quantity !== undefined) line.quantity = Number(req.body.quantity || 0);
+  if (req.body.unit !== undefined) line.unit = req.body.unit;
   if (req.body.comments !== undefined) line.comments = req.body.comments;
   if (req.body.currency !== undefined) line.currency = req.body.currency || line.currency || 'MXN';
   if (req.body.sub_cost_center_id !== undefined) {
@@ -624,10 +626,10 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
   const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
   if (!po) return res.status(404).json({ error: 'PO no encontrada' });
   if (req.user.supplier_id && po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
-  const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => ({
-    ...i,
-    name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '-'
-  }));
+  const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => {
+    const cat = db.catalog_items.find(c => c.id === i.catalog_item_id) || {};
+    return { ...i, name: cat.name || i.manual_item_name || '-', code: cat.code || '—' };
+  });
   res.json({ po, items });
 });
 
