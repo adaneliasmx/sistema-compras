@@ -895,9 +895,7 @@ function renderTarjetaBaker(c) {
     : `<div class="tarjeta-meta-item"><span class="meta-label">Varillas</span><span class="meta-val">${c.varillas ?? '—'}</span></div>
        <div class="tarjeta-meta-item"><span class="meta-label">Cantidad</span><span class="meta-val">${c.cantidad ?? '—'}</span></div>`;
 
-  const noComponente = esBarril
-    ? `🛢 Barril (${c.herramental_cavidades ?? '?'} cav)`
-    : escHtml(c.componente || '— sin comp —');
+  const noComponente = escHtml(c.componente || '— sin comp —');
 
   return `
   <div class="tarjeta-card">
