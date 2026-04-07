@@ -11,6 +11,8 @@
     error: null,
     fecha: todayStr(),
     turnoFilter: 'all',
+    lineaFilter: 'all',  // 'all' | 'L3' | 'L4' | 'Baker'
+    viewMode: 'hrs',     // 'hrs' = hora×hora | 'resumen' = solo subtotales
     lastRefresh: null,
     darkMode: localStorage.getItem('pizarron_theme') === 'dark',
     fontSize: localStorage.getItem('pizarron_font') || 'md'
@@ -166,10 +168,17 @@
 
   function buildControls() {
     const turnos = ['all', 'T1', 'T2', 'T3'];
-    const labels = { all: 'Todos', T1: 'T1', T2: 'T2', T3: 'T3' };
+    const turnoLabels = { all: 'Todos', T1: 'T1', T2: 'T2', T3: 'T3' };
     const btnHtml = turnos.map(t => {
       const active = state.turnoFilter === t ? ' active' : '';
-      return `<button class="pizarron-btn-turno${active}" data-turno="${t}">${labels[t]}</button>`;
+      return `<button class="pizarron-btn-turno${active}" data-turno="${t}">${turnoLabels[t]}</button>`;
+    }).join('');
+
+    const lineas = ['all', 'L3', 'L4', 'Baker'];
+    const lineaLabels = { all: 'Todas', L3: 'L3', L4: 'L4', Baker: 'Baker' };
+    const lineaBtns = lineas.map(l => {
+      const active = state.lineaFilter === l ? ' active' : '';
+      return `<button class="pizarron-btn-turno${active}" data-linea="${l}">${lineaLabels[l]}</button>`;
     }).join('');
 
     const fontSizes = [
@@ -182,11 +191,17 @@
       `<button class="pizarron-btn-turno${state.fontSize === f.key ? ' active' : ''}" data-font="${f.key}" style="min-width:36px">${f.label}</button>`
     ).join('');
 
+    const viewLabel = state.viewMode === 'resumen' ? '📊 Hr×Hr' : '📋 Resumen';
+
     return `
       <div class="pizarron-controls">
         <div class="pizarron-control-group">
           <label class="pizarron-label">Turno:</label>
           <div class="pizarron-turno-btns">${btnHtml}</div>
+        </div>
+        <div class="pizarron-control-group">
+          <label class="pizarron-label">Línea:</label>
+          <div class="pizarron-turno-btns">${lineaBtns}</div>
         </div>
         <div class="pizarron-control-group">
           <label class="pizarron-label" for="pizarron-fecha">Fecha:</label>
@@ -196,6 +211,7 @@
           <label class="pizarron-label">Texto:</label>
           <div class="pizarron-turno-btns">${fontBtns}</div>
         </div>
+        <button class="pizarron-btn-refresh" id="btn-view-mode">${viewLabel}</button>
         <button class="pizarron-btn-refresh" id="btn-refresh-now">↻ Actualizar</button>
         <button class="pizarron-btn-theme" id="btn-theme-toggle">
           ${state.darkMode ? '☀️ Claro' : '🌙 Oscuro'}
@@ -207,7 +223,8 @@
   function buildBoards(turno) {
     const allLineas = Object.keys(state.data || {});
     const order = ['L3', 'L4', 'Baker'];
-    const lineas = [...order.filter(l => allLineas.includes(l)), ...allLineas.filter(l => !order.includes(l))];
+    let lineas = [...order.filter(l => allLineas.includes(l)), ...allLineas.filter(l => !order.includes(l))];
+    if (state.lineaFilter !== 'all') lineas = lineas.filter(l => l === state.lineaFilter);
     const labels = { L3: 'Línea 3', L4: 'Línea 4', Baker: 'Baker' };
     return lineas.map(linea => {
       const linData = (state.data || {})[linea] || {};
@@ -233,18 +250,21 @@
         <td colspan="6"><strong>${t}${isCurrentTurno ? ' ← Turno actual' : ''}</strong></td>
       </tr>`;
 
-      if (horasT.length === 0) {
-        rows += `<tr class="no-data-row"><td colspan="6">Sin registros</td></tr>`;
-      } else {
-        for (const hr of horasT) {
-          rows += buildKpiRow(hr.hora || hr.label, hr);
+      if (state.viewMode === 'hrs') {
+        // Vista hora×hora
+        if (horasT.length === 0) {
+          rows += `<tr class="no-data-row"><td colspan="6">Sin registros</td></tr>`;
+        } else {
+          for (const hr of horasT) {
+            rows += buildKpiRow(hr.hora || hr.label, hr);
+          }
         }
       }
 
-      // Turno subtotal
+      // Turno subtotal (siempre visible)
       const subT = totales[t] || {};
       rows += `<tr class="subtotal-row">
-        <td colspan="2"><em>Subtotal ${t}</em></td>
+        <td colspan="2"><em>${state.viewMode === 'resumen' ? `KPI ${t}` : `Subtotal ${t}`}</em></td>
         <td class="${kpiColor(subT.eficiencia)}">${fmtPct(subT.eficiencia)}</td>
         <td class="${kpiColor(subT.capacidad)}">${fmtPct(subT.capacidad)}</td>
         <td class="${kpiColor(subT.calidad)}">${fmtPct(subT.calidad)}</td>
@@ -311,12 +331,29 @@
   // ── Events ────────────────────────────────────────────────────────────────
   function bindEvents() {
     // Turno filter buttons
-    document.querySelectorAll('.pizarron-btn-turno').forEach(btn => {
+    document.querySelectorAll('[data-turno]').forEach(btn => {
       btn.addEventListener('click', () => {
         state.turnoFilter = btn.dataset.turno;
         render();
       });
     });
+
+    // Linea filter buttons
+    document.querySelectorAll('[data-linea]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.lineaFilter = btn.dataset.linea;
+        render();
+      });
+    });
+
+    // View mode toggle (hrs / resumen)
+    const btnViewMode = document.getElementById('btn-view-mode');
+    if (btnViewMode) {
+      btnViewMode.addEventListener('click', () => {
+        state.viewMode = state.viewMode === 'hrs' ? 'resumen' : 'hrs';
+        render();
+      });
+    }
 
     // Date picker
     const dateInput = document.getElementById('pizarron-fecha');

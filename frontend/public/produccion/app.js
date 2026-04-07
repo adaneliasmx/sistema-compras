@@ -1197,7 +1197,8 @@ function openModalCargaBaker(catalogo, onDone) {
           componente:      row.querySelector('.bk-cav-comp')?.value?.trim() || null,
           no_skf:          row.querySelector('.bk-cav-skf')?.value?.trim()  || null,
           no_orden:        row.querySelector('.bk-cav-orden')?.value?.trim() || null,
-          lote:            row.querySelector('.bk-cav-lote')?.value?.trim()  || null
+          lote:            row.querySelector('.bk-cav-lote')?.value?.trim()  || null,
+          cantidad:        row.querySelector('.bk-cav-cantidad')?.value ? Number(row.querySelector('.bk-cav-cantidad').value) : null
         };
       });
     }
@@ -1269,6 +1270,10 @@ function buildCavidadesForm(n, componentes, clientes) {
           <label style="font-size:12px">Lote</label>
           <input class="bk-cav-lote" type="text" style="width:100%" />
         </div>
+        <div>
+          <label style="font-size:12px">Cantidad piezas</label>
+          <input class="bk-cav-cantidad" type="number" min="0" style="width:100%" placeholder="Automático" />
+        </div>
         <div style="display:flex;align-items:flex-end">
           <button type="button" class="bk-cav-aplicar-resto btn btn-xs btn-outline" style="font-size:11px;width:100%">↓ Aplicar a todas</button>
         </div>
@@ -1290,23 +1295,25 @@ function buildCavidadesForm(n, componentes, clientes) {
   // Bind: "Aplicar a todas" — copia los datos de la cavidad actual al resto
   container.querySelectorAll('.bk-cav-aplicar-resto').forEach(btn => {
     btn.addEventListener('click', () => {
-      const row     = btn.closest('.bk-cav-row');
-      const cliente = row.querySelector('.bk-cav-cliente').value;
-      const cliTxt  = row.querySelector('.bk-cav-cliente-txt').value;
-      const comp    = row.querySelector('.bk-cav-comp').value;
-      const skf     = row.querySelector('.bk-cav-skf').value;
-      const orden   = row.querySelector('.bk-cav-orden').value;
-      const lote    = row.querySelector('.bk-cav-lote').value;
+      const row      = btn.closest('.bk-cav-row');
+      const cliente  = row.querySelector('.bk-cav-cliente').value;
+      const cliTxt   = row.querySelector('.bk-cav-cliente-txt').value;
+      const comp     = row.querySelector('.bk-cav-comp').value;
+      const skf      = row.querySelector('.bk-cav-skf').value;
+      const orden    = row.querySelector('.bk-cav-orden').value;
+      const lote     = row.querySelector('.bk-cav-lote').value;
+      const cantidad = row.querySelector('.bk-cav-cantidad').value;
       container.querySelectorAll('.bk-cav-row').forEach(r => {
         if (r === row) return;
         r.querySelector('.bk-cav-cliente').value = cliente;
         const txt = r.querySelector('.bk-cav-cliente-txt');
         txt.style.display = cliente === '__libre__' ? '' : 'none';
         if (cliente === '__libre__') txt.value = cliTxt;
-        r.querySelector('.bk-cav-comp').value  = comp;
-        r.querySelector('.bk-cav-skf').value   = skf;
-        r.querySelector('.bk-cav-orden').value = orden;
-        r.querySelector('.bk-cav-lote').value  = lote;
+        r.querySelector('.bk-cav-comp').value     = comp;
+        r.querySelector('.bk-cav-skf').value      = skf;
+        r.querySelector('.bk-cav-orden').value    = orden;
+        r.querySelector('.bk-cav-lote').value     = lote;
+        r.querySelector('.bk-cav-cantidad').value = cantidad;
       });
     });
   });
@@ -1333,6 +1340,7 @@ function buildCavidadesForm(n, componentes, clientes) {
       const no_skf   = parts[0]?.trim() || '';
       const no_orden = parts[2]?.trim() || '';
       const compName = parts[3]?.trim() || '';
+      const cantidad = parts[4]?.trim() || '';
       const lote     = parts[5]?.trim() || '';
       // Detectar cliente SKF en select
       const clienteSel = row.querySelector('.bk-cav-cliente');
@@ -1346,11 +1354,12 @@ function buildCavidadesForm(n, componentes, clientes) {
         clienteTxt.style.display = '';
         clienteTxt.value = 'SKF';
       }
-      row.querySelector('.bk-cav-comp').value  = compName;
-      row.querySelector('.bk-cav-skf').value   = no_skf;
-      row.querySelector('.bk-cav-orden').value = no_orden;
-      row.querySelector('.bk-cav-lote').value  = lote;
-      zone.querySelector('.bk-cav-qr-result').textContent = `✅ ${compName} · SKF:${no_skf} · Orden:${no_orden} · Lote:${lote}`;
+      row.querySelector('.bk-cav-comp').value     = compName;
+      row.querySelector('.bk-cav-skf').value      = no_skf;
+      row.querySelector('.bk-cav-orden').value    = no_orden;
+      row.querySelector('.bk-cav-lote').value     = lote;
+      if (cantidad) row.querySelector('.bk-cav-cantidad').value = cantidad;
+      zone.querySelector('.bk-cav-qr-result').textContent = `✅ ${compName} · SKF:${no_skf} · Cant:${cantidad} · Lote:${lote}`;
       zone.querySelector('.bk-cav-qr-input').value = '';
     });
   });

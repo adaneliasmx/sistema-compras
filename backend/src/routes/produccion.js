@@ -972,6 +972,12 @@ function addDays(dateStr, n) {
   return d.toLocaleDateString('en-CA', { timeZone: MX_TZ });
 }
 
+// Objetivo de ciclos por slot: si tiene .5, alterna floor/ceil comenzando por floor en h=0
+function slotCiclosObj(ciclos_obj, h) {
+  if (Number.isInteger(ciclos_obj)) return ciclos_obj;
+  return h % 2 === 0 ? Math.floor(ciclos_obj) : Math.ceil(ciclos_obj);
+}
+
 function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const ciclos_obj = l === 'L3'
     ? (config.ciclos_objetivo_l3 ?? 2)
@@ -1038,9 +1044,10 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+    const slotObj = slotCiclosObj(ciclos_obj, h);
 
     // Eficiencia = ciclos_descargados / ciclos_objetivo_por_hora (sin descuento de paros)
-    const eficiencia    = ciclos_obj > 0 ? r3(ciclos_totales / ciclos_obj) : 0;
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
     // Calidad = buenos / no_vacios (null si no hay ciclos con material)
     const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
     // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
@@ -1482,7 +1489,8 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const eficiencia    = ciclos_obj > 0 ? r3(ciclos_totales / ciclos_obj) : 0;
+    const slotObj = slotCiclosObj(ciclos_obj, h);
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
     const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
