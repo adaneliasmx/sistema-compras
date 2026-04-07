@@ -2,6 +2,122 @@
    MÓDULO VALES DE ADICIÓN — SPA vanilla JS
    ══════════════════════════════════════════════════════════════════════════════ */
 
+// ── Generador de PDF Vale de Adición (formato original) ───────────────────────
+function generarValePDF(v) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+
+  const mL = 15, mR = 15, mT = 14, pgW = 215.9;
+  const usableW = pgW - mL - mR;
+  let y = mT;
+
+  // ── Logo (si está disponible) ──────────────────────────────────────────────
+  // Se omite logo ya que no está disponible en servidor; se puede agregar después
+
+  // ── Título ────────────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(13);
+  doc.text('VALE DE ADICIÓN DE PRODUCTO QUÍMICO', mL, y);
+  y += 7;
+
+  // ── Folio ─────────────────────────────────────────────────────────────────
+  doc.setFontSize(10);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Folio: ', mL, y);
+  doc.setFont('helvetica', 'normal');
+  doc.text(String(v.folio_vale || '—'), mL + 14, y);
+  y += 6;
+
+  // ── Línea 1: Fecha / Hora / Turno / Línea ─────────────────────────────────
+  doc.setFont('helvetica', 'bold'); doc.text('Fecha: ', mL, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.fecha || '—'), mL + 14, y);
+
+  doc.setFont('helvetica', 'bold'); doc.text('Hora: ', mL + 50, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.hora || '—'), mL + 62, y);
+
+  doc.setFont('helvetica', 'bold'); doc.text('Turno: ', mL + 90, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.turno || '—'), mL + 104, y);
+
+  doc.setFont('helvetica', 'bold'); doc.text('Línea: ', mL + 125, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.linea || '—'), mL + 138, y);
+  y += 6;
+
+  // ── Línea 2: Solicita / Adiciona / Coordinador ────────────────────────────
+  doc.setFont('helvetica', 'bold'); doc.text('Solicita: ', mL, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.solicita || '—'), mL + 18, y);
+
+  doc.setFont('helvetica', 'bold'); doc.text('Adiciona: ', mL + 70, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.adiciona || '__________'), mL + 88, y);
+
+  doc.setFont('helvetica', 'bold'); doc.text('Coordinador: ', mL + 130, y);
+  doc.setFont('helvetica', 'normal'); doc.text(String(v.coordinador || '__________'), mL + 158, y);
+  y += 8;
+
+  // ── Tabla de partidas ─────────────────────────────────────────────────────
+  const detalles = v.detalle || [];
+  const TIPO_LABELS = { KG: 'KG', TAMBO: 'TAMBO', PORRON_15L: 'PORRÓN 15L', LITRO: 'LITRO' };
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: mL, right: mR },
+    head: [['#', 'Tanque', 'Producto / Item', 'Tipo', 'Cant.', 'kg eq.']],
+    body: detalles.map((d, i) => [
+      i + 1,
+      `${d.no_tanque || ''}${d.nombre_tanque ? ' - ' + d.nombre_tanque : ''}`,
+      d.item || '—',
+      TIPO_LABELS[(d.tipo_adicion || '').toUpperCase()] || d.tipo_adicion || '—',
+      String(d.cantidad ?? '—'),
+      (d.kg_equivalentes || 0).toFixed(2)
+    ]),
+    columnStyles: {
+      0: { cellWidth: 8,  halign: 'center' },
+      1: { cellWidth: 30 },
+      2: { cellWidth: 80 },
+      3: { cellWidth: 22 },
+      4: { cellWidth: 18, halign: 'right' },
+      5: { cellWidth: 22, halign: 'right' }
+    },
+    headStyles: { fillColor: [210, 210, 210], textColor: 0, fontStyle: 'bold', fontSize: 9 },
+    bodyStyles: { fontSize: 9, font: 'helvetica' },
+    alternateRowStyles: { fillColor: [248, 248, 248] },
+    styles: { cellPadding: 2, valign: 'top' },
+  });
+
+  y = doc.lastAutoTable.finalY + 8;
+
+  // ── Comentarios ───────────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text('Comentarios', mL, y);
+  y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+  const comentariosText = (v.comentarios || '').trim() ||
+    '____________________________________________\n____________________________________________';
+  const comentLines = doc.splitTextToSize(comentariosText, usableW);
+  doc.text(comentLines, mL, y);
+  y += comentLines.length * 5 + 10;
+
+  // ── Firmas ────────────────────────────────────────────────────────────────
+  const colW = usableW / 3;
+  const firmaLabels = ['Solicita', 'Adiciona', 'Coordinador'];
+  firmaLabels.forEach((lbl, i) => {
+    const x = mL + i * colW + colW / 2;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+    doc.text(lbl, x, y, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    doc.text('____________________', x, y + 8, { align: 'center' });
+  });
+
+  // ── Footer ────────────────────────────────────────────────────────────────
+  const pgH = 279.4;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+  doc.setTextColor(128, 128, 128);
+  doc.text("SGC 4-PR-15, Rev. 2, 01-02-'26   TRA: 6 meses   TRAM: No aplica", mL, pgH - 8);
+  doc.setTextColor(0, 0, 0);
+
+  doc.save(`${v.folio_vale || 'vale'}.pdf`);
+}
+window.generarValePDF = generarValePDF;
+
 // ── Estado global ─────────────────────────────────────────────────────────────
 const state = {
   user: null,
@@ -486,7 +602,12 @@ async function guardarVale() {
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
     const vale = await POST('/vales', body);
-    alert(`✅ Vale guardado: ${vale.folio_vale}`);
+    // Generar PDF automáticamente con los datos completos del vale recién creado
+    try {
+      const valeCompleto = await GET('/vales/' + vale.folio_vale);
+      generarValePDF(valeCompleto);
+    } catch(_) { /* no bloquear si falla el PDF */ }
+    alert(`✅ Vale guardado: ${vale.folio_vale}\n\nSe generó el PDF automáticamente.`);
     state.valeDetalle = [];
     navigate('consulta-vales');
   } catch(e) {
@@ -774,6 +895,7 @@ function bindConsultaVales() {
 window.verVale = async function(folio) {
   try {
     const v = await GET('/vales/' + folio);
+    window._valeActual = v;
     const kgT = (v.detalle || []).reduce((s, d) => s + (d.kg_equivalentes || 0), 0);
     const isAdmin = state.user?.vales_role === 'admin';
     showModal(`
@@ -809,7 +931,7 @@ window.verVale = async function(folio) {
         </table>` : ''}
       <div class="modal-actions">
         ${isAdmin ? `<button class="btn btn-outline" onclick="editVale('${v.folio_vale}')">✏️ Editar encabezado</button>` : ''}
-        <button class="btn btn-outline" onclick="window.print()">🖨️ Imprimir</button>
+        <button class="btn btn-outline" onclick="generarValePDF(window._valeActual)">📄 Generar PDF</button>
         <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
       </div>`);
   } catch(e) { alert('Error: ' + e.message); }
