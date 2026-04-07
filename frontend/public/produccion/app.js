@@ -988,8 +988,12 @@ function openModalCargaBaker(catalogo, onDone) {
           <input type="text" id="bk-cliente-txt" placeholder="Nombre del cliente" style="margin-top:6px;display:none" />
         </div>
         <div class="form-group">
-          <label>Componente (catálogo)</label>
-          <select id="bk-componente"><option value="">— Seleccionar —</option>${htmlComp}</select>
+          <label style="display:flex;justify-content:space-between;align-items:center">
+            <span>Componente</span>
+            <button type="button" id="bk-comp-toggle" class="btn btn-xs btn-outline" style="font-size:11px;padding:2px 8px">✏️ Escribir</button>
+          </label>
+          <select id="bk-componente"><option value="">— Seleccionar del catálogo —</option>${htmlComp}</select>
+          <input type="text" id="bk-componente-txt" placeholder="Escribe el nombre del componente" style="display:none;margin-top:4px" />
         </div>
         <div class="form-group">
           <label>No. SKF</label>
@@ -1054,10 +1058,34 @@ function openModalCargaBaker(catalogo, onDone) {
     document.getElementById('bk-varillas').value = varComp || vtot || '';
   });
 
-  // Cliente custom
+  // Toggle componente: catálogo ↔ texto libre
+  function setCompModoLibre(libre) {
+    const sel  = document.getElementById('bk-componente');
+    const txt  = document.getElementById('bk-componente-txt');
+    const btn  = document.getElementById('bk-comp-toggle');
+    if (libre) {
+      sel.style.display = 'none';
+      txt.style.display = '';
+      btn.textContent   = '📋 Catálogo';
+    } else {
+      sel.style.display = '';
+      txt.style.display = 'none';
+      btn.textContent   = '✏️ Escribir';
+    }
+  }
+  document.getElementById('bk-comp-toggle').addEventListener('click', () => {
+    const sel = document.getElementById('bk-componente');
+    setCompModoLibre(sel.style.display !== 'none'); // toggle
+  });
+
+  // Cliente custom + auto-modo-libre para SKF
   document.getElementById('bk-cliente-sel').addEventListener('change', e => {
     const txt = document.getElementById('bk-cliente-txt');
-    txt.style.display = e.target.value === '__otro__' ? '' : 'none';
+    const val = e.target.value;
+    txt.style.display = val === '__otro__' ? '' : 'none';
+    // SKF → activar texto libre en componente automáticamente
+    const esSkf = val.toLowerCase().includes('skf');
+    setCompModoLibre(esSkf);
   });
 
   // Herramental tipo toggle + auto-fill varillas con varillas_totales
@@ -1095,16 +1123,22 @@ function openModalCargaBaker(catalogo, onDone) {
     document.getElementById('bk-no-skf').value   = no_skf;
     document.getElementById('bk-no-orden').value  = no_orden;
     document.getElementById('bk-lote').value       = lote;
-    // Auto-select cliente SKF
+    // Auto-select cliente SKF y activar modo libre en componente
     const sklSel = document.getElementById('bk-cliente-sel');
     const skfOpt = [...sklSel.options].find(o => o.value.toLowerCase().includes('skf'));
-    if (skfOpt) sklSel.value = skfOpt.value;
-    // Match componente by name or no_skf
-    const compSel = document.getElementById('bk-componente');
-    const compOpt = [...compSel.options].find(o =>
-      o.text.toLowerCase().includes(compName.toLowerCase()) || o.dataset.skf === no_skf
-    );
-    if (compOpt) { compSel.value = compOpt.value; compSel.dispatchEvent(new Event('change')); }
+    if (skfOpt) { sklSel.value = skfOpt.value; sklSel.dispatchEvent(new Event('change')); }
+    // Componente: poner nombre del QR en texto libre (ya activado por el cambio de cliente)
+    const compTxt = document.getElementById('bk-componente-txt');
+    if (compTxt && compTxt.style.display !== 'none') {
+      compTxt.value = compName;
+    } else {
+      // Buscar en catálogo como fallback
+      const compSel = document.getElementById('bk-componente');
+      const compOpt = [...compSel.options].find(o =>
+        o.text.toLowerCase().includes(compName.toLowerCase()) || o.dataset.skf === no_skf
+      );
+      if (compOpt) { compSel.value = compOpt.value; compSel.dispatchEvent(new Event('change')); }
+    }
     document.getElementById('bk-qr-result').textContent = `✅ SKF:${no_skf} Orden:${no_orden} Comp:${compName} Lote:${lote}`;
   });
 
@@ -1124,7 +1158,11 @@ function openModalCargaBaker(catalogo, onDone) {
     if (tipo === 'rack') {
       const clienteSel = document.getElementById('bk-cliente-sel').value;
       payload.cliente      = clienteSel === '__otro__' ? document.getElementById('bk-cliente-txt').value : clienteSel;
-      payload.componente_id = document.getElementById('bk-componente').value || null;
+      const compSel = document.getElementById('bk-componente');
+      const compTxt = document.getElementById('bk-componente-txt');
+      const compLibre = compTxt && compTxt.style.display !== 'none';
+      payload.componente_id = compLibre ? null : (compSel.value || null);
+      payload.componente    = compLibre ? (compTxt.value.trim() || null) : null;
       payload.no_skf       = document.getElementById('bk-no-skf').value || null;
       payload.no_orden     = document.getElementById('bk-no-orden').value || null;
       payload.lote         = document.getElementById('bk-lote').value || null;
