@@ -1123,23 +1123,34 @@ function openModalCargaBaker(catalogo, onDone) {
     document.getElementById('bk-no-skf').value   = no_skf;
     document.getElementById('bk-no-orden').value  = no_orden;
     document.getElementById('bk-lote').value       = lote;
-    // Auto-select cliente SKF y activar modo libre en componente
+    // Detectar tipo de herramental seleccionado
+    const herrEl  = document.getElementById('bk-herramental');
+    const herrOpt = herrEl?.selectedOptions[0];
+    const tipoHerr = herrOpt?.dataset.tipo || 'rack';
+
+    // Auto-select cliente SKF
     const sklSel = document.getElementById('bk-cliente-sel');
     const skfOpt = [...sklSel.options].find(o => o.value.toLowerCase().includes('skf'));
     if (skfOpt) { sklSel.value = skfOpt.value; sklSel.dispatchEvent(new Event('change')); }
-    // Componente: poner nombre del QR en texto libre (ya activado por el cambio de cliente)
-    const compTxt = document.getElementById('bk-componente-txt');
-    if (compTxt && compTxt.style.display !== 'none') {
-      compTxt.value = compName;
+    const clienteSkf = skfOpt?.value || 'SKF';
+
+    if (tipoHerr === 'barril') {
+      // Llenar todas las cavidades con los datos del QR
+      fillCavidadesFromQR(clienteSkf, compName, no_skf, no_orden, lote);
     } else {
-      // Buscar en catálogo como fallback
-      const compSel = document.getElementById('bk-componente');
-      const compOpt = [...compSel.options].find(o =>
-        o.text.toLowerCase().includes(compName.toLowerCase()) || o.dataset.skf === no_skf
-      );
-      if (compOpt) { compSel.value = compOpt.value; compSel.dispatchEvent(new Event('change')); }
+      // Rack: llenar campos individuales
+      const compTxt = document.getElementById('bk-componente-txt');
+      if (compTxt && compTxt.style.display !== 'none') {
+        compTxt.value = compName;
+      } else {
+        const compSel = document.getElementById('bk-componente');
+        const compOpt = [...compSel.options].find(o =>
+          o.text.toLowerCase().includes(compName.toLowerCase()) || o.dataset.skf === no_skf
+        );
+        if (compOpt) { compSel.value = compOpt.value; compSel.dispatchEvent(new Event('change')); }
+      }
     }
-    document.getElementById('bk-qr-result').textContent = `✅ SKF:${no_skf} Orden:${no_orden} Comp:${compName} Lote:${lote}`;
+    document.getElementById('bk-qr-result').textContent = `✅ SKF:${no_skf} Orden:${no_orden} Comp:${compName} Lote:${lote}${tipoHerr === 'barril' ? ' → cavidades llenadas' : ''}`;
   });
 
   document.getElementById('bk-save').addEventListener('click', async () => {
@@ -1170,18 +1181,23 @@ function openModalCargaBaker(catalogo, onDone) {
     } else {
       // barril
       const cavInputs = document.querySelectorAll('#bk-cavidades-container .bk-cav-row');
-      payload.cavidades = [...cavInputs].map((row, i) => {
+      payload.cavidades = [...cavInputs].map((row) => {
         const vacia = row.querySelector('.bk-cav-vacia')?.checked || false;
+        const clienteSel = row.querySelector('.bk-cav-cliente');
+        const clienteTxt = row.querySelector('.bk-cav-cliente-txt');
+        const cliente = clienteSel?.value === '__libre__'
+          ? (clienteTxt?.value?.trim() || null)
+          : (clienteSel?.value || null);
         return {
-          es_vacia:      vacia,
-          motivo_vacia_id: vacia ? (row.querySelector('.bk-cav-motivo')?.value || null) : null,
-          motivo_vacia:    vacia ? (row.querySelector('.bk-cav-motivo')?.selectedOptions[0]?.text || null) : null,
-          cliente:       row.querySelector('.bk-cav-cliente')?.value || null,
-          componente_id: row.querySelector('.bk-cav-comp')?.value || null,
-          componente:    row.querySelector('.bk-cav-comp')?.selectedOptions[0]?.text || null,
-          no_skf:        row.querySelector('.bk-cav-skf')?.value || null,
-          no_orden:      row.querySelector('.bk-cav-orden')?.value || null,
-          lote:          row.querySelector('.bk-cav-lote')?.value || null
+          es_vacia:        vacia,
+          motivo_vacia_id: null,
+          motivo_vacia:    null,
+          cliente,
+          componente_id:   null, // libre: no ID de catálogo
+          componente:      row.querySelector('.bk-cav-comp')?.value?.trim() || null,
+          no_skf:          row.querySelector('.bk-cav-skf')?.value?.trim()  || null,
+          no_orden:        row.querySelector('.bk-cav-orden')?.value?.trim() || null,
+          lote:            row.querySelector('.bk-cav-lote')?.value?.trim()  || null
         };
       });
     }
@@ -1200,21 +1216,34 @@ function openModalCargaBaker(catalogo, onDone) {
 }
 
 function buildCavidadesForm(n, componentes, clientes) {
-  const motivosCav = []; // could pass from catalogo; keep simple for now
-  const htmlComp = componentes.map(c => `<option value="${c.id}" data-skf="${escHtml(c.no_skf||'')}">${escHtml(c.nombre)}</option>`).join('');
-  const htmlCli  = clientes.map(c => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
-  let html = '';
+  // datalist para autocompletar componente desde catálogo
+  const datalistId = 'bk-cav-comp-list';
+  const datalistHtml = `<datalist id="${datalistId}">
+    ${componentes.map(c => `<option value="${escHtml(c.nombre)}" data-skf="${escHtml(c.no_skf||'')}">`).join('')}
+  </datalist>`;
+  const htmlCli = clientes.map(c => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
+
+  let html = datalistHtml;
   for (let i = 1; i <= n; i++) {
-    html += `<div class="bk-cav-row" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">
-      <div style="font-weight:700;font-size:13px;margin-bottom:8px">Cavidad ${i}</div>
+    html += `<div class="bk-cav-row" data-cav-idx="${i}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:700;font-size:13px">Cavidad ${i}</span>
+        <label style="font-size:11px;display:flex;align-items:center;gap:5px;cursor:pointer;color:#dc2626">
+          <input type="checkbox" class="bk-cav-vacia" /> Vacía
+        </label>
+      </div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
         <div>
           <label style="font-size:12px">Cliente</label>
-          <select class="bk-cav-cliente" style="width:100%"><option value="">— —</option>${htmlCli}</select>
+          <select class="bk-cav-cliente" style="width:100%">
+            <option value="">— —</option>${htmlCli}
+            <option value="__libre__">✏️ Escribir…</option>
+          </select>
+          <input class="bk-cav-cliente-txt" type="text" placeholder="Nombre cliente" style="width:100%;display:none;margin-top:3px" />
         </div>
         <div>
           <label style="font-size:12px">Componente</label>
-          <select class="bk-cav-comp" style="width:100%"><option value="">— —</option>${htmlComp}</select>
+          <input class="bk-cav-comp" type="text" list="${datalistId}" placeholder="Escribir o seleccionar" style="width:100%" />
         </div>
         <div>
           <label style="font-size:12px">No. SKF</label>
@@ -1229,14 +1258,70 @@ function buildCavidadesForm(n, componentes, clientes) {
           <input class="bk-cav-lote" type="text" style="width:100%" />
         </div>
         <div style="display:flex;align-items:flex-end">
-          <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer">
-            <input type="checkbox" class="bk-cav-vacia" /> Vacía
-          </label>
+          <button type="button" class="bk-cav-aplicar-resto btn btn-xs btn-outline" style="font-size:11px;width:100%">↓ Aplicar a todas</button>
         </div>
       </div>
     </div>`;
   }
-  document.getElementById('bk-cavidades-container').innerHTML = html;
+
+  const container = document.getElementById('bk-cavidades-container');
+  container.innerHTML = html;
+
+  // Bind: cliente libre en cada cavidad
+  container.querySelectorAll('.bk-cav-cliente').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const txt = sel.nextElementSibling;
+      txt.style.display = sel.value === '__libre__' ? '' : 'none';
+    });
+  });
+
+  // Bind: "Aplicar a todas" — copia los datos de la cavidad actual al resto
+  container.querySelectorAll('.bk-cav-aplicar-resto').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const row     = btn.closest('.bk-cav-row');
+      const cliente = row.querySelector('.bk-cav-cliente').value;
+      const cliTxt  = row.querySelector('.bk-cav-cliente-txt').value;
+      const comp    = row.querySelector('.bk-cav-comp').value;
+      const skf     = row.querySelector('.bk-cav-skf').value;
+      const orden   = row.querySelector('.bk-cav-orden').value;
+      const lote    = row.querySelector('.bk-cav-lote').value;
+      container.querySelectorAll('.bk-cav-row').forEach(r => {
+        if (r === row) return;
+        r.querySelector('.bk-cav-cliente').value = cliente;
+        const txt = r.querySelector('.bk-cav-cliente-txt');
+        txt.style.display = cliente === '__libre__' ? '' : 'none';
+        if (cliente === '__libre__') txt.value = cliTxt;
+        r.querySelector('.bk-cav-comp').value  = comp;
+        r.querySelector('.bk-cav-skf').value   = skf;
+        r.querySelector('.bk-cav-orden').value = orden;
+        r.querySelector('.bk-cav-lote').value  = lote;
+      });
+    });
+  });
+}
+
+// Rellena todas las cavidades con datos de un QR parseado
+function fillCavidadesFromQR(clienteNombre, compName, no_skf, no_orden, lote) {
+  const container = document.getElementById('bk-cavidades-container');
+  if (!container) return;
+  container.querySelectorAll('.bk-cav-row').forEach(row => {
+    const clienteSel = row.querySelector('.bk-cav-cliente');
+    const clienteTxt = row.querySelector('.bk-cav-cliente-txt');
+    // Buscar cliente en el select
+    const opt = [...clienteSel.options].find(o => o.value.toLowerCase().includes(clienteNombre.toLowerCase()));
+    if (opt) {
+      clienteSel.value = opt.value;
+      clienteTxt.style.display = 'none';
+    } else {
+      clienteSel.value = '__libre__';
+      clienteTxt.style.display = '';
+      clienteTxt.value = clienteNombre;
+    }
+    row.querySelector('.bk-cav-comp').value  = compName;
+    row.querySelector('.bk-cav-skf').value   = no_skf;
+    row.querySelector('.bk-cav-orden').value = no_orden;
+    row.querySelector('.bk-cav-lote').value  = lote;
+  });
 }
 
 // ── Modal: Descargar Herramental Baker ────────────────────────────────────────
