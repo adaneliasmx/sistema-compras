@@ -1986,9 +1986,10 @@ async function viewPizarron(el) {
       <div>
         <span class="flabel">Línea</span>
         <select id="pz-linea">
-          <option value="">Ambas</option>
+          <option value="">Todas</option>
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
+          <option value="Baker">Baker</option>
         </select>
       </div>
       <div>
@@ -2133,76 +2134,82 @@ async function viewPizarron(el) {
 function renderPizarronTable(rows, turnoTotals, dayTotals) {
   turnoTotals = turnoTotals || {};
   dayTotals   = dayTotals   || {};
+  const ORDER = ['T1', 'T2', 'T3'];
 
-  // Agrupar filas de slots por turno
-  const byTurno = {};
-  const ORDER   = ['T1', 'T2', 'T3', ''];
-  for (const r of rows) {
-    const t = r.turno || '';
-    if (!byTurno[t]) byTurno[t] = [];
-    byTurno[t].push(r);
-  }
-
-  // Determinar líneas presentes en dayTotals (o desde rows)
+  // Determinar líneas presentes
   const lineas = Object.keys(dayTotals).length
     ? Object.keys(dayTotals)
     : [...new Set(rows.map(r => r.linea))].filter(Boolean);
 
-  // Turnos con datos (slots o turno totals)
-  const turnosConDatos = ORDER.filter(t => {
-    if (!t) return false;
-    if (byTurno[t]?.length) return true;
-    return lineas.some(l => turnoTotals[`${l}-${t}`]);
-  });
+  // Si solo hay una línea → tabla simple; si hay varias → una sección por línea
+  function renderLineaSection(linea) {
+    const lineaRows = rows.filter(r => r.linea === linea);
+    const byTurno   = {};
+    for (const r of lineaRows) {
+      const t = r.turno || '';
+      if (!byTurno[t]) byTurno[t] = [];
+      byTurno[t].push(r);
+    }
+    const turnosConDatos = ORDER.filter(t =>
+      byTurno[t]?.length || turnoTotals[`${linea}-${t}`]
+    );
 
-  let bodyHtml = '';
-
-  for (const turno of turnosConDatos) {
-    const grupo  = byTurno[turno] || [];
-    const tLabel = `Turno ${turno}`;
-    bodyHtml += `<tr class="turno-row"><td colspan="7">${tLabel}</td></tr>`;
-
-    // Filas de slots
-    for (const r of grupo) {
-      bodyHtml += `<tr>
-        <td>${escHtml(r.hora || r.hr || '—')}</td>
-        <td>${escHtml(r.linea || '—')}</td>
-        <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
-        <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
-        <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
-        <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
-        <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+    let bodyHtml = '';
+    for (const turno of turnosConDatos) {
+      const grupo  = byTurno[turno] || [];
+      const tLabel = `Turno ${turno}`;
+      bodyHtml += `<tr class="turno-row"><td colspan="6">${tLabel}</td></tr>`;
+      for (const r of grupo) {
+        bodyHtml += `<tr>
+          <td>${escHtml(r.hora || '—')}</td>
+          <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
+          <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
+          <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
+          <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
+          <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+        </tr>`;
+      }
+      const tt = turnoTotals[`${linea}-${turno}`];
+      if (tt) {
+        bodyHtml += `<tr class="totals-row">
+          <td>Total ${tLabel}</td>
+          <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
+          <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
+          <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
+          <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
+          <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
+        </tr>`;
+      }
+    }
+    const dt = dayTotals[linea];
+    if (dt) {
+      bodyHtml += `<tr class="day-total-row">
+        <td>TOTAL DÍA</td>
+        <td style="text-align:center;font-weight:700">${dt.ciclos ?? '—'}</td>
+        <td class="${kpiColor(dt.eficiencia)}">${fmtPct(dt.eficiencia)}</td>
+        <td class="${kpiColor(dt.capacidad)}">${fmtPct(dt.capacidad)}</td>
+        <td class="${kpiColor(dt.calidad)}">${fmtPct(dt.calidad)}</td>
+        <td class="${kpiColor(dt.disponibilidad)}">${fmtPct(dt.disponibilidad)}</td>
       </tr>`;
     }
 
-    // Subtotal turno por línea (usando totals del backend)
-    for (const l of lineas) {
-      const tt = turnoTotals[`${l}-${turno}`];
-      if (!tt) continue;
-      bodyHtml += `<tr class="totals-row">
-        <td colspan="2">Total ${tLabel} · ${escHtml(l)}</td>
-        <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
-        <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
-        <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
-        <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
-        <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
-      </tr>`;
-    }
+    return `
+      <div class="table-card" style="margin-bottom:18px">
+        <div class="table-header">
+          <h3>📊 KPI — ${escHtml(linea)}</h3>
+        </div>
+        <div class="pizarron-scroll">
+          <table class="pizarron-table">
+            <thead><tr>
+              <th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
+            </tr></thead>
+            <tbody>${bodyHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
   }
 
-  // Totales del día por línea
-  for (const l of lineas) {
-    const dt = dayTotals[l];
-    if (!dt) continue;
-    bodyHtml += `<tr class="day-total-row">
-      <td colspan="2">TOTAL DÍA · ${escHtml(l)}</td>
-      <td style="text-align:center;font-weight:700">${dt.ciclos ?? '—'}</td>
-      <td class="${kpiColor(dt.eficiencia)}">${fmtPct(dt.eficiencia)}</td>
-      <td class="${kpiColor(dt.capacidad)}">${fmtPct(dt.capacidad)}</td>
-      <td class="${kpiColor(dt.calidad)}">${fmtPct(dt.calidad)}</td>
-      <td class="${kpiColor(dt.disponibilidad)}">${fmtPct(dt.disponibilidad)}</td>
-    </tr>`;
-  }
+  const sectionsHtml = lineas.map(renderLineaSection).join('');
 
   return `
   <div class="pizarron-wrap">
@@ -2210,16 +2217,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
       <h3>Pizarrón KPI</h3>
       <small style="color:var(--p-muted);font-size:11px">Auto-actualiza cada 30 seg</small>
     </div>
-    <div class="pizarron-scroll">
-      <table class="pizarron-table">
-        <thead>
-          <tr>
-            <th>Hr</th><th>Línea</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
-          </tr>
-        </thead>
-        <tbody>${bodyHtml}</tbody>
-      </table>
-    </div>
+    ${sectionsHtml}
   </div>`;
 }
 
@@ -2353,25 +2351,17 @@ async function viewMonitor(el) {
 
 async function viewReportes(el) {
   const today = new Date().toISOString().slice(0, 10);
+  let activeRptTab = 'L3';
+
   el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
+      <button class="tab-btn" data-tab="L4">Línea 4</button>
+      <button class="tab-btn" data-tab="Baker">Baker</button>
+    </div>
     <div class="filters-bar">
-      <div>
-        <span class="flabel">Línea</span>
-        <select id="rpt-linea">
-          <option value="">Todas</option>
-          <option value="L3">Línea 3</option>
-          <option value="L4">Línea 4</option>
-          <option value="Baker">Baker</option>
-        </select>
-      </div>
-      <div>
-        <span class="flabel">Desde</span>
-        <input type="date" id="rpt-desde" value="${today}" />
-      </div>
-      <div>
-        <span class="flabel">Hasta</span>
-        <input type="date" id="rpt-hasta" value="${today}" />
-      </div>
+      <div><span class="flabel">Desde</span><input type="date" id="rpt-desde" value="${today}"/></div>
+      <div><span class="flabel">Hasta</span><input type="date" id="rpt-hasta" value="${today}"/></div>
       <button class="btn btn-outline btn-sm" id="rpt-buscar">🔍 Consultar</button>
       <button class="btn btn-dark btn-sm" id="rpt-export">📥 Excel</button>
     </div>
@@ -2379,76 +2369,163 @@ async function viewReportes(el) {
       <div class="empty-state"><div class="icon">📈</div><p>Selecciona el rango de fechas y consulta.</p></div>
     </div>`;
 
-  document.getElementById('rpt-buscar').addEventListener('click', async () => {
-    const linea = document.getElementById('rpt-linea').value;
+  el.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+      btn.classList.add('tab-active');
+      activeRptTab = btn.dataset.tab;
+    });
+  });
+
+  function rptResultBadge(c) {
+    const est = c.resultado || c.estado || '';
+    if (est === 'buena')      return `<span class="badge badge-activo">Buena</span>`;
+    if (est === 'defecto')    return `<span class="badge badge-defecto">Defecto${c.defecto ? ': ' + escHtml(c.defecto) : ''}</span>`;
+    if (est === 'reproceso')  return `<span class="badge badge-warn">Reproceso</span>`;
+    if (est === 'descargado') return `<span class="badge badge-procesado">Descargado</span>`;
+    if (est === 'vacia')      return `<span class="badge" style="background:#e2e8f0;color:#64748b">Vacía</span>`;
+    return `<span class="badge badge-activo">${escHtml(est || 'activo')}</span>`;
+  }
+
+  function rptTipoLabel(c) {
+    return c.es_reproceso ? '<span class="badge badge-warn" style="font-size:10px">Reproceso</span>'
+                          : '<span class="badge badge-procesado" style="font-size:10px">Proceso</span>';
+  }
+
+  function renderTablaLinea(cargas, linea) {
+    if (!cargas.length) return '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para este período.</p></div>';
+    return `
+      <div class="table-card">
+        <div class="table-header">
+          <h3>Reporte — ${escHtml(linea)}</h3>
+          <span class="badge badge-activo">${cargas.length} registros</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Folio</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
+              <th>Herramental</th><th>Componente</th><th>Cantidad</th>
+              <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
+              <th>Resultado</th><th>Tipo</th>
+            </tr></thead>
+            <tbody>
+              ${cargas.map(c => `<tr>
+                <td class="mono">${escHtml(c.folio || c.id)}</td>
+                <td>${escHtml(c.fecha_carga || '—')}</td>
+                <td class="mono">${escHtml(c.hora_carga || '—')}</td>
+                <td>${escHtml(c.fecha_descarga || '—')}</td>
+                <td class="mono">${escHtml(c.hora_descarga || '—')}</td>
+                <td>${escHtml(c.herramental_no || c.herramental || '—')}</td>
+                <td>${escHtml(c.componente || '—')}</td>
+                <td style="text-align:right;font-weight:700">${c.cantidad ?? '—'}</td>
+                <td>${escHtml(c.proceso || '—')}</td>
+                <td>${escHtml(c.sub_proceso || '—')}</td>
+                <td>${escHtml(c.operador || '—')}</td>
+                <td>${rptResultBadge(c)}</td>
+                <td>${rptTipoLabel(c)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  function renderTablaCavidades(cavs) {
+    if (!cavs.length) return '';
+    return `
+      <div class="table-card" style="margin-top:18px">
+        <div class="table-header">
+          <h3>Baker — Barriles por cavidad</h3>
+          <span class="badge badge-activo">${cavs.length} cavidades</span>
+        </div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr>
+              <th>Folio Barril</th><th>Cav.</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
+              <th>Herramental</th><th>Componente</th><th>No. SKF</th><th>Cantidad</th>
+              <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
+              <th>Resultado</th><th>Tipo</th>
+            </tr></thead>
+            <tbody>
+              ${cavs.map(c => `<tr>
+                <td class="mono">${escHtml(c.folio_barril || '—')}</td>
+                <td style="text-align:center;font-weight:700">${c.cavidad_num ?? '—'}</td>
+                <td>${escHtml(c.fecha_carga || '—')}</td>
+                <td class="mono">${escHtml(c.hora_carga || '—')}</td>
+                <td>${escHtml(c.fecha_descarga || '—')}</td>
+                <td class="mono">${escHtml(c.hora_descarga || '—')}</td>
+                <td>${escHtml(c.herramental_no || '—')}</td>
+                <td>${escHtml(c.componente || '—')}</td>
+                <td class="mono">${escHtml(c.no_skf || '—')}</td>
+                <td style="text-align:right;font-weight:700">${c.cantidad ?? '—'}</td>
+                <td>${escHtml(c.proceso || '—')}</td>
+                <td>${escHtml(c.sub_proceso || '—')}</td>
+                <td>${escHtml(c.operador || '—')}</td>
+                <td>${rptResultBadge(c)}</td>
+                <td>${rptTipoLabel(c)}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+  }
+
+  async function ejecutarConsulta() {
     const desde = document.getElementById('rpt-desde').value;
     const hasta = document.getElementById('rpt-hasta').value;
     const res   = document.getElementById('rpt-resultado');
     res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
     try {
-      const params = new URLSearchParams();
-      if (linea) params.set('linea', linea);
+      const params = new URLSearchParams({ linea: activeRptTab });
       if (desde) params.set('desde', desde);
       if (hasta) params.set('hasta', hasta);
-      const data = await GET(`/reportes?${params}`);
-      const cargas = data?.cargas || data || [];
-      if (cargas.length === 0) {
-        res.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin registros.</p></div>';
-        return;
+
+      if (activeRptTab === 'Baker') {
+        const [cargasData, cavsData] = await Promise.all([
+          GET(`/reportes?${params}`),
+          GET(`/baker/cavidades?fecha_ini=${desde}&fecha_fin=${hasta}`)
+        ]);
+        const allCargas = cargasData?.cargas || cargasData || [];
+        const racks = allCargas.filter(c => c.herramental_tipo !== 'barril');
+        const cavs  = Array.isArray(cavsData) ? cavsData : [];
+        res.innerHTML = renderTablaLinea(racks, 'Baker — Racks') + renderTablaCavidades(cavs);
+      } else {
+        const data   = await GET(`/reportes?${params}`);
+        const cargas = data?.cargas || data || [];
+        res.innerHTML = renderTablaLinea(cargas, activeRptTab === 'L3' ? 'Línea 3' : 'Línea 4');
       }
-      res.innerHTML = `
-        <div class="table-card">
-          <div class="table-header">
-            <h3>Cargas del período</h3>
-            <span class="badge badge-activo">${cargas.length} registros</span>
-          </div>
-          <div class="table-scroll">
-            <table>
-              <thead>
-                <tr>
-                  <th>Folio</th><th>Línea</th><th>Fecha</th><th>Carga</th><th>Descarga</th>
-                  <th>Herramental</th><th>Componente</th><th>Proceso</th><th>Cantidad</th>
-                  <th>Operador</th><th>Estado</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${cargas.map(c => `<tr>
-                  <td class="mono">${escHtml(c.folio || c.id)}</td>
-                  <td>${escHtml(c.linea || '—')}</td>
-                  <td>${fmtDate(c.fecha_carga || c.created_at)}</td>
-                  <td class="mono">${escHtml(c.hora_carga || '—')}</td>
-                  <td class="mono">${escHtml(c.hora_descarga || '—')}</td>
-                  <td>${escHtml(c.herramental_no || c.herramental || '—')}</td>
-                  <td>${escHtml(c.componente || '—')}</td>
-                  <td>${escHtml(c.proceso || '—')}</td>
-                  <td style="text-align:right;font-weight:700">${c.cantidad ?? '—'}</td>
-                  <td>${escHtml(c.operador || '—')}</td>
-                  <td><span class="badge ${c.estado === 'procesado' ? 'badge-procesado' : c.estado === 'defecto' ? 'badge-defecto' : 'badge-activo'}">${escHtml(c.estado || 'activo')}</span></td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>`;
     } catch (e) {
       res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
-  });
+  }
+
+  document.getElementById('rpt-buscar').addEventListener('click', ejecutarConsulta);
 
   document.getElementById('rpt-export').addEventListener('click', async () => {
-    const linea = document.getElementById('rpt-linea').value || 'ambas';
     const desde = document.getElementById('rpt-desde').value;
     const hasta = document.getElementById('rpt-hasta').value;
     try {
-      const params = new URLSearchParams();
-      if (linea !== 'ambas') params.set('linea', linea);
+      const params = new URLSearchParams({ linea: activeRptTab });
       if (desde) params.set('desde', desde);
       if (hasta) params.set('hasta', hasta);
-      const data  = await GET(`/reportes?${params}`);
-      const cargas = data?.cargas || data || [];
-      const ws = XLSX.utils.json_to_sheet(cargas);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Cargas');
-      XLSX.writeFile(wb, `reporte_produccion_${desde}_${hasta}.xlsx`);
+
+      if (activeRptTab === 'Baker') {
+        const [cargasData, cavsData] = await Promise.all([
+          GET(`/reportes?${params}`),
+          GET(`/baker/cavidades?fecha_ini=${desde}&fecha_fin=${hasta}`)
+        ]);
+        const allCargas = cargasData?.cargas || cargasData || [];
+        const racks = allCargas.filter(c => c.herramental_tipo !== 'barril');
+        const cavs  = Array.isArray(cavsData) ? cavsData : [];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks), 'Baker Racks');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cavs),  'Baker Barriles');
+      } else {
+        const data   = await GET(`/reportes?${params}`);
+        const cargas = data?.cargas || data || [];
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cargas), activeRptTab);
+      }
+      XLSX.writeFile(wb, `reporte_${activeRptTab}_${desde}_${hasta}.xlsx`);
     } catch (e) { alert('Error al exportar: ' + e.message); }
   });
 }
@@ -3605,25 +3682,23 @@ async function viewConfiguracion(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewKpiHistorico(el) {
-  const today   = new Date().toLocaleDateString('en-CA');
-  // Por defecto: semana actual (lunes de esta semana)
+  const today = new Date().toLocaleDateString('en-CA');
   const lunes = (() => {
     const d = new Date(); const day = d.getDay() || 7;
     d.setDate(d.getDate() - day + 1);
     return d.toLocaleDateString('en-CA');
   })();
 
+  let activeKhTab = 'L3';
+  let lastSnaps   = [];
+
   el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
+      <button class="tab-btn" data-tab="L4">Línea 4</button>
+      <button class="tab-btn" data-tab="Baker">Baker</button>
+    </div>
     <div class="filters-bar">
-      <div>
-        <span class="flabel">Línea</span>
-        <select id="kh-linea">
-          <option value="">Todas</option>
-          <option value="L3">Línea 3</option>
-          <option value="L4">Línea 4</option>
-          <option value="Baker">Baker</option>
-        </select>
-      </div>
       <div>
         <span class="flabel">Turno</span>
         <select id="kh-turno">
@@ -3633,14 +3708,8 @@ async function viewKpiHistorico(el) {
           <option value="T3">T3</option>
         </select>
       </div>
-      <div>
-        <span class="flabel">Desde</span>
-        <input type="date" id="kh-desde" value="${lunes}"/>
-      </div>
-      <div>
-        <span class="flabel">Hasta</span>
-        <input type="date" id="kh-hasta" value="${today}"/>
-      </div>
+      <div><span class="flabel">Desde</span><input type="date" id="kh-desde" value="${lunes}"/></div>
+      <div><span class="flabel">Hasta</span><input type="date" id="kh-hasta" value="${today}"/></div>
       <button class="btn btn-outline btn-sm" id="kh-buscar">🔍 Buscar</button>
       <button class="btn btn-dark btn-sm" id="kh-export">📥 Excel</button>
     </div>
@@ -3648,15 +3717,21 @@ async function viewKpiHistorico(el) {
       <div class="empty-state"><div class="icon">⏳</div><p>Cargando KPI de la semana...</p></div>
     </div>`;
 
-  let lastSnaps = [];
+  el.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+      btn.classList.add('tab-active');
+      activeKhTab = btn.dataset.tab;
+      buscar();
+    });
+  });
 
   async function buscar() {
     const params = new URLSearchParams();
-    const linea = document.getElementById('kh-linea').value;
+    params.set('linea', activeKhTab);
     const turno = document.getElementById('kh-turno').value;
     const desde = document.getElementById('kh-desde').value;
     const hasta = document.getElementById('kh-hasta').value;
-    if (linea) params.set('linea', linea);
     if (turno) params.set('turno', turno);
     if (desde) params.set('desde', desde);
     if (hasta) params.set('hasta', hasta);
@@ -3676,7 +3751,7 @@ async function viewKpiHistorico(el) {
   }
 
   document.getElementById('kh-buscar').addEventListener('click', buscar);
-  buscar(); // carga automática al abrir la vista
+  buscar();
 
   document.getElementById('kh-export').addEventListener('click', () => {
     if (!lastSnaps.length) { alert('Primero ejecuta una búsqueda.'); return; }
@@ -3684,10 +3759,10 @@ async function viewKpiHistorico(el) {
     for (const snap of lastSnaps) {
       for (const s of (snap.slots || [])) {
         rows.push({
+          Línea:          snap.linea,
           Fecha:          snap.fecha,
           Semana:         snap.semana,
           Turno:          snap.turno,
-          Línea:          snap.linea,
           Slot:           s.slot,
           Hora_Inicio:    s.hora_inicio,
           Hora_Fin:       s.hora_fin,
@@ -3703,8 +3778,8 @@ async function viewKpiHistorico(el) {
     }
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'KPI');
-    XLSX.writeFile(wb, `kpi_historico_${new Date().toLocaleDateString('en-CA')}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, `KPI_${activeKhTab}`);
+    XLSX.writeFile(wb, `kpi_${activeKhTab}_${today}.xlsx`);
   });
 }
 
