@@ -1475,16 +1475,27 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
       if (esBarril) {
+        // Validar que todas las cavidades no-vacías tengan estado seleccionado
+        const cavEls = [...document.querySelectorAll('.bk-desc-cav')];
+        const sinEstado = cavEls.filter(cavEl => {
+          const esVacia = cavEl.querySelector('.bk-estado-btn') === null; // cavidad vacía no tiene botones
+          return !esVacia && !cavEl.dataset.estado;
+        });
+        if (sinEstado.length > 0) {
+          const nums = sinEstado.map(c => c.dataset.num).join(', ');
+          btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga';
+          alert(`Selecciona el resultado de la cavidad ${nums} antes de confirmar.`);
+          return;
+        }
         const cavResultados = [];
-        document.querySelectorAll('.bk-desc-cav').forEach(cavEl => {
+        cavEls.forEach(cavEl => {
           const num = parseInt(cavEl.dataset.num);
           const estado = cavEl.dataset.estado;
-          if (!estado) return; // skip empty cavities (they stay vacía)
+          if (!estado) return; // cavidades vacías sin botones
           const defSel = cavEl.querySelector('.bk-cav-defecto-sel');
           const defecto_id = defSel?.value || null;
           const defecto = defSel?.selectedOptions[0]?.dataset?.nombre || null;
           if (estado === 'reproceso') {
-            // Handle reproceso per cavity: mark defecto for now, reproceso requires separate flow
             cavResultados.push({ num, estado: 'defecto', defecto_id, defecto, es_reproceso: true });
           } else {
             cavResultados.push({ num, estado, defecto_id, defecto });
@@ -1492,7 +1503,7 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
         });
         await POST(`/baker/cargas/${carga.id}/descargar`, { cavidades: cavResultados });
       } else {
-        if (!rackEstado) { alert('Selecciona el resultado'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
+        if (!rackEstado) { alert('Selecciona el resultado antes de confirmar.'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
         if (rackEstado === 'reproceso') {
           // Crear reproceso directo
           await POST(`/baker/cargas/${carga.id}/reprocesar`, {});
@@ -1501,6 +1512,7 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
           return;
         }
         const defectoId = rackEstado === 'defecto' ? document.getElementById('bk-rack-defecto').value : null;
+        if (rackEstado === 'defecto' && !defectoId) { alert('Selecciona el tipo de defecto.'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
         await POST(`/baker/cargas/${carga.id}/descargar`, { defecto_id: defectoId || null });
       }
       closeModal();
