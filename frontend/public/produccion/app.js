@@ -895,14 +895,26 @@ function renderTarjetaBaker(c) {
     : `<div class="tarjeta-meta-item"><span class="meta-label">Varillas</span><span class="meta-val">${c.varillas ?? '—'}</span></div>
        <div class="tarjeta-meta-item"><span class="meta-label">Cantidad</span><span class="meta-val">${c.cantidad ?? '—'}</span></div>`;
 
+  const noComponente = esBarril
+    ? `🛢 Barril (${c.herramental_cavidades ?? '?'} cav)`
+    : escHtml(c.componente || '— sin comp —');
+
   return `
   <div class="tarjeta-card">
     <div class="tarjeta-header">
-      <span class="herramental-no">${escHtml(c.herramental_no || '—')}</span>
+      <div class="tarjeta-header-info">
+        <div class="tarjeta-header-row">
+          <span class="meta-label">No. Herramental</span>
+          <span class="herramental-no">${escHtml(c.herramental_no || '—')}</span>
+        </div>
+        <div class="tarjeta-header-row">
+          <span class="meta-label">No. Componente</span>
+          <span class="tarjeta-comp-no">${noComponente}</span>
+        </div>
+      </div>
       <span class="folio">#${escHtml(c.folio || c.id)}</span>
     </div>
     <div class="tarjeta-body">
-      <div class="tarjeta-componente">${esBarril ? '🛢 Barril' : ('🔩 Rack — ' + escHtml(c.componente || '— sin comp —'))}</div>
       <div class="tarjeta-cliente">${escHtml(c.cliente || '')}</div>
       <div class="tarjeta-meta">
         ${cavInfo}
