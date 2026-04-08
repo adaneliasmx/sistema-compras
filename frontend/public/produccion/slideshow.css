@@ -505,6 +505,12 @@ body {
 .ss-ctrl-btn:hover { border-color: #94a3b8; color: #f1f5f9; }
 .ss-btn-active { background: #3b82f6 !important; border-color: #3b82f6 !important; color: #fff !important; }
 
+/* ── Colores de estado para .val (mini-kpi) — aplica en oscuro también ── */
+.val.kpi-green { color: #10b981; }
+.val.kpi-amber { color: #f59e0b; }
+.val.kpi-red   { color: #ef4444; }
+.val.kpi-na    { color: #475569; }
+
 /* ── Light mode ─────────────────────────────────────────────────────────── */
 body.ss-light {
   background: #f1f5f9;
@@ -521,23 +527,43 @@ body.ss-light .ss-slide        { color: #1e293b; }
 body.ss-light .ss-slide-title  { color: #1e293b; }
 body.ss-light .ss-slide-subtitle { color: #64748b; }
 body.ss-light .ss-stat-chip    { background: #e2e8f0; }
+
+/* ── KPI cards en modo claro ── */
 body.ss-light .ss-kpi-card     { background: #f8fafc; border-color: #e2e8f0; }
-body.ss-light .ss-kpi-label    { color: #64748b; }
+body.ss-light .ss-kpi-label    { color: #475569; }
 body.ss-light .ss-kpi-value    { color: #1e293b; }
 body.ss-light .ss-kpi-value.kpi-na { color: #94a3b8; }
-body.ss-light .ss-kpi-card.kpi-green { background: #dcfce7; border-color: #86efac; }
-body.ss-light .ss-kpi-card.kpi-amber { background: #fef3c7; border-color: #fcd34d; }
-body.ss-light .ss-kpi-card.kpi-red   { background: #fee2e2; border-color: #fca5a5; }
-body.ss-light .ss-kpi-value.kpi-green { color: #15803d; }
-body.ss-light .ss-kpi-value.kpi-amber { color: #b45309; }
-body.ss-light .ss-kpi-value.kpi-red   { color: #b91c1c; }
+
+/* Tarjetas — fondo + borde más intenso para que se diferencien */
+body.ss-light .ss-kpi-card.kpi-green { background: #dcfce7; border-color: #22c55e; border-width: 3px; }
+body.ss-light .ss-kpi-card.kpi-amber { background: #fef9c3; border-color: #eab308; border-width: 3px; }
+body.ss-light .ss-kpi-card.kpi-red   { background: #ffe4e6; border-color: #ef4444; border-width: 3px; }
+
+/* Valores de KPI — colores de alto contraste para modo claro */
+body.ss-light .ss-kpi-value.kpi-green { color: #166534; }   /* verde 800 — muy legible */
+body.ss-light .ss-kpi-value.kpi-amber { color: #854d0e; }   /* ámbar 800 — contraste fuerte */
+body.ss-light .ss-kpi-value.kpi-red   { color: #991b1b; }   /* rojo 800 — muy visible */
+
+/* ── Mini-KPI (diapositiva "Todas las líneas") en modo claro ── */
 body.ss-light .ss-linea-panel  { background: #f1f5f9; }
 body.ss-light .ss-linea-panel h3 { color: #1e293b; border-color: #e2e8f0; }
 body.ss-light .ss-mini-kpi     { background: #e2e8f0; }
 body.ss-light .ss-mini-kpi .lbl { color: #64748b; }
-body.ss-light .ss-mini-kpi .val { color: #1e293b; }
+body.ss-light .ss-mini-kpi .val { color: #1e293b; }         /* fallback sin estado */
+body.ss-light .val.kpi-green   { color: #166534; }
+body.ss-light .val.kpi-amber   { color: #854d0e; }
+body.ss-light .val.kpi-red     { color: #991b1b; }
+body.ss-light .val.kpi-na      { color: #94a3b8; }
+
+/* ── Tabla de slots (horas) en modo claro ── */
 body.ss-light .ss-slots-table th { color: #475569; border-color: #e2e8f0; }
 body.ss-light .ss-slots-table td { color: #334155; border-color: #f1f5f9; }
+/* Celdas de KPI dentro de la tabla — alto contraste */
+body.ss-light .kpi-cell.kpi-green { color: #166534; background: #dcfce7; border-radius: 4px; }
+body.ss-light .kpi-cell.kpi-amber { color: #854d0e; background: #fef9c3; border-radius: 4px; }
+body.ss-light .kpi-cell.kpi-red   { color: #991b1b; background: #ffe4e6; border-radius: 4px; }
+body.ss-light .kpi-cell.kpi-na    { color: #94a3b8; }
+
 body.ss-light .ss-progress-track { background: #e2e8f0; }
 body.ss-light .ss-dot          { background: #cbd5e1; }
 body.ss-light .ss-dot.active   { background: #3b82f6; }
@@ -545,7 +571,7 @@ body.ss-light .ss-nav          { border-color: #cbd5e1; color: #64748b; }
 body.ss-light .ss-nav:hover    { border-color: #94a3b8; color: #1e293b; }
 body.ss-light .ss-counter      { color: #94a3b8; }
 body.ss-light .ss-dia-turnos   { background: #fff; border: 1px solid #e2e8f0; }
-body.ss-light .ss-dia-header   { background: #f1f5f9; color: #64748b; }
+body.ss-light .ss-dia-header   { background: #e2e8f0; color: #475569; }
 body.ss-light .ss-dia-row      { border-color: #f1f5f9; }
 body.ss-light .ss-dia-total-sep { color: #1e293b; }
 body.ss-light .ss-dia-ciclos   { color: #64748b; }
