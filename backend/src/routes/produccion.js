@@ -2045,4 +2045,57 @@ router.get('/export/:linea', produccionAllowRoles('admin'), (req, res) => {
   res.json({ linea, total: rows.length, rows });
 });
 
+// ─── Migración T3: corregir fecha_carga de ciclos cargados entre 00:00–06:29 ──
+// Usa created_at para derivar la fecha real del calendario y aplica getShiftDate()
+// Idempotente: si fecha_carga ya es correcta, no hace nada.
+router.post('/admin/migrate-t3-dates', produccionAllowRoles('admin'), (req, res) => {
+  const pdb = dbProd.read();
+  const dryRun = req.query.dry !== 'false'; // dry run por defecto
+
+  function isoDateMx(isoStr) {
+    // Extrae YYYY-MM-DD de una timestamp en hora de México
+    return new Date(isoStr).toLocaleDateString('en-CA', { timeZone: MX_TZ });
+  }
+
+  function fixedSemana(fechaCarga) {
+    return getISOWeek(new Date(fechaCarga + 'T12:00:00'));
+  }
+
+  const changes = [];
+
+  // Corregir cargas L3/L4
+  for (const c of (pdb.cargas || [])) {
+    if (!c.hora_carga || !c.created_at) continue;
+    const actualDate   = isoDateMx(c.created_at);
+    const correctFecha = getShiftDate(actualDate, c.hora_carga);
+    if (c.fecha_carga !== correctFecha) {
+      changes.push({ tabla: 'cargas', id: c.id, folio: c.folio, linea: c.linea,
+        hora_carga: c.hora_carga, fecha_antes: c.fecha_carga, fecha_despues: correctFecha });
+      if (!dryRun) {
+        c.fecha_carga = correctFecha;
+        c.semana      = fixedSemana(correctFecha);
+      }
+    }
+  }
+
+  // Corregir cargas Baker
+  for (const c of (pdb.cargas_baker || [])) {
+    if (!c.hora_carga || !c.created_at) continue;
+    const actualDate   = isoDateMx(c.created_at);
+    const correctFecha = getShiftDate(actualDate, c.hora_carga);
+    if (c.fecha_carga !== correctFecha) {
+      changes.push({ tabla: 'cargas_baker', id: c.id, folio: c.folio,
+        hora_carga: c.hora_carga, fecha_antes: c.fecha_carga, fecha_despues: correctFecha });
+      if (!dryRun) {
+        c.fecha_carga = correctFecha;
+        c.semana      = fixedSemana(correctFecha);
+      }
+    }
+  }
+
+  if (!dryRun && changes.length > 0) dbProd.write(pdb);
+
+  res.json({ dryRun, total_cambios: changes.length, changes });
+});
+
 module.exports = router;

@@ -2061,7 +2061,8 @@ async function viewPizarron(el) {
       <button class="btn btn-outline btn-sm" id="pz-vista-ind" onclick="window.open('/pizarron/vista','_blank')">📺 Vista independiente</button>
       ${state.user?.role === 'admin' ? `
         <button class="btn btn-primary btn-sm" id="pz-guardar-kpi">💾 Guardar KPI</button>
-        <button class="btn btn-dark btn-sm" id="pz-export">📥 Exportar Excel</button>` : ''}
+        <button class="btn btn-dark btn-sm" id="pz-export">📥 Exportar Excel</button>
+        <button class="btn btn-outline btn-sm" id="pz-migrate-t3" title="Corregir fecha_carga de ciclos T3 cargados entre 00:00-06:29">🔧 Corregir fechas T3</button>` : ''}
     </div>
     <div id="pz-resultado">
       <div class="empty-state"><div class="icon">📋</div><p>Selecciona filtros y presiona Consultar.</p></div>
@@ -2172,6 +2173,28 @@ async function viewPizarron(el) {
         XLSX.utils.book_append_sheet(wb, ws, 'Pizarron');
         XLSX.writeFile(wb, `pizarron_${linea}_${new Date().toISOString().slice(0,10)}.xlsx`);
       } catch (e) { alert('Error al exportar: ' + e.message); }
+    });
+
+    document.getElementById('pz-migrate-t3')?.addEventListener('click', async () => {
+      const btn = document.getElementById('pz-migrate-t3');
+      // Primero hacer dry run para ver cuántos registros se afectarán
+      btn.disabled = true; btn.textContent = 'Analizando...';
+      try {
+        const preview = await POST('/admin/migrate-t3-dates?dry=true', {});
+        const n = preview.total_cambios;
+        if (n === 0) { alert('✅ No hay registros que corregir. Los datos ya están al día.'); return; }
+        const ok = confirm(
+          `Se encontraron ${n} carga(s) con fecha_carga incorrecta para T3.\n\n` +
+          `Ejemplos:\n${preview.changes.slice(0,5).map(c =>
+            `• ${c.tabla} [${c.folio}] ${c.hora_carga} | ${c.fecha_antes} → ${c.fecha_despues}`
+          ).join('\n')}\n\n¿Aplicar corrección?`
+        );
+        if (!ok) return;
+        btn.textContent = 'Aplicando...';
+        const result = await POST('/admin/migrate-t3-dates?dry=false', {});
+        alert(`✅ Corrección aplicada: ${result.total_cambios} registro(s) actualizados.`);
+      } catch (e) { alert('Error: ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '🔧 Corregir fechas T3'; }
     });
   }
 
