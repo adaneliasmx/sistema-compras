@@ -211,6 +211,31 @@ router.patch('/vales/:folio', valesAllowRoles('admin'), (req, res) => {
   res.json({ ...header, detalle: (db.vales_detalle || []).filter(d => d.folio_vale === header.folio_vale) });
 });
 
+// Eliminar vale (admin) — revierte inventario
+router.delete('/vales/:folio', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const folio = req.params.folio;
+  const header = (db.vales_header || []).find(h => h.folio_vale === folio);
+  if (!header) return res.status(404).json({ error: 'Vale no encontrado' });
+
+  // Revertir efecto en inventario
+  const detalles = (db.vales_detalle || []).filter(d => d.folio_vale === folio);
+  for (const det of detalles) {
+    const inv = (db.inventario_vales || []).find(i => i.item === det.item);
+    if (inv) {
+      inv.existencia_kg = (parseFloat(inv.existencia_kg) || 0) + (det.kg_equivalentes || 0);
+      inv.ultima_actualizacion = new Date().toISOString();
+    }
+  }
+
+  db.vales_header  = db.vales_header.filter(h => h.folio_vale !== folio);
+  db.vales_detalle = (db.vales_detalle || []).filter(d => d.folio_vale !== folio);
+  db.kardex_vales  = (db.kardex_vales  || []).filter(k => !(k.referencia === folio && k.tipo === 'SALIDA'));
+
+  writeVales(db);
+  res.json({ ok: true, folio, eliminado_por: req.valesUser.full_name });
+});
+
 // Editar línea de detalle (admin) — recalcula kg y actualiza kardex
 router.patch('/vales/:folio/detalle/:id', valesAllowRoles('admin'), (req, res) => {
   const db = readVales();

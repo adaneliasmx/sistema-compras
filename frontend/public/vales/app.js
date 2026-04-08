@@ -198,6 +198,7 @@ const GET  = (p)    => api('GET',    p);
 const POST = (p, b) => api('POST',   p, b);
 const PUT  = (p, b) => api('PUT',    p, b);
 const PATCH= (p, b) => api('PATCH',  p, b);
+const DEL  = (p)    => api('DELETE', p);
 
 // ── Inactividad (15 min) ──────────────────────────────────────────────────────
 function resetTimer() {
@@ -715,6 +716,7 @@ function bindConsultaVales() {
                 <td style="display:flex;gap:4px">
                   <button class="btn btn-outline btn-sm" onclick="verVale('${v.folio_vale}')">Ver</button>
                   ${isAdmin ? `<button class="btn btn-outline btn-sm" onclick="editVale('${v.folio_vale}')">✏️</button>` : ''}
+                  ${isAdmin ? `<button class="btn btn-outline btn-sm" style="color:#dc2626" onclick="eliminarVale('${v.folio_vale}')">🗑️</button>` : ''}
                 </td>
               </tr>`;
             }).join('')}</tbody>
@@ -724,7 +726,16 @@ function bindConsultaVales() {
     } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
   document.getElementById('btn-buscar-vale').addEventListener('click', buscarVale);
+  window._buscarVale = buscarVale;
   buscarVale();
+
+  window.eliminarVale = async function(folio) {
+    if (!confirm(`¿Eliminar el vale ${folio}?\n\nEsta acción revertirá el inventario y no puede deshacerse.`)) return;
+    try {
+      await DEL('/vales/' + folio);
+      buscarVale();
+    } catch(e) { alert('Error: ' + e.message); }
+  };
 
   // ── Export Excel — Por Vale (solo admin) ──
   document.getElementById('btn-export-vale')?.addEventListener('click', () => {
@@ -1397,29 +1408,103 @@ async function viewCorrecciones() {
   </div>`;
 }
 function bindCorrecciones() {
-  document.getElementById('btn-nueva-corr')?.addEventListener('click', () => showModalCorreccion());
+  document.getElementById('btn-nueva-corr')?.addEventListener('click', () => showModalCorreccion().catch(e => alert('Error: ' + e.message)));
 }
-function showModalCorreccion() {
+async function showModalCorreccion() {
+  // Cargar vales de los últimos 90 días
+  const ini = new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10);
+  const vales = await GET('/vales?fecha_ini=' + ini).catch(() => []);
+
   showModal(`
     <h3>🔧 Nueva Corrección de Vale</h3>
-    <div class="form-group"><label>Folio de vale origen *</label><input type="text" id="c-folio" placeholder="VA-YYYYMMDD-001" /></div>
-    <div class="form-row mt-1">
-      <div class="form-group"><label>Item (código) *</label><input type="text" id="c-item" placeholder="COD-ITEM" /></div>
-      <div class="form-group"><label>Tipo *</label>
-        <select id="c-tipo"><option value="">--</option><option value="DEVOLVER">DEVOLVER (devolver al inventario)</option><option value="DESCONTAR">DESCONTAR (quitar del inventario)</option></select>
+    <div class="form-group">
+      <label>Folio de vale origen *</label>
+      <select id="c-folio" style="width:100%">
+        <option value="">-- Seleccionar folio --</option>
+        ${vales.map(v => `<option value="${v.folio_vale}">${v.folio_vale} &nbsp;·&nbsp; ${v.fecha} &nbsp;·&nbsp; ${v.linea}${v.solicita ? ' · ' + v.solicita : ''}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group" id="c-items-group" style="display:none">
+      <label>Item a corregir *</label>
+      <select id="c-item-sel" style="width:100%">
+        <option value="">-- Seleccionar item del vale --</option>
+      </select>
+    </div>
+    <div id="c-form-fields" style="display:none">
+      <div class="form-row mt-1">
+        <div class="form-group">
+          <label>Item (código)</label>
+          <input type="text" id="c-item" readonly style="background:#f5f5f4;font-weight:700" />
+        </div>
+        <div class="form-group">
+          <label>Tipo de corrección *</label>
+          <select id="c-tipo">
+            <option value="">--</option>
+            <option value="DEVOLVER">DEVOLVER (regresar al inventario)</option>
+            <option value="DESCONTAR">DESCONTAR (quitar del inventario)</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Unidad</label>
+          <select id="c-unidad">
+            <option value="KG">KG</option>
+            <option value="TAMBO">TAMBO</option>
+            <option value="PORRON_15L">PORRON_15L</option>
+            <option value="LITRO">LITRO</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Cantidad *</label>
+          <input type="number" id="c-cant" step="0.001" min="0" />
+        </div>
+      </div>
+      <div class="form-group mt-1"><label>Comentario</label><input type="text" id="c-coment" /></div>
+      <div class="modal-actions">
+        <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+        <button class="btn btn-primary" id="btn-save-corr">Guardar Corrección</button>
       </div>
     </div>
-    <div class="form-row">
-      <div class="form-group"><label>Unidad</label>
-        <select id="c-unidad"><option value="KG">KG</option><option value="TAMBO">TAMBO</option><option value="PORRON_15L">PORRON_15L</option><option value="LITRO">LITRO</option></select>
-      </div>
-      <div class="form-group"><label>Cantidad *</label><input type="number" id="c-cant" step="0.001" min="0" /></div>
-    </div>
-    <div class="form-group mt-1"><label>Comentario</label><input type="text" id="c-coment" /></div>
-    <div class="modal-actions">
+    <div id="c-cancel-row" style="margin-top:16px;display:flex;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
-      <button class="btn btn-primary" id="btn-save-corr">Guardar Corrección</button>
     </div>`);
+
+  // Folio seleccionado → cargar items del vale
+  document.getElementById('c-folio').addEventListener('change', function() {
+    const folio = this.value;
+    const vale = vales.find(v => v.folio_vale === folio);
+    const itemsGroup  = document.getElementById('c-items-group');
+    const formFields  = document.getElementById('c-form-fields');
+    const cancelRow   = document.getElementById('c-cancel-row');
+    formFields.style.display = 'none';
+    if (!vale) { itemsGroup.style.display = 'none'; cancelRow.style.display = 'flex'; return; }
+
+    const detalles = vale.detalle || [];
+    const selItem = document.getElementById('c-item-sel');
+    selItem.innerHTML = '<option value="">-- Seleccionar item del vale --</option>';
+    detalles.forEach(d => {
+      const label = `${d.item}${d.no_tanque ? ' · Tanque ' + d.no_tanque : ''} · ${d.tipo_adicion} · ${d.cantidad}`;
+      selItem.add(new Option(label, JSON.stringify(d)));
+    });
+    itemsGroup.style.display = '';
+    cancelRow.style.display = 'flex';
+  });
+
+  // Item seleccionado → precargar campos
+  document.getElementById('c-item-sel').addEventListener('change', function() {
+    const formFields = document.getElementById('c-form-fields');
+    const cancelRow  = document.getElementById('c-cancel-row');
+    if (!this.value) { formFields.style.display = 'none'; cancelRow.style.display = 'flex'; return; }
+    const det = JSON.parse(this.value);
+    document.getElementById('c-item').value = det.item;
+    const selUnidad = document.getElementById('c-unidad');
+    [...selUnidad.options].forEach(o => { o.selected = o.value === det.tipo_adicion; });
+    document.getElementById('c-cant').value = det.cantidad;
+    formFields.style.display = '';
+    cancelRow.style.display = 'none';
+  });
+
   document.getElementById('btn-save-corr').addEventListener('click', async () => {
     const body = {
       folio_origen: document.getElementById('c-folio').value.trim().toUpperCase(),
@@ -1680,7 +1765,7 @@ async function viewTanques() {
           tanques.map(t=>`<tr>
             <td>${t.linea}</td><td><strong>${t.no_tanque}</strong></td>
             <td>${t.nombre_tanque||'-'}</td><td>${t.tipo||'-'}</td>
-            <td style="font-size:11px">${(t.items_autorizados||[]).join(', ')||'Todos'}</td>
+            <td style="font-size:11px">${(t.items_autorizados||[]).join(', ')||'<span style="color:#dc2626">Sin productos</span>'}</td>
             <td>${t.activo?'✅':'❌'}</td>
             <td><button class="btn btn-outline btn-xs" onclick="editTanque(${t.id})">Editar</button></td>
           </tr>`).join('')}
@@ -1713,7 +1798,7 @@ function showModalTanque(tanque, items) {
       ${isEdit?`<div class="form-group"><label>Activo</label><select id="tk-activo"><option value="true" ${tanque?.activo?'selected':''}>Sí</option><option value="false" ${!tanque?.activo?'selected':''}>No</option></select></div>`:''}
     </div>
     <div class="form-group" style="margin-top:12px">
-      <label>Productos autorizados <small style="color:#78716c">(ninguno = tanque sin productos asignados)</small></label>
+      <label>Productos autorizados <small style="color:#dc2626">* Debe seleccionar al menos uno — si no hay selección, el tanque no admite ítems</small></label>
       <div style="max-height:160px;overflow-y:auto;border:1.5px solid #e7e5e4;border-radius:8px;padding:8px;margin-top:4px">
         ${items.map(i=>`
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;cursor:pointer">
