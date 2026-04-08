@@ -982,9 +982,11 @@ function slotOverlap(ss, se, paroStart, paroEnd, paroFechaInicio, paroFechaFin, 
 }
 
 function addDays(dateStr, n) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return d.toLocaleDateString('en-CA', { timeZone: MX_TZ });
+  // Usar mediodía UTC para evitar que la conversión de zona horaria
+  // cambie el día calendario (servidor en UTC, clientes en México CDT/CST)
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10); // YYYY-MM-DD estable al mediodía UTC
 }
 
 // Objetivo de ciclos por slot: si tiene .5, alterna floor/ceil comenzando por floor en h=0
