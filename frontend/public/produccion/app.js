@@ -2032,7 +2032,7 @@ function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewPizarron(el) {
-  const today = new Date().toISOString().slice(0, 10);
+  const { fecha_ini: shiftDate } = getShiftDates();
   el.innerHTML = `
     <div class="filters-bar">
       <div>
@@ -2046,7 +2046,7 @@ async function viewPizarron(el) {
       </div>
       <div>
         <span class="flabel">Fecha</span>
-        <input type="date" id="pz-fecha" value="${today}" />
+        <input type="date" id="pz-fecha" value="${shiftDate}" />
       </div>
       <div>
         <span class="flabel">Turno</span>
@@ -2295,9 +2295,9 @@ async function viewMonitor(el) {
       return ta > tb ? -1 : ta < tb ? 1 : 0;
     });
 
-    const ciclosL3    = cargasL3.filter(c => c.turno === turno).length;
-    const ciclosL4    = cargasL4.filter(c => c.turno === turno).length;
-    const ciclosBaker = cargasBaker.filter(c => c.turno === turno).length;
+    const ciclosL3    = cargasL3.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosL4    = cargasL4.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosBaker = cargasBaker.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
 
     const paroHtml = (paro, label) => paro
       ? `<div style="background:#dc2626;color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700">
@@ -2362,14 +2362,14 @@ async function viewMonitor(el) {
   }
 
   async function cargarMonitor() {
-    const today = new Date().toISOString().slice(0, 10);
+    const { fecha_ini, fecha_fin } = getShiftDates();
     const contenedor = document.getElementById('monitor-contenido');
     if (!contenedor) return;
     try {
       const [dL3, dL4, dBaker, paroL3Res, paroL4Res, paroBakerRes] = await Promise.all([
-        GET(`/cargas/L3?fecha_ini=${today}&fecha_fin=${today}`),
-        GET(`/cargas/L4?fecha_ini=${today}&fecha_fin=${today}`),
-        GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`),
+        GET(`/cargas/L3?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
+        GET(`/cargas/L4?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
+        GET(`/baker/cargas?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET('/paros/L3/activo').catch(() => null),
         GET('/paros/L4/activo').catch(() => null),
         GET('/baker/paros/activo').catch(() => null)
@@ -2385,7 +2385,7 @@ async function viewMonitor(el) {
 
   el.innerHTML = `
     <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del día de hoy (L3 + L4 + Baker)</span>
+      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del turno actual (L3 + L4 + Baker)</span>
       <button class="btn btn-outline btn-sm" id="mon-refresh">↻ Actualizar</button>
     </div>
     <div id="monitor-contenido"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;

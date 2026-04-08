@@ -46,6 +46,15 @@
     const d = new Date();
     return d.getHours() * 60 + d.getMinutes();
   }
+  // Shift date: T3 (00:00–06:29) belongs to previous day
+  function shiftDate() {
+    const m = nowMins();
+    if (m < 6 * 60 + 30) {
+      const d = new Date(Date.now() - 86400000);
+      return d.toLocaleDateString('en-CA');
+    }
+    return nowDateShort();
+  }
   function currentTurno() {
     const m = nowMins();
     if (m >= 6*60+30 && m < 14*60+30) return 'T1';
@@ -152,7 +161,7 @@
 
   async function fetchKpi() {
     try {
-      const fecha = nowDateShort();
+      const fecha = shiftDate();
       const d = await apiFetch(`/pizarron?linea=ambas&fecha=${fecha}&turno=all`);
       if (d) kpiData = d.data || {};
     } catch {}

@@ -460,10 +460,10 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
   }
 
   const now = new Date();
-  const fecha_carga = nowDateStr();
   const hora_carga = nowTimeStr();
+  const fecha_carga = getShiftDate(nowDateStr(), hora_carga);
   const turno = getTurno(hora_carga);
-  const semana = getISOWeek(now);
+  const semana = getISOWeek(new Date(fecha_carga + 'T12:00:00'));
   const cantidad = es_vacia ? 0 : Number(varillas) * Number(piezas_por_varilla);
 
   const id = dbProd.nextId(pdb.cargas || []);
@@ -572,10 +572,10 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   }
 
   const now = new Date();
-  const fecha_carga = nowDateStr();
   const hora_carga = nowTimeStr();
+  const fecha_carga = getShiftDate(nowDateStr(), hora_carga);
   const turno = getTurno(hora_carga);
-  const semana = getISOWeek(now);
+  const semana = getISOWeek(new Date(fecha_carga + 'T12:00:00'));
 
   const newId = dbProd.nextId(pdb.cargas);
   const prefix = linea.toUpperCase();
@@ -1675,8 +1675,8 @@ router.post('/baker/cargas', (req, res) => {
   const operador   = (pdb.operadores_baker    || []).find(o => String(o.id) === String(operador_id));
 
   const now  = new Date().toISOString();
-  const fecha = nowDateStr();
   const hora  = nowTimeStr();
+  const fecha = getShiftDate(nowDateStr(), hora);
   const turno = getTurno(hora);
   const semana = getISOWeek(new Date(fecha + 'T12:00:00'));
   const folio = nextFolio('BKR', pdb.cargas_baker, 'folio');
@@ -1886,7 +1886,7 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
     id: dbProd.nextId(pdb.cargas_baker),
     folio,
     estado: 'activo',
-    fecha_carga: nowDateStr(), hora_carga: nowTimeStr(),
+    fecha_carga: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
     turno: getTurno(nowTimeStr()),
     fecha_descarga: null, hora_descarga: null,
     defecto_id: null, defecto: null,
