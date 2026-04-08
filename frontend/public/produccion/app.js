@@ -31,7 +31,8 @@ const state = {
   _shiftTimer: null,
   _shiftWarnShown: false,
   // Guard para no mostrar el form de paro automático dos veces seguidas
-  _autoParoShown: { L3: false, L4: false }
+  _autoParoShown: { L3: false, L4: false },
+  _autoParoInfo:  {}   // { [linea]: { horaInicio, fechaInicio } } — para "Paro antes de tiempo"
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -213,8 +214,28 @@ function logout() {
 }
 
 async function logoutShiftEnd() {
-  // Si hay línea activa y usuario con rol produccion/admin, registrar paro cambio de turno
   if (state.lineaActiva && state.token && ['produccion', 'admin'].includes(state.user?.role)) {
+    // Si el modal de paro automático estaba abierto sin justificar → "Paro antes de tiempo"
+    const autoInfo = state._autoParoInfo?.[state.lineaActiva];
+    if (autoInfo) {
+      try {
+        // Hora de fin = el cambio de turno que acaba de ocurrir
+        const now = new Date();
+        const curMins = now.getHours() * 60 + now.getMinutes();
+        // Buscar el fin de turno más cercano (dentro de ±2 min)
+        const shiftEnd = SHIFT_ENDS_MINS.find(e => Math.abs(e - curMins) <= 2) ?? curMins;
+        const hora_fin = `${String(Math.floor(shiftEnd/60)).padStart(2,'0')}:${String(shiftEnd%60).padStart(2,'0')}`;
+        const isBaker  = state.lineaActiva === 'Baker';
+        const path     = isBaker ? '/baker/paros/antes-de-tiempo' : `/paros/${state.lineaActiva}/antes-de-tiempo`;
+        await fetch('/api/produccion' + path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+          body: JSON.stringify({ hora_inicio: autoInfo.horaInicio, fecha_inicio: autoInfo.fechaInicio, hora_fin })
+        });
+      } catch (_) {}
+      delete state._autoParoInfo[state.lineaActiva];
+    }
+    // Registrar paro de cambio de turno
     try {
       await fetch(`/api/produccion/paros/${state.lineaActiva}/cambio-turno`, {
         method: 'POST',
@@ -572,8 +593,10 @@ function showModal(html, opts = {}) {
   const sizeClass    = opts.size ? `modal-${opts.size}` : '';
   overlay.innerHTML  = `<div class="modal-box ${sizeClass}">${html}</div>`;
   document.body.appendChild(overlay);
-  // Close on backdrop click
-  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  // Close on backdrop click (disabled when noClose: true)
+  if (!opts.noClose) {
+    overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  }
   return overlay;
 }
 
@@ -729,9 +752,12 @@ async function viewLinea(el, linea) {
             const fechaIni = lastDate.toLocaleDateString('en-CA');
             setTimeout(() => openModalParoAuto(linea, catalogo, horaIni, fechaIni, () => {
               state._autoParoShown[linea] = false;
+              delete state._autoParoInfo[linea];
               const elActual = document.getElementById('p-content');
               if (elActual) viewLinea(elActual, linea);
             }), 500);
+    // Guardar hora de inicio para "Paro antes de tiempo" si no se justifica antes del cambio de turno
+    state._autoParoInfo[linea] = { horaInicio: horaIni, fechaInicio: fechaIni };
           }
         }
       }
@@ -767,6 +793,7 @@ async function viewLinea(el, linea) {
           ${paroMiniCard}
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-nueva-paro">⏸ Registrar Paro</button>' : ''}
+            <button class="btn btn-outline btn-sm" id="btn-carga-vacia">📭 Carga Vacía</button>
             <button class="btn btn-primary" id="btn-nueva-carga">+ Registrar Carga</button>
           </div>
         </div>
@@ -781,6 +808,15 @@ async function viewLinea(el, linea) {
         return;
       }
       openModalCarga(linea, catalogo);
+    });
+
+    el.querySelector('#btn-carga-vacia')?.addEventListener('click', () => {
+      const pa = state.paroActivo[linea];
+      if (pa && pa.tipo !== 'cambio_turno') {
+        showCierreParoModal(linea, pa, el, () => openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea)));
+        return;
+      }
+      openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea));
     });
     el.querySelector('#btn-nueva-paro')?.addEventListener('click', () => {
       openModalParo(linea, catalogo, () => viewLinea(el, linea));
@@ -1262,6 +1298,26 @@ function openModalCargaBaker(catalogo, onDone) {
       });
     }
 
+    // Validar campos requeridos
+    const erroresBk = [];
+    if (!herrId)                          erroresBk.push('Herramental');
+    if (!procesoId)                       erroresBk.push('Proceso');
+    if (!operadorId)                      erroresBk.push('Operador');
+    if (tipo === 'rack') {
+      const compVal = payload.componente_id || payload.componente;
+      if (!compVal)                       erroresBk.push('Componente');
+      if (!payload.varillas)              erroresBk.push('Varillas (cantidad)');
+    }
+    if (tipo === 'barril' && Array.isArray(payload.cavidades)) {
+      payload.cavidades.forEach((cv, i) => {
+        if (!cv.es_vacia) {
+          if (!cv.componente)             erroresBk.push(`Cavidad ${i+1}: Componente`);
+          if (!cv.cantidad)               erroresBk.push(`Cavidad ${i+1}: Cantidad`);
+        }
+      });
+    }
+    if (erroresBk.length) { alert('Campos requeridos:\n• ' + erroresBk.join('\n• ')); return; }
+
     const btn = document.getElementById('bk-save');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
@@ -1740,11 +1796,6 @@ async function openModalCarga(linea, catalogo) {
         <label>Componente</label>
         <select id="mc-componente"><option value="">— Seleccionar —</option>${htmlComp}</select>
       </div>
-      <div class="form-group full" id="mc-vacia-wrap" style="display:none">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="mc-carga-vacia" /> Carga vacía (sin componente)
-        </label>
-      </div>
       <div class="form-group">
         <label>Cliente</label>
         <input type="text" id="mc-cliente" placeholder="Auto-llena del componente" readonly />
@@ -1780,9 +1831,6 @@ async function openModalCarga(linea, catalogo) {
       <button class="btn btn-primary" id="mc-submit">⬆ Cargar Material</button>
     </div>`, { size: 'lg' });
 
-  // Carga vacía siempre disponible
-  document.getElementById('mc-vacia-wrap').style.display = '';
-
   // Auto-fill cliente y hints desde componente
   document.getElementById('mc-componente').addEventListener('change', function() {
     const opt = this.options[this.selectedIndex];
@@ -1806,11 +1854,10 @@ async function openModalCarga(linea, catalogo) {
   document.getElementById('mc-pzs-varilla').addEventListener('input', calcCantidad);
 
   document.getElementById('mc-submit').addEventListener('click', async () => {
-    const vacia    = document.getElementById('mc-carga-vacia')?.checked || false;
     const payload  = {
       herramental_id:    document.getElementById('mc-herramental').value,
-      componente_id:     vacia ? null : document.getElementById('mc-componente').value || null,
-      es_vacia:          vacia,
+      componente_id:     document.getElementById('mc-componente').value || null,
+      es_vacia:          false,
       cliente:           document.getElementById('mc-cliente').value.trim(),
       proceso_id:        document.getElementById('mc-proceso').value || null,
       acabado_id:        document.getElementById('mc-acabado').value || null,
@@ -1819,7 +1866,16 @@ async function openModalCarga(linea, catalogo) {
       cantidad:          parseInt(document.getElementById('mc-cantidad').textContent) || null,
       operador_id:       document.getElementById('mc-operador').value || null
     };
-    if (!payload.herramental_id) { alert('Selecciona un herramental'); return; }
+    // Validar todos los campos requeridos
+    const errores = [];
+    if (!payload.herramental_id)    errores.push('Herramental');
+    if (!payload.componente_id)     errores.push('Componente');
+    if (!payload.proceso_id)        errores.push('Proceso');
+    if (!payload.acabado_id)        errores.push('Acabado');
+    if (!payload.varillas)          errores.push('Varillas');
+    if (!payload.piezas_por_varilla) errores.push('Piezas por varilla');
+    if (!payload.operador_id)       errores.push('Operador');
+    if (errores.length) { alert('Campos requeridos:\n• ' + errores.join('\n• ')); return; }
     const btn = document.getElementById('mc-submit');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
@@ -1830,6 +1886,89 @@ async function openModalCarga(linea, catalogo) {
       if (elContent) viewLinea(elContent, linea);
     } catch (e) {
       btn.disabled = false; btn.textContent = '⬆ Cargar Material';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
+// ── Modal: Carga vacía (sin material) ─────────────────────────────────────────
+async function openModalCargaVacia(linea, catalogo, onDone) {
+  const herramentales = catalogo.herramentales || [];
+  const operadores    = catalogo.operadores    || [];
+  const myOp = operadores.find(o =>
+    (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+    (o.compras_user_id && o.compras_user_id === state.user?.id)
+  );
+  const htmlHerr = herramentales.map(h => `<option value="${h.id}">${escHtml(h.numero)}</option>`).join('');
+  const htmlOper = operadores.map(o => `<option value="${o.id}"${o.id===myOp?.id?' selected':''}>${escHtml(o.nombre)}</option>`).join('');
+
+  showModal(`
+    <h3>📭 Registrar Carga Vacía — Línea ${linea.replace('L','')}</h3>
+    <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:13px">
+      La carga vacía suma al conteo de ciclos (eficiencia) pero reduce la capacidad.
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Herramental <span style="color:#dc2626">*</span></label>
+        <select id="cv-herramental"><option value="">— Seleccionar —</option>${htmlHerr}</select>
+      </div>
+      <div class="form-group">
+        <label>Operador <span style="color:#dc2626">*</span></label>
+        <select id="cv-operador"><option value="">— Seleccionar —</option>${htmlOper}</select>
+      </div>
+      <div class="form-group">
+        <label>Varillas <span style="color:#dc2626">*</span></label>
+        <select id="cv-varillas"><option value="">— Cantidad —</option>${[...Array(14)].map((_,i)=>`<option value="${i+1}">${i+1}</option>`).join('')}</select>
+      </div>
+      <div class="form-group">
+        <label>Piezas por varilla <span style="color:#dc2626">*</span></label>
+        <input type="number" id="cv-pzs-varilla" min="1" placeholder="Para cálculo de capacidad" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="cv-submit">📭 Registrar Carga Vacía</button>
+    </div>`, { size: 'md' });
+
+  // Pre-llenar varillas/pzs desde la última carga con el mismo herramental
+  document.getElementById('cv-herramental').addEventListener('change', async function() {
+    const herrId = this.value;
+    if (!herrId) return;
+    try {
+      const { fecha_ini, fecha_fin } = getShiftDates();
+      const cargas = await GET(`/cargas/${linea}?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`);
+      const ultima = [...(Array.isArray(cargas) ? cargas : [])].reverse()
+        .find(c => String(c.herramental_id) === String(herrId) && !c.es_vacia);
+      if (ultima) {
+        if (ultima.varillas) document.getElementById('cv-varillas').value = ultima.varillas;
+        if (ultima.piezas_por_varilla) document.getElementById('cv-pzs-varilla').value = ultima.piezas_por_varilla;
+      }
+    } catch (_) {}
+  });
+
+  document.getElementById('cv-submit').addEventListener('click', async () => {
+    const herramental_id    = document.getElementById('cv-herramental').value;
+    const operador_id       = document.getElementById('cv-operador').value;
+    const varillas          = parseInt(document.getElementById('cv-varillas').value) || null;
+    const piezas_por_varilla = parseInt(document.getElementById('cv-pzs-varilla').value) || null;
+    const errores = [];
+    if (!herramental_id)    errores.push('Herramental');
+    if (!operador_id)       errores.push('Operador');
+    if (!varillas)          errores.push('Varillas');
+    if (!piezas_por_varilla) errores.push('Piezas por varilla');
+    if (errores.length) { alert('Campos requeridos:\n• ' + errores.join('\n• ')); return; }
+    const btn = document.getElementById('cv-submit');
+    btn.disabled = true; btn.textContent = 'Registrando...';
+    try {
+      await POST(`/cargas/${linea}`, {
+        herramental_id, operador_id, varillas, piezas_por_varilla,
+        es_vacia: true, componente_id: null, componente: null,
+        proceso_id: null, acabado_id: null, cantidad: 0, cliente: ''
+      });
+      closeModal();
+      if (onDone) onDone();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '📭 Registrar Carga Vacía';
       alert('Error: ' + e.message);
     }
   });
@@ -1976,18 +2115,18 @@ function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
     <h3>⚠️ Paro detectado — Línea ${linea.replace('L', '')}</h3>
     <div class="alert alert-warn" style="margin-bottom:16px">
       Se detectó inactividad desde las <b>${escHtml(horaInicio)}</b>.<br>
-      Por favor indica el motivo del paro para continuar.
+      <strong>Debes registrar el motivo del paro para continuar.</strong>
     </div>
     <div class="form-grid">
       <div class="form-group full">
-        <label>Motivo de paro</label>
+        <label>Motivo de paro <span style="color:#dc2626">*</span></label>
         <select id="mpa-motivo">
           <option value="">— Seleccionar motivo —</option>
           ${htmlMotivos}
         </select>
       </div>
       <div class="form-group full">
-        <label>Sub-motivo</label>
+        <label>Sub-motivo <span style="color:#9ca3af;font-size:11px">(opcional)</span></label>
         <select id="mpa-submotivo" disabled>
           <option value="">— Primero selecciona motivo —</option>
         </select>
@@ -1995,7 +2134,7 @@ function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="mpa-submit">⏸ Registrar Paro</button>
-    </div>`, { size: 'sm' });
+    </div>`, { size: 'sm', noClose: true });
 
   document.getElementById('mpa-motivo').addEventListener('change', function() {
     const subSel = document.getElementById('mpa-submotivo');

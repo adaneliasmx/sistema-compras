@@ -1052,6 +1052,10 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
         ? (Number(comp.carga_optima_varillas || 0) * Number(comp.piezas_objetivo || 0))
         : 0;
     }
+    // Cargas vacías: cuentan en el objetivo pero aportan 0 piezas reales → reducen capacidad
+    for (const c of cargasEnSlot.filter(c => c.es_vacia && c.varillas && c.piezas_por_varilla)) {
+      piezas_obj_total += Number(c.varillas) * Number(c.piezas_por_varilla);
+    }
 
     // Disponibilidad: tiempo disponible descontando paros
     let paros_min = 0;
@@ -2054,6 +2058,89 @@ router.get('/export/:linea', produccionAllowRoles('admin'), (req, res) => {
   }));
 
   res.json({ linea, total: rows.length, rows });
+});
+
+// ─── Paro "Antes de tiempo" ────────────────────────────────────────────────────
+// Se registra cuando el operador no justificó la inactividad antes del cambio de turno.
+// Crea automáticamente el motivo "Paro antes de tiempo" en el catálogo si no existe.
+function ensureMotivoParo(pdb, motivoKey, nombre) {
+  if (!pdb[motivoKey]) pdb[motivoKey] = [];
+  let m = pdb[motivoKey].find(x => x.nombre === nombre);
+  if (!m) {
+    m = { id: pdb[motivoKey].length > 0 ? Math.max(...pdb[motivoKey].map(x => x.id)) + 1 : 1,
+          nombre, activo: true, created_at: new Date().toISOString() };
+    pdb[motivoKey].push(m);
+  }
+  return m;
+}
+
+router.post('/paros/:linea/antes-de-tiempo', produccionAllowRoles('produccion'), (req, res) => {
+  const { linea } = req.params;
+  const { hora_inicio, fecha_inicio, hora_fin } = req.body || {};
+  if (!hora_inicio || !fecha_inicio || !hora_fin) return res.status(400).json({ error: 'hora_inicio, fecha_inicio y hora_fin requeridos' });
+
+  const pdb = dbProd.read();
+  const l   = lineaKey(linea);
+  const motivo = ensureMotivoParo(pdb, `motivos_paro_${l}`, 'Paro antes de tiempo');
+
+  const ini = toMins(hora_inicio);
+  const fin = toMins(hora_fin);
+  const duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+  if (duracion_min <= 0) return res.json({ skipped: true, reason: 'duracion_cero' });
+
+  // Idempotente: no duplicar
+  const yaExiste = (pdb.paros || []).find(p =>
+    p.linea === linea && p.tipo === 'antes_de_tiempo' &&
+    p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
+  if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
+
+  const turno = getTurno(hora_inicio);
+  const id    = dbProd.nextId(pdb.paros || []);
+  const paro  = {
+    id, folio: `PAT-${nowDateStr().replace(/-/g,'')}-${id}`, linea,
+    motivo_id: motivo.id, motivo: motivo.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio, hora_inicio, fecha_fin: fecha_inicio, hora_fin,
+    duracion_min, turno, tipo: 'antes_de_tiempo',
+    created_at: new Date().toISOString()
+  };
+  if (!pdb.paros) pdb.paros = [];
+  pdb.paros.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+router.post('/baker/paros/antes-de-tiempo', produccionAllowRoles('produccion'), (req, res) => {
+  const { hora_inicio, fecha_inicio, hora_fin } = req.body || {};
+  if (!hora_inicio || !fecha_inicio || !hora_fin) return res.status(400).json({ error: 'hora_inicio, fecha_inicio y hora_fin requeridos' });
+
+  const pdb    = dbProd.read();
+  const motivo = ensureMotivoParo(pdb, 'motivos_paro_baker', 'Paro antes de tiempo');
+
+  const ini = toMins(hora_inicio);
+  const fin = toMins(hora_fin);
+  const duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+  if (duracion_min <= 0) return res.json({ skipped: true, reason: 'duracion_cero' });
+
+  const yaExiste = (pdb.paros_baker || []).find(p =>
+    p.tipo === 'antes_de_tiempo' &&
+    p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
+  if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
+
+  const turno = getTurno(hora_inicio);
+  const id    = dbProd.nextId(pdb.paros_baker || []);
+  const paro  = {
+    id, folio: `BKPAT-${nowDateStr().replace(/-/g,'')}-${id}`,
+    motivo_id: motivo.id, motivo: motivo.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio, hora_inicio, fecha_fin: fecha_inicio, hora_fin,
+    duracion_min, turno, tipo: 'antes_de_tiempo',
+    created_at: new Date().toISOString()
+  };
+  if (!pdb.paros_baker) pdb.paros_baker = [];
+  pdb.paros_baker.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
 });
 
 // ─── Migración T3: agregar fecha_turno a todos los registros ─────────────────
