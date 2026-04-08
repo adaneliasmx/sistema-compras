@@ -398,8 +398,10 @@ router.get('/cargas/:linea', (req, res) => {
   const pdb = dbProd.read();
   let cargas = (pdb.cargas || []).filter(c => c.linea === linea);
 
-  if (fecha_ini) cargas = cargas.filter(c => c.fecha_carga >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => c.fecha_carga <= fecha_fin);
+  // Usar fecha_turno si existe (fecha del turno), sino fecha_carga (retrocompat)
+  const ft = c => c.fecha_turno || c.fecha_carga;
+  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
   if (turno) cargas = cargas.filter(c => c.turno === turno);
   if (estado) cargas = cargas.filter(c => c.estado === estado);
   if (operador) cargas = cargas.filter(c => String(c.operador_id) === String(operador));
@@ -460,10 +462,11 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
   }
 
   const now = new Date();
-  const hora_carga = nowTimeStr();
-  const fecha_carga = getShiftDate(nowDateStr(), hora_carga);
+  const hora_carga  = nowTimeStr();
+  const fecha_carga = nowDateStr();                          // fecha real del calendario
+  const fecha_turno = getShiftDate(fecha_carga, hora_carga); // fecha del turno (T3 nocturno → día anterior)
   const turno = getTurno(hora_carga);
-  const semana = getISOWeek(new Date(fecha_carga + 'T12:00:00'));
+  const semana = getISOWeek(new Date(fecha_turno + 'T12:00:00'));
   const cantidad = es_vacia ? 0 : Number(varillas) * Number(piezas_por_varilla);
 
   const id = dbProd.nextId(pdb.cargas || []);
@@ -490,6 +493,7 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
     operador_id: Number(operador_id),
     operador: operador.nombre,
     fecha_carga,
+    fecha_turno,
     hora_carga,
     semana,
     fecha_descarga: null,
@@ -572,10 +576,11 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   }
 
   const now = new Date();
-  const hora_carga = nowTimeStr();
-  const fecha_carga = getShiftDate(nowDateStr(), hora_carga);
+  const hora_carga  = nowTimeStr();
+  const fecha_carga = nowDateStr();
+  const fecha_turno = getShiftDate(fecha_carga, hora_carga);
   const turno = getTurno(hora_carga);
-  const semana = getISOWeek(new Date(fecha_carga + 'T12:00:00'));
+  const semana = getISOWeek(new Date(fecha_turno + 'T12:00:00'));
 
   const newId = dbProd.nextId(pdb.cargas);
   const prefix = linea.toUpperCase();
@@ -601,6 +606,7 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
     operador_id: original.operador_id,
     operador: original.operador,
     fecha_carga,
+    fecha_turno,
     hora_carga,
     semana,
     fecha_descarga: null,
@@ -1238,8 +1244,9 @@ router.get('/reportes', (req, res) => {
     cargas = (pdb.cargas || []).filter(c => c.linea === linea);
   }
 
-  if (desde) cargas = cargas.filter(c => c.fecha_carga >= desde);
-  if (hasta) cargas = cargas.filter(c => c.fecha_carga <= hasta);
+  const ftR = c => c.fecha_turno || c.fecha_carga;
+  if (desde) cargas = cargas.filter(c => ftR(c) >= desde);
+  if (hasta) cargas = cargas.filter(c => ftR(c) <= hasta);
 
   cargas = cargas.sort((a, b) => {
     const ta = `${a.fecha_carga}T${a.hora_carga || '00:00'}`;
@@ -1625,8 +1632,9 @@ router.get('/baker/cargas', (req, res) => {
   const { fecha_ini, fecha_fin, turno, estado } = req.query;
   const pdb = dbProd.read();
   let cargas = pdb.cargas_baker || [];
-  if (fecha_ini) cargas = cargas.filter(c => c.fecha_carga >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => c.fecha_carga <= fecha_fin);
+  const ft = c => c.fecha_turno || c.fecha_carga;
+  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
   if (turno)  cargas = cargas.filter(c => c.turno === turno);
   if (estado) cargas = cargas.filter(c => c.estado === estado);
   cargas = cargas.sort((a, b) => {
@@ -1674,11 +1682,12 @@ router.post('/baker/cargas', (req, res) => {
   const subProceso = (pdb.sub_procesos_baker  || []).find(s => String(s.id) === String(sub_proceso_id));
   const operador   = (pdb.operadores_baker    || []).find(o => String(o.id) === String(operador_id));
 
-  const now  = new Date().toISOString();
-  const hora  = nowTimeStr();
-  const fecha = getShiftDate(nowDateStr(), hora);
-  const turno = getTurno(hora);
-  const semana = getISOWeek(new Date(fecha + 'T12:00:00'));
+  const now        = new Date().toISOString();
+  const hora       = nowTimeStr();
+  const fecha      = nowDateStr();                     // fecha real del calendario
+  const fecha_turno_b = getShiftDate(fecha, hora);    // fecha del turno
+  const turno      = getTurno(hora);
+  const semana     = getISOWeek(new Date(fecha_turno_b + 'T12:00:00'));
   const folio = nextFolio('BKR', pdb.cargas_baker, 'folio');
 
   let carga = {
@@ -1693,7 +1702,7 @@ router.post('/baker/cargas', (req, res) => {
     sub_proceso:    subProceso?.nombre || body.sub_proceso || null,
     operador_id:    operador?.id    || null,
     operador:       operador?.nombre || body.operador || null,
-    fecha_carga: fecha, hora_carga: hora, semana, turno,
+    fecha_carga: fecha, fecha_turno: fecha_turno_b, hora_carga: hora, semana, turno,
     fecha_descarga: null, hora_descarga: null,
     estado: 'activo',
     es_reproceso: body.es_reproceso || false,
@@ -1886,7 +1895,7 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
     id: dbProd.nextId(pdb.cargas_baker),
     folio,
     estado: 'activo',
-    fecha_carga: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
+    fecha_carga: nowDateStr(), fecha_turno: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
     turno: getTurno(nowTimeStr()),
     fecha_descarga: null, hora_descarga: null,
     defecto_id: null, defecto: null,
@@ -2045,53 +2054,54 @@ router.get('/export/:linea', produccionAllowRoles('admin'), (req, res) => {
   res.json({ linea, total: rows.length, rows });
 });
 
-// ─── Migración T3: corregir fecha_carga de ciclos cargados entre 00:00–06:29 ──
-// Usa created_at para derivar la fecha real del calendario y aplica getShiftDate()
-// Idempotente: si fecha_carga ya es correcta, no hace nada.
+// ─── Migración T3: agregar fecha_turno a todos los registros ─────────────────
+// Idempotente: sólo agrega/corrige fecha_turno; nunca modifica fecha_carga.
+// Usa created_at para recuperar la fecha real del calendario (por si fecha_carga
+// fue modificada por el fix anterior), luego calcula fecha_turno = getShiftDate(real, hora).
 router.post('/admin/migrate-t3-dates', produccionAllowRoles('admin'), (req, res) => {
-  const pdb = dbProd.read();
+  const pdb    = dbProd.read();
   const dryRun = req.query.dry !== 'false'; // dry run por defecto
 
+  // YYYY-MM-DD en hora México a partir de un timestamp ISO
   function isoDateMx(isoStr) {
-    // Extrae YYYY-MM-DD de una timestamp en hora de México
     return new Date(isoStr).toLocaleDateString('en-CA', { timeZone: MX_TZ });
-  }
-
-  function fixedSemana(fechaCarga) {
-    return getISOWeek(new Date(fechaCarga + 'T12:00:00'));
   }
 
   const changes = [];
 
-  // Corregir cargas L3/L4
-  for (const c of (pdb.cargas || [])) {
-    if (!c.hora_carga || !c.created_at) continue;
-    const actualDate   = isoDateMx(c.created_at);
-    const correctFecha = getShiftDate(actualDate, c.hora_carga);
-    if (c.fecha_carga !== correctFecha) {
-      changes.push({ tabla: 'cargas', id: c.id, folio: c.folio, linea: c.linea,
-        hora_carga: c.hora_carga, fecha_antes: c.fecha_carga, fecha_despues: correctFecha });
-      if (!dryRun) {
-        c.fecha_carga = correctFecha;
-        c.semana      = fixedSemana(correctFecha);
+  function procesaColeccion(lista, tabla) {
+    for (const c of (lista || [])) {
+      if (!c.hora_carga) continue;
+
+      // Fecha real del calendario: preferimos created_at sobre fecha_carga
+      // (por si fecha_carga fue cambiada erróneamente en un fix anterior)
+      const realDate    = c.created_at ? isoDateMx(c.created_at) : c.fecha_carga;
+      const correctFT   = getShiftDate(realDate, c.hora_carga);
+      const correctFC   = realDate; // fecha_carga debe ser la fecha real siempre
+      const correctSem  = getISOWeek(new Date(correctFT + 'T12:00:00'));
+
+      const needsFT  = c.fecha_turno !== correctFT;
+      const needsFC  = c.fecha_carga !== correctFC;  // restaurar si fue cambiada
+      const needsSem = needsFT && c.semana !== correctSem;
+
+      if (needsFT || needsFC) {
+        changes.push({
+          tabla, id: c.id, folio: c.folio || c.id,
+          hora_carga: c.hora_carga,
+          fecha_carga_antes: c.fecha_carga,  fecha_carga_despues: correctFC,
+          fecha_turno_antes: c.fecha_turno,  fecha_turno_despues: correctFT
+        });
+        if (!dryRun) {
+          if (needsFC)  c.fecha_carga = correctFC;
+          if (needsFT)  c.fecha_turno = correctFT;
+          if (needsSem) c.semana      = correctSem;
+        }
       }
     }
   }
 
-  // Corregir cargas Baker
-  for (const c of (pdb.cargas_baker || [])) {
-    if (!c.hora_carga || !c.created_at) continue;
-    const actualDate   = isoDateMx(c.created_at);
-    const correctFecha = getShiftDate(actualDate, c.hora_carga);
-    if (c.fecha_carga !== correctFecha) {
-      changes.push({ tabla: 'cargas_baker', id: c.id, folio: c.folio,
-        hora_carga: c.hora_carga, fecha_antes: c.fecha_carga, fecha_despues: correctFecha });
-      if (!dryRun) {
-        c.fecha_carga = correctFecha;
-        c.semana      = fixedSemana(correctFecha);
-      }
-    }
-  }
+  procesaColeccion(pdb.cargas,       'cargas');
+  procesaColeccion(pdb.cargas_baker, 'cargas_baker');
 
   if (!dryRun && changes.length > 0) dbProd.write(pdb);
 
