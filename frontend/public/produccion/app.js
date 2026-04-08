@@ -292,6 +292,23 @@ function getCurrentTurno() {
   return 'T3';
 }
 
+// Horas por turno (para calcular objetivo = ciclos/h × horas_turno)
+const HORAS_TURNO = { T1: 8, T2: 7, T3: 9 };
+
+// Rango de fechas correcto para el turno actual.
+// T3 (21:30–06:30+1): antes de las 06:30 el turno inició ayer → fecha_ini = ayer
+function getShiftDates() {
+  const now  = new Date();
+  const mins = now.getHours() * 60 + now.getMinutes();
+  const today = now.toISOString().slice(0, 10);
+  if (mins < 6 * 60 + 30) {
+    // Aún en T3 que arrancó ayer
+    const yesterday = new Date(now.getTime() - 86400000);
+    return { fecha_ini: yesterday.toISOString().slice(0, 10), fecha_fin: today };
+  }
+  return { fecha_ini: today, fecha_fin: today };
+}
+
 // Retorna { turno, fecha } del turno inmediatamente anterior al actual
 function getPrevTurnoInfo() {
   const now = new Date();
@@ -645,19 +662,23 @@ async function viewLinea(el, linea) {
 
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando tarjetas...</p></div>';
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
 
-    const [cargasData, catalogData, parosData, todasHoyData] = await Promise.all([
+    const [cargasData, catalogData, parosData, todasHoyData, cfgData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
       GET(`/catalogos/${linea}`),
       GET(`/paros/${linea}/activo`).catch(() => null),
-      GET(`/cargas/${linea}?fecha_ini=${today}&fecha_fin=${today}`).catch(() => [])
+      GET(`/cargas/${linea}?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET('/config').catch(() => ({}))
     ]);
 
-    // Contar ciclos del turno vigente
+    // Contar ciclos del turno vigente (incluye T3 con cargas cargadas ayer antes de medianoche)
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
+    const cfg = (cfgData?.config || cfgData) ?? {};
+    const ciclosObjHora = cfg[`ciclos_objetivo_${linea.toLowerCase()}`] ?? 2;
+    const objetivoTurno = Math.round(ciclosObjHora * (HORAS_TURNO[turnoActual] ?? 8));
     const cargas    = Array.isArray(cargasData) ? cargasData : (cargasData?.cargas || []);
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
@@ -728,7 +749,7 @@ async function viewLinea(el, linea) {
         <h3>Línea ${linea.replace('L','')} — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activas</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
-            🔄 Ciclos ${turnoActual}: <span style="color:#38bdf8;font-size:16px">${ciclosTurno}</span>
+            🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
           </div>
           ${paroMiniCard}
           <div class="tarjetero-actions">
@@ -801,14 +822,14 @@ async function viewBaker(el) {
 
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Baker...</p></div>';
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
 
     const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
       GET('/baker/cargas/activas'),
       GET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
-      GET(`/baker/cargas?fecha_ini=${today}&fecha_fin=${today}`).catch(() => []),
+      GET(`/baker/cargas?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({}))
     ]);
 
@@ -816,8 +837,12 @@ async function viewBaker(el) {
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
-    const planesUrl = (cfgData?.config || cfgData)?.planes_control_baker_url || '';
+    const cfg = (cfgData?.config || cfgData) ?? {};
+    const planesUrl = cfg.planes_control_baker_url || '';
+    // Ciclos del turno: un registro en cargas_baker = un ciclo (barril o rack), no cavidades
     const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
+    const ciclosObjBaker = cfg.ciclos_objetivo_baker ?? 2;
+    const objetivoTurno = Math.round(ciclosObjBaker * (HORAS_TURNO[turnoActual] ?? 8));
 
     // Check turno anterior sin actividad (idempotente)
     try {
@@ -852,7 +877,7 @@ async function viewBaker(el) {
         <h3>Baker — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activos</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
-            🔄 Ciclos ${turnoActual}: <span style="color:#38bdf8;font-size:16px">${ciclosTurno}</span>
+            🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
           </div>
           ${capacidadBar}
           ${paroMiniCard}

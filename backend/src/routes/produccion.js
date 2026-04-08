@@ -1252,7 +1252,7 @@ router.get('/reportes', (req, res) => {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-router.get('/config', produccionAllowRoles('admin'), (req, res) => {
+router.get('/config', produccionAllowRoles('produccion'), (req, res) => {
   const pdb = dbProd.read();
   res.json(pdb.config || { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 });
 });
