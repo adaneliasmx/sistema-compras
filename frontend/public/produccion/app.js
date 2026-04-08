@@ -295,6 +295,16 @@ function getCurrentTurno() {
 // Horas por turno (para calcular objetivo = ciclos/h × horas_turno)
 const HORAS_TURNO = { T1: 8, T2: 7, T3: 9 };
 
+// Devuelve el turno correspondiente a una hora tipo "HH:MM"
+function getTurnoDeHora(hora) {
+  if (!hora) return null;
+  const parts = String(hora).split(':');
+  const mins  = Number(parts[0]) * 60 + Number(parts[1] || 0);
+  if (mins >= 6 * 60 + 30 && mins < 14 * 60 + 30) return 'T1';
+  if (mins >= 14 * 60 + 30 && mins < 21 * 60 + 30) return 'T2';
+  return 'T3';
+}
+
 // Rango de fechas correcto para el turno actual.
 // T3 (21:30–06:30+1): antes de las 06:30 el turno inició ayer → fecha_ini = ayer
 function getShiftDates() {
@@ -673,9 +683,12 @@ async function viewLinea(el, linea) {
       GET('/config').catch(() => ({}))
     ]);
 
-    // Contar ciclos del turno vigente (incluye T3 con cargas cargadas ayer antes de medianoche)
+    // Contar ciclos DESCARGADOS en el turno vigente.
+    // Para L3/L4 el campo turno refleja la carga (no la descarga), por eso usamos hora_descarga.
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
-    const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
+    const ciclosTurno = todasHoy.filter(c =>
+      c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual
+    ).length;
     const cfg = (cfgData?.config || cfgData) ?? {};
     const ciclosObjHora = cfg[`ciclos_objetivo_${linea.toLowerCase()}`] ?? 2;
     const objetivoTurno = Math.round(ciclosObjHora * (HORAS_TURNO[turnoActual] ?? 8));
@@ -839,8 +852,10 @@ async function viewBaker(el) {
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
-    // Ciclos del turno: un registro en cargas_baker = un ciclo (barril o rack), no cavidades
-    const ciclosTurno = todasHoy.filter(c => c.turno === turnoActual).length;
+    // Ciclos DESCARGADOS del turno.
+    // Baker sobreescribe el campo turno al descargar, por lo que turno = turno de descarga.
+    // Un registro en cargas_baker = un ciclo (barril o rack), no cavidades individuales.
+    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && c.turno === turnoActual).length;
     const ciclosObjBaker = cfg.ciclos_objetivo_baker ?? 2;
     const objetivoTurno = Math.round(ciclosObjBaker * (HORAS_TURNO[turnoActual] ?? 8));
 
