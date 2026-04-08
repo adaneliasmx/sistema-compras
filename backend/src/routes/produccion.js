@@ -796,9 +796,10 @@ router.post('/paros/:linea/auto-sin-actividad', produccionAllowRoles('produccion
   const pdb = dbProd.read();
 
   // Verificar que no hay cargas en ese turno/fecha/línea
+  // Usa fecha_turno (campo canónico para T3) con fallback a fecha_carga para registros anteriores
   const cargasEnTurno = (pdb.cargas || []).filter(c =>
     c.linea === linea && c.turno === turno &&
-    (c.fecha_carga === fecha || c.fecha_descarga === fecha)
+    ((c.fecha_turno || c.fecha_carga) === fecha)
   );
   if (cargasEnTurno.length > 0) return res.json({ skipped: true, reason: 'hay_cargas' });
 
@@ -942,14 +943,24 @@ router.patch('/paros/:id/admin-editar', produccionAllowRoles('admin'), (req, res
   res.json(pdb.paros[idx]);
 });
 
-// Admin: eliminar paro
+// Admin: eliminar paro (L3/L4 en pdb.paros, Baker en pdb.paros_baker)
 router.delete('/paros/:id', produccionAllowRoles('admin'), (req, res) => {
   const { id } = req.params;
   const pdb = dbProd.read();
-  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
+
+  // Buscar en paros regulares (L3/L4)
+  let idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
+  if (idx !== -1) {
+    const [eliminado] = pdb.paros.splice(idx, 1);
+    dbProd.write(pdb);
+    return res.json({ ok: true, eliminado });
+  }
+
+  // Buscar en paros Baker
+  idx = (pdb.paros_baker || []).findIndex(p => String(p.id) === String(id));
   if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
 
-  const [eliminado] = pdb.paros.splice(idx, 1);
+  const [eliminado] = pdb.paros_baker.splice(idx, 1);
   dbProd.write(pdb);
   res.json({ ok: true, eliminado });
 });
@@ -1996,7 +2007,10 @@ router.post('/baker/paros/auto-sin-actividad', (req, res) => {
   if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
 
   const pdb = dbProd.read();
-  const cargas = (pdb.cargas_baker || []).filter(c => c.fecha_carga === fecha && c.turno === turno);
+  // Usa fecha_turno (campo canónico para T3) con fallback a fecha_carga para registros anteriores
+  const cargas = (pdb.cargas_baker || []).filter(c =>
+    ((c.fecha_turno || c.fecha_carga) === fecha) && c.turno === turno
+  );
   if (cargas.length > 0) return res.json({ skipped: true, reason: 'Hay cargas en el turno' });
 
   const paros = (pdb.paros_baker || []).filter(p => p.fecha_inicio === fecha && p.turno === turno);
