@@ -11,13 +11,29 @@ function generarValePDF(v) {
   const usableW = pgW - mL - mR;
   let y = mT;
 
-  // ── Logo (si está disponible) ──────────────────────────────────────────────
-  // Se omite logo ya que no está disponible en servidor; se puede agregar después
+  const correcciones = v.correcciones || [];
+  const tieneCorrecciones = correcciones.length > 0;
 
   // ── Título ────────────────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(13);
   doc.text('VALE DE ADICIÓN DE PRODUCTO QUÍMICO', mL, y);
+
+  // ── Sello VALE CON CORRECCIÓN (esquina superior derecha) ──────────────────
+  if (tieneCorrecciones) {
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(180, 0, 0);
+    doc.setDrawColor(180, 0, 0);
+    doc.setLineWidth(0.6);
+    const sellW = 58, sellH = 9;
+    const sellX = pgW - mR - sellW;
+    doc.rect(sellX, mT - 6, sellW, sellH);
+    doc.text(`VALE CON CORRECCIÓN (${correcciones.length})`, sellX + sellW / 2, mT - 0.5, { align: 'center' });
+    doc.setTextColor(0, 0, 0);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.2);
+  }
   y += 7;
 
   // ── Folio ─────────────────────────────────────────────────────────────────
@@ -106,6 +122,47 @@ function generarValePDF(v) {
     doc.setFont('helvetica', 'normal');
     doc.text('____________________', x, y + 8, { align: 'center' });
   });
+  y += 22;
+
+  // ── Correcciones aplicadas ─────────────────────────────────────────────────
+  if (tieneCorrecciones) {
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(180, 0, 0);
+    doc.text('CORRECCIONES APLICADAS', mL, y);
+    doc.setTextColor(0, 0, 0);
+    y += 2;
+
+    doc.autoTable({
+      startY: y,
+      margin: { left: mL, right: mR },
+      head: [['Folio corrección', 'Tipo', 'Item', 'Cantidad', 'kg', 'Realizada por', 'Fecha', 'Comentario']],
+      body: correcciones.map(c => [
+        c.folio_correccion || '—',
+        c.tipo || '—',
+        c.item || '—',
+        `${c.cantidad ?? '—'} ${c.unidad || ''}`.trim(),
+        (c.kg || 0).toFixed(3),
+        c.usuario || '—',
+        c.created_at ? String(c.created_at).substring(0, 16).replace('T', ' ') : '—',
+        c.comentario || '—'
+      ]),
+      columnStyles: {
+        0: { cellWidth: 30 },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 45 },
+        3: { cellWidth: 20, halign: 'right' },
+        4: { cellWidth: 15, halign: 'right' },
+        5: { cellWidth: 25 },
+        6: { cellWidth: 22 },
+        7: { cellWidth: 'auto' }
+      },
+      headStyles: { fillColor: [220, 180, 180], textColor: 0, fontStyle: 'bold', fontSize: 8 },
+      bodyStyles: { fontSize: 7.5, font: 'helvetica' },
+      alternateRowStyles: { fillColor: [255, 248, 248] },
+      styles: { cellPadding: 1.5, valign: 'top' },
+    });
+  }
 
   // ── Footer ────────────────────────────────────────────────────────────────
   const pgH = 279.4;
@@ -909,8 +966,9 @@ window.verVale = async function(folio) {
     window._valeActual = v;
     const kgT = (v.detalle || []).reduce((s, d) => s + (d.kg_equivalentes || 0), 0);
     const isAdmin = state.user?.vales_role === 'admin';
+    const numCorr = (v.correcciones || []).length;
     showModal(`
-      <h3>📋 ${v.folio_vale}</h3>
+      <h3>📋 ${v.folio_vale}${numCorr > 0 ? ` <span style="background:#fee2e2;color:#b91c1c;font-size:11px;font-weight:700;padding:2px 8px;border-radius:4px;border:1px solid #fca5a5;vertical-align:middle">CORREGIDO (${numCorr})</span>` : ''}</h3>
       <div class="vale-meta">
         <span><strong>Fecha:</strong> ${v.fecha}</span>
         <span><strong>Hora:</strong> ${v.hora||'-'}</span>
@@ -932,12 +990,20 @@ window.verVale = async function(folio) {
         </tbody>
       </table>
       ${(v.correcciones||[]).length > 0 ? `
-        <h4 style="margin:16px 0 8px;font-size:13px;font-weight:700">Correcciones (${v.correcciones.length})</h4>
+        <h4 style="margin:16px 0 8px;font-size:13px;font-weight:700;color:#b91c1c">Correcciones aplicadas (${v.correcciones.length})</h4>
         <table class="detail-table">
-          <thead><tr><th>Folio corr.</th><th>Tipo</th><th>Item</th><th>kg</th><th>Comentario</th></tr></thead>
+          <thead><tr><th>Folio corrección</th><th>Tipo</th><th>Item</th><th>Cantidad</th><th>kg</th><th>Realizada por</th><th>Fecha</th><th>Comentario</th></tr></thead>
           <tbody>${v.correcciones.map(c => `
-            <tr><td class="mono">${c.folio_correccion}</td><td>${c.tipo}</td><td>${c.item}</td>
-            <td>${(c.kg||0).toFixed(3)}</td><td>${c.comentario||'-'}</td></tr>`).join('')}
+            <tr style="background:#fff5f5">
+              <td class="mono">${c.folio_correccion}</td>
+              <td><span style="background:#fee2e2;color:#b91c1c;padding:1px 6px;border-radius:3px;font-size:11px;font-weight:600">${c.tipo}</span></td>
+              <td>${c.item}</td>
+              <td>${c.cantidad ?? '-'} ${c.unidad||''}</td>
+              <td>${(c.kg||0).toFixed(3)}</td>
+              <td>${c.usuario||'-'}</td>
+              <td style="white-space:nowrap">${c.created_at ? String(c.created_at).substring(0,16).replace('T',' ') : '-'}</td>
+              <td>${c.comentario||'-'}</td>
+            </tr>`).join('')}
           </tbody>
         </table>` : ''}
       <div class="modal-actions">
