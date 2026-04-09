@@ -47,6 +47,7 @@ const MENU = {
     ['paros',          '⏸', 'Paros'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
     ['kpi-historico',  '📊', 'KPI Histórico'],
+    ['resumen-turno',  '📑', 'Resumen de Turno'],
     ['monitor',        '📡', 'Monitor en vivo'],
     ['---', '', 'Catálogos'],
     ['catalogos-l3',   '📦', 'Catálogos L3'],
@@ -56,14 +57,16 @@ const MENU = {
     ['configuracion',  '⚙️', 'Configuración']
   ],
   produccion: [
-    ['dashboard',    '📊', 'Dashboard'],
-    ['linea-3',      '🏭', 'Línea 3'],
-    ['linea-4',      '🏭', 'Línea 4'],
-    ['linea-baker',  '🔧', 'Baker'],
-    ['pizarron',     '📋', 'Pizarrón KPI']
+    ['dashboard',      '📊', 'Dashboard'],
+    ['linea-3',        '🏭', 'Línea 3'],
+    ['linea-4',        '🏭', 'Línea 4'],
+    ['linea-baker',    '🔧', 'Baker'],
+    ['pizarron',       '📋', 'Pizarrón KPI'],
+    ['resumen-turno',  '📑', 'Resumen de Turno']
   ],
   pizarron: [
-    ['pizarron',   '📋', 'Pizarrón KPI']
+    ['pizarron',       '📋', 'Pizarrón KPI'],
+    ['resumen-turno',  '📑', 'Resumen de Turno']
   ]
 };
 
@@ -77,6 +80,7 @@ const SECTION_TITLES = {
   'paros':           'Registro de Paros',
   'pizarron':        'Pizarrón KPI',
   'kpi-historico':   'KPI Histórico',
+  'resumen-turno':   'Resumen de Turno',
   'monitor':         'Monitor en vivo — L3, L4 y Baker',
   'catalogos-l3':    'Catálogos Línea 3',
   'catalogos-l4':    'Catálogos Línea 4',
@@ -571,6 +575,7 @@ async function renderMain() {
       case 'paros':          await viewParos(el);             break;
       case 'pizarron':       await viewPizarron(el);          break;
       case 'kpi-historico':  await viewKpiHistorico(el);      break;
+      case 'resumen-turno':  await viewResumenTurno(el);      break;
       case 'monitor':        await viewMonitor(el);           break;
       case 'catalogos-l3':   await viewCatalogos(el, 'L3');   break;
       case 'catalogos-l4':   await viewCatalogos(el, 'L4');   break;
@@ -4058,6 +4063,181 @@ function renderKpiHistTable(snaps) {
       </div>`;
   }
   return html;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// RESUMEN DE TURNO
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewResumenTurno(el) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const lunes = (() => {
+    const d = new Date(); const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d.toLocaleDateString('en-CA');
+  })();
+
+  const isAdmin = state.user?.role === 'admin';
+  let activeTab = 'L3';
+  let lastSnaps = [];
+
+  el.innerHTML = `
+    <div class="tab-bar">
+      <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
+      <button class="tab-btn" data-tab="L4">Línea 4</button>
+      <button class="tab-btn" data-tab="Baker">Baker</button>
+    </div>
+    <div class="filters-bar">
+      <div><span class="flabel">Turno</span>
+        <select id="rt-turno">
+          <option value="">Todos</option>
+          <option value="T1">T1</option>
+          <option value="T2">T2</option>
+          <option value="T3">T3</option>
+        </select>
+      </div>
+      <div><span class="flabel">Desde</span><input type="date" id="rt-desde" value="${lunes}"/></div>
+      <div><span class="flabel">Hasta</span><input type="date" id="rt-hasta" value="${today}"/></div>
+      <button class="btn btn-outline btn-sm" id="rt-buscar">🔍 Buscar</button>
+      <button class="btn btn-dark btn-sm" id="rt-export">📥 Excel</button>
+      ${isAdmin ? `<button class="btn btn-primary btn-sm" id="rt-guardar">💾 Guardar Resumen</button>` : ''}
+    </div>
+    <div id="rt-resultado">
+      <div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>
+    </div>`;
+
+  el.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
+      btn.classList.add('tab-active');
+      activeTab = btn.dataset.tab;
+      buscar();
+    });
+  });
+
+  async function buscar() {
+    const params = new URLSearchParams();
+    params.set('linea', activeTab);
+    const turno = document.getElementById('rt-turno').value;
+    const desde = document.getElementById('rt-desde').value;
+    const hasta = document.getElementById('rt-hasta').value;
+    if (turno) params.set('turno', turno);
+    if (desde) params.set('desde', desde);
+    if (hasta) params.set('hasta', hasta);
+    const res = document.getElementById('rt-resultado');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+    try {
+      const data = await GET(`/kpis?${params}`);
+      lastSnaps = data?.snapshots || [];
+      if (!lastSnaps.length) {
+        res.innerHTML = '<div class="empty-state"><div class="icon">📑</div><p>Sin datos para estos filtros.</p></div>';
+        return;
+      }
+      res.innerHTML = renderResumenTurnoTable(lastSnaps, activeTab);
+    } catch (e) {
+      res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  document.getElementById('rt-buscar').addEventListener('click', buscar);
+  buscar();
+
+  document.getElementById('rt-export').addEventListener('click', () => {
+    if (!lastSnaps.length) { alert('Primero ejecuta una búsqueda.'); return; }
+    const rows = lastSnaps.map(s => ({
+      Fecha:                   s.fecha,
+      Turno:                   s.turno,
+      Línea:                   s.linea,
+      Ciclos_Totales:          s.ciclos_totales,
+      Cavidades_Totales:       s.piezas_obj_total,
+      Ciclos_Buenos:           s.ciclos_buenos,
+      Eficiencia_pct:          s.eficiencia  != null ? +(s.eficiencia  * 100).toFixed(1) : '',
+      Capacidad_pct:           s.capacidad   != null ? +(s.capacidad   * 100).toFixed(1) : '',
+      Calidad_pct:             s.calidad     != null ? +(s.calidad     * 100).toFixed(1) : '',
+      Disponibilidad_pct:      s.disponibilidad != null ? +(s.disponibilidad * 100).toFixed(1) : '',
+      Qty_Piezas_Procesadas:   s.piezas_total,
+      Tiempo_Paro_Acum_min:    s.paros_min_total
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, `Resumen_${activeTab}`);
+    XLSX.writeFile(wb, `resumen_turno_${activeTab}_${today}.xlsx`);
+  });
+
+  if (isAdmin) {
+    document.getElementById('rt-guardar').addEventListener('click', async () => {
+      const desde = document.getElementById('rt-desde').value;
+      const hasta = document.getElementById('rt-hasta').value;
+      const turno = document.getElementById('rt-turno').value;
+      const btn   = document.getElementById('rt-guardar');
+      btn.disabled = true; btn.textContent = 'Guardando...';
+      try {
+        // Guardar para la fecha "hasta" (o hoy si no hay filtro) y la línea activa
+        const fecha = hasta || today;
+        const linea = activeTab;
+        const body  = { fecha, linea, turno: turno || 'all' };
+        const r = await POST('/kpis/guardar', body);
+        alert(`✅ Resumen guardado: ${r.guardados} registro(s)`);
+        buscar();
+      } catch (e) {
+        alert(`Error: ${e.message}`);
+      } finally {
+        btn.disabled = false; btn.textContent = '💾 Guardar Resumen';
+      }
+    });
+  }
+}
+
+function renderResumenTurnoTable(snaps, linea) {
+  const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const fmtNum = v => v != null ? v : '—';
+
+  const rows = snaps.map(s => `
+    <tr>
+      <td>${escHtml(s.fecha)}</td>
+      <td style="text-align:center;font-weight:600">${escHtml(s.turno)}</td>
+      <td style="text-align:center">${escHtml(s.linea)}</td>
+      <td style="text-align:center;font-weight:700">${fmtNum(s.ciclos_totales)}</td>
+      <td style="text-align:center">${fmtNum(s.piezas_obj_total)}</td>
+      <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
+      <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${fmtPct(s.eficiencia)}</td>
+      <td class="${kpiColor(s.capacidad  != null ? s.capacidad  * 100 : null)}">${fmtPct(s.capacidad)}</td>
+      <td class="${kpiColor(s.calidad    != null ? s.calidad    * 100 : null)}">${fmtPct(s.calidad)}</td>
+      <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)}">${fmtPct(s.disponibilidad)}</td>
+      <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
+      <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
+    </tr>`).join('');
+
+  return `
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Resumen de Turnos — ${escHtml(linea)}</h3>
+        <span style="font-size:13px;color:var(--p-muted)">${snaps.length} registro(s)</span>
+      </div>
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Fecha</th>
+              <th>Turno</th>
+              <th>Línea</th>
+              <th>Ciclos Totales</th>
+              <th>Cavidades Totales</th>
+              <th>Ciclos Buenos</th>
+              <th>Eficiencia</th>
+              <th>Capacidad</th>
+              <th>Calidad</th>
+              <th>Disponibilidad</th>
+              <th>Qty Piezas Procesadas</th>
+              <th>T. Paro Acumulado</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
