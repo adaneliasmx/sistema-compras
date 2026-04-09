@@ -2581,6 +2581,8 @@ async function viewMonitor(el) {
 async function viewReportes(el) {
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   let activeRptTab = 'L3';
+  let allCargas    = [];   // raw fetched cargas / racks
+  let allCavidades = [];   // raw fetched cavidades_baker
 
   el.innerHTML = `
     <div class="tab-bar">
@@ -2594,6 +2596,23 @@ async function viewReportes(el) {
       <button class="btn btn-outline btn-sm" id="rpt-buscar">🔍 Consultar</button>
       <button class="btn btn-dark btn-sm" id="rpt-export">📥 Excel</button>
     </div>
+    <div id="rpt-filtros-extra" style="display:none;padding:0 0 12px">
+      <div class="filters-bar" style="background:var(--p-bg-card);border:1px solid var(--p-border);border-radius:8px;padding:10px 16px;gap:12px;flex-wrap:wrap;margin:0">
+        <div><span class="flabel">Turno</span>
+          <select id="rf-turno"><option value="">Todos</option><option value="T1">T1</option><option value="T2">T2</option><option value="T3">T3</option></select>
+        </div>
+        <div><span class="flabel">Operador</span><select id="rf-operador"><option value="">Todos</option></select></div>
+        <div><span class="flabel">Herramental</span><select id="rf-herramental"><option value="">Todos</option></select></div>
+        <div><span class="flabel">Proceso</span><select id="rf-proceso"><option value="">Todos</option></select></div>
+        <div><span class="flabel">Defecto</span>
+          <select id="rf-defecto">
+            <option value="">Todos</option>
+            <option value="con">Solo con defecto</option>
+            <option value="sin">Solo sin defecto</option>
+          </select>
+        </div>
+      </div>
+    </div>
     <div id="rpt-resultado">
       <div class="empty-state"><div class="icon">📈</div><p>Selecciona el rango de fechas y consulta.</p></div>
     </div>`;
@@ -2603,16 +2622,78 @@ async function viewReportes(el) {
       el.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('tab-active'));
       btn.classList.add('tab-active');
       activeRptTab = btn.dataset.tab;
+      allCargas = []; allCavidades = [];
+      document.getElementById('rpt-filtros-extra').style.display = 'none';
+      document.getElementById('rpt-resultado').innerHTML =
+        '<div class="empty-state"><div class="icon">📈</div><p>Consulta los datos de la línea seleccionada.</p></div>';
     });
   });
 
+  // ── Filter helpers ────────────────────────────────────────────────────────
+  function uniqVals(arr, field) {
+    return [...new Set(arr.map(x => x[field]).filter(Boolean))].sort();
+  }
+
+  function populateSelect(id, values) {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = '<option value="">Todos</option>' +
+      values.map(v => `<option value="${escHtml(v)}">${escHtml(v)}</option>`).join('');
+    if (values.includes(cur)) sel.value = cur;
+  }
+
+  function populateFilters(cargas, cavs) {
+    const pool = [...cargas, ...cavs];
+    populateSelect('rf-operador',    uniqVals(pool, 'operador'));
+    populateSelect('rf-herramental', uniqVals(pool, 'herramental_no'));
+    populateSelect('rf-proceso',     uniqVals(pool, 'proceso'));
+    document.getElementById('rpt-filtros-extra').style.display = 'block';
+  }
+
+  function getF() {
+    return {
+      turno:       document.getElementById('rf-turno')?.value       || '',
+      operador:    document.getElementById('rf-operador')?.value    || '',
+      herramental: document.getElementById('rf-herramental')?.value || '',
+      proceso:     document.getElementById('rf-proceso')?.value     || '',
+      defecto:     document.getElementById('rf-defecto')?.value     || ''
+    };
+  }
+
+  function hasDefecto(c) {
+    return !!(c.defecto_id || c.defecto || c.estado === 'defecto' || c.resultado === 'defecto');
+  }
+
+  function fltItem(c, f) {
+    if (f.turno       && c.turno       !== f.turno)       return false;
+    if (f.operador    && c.operador    !== f.operador)     return false;
+    if (f.herramental && c.herramental_no !== f.herramental) return false;
+    if (f.proceso     && c.proceso     !== f.proceso)     return false;
+    if (f.defecto === 'con' && !hasDefecto(c)) return false;
+    if (f.defecto === 'sin' &&  hasDefecto(c)) return false;
+    return true;
+  }
+
+  function applyFilters() {
+    const f = getF();
+    renderResult(allCargas.filter(c => fltItem(c, f)), allCavidades.filter(c => fltItem(c, f)));
+  }
+
+  // React to filter dropdowns
+  el.addEventListener('change', e => {
+    if (['rf-turno','rf-operador','rf-herramental','rf-proceso','rf-defecto'].includes(e.target.id)) {
+      applyFilters();
+    }
+  });
+
+  // ── Badge helpers ─────────────────────────────────────────────────────────
   function rptResultBadge(c) {
     const est = c.resultado || c.estado || '';
-    if (est === 'buena')      return `<span class="badge badge-activo">Buena</span>`;
-    if (est === 'defecto')    return `<span class="badge badge-defecto">Defecto${c.defecto ? ': ' + escHtml(c.defecto) : ''}</span>`;
-    if (est === 'reproceso')  return `<span class="badge badge-warn">Reproceso</span>`;
-    if (est === 'descargado') return `<span class="badge badge-procesado">Descargado</span>`;
-    if (est === 'vacia')      return `<span class="badge" style="background:#e2e8f0;color:#64748b">Vacía</span>`;
+    if (est === 'buena' || est === 'descargado') return `<span class="badge badge-activo">Buena</span>`;
+    if (est === 'defecto')   return `<span class="badge badge-defecto">Defecto${c.defecto ? ': ' + escHtml(c.defecto) : ''}</span>`;
+    if (est === 'reproceso') return `<span class="badge badge-warn">Reproceso</span>`;
+    if (est === 'vacia')     return `<span class="badge" style="background:#e2e8f0;color:#64748b">Vacía</span>`;
     return `<span class="badge badge-activo">${escHtml(est || 'activo')}</span>`;
   }
 
@@ -2621,9 +2702,28 @@ async function viewReportes(el) {
                           : '<span class="badge badge-procesado" style="font-size:10px">Proceso</span>';
   }
 
+  function rowStyle(c) {
+    return hasDefecto(c) ? ' style="background:rgba(239,68,68,.07)"' : '';
+  }
+
+  // ── Summary bar ───────────────────────────────────────────────────────────
+  function renderSummaryBar(items) {
+    const total  = items.length;
+    const conDef = items.filter(hasDefecto).length;
+    const pct    = total > 0 ? ((conDef / total) * 100).toFixed(1) : '0.0';
+    const color  = conDef > 0 ? '#ef4444' : 'inherit';
+    return `<div style="display:flex;gap:20px;margin-bottom:12px;padding:10px 16px;background:var(--p-bg-card);border-radius:8px;border:1px solid var(--p-border);font-size:13px;flex-wrap:wrap">
+      <span>Total: <strong>${total}</strong></span>
+      <span>Con defecto: <strong style="color:${color}">${conDef}</strong></span>
+      <span>% Defecto: <strong style="color:${color}">${pct}%</strong></span>
+    </div>`;
+  }
+
+  // ── Tabla principal L3/L4 ─────────────────────────────────────────────────
   function renderTablaLinea(cargas, linea) {
-    if (!cargas.length) return '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para este período.</p></div>';
+    if (!cargas.length) return '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para este período / filtros.</p></div>';
     return `
+      ${renderSummaryBar(cargas)}
       <div class="table-card">
         <div class="table-header">
           <h3>Reporte — ${escHtml(linea)}</h3>
@@ -2632,14 +2732,15 @@ async function viewReportes(el) {
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Folio</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
+              <th>Folio</th><th>Turno</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
               <th>Herramental</th><th>Componente</th><th>Cantidad</th>
               <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
-              <th>Resultado</th><th>Tipo</th>
+              <th>Resultado / Defecto</th><th>Tipo</th>
             </tr></thead>
             <tbody>
-              ${cargas.map(c => `<tr>
+              ${cargas.map(c => `<tr${rowStyle(c)}>
                 <td class="mono">${escHtml(c.folio || c.id)}</td>
+                <td style="text-align:center">${escHtml(c.turno || '—')}</td>
                 <td>${escHtml(c.fecha_carga || '—')}</td>
                 <td class="mono">${escHtml(c.hora_carga || '—')}</td>
                 <td>${escHtml(c.fecha_descarga || '—')}</td>
@@ -2659,6 +2760,7 @@ async function viewReportes(el) {
       </div>`;
   }
 
+  // ── Tabla cavidades Baker ─────────────────────────────────────────────────
   function renderTablaCavidades(cavs) {
     if (!cavs.length) return '';
     return `
@@ -2670,15 +2772,16 @@ async function viewReportes(el) {
         <div class="table-scroll">
           <table>
             <thead><tr>
-              <th>Folio Barril</th><th>Cav.</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
+              <th>Folio Barril</th><th>Cav.</th><th>Turno</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
               <th>Herramental</th><th>Componente</th><th>No. SKF</th><th>Cantidad</th>
-              <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
-              <th>Resultado</th><th>Tipo</th>
+              <th>Proceso</th><th>Operador</th>
+              <th>Resultado / Defecto</th>
             </tr></thead>
             <tbody>
-              ${cavs.map(c => `<tr>
+              ${cavs.map(c => `<tr${rowStyle(c)}>
                 <td class="mono">${escHtml(c.folio_barril || '—')}</td>
                 <td style="text-align:center;font-weight:700">${c.cavidad_num ?? '—'}</td>
+                <td style="text-align:center">${escHtml(c.turno || '—')}</td>
                 <td>${escHtml(c.fecha_carga || '—')}</td>
                 <td class="mono">${escHtml(c.hora_carga || '—')}</td>
                 <td>${escHtml(c.fecha_descarga || '—')}</td>
@@ -2688,10 +2791,8 @@ async function viewReportes(el) {
                 <td class="mono">${escHtml(c.no_skf || '—')}</td>
                 <td style="text-align:right;font-weight:700">${c.cantidad ?? '—'}</td>
                 <td>${escHtml(c.proceso || '—')}</td>
-                <td>${escHtml(c.sub_proceso || '—')}</td>
                 <td>${escHtml(c.operador || '—')}</td>
                 <td>${rptResultBadge(c)}</td>
-                <td>${rptTipoLabel(c)}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -2699,6 +2800,134 @@ async function viewReportes(el) {
       </div>`;
   }
 
+  // ── Análisis de defectos (genérico: L3/L4 usa cargas, Baker usa cavidades) ──
+  function renderAnalisisDefectos(items, titulo) {
+    const conDatos = items.filter(c => hasDefecto(c) || c.estado === 'buena' || c.resultado === 'buena');
+    if (!conDatos.length) return '';
+
+    const total  = items.length;
+    const buenas  = items.filter(c => c.estado === 'buena' || c.resultado === 'buena').length;
+    const defecto = items.filter(hasDefecto).length;
+    const vacias  = items.filter(c => c.es_vacia || c.estado === 'vacia').length;
+    const activas = total - vacias;
+    const calidad = activas > 0 ? ((buenas / activas) * 100).toFixed(1) : null;
+
+    // Por tipo de defecto
+    const byDef = {};
+    for (const c of items.filter(hasDefecto)) {
+      const k = c.defecto || 'Sin especificar';
+      byDef[k] = (byDef[k] || 0) + 1;
+    }
+
+    // Por componente
+    const byComp = {};
+    for (const c of items.filter(x => !x.es_vacia && x.estado !== 'vacia')) {
+      const k = c.componente || 'Sin componente';
+      if (!byComp[k]) byComp[k] = { buenas: 0, defecto: 0 };
+      if (c.estado === 'buena' || c.resultado === 'buena') byComp[k].buenas++;
+      if (hasDefecto(c)) byComp[k].defecto++;
+    }
+
+    // Por operador
+    const byOp = {};
+    for (const c of items) {
+      const k = c.operador || 'Sin operador';
+      if (!byOp[k]) byOp[k] = { total: 0, buenas: 0, defecto: 0 };
+      byOp[k].total++;
+      if (c.estado === 'buena' || c.resultado === 'buena') byOp[k].buenas++;
+      if (hasDefecto(c)) byOp[k].defecto++;
+    }
+
+    // Por herramental
+    const byHerr = {};
+    for (const c of items) {
+      const k = c.herramental_no || 'Desconocido';
+      if (!byHerr[k]) byHerr[k] = { total: 0, buenas: 0, defecto: 0 };
+      byHerr[k].total++;
+      if (c.estado === 'buena' || c.resultado === 'buena') byHerr[k].buenas++;
+      if (hasDefecto(c)) byHerr[k].defecto++;
+    }
+
+    function calRow(b, d) {
+      const t = b + d; const p = t > 0 ? ((b / t) * 100).toFixed(1) : null;
+      return `<td class="${kpiColor(p ? Number(p) : null)}">${p !== null ? p+'%' : '—'}</td>`;
+    }
+    function defCell(n) {
+      return `<td style="text-align:center;${n>0?'color:#ef4444;font-weight:700':''}">${n}</td>`;
+    }
+
+    const defRows  = Object.entries(byDef).sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`<tr><td>${escHtml(k)}</td><td style="text-align:center;font-weight:700;color:#ef4444">${v}</td><td style="text-align:center">${total>0?((v/total)*100).toFixed(1):0}%</td></tr>`).join('');
+    const compRows = Object.entries(byComp).sort((a,b)=>(b[1].defecto-a[1].defecto))
+      .map(([k,v])=>`<tr><td>${escHtml(k)}</td><td style="text-align:center">${v.buenas}</td>${defCell(v.defecto)}${calRow(v.buenas,v.defecto)}</tr>`).join('');
+    const opRows   = Object.entries(byOp).sort((a,b)=>(b[1].defecto-a[1].defecto))
+      .map(([k,v])=>`<tr><td>${escHtml(k)}</td><td style="text-align:center">${v.total}</td><td style="text-align:center">${v.buenas}</td>${defCell(v.defecto)}${calRow(v.buenas,v.defecto)}</tr>`).join('');
+    const herrRows = Object.entries(byHerr).sort((a,b)=>(b[1].defecto-a[1].defecto))
+      .map(([k,v])=>`<tr><td>${escHtml(k)}</td><td style="text-align:center">${v.total}</td><td style="text-align:center">${v.buenas}</td>${defCell(v.defecto)}${calRow(v.buenas,v.defecto)}</tr>`).join('');
+
+    if (!defecto) return '';   // sin defectos, no mostrar panel
+
+    return `
+      <div class="table-card" style="margin-top:18px;border:2px solid rgba(239,68,68,.25)">
+        <div class="table-header" style="background:rgba(239,68,68,.06)">
+          <h3>🔍 Análisis de Defectos — ${escHtml(titulo)}</h3>
+          <div style="display:flex;gap:20px;font-size:13px;flex-wrap:wrap">
+            <span>Total: <strong>${total}</strong></span>
+            <span>Buenas: <strong style="color:#22c55e">${buenas}</strong></span>
+            <span>Con defecto: <strong style="color:#ef4444">${defecto}</strong></span>
+            ${vacias ? `<span>Vacías: <strong>${vacias}</strong></span>` : ''}
+            <span>Calidad: <strong class="${kpiColor(calidad ? Number(calidad) : null)}">${calidad !== null ? calidad+'%' : '—'}</strong></span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px">
+          <div>
+            <h4 style="margin:0 0 8px;font-size:12px;color:var(--p-muted);text-transform:uppercase;letter-spacing:.05em">Por tipo de defecto</h4>
+            <div class="table-scroll"><table>
+              <thead><tr><th>Defecto</th><th>Cant.</th><th>% Total</th></tr></thead>
+              <tbody>${defRows || '<tr><td colspan="3" style="text-align:center;color:var(--p-muted)">Sin defectos</td></tr>'}</tbody>
+            </table></div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 8px;font-size:12px;color:var(--p-muted);text-transform:uppercase;letter-spacing:.05em">Por componente</h4>
+            <div class="table-scroll"><table>
+              <thead><tr><th>Componente</th><th>Buenas</th><th>Defecto</th><th>Calidad</th></tr></thead>
+              <tbody>${compRows || '<tr><td colspan="4" style="text-align:center;color:var(--p-muted)">Sin datos</td></tr>'}</tbody>
+            </table></div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 8px;font-size:12px;color:var(--p-muted);text-transform:uppercase;letter-spacing:.05em">Por operador</h4>
+            <div class="table-scroll"><table>
+              <thead><tr><th>Operador</th><th>Total</th><th>Buenas</th><th>Defecto</th><th>Calidad</th></tr></thead>
+              <tbody>${opRows || '<tr><td colspan="5" style="text-align:center;color:var(--p-muted)">Sin datos</td></tr>'}</tbody>
+            </table></div>
+          </div>
+          <div>
+            <h4 style="margin:0 0 8px;font-size:12px;color:var(--p-muted);text-transform:uppercase;letter-spacing:.05em">Por herramental</h4>
+            <div class="table-scroll"><table>
+              <thead><tr><th>Herramental</th><th>Total</th><th>Buenas</th><th>Defecto</th><th>Calidad</th></tr></thead>
+              <tbody>${herrRows || '<tr><td colspan="5" style="text-align:center;color:var(--p-muted)">Sin datos</td></tr>'}</tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  // ── Render result (orquesta las secciones) ────────────────────────────────
+  function renderResult(cargas, cavs) {
+    const res = document.getElementById('rpt-resultado');
+    if (activeRptTab === 'Baker') {
+      const racks = cargas.filter(c => c.herramental_tipo !== 'barril');
+      res.innerHTML = renderTablaLinea(racks, 'Baker — Racks')
+                    + renderTablaCavidades(cavs)
+                    + renderAnalisisDefectos(cavs, 'Baker Barriles');
+    } else {
+      const label = activeRptTab === 'L3' ? 'Línea 3' : 'Línea 4';
+      res.innerHTML = renderTablaLinea(cargas, label)
+                    + renderAnalisisDefectos(cargas, label);
+    }
+  }
+
+  // ── Consulta al servidor ──────────────────────────────────────────────────
   async function ejecutarConsulta() {
     const desde = document.getElementById('rpt-desde').value;
     const hasta = document.getElementById('rpt-hasta').value;
@@ -2714,15 +2943,15 @@ async function viewReportes(el) {
           GET(`/reportes?${params}`),
           GET(`/baker/cavidades?fecha_ini=${desde}&fecha_fin=${hasta}`)
         ]);
-        const allCargas = cargasData?.cargas || cargasData || [];
-        const racks = allCargas.filter(c => c.herramental_tipo !== 'barril');
-        const cavs  = Array.isArray(cavsData) ? cavsData : [];
-        res.innerHTML = renderTablaLinea(racks, 'Baker — Racks') + renderTablaCavidades(cavs);
+        allCargas    = cargasData?.cargas || cargasData || [];
+        allCavidades = Array.isArray(cavsData) ? cavsData : [];
       } else {
         const data   = await GET(`/reportes?${params}`);
-        const cargas = data?.cargas || data || [];
-        res.innerHTML = renderTablaLinea(cargas, activeRptTab === 'L3' ? 'Línea 3' : 'Línea 4');
+        allCargas    = data?.cargas || data || [];
+        allCavidades = [];
       }
+      populateFilters(allCargas, allCavidades);
+      applyFilters();
     } catch (e) {
       res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
@@ -2730,32 +2959,22 @@ async function viewReportes(el) {
 
   document.getElementById('rpt-buscar').addEventListener('click', ejecutarConsulta);
 
-  document.getElementById('rpt-export').addEventListener('click', async () => {
+  document.getElementById('rpt-export').addEventListener('click', () => {
+    if (!allCargas.length && !allCavidades.length) { alert('Primero consulta los datos.'); return; }
     const desde = document.getElementById('rpt-desde').value;
     const hasta = document.getElementById('rpt-hasta').value;
-    try {
-      const params = new URLSearchParams({ linea: activeRptTab });
-      if (desde) params.set('desde', desde);
-      if (hasta) params.set('hasta', hasta);
-      const wb = XLSX.utils.book_new();
-
-      if (activeRptTab === 'Baker') {
-        const [cargasData, cavsData] = await Promise.all([
-          GET(`/reportes?${params}`),
-          GET(`/baker/cavidades?fecha_ini=${desde}&fecha_fin=${hasta}`)
-        ]);
-        const allCargas = cargasData?.cargas || cargasData || [];
-        const racks = allCargas.filter(c => c.herramental_tipo !== 'barril');
-        const cavs  = Array.isArray(cavsData) ? cavsData : [];
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks), 'Baker Racks');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cavs),  'Baker Barriles');
-      } else {
-        const data   = await GET(`/reportes?${params}`);
-        const cargas = data?.cargas || data || [];
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cargas), activeRptTab);
-      }
-      XLSX.writeFile(wb, `reporte_${activeRptTab}_${desde}_${hasta}.xlsx`);
-    } catch (e) { alert('Error al exportar: ' + e.message); }
+    const f   = getF();
+    const flt = c => fltItem(c, f);
+    const wb  = XLSX.utils.book_new();
+    if (activeRptTab === 'Baker') {
+      const racks = allCargas.filter(c => c.herramental_tipo !== 'barril').filter(flt);
+      const cavs  = allCavidades.filter(flt);
+      if (racks.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks), 'Baker Racks');
+      if (cavs.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cavs),  'Baker Barriles');
+    } else {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allCargas.filter(flt)), activeRptTab);
+    }
+    XLSX.writeFile(wb, `reporte_${activeRptTab}_${desde}_${hasta}.xlsx`);
   });
 }
 
