@@ -31,8 +31,9 @@ const state = {
   _shiftTimer: null,
   _shiftWarnShown: false,
   // Guard para no mostrar el form de paro automático dos veces seguidas
-  _autoParoShown: { L3: false, L4: false },
-  _autoParoInfo:  {}   // { [linea]: { horaInicio, fechaInicio } } — para "Paro antes de tiempo"
+  _autoParoShown:  { L3: false, L4: false },
+  _autoParoLastTs: {},  // { [linea]: lastTs } — timestamp que disparó el último auto-paro
+  _autoParoInfo:   {}   // { [linea]: { horaInicio, fechaInicio } } — para "Paro antes de tiempo"
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -746,14 +747,20 @@ async function viewLinea(el, linea) {
           return ts > max ? ts : max;
         }, '');
         if (lastTs) {
+          // Si hay nueva actividad posterior al último auto-paro, resetear el flag
+          if (state._autoParoLastTs[linea] && lastTs > state._autoParoLastTs[linea]) {
+            state._autoParoShown[linea] = false;
+            delete state._autoParoLastTs[linea];
+          }
           const minsInactive = (Date.now() - new Date(lastTs).getTime()) / 60000;
           if (minsInactive > 15 && !state._autoParoShown[linea]) {
             state._autoParoShown[linea] = true;
+            state._autoParoLastTs[linea] = lastTs; // recordar qué timestamp disparó el paro
             const lastDate = new Date(lastTs);
             const horaIni = lastDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
             const fechaIni = lastDate.toLocaleDateString('en-CA');
             setTimeout(() => openModalParoAuto(linea, catalogo, horaIni, fechaIni, () => {
-              state._autoParoShown[linea] = false;
+              // NO resetear _autoParoShown aquí — se resetea solo cuando haya nueva carga
               delete state._autoParoInfo[linea];
               const elActual = document.getElementById('p-content');
               if (elActual) viewLinea(elActual, linea);
