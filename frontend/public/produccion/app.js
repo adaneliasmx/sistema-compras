@@ -330,13 +330,14 @@ function getTurnoDeHora(hora) {
 // Rango de fechas correcto para el turno actual.
 // T3 (21:30–06:30+1): antes de las 06:30 el turno inició ayer → fecha_ini = ayer
 function getShiftDates() {
-  const now  = new Date();
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const today = now.toISOString().slice(0, 10);
+  const now   = new Date();
+  const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const mins  = mxNow.getHours() * 60 + mxNow.getMinutes();
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   if (mins < 6 * 60 + 30) {
     // Aún en T3 que arrancó ayer
     const yesterday = new Date(now.getTime() - 86400000);
-    return { fecha_ini: yesterday.toISOString().slice(0, 10), fecha_fin: today };
+    return { fecha_ini: yesterday.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }), fecha_fin: today };
   }
   return { fecha_ini: today, fecha_fin: today };
 }
@@ -2457,7 +2458,6 @@ async function viewMonitor(el) {
 
   function renderMonitorContent(cargasL3, cargasL4, cargasBaker, paroL3, paroL4, paroBaker) {
     const turno    = getCurrentTurno();
-    const today    = new Date().toISOString().slice(0, 10);
     const now      = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
     const cBakerNorm = cargasBaker.map(c => ({ ...c, linea: 'Baker' }));
@@ -2574,7 +2574,7 @@ async function viewMonitor(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewReportes(el) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   let activeRptTab = 'L3';
 
   el.innerHTML = `
