@@ -1092,34 +1092,42 @@ function openModalCargaBaker(catalogo, onDone) {
 
       <!-- Campos rack (se muestran/ocultan según tipo herramental) -->
       <div id="bk-rack-fields" style="display:contents">
-        <div class="form-group">
-          <label>Cliente</label>
-          <select id="bk-cliente-sel" style="width:100%"><option value="">— Seleccionar —</option>${htmlCli}<option value="__otro__">Otro (escribir)</option></select>
-          <input type="text" id="bk-cliente-txt" placeholder="Nombre del cliente" style="margin-top:6px;display:none" />
-        </div>
-        <div class="form-group">
-          <label style="display:flex;justify-content:space-between;align-items:center">
-            <span>Componente</span>
-            <button type="button" id="bk-comp-toggle" class="btn btn-xs btn-outline" style="font-size:11px;padding:2px 8px">✏️ Escribir</button>
+        <div class="form-group full" id="bk-vacio-wrap">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:10px 14px;font-weight:600;color:#dc2626">
+            <input type="checkbox" id="bk-vacio" style="width:18px;height:18px;accent-color:#dc2626;cursor:pointer" />
+            Herramental vacío — sin material (omite datos de componente)
           </label>
-          <select id="bk-componente"><option value="">— Seleccionar del catálogo —</option>${htmlComp}</select>
-          <input type="text" id="bk-componente-txt" placeholder="Escribe el nombre del componente" style="display:none;margin-top:4px" />
         </div>
-        <div class="form-group">
-          <label>No. SKF</label>
-          <input type="text" id="bk-no-skf" placeholder="Auto de catálogo o QR" />
-        </div>
-        <div class="form-group">
-          <label>No. Orden</label>
-          <input type="text" id="bk-no-orden" />
-        </div>
-        <div class="form-group">
-          <label>Lote</label>
-          <input type="text" id="bk-lote" />
-        </div>
-        <div class="form-group">
-          <label>Varillas</label>
-          <input type="number" id="bk-varillas" min="1" />
+        <div id="bk-rack-datos" style="display:contents">
+          <div class="form-group">
+            <label>Cliente</label>
+            <select id="bk-cliente-sel" style="width:100%"><option value="">— Seleccionar —</option>${htmlCli}<option value="__otro__">Otro (escribir)</option></select>
+            <input type="text" id="bk-cliente-txt" placeholder="Nombre del cliente" style="margin-top:6px;display:none" />
+          </div>
+          <div class="form-group">
+            <label style="display:flex;justify-content:space-between;align-items:center">
+              <span>Componente</span>
+              <button type="button" id="bk-comp-toggle" class="btn btn-xs btn-outline" style="font-size:11px;padding:2px 8px">✏️ Escribir</button>
+            </label>
+            <select id="bk-componente"><option value="">— Seleccionar del catálogo —</option>${htmlComp}</select>
+            <input type="text" id="bk-componente-txt" placeholder="Escribe el nombre del componente" style="display:none;margin-top:4px" />
+          </div>
+          <div class="form-group">
+            <label>No. SKF</label>
+            <input type="text" id="bk-no-skf" placeholder="Auto de catálogo o QR" />
+          </div>
+          <div class="form-group">
+            <label>No. Orden</label>
+            <input type="text" id="bk-no-orden" />
+          </div>
+          <div class="form-group">
+            <label>Lote</label>
+            <input type="text" id="bk-lote" />
+          </div>
+          <div class="form-group">
+            <label>Varillas</label>
+            <input type="number" id="bk-varillas" min="1" />
+          </div>
         </div>
       </div>
 
@@ -1183,6 +1191,11 @@ function openModalCargaBaker(catalogo, onDone) {
       btn.textContent   = '✏️ Escribir';
     }
   }
+  // Vacío: mostrar/ocultar campos de datos del rack
+  document.getElementById('bk-vacio').addEventListener('change', e => {
+    document.getElementById('bk-rack-datos').style.display = e.target.checked ? 'none' : 'contents';
+  });
+
   document.getElementById('bk-comp-toggle').addEventListener('click', () => {
     const sel = document.getElementById('bk-componente');
     setCompModoLibre(sel.style.display !== 'none'); // toggle
@@ -1206,6 +1219,9 @@ function openModalCargaBaker(catalogo, onDone) {
     const vtot = opt?.dataset.vtot || '';
     document.getElementById('bk-rack-fields').style.display   = tipo === 'rack'   ? 'contents' : 'none';
     document.getElementById('bk-barril-fields').style.display = tipo === 'barril' ? '' : 'none';
+    // Resetear vacío al cambiar tipo
+    const vacioChk = document.getElementById('bk-vacio');
+    if (vacioChk) { vacioChk.checked = false; document.getElementById('bk-rack-datos').style.display = 'contents'; }
     if (tipo === 'rack' && vtot) {
       // Default: varillas = varillas_totales si no hay componente seleccionado
       const compSel = document.getElementById('bk-componente');
@@ -1274,9 +1290,11 @@ function openModalCargaBaker(catalogo, onDone) {
     const subProcesoId = document.getElementById('bk-subproceso').value || null;
     const operadorId   = document.getElementById('bk-operador').value || null;
 
+    const esVacio = tipo === 'rack' && (document.getElementById('bk-vacio')?.checked || false);
     const payload = { herramental_id: herrId, proceso_id: procesoId, sub_proceso_id: subProcesoId, operador_id: operadorId };
 
     if (tipo === 'rack') {
+      payload.es_vacia = esVacio;
       const clienteSel = document.getElementById('bk-cliente-sel').value;
       payload.cliente      = clienteSel === '__otro__' ? document.getElementById('bk-cliente-txt').value : clienteSel;
       const compSel = document.getElementById('bk-componente');
@@ -1315,19 +1333,27 @@ function openModalCargaBaker(catalogo, onDone) {
 
     // Validar campos requeridos
     const erroresBk = [];
-    if (!herrId)                          erroresBk.push('Herramental');
-    if (!procesoId)                       erroresBk.push('Proceso');
-    if (!operadorId)                      erroresBk.push('Operador');
-    if (tipo === 'rack') {
+    if (!herrId)        erroresBk.push('Herramental');
+    if (!procesoId)     erroresBk.push('Proceso');
+    if (!subProcesoId)  erroresBk.push('Sub-proceso');
+    if (!operadorId)    erroresBk.push('Operador');
+
+    if (tipo === 'rack' && !esVacio) {
+      if (!payload.cliente)                               erroresBk.push('Cliente');
       const compVal = payload.componente_id || payload.componente;
-      if (!compVal)                       erroresBk.push('Componente');
-      if (!payload.varillas)              erroresBk.push('Varillas (cantidad)');
+      if (!compVal)                                       erroresBk.push('Componente');
+      if (!payload.no_skf)                               erroresBk.push('No. SKF');
+      if (!payload.no_orden)                             erroresBk.push('No. Orden');
+      if (!payload.varillas)                             erroresBk.push('Varillas (cantidad)');
     }
     if (tipo === 'barril' && Array.isArray(payload.cavidades)) {
       payload.cavidades.forEach((cv, i) => {
         if (!cv.es_vacia) {
-          if (!cv.componente)             erroresBk.push(`Cavidad ${i+1}: Componente`);
-          if (!cv.cantidad)               erroresBk.push(`Cavidad ${i+1}: Cantidad`);
+          if (!cv.cliente)    erroresBk.push(`Cavidad ${i+1}: Cliente`);
+          if (!cv.componente) erroresBk.push(`Cavidad ${i+1}: Componente`);
+          if (!cv.no_skf)    erroresBk.push(`Cavidad ${i+1}: No. SKF`);
+          if (!cv.no_orden)  erroresBk.push(`Cavidad ${i+1}: No. Orden`);
+          if (!cv.cantidad)  erroresBk.push(`Cavidad ${i+1}: Cantidad`);
         }
       });
     }

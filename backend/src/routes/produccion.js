@@ -1695,6 +1695,38 @@ router.post('/baker/cargas', (req, res) => {
   const herr = (pdb.herramentales_baker || []).find(h => String(h.id) === String(herramental_id));
   if (!herr) return res.status(404).json({ error: 'Herramental no encontrado' });
 
+  // Validaciones obligatorias siempre (con o sin material)
+  if (!proceso_id)    return res.status(400).json({ error: 'proceso_id es requerido' });
+  if (!sub_proceso_id) return res.status(400).json({ error: 'sub_proceso_id es requerido' });
+  if (!operador_id)   return res.status(400).json({ error: 'operador_id es requerido' });
+
+  const esVacioRack = (herr.tipo !== 'barril') && (body.es_vacia === true);
+
+  // Validaciones de material (rack no vacío)
+  if (herr.tipo !== 'barril' && !esVacioRack) {
+    if (!body.cliente)                               return res.status(400).json({ error: 'cliente es requerido' });
+    if (!body.componente_id && !body.componente)     return res.status(400).json({ error: 'componente es requerido' });
+    if (!body.no_skf)                               return res.status(400).json({ error: 'no_skf es requerido' });
+    if (!body.no_orden)                             return res.status(400).json({ error: 'no_orden es requerido' });
+    if (!body.varillas)                             return res.status(400).json({ error: 'varillas es requerido' });
+  }
+
+  // Validaciones por cavidad (barril)
+  if (herr.tipo === 'barril') {
+    const cavidades = Array.isArray(body.cavidades) ? body.cavidades : [];
+    const errCav = [];
+    cavidades.forEach((cv, i) => {
+      if (!cv.es_vacia) {
+        if (!cv.cliente)    errCav.push(`Cavidad ${i+1}: cliente`);
+        if (!cv.componente) errCav.push(`Cavidad ${i+1}: componente`);
+        if (!cv.no_skf)    errCav.push(`Cavidad ${i+1}: no_skf`);
+        if (!cv.no_orden)  errCav.push(`Cavidad ${i+1}: no_orden`);
+        if (!cv.cantidad)  errCav.push(`Cavidad ${i+1}: cantidad`);
+      }
+    });
+    if (errCav.length) return res.status(400).json({ error: `Campos requeridos: ${errCav.join(', ')}` });
+  }
+
   const proceso    = (pdb.procesos_baker      || []).find(p => String(p.id) === String(proceso_id));
   const subProceso = (pdb.sub_procesos_baker  || []).find(s => String(s.id) === String(sub_proceso_id));
   const operador   = (pdb.operadores_baker    || []).find(o => String(o.id) === String(operador_id));
