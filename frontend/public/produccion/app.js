@@ -343,10 +343,12 @@ function getShiftDates() {
 // Retorna { turno, fecha } del turno inmediatamente anterior al actual
 function getPrevTurnoInfo() {
   const now = new Date();
-  const mins = now.getHours() * 60 + now.getMinutes();
-  const today = now.toISOString().slice(0, 10);
-  const yest = new Date(now); yest.setDate(yest.getDate() - 1);
-  const yesterday = yest.toISOString().slice(0, 10);
+  // Use Mexico City timezone consistently for both time-of-day comparisons and date strings
+  const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const mins = mxNow.getHours() * 60 + mxNow.getMinutes();
+  const today = now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const yest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const yesterday = yest.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   if (mins >= 6 * 60 + 30 && mins < 14 * 60 + 30) return { turno: 'T3', fecha: yesterday };
   if (mins >= 14 * 60 + 30 && mins < 21 * 60 + 30) return { turno: 'T1', fecha: today };
   // T3 (21:30-06:29)
@@ -2156,7 +2158,8 @@ function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
     const btn = document.getElementById('mpa-submit');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
-      await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: fechaInicio, hora_inicio: horaInicio });
+      const nuevo = await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: fechaInicio, hora_inicio: horaInicio });
+      await PATCH(`/paros/${linea}/${nuevo.id}/cerrar`, {});
       closeModal();
       onDone();
     } catch (e) {
