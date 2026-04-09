@@ -32,7 +32,7 @@ const navItems = [
 
 const MENU_BY_ROLE = {
   cliente_requisicion: ['dashboard', 'requisiciones', 'seguimiento'],
-  comprador: ['dashboard', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos'],
+  comprador: ['dashboard', 'requisiciones', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos'],
   autorizador: ['dashboard', 'autorizaciones', 'seguimiento'],
   proveedor: ['cotizaciones', 'facturacion'],
   pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones'],
