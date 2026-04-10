@@ -2531,6 +2531,7 @@ async function purchasesView() {
       <td>${statusPill(i.status)}</td>
       <td style="font-size:11px">${i.po_folio||'-'}</td>
       <td style="white-space:nowrap">
+        <button class="btn-secondary open-edit-modal" data-id="${i.id}" style="padding:2px 7px;font-size:11px" title="Editar ítem">✏️</button>
         ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary save-edit" data-id="${i.id}" style="padding:2px 7px;font-size:11px">💾</button>` : ''}
         ${!i.catalog_item_id && !['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
         ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
@@ -2583,11 +2584,10 @@ async function purchasesView() {
         btn.textContent = '✅'; setTimeout(render, 800);
       } catch(e) { alert(e.message); }
     });
-    // Doble clic en fila → modal de edición completa
-    tableEl.querySelectorAll('tr[data-id]').forEach(tr => {
-      tr.ondblclick = (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
-        const item = sourceList.find(x => Number(x.id) === Number(tr.dataset.id));
+    // Botón lápiz → modal de edición completa
+    tableEl.querySelectorAll('.open-edit-modal').forEach(btn => {
+      btn.onclick = () => {
+        const item = sourceList.find(x => Number(x.id) === Number(btn.dataset.id));
         if (item) openItemEditModal(item);
       };
     });
@@ -2600,7 +2600,7 @@ async function purchasesView() {
 
   // Modal de edición completa de ítem (doble clic)
   const openItemEditModal = (item) => {
-    const isLocked = ['Cancelado','En proceso','Cerrado','Enviada'].includes(item.status);
+    const isLocked = ['Cancelado','Cerrado'].includes(item.status);
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
     modal.innerHTML = `
@@ -3829,16 +3829,21 @@ async function purchasesView() {
     const panel = document.createElement('div');
     panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
     panel.innerHTML = `
-      <div style="background:#fff;border-radius:12px;padding:28px;width:520px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="background:#fff;border-radius:12px;padding:28px;width:540px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
         <h3 style="margin:0 0 8px">📧 Correos generados</h3>
-        <p style="font-size:13px;color:#6b7280;margin:0 0 18px">Haz clic en cada botón para abrir el correo en tu cliente de correo (Outlook, Gmail, etc.). El correo incluye los ítems, precios, cotizaciones y el enlace al PDF de la PO.</p>
-        ${poMailtos.map(pm => `
-          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
-            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${pm.po_folio}</div>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">Para: <b>${escapeHtml(pm.supplier_email || '(sin correo)')}</b>${pm.cc ? `  · CC: ${escapeHtml(pm.cc.split(',').slice(0,3).join(', '))}${pm.cc.split(',').length>3?'…':''}` : ''}</div>
+        <p style="font-size:13px;color:#6b7280;margin:0 0 18px">Haz clic en cada botón para abrir el correo en tu cliente de correo. El correo incluye ítems, precios, cotizaciones y el enlace al PDF.</p>
+        ${poMailtos.map((pm, idx) => `
+          <div id="pm-card-${idx}" style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px">${escapeHtml(pm.po_folio)} · <span style="font-weight:400;color:#6b7280">${escapeHtml(pm.supplier_name||'')}</span></div>
             ${pm.supplier_email
-              ? `<a href="${pm.mailto}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;padding:6px 16px;border-radius:6px;font-weight:600">📧 Abrir correo al proveedor</a>`
-              : '<span style="color:#dc2626;font-size:12px">⚠ Proveedor sin correo registrado</span>'}
+              ? `<div style="font-size:12px;color:#6b7280;margin-bottom:8px">Para: <b>${escapeHtml(pm.supplier_email)}</b>${pm.cc ? `  · CC: ${escapeHtml(pm.cc.split(',').slice(0,3).join(', '))}${pm.cc.split(',').length>3?'…':''}` : ''}</div>
+                 <a href="${pm.mailto}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;padding:6px 16px;border-radius:6px;font-weight:600">📧 Abrir correo al proveedor</a>`
+              : `<div style="font-size:12px;color:#dc2626;margin-bottom:8px">⚠ Proveedor sin correo registrado — agrégalo aquí:</div>
+                 <div style="display:flex;gap:6px;align-items:center">
+                   <input id="pm-newemail-${idx}" type="email" placeholder="correo@proveedor.com" style="flex:1;font-size:13px;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px"/>
+                   <button id="pm-saveemail-${idx}" data-supplier="${pm.supplier_id||''}" data-pm="${idx}" data-cc="${escapeHtml(pm.cc||'')}" data-folio="${escapeHtml(pm.po_folio||'')}" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:6px 12px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap">💾 Guardar y enviar</button>
+                 </div>
+                 <div id="pm-emailmsg-${idx}" style="font-size:11px;margin-top:4px"></div>`}
           </div>`).join('')}
         <div style="text-align:right;margin-top:16px">
           <button id="closeMailtoPanel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:13px">Cerrar</button>
@@ -3847,6 +3852,39 @@ async function purchasesView() {
     document.body.appendChild(panel);
     panel.querySelector('#closeMailtoPanel').onclick = () => panel.remove();
     panel.onclick = (e) => { if (e.target === panel) panel.remove(); };
+
+    // Binding: guardar correo del proveedor y regenerar mailto
+    poMailtos.forEach((pm, idx) => {
+      if (pm.supplier_email) return; // ya tiene correo
+      const saveBtn = panel.querySelector(`#pm-saveemail-${idx}`);
+      if (!saveBtn || !pm.supplier_id) return;
+      saveBtn.onclick = async () => {
+        const emailInput = panel.querySelector(`#pm-newemail-${idx}`);
+        const msgEl = panel.querySelector(`#pm-emailmsg-${idx}`);
+        const newEmail = (emailInput?.value || '').trim();
+        if (!newEmail || !newEmail.includes('@')) { if (msgEl) { msgEl.textContent = 'Correo inválido'; msgEl.style.color = '#dc2626'; } return; }
+        saveBtn.disabled = true; saveBtn.textContent = '⏳ Guardando...';
+        try {
+          await api(`/api/catalogs/suppliers/${pm.supplier_id}`, { method: 'PATCH', body: JSON.stringify({ email: newEmail }) });
+          // Actualizar local
+          const localSupplier = suppliers.find(s => s.id === pm.supplier_id);
+          if (localSupplier) localSupplier.email = newEmail;
+          // Regenerar mailto
+          const data = await api(`/api/purchases/purchase-orders/${pm.po_id}/mailto`).catch(() => null);
+          const card = panel.querySelector(`#pm-card-${idx}`);
+          if (card && data?.mailto) {
+            card.innerHTML = `
+              <div style="font-weight:700;font-size:14px;margin-bottom:4px">${escapeHtml(pm.po_folio)} · <span style="font-weight:400;color:#6b7280">${escapeHtml(pm.supplier_name||'')}</span></div>
+              <div style="font-size:12px;color:#6b7280;margin-bottom:8px">Para: <b>${escapeHtml(newEmail)}</b></div>
+              <a href="${data.mailto}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;padding:6px 16px;border-radius:6px;font-weight:600">📧 Abrir correo al proveedor</a>
+              <span style="font-size:12px;color:#16a34a;margin-left:8px">✅ Correo guardado</span>`;
+          }
+        } catch(e) {
+          if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
+          saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar y enviar';
+        }
+      };
+    });
   };
 
   const generarPDFsPorPO = async (out) => {

@@ -522,6 +522,8 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     return {
       po_id: po.id,
       po_folio: po.folio,
+      supplier_id: po.supplier_id,
+      supplier_name: supplier.business_name || '',
       supplier_email: supplier.email || '',
       cc: allCc,
       po_view_url: poViewUrl,
@@ -706,7 +708,7 @@ router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req
   ].join('\n');
 
   const mailto = `mailto:${encodeURIComponent(supplier.email||'')}?cc=${encodeURIComponent(allCc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  res.json({ mailto, supplier_email: supplier.email || '', cc: allCc, po_view_url: poViewUrl });
+  res.json({ mailto, supplier_id: po.supplier_id, supplier_name: supplier.business_name || '', supplier_email: supplier.email || '', cc: allCc, po_view_url: poViewUrl });
 });
 
 // Proveedor acepta o rechaza la PO
