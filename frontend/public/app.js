@@ -2181,12 +2181,13 @@ async function purchasesView() {
   const loadItems = () => api(`/api/purchases/pending-items${showCancelled ? '?show_cancelled=true' : ''}`);
   const loadRejected = () => api('/api/purchases/pending-items?include_rejected=true&show_cancelled=true');
 
-  const [allItems, allItemsWithRejected, pos, suppliers, sccList] = await Promise.all([
+  const [allItems, allItemsWithRejected, pos, suppliers, sccList, costCenters] = await Promise.all([
     loadItems(),
     loadRejected(),
     api('/api/purchases/purchase-orders'),
     api('/api/catalogs/suppliers'),
-    api('/api/catalogs/sub-cost-centers')
+    api('/api/catalogs/sub-cost-centers'),
+    api('/api/catalogs/cost-centers')
   ]);
 
   const rejectedItems = allItemsWithRejected.filter(x => x.is_rejected);
@@ -2582,11 +2583,122 @@ async function purchasesView() {
         btn.textContent = '✅'; setTimeout(render, 800);
       } catch(e) { alert(e.message); }
     });
+    // Doble clic en fila → modal de edición completa
+    tableEl.querySelectorAll('tr[data-id]').forEach(tr => {
+      tr.ondblclick = (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON' || e.target.tagName === 'A') return;
+        const item = sourceList.find(x => Number(x.id) === Number(tr.dataset.id));
+        if (item) openItemEditModal(item);
+      };
+    });
     // Select all
     const selAll = tableEl.querySelector('#selectAllCheck');
     if (selAll) selAll.onchange = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = selAll.checked);
     const selAuth = tableEl.querySelector('#selectAllAuth');
     if (selAuth) selAuth.onclick = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = true);
+  };
+
+  // Modal de edición completa de ítem (doble clic)
+  const openItemEditModal = (item) => {
+    const isLocked = ['Cancelado','En proceso','Cerrado','Enviada'].includes(item.status);
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:28px;width:600px;max-width:96vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+        <h3 style="margin:0 0 4px">✏️ Editar ítem</h3>
+        <p style="font-size:12px;color:#6b7280;margin:0 0 18px">Req: <b>${escapeHtml(item.requisition_folio||'-')}</b> · Estado: <b>${escapeHtml(item.status||'-')}</b></p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div style="grid-column:1/-1">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Descripción del ítem</label>
+            <input id="eim-name" value="${escapeHtml(item.item_name||item.manual_item_name||'')}" style="width:100%" ${item.catalog_item_id && !isLocked ? '' : (isLocked ? 'disabled' : '')} placeholder="Nombre del ítem"/>
+            ${item.catalog_item_id ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">Ítem de catálogo — solo editable si es manual</div>` : ''}
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Proveedor</label>
+            <select id="eim-supplier" style="width:100%" ${isLocked ? 'disabled' : ''}>
+              <option value="">Sin proveedor</option>
+              ${suppliers.map(s => `<option value="${s.id}" ${Number(item.supplier_id)===s.id?'selected':''}>${escapeHtml(s.business_name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Cantidad</label>
+            <input id="eim-qty" type="number" min="0.001" step="any" value="${Number(item.quantity||0)}" style="width:100%" ${isLocked ? 'disabled' : ''}/>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unidad</label>
+            <input id="eim-unit" value="${escapeHtml(item.unit||'')}" style="width:100%" ${isLocked ? 'disabled' : ''}/>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Precio unitario</label>
+            <input id="eim-cost" type="number" min="0" step="any" value="${Number(item.unit_cost||0)}" style="width:100%" ${isLocked || item.winning_quote_id ? 'disabled' : ''}/>
+            ${item.winning_quote_id ? `<div style="font-size:11px;color:#6b7280;margin-top:2px">🔒 Asignado por cotización</div>` : ''}
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Moneda</label>
+            <select id="eim-currency" style="width:100%" ${isLocked || item.winning_quote_id ? 'disabled' : ''}>
+              <option ${(item.currency||'MXN')==='MXN'?'selected':''}>MXN</option>
+              <option ${(item.currency||'MXN')==='USD'?'selected':''}>USD</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Centro de costo</label>
+            <select id="eim-cc" style="width:100%" ${isLocked ? 'disabled' : ''}>
+              <option value="">Sin centro de costo</option>
+              ${costCenters.map(c => `<option value="${c.id}" ${Number(item.cost_center_id)===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Sub centro de costo</label>
+            <select id="eim-scc" style="width:100%" ${isLocked ? 'disabled' : ''}>
+              <option value="">Sin subcentro</option>
+              ${sccList.map(s => `<option value="${s.id}" ${Number(item.sub_cost_center_id)===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div style="grid-column:1/-1">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Comentarios</label>
+            <textarea id="eim-comments" style="width:100%;height:60px;resize:vertical" ${isLocked ? 'disabled' : ''}>${escapeHtml(item.comments||'')}</textarea>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;align-items:center">
+          <span id="eim-msg" style="font-size:12px;flex:1"></span>
+          <button id="eim-cancel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:6px 16px;cursor:pointer">Cancelar</button>
+          ${!isLocked ? `<button id="eim-save" style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:7px 20px;cursor:pointer;font-weight:600">Guardar cambios</button>` : ''}
+        </div>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.querySelector('#eim-cancel').onclick = () => modal.remove();
+    modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    const saveBtn = modal.querySelector('#eim-save');
+    if (saveBtn) saveBtn.onclick = async () => {
+      saveBtn.disabled = true;
+      const msg = modal.querySelector('#eim-msg');
+      const nameVal = modal.querySelector('#eim-name').value.trim();
+      try {
+        const payload = {
+          supplier_id:        modal.querySelector('#eim-supplier').value || null,
+          quantity:           Number(modal.querySelector('#eim-qty').value),
+          unit:               modal.querySelector('#eim-unit').value.trim(),
+          unit_cost:          Number(modal.querySelector('#eim-cost').value),
+          currency:           modal.querySelector('#eim-currency').value,
+          cost_center_id:     modal.querySelector('#eim-cc').value || null,
+          sub_cost_center_id: modal.querySelector('#eim-scc').value || null,
+          comments:           modal.querySelector('#eim-comments').value.trim()
+        };
+        if (!item.catalog_item_id && nameVal) payload.manual_item_name = nameVal;
+        await api(`/api/purchases/items/${item.id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+        // Actualizar local
+        Object.assign(item, payload, {
+          item_name: item.catalog_item_id ? item.item_name : (nameVal || item.item_name),
+          supplier_id: payload.supplier_id ? Number(payload.supplier_id) : null,
+          cost_center_id: payload.cost_center_id ? Number(payload.cost_center_id) : null,
+          sub_cost_center_id: payload.sub_cost_center_id ? Number(payload.sub_cost_center_id) : null,
+          cost_center_name: (costCenters.find(c => Number(c.id) === Number(payload.cost_center_id))||{}).name || item.cost_center_name
+        });
+        msg.textContent = '✅ Guardado';
+        msg.style.color = '#16a34a';
+        setTimeout(() => modal.remove(), 700);
+      } catch(e) { msg.textContent = e.message; msg.style.color = '#dc2626'; saveBtn.disabled = false; }
+    };
   };
 
   const generarPOPdf = async (po, supplierName, poViewUrl) => {
@@ -3192,6 +3304,7 @@ async function purchasesView() {
             ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
             <button class="btn-secondary po-print-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">🖨 Ver/Imprimir PO</button>
             <button class="btn-secondary po-items-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📦 Ver ítems</button>
+            <button class="btn-secondary po-resend-mail-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">📧 Reenviar correo</button>
           </div>
           <div id="po-items-detail-${p.id}" style="display:none;margin-top:10px;padding:10px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb"></div>
           <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
@@ -3482,6 +3595,19 @@ async function purchasesView() {
           } catch(e) { detailDiv.innerHTML = `<div class="small" style="color:#dc2626">Error: ${e.message}</div>`; }
         };
       });
+
+      // Reenviar correo
+      tabContent.querySelectorAll('.po-resend-mail-btn').forEach(btn => {
+        btn.onclick = async () => {
+          btn.disabled = true; btn.textContent = '⏳ Generando...';
+          try {
+            const data = await api(`/api/purchases/purchase-orders/${btn.dataset.id}/mailto`);
+            if (data.mailto) showMailtoPanel([{ po_folio: btn.dataset.folio, supplier_email: data.supplier_email, cc: data.cc, mailto: data.mailto }]);
+            else alert('No se pudo generar el correo.');
+          } catch(e) { alert(e.message); }
+          finally { btn.disabled = false; btn.textContent = '📧 Reenviar correo'; }
+        };
+      });
       };  // close renderPos
 
       renderPos();
@@ -3697,6 +3823,32 @@ async function purchasesView() {
   };
 
   closePreviewBtn.onclick = () => { poPreviewSection.style.display = 'none'; };
+
+  // Panel de correos para abrir manualmente (evita bloqueo de popups del navegador)
+  const showMailtoPanel = (poMailtos) => {
+    const panel = document.createElement('div');
+    panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
+    panel.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:28px;width:520px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+        <h3 style="margin:0 0 8px">📧 Correos generados</h3>
+        <p style="font-size:13px;color:#6b7280;margin:0 0 18px">Haz clic en cada botón para abrir el correo en tu cliente de correo (Outlook, Gmail, etc.). El correo incluye los ítems, precios, cotizaciones y el enlace al PDF de la PO.</p>
+        ${poMailtos.map(pm => `
+          <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:10px">
+            <div style="font-weight:700;font-size:14px;margin-bottom:2px">${pm.po_folio}</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">Para: <b>${escapeHtml(pm.supplier_email || '(sin correo)')}</b>${pm.cc ? `  · CC: ${escapeHtml(pm.cc.split(',').slice(0,3).join(', '))}${pm.cc.split(',').length>3?'…':''}` : ''}</div>
+            ${pm.supplier_email
+              ? `<a href="${pm.mailto}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;padding:6px 16px;border-radius:6px;font-weight:600">📧 Abrir correo al proveedor</a>`
+              : '<span style="color:#dc2626;font-size:12px">⚠ Proveedor sin correo registrado</span>'}
+          </div>`).join('')}
+        <div style="text-align:right;margin-top:16px">
+          <button id="closeMailtoPanel" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:13px">Cerrar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(panel);
+    panel.querySelector('#closeMailtoPanel').onclick = () => panel.remove();
+    panel.onclick = (e) => { if (e.target === panel) panel.remove(); };
+  };
+
   const generarPDFsPorPO = async (out) => {
     const urlMap = new Map((out.po_mailtos || []).map(pm => [pm.po_id, pm.po_view_url]));
     for (const po of (out.purchase_orders || [])) {
@@ -3710,11 +3862,7 @@ async function purchasesView() {
       poConfirmMsg.textContent = 'Generando...';
       const out = await doGeneratePO(lastPreviewIds);
       poConfirmMsg.textContent = out.message;
-      if (out.po_mailtos?.length) {
-        out.po_mailtos.forEach((pm, i) => {
-          if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
-        });
-      }
+      if (out.po_mailtos?.length) showMailtoPanel(out.po_mailtos);
       await generarPDFsPorPO(out);
       setTimeout(render, 1800);
     } catch (e) {
@@ -3732,11 +3880,7 @@ async function purchasesView() {
       poMsg.textContent = 'Generando POs...';
       const out = await doGeneratePO(ids);
       poMsg.textContent = out.message;
-      if (out.po_mailtos?.length) {
-        out.po_mailtos.forEach((pm, i) => {
-          if (pm.mailto) setTimeout(() => window.open(pm.mailto, '_blank'), i * 700);
-        });
-      }
+      if (out.po_mailtos?.length) showMailtoPanel(out.po_mailtos);
       await generarPDFsPorPO(out);
       setTimeout(render, 1800);
     } catch (e) {

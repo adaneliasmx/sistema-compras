@@ -120,6 +120,7 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   if (req.body.unit !== undefined) line.unit = req.body.unit;
   if (req.body.comments !== undefined) line.comments = req.body.comments;
   if (req.body.currency !== undefined) line.currency = req.body.currency || line.currency || 'MXN';
+  if (req.body.cost_center_id !== undefined) line.cost_center_id = req.body.cost_center_id ? Number(req.body.cost_center_id) : null;
   if (req.body.sub_cost_center_id !== undefined) {
     line.sub_cost_center_id = req.body.sub_cost_center_id ? Number(req.body.sub_cost_center_id) : null;
     // Assign removes the pending proposal
@@ -461,23 +462,26 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
     const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
 
-    // Enriquecer cada línea con código, urgencia y fecha estimada desde requisición
+    // Enriquecer cada línea con código, urgencia, fecha estimada y cotización desde requisición
     const lineDetails = poLines.map(l => {
       const cat = db.catalog_items.find(c => c.id === l.catalog_item_id) || {};
       const name = cat.name || l.description || l.manual_item_name || 'ítem';
       const code = cat.code || '—';
       const reqItem = db.requisition_items.find(ri => ri.id === l.requisition_item_id) || {};
-      const req = reqItem.requisition_id
+      const req2 = reqItem.requisition_id
         ? db.requisitions.find(r => r.id === reqItem.requisition_id) || {}
         : {};
-      const urgency = req.urgency || '—';
-      const estDate = req.programmed_date || '—';
+      const urgency = req2.urgency || '—';
+      const estDate = req2.programmed_date || '—';
       const subtotal = (Number(l.quantity||0) * Number(l.unit_cost||0)).toFixed(2);
-      return [
+      const winQuote = reqItem.winning_quote_id ? (db.quotations || []).find(q => q.id === reqItem.winning_quote_id) : null;
+      const lines2 = [
         `  ┌─ ${name} [${code}]`,
         `  │  Cantidad: ${l.quantity} ${l.unit || ''}   Precio unit.: $${Number(l.unit_cost||0).toFixed(2)} ${l.currency||po.currency||'MXN'}   Subtotal: $${subtotal}`,
+        winQuote ? `  │  Ref. cotización: ${winQuote.folio || ('#' + winQuote.id)}` : null,
         `  └─ Urgencia: ${urgency}   Fecha estimada de entrega: ${estDate}`
-      ].join('\n');
+      ].filter(Boolean);
+      return lines2.join('\n');
     }).join('\n\n');
 
     // Buscar requisición para obtener solicitante
@@ -631,6 +635,78 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
     return { ...i, name: cat.name || i.manual_item_name || '-', code: cat.code || '—' };
   });
   res.json({ po, items });
+});
+
+// Regenerar mailto para una PO ya creada (reenvío de correo)
+router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req, res) => {
+  const { poToken } = require('./public-po');
+  const db = read();
+  const po = db.purchase_orders.find(x => x.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+
+  const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
+  const poLines  = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
+
+  const lineDetails = poLines.map(l => {
+    const cat  = db.catalog_items.find(c => c.id === l.catalog_item_id) || {};
+    const name = cat.name || l.description || l.manual_item_name || 'ítem';
+    const code = cat.code || '—';
+    const reqItem = db.requisition_items.find(ri => ri.id === l.requisition_item_id) || {};
+    const reqRow  = reqItem.requisition_id ? db.requisitions.find(r => r.id === reqItem.requisition_id) || {} : {};
+    const urgency = reqRow.urgency || '—';
+    const estDate = reqRow.programmed_date || '—';
+    const subtotal = (Number(l.quantity||0) * Number(l.unit_cost||0)).toFixed(2);
+    const winQuote = reqItem.winning_quote_id ? (db.quotations || []).find(q => q.id === reqItem.winning_quote_id) : null;
+    return [
+      `  ┌─ ${name} [${code}]`,
+      `  │  Cantidad: ${l.quantity} ${l.unit || ''}   Precio unit.: $${Number(l.unit_cost||0).toFixed(2)} ${l.currency||po.currency||'MXN'}   Subtotal: $${subtotal}`,
+      winQuote ? `  │  Ref. cotización: ${winQuote.folio || ('#' + winQuote.id)}` : null,
+      `  └─ Urgencia: ${urgency}   Fecha estimada de entrega: ${estDate}`
+    ].filter(Boolean).join('\n');
+  }).join('\n\n');
+
+  const buyers     = db.users.filter(u => u.role_code === 'comprador'   && u.active !== false);
+  const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
+  const ccEmails   = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
+  const firstLine    = poLines[0];
+  const firstReqItem = firstLine ? db.requisition_items.find(ri => ri.id === firstLine.requisition_item_id) : null;
+  const reqRow2      = firstReqItem ? db.requisitions.find(r => r.id === firstReqItem.requisition_id) : null;
+  const requester    = reqRow2 ? db.users.find(u => u.id === reqRow2.requester_user_id) : null;
+  const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
+
+  const proto = req.headers['x-forwarded-proto'] || req.protocol;
+  const host  = req.get('host');
+  const baseUrl  = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const token    = poToken(po);
+  const poViewUrl = `${baseUrl}/po-view?token=${token}`;
+  const subject  = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
+
+  const body = [
+    `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
+    ``,
+    `Le enviamos la Orden de Compra ${po.folio}.`,
+    ``,
+    `Proveedor : ${supplier.business_name || '—'}`,
+    `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
+    ``,
+    `── Ítems solicitados ────────────────────────────`,
+    ``,
+    lineDetails,
+    ``,
+    `────────────────────────────────────────────────`,
+    `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
+    ``,
+    `── Ver y confirmar esta orden ───────────────────`,
+    `Puede ver el PDF de esta orden y confirmar su fecha`,
+    `compromiso de entrega en el siguiente enlace:`,
+    ``,
+    `${poViewUrl}`,
+    ``,
+    `Gracias.`
+  ].join('\n');
+
+  const mailto = `mailto:${encodeURIComponent(supplier.email||'')}?cc=${encodeURIComponent(allCc)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  res.json({ mailto, supplier_email: supplier.email || '', cc: allCc, po_view_url: poViewUrl });
 });
 
 // Proveedor acepta o rechaza la PO
