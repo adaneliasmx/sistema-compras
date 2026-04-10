@@ -2758,9 +2758,9 @@ async function purchasesView() {
         ['','','','','IVA (16%):', `$${iva.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`],
         ['','','','','Total c/IVA:', `$${total.toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`],
       ],
-      headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: 'bold', fontSize: 9 },
-      bodyStyles: { fontSize: 9 },
-      footStyles: { fontStyle: 'bold', fontSize: 9, fillColor: [241, 245, 249] },
+      headStyles: { fillColor: [219, 234, 254], textColor: [0, 0, 0], fontStyle: 'bold', fontSize: 9 },
+      bodyStyles: { fontSize: 9, textColor: [0, 0, 0] },
+      footStyles: { fontStyle: 'bold', fontSize: 9, fillColor: [241, 245, 249], textColor: [0, 0, 0] },
       columnStyles: { 0:{cellWidth:20}, 1:{cellWidth:14,halign:'right'}, 2:{cellWidth:18}, 3:{cellWidth:'auto'}, 4:{cellWidth:30,halign:'right'}, 5:{cellWidth:30,halign:'right'} },
       showFoot: 'lastPage',
     });
