@@ -231,6 +231,7 @@ function shell(content, activeHash) {
 
   return `
     <div class="layout rhh-layout">
+      <div class="sidebar-overlay" id="sidebarOverlay" onclick="document.querySelector('.sidebar').classList.remove('open');this.classList.remove('open')"></div>
       <aside class="sidebar">
         <div class="brand">👥 Recursos Humanos</div>
         <nav class="nav">${menuHtml}</nav>
@@ -242,10 +243,10 @@ function shell(content, activeHash) {
       </aside>
       <main class="main">
         <div class="topbar">
-          <div>
+          <div style="display:flex;align-items:center;gap:10px"><button class="mob-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');document.getElementById('sidebarOverlay').classList.toggle('open')">☰</button><div>
             <strong>${state.user?.full_name || ''}</strong>
             <span class="badge" style="margin-left:8px;">${role.toUpperCase()}</span>
-          </div>
+          </div></div>
           <div style="display:flex;align-items:center;gap:12px;">
             <button id="rhhNotifBtn" onclick="toggleNotifPanel()" style="position:relative;background:none;border:none;cursor:pointer;font-size:20px;padding:4px 8px;border-radius:8px;" title="Notificaciones">
               🔔<span id="rhhNotifBadge" style="display:none;position:absolute;top:0;right:0;background:#ef4444;color:#fff;border-radius:50%;font-size:10px;min-width:16px;height:16px;line-height:16px;text-align:center;font-weight:700;"></span>

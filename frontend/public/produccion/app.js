@@ -472,6 +472,7 @@ function renderLayout() {
 
   return `
   <div class="prod-layout">
+    <div class="p-sidebar-overlay" id="pSidebarOverlay" onclick="document.querySelector('.p-sidebar').classList.remove('open');this.classList.remove('open')"></div>
     <nav class="p-sidebar">
       <div class="p-sidebar-brand">
         <div class="s-icon">🏭</div>
@@ -492,6 +493,7 @@ function renderLayout() {
     </nav>
     <div class="p-main">
       <div class="p-topbar">
+        <button class="p-mob-menu-btn" onclick="document.querySelector('.p-sidebar').classList.toggle('open');document.getElementById('pSidebarOverlay').classList.toggle('open')">☰</button>
         <h2 id="topbar-title">${SECTION_TITLES[state.section] || ''}</h2>
       </div>
       <div class="p-content" id="p-content"></div>

@@ -1,0 +1,208 @@
+================================================================================
+IMPLEMENTACIÓN DE NOTIFICACIONES POR EMAIL — SISTEMA DE COMPRAS
+Fecha de redacción: 2026-04-10
+================================================================================
+
+CONTEXTO DEL SISTEMA
+---------------------
+- Stack: Node.js + Express.js (v4.21.2) + PostgreSQL (producción) / SQLite (dev)
+- Deploy: Render.com (backend) + frontend estático
+- Repositorio: C:\webcompras\sistema-compras
+- Backend entry point: backend/src/server.js
+- El sistema YA genera PDFs de órdenes de compra y YA tiene lógica de
+  notificaciones internas en backend/src/routes/notifications.js
+- Actualmente los correos se generan como enlaces mailto: (sin envío real)
+  Archivos afectados: backend/src/routes/purchases.js (líneas 225, 351, 530, 710)
+
+
+INFRAESTRUCTURA DE CORREO DISPONIBLE
+--------------------------------------
+- Proveedor: Microsoft 365 (Outlook con dominio corporativo @tuempresa.com)
+- Servidor SMTP: smtp.office365.com / Puerto: 587 / Seguridad: STARTTLS
+- Se recomienda crear una cuenta dedicada: notificaciones@tuempresa.com
+  (o similar) para que el remitente sea identificable y no mezcle con correo humano
+
+REQUISITO PREVIO (acción del admin de Microsoft 365):
+  1. Crear o designar cuenta remitente (ej: notificaciones@tuempresa.com)
+  2. Habilitar SMTP AUTH para esa cuenta:
+     Centro de administración M365 → Usuarios → [cuenta] →
+     Correo → Administrar configuración de correo → SMTP autenticado: ON
+  3. Si la cuenta tiene MFA activo: generar una App Password específica
+     (Seguridad → Contraseñas de aplicación) y usarla en lugar de la contraseña normal
+
+
+DEPENDENCIAS A INSTALAR
+------------------------
+En la raíz del proyecto:
+
+  npm install nodemailer
+  npm install nodemailer-express-handlebars   # opcional, para plantillas HTML
+
+No se requieren más dependencias. Nodemailer es compatible con Microsoft 365
+via SMTP con STARTTLS sin configuración adicional.
+
+
+VARIABLES DE ENTORNO A AGREGAR (.env y en Render dashboard)
+-------------------------------------------------------------
+  SMTP_HOST=smtp.office365.com
+  SMTP_PORT=587
+  SMTP_SECURE=false          # false = STARTTLS en puerto 587
+  SMTP_USER=notificaciones@tuempresa.com
+  SMTP_PASS=contraseña_o_app_password
+  MAIL_FROM="Sistema Compras <notificaciones@tuempresa.com>"
+
+En Render: Settings → Environment → Add Environment Variable (una por una)
+NUNCA commitear estos valores al repositorio.
+
+
+ARQUITECTURA RECOMENDADA
+-------------------------
+Crear un servicio de email centralizado en:
+
+  backend/src/services/emailService.js
+
+Este archivo debe:
+  1. Crear el transporter de Nodemailer con la config SMTP
+  2. Exportar funciones específicas para cada tipo de notificación
+  3. Ser importado por las rutas que necesiten enviar correos
+
+Ejemplo de estructura del archivo:
+
+------------------------------------------------------------
+  const nodemailer = require('nodemailer');
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT),
+    secure: false,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+    tls: { ciphers: 'SSLv3' }  // requerido por Office365
+  });
+
+  async function enviarOrdenCompra({ destinatario, cc, asunto, htmlBody, adjuntoPDF }) {
+    return transporter.sendMail({
+      from: process.env.MAIL_FROM,
+      to: destinatario,
+      cc: cc,
+      subject: asunto,
+      html: htmlBody,
+      attachments: adjuntoPDF ? [{ filename: 'orden_compra.pdf', content: adjuntoPDF }] : []
+    });
+  }
+
+  module.exports = { enviarOrdenCompra, /* otras funciones */ };
+------------------------------------------------------------
+
+
+PUNTOS DE INTEGRACIÓN EN EL CÓDIGO EXISTENTE
+----------------------------------------------
+Los siguientes archivos y líneas deben modificarse para llamar al emailService
+en lugar de generar mailto: links:
+
+1. backend/src/routes/purchases.js
+   - Línea ~225: envío de cotización a proveedor → reemplazar mailto por emailService.enviarCotizacion()
+   - Línea ~351: distribución de OC aprobada → reemplazar mailto por emailService.enviarOrdenCompra()
+   - Línea ~530: notificación de pago → reemplazar mailto por emailService.enviarConfirmacionPago()
+   - Línea ~710: reenvío de OC → reemplazar mailto por emailService.reenviarOrdenCompra()
+
+2. backend/src/routes/notifications.js
+   - Este archivo ya contiene lógica para 10+ tipos de notificaciones por rol
+     (autorizador, comprador, pagos, proveedor, cliente_requisición, admin)
+   - Cada vez que se inserta una notificación interna, añadir llamada paralela
+     al emailService correspondiente (no bloquear el flujo principal con await)
+   - Patrón recomendado: emailService.enviar(...).catch(err => console.error('Email error:', err))
+     para que un fallo de email no rompa la operación principal
+
+3. backend/src/routes/requisitions.js
+   - Aprobación/rechazo de requisición → notificar al solicitante
+
+4. backend/src/routes/vales.js
+   - Aprobación de vale → notificar al empleado
+
+
+EVENTOS PRIORITARIOS PARA IMPLEMENTAR (en orden de valor)
+-----------------------------------------------------------
+  PRIORIDAD 1:
+  [ ] OC generada/aprobada → Email al proveedor con PDF adjunto
+  [ ] Cotización solicitada → Email al proveedor con detalle de ítems
+
+  PRIORIDAD 2:
+  [ ] Requisición aprobada → Email al solicitante
+  [ ] Requisición rechazada → Email al solicitante con motivo
+  [ ] Pago registrado → Email al proveedor con confirmación
+
+  PRIORIDAD 3:
+  [ ] Vale aprobado → Email al empleado
+  [ ] Alertas de stock bajo → Email al comprador/admin
+  [ ] Recordatorio de cotizaciones pendientes → Email periódico al comprador
+
+
+PLANTILLAS HTML DE CORREO
+---------------------------
+Se recomienda crear plantillas en: backend/src/email-templates/
+  - orden_compra.html
+  - cotizacion.html
+  - confirmacion_pago.html
+  - requisicion_aprobada.html
+  - requisicion_rechazada.html
+
+Usar variables con sintaxis {{variable}} si se usa handlebars,
+o template literals de JS si se prefiere sin dependencias extra.
+
+
+CONSIDERACIONES DE SEGURIDAD
+------------------------------
+- NUNCA exponer credenciales SMTP en el código fuente o en el repositorio
+- Usar siempre process.env para leer configuración sensible
+- Agregar SMTP_USER y SMTP_PASS al .gitignore implícitamente via .env
+- Validar siempre que los emails destinatarios sean strings válidos antes de enviar
+- Limitar el volumen: Microsoft 365 tiene límite de ~10,000 emails/día por tenant
+  y ~30 mensajes/minuto por cuenta. Para este sistema de uso interno es más que suficiente.
+
+
+TESTING
+--------
+Para probar sin enviar correos reales usar Ethereal Email (servicio de test gratuito):
+  https://ethereal.email
+  - Crear cuenta de prueba
+  - Usar sus credenciales SMTP en .env durante desarrollo
+  - Los correos "enviados" se pueden ver en el dashboard web de Ethereal
+
+Comando para generar cuenta de prueba desde Node:
+  const testAccount = await nodemailer.createTestAccount();
+  console.log(nodemailer.getTestMessageUrl(info)); // URL para ver el email enviado
+
+
+PROMPT PARA IA (para retomar esta implementación en el futuro)
+---------------------------------------------------------------
+Pegar esto al inicio de la conversación con Claude Code:
+
+"""
+Quiero implementar notificaciones por email en el sistema de compras ubicado en
+C:\webcompras\sistema-compras. El stack es Node.js + Express + PostgreSQL desplegado en Render.
+
+Ya existe lógica de notificaciones internas en backend/src/routes/notifications.js.
+Las rutas de compras generan mailto: links en purchases.js que deben convertirse
+en envíos reales.
+
+El correo remitente será una cuenta Microsoft 365 con dominio corporativo.
+Las credenciales estarán en variables de entorno: SMTP_HOST, SMTP_PORT, SMTP_SECURE,
+SMTP_USER, SMTP_PASS, MAIL_FROM.
+
+Quiero que:
+1. Instales nodemailer
+2. Crees backend/src/services/emailService.js con el transporter y funciones de envío
+3. Integres el envío real en purchases.js reemplazando los mailto: links
+4. Conectes el emailService a notifications.js para enviar email paralelo a cada
+   notificación interna
+5. Empieces por la Prioridad 1: OC aprobada con PDF adjunto al proveedor
+
+Lee el archivo 'Fututo notificaciones.txt' en la raíz del proyecto para contexto completo.
+"""
+
+================================================================================
+FIN DEL DOCUMENTO
+================================================================================
