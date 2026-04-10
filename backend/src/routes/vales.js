@@ -879,9 +879,12 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
   const db = readVales();
   const headers  = db.vales_header  || [];
   const detalles = db.vales_detalle || [];
+  const itemsCat = db.items_vales   || [];
 
   const hdrMap = {};
   headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+  const itemPrecioMap = {};
+  itemsCat.forEach(i => { itemPrecioMap[i.item] = parseFloat(i.precio_kg) || 0; });
 
   const bounds = getPeriodBounds(tipo, fecha);
   const { ini, fin, prevIni, prevFin, label, prevLabel } = bounds;
@@ -889,16 +892,21 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
   // Aplanar detalles con header
   const rows = detalles.map(d => {
     const h = hdrMap[d.folio_vale] || {};
+    const kg = parseFloat(d.kg_equivalentes) || 0;
+    const precio_kg = itemPrecioMap[d.item] || 0;
     return {
       folio_vale: d.folio_vale,
       fecha:  h.fecha  || '',
       linea:  h.linea  || '',
       item:   d.item   || '',
-      kg:     parseFloat(d.kg_equivalentes) || 0
+      kg,
+      dinero: kg * precio_kg,
+      precio_kg
     };
   }).filter(r => !filtLinea || r.linea === filtLinea);
 
-  const sumKg = arr => arr.reduce((s, r) => s + r.kg, 0);
+  const sumKg     = arr => arr.reduce((s, r) => s + r.kg, 0);
+  const sumDinero = arr => arr.reduce((s, r) => s + r.dinero, 0);
   const actual   = rows.filter(r => r.fecha >= ini    && r.fecha <= fin);
   const anterior = rows.filter(r => r.fecha >= prevIni && r.fecha <= prevFin);
 
@@ -910,28 +918,60 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
     anterior: sumKg(anterior.filter(r => r.fecha >= b.prevIni && r.fecha <= b.prevFin))
   }));
 
-  // ── Por producto
-  const acc = (arr) => {
+  // ── Por producto (con dinero)
+  const accKgDin = (arr) => {
     const m = {};
-    arr.forEach(r => { m[r.item] = (m[r.item] || 0) + r.kg; });
+    arr.forEach(r => {
+      if (!m[r.item]) m[r.item] = { kg: 0, dinero: 0, precio_kg: r.precio_kg };
+      m[r.item].kg += r.kg;
+      m[r.item].dinero += r.dinero;
+    });
     return m;
   };
-  const iAct = acc(actual), iAnt = acc(anterior);
+  const iAct = accKgDin(actual), iAnt = accKgDin(anterior);
   const allItems = [...new Set([...Object.keys(iAct), ...Object.keys(iAnt)])];
   const byProducto = allItems.map(item => {
-    const act = iAct[item] || 0, ant = iAnt[item] || 0;
-    const delta = act - ant;
-    const pct   = ant > 0 ? (delta / ant) * 100 : (act > 0 ? 100 : 0);
-    return { item, actual: act, anterior: ant, delta, pct };
+    const a = iAct[item] || { kg: 0, dinero: 0, precio_kg: 0 };
+    const b = iAnt[item] || { kg: 0, dinero: 0, precio_kg: 0 };
+    const delta = a.kg - b.kg;
+    const pct   = b.kg > 0 ? (delta / b.kg) * 100 : (a.kg > 0 ? 100 : 0);
+    return { item, actual: a.kg, anterior: b.kg, delta, pct,
+             dinero_actual: a.dinero, dinero_anterior: b.dinero,
+             dinero_delta: a.dinero - b.dinero,
+             precio_kg: a.precio_kg || b.precio_kg || 0 };
   }).sort((a, b) => b.actual - a.actual);
 
-  // ── Por línea
-  const lAct = acc(actual.map(r => ({ ...r, item: r.linea })));
-  const lAnt = acc(anterior.map(r => ({ ...r, item: r.linea })));
+  // ── Por línea con desglose de productos
+  const accLinea = (arr) => {
+    const m = {};
+    arr.forEach(r => {
+      if (!m[r.linea]) m[r.linea] = { kg: 0, dinero: 0, productos: {} };
+      m[r.linea].kg += r.kg;
+      m[r.linea].dinero += r.dinero;
+      if (!m[r.linea].productos[r.item]) m[r.linea].productos[r.item] = { kg: 0, dinero: 0 };
+      m[r.linea].productos[r.item].kg += r.kg;
+      m[r.linea].productos[r.item].dinero += r.dinero;
+    });
+    return m;
+  };
+  const lAct = accLinea(actual), lAnt = accLinea(anterior);
   const allLineas = [...new Set([...Object.keys(lAct), ...Object.keys(lAnt)])];
   const byLinea = allLineas.map(linea => {
-    const act = lAct[linea] || 0, ant = lAnt[linea] || 0;
-    return { linea, actual: act, anterior: ant, delta: act - ant, pct: ant > 0 ? ((act-ant)/ant)*100 : (act>0?100:0) };
+    const a = lAct[linea] || { kg: 0, dinero: 0, productos: {} };
+    const b = lAnt[linea] || { kg: 0, dinero: 0, productos: {} };
+    const allProds = [...new Set([...Object.keys(a.productos), ...Object.keys(b.productos)])];
+    const productos = allProds.map(item => ({
+      item,
+      actual:           (a.productos[item] || { kg: 0 }).kg,
+      anterior:         (b.productos[item] || { kg: 0 }).kg,
+      dinero_actual:    (a.productos[item] || { dinero: 0 }).dinero,
+      dinero_anterior:  (b.productos[item] || { dinero: 0 }).dinero
+    })).sort((x, y) => y.actual - x.actual);
+    return { linea, actual: a.kg, anterior: b.kg, delta: a.kg - b.kg,
+             pct: b.kg > 0 ? ((a.kg - b.kg) / b.kg) * 100 : (a.kg > 0 ? 100 : 0),
+             dinero_actual: a.dinero, dinero_anterior: b.dinero,
+             dinero_delta: a.dinero - b.dinero,
+             productos };
   }).sort((a, b) => b.actual - a.actual);
 
   // ── Alertas: productos con subida ≥ 20%
@@ -944,13 +984,130 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
     byProducto,
     byLinea,
     totales: {
-      actual:          sumKg(actual),
-      anterior:        sumKg(anterior),
-      vales_actual:    new Set(actual.map(r => r.folio_vale)).size,
-      vales_anterior:  new Set(anterior.map(r => r.folio_vale)).size
+      actual:           sumKg(actual),
+      anterior:         sumKg(anterior),
+      dinero_actual:    sumDinero(actual),
+      dinero_anterior:  sumDinero(anterior),
+      vales_actual:     new Set(actual.map(r => r.folio_vale)).size,
+      vales_anterior:   new Set(anterior.map(r => r.folio_vale)).size
     },
     alertas
   });
+});
+
+// ── Reporte para Procesos (admin) ─────────────────────────────────────────────
+router.get('/reportes/procesos', valesAllowRoles('admin'), (req, res) => {
+  const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
+
+  const db = readVales();
+  const headers  = db.vales_header  || [];
+  const detalles = db.vales_detalle || [];
+  const tanques  = db.tanques_vales || [];
+  const itemsCat = db.items_vales   || [];
+
+  // Lookup maps
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+  const tanqueMap = {}; // "linea|no_tanque" -> tipo
+  tanques.forEach(t => { tanqueMap[`${t.linea}|${t.no_tanque}`] = t.tipo || 'Sin tipo'; });
+  const precioMap = {};
+  itemsCat.forEach(i => { precioMap[i.item] = parseFloat(i.precio_kg) || 0; });
+
+  // ISO week number for a date string
+  function dateToISOWeek(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00Z');
+    const thursday = new Date(d);
+    thursday.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((thursday - yearStart) / 86400000 + 1) / 7);
+    return { week, month: d.getUTCMonth() + 1 };
+  }
+
+  // Flatten and filter by calendar year
+  const yStr = String(year);
+  const flatRows = [];
+  detalles.forEach(det => {
+    const h = hdrMap[det.folio_vale] || {};
+    if (!h.fecha || !h.fecha.startsWith(yStr)) return;
+    const kg = parseFloat(det.kg_equivalentes) || 0;
+    if (!kg) return;
+    const tipo = tanqueMap[`${h.linea}|${det.no_tanque}`] || 'Sin tipo';
+    const precio_kg = precioMap[det.item] || 0;
+    const { week, month } = dateToISOWeek(h.fecha);
+    flatRows.push({ linea: h.linea || 'Sin línea', tipo, item: det.item || '', kg, dinero: kg * precio_kg, week, month });
+  });
+
+  // Unique weeks and months present in data
+  const allWeeks  = [...new Set(flatRows.map(r => r.week))].sort((a, b) => a - b);
+  const allMonths = [...new Set(flatRows.map(r => r.month))].sort((a, b) => a - b);
+
+  // Build nested accumulator: linea → tipo → item → {weeks, months}
+  const lineaMap = {};
+  flatRows.forEach(r => {
+    if (!lineaMap[r.linea]) lineaMap[r.linea] = {};
+    if (!lineaMap[r.linea][r.tipo]) lineaMap[r.linea][r.tipo] = {};
+    if (!lineaMap[r.linea][r.tipo][r.item]) lineaMap[r.linea][r.tipo][r.item] = { weeks: {}, months: {} };
+    const cell = lineaMap[r.linea][r.tipo][r.item];
+    if (!cell.weeks[r.week])   cell.weeks[r.week]   = { kg: 0, mxn: 0 };
+    if (!cell.months[r.month]) cell.months[r.month] = { kg: 0, mxn: 0 };
+    cell.weeks[r.week].kg    += r.kg;   cell.weeks[r.week].mxn   += r.dinero;
+    cell.months[r.month].kg  += r.kg;   cell.months[r.month].mxn += r.dinero;
+  });
+
+  // Sort lineas: numbers first in order, then baker last
+  const sortLineas = (keys) => keys.sort((a, b) => {
+    const isBakerA = /baker/i.test(a), isBakerB = /baker/i.test(b);
+    if (isBakerA && !isBakerB) return 1;
+    if (!isBakerA && isBakerB) return -1;
+    const numA = parseInt(a.match(/\d+/)?.[0] ?? '999');
+    const numB = parseInt(b.match(/\d+/)?.[0] ?? '999');
+    return numA !== numB ? numA - numB : a.localeCompare(b);
+  });
+
+  const lineas = sortLineas(Object.keys(lineaMap)).map(linea => {
+    const tipoObj = lineaMap[linea];
+    const tipos = Object.keys(tipoObj).sort().map(tipo => {
+      const itemObj = tipoObj[tipo];
+      const items = Object.keys(itemObj).sort().map(item => {
+        const d = itemObj[item];
+        const totalKg  = Object.values(d.weeks).reduce((s, c) => s + c.kg, 0);
+        const totalMxn = Object.values(d.weeks).reduce((s, c) => s + c.mxn, 0);
+        return { item, weeks: d.weeks, months: d.months, total: { kg: totalKg, mxn: totalMxn } };
+      }).sort((a, b) => b.total.kg - a.total.kg);
+
+      // Subtotals por tipo
+      const tipoWeeks = {}, tipoMonths = {};
+      items.forEach(it => {
+        Object.entries(it.weeks).forEach(([w, c]) => {
+          if (!tipoWeeks[w])  tipoWeeks[w]  = { kg: 0, mxn: 0 };
+          tipoWeeks[w].kg  += c.kg; tipoWeeks[w].mxn  += c.mxn;
+        });
+        Object.entries(it.months).forEach(([m, c]) => {
+          if (!tipoMonths[m]) tipoMonths[m] = { kg: 0, mxn: 0 };
+          tipoMonths[m].kg += c.kg; tipoMonths[m].mxn += c.mxn;
+        });
+      });
+      const tipoTotal = { kg: items.reduce((s, i) => s + i.total.kg, 0), mxn: items.reduce((s, i) => s + i.total.mxn, 0) };
+      return { tipo, items, weeks: tipoWeeks, months: tipoMonths, total: tipoTotal };
+    }).sort((a, b) => b.total.kg - a.total.kg);
+
+    // Totals por línea
+    const lineaWeeks = {}, lineaMonths = {};
+    tipos.forEach(t => {
+      Object.entries(t.weeks).forEach(([w, c]) => {
+        if (!lineaWeeks[w])  lineaWeeks[w]  = { kg: 0, mxn: 0 };
+        lineaWeeks[w].kg  += c.kg; lineaWeeks[w].mxn  += c.mxn;
+      });
+      Object.entries(t.months).forEach(([m, c]) => {
+        if (!lineaMonths[m]) lineaMonths[m] = { kg: 0, mxn: 0 };
+        lineaMonths[m].kg += c.kg; lineaMonths[m].mxn += c.mxn;
+      });
+    });
+    const lineaTotal = { kg: tipos.reduce((s, t) => s + t.total.kg, 0), mxn: tipos.reduce((s, t) => s + t.total.mxn, 0) };
+    return { linea, tipos, weeks: lineaWeeks, months: lineaMonths, total: lineaTotal };
+  });
+
+  res.json({ year, weeks: allWeeks, months: allMonths, lineas });
 });
 
 // ── Comparativo real vs teórico (admin) ───────────────────────────────────────

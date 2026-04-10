@@ -1110,7 +1110,7 @@ window.editDetalle = async function(folio, detalleId) {
 
 // ── Reportes de Consumo (admin) ───────────────────────────────────────────────
 // Estado del navegador de períodos
-const RPS = { tipo: 'semana', fecha: today(), linea: '', _data: null, _charts: {} };
+const RPS = { tipo: 'semana', fecha: today(), linea: '', modo: 'kg', _data: null, _charts: {} };
 
 function navFecha(dir) {
   const d = new Date(RPS.fecha + 'T12:00:00Z');
@@ -1132,6 +1132,7 @@ async function viewReportes() {
   <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
     <button class="tab-btn tab-active" id="rpt-main-tab-consumo" onclick="switchRptMainTab('consumo')">📊 Consumo</button>
     <button class="tab-btn" id="rpt-main-tab-comp" onclick="switchRptMainTab('comp')">🔬 Real vs Teórico</button>
+    <button class="tab-btn" id="rpt-main-tab-procesos" onclick="switchRptMainTab('procesos')">🏭 Reporte para Procesos</button>
   </div>
 
   <!-- Panel: Consumo (existing content) -->
@@ -1153,6 +1154,10 @@ async function viewReportes() {
         <option value="">Todas las líneas</option>
         ${lineas.map(l=>`<option value="${l}"${RPS.linea===l?' selected':''}>${l}</option>`).join('')}
       </select>
+      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+        <button id="rpt-modo-kg"  class="btn btn-sm${RPS.modo==='kg'?' btn-primary':' btn-outline'}" style="border-radius:0;border:none" onclick="rptSetModo('kg')">kg</button>
+        <button id="rpt-modo-mxn" class="btn btn-sm${RPS.modo==='mxn'?' btn-primary':' btn-outline'}" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="rptSetModo('mxn')">$</button>
+      </div>
       <button class="btn btn-outline btn-sm" onclick="rptExport()">📥 CSV</button>
     </div>
   </div>
@@ -1188,6 +1193,22 @@ async function viewReportes() {
   </div>
   </div><!-- end rpt-panel-consumo -->
 
+  <!-- Panel: Reporte para Procesos -->
+  <div id="rpt-panel-procesos" style="display:none">
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+      <div><label class="flabel">Año</label><br>
+        <select id="proc-year" style="font-size:13px">${[2024,2025,2026,2027].map(y=>`<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}</select>
+      </div>
+      <button class="btn btn-primary" id="proc-btn">🔍 Generar</button>
+      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+        <button id="proc-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="procSetModo('kg')">kg</button>
+        <button id="proc-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="procSetModo('mxn')">$</button>
+      </div>
+      <button class="btn btn-outline" id="proc-export-btn">📥 CSV</button>
+    </div>
+    <div id="proc-result"></div>
+  </div>
+
   <!-- Panel: Comparativo Real vs Teórico -->
   <div id="rpt-panel-comp" style="display:none">
     <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
@@ -1217,6 +1238,14 @@ function bindReportes() {
     RPS.linea = l;
     rptLoad();
   };
+  window.rptSetModo = function(m) {
+    RPS.modo = m;
+    document.getElementById('rpt-modo-kg') ?.classList.toggle('btn-primary', m === 'kg');
+    document.getElementById('rpt-modo-kg') ?.classList.toggle('btn-outline',  m !== 'kg');
+    document.getElementById('rpt-modo-mxn')?.classList.toggle('btn-primary', m === 'mxn');
+    document.getElementById('rpt-modo-mxn')?.classList.toggle('btn-outline',  m !== 'mxn');
+    if (RPS._data) renderRptTables(RPS._data);
+  };
   window.rptExport = function() {
     const d = RPS._data;
     if (!d) return;
@@ -1234,10 +1263,12 @@ function bindReportes() {
   };
 
   window.switchRptMainTab = function(tab) {
-    document.getElementById('rpt-panel-consumo').style.display = tab === 'consumo' ? '' : 'none';
-    document.getElementById('rpt-panel-comp').style.display    = tab === 'comp'    ? '' : 'none';
-    document.getElementById('rpt-main-tab-consumo').classList.toggle('tab-active', tab === 'consumo');
-    document.getElementById('rpt-main-tab-comp').classList.toggle('tab-active',    tab === 'comp');
+    ['consumo','comp','procesos'].forEach(t => {
+      const panel = document.getElementById(`rpt-panel-${t}`);
+      const btn   = document.getElementById(`rpt-main-tab-${t}`);
+      if (panel) panel.style.display = t === tab ? '' : 'none';
+      if (btn)   btn.classList.toggle('tab-active', t === tab);
+    });
   };
 
   const runComparativo = async () => {
@@ -1293,6 +1324,127 @@ function bindReportes() {
     } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
 
+  // ── Tab: Reporte para Procesos ──────────────────────────────────────────────
+  let _procData = null;
+  let _procModo = 'kg';
+
+  window.procSetModo = function(m) {
+    _procModo = m;
+    document.getElementById('proc-modo-kg') ?.classList.toggle('btn-primary', m === 'kg');
+    document.getElementById('proc-modo-kg') ?.classList.toggle('btn-outline',  m !== 'kg');
+    document.getElementById('proc-modo-mxn')?.classList.toggle('btn-primary', m === 'mxn');
+    document.getElementById('proc-modo-mxn')?.classList.toggle('btn-outline',  m !== 'mxn');
+    if (_procData) renderProcesos(_procData, _procModo);
+  };
+
+  const MESES_PROC = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  function fmtProc(cell, modo) {
+    if (!cell) return '<span style="color:#e7e5e4">—</span>';
+    if (modo === 'mxn') return cell.mxn > 0 ? `$${cell.mxn.toLocaleString('es-MX',{maximumFractionDigits:0})}` : '<span style="color:#e7e5e4">—</span>';
+    return cell.kg > 0 ? cell.kg.toFixed(1) : '<span style="color:#e7e5e4">—</span>';
+  }
+
+  function renderProcesos(data, modo) {
+    const res = document.getElementById('proc-result');
+    if (!data || !data.lineas || data.lineas.length === 0) {
+      res.innerHTML = '<div class="empty-state"><div class="icon">🏭</div><p>Sin datos para este año.</p></div>';
+      return;
+    }
+    const weeks  = data.weeks;
+    const months = data.months;
+    const totalCols = weeks.length + months.length + 1;
+
+    // Header row
+    const thWeeks  = weeks.map(w  => `<th style="text-align:right;min-width:60px;font-size:11px;white-space:nowrap">S${w}</th>`).join('');
+    const thMonths = months.map(m => `<th style="text-align:right;min-width:72px;font-size:11px;white-space:nowrap;background:#fef9c3">${MESES_PROC[m-1]}</th>`).join('');
+    const thTotal  = `<th style="text-align:right;min-width:80px;font-size:11px;background:#fef3c7;font-weight:700">TOTAL</th>`;
+
+    let rows = '';
+    data.lineas.forEach(linea => {
+      // Fila TOTAL línea
+      const lwCells = weeks.map(w => `<td style="text-align:right;font-weight:700;font-size:12px">${fmtProc(linea.weeks[w], modo)}</td>`).join('');
+      const lmCells = months.map(m => `<td style="text-align:right;font-weight:700;font-size:12px;background:#fef9c3">${fmtProc(linea.months[m], modo)}</td>`).join('');
+      const ltCell  = `<td style="text-align:right;font-weight:700;font-size:12px;background:#fef3c7">${fmtProc(linea.total, modo)}</td>`;
+      rows += `<tr style="background:#1c1917;color:#fff">
+        <td style="font-weight:700;padding:6px 10px;font-size:13px;white-space:nowrap;position:sticky;left:0;background:#1c1917;z-index:2">${linea.linea}</td>
+        ${lwCells}${lmCells}${ltCell}
+      </tr>`;
+
+      linea.tipos.forEach(tipo => {
+        // Fila subtotal por tipo
+        const twCells = weeks.map(w => `<td style="text-align:right;font-weight:600;font-size:12px">${fmtProc(tipo.weeks[w], modo)}</td>`).join('');
+        const tmCells = months.map(m => `<td style="text-align:right;font-weight:600;font-size:12px;background:#fef9c3">${fmtProc(tipo.months[m], modo)}</td>`).join('');
+        const ttCell  = `<td style="text-align:right;font-weight:600;font-size:12px;background:#fef3c7">${fmtProc(tipo.total, modo)}</td>`;
+        rows += `<tr style="background:#292524;color:#e7e5e4">
+          <td style="padding:4px 10px 4px 20px;font-size:12px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#292524;z-index:2">↳ ${tipo.tipo}</td>
+          ${twCells}${tmCells}${ttCell}
+        </tr>`;
+
+        tipo.items.forEach(item => {
+          // Fila por ítem
+          const iwCells = weeks.map(w => `<td style="text-align:right;font-size:11px">${fmtProc(item.weeks[w], modo)}</td>`).join('');
+          const imCells = months.map(m => `<td style="text-align:right;font-size:11px;background:#fefce8">${fmtProc(item.months[m], modo)}</td>`).join('');
+          const itCell  = `<td style="text-align:right;font-size:11px;font-weight:600;background:#fef9c3">${fmtProc(item.total, modo)}</td>`;
+          rows += `<tr style="background:#fff">
+            <td style="padding:3px 10px 3px 36px;font-size:11px;color:#57534e;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:#fff;z-index:2" title="${item.item}">${item.item}</td>
+            ${iwCells}${imCells}${itCell}
+          </tr>`;
+        });
+      });
+    });
+
+    res.innerHTML = `
+    <div class="table-card">
+      <div style="overflow-x:auto;max-height:70vh;overflow-y:auto">
+        <table style="border-collapse:collapse;font-size:12px;min-width:100%">
+          <thead style="position:sticky;top:0;z-index:3">
+            <tr style="background:#57534e;color:#fff">
+              <th style="text-align:left;padding:8px 10px;min-width:220px;position:sticky;left:0;background:#57534e;z-index:4">Línea / Tipo / Ítem</th>
+              ${thWeeks}
+              ${thMonths}
+              ${thTotal}
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  const runProcesos = async () => {
+    const year = document.getElementById('proc-year').value;
+    const res  = document.getElementById('proc-result');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Generando reporte...</p></div>';
+    try {
+      const data = await GET(`/reportes/procesos?year=${year}`);
+      _procData = data;
+      renderProcesos(data, _procModo);
+    } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  };
+
+  document.getElementById('proc-btn').addEventListener('click', runProcesos);
+  document.getElementById('proc-export-btn').addEventListener('click', () => {
+    if (!_procData) { alert('Primero genera el reporte'); return; }
+    const data = _procData;
+    const weeks  = data.weeks;
+    const months = data.months;
+    const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const hdr = ['Línea','Tipo','Ítem', ...weeks.map(w=>`S${w} kg`), ...weeks.map(w=>`S${w} $`), ...months.map(m=>MESES[m-1]+' kg'), ...months.map(m=>MESES[m-1]+' $'), 'Total kg','Total $'];
+    const csvRows = [hdr.join(',')];
+    data.lineas.forEach(l => l.tipos.forEach(t => t.items.forEach(it => {
+      const wKg  = weeks.map(w => (it.weeks[w]?.kg  || 0).toFixed(3));
+      const wMxn = weeks.map(w => (it.weeks[w]?.mxn || 0).toFixed(2));
+      const mKg  = months.map(m => (it.months[m]?.kg  || 0).toFixed(3));
+      const mMxn = months.map(m => (it.months[m]?.mxn || 0).toFixed(2));
+      csvRows.push([`"${l.linea}"`,`"${t.tipo}"`,`"${it.item}"`, ...wKg,...wMxn,...mKg,...mMxn, it.total.kg.toFixed(3), it.total.mxn.toFixed(2)].join(','));
+    })));
+    const blob = new Blob(['\uFEFF'+csvRows.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `procesos_${data.year}.csv`; a.click();
+  });
+  // ── fin Tab Procesos ──────────────────────────────────────────────────────────
+
   document.getElementById('comp-btn').addEventListener('click', runComparativo);
   document.getElementById('comp-export-btn').addEventListener('click', () => {
     const d = window._compData;
@@ -1334,21 +1486,6 @@ async function rptLoad() {
     // Label del período
     if (el('rpt-label')) el('rpt-label').textContent = d.periodoActual.label;
     if (el('rpt-vs-label')) el('rpt-vs-label').textContent = `vs ${d.periodoAnterior.label}`;
-
-    // KPIs
-    const t = d.totales;
-    const kgDelta = t.actual - t.anterior;
-    const kgPct   = t.anterior > 0 ? ((kgDelta/t.anterior)*100).toFixed(1) : '—';
-    const vDelta  = t.vales_actual - t.vales_anterior;
-    const kgClr   = kgDelta >= 0 ? '#dc2626' : '#16a34a';
-    const vClr    = vDelta  >= 0 ? '#dc2626' : '#16a34a';
-    if (el('rpt-kpis')) el('rpt-kpis').innerHTML = `
-      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.actual.toFixed(1)}</div><div class="rpt-kpi-lbl">kg despachados</div>
-        <div class="rpt-kpi-sub" style="color:${kgClr}">${kgDelta>=0?'+':''}${kgDelta.toFixed(1)} kg (${kgDelta>=0?'+':''}${kgPct}%) vs anterior</div></div>
-      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.vales_actual}</div><div class="rpt-kpi-lbl">vales emitidos</div>
-        <div class="rpt-kpi-sub" style="color:${vClr}">${vDelta>=0?'+':''}${vDelta} vs anterior</div></div>
-      <div class="rpt-kpi"><div class="rpt-kpi-val">${t.anterior.toFixed(1)}</div><div class="rpt-kpi-lbl">kg período anterior</div>
-        <div class="rpt-kpi-sub" style="color:#78716c">${d.periodoAnterior.label}</div></div>`;
 
     // Alertas
     if (el('rpt-alertas')) {
@@ -1406,44 +1543,96 @@ async function rptLoad() {
       ctxP.parentElement.style.height = Math.max(180, top10.length * 28 + 50) + 'px';
     }
 
-    // Tabla productos
-    const fmtDelta = (d, p) => {
-      if (d === 0) return '<span style="color:#a8a29e">—</span>';
-      const clr = d > 0 ? '#dc2626' : '#16a34a';
-      return `<span style="color:${clr};font-weight:700">${d>0?'+':''}${d.toFixed(1)} kg (${d>0?'+':''}${p.toFixed(1)}%)</span>`;
-    };
-    if (el('rpt-tabla-productos')) el('rpt-tabla-productos').innerHTML = d.byProducto.length === 0
-      ? '<div class="empty-state"><div class="icon">📦</div><p>Sin datos</p></div>'
-      : `<table><thead><tr><th>Producto</th><th style="text-align:right">Actual (kg)</th><th style="text-align:right">Anterior (kg)</th><th>Variación</th></tr></thead>
-         <tbody>${d.byProducto.map(r=>`<tr>
-           <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
-           <td style="text-align:right;font-weight:700">${r.actual.toFixed(1)}</td>
-           <td style="text-align:right;color:#78716c">${r.anterior.toFixed(1)}</td>
-           <td>${fmtDelta(r.delta,r.pct)}</td>
-         </tr>`).join('')}</tbody>
-         <tfoot><tr style="background:#fef3c7;font-weight:700">
-           <td>TOTAL</td>
-           <td style="text-align:right">${d.totales.actual.toFixed(1)}</td>
-           <td style="text-align:right">${d.totales.anterior.toFixed(1)}</td>
-           <td>${fmtDelta(d.totales.actual-d.totales.anterior, d.totales.anterior>0?((d.totales.actual-d.totales.anterior)/d.totales.anterior)*100:0)}</td>
-         </tr></tfoot></table>`;
-
-    // Tabla líneas
-    if (el('rpt-tabla-lineas')) el('rpt-tabla-lineas').innerHTML = d.byLinea.length === 0
-      ? '<div class="empty-state"><div class="icon">🏭</div><p>Sin datos</p></div>'
-      : `<table><thead><tr><th>Línea</th><th style="text-align:right">Actual (kg)</th><th style="text-align:right">Anterior (kg)</th><th>Variación</th></tr></thead>
-         <tbody>${d.byLinea.map(r=>`<tr>
-           <td style="font-weight:600">${r.linea}</td>
-           <td style="text-align:right;font-weight:700">${r.actual.toFixed(1)}</td>
-           <td style="text-align:right;color:#78716c">${r.anterior.toFixed(1)}</td>
-           <td>${fmtDelta(r.delta,r.pct)}</td>
-         </tr>`).join('')}</tbody></table>`;
+    renderRptTables(d);
 
   } catch(e) {
     const el2 = document.getElementById('rpt-kpis');
     if (el2) el2.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
   }
 }
+
+function renderRptTables(d) {
+  const el = id => document.getElementById(id);
+  const esMxn = RPS.modo === 'mxn';
+  const fmt = (kg, mxn) => esMxn
+    ? `$${(mxn||0).toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0})}`
+    : `${(kg||0).toFixed(1)} kg`;
+  const unidad = esMxn ? '$' : 'kg';
+
+  const fmtDelta = (dkg, dmxn, pct) => {
+    const val = esMxn ? dmxn : dkg;
+    if (!val) return '<span style="color:#a8a29e">—</span>';
+    const clr = val > 0 ? '#dc2626' : '#16a34a';
+    const fv = esMxn
+      ? `$${Math.abs(val).toLocaleString('es-MX',{maximumFractionDigits:0})}`
+      : `${Math.abs(val).toFixed(1)} kg`;
+    return `<span style="color:${clr};font-weight:700">${val>0?'+':'-'}${fv} (${val>0?'+':''}${(pct||0).toFixed(1)}%)</span>`;
+  };
+
+  // KPIs con modo
+  const t = d.totales;
+  const kgDelta = t.actual - t.anterior;
+  const kgPct   = t.anterior > 0 ? ((kgDelta/t.anterior)*100).toFixed(1) : '—';
+  const vDelta  = t.vales_actual - t.vales_anterior;
+  const kgClr   = kgDelta >= 0 ? '#dc2626' : '#16a34a';
+  const vClr    = vDelta  >= 0 ? '#dc2626' : '#16a34a';
+  const mxnDelta = (t.dinero_actual||0) - (t.dinero_anterior||0);
+  const mxnPct   = (t.dinero_anterior||0) > 0 ? ((mxnDelta/(t.dinero_anterior||1))*100).toFixed(1) : '—';
+  if (el('rpt-kpis')) el('rpt-kpis').innerHTML = `
+    <div class="rpt-kpi"><div class="rpt-kpi-val">${t.actual.toFixed(1)}</div><div class="rpt-kpi-lbl">kg despachados</div>
+      <div class="rpt-kpi-sub" style="color:${kgClr}">${kgDelta>=0?'+':''}${kgDelta.toFixed(1)} kg (${kgDelta>=0?'+':''}${kgPct}%) vs anterior</div></div>
+    <div class="rpt-kpi"><div class="rpt-kpi-val">$${((t.dinero_actual||0)/1000).toFixed(1)}k</div><div class="rpt-kpi-lbl">costo estimado</div>
+      <div class="rpt-kpi-sub" style="color:${mxnDelta>=0?'#dc2626':'#16a34a'}">${mxnDelta>=0?'+':'-'}$${Math.abs(mxnDelta).toLocaleString('es-MX',{maximumFractionDigits:0})} (${mxnDelta>=0?'+':''}${mxnPct}%)</div></div>
+    <div class="rpt-kpi"><div class="rpt-kpi-val">${t.vales_actual}</div><div class="rpt-kpi-lbl">vales emitidos</div>
+      <div class="rpt-kpi-sub" style="color:${vClr}">${vDelta>=0?'+':''}${vDelta} vs anterior</div></div>
+    <div class="rpt-kpi"><div class="rpt-kpi-val">${t.anterior.toFixed(1)}</div><div class="rpt-kpi-lbl">kg período anterior</div>
+      <div class="rpt-kpi-sub" style="color:#78716c">${d.periodoAnterior.label}</div></div>`;
+
+  // Tabla productos
+  if (el('rpt-tabla-productos')) el('rpt-tabla-productos').innerHTML = d.byProducto.length === 0
+    ? '<div class="empty-state"><div class="icon">📦</div><p>Sin datos</p></div>'
+    : `<table><thead><tr><th>Producto</th><th style="text-align:right">Actual (${unidad})</th><th style="text-align:right">Anterior (${unidad})</th><th>Variación</th></tr></thead>
+       <tbody>${d.byProducto.map(r=>`<tr>
+         <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${r.item}">${r.item}</td>
+         <td style="text-align:right;font-weight:700">${fmt(r.actual, r.dinero_actual)}</td>
+         <td style="text-align:right;color:#78716c">${fmt(r.anterior, r.dinero_anterior)}</td>
+         <td>${fmtDelta(r.delta, r.dinero_delta, r.pct)}</td>
+       </tr>`).join('')}</tbody>
+       <tfoot><tr style="background:#fef3c7;font-weight:700">
+         <td>TOTAL</td>
+         <td style="text-align:right">${fmt(t.actual, t.dinero_actual)}</td>
+         <td style="text-align:right">${fmt(t.anterior, t.dinero_anterior)}</td>
+         <td>${fmtDelta(t.actual-t.anterior, (t.dinero_actual||0)-(t.dinero_anterior||0), t.anterior>0?((t.actual-t.anterior)/t.anterior)*100:0)}</td>
+       </tr></tfoot></table>`;
+
+  // Tabla líneas con desglose de productos
+  if (el('rpt-tabla-lineas')) el('rpt-tabla-lineas').innerHTML = d.byLinea.length === 0
+    ? '<div class="empty-state"><div class="icon">🏭</div><p>Sin datos</p></div>'
+    : `<table><thead><tr><th>Línea / Producto</th><th style="text-align:right">Actual (${unidad})</th><th style="text-align:right">Anterior (${unidad})</th><th>Variación</th></tr></thead>
+       <tbody>${d.byLinea.map((r,i)=>{
+         const rowId = `linea-prods-${i}`;
+         const prodsHtml = (r.productos||[]).map(p=>`<tr class="${rowId}" style="display:none;background:#fafaf9">
+           <td style="padding-left:28px;font-size:12px;color:#57534e">↳ ${p.item}</td>
+           <td style="text-align:right;font-size:12px">${fmt(p.actual, p.dinero_actual)}</td>
+           <td style="text-align:right;font-size:12px;color:#78716c">${fmt(p.anterior, p.dinero_anterior)}</td>
+           <td></td>
+         </tr>`).join('');
+         return `<tr style="cursor:pointer" onclick="toggleLinea('${rowId}',this)">
+           <td style="font-weight:600">▶ ${r.linea} <span style="font-size:11px;color:#a8a29e">(${(r.productos||[]).length} productos)</span></td>
+           <td style="text-align:right;font-weight:700">${fmt(r.actual, r.dinero_actual)}</td>
+           <td style="text-align:right;color:#78716c">${fmt(r.anterior, r.dinero_anterior)}</td>
+           <td>${fmtDelta(r.delta, r.dinero_delta, r.pct)}</td>
+         </tr>${prodsHtml}`;
+       }).join('')}</tbody></table>`;
+}
+
+window.toggleLinea = function(rowId, trEl) {
+  const rows = document.querySelectorAll(`.${rowId}`);
+  const open = rows[0]?.style.display !== 'none';
+  rows.forEach(r => r.style.display = open ? 'none' : '');
+  const arrow = trEl.querySelector('td:first-child');
+  if (arrow) arrow.innerHTML = arrow.innerHTML.replace(open ? '▼' : '▶', open ? '▶' : '▼');
+};
 
 // ── Correcciones ──────────────────────────────────────────────────────────────
 async function viewCorrecciones() {
