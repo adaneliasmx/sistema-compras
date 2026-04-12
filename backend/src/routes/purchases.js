@@ -607,7 +607,7 @@ router.get('/purchase-orders', allowRoles('comprador', 'proveedor', 'admin'), (r
     .map(po => {
       const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => ({
         ...i,
-        item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '-'
+        item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.description || i.manual_item_name || '-'
       }));
       const firstPoItem = db.purchase_order_items.find(i => i.purchase_order_id === po.id);
       const firstReqItem = firstPoItem ? db.requisition_items.find(ri => ri.id === firstPoItem.requisition_item_id) : null;
@@ -634,7 +634,7 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
   if (req.user.supplier_id && po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
   const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => {
     const cat = db.catalog_items.find(c => c.id === i.catalog_item_id) || {};
-    return { ...i, name: cat.name || i.manual_item_name || '-', code: cat.code || '—' };
+    return { ...i, name: cat.name || i.description || i.manual_item_name || '-', code: cat.code || '—' };
   });
   res.json({ po, items });
 });
