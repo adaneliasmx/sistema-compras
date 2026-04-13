@@ -2536,6 +2536,7 @@ async function purchasesView() {
         ${!i.catalog_item_id && !['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
         ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
         ${i.status === 'Autorizado' && i.supplier_id && i.unit_cost && !i.purchase_order_id ? `<button class="btn-primary single-po" data-id="${i.id}" style="padding:2px 7px;font-size:11px">PO</button>` : ''}
+        ${i.status === 'En autorización' && i.winning_quote_id && i.supplier_id && i.unit_cost ? `<button class="btn-secondary authorize-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px;color:#16a34a;border-color:#16a34a" title="Autorizar ítem con cotización ganadora">✔ Autorizar</button>` : ''}
         ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">✖</button>` : ''}
         ${i.status === 'Cancelado' ? `<button class="btn-secondary restore-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px;color:#2563eb" title="Restaurar ítem cancelado">↩</button>` : ''}
       </td>
@@ -2572,6 +2573,13 @@ async function purchasesView() {
         poMsg.textContent = out.message;
         setTimeout(render, 1500);
       } catch (e) { poMsg.textContent = e.message; }
+    });
+    tableEl.querySelectorAll('.authorize-item').forEach(btn => btn.onclick = async () => {
+      if (!confirm('¿Autorizar este ítem para generar su PO?')) return;
+      try {
+        await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado desde módulo Compras' }) });
+        btn.textContent = '✅'; setTimeout(render, 800);
+      } catch(e) { poMsg.textContent = e.message; }
     });
     tableEl.querySelectorAll('.cancel-item').forEach(btn => btn.onclick = () => {
       const row = sourceList.find(x => Number(x.id) === Number(btn.dataset.id));
@@ -2843,7 +2851,7 @@ async function purchasesView() {
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="filterItemsTab" placeholder="Buscar ítem, proveedor..." style="flex:1;min-width:150px"/></div>
         <div style="margin-bottom:8px;font-size:13px">
           ${itemsPendientePO.length} ítem(s) con proveedor y costo · <b>${authCount}</b> autorizado(s)
-          ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización</span>` : ''}
+          ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización — ve a <b>Autorizaciones</b> para aprobarlos antes de generar PO</span>` : ''}
           ${authCount > 0 ? `<button class="btn-secondary" id="selectAllAuth" style="margin-left:10px;padding:2px 8px;font-size:12px">Seleccionar autorizados</button>` : ''}
         </div>
         <div id="pendientesTableWrap"><div class="table-wrap"><table>${THEAD}<tbody>

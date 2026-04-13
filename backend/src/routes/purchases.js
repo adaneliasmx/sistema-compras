@@ -129,10 +129,13 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   if (req.body.sub_cost_center_proposed !== undefined) line.sub_cost_center_proposed = req.body.sub_cost_center_proposed || null;
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   recalcRequisition(db, line.requisition_id);
-  // Solo re-derivar status en etapas tempranas; no regresar ítems que ya avanzaron en el flujo
-  const EARLY_STATUSES = ['En cotización', 'En autorización', 'Autorizado'];
+  // Re-derivar status solo en etapas pre-autorización; no regresar ítems ya Autorizados manualmente
+  const EARLY_STATUSES = ['En cotización', 'En autorización'];
   if (EARLY_STATUSES.includes(line.status)) {
     line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
+  } else if (line.status === 'Autorizado' && (!Number(line.unit_cost || 0) || !line.supplier_id)) {
+    // Solo regresar a cotización si se quita explícitamente proveedor o costo
+    line.status = 'En cotización';
   }
   line.updated_at = new Date().toISOString();
   addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: line.status, changed_by_user_id: req.user.id, comment: 'Edición de ítem por compras' });
