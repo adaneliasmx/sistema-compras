@@ -54,13 +54,27 @@ const EMPTY_DB = {
   motivos_paro_baker: [],      // {id, nombre, activo, created_at}
   sub_motivos_paro_baker: [],  // {id, motivo_id, nombre, activo, created_at}
   operadores_baker: [],        // {id, nombre, rhh_employee_id, compras_user_id, activo, created_at}
-  cargas_baker: [],            // rack:{id,folio,herramental_id,herramental_no,herramental_tipo:'rack',cliente,componente_id,componente,no_skf,no_orden,lote,proceso_id,proceso,sub_proceso_id,sub_proceso,varillas,piezas_por_varilla,cantidad,operador_id,operador,fecha_carga,hora_carga,semana,fecha_descarga,hora_descarga,turno,estado,defecto_id,defecto,es_reproceso,folio_origen,created_at} | barril:{...herramental_tipo:'barril',herramental_cavidades,cavidades:[{num,es_vacia,motivo_vacia_id,motivo_vacia,cliente,componente_id,componente,no_skf,no_orden,lote,estado:'buena'|'defecto'|'vacia'|null,defecto_id,defecto}],cavidades_totales,cavidades_cargadas,cavidades_buenas,cavidades_defecto,cavidades_vacias}
+  cargas_baker: [],            // rack:{id,folio,...} | barril:{...}
   paros_baker: [],             // {id, folio, motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio, hora_inicio, fecha_fin, hora_fin, duracion_min, turno, created_at}
+  // ── Línea 1 (L1) ─────────────────────────────────────────────────────────
+  clientes_l1: [],             // {id, nombre, activo, created_at}
+  componentes_l1: [],          // {id, nombre, cliente, no_skf, carga_optima_varillas, piezas_objetivo, activo, created_at}
+  herramentales_l1: [],        // {id, numero, descripcion, tipo:'rack'|'barril', cavidades, piezas_por_varilla, activo, created_at}
+  procesos_l1: [],             // {id, nombre, activo, created_at}
+  sub_procesos_l1: [],         // {id, proceso_id, nombre, activo, created_at}
+  defectos_l1: [],             // {id, nombre, activo, created_at}
+  motivos_cavidad_vacia_l1: [],// {id, nombre, activo, created_at}
+  motivos_paro_l1: [],         // {id, nombre, activo, created_at}
+  sub_motivos_paro_l1: [],     // {id, motivo_id, nombre, activo, created_at}
+  operadores_l1: [],           // {id, nombre, rhh_employee_id, compras_user_id, activo, created_at}
+  cargas_l1: [],               // igual a cargas_baker (con array cavidades)
+  paros_l1: [],                // {id, folio, motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio, hora_inicio, fecha_fin, hora_fin, duracion_min, turno, created_at}
   // Configuración
   config: {
     ciclos_objetivo_l3: 2,
     ciclos_objetivo_l4: 2,
     ciclos_objetivo_baker: 2,
+    ciclos_objetivo_l1: 2,
     slideshow: {
       default_duracion_seg: 120,
       slides: [

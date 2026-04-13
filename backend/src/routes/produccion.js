@@ -65,20 +65,21 @@ function lineaKey(linea) {
 
 function catalogCollection(linea, tipo) {
   // tipo: componentes | procesos | acabados | herramentales | defectos | motivos-paro | sub-motivos-paro
-  // linea: L3 | L4 | baker
-  if (linea === 'baker') {
-    const bakerMap = {
-      componentes:           'componentes_baker',
-      herramentales:         'herramentales_baker',
-      procesos:              'procesos_baker',
-      'sub-procesos':        'sub_procesos_baker',
-      defectos:              'defectos_baker',
-      clientes:              'clientes_baker',
-      'motivos-cavidad-vacia':'motivos_cavidad_vacia_baker',
-      'motivos-paro':        'motivos_paro_baker',
-      'sub-motivos-paro':    'sub_motivos_paro_baker'
+  // linea: L3 | L4 | baker | l1
+  if (linea === 'baker' || linea === 'l1') {
+    const suffix = linea === 'baker' ? 'baker' : 'l1';
+    const bakerLikeMap = {
+      componentes:           `componentes_${suffix}`,
+      herramentales:         `herramentales_${suffix}`,
+      procesos:              `procesos_${suffix}`,
+      'sub-procesos':        `sub_procesos_${suffix}`,
+      defectos:              `defectos_${suffix}`,
+      clientes:              `clientes_${suffix}`,
+      'motivos-cavidad-vacia':`motivos_cavidad_vacia_${suffix}`,
+      'motivos-paro':        `motivos_paro_${suffix}`,
+      'sub-motivos-paro':    `sub_motivos_paro_${suffix}`
     };
-    return bakerMap[tipo] || null;
+    return bakerLikeMap[tipo] || null;
   }
   const l = lineaKey(linea);
   const map = {
@@ -184,21 +185,22 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   const { linea } = req.params;
   const pdb = dbProd.read();
 
-  // Baker tiene su propio conjunto de catálogos
-  if (linea === 'baker') {
-    const operadores = (pdb.operadores_baker || [])
+  // Baker / L1 tienen su propio conjunto de catálogos (misma estructura)
+  if (linea === 'baker' || linea === 'l1') {
+    const s = linea === 'baker' ? 'baker' : 'l1';
+    const operadores = (pdb[`operadores_${s}`] || [])
       .filter(o => o.activo !== false)
       .map(o => { const { pin_hash, ...rest } = o; return rest; });
     return res.json({
-      clientes:             (pdb.clientes_baker             || []).filter(x => x.activo !== false),
-      componentes:          (pdb.componentes_baker          || []).filter(x => x.activo !== false),
-      herramentales:        (pdb.herramentales_baker        || []).filter(x => x.activo !== false),
-      procesos:             (pdb.procesos_baker             || []).filter(x => x.activo !== false),
-      sub_procesos:         (pdb.sub_procesos_baker         || []).filter(x => x.activo !== false),
-      defectos:             (pdb.defectos_baker             || []).filter(x => x.activo !== false),
-      motivos_cavidad_vacia:(pdb.motivos_cavidad_vacia_baker|| []).filter(x => x.activo !== false),
-      motivos_paro:         (pdb.motivos_paro_baker         || []).filter(x => x.activo !== false),
-      sub_motivos:          (pdb.sub_motivos_paro_baker     || []).filter(x => x.activo !== false),
+      clientes:             (pdb[`clientes_${s}`]             || []).filter(x => x.activo !== false),
+      componentes:          (pdb[`componentes_${s}`]          || []).filter(x => x.activo !== false),
+      herramentales:        (pdb[`herramentales_${s}`]        || []).filter(x => x.activo !== false),
+      procesos:             (pdb[`procesos_${s}`]             || []).filter(x => x.activo !== false),
+      sub_procesos:         (pdb[`sub_procesos_${s}`]         || []).filter(x => x.activo !== false),
+      defectos:             (pdb[`defectos_${s}`]             || []).filter(x => x.activo !== false),
+      motivos_cavidad_vacia:(pdb[`motivos_cavidad_vacia_${s}`]|| []).filter(x => x.activo !== false),
+      motivos_paro:         (pdb[`motivos_paro_${s}`]         || []).filter(x => x.activo !== false),
+      sub_motivos:          (pdb[`sub_motivos_paro_${s}`]     || []).filter(x => x.activo !== false),
       operadores
     });
   }
@@ -248,18 +250,16 @@ router.post('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res)
   if (tipo === 'componentes') {
     if (!body.nombre) return res.status(400).json({ error: 'nombre es requerido' });
     item = { ...item, nombre: body.nombre, cliente: body.cliente || '', carga_optima_varillas: body.carga_optima_varillas || 0, piezas_objetivo: body.piezas_objetivo || 0 };
-    if (linea === 'baker') {
+    if (linea === 'baker' || linea === 'l1') {
       item.no_skf = body.no_skf || '';
-      // Baker: piezas_por_varilla se guarda directamente (alias de piezas_objetivo para claridad)
       if (body.piezas_por_varilla !== undefined) item.piezas_por_varilla = Number(body.piezas_por_varilla) || 0;
     }
   } else if (tipo === 'herramentales') {
     if (!body.numero) return res.status(400).json({ error: 'numero es requerido' });
     item = { ...item, numero: body.numero, descripcion: body.descripcion || '' };
-    if (linea === 'baker') {
+    if (linea === 'baker' || linea === 'l1') {
       item.tipo = body.tipo || 'rack'; // 'rack' | 'barril'
       item.cavidades = body.cavidades ? Number(body.cavidades) : null;
-      // Rack: varillas_totales = capacidad total del rack en varillas
       item.varillas_totales = body.varillas_totales ? Number(body.varillas_totales) : null;
     }
   } else if (tipo === 'sub-motivos-paro' || tipo === 'sub-procesos') {
@@ -659,10 +659,11 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
 router.get('/resumen/paros', (req, res) => {
   const { desde, hasta, linea } = req.query;
   const pdb = dbProd.read();
-  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker'];
+  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker', 'L1'];
   let paros = [];
   for (const l of lineasReq) {
     if (l === 'Baker') paros.push(...(pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' })));
+    else if (l === 'L1') paros.push(...(pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' })));
     else paros.push(...(pdb.paros || []).filter(p => p.linea === l));
   }
   if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
@@ -675,22 +676,30 @@ router.get('/resumen/paros', (req, res) => {
 router.get('/resumen/defectos', (req, res) => {
   const { desde, hasta, linea, turno } = req.query;
   const pdb = dbProd.read();
-  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker'];
+  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker', 'L1'];
   const result = [];
   const ft = c => c.fecha_turno || c.fecha_carga;
   for (const l of lineasReq) {
-    if (l === 'Baker') {
-      let cargas = pdb.cargas_baker || [];
+    if (l === 'Baker' || l === 'L1') {
+      const src = l === 'Baker' ? 'cargas_baker' : 'cargas_l1';
+      let cargas = pdb[src] || [];
       if (desde) cargas = cargas.filter(c => ft(c) >= desde);
       if (hasta) cargas = cargas.filter(c => ft(c) <= hasta);
       if (turno) cargas = cargas.filter(c => c.turno === turno);
       for (const carga of cargas) {
-        const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
-        for (const cav of cavsMalas) {
-          result.push({ linea: 'Baker', fecha: ft(carga), turno: carga.turno,
+        if (carga.herramental_tipo === 'barril') {
+          const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
+          for (const cav of cavsMalas) {
+            result.push({ linea: l, fecha: ft(carga), turno: carga.turno,
+              herramental: carga.herramental_no || String(carga.herramental_id || ''),
+              operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
+              detalle: `Cavidad ${cav.num}`, folio: carga.folio });
+          }
+        } else if (carga.estado === 'defecto' || carga.defecto_id) {
+          result.push({ linea: l, fecha: ft(carga), turno: carga.turno,
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
-            operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
-            detalle: `Cavidad ${cav.num}`, folio: carga.folio });
+            operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
+            detalle: `Ciclo ${carga.folio}`, folio: carga.folio });
         }
       }
     } else {
@@ -1255,14 +1264,14 @@ router.get('/pizarron', (req, res) => {
 
   const data = buildPizarronResult(pdb, config, lineas, targetTurnos, targetDate);
 
-  // Incluir Baker si linea === 'ambas' o 'baker'
-  if (linea === 'ambas' || linea === 'baker') {
+  // Helper para agregar línea tipo Baker al pizarrón
+  function addBakerLike(lineaLabel, buildFn, ciclosObjKey) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const bakerTurnos = {};
-    let bDayC = 0, bDayNV = 0, bDayB = 0, bDayPz = 0, bDayPzObj = 0, bDayParos = 0, bDaySlots = 0;
+    const turnData = {};
+    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dSlots = 0;
     for (const t of targetTurnos) {
       const tDef  = TURNOS_DEF[t];
-      const slots = buildSlotsForBaker(pdb, config, t, targetDate);
+      const slots = buildFn(pdb, config, t, targetDate);
       const tC   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
       const tNV  = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
       const tB   = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
@@ -1270,8 +1279,8 @@ router.get('/pizarron', (req, res) => {
       const tPzO = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
       const tParos = slots.reduce((s, x) => s + x.paros_min,      0);
       const turnoMins = tDef.hours * 60;
-      const ciclos_obj = config.ciclos_objetivo_baker ?? 2;
-      bakerTurnos[t] = {
+      const ciclos_obj = config[ciclosObjKey] ?? 2;
+      turnData[t] = {
         slots,
         totals: {
           eficiencia:    (ciclos_obj * tDef.hours) > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : 0,
@@ -1280,20 +1289,23 @@ router.get('/pizarron', (req, res) => {
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
         }
       };
-      bDayC += tC; bDayNV += tNV; bDayB += tB; bDayPz += tPz; bDayPzObj += tPzO;
-      bDayParos += tParos; bDaySlots += tDef.hours;
+      dC += tC; dNV += tNV; dB += tB; dPz += tPz; dPzO += tPzO;
+      dParos += tParos; dSlots += tDef.hours;
     }
-    const ciclos_obj_baker = config.ciclos_objetivo_baker ?? 2;
-    data['Baker'] = {
-      ...bakerTurnos,
+    const ciclos_obj = config[ciclosObjKey] ?? 2;
+    data[lineaLabel] = {
+      ...turnData,
       totales_dia: {
-        eficiencia:    (ciclos_obj_baker * bDaySlots) > 0 ? r3(bDayC / (ciclos_obj_baker * bDaySlots)) : 0,
-        calidad:       bDayNV > 0 ? r3(bDayB / bDayNV) : null,
-        capacidad:     bDayPzObj > 0 ? r3(bDayPz / bDayPzObj) : null,
-        disponibilidad: bDaySlots > 0 ? r3(Math.max(0, bDaySlots * 60 - Math.min(bDayParos, bDaySlots * 60)) / (bDaySlots * 60)) : null
+        eficiencia:    (ciclos_obj * dSlots) > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dSlots)) : 0,
+        calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
+        capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
+        disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null
       }
     };
   }
+
+  if (linea === 'ambas' || linea === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
+  if (linea === 'ambas' || linea === 'L1')    addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
 
   res.json({ fecha: targetDate, linea, turno, data });
 });
@@ -1306,11 +1318,14 @@ router.get('/reportes', (req, res) => {
   let cargas = [];
 
   if (!linea || linea === 'ambas') {
-    // L3 + L4 + Baker
+    // L3 + L4 + Baker + L1
     const bakerCargas = (pdb.cargas_baker || []).map(c => ({ ...c, linea: 'Baker' }));
-    cargas = [...(pdb.cargas || []), ...bakerCargas];
+    const l1Cargas    = (pdb.cargas_l1    || []).map(c => ({ ...c, linea: 'L1' }));
+    cargas = [...(pdb.cargas || []), ...bakerCargas, ...l1Cargas];
   } else if (linea === 'Baker') {
     cargas = (pdb.cargas_baker || []).map(c => ({ ...c, linea: 'Baker' }));
+  } else if (linea === 'L1') {
+    cargas = (pdb.cargas_l1 || []).map(c => ({ ...c, linea: 'L1' }));
   } else {
     cargas = (pdb.cargas || []).filter(c => c.linea === linea);
   }
@@ -1339,13 +1354,13 @@ router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
   if (!pdb.config) pdb.config = {};
   const camposNum = [
-    'ciclos_objetivo_l3', 'ciclos_objetivo_l4', 'ciclos_objetivo_baker',
-    'eficiencia_obj_l3',  'eficiencia_obj_l4',  'eficiencia_obj_baker',
-    'capacidad_obj_l3',   'capacidad_obj_l4',   'capacidad_obj_baker',
-    'calidad_obj_l3',     'calidad_obj_l4',     'calidad_obj_baker',
-    'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker'
+    'ciclos_objetivo_l3', 'ciclos_objetivo_l4', 'ciclos_objetivo_baker', 'ciclos_objetivo_l1',
+    'eficiencia_obj_l3',  'eficiencia_obj_l4',  'eficiencia_obj_baker',  'eficiencia_obj_l1',
+    'capacidad_obj_l3',   'capacidad_obj_l4',   'capacidad_obj_baker',   'capacidad_obj_l1',
+    'calidad_obj_l3',     'calidad_obj_l4',     'calidad_obj_baker',     'calidad_obj_l1',
+    'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker', 'disponibilidad_obj_l1'
   ];
-  const camposStr = ['planes_control_baker_url'];
+  const camposStr = ['planes_control_baker_url', 'planes_control_l1_url'];
   const body = req.body || {};
   for (const f of camposNum) {
     if (body[f] !== undefined) pdb.config[f] = Number(body[f]);
@@ -1400,8 +1415,9 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
   const config       = pdb.config || {};
   if (!pdb.kpi_snapshots) pdb.kpi_snapshots = [];
 
-  const lineasL3L4 = linea === 'ambas' ? ['L3', 'L4'] : (linea === 'Baker' ? [] : [linea]);
+  const lineasL3L4 = linea === 'ambas' ? ['L3', 'L4'] : (['Baker','L1'].includes(linea) ? [] : [linea]);
   const includeBakerG = linea === 'ambas' || linea === 'Baker';
+  const includeL1G    = linea === 'ambas' || linea === 'L1';
   const turnos   = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
   const guardados = [];
   const semana = getISOWeek(new Date(targetDate + 'T12:00:00'));
@@ -1467,6 +1483,37 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
       guardados.push(snap);
     }
   }
+
+  if (includeL1G) {
+    for (const t of turnos) {
+      const slots          = buildSlotsForL1(pdb, config, t, targetDate);
+      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
+      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+
+      const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'L1' && k.turno === t);
+      const snap = {
+        id:             existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+        fecha:          targetDate,
+        semana,
+        turno:          t,
+        linea:          'L1',
+        guardado_at:    new Date().toISOString(),
+        ciclos_totales,
+        ciclos_buenos,
+        paros_min_total,
+        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
+        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
+        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
+        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
+        slots
+      };
+      if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+      else pdb.kpi_snapshots.push(snap);
+      guardados.push(snap);
+    }
+  }
   dbProd.write(pdb);
   res.json({ guardados: guardados.length, snapshots: guardados });
 });
@@ -1493,8 +1540,9 @@ router.get('/kpis', (req, res) => {
     cur.setDate(cur.getDate() + 1);
   }
 
-  const lineasL3L4 = (!linea || linea === 'ambas') ? ['L3', 'L4'] : (linea === 'Baker' ? [] : [linea]);
+  const lineasL3L4 = (!linea || linea === 'ambas') ? ['L3', 'L4'] : (['Baker','L1'].includes(linea) ? [] : [linea]);
   const includeBaker = !linea || linea === 'ambas' || linea === 'Baker';
+  const includeL1    = !linea || linea === 'ambas' || linea === 'L1';
   const turnos  = turno ? [turno] : ['T1', 'T2', 'T3'];
   const r3      = v => v != null ? Math.round(v * 1000) / 1000 : null;
 
@@ -1577,6 +1625,50 @@ router.get('/kpis', (req, res) => {
           semana,
           turno:           t,
           linea:           'Baker',
+          ciclos_totales,
+          ciclos_no_vacios,
+          ciclos_buenos,
+          piezas_total,
+          piezas_obj_total,
+          paros_min_total: Math.round(paros_min_total * 10) / 10,
+          eficiencia:      r3(eficiencia),
+          calidad:         r3(calidad),
+          capacidad:       r3(capacidad),
+          disponibilidad:  r3(disponibilidad),
+          slots
+        });
+      }
+    }
+
+    // L1
+    if (includeL1) {
+      const ciclos_obj_l1 = config.ciclos_objetivo_l1 ?? 2;
+      for (const t of turnos) {
+        const tDef  = TURNOS_DEF[t];
+        const slots = buildSlotsForL1(pdb, config, t, date);
+
+        const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+        const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+        const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+        const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
+        const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+        const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+
+        if (ciclos_totales === 0 && paros_min_total === 0) continue;
+
+        const turnoMins      = tDef.hours * 60;
+        const eficiencia     = (ciclos_obj_l1 * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj_l1 * tDef.hours) : 0;
+        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
+        const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
+        const semana         = getISOWeek(new Date(date + 'T12:00:00'));
+
+        snapshots.push({
+          id:              `${date}-L1-${t}`,
+          fecha:           date,
+          semana,
+          turno:           t,
+          linea:           'L1',
           ciclos_totales,
           ciclos_no_vacios,
           ciclos_buenos,
@@ -1685,6 +1777,545 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
   }
   return slots;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── LÍNEA 1 (L1) ─────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// KPI slots para L1 — idéntico a Baker pero usa cargas_l1 y paros_l1
+function buildSlotsForL1(pdb, config, t, targetDate) {
+  const ciclos_obj = config.ciclos_objetivo_l1 ?? 2;
+  const tDef    = TURNOS_DEF[t];
+  const nextDay = addDays(targetDate, 1);
+  const slots   = [];
+  let curMins   = tDef.start;
+
+  for (let h = 0; h < tDef.hours; h++) {
+    const ss    = curMins;
+    const se    = curMins + 60;
+    const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
+    const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
+
+    const slotDate   = (t === 'T3' && ss >= 1440) ? nextDay : targetDate;
+    const ssR        = ss % 1440;
+    const seR        = se % 1440;
+    const crossesMid = ssR > seR;
+
+    const cargasEnSlot = (pdb.cargas_l1 || []).filter(c => {
+      if (!c.fecha_descarga || !c.hora_descarga) return false;
+      const dm = toMins(c.hora_descarga);
+      if (crossesMid) {
+        return (c.fecha_descarga === slotDate && dm >= ssR) ||
+               (c.fecha_descarga === nextDay  && dm <  seR);
+      }
+      return c.fecha_descarga === slotDate && dm >= ssR && dm < seR;
+    });
+
+    const ciclos_totales = cargasEnSlot.length;
+
+    let ciclos_buenos = 0, ciclos_no_vacios = 0;
+    let piezas_total = 0, piezas_obj_total = 0;
+    for (const c of cargasEnSlot) {
+      if (c.herramental_tipo === 'barril') {
+        const carg = Number(c.cavidades_cargadas || 0);
+        const buen = Number(c.cavidades_buenas   || 0);
+        ciclos_no_vacios += carg;
+        ciclos_buenos    += buen;
+        piezas_total     += buen;
+        piezas_obj_total += Number(c.herramental_cavidades || 0);
+      } else {
+        if (!c.es_vacia) {
+          ciclos_no_vacios++;
+          if (!c.defecto_id) ciclos_buenos++;
+          piezas_total     += Number(c.cantidad || 0);
+          piezas_obj_total += Number(c.piezas_objetivo_carga || 0);
+        }
+      }
+    }
+
+    let paros_min = 0;
+    for (const p of (pdb.paros_l1 || [])) {
+      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                               p.fecha_inicio, p.fecha_fin, slotDate);
+    }
+
+    const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+    const slotObj = slotCiclosObj(ciclos_obj, h);
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
+    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
+
+    slots.push({
+      slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
+      ciclos_totales, ciclos_no_vacios, ciclos_buenos,
+      piezas_total, piezas_obj_total,
+      paros_min: Math.round(paros_min * 10) / 10,
+      eficiencia, calidad, capacidad, disponibilidad
+    });
+    curMins += 60;
+  }
+  return slots;
+}
+
+// GET /l1/cargas/activas
+router.get('/l1/cargas/activas', (req, res) => {
+  const pdb = dbProd.read();
+  const cargas = (pdb.cargas_l1 || []).filter(c => c.estado === 'activo');
+  cargas.sort((a, b) => {
+    const ta = `${a.fecha_carga}T${a.hora_carga}`;
+    const tb = `${b.fecha_carga}T${b.hora_carga}`;
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  });
+  res.json(cargas);
+});
+
+// GET /l1/cargas
+router.get('/l1/cargas', (req, res) => {
+  const { fecha_ini, fecha_fin, turno, estado } = req.query;
+  const pdb = dbProd.read();
+  let cargas = pdb.cargas_l1 || [];
+  const ft = c => c.fecha_turno || c.fecha_carga;
+  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
+  if (turno)  cargas = cargas.filter(c => c.turno === turno);
+  if (estado) cargas = cargas.filter(c => c.estado === estado);
+  cargas = cargas.sort((a, b) => {
+    const ta = `${a.fecha_carga}T${a.hora_carga}`;
+    const tb = `${b.fecha_carga}T${b.hora_carga}`;
+    return ta > tb ? -1 : ta < tb ? 1 : 0;
+  });
+  res.json(cargas);
+});
+
+// GET /l1/cavidades — registros individuales de cavidades de barril
+router.get('/l1/cavidades', (req, res) => {
+  const { fecha_ini, fecha_fin, turno, folio_barril } = req.query;
+  const pdb = dbProd.read();
+  let cavs = pdb.cavidades_l1 || [];
+  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_carga >= fecha_ini);
+  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_carga <= fecha_fin);
+  if (turno)        cavs = cavs.filter(c => c.turno === turno);
+  if (folio_barril) cavs = cavs.filter(c => c.folio_barril === folio_barril);
+  res.json(cavs);
+});
+
+// POST /l1/cargas — registrar nueva carga L1 (rack o barril); máx 8 herramentales activos
+router.post('/l1/cargas', (req, res) => {
+  const pdb = dbProd.read();
+  if (!pdb.cargas_l1) pdb.cargas_l1 = [];
+  if (!pdb.herramentales_l1) pdb.herramentales_l1 = [];
+
+  const body = req.body || {};
+  const { herramental_id, proceso_id, sub_proceso_id, operador_id } = body;
+  if (!herramental_id) return res.status(400).json({ error: 'herramental_id es requerido' });
+
+  // Máximo 8 herramentales activos simultáneos (diferencia clave respecto a Baker=7)
+  const activos = (pdb.cargas_l1 || []).filter(c => c.estado === 'activo');
+  if (activos.length >= 8) return res.status(409).json({ error: 'Máximo de 8 herramentales activos alcanzado en L1' });
+
+  const dupActivo = activos.find(c => String(c.herramental_id) === String(herramental_id));
+  if (dupActivo) return res.status(409).json({ error: `El herramental ya está activo (folio ${dupActivo.folio})` });
+
+  const herr = (pdb.herramentales_l1 || []).find(h => String(h.id) === String(herramental_id));
+  if (!herr) return res.status(404).json({ error: 'Herramental no encontrado' });
+
+  if (!proceso_id)     return res.status(400).json({ error: 'proceso_id es requerido' });
+  if (!sub_proceso_id) return res.status(400).json({ error: 'sub_proceso_id es requerido' });
+  if (!operador_id)    return res.status(400).json({ error: 'operador_id es requerido' });
+
+  const esVacioRack = (herr.tipo !== 'barril') && (body.es_vacia === true);
+
+  if (herr.tipo !== 'barril' && !esVacioRack) {
+    if (!body.cliente)                           return res.status(400).json({ error: 'cliente es requerido' });
+    if (!body.componente_id && !body.componente) return res.status(400).json({ error: 'componente es requerido' });
+    if (!body.no_skf)                           return res.status(400).json({ error: 'no_skf es requerido' });
+    if (!body.no_orden)                         return res.status(400).json({ error: 'no_orden es requerido' });
+    if (!body.varillas)                         return res.status(400).json({ error: 'varillas es requerido' });
+  }
+
+  if (herr.tipo === 'barril') {
+    const cavidades = Array.isArray(body.cavidades) ? body.cavidades : [];
+    const errCav = [];
+    cavidades.forEach((cv, i) => {
+      if (!cv.es_vacia) {
+        if (!cv.cliente)    errCav.push(`Cavidad ${i+1}: cliente`);
+        if (!cv.componente) errCav.push(`Cavidad ${i+1}: componente`);
+        if (!cv.no_skf)    errCav.push(`Cavidad ${i+1}: no_skf`);
+        if (!cv.no_orden)  errCav.push(`Cavidad ${i+1}: no_orden`);
+        if (!cv.cantidad)  errCav.push(`Cavidad ${i+1}: cantidad`);
+      }
+    });
+    if (errCav.length) return res.status(400).json({ error: `Campos requeridos: ${errCav.join(', ')}` });
+  }
+
+  const proceso    = (pdb.procesos_l1      || []).find(p => String(p.id) === String(proceso_id));
+  const subProceso = (pdb.sub_procesos_l1  || []).find(s => String(s.id) === String(sub_proceso_id));
+  const operador   = (pdb.operadores_l1    || []).find(o => String(o.id) === String(operador_id));
+
+  const now           = new Date().toISOString();
+  const hora          = nowTimeStr();
+  const fecha         = nowDateStr();
+  const fecha_turno_l1 = getShiftDate(fecha, hora);
+  const turno         = getTurno(hora);
+  const semana        = getISOWeek(new Date(fecha_turno_l1 + 'T12:00:00'));
+  const folio = nextFolio('L1', pdb.cargas_l1, 'folio');
+
+  let carga = {
+    id: dbProd.nextId(pdb.cargas_l1),
+    folio,
+    herramental_id: herr.id,
+    herramental_no: herr.numero,
+    herramental_tipo: herr.tipo || 'rack',
+    proceso_id:     proceso?.id    || null,
+    proceso:        proceso?.nombre || body.proceso || null,
+    sub_proceso_id: subProceso?.id    || null,
+    sub_proceso:    subProceso?.nombre || body.sub_proceso || null,
+    operador_id:    operador?.id    || null,
+    operador:       operador?.nombre || body.operador || null,
+    fecha_carga: fecha, fecha_turno: fecha_turno_l1, hora_carga: hora, semana, turno,
+    fecha_descarga: null, hora_descarga: null,
+    estado: 'activo',
+    es_reproceso: body.es_reproceso || false,
+    folio_origen: body.folio_origen || null,
+    created_at: now
+  };
+
+  if (herr.tipo === 'barril') {
+    const cavidades = Array.isArray(body.cavidades) ? body.cavidades : [];
+    const cavTotales = herr.cavidades || cavidades.length;
+    carga.herramental_cavidades = cavTotales;
+    carga.cavidades = cavidades.map((cv, i) => ({
+      num: i + 1,
+      es_vacia: cv.es_vacia || false,
+      motivo_vacia_id: cv.motivo_vacia_id || null,
+      motivo_vacia: cv.motivo_vacia || null,
+      cliente: cv.cliente || null,
+      componente_id: cv.componente_id || null,
+      componente: cv.componente || null,
+      no_skf: cv.no_skf || null,
+      no_orden: cv.no_orden || null,
+      lote: cv.lote || null,
+      cantidad: cv.cantidad ? Number(cv.cantidad) : null,
+      estado: null
+    }));
+    carga.cavidades_totales  = cavTotales;
+    carga.cavidades_cargadas = cavidades.filter(cv => !cv.es_vacia).length;
+    carga.cavidades_buenas   = 0;
+    carga.cavidades_defecto  = 0;
+    carga.cavidades_vacias   = cavidades.filter(cv => cv.es_vacia).length;
+
+    if (!pdb.cavidades_l1) pdb.cavidades_l1 = [];
+    cavidades.forEach((cv, i) => {
+      pdb.cavidades_l1.push({
+        id:              dbProd.nextId(pdb.cavidades_l1),
+        folio_barril:    folio,
+        carga_id:        carga.id,
+        herramental_no:  herr.numero,
+        herramental_id:  herr.id,
+        cavidad_num:     i + 1,
+        es_vacia:        cv.es_vacia || false,
+        cliente:         cv.cliente   || null,
+        componente:      cv.componente || null,
+        no_skf:          cv.no_skf    || null,
+        no_orden:        cv.no_orden  || null,
+        lote:            cv.lote      || null,
+        cantidad:        cv.cantidad  ? Number(cv.cantidad) : null,
+        proceso:         proceso?.nombre    || null,
+        sub_proceso:     subProceso?.nombre || null,
+        operador:        operador?.nombre   || null,
+        fecha_carga:     fecha,
+        hora_carga:      hora,
+        turno,
+        semana,
+        estado:          cv.es_vacia ? 'vacia' : 'activo',
+        resultado:       null,
+        defecto_id:      null,
+        defecto:         null,
+        fecha_descarga:  null,
+        hora_descarga:   null,
+        created_at:      now
+      });
+    });
+  } else {
+    const comp = (pdb.componentes_l1 || []).find(c => String(c.id) === String(body.componente_id));
+    const ppvComp = comp ? (Number(comp.piezas_por_varilla) || Number(comp.piezas_objetivo) || null) : null;
+    carga.cliente       = body.cliente || comp?.cliente || null;
+    carga.componente_id = comp?.id     || null;
+    carga.componente    = comp?.nombre || body.componente || null;
+    carga.no_skf        = body.no_skf  || comp?.no_skf  || null;
+    carga.no_orden      = body.no_orden || null;
+    carga.lote          = body.lote     || null;
+
+    const varillasDefault = comp ? (Number(comp.carga_optima_varillas) || null) : (Number(herr.varillas_totales) || null);
+    carga.varillas = body.varillas ? Number(body.varillas) : varillasDefault;
+    carga.piezas_por_varilla = body.piezas_por_varilla ? Number(body.piezas_por_varilla) : ppvComp;
+    carga.cantidad = carga.varillas && carga.piezas_por_varilla
+      ? carga.varillas * carga.piezas_por_varilla
+      : (body.cantidad ? Number(body.cantidad) : null);
+
+    const ppvObj = ppvComp || 0;
+    carga.piezas_objetivo_carga = herr.varillas_totales && ppvObj ? Number(herr.varillas_totales) * ppvObj : 0;
+    carga.es_vacia = body.es_vacia || false;
+  }
+
+  pdb.cargas_l1.push(carga);
+  dbProd.write(pdb);
+  res.status(201).json(carga);
+});
+
+// POST /l1/cargas/:id/descargar
+router.post('/l1/cargas/:id/descargar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.cargas_l1) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.cargas_l1.findIndex(c => String(c.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Carga L1 no encontrada' });
+  const carga = pdb.cargas_l1[idx];
+  if (carga.estado !== 'activo') return res.status(409).json({ error: 'La carga no está activa' });
+
+  const body = req.body || {};
+  const fecha = nowDateStr();
+  const hora  = nowTimeStr();
+  const turno = getTurno(hora);
+
+  if (carga.herramental_tipo === 'barril') {
+    const cavResultados = Array.isArray(body.cavidades) ? body.cavidades : [];
+    carga.cavidades = (carga.cavidades || []).map(cv => {
+      const r = cavResultados.find(r => r.num === cv.num) || {};
+      return { ...cv, estado: r.estado || cv.estado || 'vacia', defecto_id: r.defecto_id || null, defecto: r.defecto || null };
+    });
+    carga.cavidades_buenas  = carga.cavidades.filter(cv => cv.estado === 'buena').length;
+    carga.cavidades_defecto = carga.cavidades.filter(cv => cv.estado === 'defecto').length;
+    carga.cavidades_vacias  = carga.cavidades.filter(cv => cv.estado === 'vacia' || cv.es_vacia).length;
+
+    if (pdb.cavidades_l1) {
+      pdb.cavidades_l1 = pdb.cavidades_l1.map(cav => {
+        if (String(cav.carga_id) !== String(carga.id)) return cav;
+        const r = cavResultados.find(r => r.num === cav.cavidad_num) || {};
+        return {
+          ...cav,
+          estado:        r.estado     || cav.estado     || (cav.es_vacia ? 'vacia' : 'descargado'),
+          resultado:     r.estado     || null,
+          defecto_id:    r.defecto_id || null,
+          defecto:       r.defecto    || null,
+          fecha_descarga: fecha,
+          hora_descarga:  hora
+        };
+      });
+    }
+  } else {
+    if (body.defecto_id) {
+      carga.defecto_id = body.defecto_id;
+      const def = (pdb.defectos_l1 || []).find(d => String(d.id) === String(body.defecto_id));
+      carga.defecto = def?.nombre || body.defecto || null;
+      carga.estado  = 'defecto';
+    } else {
+      carga.estado = 'descargado';
+    }
+  }
+
+  if (carga.herramental_tipo === 'barril') carga.estado = 'descargado';
+
+  carga.fecha_descarga = fecha;
+  carga.hora_descarga  = hora;
+  carga.turno          = turno;
+  pdb.cargas_l1[idx] = carga;
+  dbProd.write(pdb);
+  res.json(carga);
+});
+
+// POST /l1/cargas/:id/reprocesar
+router.post('/l1/cargas/:id/reprocesar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.cargas_l1) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.cargas_l1.findIndex(c => String(c.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Carga L1 no encontrada' });
+  const original = pdb.cargas_l1[idx];
+
+  if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
+
+  if (original.estado === 'activo') {
+    original.estado = 'defecto';
+    original.fecha_descarga = nowDateStr();
+    original.hora_descarga  = nowTimeStr();
+  }
+
+  const activos = pdb.cargas_l1.filter(c => c.estado === 'activo');
+  if (activos.length >= 8) return res.status(409).json({ error: 'Máximo de 8 herramentales activos en L1' });
+
+  const folio = nextFolio('L1', pdb.cargas_l1, 'folio');
+  const nueva = {
+    ...original,
+    id: dbProd.nextId(pdb.cargas_l1),
+    folio,
+    estado: 'activo',
+    fecha_carga: nowDateStr(), fecha_turno: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
+    turno: getTurno(nowTimeStr()),
+    fecha_descarga: null, hora_descarga: null,
+    defecto_id: null, defecto: null,
+    es_reproceso: true, folio_origen: original.folio,
+    created_at: new Date().toISOString()
+  };
+  if (original.herramental_tipo === 'barril') {
+    nueva.cavidades = (original.cavidades || []).map(cv => ({ ...cv, estado: null }));
+    nueva.cavidades_buenas = 0; nueva.cavidades_defecto = 0;
+  }
+
+  original.reprocesado = true;
+  pdb.cargas_l1[idx] = original;
+  pdb.cargas_l1.push(nueva);
+  dbProd.write(pdb);
+  res.status(201).json(nueva);
+});
+
+// GET /l1/paros/activo
+router.get('/l1/paros/activo', (req, res) => {
+  const pdb = dbProd.read();
+  const paro = (pdb.paros_l1 || []).find(p => !p.fecha_fin);
+  res.json({ paro: paro || null });
+});
+
+// POST /l1/paros
+router.post('/l1/paros', (req, res) => {
+  const pdb = dbProd.read();
+  if (!pdb.paros_l1) pdb.paros_l1 = [];
+
+  const abierto = pdb.paros_l1.find(p => !p.fecha_fin);
+  if (abierto) return res.status(409).json({ error: 'Ya existe un paro activo en L1' });
+
+  const body = req.body || {};
+  const fecha_inicio = body.fecha_inicio || nowDateStr();
+  const hora_inicio  = body.hora_inicio  || nowTimeStr();
+  const turno        = getTurno(hora_inicio);
+
+  let motivo_id = body.motivo_id, motivo = body.motivo;
+  if (!motivo_id && motivo) {
+    const existente = (pdb.motivos_paro_l1 || []).find(m => m.nombre === motivo);
+    if (existente) { motivo_id = existente.id; }
+    else {
+      if (!pdb.motivos_paro_l1) pdb.motivos_paro_l1 = [];
+      const newM = { id: dbProd.nextId(pdb.motivos_paro_l1), nombre: motivo, activo: true, created_at: new Date().toISOString() };
+      pdb.motivos_paro_l1.push(newM);
+      motivo_id = newM.id;
+    }
+  }
+
+  const folio = nextFolio('L1P', pdb.paros_l1, 'folio');
+  const paro = {
+    id: dbProd.nextId(pdb.paros_l1), folio,
+    motivo_id, motivo,
+    sub_motivo_id: body.sub_motivo_id || null,
+    sub_motivo: body.sub_motivo || null,
+    fecha_inicio, hora_inicio, turno,
+    fecha_fin: null, hora_fin: null, duracion_min: null,
+    tipo: body.tipo || null,
+    created_at: new Date().toISOString()
+  };
+  pdb.paros_l1.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+// PATCH /l1/paros/:id/cerrar
+router.patch('/l1/paros/:id/cerrar', (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+  if (!pdb.paros_l1) return res.status(404).json({ error: 'No encontrado' });
+  const idx = pdb.paros_l1.findIndex(p => String(p.id) === String(id));
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+  const paro = pdb.paros_l1[idx];
+  if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya está cerrado' });
+
+  const fecha_fin = nowDateStr();
+  const hora_fin  = nowTimeStr();
+  const ini  = toMins(paro.hora_inicio);
+  const fin  = toMins(hora_fin);
+  const duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+
+  paro.fecha_fin = fecha_fin; paro.hora_fin = hora_fin; paro.duracion_min = duracion_min;
+  pdb.paros_l1[idx] = paro;
+  dbProd.write(pdb);
+  res.json(paro);
+});
+
+// POST /l1/paros/auto-sin-actividad (idempotente)
+router.post('/l1/paros/auto-sin-actividad', (req, res) => {
+  const { fecha, turno } = req.body || {};
+  if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
+
+  const pdb = dbProd.read();
+  const cargas = (pdb.cargas_l1 || []).filter(c =>
+    ((c.fecha_turno || c.fecha_carga) === fecha) && c.turno === turno
+  );
+  if (cargas.length > 0) return res.json({ skipped: true, reason: 'Hay cargas en el turno' });
+
+  const paros = (pdb.paros_l1 || []).filter(p => p.fecha_inicio === fecha && p.turno === turno);
+  if (paros.length > 0) return res.json({ skipped: true, reason: 'Ya hay paros en el turno' });
+
+  if (!pdb.motivos_paro_l1) pdb.motivos_paro_l1 = [];
+  let motivoAuto = pdb.motivos_paro_l1.find(m => m.nombre === 'Turno no trabajado');
+  if (!motivoAuto) {
+    motivoAuto = { id: dbProd.nextId(pdb.motivos_paro_l1), nombre: 'Turno no trabajado', activo: true, created_at: new Date().toISOString() };
+    pdb.motivos_paro_l1.push(motivoAuto);
+  }
+
+  const SHIFT_TIMES = { T1: { hi:'06:30', hf:'14:30', dur:480 }, T2: { hi:'14:30', hf:'21:30', dur:420 }, T3: { hi:'21:30', hf:'06:30', dur:540 } };
+  const st = SHIFT_TIMES[turno] || SHIFT_TIMES.T1;
+  if (!pdb.paros_l1) pdb.paros_l1 = [];
+  const folio = nextFolio('L1P', pdb.paros_l1, 'folio');
+  const paro = {
+    id: dbProd.nextId(pdb.paros_l1), folio,
+    motivo_id: motivoAuto.id, motivo: motivoAuto.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio: fecha, hora_inicio: st.hi, turno,
+    fecha_fin: turno === 'T3' ? addDays(fecha, 1) : fecha,
+    hora_fin: st.hf, duracion_min: st.dur,
+    tipo: 'auto', created_at: new Date().toISOString()
+  };
+  pdb.paros_l1.push(paro);
+  dbProd.write(pdb);
+  res.json({ created: true, paro });
+});
+
+// POST /l1/paros/antes-de-tiempo
+router.post('/l1/paros/antes-de-tiempo', produccionAllowRoles('produccion'), (req, res) => {
+  const { hora_inicio, fecha_inicio, hora_fin } = req.body || {};
+  if (!hora_inicio || !fecha_inicio || !hora_fin) return res.status(400).json({ error: 'hora_inicio, fecha_inicio y hora_fin requeridos' });
+
+  const pdb    = dbProd.read();
+  const motivo = ensureMotivoParo(pdb, 'motivos_paro_l1', 'Paro antes de tiempo');
+
+  const ini = toMins(hora_inicio);
+  const fin = toMins(hora_fin);
+  const duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+  if (duracion_min <= 0) return res.json({ skipped: true, reason: 'duracion_cero' });
+
+  const yaExiste = (pdb.paros_l1 || []).find(p =>
+    p.tipo === 'antes_de_tiempo' &&
+    p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
+  if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
+
+  const turno = getTurno(hora_inicio);
+  const id    = dbProd.nextId(pdb.paros_l1 || []);
+  const paro  = {
+    id, folio: `L1PAT-${nowDateStr().replace(/-/g,'')}-${id}`,
+    motivo_id: motivo.id, motivo: motivo.nombre,
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio, hora_inicio, fecha_fin: fecha_inicio, hora_fin,
+    duracion_min, turno, tipo: 'antes_de_tiempo',
+    created_at: new Date().toISOString()
+  };
+  if (!pdb.paros_l1) pdb.paros_l1 = [];
+  pdb.paros_l1.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ─── LÍNEA BAKER ──────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════════
 
 // GET /baker/cargas/activas
 router.get('/baker/cargas/activas', (req, res) => {
@@ -2291,6 +2922,7 @@ router.post('/admin/migrate-t3-dates', produccionAllowRoles('admin'), (req, res)
 
   procesaColeccion(pdb.cargas,       'cargas');
   procesaColeccion(pdb.cargas_baker, 'cargas_baker');
+  procesaColeccion(pdb.cargas_l1,    'cargas_l1');
 
   if (!dryRun && changes.length > 0) dbProd.write(pdb);
 

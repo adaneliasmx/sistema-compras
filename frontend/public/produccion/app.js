@@ -43,6 +43,7 @@ const MENU = {
     ['linea-3',        '🏭', 'Línea 3'],
     ['linea-4',        '🏭', 'Línea 4'],
     ['linea-baker',    '🔧', 'Baker'],
+    ['linea-l1',       '🏭', 'Línea 1'],
     ['reportes',       '📈', 'Reportes'],
     ['paros',          '⏸', 'Paros'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
@@ -53,6 +54,7 @@ const MENU = {
     ['catalogos-l3',   '📦', 'Catálogos L3'],
     ['catalogos-l4',   '📦', 'Catálogos L4'],
     ['catalogos-baker','📦', 'Catálogos Baker'],
+    ['catalogos-l1',   '📦', 'Catálogos L1'],
     ['operadores',     '👤', 'Operadores'],
     ['configuracion',  '⚙️', 'Configuración']
   ],
@@ -61,6 +63,7 @@ const MENU = {
     ['linea-3',        '🏭', 'Línea 3'],
     ['linea-4',        '🏭', 'Línea 4'],
     ['linea-baker',    '🔧', 'Baker'],
+    ['linea-l1',       '🏭', 'Línea 1'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
     ['resumen-turno',  '📑', 'Resumen de Turno']
   ],
@@ -76,6 +79,7 @@ const SECTION_TITLES = {
   'linea-4':         'Línea 4 — Tarjetero Activo',
   'linea-op':        'Mi Línea — Tarjetero Activo',
   'linea-baker':     'Baker — Tarjetero Activo',
+  'linea-l1':        'Línea 1 — Tarjetero Activo',
   'reportes':        'Reportes de Producción',
   'paros':           'Registro de Paros',
   'pizarron':        'Pizarrón KPI',
@@ -85,6 +89,7 @@ const SECTION_TITLES = {
   'catalogos-l3':    'Catálogos Línea 3',
   'catalogos-l4':    'Catálogos Línea 4',
   'catalogos-baker': 'Catálogos Baker',
+  'catalogos-l1':    'Catálogos Línea 1',
   'operadores':      'Gestión de Operadores',
   'configuracion':   'Configuración'
 };
@@ -230,8 +235,9 @@ async function logoutShiftEnd() {
         // Buscar el fin de turno más cercano (dentro de ±2 min)
         const shiftEnd = SHIFT_ENDS_MINS.find(e => Math.abs(e - curMins) <= 2) ?? curMins;
         const hora_fin = `${String(Math.floor(shiftEnd/60)).padStart(2,'0')}:${String(shiftEnd%60).padStart(2,'0')}`;
-        const isBaker  = state.lineaActiva === 'Baker';
-        const path     = isBaker ? '/baker/paros/antes-de-tiempo' : `/paros/${state.lineaActiva}/antes-de-tiempo`;
+        const isBakerLike = state.lineaActiva === 'Baker' || state.lineaActiva === 'L1';
+        const bakerLikePath = state.lineaActiva === 'Baker' ? '/baker/paros/antes-de-tiempo' : '/l1/paros/antes-de-tiempo';
+        const path     = isBakerLike ? bakerLikePath : `/paros/${state.lineaActiva}/antes-de-tiempo`;
         await fetch('/api/produccion' + path, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
@@ -573,6 +579,7 @@ async function renderMain() {
       case 'linea-4':        await viewLinea(el, 'L4');      break;
       case 'linea-op':       await viewLinea(el, lineaFromSection('linea-op')); break;
       case 'linea-baker':    await viewBaker(el);             break;
+      case 'linea-l1':       await viewL1(el);                break;
       case 'reportes':       await viewReportes(el);          break;
       case 'paros':          await viewParos(el);             break;
       case 'pizarron':       await viewPizarron(el);          break;
@@ -582,6 +589,7 @@ async function renderMain() {
       case 'catalogos-l3':   await viewCatalogos(el, 'L3');   break;
       case 'catalogos-l4':   await viewCatalogos(el, 'L4');   break;
       case 'catalogos-baker':await viewCatalogos(el, 'baker');break;
+      case 'catalogos-l1':   await viewCatalogos(el, 'l1');   break;
       case 'operadores':     await viewOperadores(el);        break;
       case 'configuracion':  await viewConfiguracion(el);     break;
       default:
@@ -1039,8 +1047,171 @@ function renderTarjetaBaker(c) {
   </div>`;
 }
 
-// ── Modal: Registrar Herramental Baker ────────────────────────────────────────
-function openModalCargaBaker(catalogo, onDone) {
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: LÍNEA 1 (tarjetero activo) — idéntica a Baker pero con max 8 herramentales
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewL1(el) {
+  clearInterval(state._lineaTimer);
+  state._lineaTimer = setInterval(() => {
+    const elActual = document.getElementById('p-content');
+    if (elActual && state.section === 'linea-l1') viewL1(elActual);
+  }, 20000);
+
+  el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Línea 1...</p></div>';
+  try {
+    const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
+    const turnoActual = getCurrentTurno();
+
+    const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
+      GET('/l1/cargas/activas'),
+      GET('/catalogos/l1'),
+      GET('/l1/paros/activo').catch(() => null),
+      GET(`/l1/cargas?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET('/config').catch(() => ({}))
+    ]);
+
+    const cargas   = Array.isArray(cargasData) ? cargasData : [];
+    const catalogo = catalogData || {};
+    let paroActivo = paroData?.paro || null;
+    const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
+    const cfg = (cfgData?.config || cfgData) ?? {};
+
+    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && c.turno === turnoActual).length;
+    const ciclosObjL1 = cfg.ciclos_objetivo_l1 ?? 2;
+    const objetivoTurno = Math.round(ciclosObjL1 * (HORAS_TURNO[turnoActual] ?? 8));
+
+    try {
+      const prev = getPrevTurnoInfo();
+      await POST('/l1/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
+    } catch (_) {}
+
+    const MAX_L1 = 8;
+    const capacidadBar = `
+      <div style="display:flex;align-items:center;gap:8px;background:#f1f5f9;border-radius:8px;padding:6px 14px">
+        <span style="font-size:13px;color:#64748b;font-weight:600">Herramentales:</span>
+        <span style="font-size:18px;font-weight:800;color:${cargas.length >= MAX_L1 ? '#dc2626' : cargas.length >= 6 ? '#f59e0b' : '#16a34a'}">${cargas.length}/${MAX_L1}</span>
+        <div style="flex:1;background:#e2e8f0;border-radius:4px;height:8px;max-width:80px">
+          <div style="width:${(cargas.length/MAX_L1*100).toFixed(0)}%;background:${cargas.length >= MAX_L1 ? '#dc2626' : '#3b82f6'};height:8px;border-radius:4px"></div>
+        </div>
+      </div>`;
+
+    const paroMiniCard = paroActivo
+      ? `<div style="display:flex;align-items:center;gap:8px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;padding:6px 12px">
+           <span style="color:#dc2626;font-weight:700;font-size:13px">🔴 PARO ACTIVO</span>
+           <span style="font-size:13px;font-weight:600">${escHtml(paroActivo.motivo || '—')}</span>
+           <span style="font-size:11px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio || '')}</span>
+           <button class="btn btn-sm btn-primary" id="btn-l1-cerrar-paro" data-id="${paroActivo.id}">✅ Cerrar Paro</button>
+         </div>`
+      : '';
+
+    const tarjetasHtml = cargas.length === 0
+      ? '<div class="empty-state"><div class="icon">📭</div><p>No hay herramentales activos en Línea 1.</p></div>'
+      : `<div class="tarjetero-grid">${cargas.map(c => renderTarjetaL1(c)).join('')}</div>`;
+
+    el.innerHTML = `
+      <div class="tarjetero-header">
+        <h3>Línea 1 — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activos</span></h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+            🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
+          </div>
+          ${capacidadBar}
+          ${paroMiniCard}
+          <div class="tarjetero-actions">
+            ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-l1-paro">⏸ Registrar Paro</button>' : ''}
+            <button class="btn btn-primary" id="btn-l1-carga"${cargas.length >= MAX_L1 ? ` disabled title="Máx. ${MAX_L1} herramentales activos"` : ''}>+ Registrar Herramental</button>
+          </div>
+        </div>
+      </div>
+      ${tarjetasHtml}`;
+
+    el.querySelector('#btn-l1-carga')?.addEventListener('click', () => {
+      if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
+      openModalCargaL1(catalogo, () => viewL1(el));
+    });
+    el.querySelector('#btn-l1-paro')?.addEventListener('click', () => {
+      openModalParoL1(catalogo, () => viewL1(el));
+    });
+    el.querySelector('#btn-l1-cerrar-paro')?.addEventListener('click', async (ev) => {
+      const id = ev.currentTarget.dataset.id;
+      try {
+        await PATCH(`/l1/paros/${id}/cerrar`, {});
+        viewL1(el);
+      } catch (e) { alert('Error al cerrar paro: ' + e.message); }
+    });
+    el.querySelectorAll('[data-l1-descargar]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (paroActivo) { alert('Cierra el paro activo antes de descargar.'); return; }
+        const carga = cargas.find(c => String(c.id) === String(btn.dataset.l1Descargar));
+        openModalDescargaL1(carga, catalogo, () => viewL1(el));
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function renderTarjetaL1(c) {
+  const esBarril = c.herramental_tipo === 'barril';
+  const cavInfo  = esBarril
+    ? `<div class="tarjeta-meta-item"><span class="meta-label">Cavidades</span><span class="meta-val">${c.cavidades_cargadas ?? '—'}/${c.herramental_cavidades ?? '—'}</span></div>`
+    : `<div class="tarjeta-meta-item"><span class="meta-label">Varillas</span><span class="meta-val">${c.varillas ?? '—'}</span></div>
+       <div class="tarjeta-meta-item"><span class="meta-label">Cantidad</span><span class="meta-val">${c.cantidad ?? '—'}</span></div>`;
+
+  let noComponente = c.componente || '';
+  if (!noComponente && esBarril && Array.isArray(c.cavidades)) {
+    const compsCav = [...new Set(c.cavidades.filter(cv => !cv.es_vacia && cv.componente).map(cv => cv.componente))];
+    noComponente = compsCav.length === 1 ? compsCav[0] : compsCav.length > 1 ? 'Múltiples' : '';
+  }
+  noComponente = escHtml(noComponente || '— sin comp —');
+
+  return `
+  <div class="tarjeta-card">
+    <div class="tarjeta-header">
+      <div class="tarjeta-header-info">
+        <div class="tarjeta-header-row">
+          <span class="meta-label">No. Herramental</span>
+          <span class="herramental-no">${escHtml(c.herramental_no || '—')}</span>
+        </div>
+        <div class="tarjeta-header-row">
+          <span class="meta-label">No. Componente</span>
+          <span class="tarjeta-comp-no">${noComponente}</span>
+        </div>
+      </div>
+      <span class="folio">#${escHtml(c.folio || c.id)}</span>
+    </div>
+    <div class="tarjeta-body">
+      <div class="tarjeta-cliente">${escHtml(c.cliente || '')}</div>
+      <div class="tarjeta-meta">
+        ${cavInfo}
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Proceso</span>
+          <span class="meta-val">${escHtml(c.proceso || '—')}${c.sub_proceso ? ' › ' + escHtml(c.sub_proceso) : ''}</span>
+        </div>
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Cargado</span>
+          <span class="meta-val">${c.fecha_carga || ''} ${fmtTime(c.created_at)}</span>
+        </div>
+        <div class="tarjeta-meta-item">
+          <span class="meta-label">Operador</span>
+          <span class="meta-val">${escHtml(c.operador || '—')}</span>
+        </div>
+      </div>
+    </div>
+    <div class="tarjeta-footer">
+      <span class="badge badge-activo">activo</span>
+      <button class="btn-descargar" data-l1-descargar="${c.id}">⬇ Descargar</button>
+    </div>
+  </div>`;
+}
+
+// ── Modal: Registrar Herramental Baker / L1 ───────────────────────────────────
+function openModalCargaL1(catalogo, onDone) { openModalCargaBaker(catalogo, onDone, 'l1'); }
+function openModalDescargaL1(carga, catalogo, onDone) { openModalDescargaBaker(carga, catalogo, onDone, 'l1'); }
+function openModalParoL1(catalogo, onDone) { openModalParoBaker(catalogo, onDone, 'l1'); }
+
+function openModalCargaBaker(catalogo, onDone, linea = 'baker') {
   const herramentales = (catalogo.herramentales || []).filter(h => h.activo !== false);
   const procesos      = (catalogo.procesos      || []).filter(p => p.activo !== false);
   const subProcesos   = (catalogo.sub_procesos  || []).filter(s => s.activo !== false);
@@ -1060,7 +1231,7 @@ function openModalCargaBaker(catalogo, onDone) {
   const htmlCli  = clientes.map(c   => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
 
   showModal(`
-    <h3>Registrar Herramental — Baker</h3>
+    <h3>Registrar Herramental — ${linea === 'l1' ? 'Línea 1' : 'Baker'}</h3>
     <div class="form-grid">
       <div class="form-group full" style="display:flex;gap:8px;align-items:center">
         <label style="white-space:nowrap">Modo registro:</label>
@@ -1364,7 +1535,7 @@ function openModalCargaBaker(catalogo, onDone) {
     const btn = document.getElementById('bk-save');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
-      await POST('/baker/cargas', payload);
+      await POST(`/${linea}/cargas`, payload);
       closeModal();
       if (onDone) onDone();
     } catch (e) {
@@ -1525,7 +1696,7 @@ function buildCavidadesForm(n, componentes, clientes) {
 
 
 // ── Modal: Descargar Herramental Baker ────────────────────────────────────────
-function openModalDescargaBaker(carga, catalogo, onDone) {
+function openModalDescargaBaker(carga, catalogo, onDone, linea = 'baker') {
   if (!carga) return;
   const defectos = (catalogo.defectos || []).filter(d => d.activo !== false);
   const esBarril = carga.herramental_tipo === 'barril';
@@ -1575,7 +1746,7 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
   }
 
   showModal(`
-    <h3>Descargar Herramental Baker — ${escHtml(carga.herramental_no || carga.folio)}</h3>
+    <h3>Descargar Herramental ${linea === 'l1' ? 'L1' : 'Baker'} — ${escHtml(carga.herramental_no || carga.folio)}</h3>
     ${bodyHtml}
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
@@ -1640,19 +1811,19 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
             cavResultados.push({ num, estado, defecto_id, defecto });
           }
         });
-        await POST(`/baker/cargas/${carga.id}/descargar`, { cavidades: cavResultados });
+        await POST(`/${linea}/cargas/${carga.id}/descargar`, { cavidades: cavResultados });
       } else {
         if (!rackEstado) { alert('Selecciona el resultado antes de confirmar.'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
         if (rackEstado === 'reproceso') {
           // Crear reproceso directo
-          await POST(`/baker/cargas/${carga.id}/reprocesar`, {});
+          await POST(`/${linea}/cargas/${carga.id}/reprocesar`, {});
           closeModal();
           if (onDone) onDone();
           return;
         }
         const defectoId = rackEstado === 'defecto' ? document.getElementById('bk-rack-defecto').value : null;
         if (rackEstado === 'defecto' && !defectoId) { alert('Selecciona el tipo de defecto.'); btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga'; return; }
-        await POST(`/baker/cargas/${carga.id}/descargar`, { defecto_id: defectoId || null });
+        await POST(`/${linea}/cargas/${carga.id}/descargar`, { defecto_id: defectoId || null });
       }
       closeModal();
       if (onDone) onDone();
@@ -1664,13 +1835,13 @@ function openModalDescargaBaker(carga, catalogo, onDone) {
 }
 
 // ── Modal: Registrar Paro Baker ───────────────────────────────────────────────
-function openModalParoBaker(catalogo, onDone) {
+function openModalParoBaker(catalogo, onDone, linea = 'baker') {
   const motivos    = (catalogo.motivos_paro || []).filter(m => m.activo !== false);
   const subMotivos = (catalogo.sub_motivos  || []).filter(s => s.activo !== false);
   const htmlMotivos = motivos.map(m => `<option value="${m.id}">${escHtml(m.nombre)}</option>`).join('');
 
   showModal(`
-    <h3>⏸ Registrar Paro — Baker</h3>
+    <h3>⏸ Registrar Paro — ${linea === 'l1' ? 'Línea 1' : 'Baker'}</h3>
     <div class="form-grid">
       <div class="form-group full">
         <label>Motivo de paro</label>
@@ -1704,7 +1875,7 @@ function openModalParoBaker(catalogo, onDone) {
     const btn = document.getElementById('bkp-save');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
-      await POST('/baker/paros', { motivo_id: motivoId, motivo: motivoNom, sub_motivo_id: subId, sub_motivo: subNom });
+      await POST(`/${linea}/paros`, { motivo_id: motivoId, motivo: motivoNom, sub_motivo_id: subId, sub_motivo: subNom });
       closeModal();
       if (onDone) onDone();
     } catch (e) {
@@ -2225,6 +2396,7 @@ async function viewPizarron(el) {
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
           <option value="Baker">Baker</option>
+          <option value="L1">Línea 1</option>
         </select>
       </div>
       <div>
@@ -2617,6 +2789,7 @@ async function viewReportes(el) {
       <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
       <button class="tab-btn" data-tab="L4">Línea 4</button>
       <button class="tab-btn" data-tab="Baker">Baker</button>
+      <button class="tab-btn" data-tab="L1">Línea 1</button>
     </div>
     <div class="filters-bar">
       <div><span class="flabel">Desde</span><input type="date" id="rpt-desde" value="${today}"/></div>
@@ -2943,11 +3116,12 @@ async function viewReportes(el) {
   // ── Render result (orquesta las secciones) ────────────────────────────────
   function renderResult(cargas, cavs) {
     const res = document.getElementById('rpt-resultado');
-    if (activeRptTab === 'Baker') {
+    if (activeRptTab === 'Baker' || activeRptTab === 'L1') {
       const racks = cargas.filter(c => c.herramental_tipo !== 'barril');
-      res.innerHTML = renderTablaLinea(racks, 'Baker — Racks')
+      const lineaLabel = activeRptTab === 'L1' ? 'L1' : 'Baker';
+      res.innerHTML = renderTablaLinea(racks, `${lineaLabel} — Racks`)
                     + renderTablaCavidades(cavs)
-                    + renderAnalisisDefectos(cavs, 'Baker Barriles');
+                    + renderAnalisisDefectos(cavs, `${lineaLabel} Barriles`);
     } else {
       const label = activeRptTab === 'L3' ? 'Línea 3' : 'Línea 4';
       res.innerHTML = renderTablaLinea(cargas, label)
@@ -2966,10 +3140,11 @@ async function viewReportes(el) {
       if (desde) params.set('desde', desde);
       if (hasta) params.set('hasta', hasta);
 
-      if (activeRptTab === 'Baker') {
+      if (activeRptTab === 'Baker' || activeRptTab === 'L1') {
+        const cavsEndpoint = activeRptTab === 'L1' ? '/l1/cavidades' : '/baker/cavidades';
         const [cargasData, cavsData] = await Promise.all([
           GET(`/reportes?${params}`),
-          GET(`/baker/cavidades?fecha_ini=${desde}&fecha_fin=${hasta}`)
+          GET(`${cavsEndpoint}?fecha_ini=${desde}&fecha_fin=${hasta}`)
         ]);
         allCargas    = cargasData?.cargas || cargasData || [];
         allCavidades = Array.isArray(cavsData) ? cavsData : [];
@@ -2994,11 +3169,12 @@ async function viewReportes(el) {
     const f   = getF();
     const flt = c => fltItem(c, f);
     const wb  = XLSX.utils.book_new();
-    if (activeRptTab === 'Baker') {
+    if (activeRptTab === 'Baker' || activeRptTab === 'L1') {
+      const lineaLabel = activeRptTab === 'L1' ? 'L1' : 'Baker';
       const racks = allCargas.filter(c => c.herramental_tipo !== 'barril').filter(flt);
       const cavs  = allCavidades.filter(flt);
-      if (racks.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks), 'Baker Racks');
-      if (cavs.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cavs),  'Baker Barriles');
+      if (racks.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(racks), `${lineaLabel} Racks`);
+      if (cavs.length)  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(cavs),  `${lineaLabel} Barriles`);
     } else {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(allCargas.filter(flt)), activeRptTab);
     }
@@ -3044,9 +3220,9 @@ function apiTipo(key) {
 }
 
 async function viewCatalogos(el, linea) {
-  const isBaker = linea === 'baker';
-  const tabs = isBaker ? BAKER_CATALOG_TABS : CATALOG_TABS;
-  let activeTab = isBaker ? 'clientes' : 'componentes';
+  const isBakerLike = linea === 'baker' || linea === 'l1';
+  const tabs = isBakerLike ? BAKER_CATALOG_TABS : CATALOG_TABS;
+  let activeTab = isBakerLike ? 'clientes' : 'componentes';
   let catalogo  = {};
 
   async function loadAndRender() {
@@ -3067,7 +3243,7 @@ async function viewCatalogos(el, linea) {
     let items = Array.isArray(catalogo[activeTab]) ? catalogo[activeTab] : [];
 
     // Filtro por cliente (solo Baker componentes)
-    const showClienteFilter = isBaker && activeTab === 'componentes';
+    const showClienteFilter = isBakerLike && activeTab === 'componentes';
     const clientes = showClienteFilter
       ? [...new Set(items.map(i => i.cliente).filter(Boolean))].sort()
       : [];
@@ -3399,17 +3575,19 @@ function collectCatalogoFields(tipo) {
 
 async function viewOperadores(el) {
   async function loadAndRender() {
-    let operadoresL3 = [], operadoresL4 = [], operadoresBaker = [], usuariosSistema = [];
+    let operadoresL3 = [], operadoresL4 = [], operadoresBaker = [], operadoresL1 = [], usuariosSistema = [];
     try {
-      const [dL3, dL4, dBaker, dUsers] = await Promise.all([
+      const [dL3, dL4, dBaker, dL1, dUsers] = await Promise.all([
         GET('/operadores/L3'),
         GET('/operadores/L4'),
         GET('/operadores/baker'),
+        GET('/operadores/l1'),
         GET('/usuarios-sistema')
       ]);
       operadoresL3    = Array.isArray(dL3)    ? dL3    : (dL3?.operadores    || []);
       operadoresL4    = Array.isArray(dL4)    ? dL4    : (dL4?.operadores    || []);
       operadoresBaker = Array.isArray(dBaker) ? dBaker : (dBaker?.operadores || []);
+      operadoresL1    = Array.isArray(dL1)    ? dL1    : (dL1?.operadores    || []);
       usuariosSistema = Array.isArray(dUsers) ? dUsers : [];
     } catch (e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
@@ -3440,7 +3618,7 @@ async function viewOperadores(el) {
         </table>`;
 
     el.innerHTML = `
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
         <div class="table-card">
           <div class="table-header">
             <h3>Línea 3</h3>
@@ -3461,6 +3639,13 @@ async function viewOperadores(el) {
             <button class="btn btn-primary btn-sm" data-nuevo-op="baker">+ Agregar</button>
           </div>
           <div class="table-scroll">${tableHtml(operadoresBaker, 'baker')}</div>
+        </div>
+        <div class="table-card">
+          <div class="table-header">
+            <h3>Línea 1</h3>
+            <button class="btn btn-primary btn-sm" data-nuevo-op="l1">+ Agregar</button>
+          </div>
+          <div class="table-scroll">${tableHtml(operadoresL1, 'l1')}</div>
         </div>
       </div>`;
 
@@ -3597,6 +3782,7 @@ async function viewParos(el) {
           <option value="L3">Línea 3</option>
           <option value="L4">Línea 4</option>
           <option value="Baker">Baker</option>
+          <option value="L1">Línea 1</option>
         </select>
       </div>
       <div>
@@ -3860,10 +4046,11 @@ async function viewConfiguracion(el) {
       <h3>Configuración General</h3>
 
       <h4 style="margin-top:20px">Ciclos objetivo por hora</h4>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
         ${row('cfg-ciclos-l3','Línea 3', n('ciclos_objetivo_l3',2), 'ciclos/hr')}
         ${row('cfg-ciclos-l4','Línea 4', n('ciclos_objetivo_l4',2), 'ciclos/hr')}
         ${row('cfg-ciclos-baker','Baker',  n('ciclos_objetivo_baker',2), 'ciclos/hr')}
+        ${row('cfg-ciclos-l1','Línea 1', n('ciclos_objetivo_l1',2), 'ciclos/hr')}
       </div>
 
       <h4 style="margin-top:24px">Objetivos KPI (%)</h4>
@@ -3874,6 +4061,7 @@ async function viewConfiguracion(el) {
             <th style="padding:6px 10px">Línea 3 (%)</th>
             <th style="padding:6px 10px">Línea 4 (%)</th>
             <th style="padding:6px 10px">Baker (%)</th>
+            <th style="padding:6px 10px">L1 (%)</th>
           </tr>
         </thead>
         <tbody>
@@ -3882,24 +4070,28 @@ async function viewConfiguracion(el) {
             <td style="padding:6px 10px"><input type="number" id="cfg-ef-l3" value="${n('eficiencia_obj_l3',85)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-ef-l4" value="${n('eficiencia_obj_l4',85)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-ef-baker" value="${n('eficiencia_obj_baker',85)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ef-l1" value="${n('eficiencia_obj_l1',85)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Capacidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cap-l3" value="${n('capacidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cap-l4" value="${n('capacidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cap-baker" value="${n('capacidad_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cap-l1" value="${n('capacidad_obj_l1',90)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Calidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cal-l3" value="${n('calidad_obj_l3',95)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cal-l4" value="${n('calidad_obj_l4',95)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-cal-baker" value="${n('calidad_obj_baker',95)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-cal-l1" value="${n('calidad_obj_l1',95)}" min="0" max="100" style="width:80px"/></td>
           </tr>
           <tr>
             <td style="padding:6px 10px">Disponibilidad</td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-l3" value="${n('disponibilidad_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-l4" value="${n('disponibilidad_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-baker" value="${n('disponibilidad_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-dis-l1" value="${n('disponibilidad_obj_l1',90)}" min="0" max="100" style="width:80px"/></td>
           </tr>
         </tbody>
       </table>
@@ -3927,18 +4119,23 @@ async function viewConfiguracion(el) {
         ciclos_objetivo_l3:    g('cfg-ciclos-l3'),
         ciclos_objetivo_l4:    g('cfg-ciclos-l4'),
         ciclos_objetivo_baker: g('cfg-ciclos-baker'),
+        ciclos_objetivo_l1:    g('cfg-ciclos-l1'),
         eficiencia_obj_l3:     g('cfg-ef-l3'),
         eficiencia_obj_l4:     g('cfg-ef-l4'),
         eficiencia_obj_baker:  g('cfg-ef-baker'),
+        eficiencia_obj_l1:     g('cfg-ef-l1'),
         capacidad_obj_l3:      g('cfg-cap-l3'),
         capacidad_obj_l4:      g('cfg-cap-l4'),
         capacidad_obj_baker:   g('cfg-cap-baker'),
+        capacidad_obj_l1:      g('cfg-cap-l1'),
         calidad_obj_l3:        g('cfg-cal-l3'),
         calidad_obj_l4:        g('cfg-cal-l4'),
         calidad_obj_baker:     g('cfg-cal-baker'),
+        calidad_obj_l1:        g('cfg-cal-l1'),
         disponibilidad_obj_l3: g('cfg-dis-l3'),
         disponibilidad_obj_l4: g('cfg-dis-l4'),
         disponibilidad_obj_baker: g('cfg-dis-baker'),
+        disponibilidad_obj_l1: g('cfg-dis-l1'),
         planes_control_baker_url: document.getElementById('cfg-planes-url')?.value?.trim() || ''
       });
       msg.style.color = 'var(--p-success)';
@@ -4173,6 +4370,7 @@ async function viewKpiHistorico(el) {
       <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
       <button class="tab-btn" data-tab="L4">Línea 4</button>
       <button class="tab-btn" data-tab="Baker">Baker</button>
+      <button class="tab-btn" data-tab="L1">Línea 1</button>
     </div>
     <div class="filters-bar">
       <div>
@@ -4520,6 +4718,7 @@ async function viewResumenTurno(el) {
       <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
       <button class="tab-btn" data-tab="L4">Línea 4</button>
       <button class="tab-btn" data-tab="Baker">Baker</button>
+      <button class="tab-btn" data-tab="L1">Línea 1</button>
     </div>
     <div class="filters-bar" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
       <div><span class="flabel">Semana</span>
@@ -4679,19 +4878,21 @@ async function viewResumenTurno(el) {
     const primerDia = year + '-' + String(month).padStart(2, '0') + '-01';
     const ultimoDia = new Date(year, month, 0).toISOString().slice(0, 10);
     try {
-      const [dL3, dL4, dBk, pL3, pL4, pBk] = await Promise.all([
+      const [dL3, dL4, dBk, dL1, pL3, pL4, pBk, pL1] = await Promise.all([
         GET('/kpis?linea=L3&desde=' + primerDia + '&hasta=' + ultimoDia),
         GET('/kpis?linea=L4&desde=' + primerDia + '&hasta=' + ultimoDia),
         GET('/kpis?linea=Baker&desde=' + primerDia + '&hasta=' + ultimoDia),
+        GET('/kpis?linea=L1&desde=' + primerDia + '&hasta=' + ultimoDia),
         GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=L3'),
         GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=L4'),
-        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=Baker')
+        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=Baker'),
+        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=L1')
       ]);
-      const allSnaps = [...(dL3.snapshots||[]),...(dL4.snapshots||[]),...(dBk.snapshots||[])];
-      const parosSrc = { L3: pL3.paros||[], L4: pL4.paros||[], Baker: pBk.paros||[] };
+      const allSnaps = [...(dL3.snapshots||[]),...(dL4.snapshots||[]),...(dBk.snapshots||[]),...(dL1.snapshots||[])];
+      const parosSrc = { L3: pL3.paros||[], L4: pL4.paros||[], Baker: pBk.paros||[], L1: pL1.paros||[] };
 
-      const LINEAS = ['Baker','L3','L4'];
-      const LLAB   = { Baker:'Bk', L3:'L3', L4:'L4' };
+      const LINEAS = ['Baker','L1','L3','L4'];
+      const LLAB   = { Baker:'Bk', L1:'L1', L3:'L3', L4:'L4' };
       const TURNO_H = { T1:8, T2:7, T3:9 };
 
       function aggKPI(snaps, l, filterFn) {
@@ -4720,11 +4921,8 @@ async function viewResumenTurno(el) {
       const thead = `<tr style="background:#1e3a5f;color:#fff">
         <th style="padding:7px 10px;text-align:left;min-width:110px;position:sticky;left:0;background:#1e3a5f">Período</th>
         ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Eficiencia ${l}">Eff ${LLAB[l]}</th>`).join('')}
-        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Eff L1</th>
         ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Horas paro ${l}">Paro ${LLAB[l]}</th>`).join('')}
-        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Paro L1</th>
         ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Calidad ${l}">Cal ${LLAB[l]}</th>`).join('')}
-        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Cal L1</th>
       </tr>`;
 
       const tbodyRows = rows.map((row, ri) => {
@@ -4733,15 +4931,15 @@ async function viewResumenTurno(el) {
         const efCells = LINEAS.map(l => {
           const { ef } = aggKPI(allSnaps, l, row.filter);
           return `<td data-action="ef" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" data-week="${row.week||''}" style="padding:6px;text-align:center;${wt};${clr(ef)};cursor:pointer">${fmtP(ef)}</td>`;
-        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        }).join('');
         const paroCells = LINEAS.map(l => {
           const h = paroHrs(l, row.pFilter);
           return `<td data-action="paro" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};color:${h>0?'#dc2626':'#16a34a'};cursor:pointer">${fmtH(h)}</td>`;
-        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        }).join('');
         const calCells = LINEAS.map(l => {
           const { cal } = aggKPI(allSnaps, l, row.filter);
           return `<td data-action="cal" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};${clr(cal)};cursor:pointer">${fmtP(cal)}</td>`;
-        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        }).join('');
         return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb">
           <td style="padding:6px 10px;${wt};position:sticky;left:0;background:${bg}">${escHtml(row.label)}</td>
           ${efCells}${paroCells}${calCells}
@@ -4751,7 +4949,7 @@ async function viewResumenTurno(el) {
       container.innerHTML = `
         <div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-size:14px;font-weight:700">${escHtml(mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1))} — Score Card</span>
-          <span style="font-size:11px;color:#6b7280">Clic en celda para desglosar · L1 = no configurada aún</span>
+          <span style="font-size:11px;color:#6b7280">Clic en celda para desglosar</span>
         </div>
         <div style="overflow-x:auto">
           <table style="border-collapse:collapse;min-width:900px;font-size:13px">
