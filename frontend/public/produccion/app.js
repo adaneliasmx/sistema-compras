@@ -4313,20 +4313,207 @@ function renderKpiHistTable(snaps) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// RESUMEN DE TURNO — helpers de semana ISO
+// ══════════════════════════════════════════════════════════════════════════════
+
+function getISOWeekFE(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return { week: Math.ceil((((date - yearStart) / 86400000) + 1) / 7), year: date.getUTCFullYear() };
+}
+
+function getISOWeekRangeFE(week, year) {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7;
+  const w1Mon = new Date(jan4);
+  w1Mon.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+  const mon = new Date(w1Mon);
+  mon.setUTCDate(w1Mon.getUTCDate() + (week - 1) * 7);
+  const sun = new Date(mon);
+  sun.setUTCDate(mon.getUTCDate() + 6);
+  return { desde: mon.toISOString().slice(0, 10), hasta: sun.toISOString().slice(0, 10) };
+}
+
+function renderHBarChart(items, colorFn) {
+  if (!items.length) return '<div class="p-muted" style="font-size:12px;padding:8px">Sin datos</div>';
+  const max = Math.max(...items.map(d => d.value), 1);
+  return `<div style="display:flex;flex-direction:column;gap:4px">${items.map(d => `
+    <div style="display:flex;align-items:center;gap:6px">
+      <div style="width:140px;font-size:11px;text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex-shrink:0" title="${escHtml(d.label)}">${escHtml(d.label)}</div>
+      <div style="flex:1;background:#f3f4f6;border-radius:2px;height:18px;min-width:60px">
+        <div style="width:${(d.value / max * 100).toFixed(1)}%;background:${colorFn ? colorFn(d) : '#3b82f6'};height:100%;border-radius:2px"></div>
+      </div>
+      <div style="width:60px;font-size:11px;font-weight:600;text-align:right">${d.label2 !== undefined ? d.label2 : d.value}</div>
+    </div>`).join('')}</div>`;
+}
+
+async function showDefectosDrilldown(linea, desde, hasta, turno) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:700px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">🔍 Detalle de Defectos — ${escHtml(linea)}</h3>
+      <button id="closeDefModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${desde} al ${hasta}${turno ? ' · Turno ' + turno : ''}</p>
+    <div id="defModalBody"><div style="text-align:center;padding:24px;color:#6b7280">⏳ Cargando...</div></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeDefModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  try {
+    const params = new URLSearchParams({ desde, hasta, linea });
+    if (turno) params.set('turno', turno);
+    const data = await GET('/resumen/defectos?' + params);
+    const defs = data.defectos || [];
+    if (!defs.length) {
+      overlay.querySelector('#defModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600">Sin defectos registrados en este período ✅</div>';
+      return;
+    }
+    const defConteo = {};
+    defs.forEach(d => { defConteo[d.defecto] = (defConteo[d.defecto] || 0) + 1; });
+    const defPareto = Object.entries(defConteo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+    overlay.querySelector('#defModalBody').innerHTML = `
+      <div style="margin-bottom:16px">
+        <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Conteo por tipo de defecto (${defs.length} total)</h4>
+        ${renderHBarChart(defPareto, () => '#ef4444')}
+      </div>
+      <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Ciclos / Cavidades con defecto</h4>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f8fafc">
+          <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Fecha</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Turno</th>
+          <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Herramental</th>
+          <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Operador</th>
+          <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Motivo de rechazo</th>
+          <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Detalle</th>
+        </tr></thead>
+        <tbody>${defs.map(d => `<tr style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:5px 8px">${escHtml(d.fecha)}</td>
+          <td style="padding:5px 8px;text-align:center;font-weight:600">${escHtml(d.turno)}</td>
+          <td style="padding:5px 8px">${escHtml(d.herramental)}</td>
+          <td style="padding:5px 8px">${escHtml(d.operador)}</td>
+          <td style="padding:5px 8px;color:#dc2626;font-weight:600">${escHtml(d.defecto)}</td>
+          <td style="padding:5px 8px;color:#6b7280;font-size:11px">${escHtml(d.detalle || '')}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`;
+  } catch (e) {
+    overlay.querySelector('#defModalBody').innerHTML = `<div style="color:#dc2626;padding:16px">Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function showParetoParo(linea, desde, hasta, tituloExtra) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:620px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">⏸ Paros — ${escHtml(linea)} ${tituloExtra ? '· ' + escHtml(tituloExtra) : ''}</h3>
+      <button id="closePModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${desde} al ${hasta}</p>
+    <div id="paroModalBody"><div style="text-align:center;padding:24px;color:#6b7280">⏳ Cargando...</div></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closePModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  try {
+    const data = await GET('/resumen/paros?desde=' + desde + '&hasta=' + hasta + '&linea=' + linea);
+    const paros = data.paros || [];
+    if (!paros.length) {
+      overlay.querySelector('#paroModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600">Sin paros en este período ✅</div>';
+      return;
+    }
+    const motivoTiempo = {};
+    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+    const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
+    const paroPorDia = {};
+    paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + Number(p.duracion_min || 0); });
+    const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
+    const totalMin = paros.reduce((s, p) => s + Number(p.duracion_min || 0), 0);
+    overlay.querySelector('#paroModalBody').innerHTML = `
+      <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${paros.length} paros · <b>${(totalMin / 60).toFixed(1)} horas</b> acumuladas</div>
+      <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Pareto por motivo</h4>
+      ${renderHBarChart(paretoParos, () => '#f59e0b')}
+      <h4 style="font-size:13px;margin:16px 0 8px;color:#374151">Tiempo de paro por día</h4>
+      ${renderHBarChart(diasParos, () => '#3b82f6')}`;
+  } catch (e) {
+    overlay.querySelector('#paroModalBody').innerHTML = `<div style="color:#dc2626;padding:16px">Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:520px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">📊 Eficiencia — ${escHtml(linea)} · ${escHtml(semanaLabel)}</h3>
+      <button id="closeEfModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <div id="efModalBody"></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeEfModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  const snaps = weekSnaps.filter(s => s.linea === linea);
+  if (!snaps.length) {
+    overlay.querySelector('#efModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#6b7280">Sin datos para este período</div>';
+    return;
+  }
+  const efPorDia = {};
+  const efPorDiaCnt = {};
+  snaps.forEach(s => { efPorDia[s.fecha] = (efPorDia[s.fecha] || 0) + (s.eficiencia || 0); efPorDiaCnt[s.fecha] = (efPorDiaCnt[s.fecha] || 0) + 1; });
+  const dias = Object.keys(efPorDia).sort().map(f => {
+    const v = Math.round(efPorDia[f] / efPorDiaCnt[f] * 100);
+    return { label: f, value: v, label2: v + '%' };
+  });
+  const tableRows = snaps.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.turno.localeCompare(b.turno)).map(s => `
+    <tr style="border-bottom:1px solid #f3f4f6">
+      <td style="padding:4px 8px">${s.fecha}</td>
+      <td style="padding:4px 8px;text-align:center;font-weight:600">${s.turno}</td>
+      <td style="padding:4px 8px;text-align:center">${s.ciclos_totales}</td>
+      <td style="padding:4px 8px;text-align:center" class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${s.eficiencia != null ? (s.eficiencia * 100).toFixed(1) + '%' : '—'}</td>
+    </tr>`).join('');
+  overlay.querySelector('#efModalBody').innerHTML = `
+    <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Eficiencia promedio por día</h4>
+    ${renderHBarChart(dias, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444')}
+    <h4 style="font-size:13px;margin:16px 0 8px;color:#374151">Detalle por turno</h4>
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f8fafc">
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Fecha</th>
+        <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Turno</th>
+        <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Ciclos</th>
+        <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Eficiencia</th>
+      </tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // RESUMEN DE TURNO
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewResumenTurno(el) {
   const today = new Date().toLocaleDateString('en-CA');
-  const lunes = (() => {
-    const d = new Date(); const day = d.getDay() || 7;
-    d.setDate(d.getDate() - day + 1);
-    return d.toLocaleDateString('en-CA');
-  })();
+  const currentYear = new Date().getFullYear();
+  const { week: currentWeek } = getISOWeekFE(today);
 
   const isAdmin = state.user?.role === 'admin';
   let activeTab = 'L3';
+  let activeSubTab = 'detalle';
   let lastSnaps = [];
+
+  const weekOpts = Array.from({ length: 53 }, (_, i) => i + 1).map(w => {
+    try {
+      const r = getISOWeekRangeFE(w, currentYear);
+      if (r.desde.slice(0, 4) !== String(currentYear) && r.hasta.slice(0, 4) !== String(currentYear)) return '';
+      return `<option value="${w}" ${w === currentWeek ? 'selected' : ''}>Sem ${w} · ${r.desde} – ${r.hasta}</option>`;
+    } catch (_) { return ''; }
+  }).filter(Boolean).join('');
+
+  const initRange = getISOWeekRangeFE(currentWeek, currentYear);
 
   el.innerHTML = `
     <div class="tab-bar">
@@ -4334,24 +4521,30 @@ async function viewResumenTurno(el) {
       <button class="tab-btn" data-tab="L4">Línea 4</button>
       <button class="tab-btn" data-tab="Baker">Baker</button>
     </div>
-    <div class="filters-bar">
-      <div><span class="flabel">Turno</span>
-        <select id="rt-turno">
-          <option value="">Todos</option>
-          <option value="T1">T1</option>
-          <option value="T2">T2</option>
-          <option value="T3">T3</option>
+    <div class="filters-bar" style="flex-wrap:wrap;gap:8px;align-items:flex-end">
+      <div><span class="flabel">Semana</span>
+        <select id="rt-semana" style="min-width:220px">
+          <option value="">— Usar fechas manuales —</option>
+          ${weekOpts}
         </select>
       </div>
-      <div><span class="flabel">Desde</span><input type="date" id="rt-desde" value="${lunes}"/></div>
-      <div><span class="flabel">Hasta</span><input type="date" id="rt-hasta" value="${today}"/></div>
+      <div><span class="flabel">Turno</span>
+        <select id="rt-turno"><option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option></select>
+      </div>
+      <div><span class="flabel">Desde</span><input type="date" id="rt-desde" value="${initRange.desde}"/></div>
+      <div><span class="flabel">Hasta</span><input type="date" id="rt-hasta" value="${initRange.hasta}"/></div>
       <button class="btn btn-outline btn-sm" id="rt-buscar">🔍 Buscar</button>
       <button class="btn btn-dark btn-sm" id="rt-export">📥 Excel</button>
       ${isAdmin ? `<button class="btn btn-primary btn-sm" id="rt-guardar">💾 Guardar Resumen</button>` : ''}
     </div>
-    <div id="rt-resultado">
-      <div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>
-    </div>`;
+    <div style="display:flex;border-bottom:2px solid #e5e7eb;margin-bottom:12px;gap:0">
+      <button class="rt-stab rt-stab-on" data-st="detalle" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:#2563eb;border-bottom:2px solid #2563eb;margin-bottom:-2px">📑 Detalle</button>
+      <button class="rt-stab" data-st="analisis" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-2px">📊 Análisis Semanal</button>
+      <button class="rt-stab" data-st="scorecard" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-2px">🏆 Score Card</button>
+    </div>
+    <div id="rt-resultado"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
+
+  const getEl = id => document.getElementById(id);
 
   el.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -4362,75 +4555,258 @@ async function viewResumenTurno(el) {
     });
   });
 
+  el.querySelectorAll('.rt-stab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('.rt-stab').forEach(b => {
+        b.style.color = '#6b7280'; b.style.fontWeight = '400'; b.style.borderBottom = '2px solid transparent'; b.classList.remove('rt-stab-on');
+      });
+      btn.style.color = '#2563eb'; btn.style.fontWeight = '600'; btn.style.borderBottom = '2px solid #2563eb'; btn.classList.add('rt-stab-on');
+      activeSubTab = btn.dataset.st;
+      renderSubTab();
+    });
+  });
+
+  getEl('rt-semana').addEventListener('change', () => {
+    const w = Number(getEl('rt-semana').value);
+    if (w) { const r = getISOWeekRangeFE(w, currentYear); getEl('rt-desde').value = r.desde; getEl('rt-hasta').value = r.hasta; }
+  });
+
   async function buscar() {
-    const params = new URLSearchParams();
-    params.set('linea', activeTab);
-    const turno = document.getElementById('rt-turno').value;
-    const desde = document.getElementById('rt-desde').value;
-    const hasta = document.getElementById('rt-hasta').value;
+    const params = new URLSearchParams({ linea: activeTab });
+    const turno = getEl('rt-turno').value;
+    const desde = getEl('rt-desde').value;
+    const hasta  = getEl('rt-hasta').value;
     if (turno) params.set('turno', turno);
     if (desde) params.set('desde', desde);
-    if (hasta) params.set('hasta', hasta);
-    const res = document.getElementById('rt-resultado');
+    if (hasta)  params.set('hasta', hasta);
+    const res = getEl('rt-resultado');
     res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
     try {
-      const data = await GET(`/kpis?${params}`);
+      const data = await GET('/kpis?' + params);
       lastSnaps = data?.snapshots || [];
-      if (!lastSnaps.length) {
-        res.innerHTML = '<div class="empty-state"><div class="icon">📑</div><p>Sin datos para estos filtros.</p></div>';
-        return;
-      }
-      res.innerHTML = renderResumenTurnoTable(lastSnaps, activeTab);
+      renderSubTab();
     } catch (e) {
-      res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+      getEl('rt-resultado').innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
   }
 
-  document.getElementById('rt-buscar').addEventListener('click', buscar);
+  function renderSubTab() {
+    const res = getEl('rt-resultado');
+    if (activeSubTab === 'scorecard') { renderScorecardView(res); return; }
+    if (!lastSnaps.length) { res.innerHTML = '<div class="empty-state"><div class="icon">📑</div><p>Sin datos para estos filtros.</p></div>'; return; }
+    if (activeSubTab === 'detalle') {
+      res.innerHTML = renderResumenTurnoTable(lastSnaps, activeTab);
+      res.querySelectorAll('.calidad-click').forEach(td => {
+        td.style.cursor = 'pointer';
+        td.title = 'Clic para ver detalle de defectos';
+        td.addEventListener('click', () => {
+          const snap = lastSnaps.find(s => s.id === td.dataset.sid);
+          if (snap) showDefectosDrilldown(snap.linea, snap.fecha, snap.fecha, snap.turno);
+        });
+      });
+    } else if (activeSubTab === 'analisis') {
+      renderAnalisisSemanal(res);
+    }
+  }
+
+  async function renderAnalisisSemanal(container) {
+    const desde = getEl('rt-desde').value;
+    const hasta  = getEl('rt-hasta').value;
+    if (!desde || !hasta) { container.innerHTML = '<div class="alert">Selecciona un rango de fechas.</div>'; return; }
+    container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando análisis...</p></div>';
+    try {
+      const [parosData, defData] = await Promise.all([
+        GET('/resumen/paros?desde=' + desde + '&hasta=' + hasta + '&linea=' + activeTab),
+        GET('/resumen/defectos?desde=' + desde + '&hasta=' + hasta + '&linea=' + activeTab)
+      ]);
+      const paros = parosData.paros || [];
+      const defs  = defData.defectos || [];
+
+      const motivoTiempo = {};
+      paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+      const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
+
+      const paroPorDia = {};
+      paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + Number(p.duracion_min || 0); });
+      const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
+
+      const defTipo = {};
+      defs.forEach(d => { defTipo[d.defecto] = (defTipo[d.defecto] || 0) + 1; });
+      const paretoDefectos = Object.entries(defTipo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+
+      const defPorDia = {};
+      defs.forEach(d => { defPorDia[d.fecha] = (defPorDia[d.fecha] || 0) + 1; });
+      const diasDefs = Object.entries(defPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value }));
+
+      const efPorDia = {};
+      const efPorDiaCnt = {};
+      lastSnaps.forEach(s => { efPorDia[s.fecha] = (efPorDia[s.fecha] || 0) + (s.eficiencia || 0); efPorDiaCnt[s.fecha] = (efPorDiaCnt[s.fecha] || 0) + 1; });
+      const diasEf = Object.keys(efPorDia).sort().map(f => { const v = Math.round(efPorDia[f] / efPorDiaCnt[f] * 100); return { label: f, value: v, label2: v + '%' }; });
+
+      const cardStyle = 'background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05)';
+      container.innerHTML = `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">⏸ Pareto Motivos de Paro — ${escHtml(activeTab)}</h4>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${paros.length} paros · ${(paros.reduce((s,p)=>s+Number(p.duracion_min||0),0)/60).toFixed(1)}h totales</div>
+            ${paretoParos.length ? renderHBarChart(paretoParos, () => '#f59e0b') : '<div style="color:#16a34a;font-size:12px">Sin paros ✅</div>'}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">📅 Tiempo de Paro por Día — ${escHtml(activeTab)}</h4>
+            ${diasParos.length ? renderHBarChart(diasParos, () => '#fb923c') : '<div style="color:#16a34a;font-size:12px">Sin paros ✅</div>'}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">❌ Pareto Tipos de Defecto — ${escHtml(activeTab)}</h4>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${defs.length} ciclos/cavidades con defecto</div>
+            ${paretoDefectos.length ? renderHBarChart(paretoDefectos, () => '#ef4444') : '<div style="color:#16a34a;font-size:12px">Sin defectos ✅</div>'}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">📈 Eficiencia por Día — ${escHtml(activeTab)}</h4>
+            ${diasEf.length ? renderHBarChart(diasEf, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444') : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+          </div>
+        </div>`;
+    } catch (e) {
+      container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  async function renderScorecardView(container) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Score Card...</p></div>';
+    const desdeVal = getEl('rt-desde').value || today;
+    const year  = parseInt(desdeVal.slice(0, 4));
+    const month = parseInt(desdeVal.slice(5, 7));
+    const mesLabel = new Date(year, month - 1, 15).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    const primerDia = year + '-' + String(month).padStart(2, '0') + '-01';
+    const ultimoDia = new Date(year, month, 0).toISOString().slice(0, 10);
+    try {
+      const [dL3, dL4, dBk, pL3, pL4, pBk] = await Promise.all([
+        GET('/kpis?linea=L3&desde=' + primerDia + '&hasta=' + ultimoDia),
+        GET('/kpis?linea=L4&desde=' + primerDia + '&hasta=' + ultimoDia),
+        GET('/kpis?linea=Baker&desde=' + primerDia + '&hasta=' + ultimoDia),
+        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=L3'),
+        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=L4'),
+        GET('/resumen/paros?desde=' + primerDia + '&hasta=' + ultimoDia + '&linea=Baker')
+      ]);
+      const allSnaps = [...(dL3.snapshots||[]),...(dL4.snapshots||[]),...(dBk.snapshots||[])];
+      const parosSrc = { L3: pL3.paros||[], L4: pL4.paros||[], Baker: pBk.paros||[] };
+
+      const LINEAS = ['Baker','L3','L4'];
+      const LLAB   = { Baker:'Bk', L3:'L3', L4:'L4' };
+      const TURNO_H = { T1:8, T2:7, T3:9 };
+
+      function aggKPI(snaps, l, filterFn) {
+        const s = snaps.filter(x => x.linea === l && (filterFn ? filterFn(x) : true));
+        if (!s.length) return { ef:null, cal:null };
+        let efNum=0, efDen=0, buenos=0, noVacios=0;
+        s.forEach(x => { const h=TURNO_H[x.turno]||8; if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;} buenos+=x.ciclos_buenos; noVacios+=x.ciclos_no_vacios; });
+        return { ef:efDen>0?efNum/efDen:null, cal:noVacios>0?buenos/noVacios:null };
+      }
+      function paroHrs(l, filterFn) {
+        const arr = filterFn ? parosSrc[l].filter(filterFn) : parosSrc[l];
+        return arr.reduce((s,p)=>s+Number(p.duracion_min||0),0)/60;
+      }
+      const fmtP = v => v!=null ? (v*100).toFixed(1)+'%' : '—';
+      const fmtH = v => v>0 ? v.toFixed(1)+'h' : '—';
+      const clr  = v => v==null?'':v>=0.9?'color:#16a34a;font-weight:700':v>=0.7?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700';
+
+      const weeks = [...new Set(allSnaps.map(s=>s.semana))].sort((a,b)=>a-b);
+      const rows = [{ label: mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1), type:'month', filter:()=>true, pFilter:()=>true, desde:primerDia, hasta:ultimoDia }];
+      weeks.forEach(w => {
+        const r = getISOWeekRangeFE(w, year);
+        rows.push({ label:'Sem '+w, type:'week', week:w, desde:r.desde, hasta:r.hasta, filter:s=>s.semana===w, pFilter:p=>p.fecha_inicio>=r.desde&&p.fecha_inicio<=r.hasta });
+      });
+
+      const th = s => `<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">${s}</th>`;
+      const thead = `<tr style="background:#1e3a5f;color:#fff">
+        <th style="padding:7px 10px;text-align:left;min-width:110px;position:sticky;left:0;background:#1e3a5f">Período</th>
+        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Eficiencia ${l}">Eff ${LLAB[l]}</th>`).join('')}
+        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Eff L1</th>
+        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Horas paro ${l}">Paro ${LLAB[l]}</th>`).join('')}
+        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Paro L1</th>
+        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Calidad ${l}">Cal ${LLAB[l]}</th>`).join('')}
+        <th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">Cal L1</th>
+      </tr>`;
+
+      const tbodyRows = rows.map((row, ri) => {
+        const bg = row.type==='month'?'#f0f9ff':ri%2===0?'#fafafa':'#fff';
+        const wt = row.type==='month'?'font-weight:700':'';
+        const efCells = LINEAS.map(l => {
+          const { ef } = aggKPI(allSnaps, l, row.filter);
+          return `<td data-action="ef" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" data-week="${row.week||''}" style="padding:6px;text-align:center;${wt};${clr(ef)};cursor:pointer">${fmtP(ef)}</td>`;
+        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        const paroCells = LINEAS.map(l => {
+          const h = paroHrs(l, row.pFilter);
+          return `<td data-action="paro" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};color:${h>0?'#dc2626':'#16a34a'};cursor:pointer">${fmtH(h)}</td>`;
+        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        const calCells = LINEAS.map(l => {
+          const { cal } = aggKPI(allSnaps, l, row.filter);
+          return `<td data-action="cal" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};${clr(cal)};cursor:pointer">${fmtP(cal)}</td>`;
+        }).join('') + `<td style="padding:6px;text-align:center;color:#9ca3af;font-size:11px">N/D</td>`;
+        return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb">
+          <td style="padding:6px 10px;${wt};position:sticky;left:0;background:${bg}">${escHtml(row.label)}</td>
+          ${efCells}${paroCells}${calCells}
+        </tr>`;
+      }).join('');
+
+      container.innerHTML = `
+        <div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:14px;font-weight:700">${escHtml(mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1))} — Score Card</span>
+          <span style="font-size:11px;color:#6b7280">Clic en celda para desglosar · L1 = no configurada aún</span>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="border-collapse:collapse;min-width:900px;font-size:13px">
+            <thead>${thead}</thead>
+            <tbody>${tbodyRows}</tbody>
+          </table>
+        </div>`;
+
+      container.querySelectorAll('td[data-action]').forEach(td => {
+        td.addEventListener('click', () => {
+          const { action, linea, desde, hasta, week } = td.dataset;
+          if (action === 'ef') {
+            const ws = week ? allSnaps.filter(s=>s.linea===linea&&s.semana===Number(week)) : allSnaps.filter(s=>s.linea===linea);
+            showEficienciaDetalle(ws, linea, week ? 'Sem '+week : mesLabel);
+          } else if (action === 'paro') {
+            showParetoParo(linea, desde, hasta, '');
+          } else if (action === 'cal') {
+            showDefectosDrilldown(linea, desde, hasta, '');
+          }
+        });
+      });
+    } catch (e) {
+      container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  getEl('rt-buscar').addEventListener('click', buscar);
   buscar();
 
-  document.getElementById('rt-export').addEventListener('click', () => {
+  getEl('rt-export').addEventListener('click', () => {
     if (!lastSnaps.length) { alert('Primero ejecuta una búsqueda.'); return; }
     const rows = lastSnaps.map(s => ({
-      Fecha:                   s.fecha,
-      Turno:                   s.turno,
-      Línea:                   s.linea,
-      Ciclos_Totales:          s.ciclos_totales,
-      Cavidades_Totales:       s.piezas_obj_total,
-      Ciclos_Buenos:           s.ciclos_buenos,
-      Eficiencia_pct:          s.eficiencia  != null ? +(s.eficiencia  * 100).toFixed(1) : '',
-      Capacidad_pct:           s.capacidad   != null ? +(s.capacidad   * 100).toFixed(1) : '',
-      Calidad_pct:             s.calidad     != null ? +(s.calidad     * 100).toFixed(1) : '',
-      Disponibilidad_pct:      s.disponibilidad != null ? +(s.disponibilidad * 100).toFixed(1) : '',
-      Qty_Piezas_Procesadas:   s.piezas_total,
-      Tiempo_Paro_Acum_min:    s.paros_min_total
+      Semana: s.semana, Fecha: s.fecha, Turno: s.turno, Línea: s.linea,
+      Ciclos_Totales: s.ciclos_totales, Ciclos_Buenos: s.ciclos_buenos,
+      Eficiencia_pct:    s.eficiencia    != null ? +(s.eficiencia    * 100).toFixed(1) : '',
+      Calidad_pct:       s.calidad       != null ? +(s.calidad       * 100).toFixed(1) : '',
+      Disponibilidad_pct:s.disponibilidad!= null ? +(s.disponibilidad* 100).toFixed(1) : '',
+      Tiempo_Paro_min:   s.paros_min_total
     }));
-    const ws = XLSX.utils.json_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, `Resumen_${activeTab}`);
-    XLSX.writeFile(wb, `resumen_turno_${activeTab}_${today}.xlsx`);
+    const ws2 = XLSX.utils.json_to_sheet(rows);
+    const wb2 = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb2, ws2, 'Resumen_' + activeTab);
+    XLSX.writeFile(wb2, 'resumen_turno_' + activeTab + '_' + today + '.xlsx');
   });
 
   if (isAdmin) {
-    document.getElementById('rt-guardar').addEventListener('click', async () => {
-      const desde = document.getElementById('rt-desde').value;
-      const hasta = document.getElementById('rt-hasta').value;
-      const turno = document.getElementById('rt-turno').value;
-      const btn   = document.getElementById('rt-guardar');
+    getEl('rt-guardar').addEventListener('click', async () => {
+      const btn = getEl('rt-guardar');
       btn.disabled = true; btn.textContent = 'Guardando...';
       try {
-        // Guardar para la fecha "hasta" (o hoy si no hay filtro) y la línea activa
-        const fecha = hasta || today;
-        const linea = activeTab;
-        const body  = { fecha, linea, turno: turno || 'all' };
-        const r = await POST('/kpis/guardar', body);
-        alert(`✅ Resumen guardado: ${r.guardados} registro(s)`);
+        const r = await POST('/kpis/guardar', { fecha: getEl('rt-hasta').value || today, linea: activeTab, turno: getEl('rt-turno').value || 'all' });
+        alert('✅ Resumen guardado: ' + r.guardados + ' registro(s)');
         buscar();
-      } catch (e) {
-        alert(`Error: ${e.message}`);
-      } finally {
-        btn.disabled = false; btn.textContent = '💾 Guardar Resumen';
-      }
+      } catch (e) { alert('Error: ' + e.message); }
+      finally { btn.disabled = false; btn.textContent = '💾 Guardar Resumen'; }
     });
   }
 }
@@ -4439,49 +4815,60 @@ function renderResumenTurnoTable(snaps, linea) {
   const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
   const fmtNum = v => v != null ? v : '—';
 
+  const byWeek = {};
+  snaps.forEach(s => { if (!byWeek[s.semana]) byWeek[s.semana] = []; byWeek[s.semana].push(s); });
+
   const rows = snaps.map(s => `
     <tr>
+      <td style="font-size:11px;color:#6b7280;text-align:center">${s.semana ? 'S' + s.semana : ''}</td>
       <td>${escHtml(s.fecha)}</td>
       <td style="text-align:center;font-weight:600">${escHtml(s.turno)}</td>
       <td style="text-align:center">${escHtml(s.linea)}</td>
       <td style="text-align:center;font-weight:700">${fmtNum(s.ciclos_totales)}</td>
-      <td style="text-align:center">${fmtNum(s.piezas_obj_total)}</td>
       <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
       <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${fmtPct(s.eficiencia)}</td>
-      <td class="${kpiColor(s.capacidad  != null ? s.capacidad  * 100 : null)}">${fmtPct(s.capacidad)}</td>
-      <td class="${kpiColor(s.calidad    != null ? s.calidad    * 100 : null)}">${fmtPct(s.calidad)}</td>
+      <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
       <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)}">${fmtPct(s.disponibilidad)}</td>
       <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
       <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
     </tr>`).join('');
 
+  const weekRows = Object.entries(byWeek).sort((a, b) => Number(a[0]) - Number(b[0])).map(([wk, ws]) => {
+    const ciclosTot = ws.reduce((s,x)=>s+x.ciclos_totales,0);
+    const ciclosBuenos = ws.reduce((s,x)=>s+x.ciclos_buenos,0);
+    const ciclosNoV = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
+    const paroMin = ws.reduce((s,x)=>s+x.paros_min_total,0);
+    const TURNO_H = {T1:8,T2:7,T3:9};
+    let efNum=0,efDen=0; ws.forEach(x=>{if(x.eficiencia!=null){const h=TURNO_H[x.turno]||8;efNum+=x.eficiencia*h;efDen+=h;}});
+    const ef  = efDen>0?efNum/efDen:null;
+    const cal = ciclosNoV>0?ciclosBuenos/ciclosNoV:null;
+    return `<tr style="background:#eff6ff;font-weight:700;border-top:2px solid #bfdbfe">
+      <td colspan="4" style="padding:4px 8px;font-size:12px;color:#1d4ed8">∑ Semana ${wk} — ${ws.length} turno(s)</td>
+      <td style="text-align:center">${ciclosTot}</td>
+      <td style="text-align:center">${ciclosBuenos}</td>
+      <td class="${kpiColor(ef!=null?ef*100:null)}">${fmtPct(ef)}</td>
+      <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
+      <td>—</td>
+      <td style="text-align:center">${ws.reduce((s,x)=>s+x.piezas_total,0)}</td>
+      <td style="text-align:center">${paroMin.toFixed(0)} min</td>
+    </tr>`;
+  }).join('');
+
   return `
     <div class="table-card">
       <div class="table-header">
         <h3>Resumen de Turnos — ${escHtml(linea)}</h3>
-        <span style="font-size:13px;color:var(--p-muted)">${snaps.length} registro(s)</span>
+        <span style="font-size:13px;color:var(--p-muted)">${snaps.length} registro(s) · Clic en Calidad para ver defectos</span>
       </div>
       <div class="table-scroll">
         <table>
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Turno</th>
-              <th>Línea</th>
-              <th>Ciclos Totales</th>
-              <th>Cavidades Totales</th>
-              <th>Ciclos Buenos</th>
-              <th>Eficiencia</th>
-              <th>Capacidad</th>
-              <th>Calidad</th>
-              <th>Disponibilidad</th>
-              <th>Qty Piezas Procesadas</th>
-              <th>T. Paro Acumulado</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rows}
-          </tbody>
+          <thead><tr>
+            <th>Sem</th><th>Fecha</th><th>Turno</th><th>Línea</th>
+            <th>Ciclos Tot.</th><th>Ciclos Buenos</th>
+            <th>Eficiencia</th><th>Calidad 🔍</th><th>Disponibilidad</th>
+            <th>Piezas</th><th>T. Paro</th>
+          </tr></thead>
+          <tbody>${rows}${weekRows}</tbody>
         </table>
       </div>
     </div>`;

@@ -655,6 +655,60 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
   res.json({ total: paros.length, paros });
 });
 
+// GET /resumen/paros?desde=&hasta=&linea= — paros en rango (todos los roles)
+router.get('/resumen/paros', (req, res) => {
+  const { desde, hasta, linea } = req.query;
+  const pdb = dbProd.read();
+  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker'];
+  let paros = [];
+  for (const l of lineasReq) {
+    if (l === 'Baker') paros.push(...(pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' })));
+    else paros.push(...(pdb.paros || []).filter(p => p.linea === l));
+  }
+  if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
+  if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
+  paros = paros.filter(p => Number(p.duracion_min || 0) > 0);
+  res.json({ total: paros.length, paros });
+});
+
+// GET /resumen/defectos?desde=&hasta=&linea=&turno= — ciclos/cavidades con defecto (todos los roles)
+router.get('/resumen/defectos', (req, res) => {
+  const { desde, hasta, linea, turno } = req.query;
+  const pdb = dbProd.read();
+  const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker'];
+  const result = [];
+  const ft = c => c.fecha_turno || c.fecha_carga;
+  for (const l of lineasReq) {
+    if (l === 'Baker') {
+      let cargas = pdb.cargas_baker || [];
+      if (desde) cargas = cargas.filter(c => ft(c) >= desde);
+      if (hasta) cargas = cargas.filter(c => ft(c) <= hasta);
+      if (turno) cargas = cargas.filter(c => c.turno === turno);
+      for (const carga of cargas) {
+        const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
+        for (const cav of cavsMalas) {
+          result.push({ linea: 'Baker', fecha: ft(carga), turno: carga.turno,
+            herramental: carga.herramental_no || String(carga.herramental_id || ''),
+            operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
+            detalle: `Cavidad ${cav.num}`, folio: carga.folio });
+        }
+      }
+    } else {
+      let cargas = (pdb.cargas || []).filter(c => c.linea === l);
+      if (desde) cargas = cargas.filter(c => ft(c) >= desde);
+      if (hasta) cargas = cargas.filter(c => ft(c) <= hasta);
+      if (turno) cargas = cargas.filter(c => c.turno === turno);
+      for (const c of cargas.filter(x => x.estado === 'defecto' || x.defecto_id)) {
+        result.push({ linea: l, fecha: ft(c), turno: c.turno,
+          herramental: c.herramental_no || '', operador: c.operador || '',
+          defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio });
+      }
+    }
+  }
+  result.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.turno.localeCompare(b.turno));
+  res.json({ total: result.length, defectos: result });
+});
+
 router.get('/paros/:linea/activo', (req, res) => {
   const { linea } = req.params;
   const pdb = dbProd.read();
