@@ -2808,6 +2808,7 @@ async function viewMonitorGrafico(el) {
   let selTurno       = '';
   let showHerr       = true;
   let showParosFlag  = true;
+  let zoomLevel      = 1.0;
 
   // ── shell ──────────────────────────────────────────────────────────────────
   el.innerHTML = `
@@ -2832,8 +2833,14 @@ async function viewMonitorGrafico(el) {
         <input type="checkbox" id="mg-paros" checked> Paros
       </label>
       <button class="btn btn-outline btn-sm" id="mg-refresh">↻ Actualizar</button>
+      <div style="display:flex;align-items:center;gap:4px;margin-left:8px">
+        <span style="font-size:11px;color:#64748b;white-space:nowrap">Zoom:</span>
+        <button class="btn btn-outline btn-sm" id="mg-zoom-out" style="padding:2px 8px;font-size:15px;font-weight:700">−</button>
+        <span id="mg-zoom-lbl" style="font-size:11px;min-width:34px;text-align:center;color:#334155">100%</span>
+        <button class="btn btn-outline btn-sm" id="mg-zoom-in"  style="padding:2px 8px;font-size:15px;font-weight:700">+</button>
+      </div>
     </div>
-    <div id="mg-wrap" style="overflow-x:auto;background:#fff;border:1px solid var(--p-border);border-radius:8px 8px 0 0;min-height:120px">
+    <div id="mg-wrap" style="overflow-x:auto;background:#fff;border:1px solid var(--p-border);border-radius:8px 8px 0 0;min-height:300px">
       <div class="empty-state"><div class="icon">⏳</div><p>Cargando datos…</p></div>
     </div>
     <div id="mg-legend" style="display:flex;gap:14px;padding:7px 12px;font-size:11px;align-items:center;flex-wrap:wrap;border:1px solid var(--p-border);border-top:none;border-radius:0 0 8px 8px;background:#f8fafc">
@@ -2916,7 +2923,7 @@ async function viewMonitorGrafico(el) {
         if (fd && fd > e.max) e.max = fd;
       }
       semanas = [...semMap.entries()]
-        .sort((a, b) => b[0].localeCompare(a[0]))
+        .sort((a, b) => String(b[0]).localeCompare(String(a[0]), undefined, { numeric: true }))
         .map(([, v]) => ({ sem: v.sem, minFecha: v.min, maxFecha: v.max, fechas: [...v.fechas].filter(Boolean).sort() }));
 
       const semSel = document.getElementById('mg-semana');
@@ -2951,7 +2958,7 @@ async function viewMonitorGrafico(el) {
     ganttData = [];
 
     // Filtrar cargas
-    let cargas = allCargas.filter(c => !selSemana || c.semana === selSemana);
+    let cargas = allCargas.filter(c => !selSemana || String(c.semana) === String(selSemana));
     if (selFecha) cargas = cargas.filter(c =>
       c.fecha_carga === selFecha || c.fecha_descarga === selFecha);
     if (selTurno) cargas = cargas.filter(c => {
@@ -2961,7 +2968,7 @@ async function viewMonitorGrafico(el) {
 
     // Filtrar paros
     let paros = allParos.filter(p => {
-      const info = semanas.find(s => s.sem === selSemana);
+      const info = semanas.find(s => String(s.sem) === String(selSemana));
       if (info && (p.fecha_inicio < info.minFecha || p.fecha_inicio > info.maxFecha)) return false;
       if (selFecha && p.fecha_inicio !== selFecha) return false;
       if (selTurno && p.turno !== selTurno) return false;
@@ -2994,9 +3001,9 @@ async function viewMonitorGrafico(el) {
     const totalMs = tMax - tMin, totalHours = totalMs / HR;
 
     // ── dimensiones ──────────────────────────────────────────────────────────
-    const LW = 134, RH = 34, HH = 52, BP = 5, BH = RH - BP * 2;
+    const LW = 140, RH = 44, HH = 52, BP = 6, BH = RH - BP * 2;
     const cW0  = Math.max((wrap.clientWidth || window.innerWidth - 80) - LW - 16, 300);
-    const pxHr = Math.min(Math.max(cW0 / totalHours, 8), 90);
+    const pxHr = Math.max((cW0 / totalHours) * zoomLevel, 4);
     const CW   = Math.ceil(totalHours * pxHr);
     const SW   = LW + CW + 2;
     const tsX  = ts => LW + ((ts - tMin) / totalMs) * CW;
@@ -3310,6 +3317,19 @@ async function viewMonitorGrafico(el) {
   el.querySelector('#mg-herr')?.addEventListener('change',   e => { showHerr      = e.target.checked; renderGantt(); });
   el.querySelector('#mg-paros')?.addEventListener('change',  e => { showParosFlag = e.target.checked; renderGantt(); });
   el.querySelector('#mg-refresh')?.addEventListener('click', () => loadData());
+
+  const updateZoomLbl = () => {
+    const lbl = el.querySelector('#mg-zoom-lbl');
+    if (lbl) lbl.textContent = Math.round(zoomLevel * 100) + '%';
+  };
+  el.querySelector('#mg-zoom-in')?.addEventListener('click', () => {
+    zoomLevel = Math.min(zoomLevel * 1.5, 20);
+    updateZoomLbl(); renderGantt();
+  });
+  el.querySelector('#mg-zoom-out')?.addEventListener('click', () => {
+    zoomLevel = Math.max(zoomLevel / 1.5, 0.1);
+    updateZoomLbl(); renderGantt();
+  });
 
   loadData();
 }
