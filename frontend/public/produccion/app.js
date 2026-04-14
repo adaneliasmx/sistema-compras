@@ -2975,29 +2975,39 @@ async function viewMonitorGrafico(el) {
       return true;
     });
 
-    if (!cargas.length && !paros.length) {
-      wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin datos para los filtros actuales.</p></div>';
-      return;
-    }
-
-    // ── rango de tiempo ──────────────────────────────────────────────────────
+    // ── rango de tiempo FIJO basado en filtros (no en datos) ─────────────────
     const nowTs = Date.now();
-    const tsArr = [];
-    for (const c of cargas) {
-      const s = parseTS(c.fecha_carga, c.hora_carga);
-      const e = c.fecha_descarga ? parseTS(c.fecha_descarga, c.hora_descarga) : nowTs;
-      if (s) tsArr.push(s); if (e) tsArr.push(e);
-    }
-    for (const p of paros) {
-      const s = parseTS(p.fecha_inicio, p.hora_inicio);
-      const e = p.fecha_fin ? parseTS(p.fecha_fin, p.hora_fin) : null;
-      if (s) tsArr.push(s); if (e) tsArr.push(e);
-    }
-    if (!tsArr.length) { wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin marcas de tiempo válidas.</p></div>'; return; }
-
     const HR = 3600000;
-    const tMin = Math.floor(Math.min(...tsArr) / HR) * HR - HR;
-    const tMax = Math.ceil( Math.max(...tsArr) / HR) * HR + HR;
+    let tMin, tMax;
+
+    if (selFecha && selTurno) {
+      // Día + turno específico → solo esas horas
+      const base = new Date(selFecha + 'T00:00:00').getTime();
+      const turnoBounds = { T1: [6*60+30, 14*60+30], T2: [14*60+30, 21*60+30], T3: [21*60+30, 30*60+30] };
+      const [sm, em] = turnoBounds[selTurno] || [0, 24*60];
+      tMin = base + sm * 60000;
+      tMax = base + em * 60000;
+    } else if (selFecha) {
+      // Día completo 00:00–24:00
+      tMin = new Date(selFecha + 'T00:00:00').getTime();
+      tMax = tMin + 24 * HR;
+    } else if (selSemana) {
+      // Toda la semana: desde el primer al último día registrado
+      const info = semanas.find(s => String(s.sem) === String(selSemana));
+      if (info && info.minFecha && info.maxFecha) {
+        tMin = new Date(info.minFecha + 'T00:00:00').getTime();
+        tMax = new Date(info.maxFecha  + 'T00:00:00').getTime() + 24 * HR;
+      } else {
+        wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin datos para la semana seleccionada.</p></div>';
+        return;
+      }
+    } else {
+      // Sin filtro → últimos 7 días
+      const hoy = new Date(new Date().toLocaleDateString('en-CA', { timeZone:'America/Mexico_City' }) + 'T00:00:00').getTime();
+      tMin = hoy - 6 * 24 * HR;
+      tMax = hoy + 24 * HR;
+    }
+
     const totalMs = tMax - tMin, totalHours = totalMs / HR;
 
     // ── dimensiones ──────────────────────────────────────────────────────────
@@ -3025,13 +3035,17 @@ async function viewMonitorGrafico(el) {
     const paroRow  = showParosFlag && paros.length > 0;
     const herrCnt  = showHerr ? herrRows.length : 0;
     const totRows  = (paroRow ? 1 : 0) + herrCnt;
-    if (totRows === 0) { wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Activa al menos una capa (herramentales o paros).</p></div>'; return; }
+    // Si no hay filas de datos pero sí hay rango de tiempo, mostrar eje vacío con 1 fila placeholder
+    const emptyMsg = (!cargas.length && !paros.length)
+      ? 'Sin cargas ni paros en este período'
+      : (!showHerr && !showParosFlag) ? 'Activa al menos una capa' : null;
+    const drawRows = totRows > 0 ? totRows : 1;
 
-    const SH = HH + totRows * RH + 4;
+    const SH = HH + drawRows * RH + 4;
     const px = [];  // SVG parts
 
     // ── fondos de filas ───────────────────────────────────────────────────────
-    for (let i = 0; i < totRows; i++) {
+    for (let i = 0; i < drawRows; i++) {
       const fy = HH + i * RH;
       const isP = i === 0 && paroRow;
       px.push(`<rect x="${LW}" y="${fy}" width="${CW}" height="${RH}" fill="${isP ? '#fff5f5' : i % 2 ? '#fff' : '#f8fafc'}"/>`);
@@ -3175,9 +3189,15 @@ async function viewMonitorGrafico(el) {
       }
     }
 
+    // ── mensaje vacío centrado si no hay datos ────────────────────────────────
+    if (emptyMsg) {
+      const mx = LW + CW / 2, my = HH + drawRows * RH / 2;
+      px.push(`<text x="${mx}" y="${my}" text-anchor="middle" dominant-baseline="middle" font-size="13" fill="#94a3b8" font-family="sans-serif">${escHtml(emptyMsg)}</text>`);
+    }
+
     // separador Y + líneas de fila
     px.push(`<line x1="${LW}" y1="0" x2="${LW}" y2="${SH}" stroke="#334155" stroke-width="1.5"/>`);
-    for (let i = 0; i <= totRows; i++)
+    for (let i = 0; i <= drawRows; i++)
       px.push(`<line x1="0" y1="${HH+i*RH}" x2="${SW}" y2="${HH+i*RH}" stroke="#e2e8f0" stroke-width=".5"/>`);
 
     wrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" id="mg-svg" width="${SW}" height="${SH}" style="display:block">${px.join('')}</svg>`;
