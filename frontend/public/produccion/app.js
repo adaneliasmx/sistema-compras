@@ -4658,6 +4658,85 @@ async function showParetoParo(linea, desde, hasta, tituloExtra, turno = '') {
   }
 }
 
+function showEficienciaDrilldown(snap) {
+  const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const fmtNum = v => v != null ? v : '—';
+  const totalObj = (snap.slots || []).reduce((s, x) => s + (x.ciclos_obj || 0), 0);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:560px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">📊 Eficiencia por Hora — ${escHtml(snap.linea)} · ${escHtml(snap.fecha)} ${escHtml(snap.turno)}</h3>
+      <button id="closeEfModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:14px">
+      Total turno: <strong>${snap.ciclos_totales}</strong> ciclos de <strong>${totalObj}</strong> objetivo
+      · Eficiencia: <strong>${fmtPct(snap.eficiencia)}</strong>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f8fafc">
+        <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Hora</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Ciclos reales</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Objetivo</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Eficiencia</th>
+      </tr></thead>
+      <tbody>${(snap.slots || []).map(s => {
+        const ef = s.eficiencia;
+        const clr = ef == null ? '' : ef >= 0.9 ? 'color:#16a34a;font-weight:700' : ef >= 0.7 ? 'color:#d97706;font-weight:700' : 'color:#dc2626;font-weight:700';
+        return `<tr style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:5px 8px;color:#374151">${escHtml(s.hora_inicio)}–${escHtml(s.hora_fin)}</td>
+          <td style="padding:5px 8px;text-align:center;font-weight:600">${fmtNum(s.ciclos_totales)}</td>
+          <td style="padding:5px 8px;text-align:center;color:#6b7280">${fmtNum(s.ciclos_obj)}</td>
+          <td style="padding:5px 8px;text-align:center;${clr}">${fmtPct(ef)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeEfModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
+function showCapacidadDrilldown(snap) {
+  const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const fmtNum = v => v != null ? v : '—';
+  const totalPiezas = (snap.slots || []).reduce((s, x) => s + (x.piezas_total || 0), 0);
+  const totalObj    = (snap.slots || []).reduce((s, x) => s + (x.piezas_obj_total || 0), 0);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:560px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="margin:0;font-size:16px">📦 Capacidad por Hora — ${escHtml(snap.linea)} · ${escHtml(snap.fecha)} ${escHtml(snap.turno)}</h3>
+      <button id="closeCapModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:14px">
+      Total turno: <strong>${totalPiezas}</strong> piezas de <strong>${totalObj}</strong> objetivo
+      · Capacidad: <strong>${fmtPct(snap.capacidad)}</strong>
+    </div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="background:#f8fafc">
+        <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Hora</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Piezas carg.</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Objetivo</th>
+        <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Capacidad</th>
+      </tr></thead>
+      <tbody>${(snap.slots || []).map(s => {
+        const cap = s.capacidad;
+        const clr = cap == null ? 'color:#6b7280' : cap >= 0.9 ? 'color:#16a34a;font-weight:700' : cap >= 0.7 ? 'color:#d97706;font-weight:700' : 'color:#dc2626;font-weight:700';
+        return `<tr style="border-bottom:1px solid #f3f4f6">
+          <td style="padding:5px 8px;color:#374151">${escHtml(s.hora_inicio)}–${escHtml(s.hora_fin)}</td>
+          <td style="padding:5px 8px;text-align:center;font-weight:600">${fmtNum(s.piezas_total)}</td>
+          <td style="padding:5px 8px;text-align:center;color:#6b7280">${fmtNum(s.piezas_obj_total) !== '—' && s.piezas_obj_total > 0 ? s.piezas_obj_total : '—'}</td>
+          <td style="padding:5px 8px;text-align:center;${clr}">${fmtPct(cap)}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeCapModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+}
+
 function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -4811,6 +4890,13 @@ async function viewResumenTurno(el) {
     if (!lastSnaps.length) { res.innerHTML = '<div class="empty-state"><div class="icon">📑</div><p>Sin datos para estos filtros.</p></div>'; return; }
     if (activeSubTab === 'detalle') {
       res.innerHTML = renderResumenTurnoTable(lastSnaps, activeTab);
+      res.querySelectorAll('.eficiencia-click').forEach(td => {
+        td.style.cursor = 'pointer';
+        td.addEventListener('click', () => {
+          const snap = lastSnaps.find(s => s.id === td.dataset.sid);
+          if (snap) showEficienciaDrilldown(snap);
+        });
+      });
       res.querySelectorAll('.calidad-click').forEach(td => {
         td.style.cursor = 'pointer';
         td.title = 'Clic para ver detalle de defectos';
@@ -4819,12 +4905,20 @@ async function viewResumenTurno(el) {
           if (snap) showDefectosDrilldown(snap.linea, snap.fecha, snap.fecha, snap.turno);
         });
       });
+      res.querySelectorAll('.capacidad-click').forEach(td => {
+        td.style.cursor = 'pointer';
+        td.addEventListener('click', () => {
+          const snap = lastSnaps.find(s => s.id === td.dataset.sid);
+          if (snap) showCapacidadDrilldown(snap);
+        });
+      });
       res.querySelectorAll('.disponibilidad-click').forEach(td => {
         td.style.cursor = 'pointer';
         td.title = 'Clic para ver paros de este turno';
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
-          if (snap) showParetoParo(snap.linea, snap.fecha, snap.fecha, snap.turno, snap.turno);
+          // No filtrar por turno en API (igual que KPI: cuenta overlap de CUALQUIER paro)
+          if (snap) showParetoParo(snap.linea, snap.fecha, snap.fecha, snap.turno);
         });
       });
     } else if (activeSubTab === 'analisis') {
@@ -5048,8 +5142,9 @@ function renderResumenTurnoTable(snaps, linea) {
       <td style="text-align:center">${escHtml(s.linea)}</td>
       <td style="text-align:center;font-weight:700">${fmtNum(s.ciclos_totales)}</td>
       <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
-      <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${fmtPct(s.eficiencia)}</td>
+      <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)} eficiencia-click" data-sid="${s.id}" title="Clic para ver ciclos por hora">${fmtPct(s.eficiencia)} 🔍</td>
       <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
+      <td class="${kpiColor(s.capacidad != null ? s.capacidad * 100 : null)} capacidad-click" data-sid="${s.id}" title="Clic para ver piezas por hora">${fmtPct(s.capacidad)}${s.capacidad != null ? ' 🔍' : ''}</td>
       <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)} disponibilidad-click" data-sid="${s.id}" title="Clic para ver paros">${fmtPct(s.disponibilidad)}${s.disponibilidad != null && s.disponibilidad < 1 ? ' 🔍' : ''}</td>
       <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
       <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
@@ -5071,6 +5166,7 @@ function renderResumenTurnoTable(snaps, linea) {
       <td class="${kpiColor(ef!=null?ef*100:null)}">${fmtPct(ef)}</td>
       <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
       <td>—</td>
+      <td>—</td>
       <td style="text-align:center">${ws.reduce((s,x)=>s+x.piezas_total,0)}</td>
       <td style="text-align:center">${paroMin.toFixed(0)} min</td>
     </tr>`;
@@ -5087,7 +5183,7 @@ function renderResumenTurnoTable(snaps, linea) {
           <thead><tr>
             <th>Sem</th><th>Fecha</th><th>Turno</th><th>Línea</th>
             <th>Ciclos Tot.</th><th>Ciclos Buenos</th>
-            <th>Eficiencia</th><th>Calidad 🔍</th><th>Disponibilidad 🔍</th>
+            <th>Eficiencia 🔍</th><th>Calidad 🔍</th><th>Capacidad 🔍</th><th>Disponibilidad 🔍</th>
             <th>Piezas</th><th>T. Paro</th>
           </tr></thead>
           <tbody>${rows}${weekRows}</tbody>

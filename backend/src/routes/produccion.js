@@ -1158,6 +1158,7 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       hora_inicio:      ssStr,
       hora_fin:         seStr,
       ciclos_totales,
+      ciclos_obj:       slotObj,
       ciclos_no_vacios,
       ciclos_buenos,
       piezas_total,
@@ -1771,7 +1772,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
-      ciclos_totales, ciclos_no_vacios, ciclos_buenos,
+      ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
@@ -1851,7 +1852,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
-      ciclos_totales, ciclos_no_vacios, ciclos_buenos,
+      ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
