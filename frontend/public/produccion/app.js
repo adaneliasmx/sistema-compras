@@ -50,6 +50,7 @@ const MENU = {
     ['kpi-historico',  '📊', 'KPI Histórico'],
     ['resumen-turno',  '📑', 'Resumen de Turno'],
     ['monitor',        '📡', 'Monitor en vivo'],
+    ['monitor-grafico','📊', 'Monitoreo Gráfico'],
     ['---', '', 'Catálogos'],
     ['catalogos-l3',   '📦', 'Catálogos L3'],
     ['catalogos-l4',   '📦', 'Catálogos L4'],
@@ -65,7 +66,8 @@ const MENU = {
     ['linea-baker',    '🔧', 'Baker'],
     ['linea-l1',       '🏭', 'Línea 1'],
     ['pizarron',       '📋', 'Pizarrón KPI'],
-    ['resumen-turno',  '📑', 'Resumen de Turno']
+    ['resumen-turno',  '📑', 'Resumen de Turno'],
+    ['monitor-grafico','📊', 'Monitoreo Gráfico']
   ],
   pizarron: [
     ['pizarron',       '📋', 'Pizarrón KPI'],
@@ -86,6 +88,7 @@ const SECTION_TITLES = {
   'kpi-historico':   'KPI Histórico',
   'resumen-turno':   'Resumen de Turno',
   'monitor':         'Monitor en vivo — L3, L4 y Baker',
+  'monitor-grafico': 'Monitoreo Gráfico — Diagrama de Gantt',
   'catalogos-l3':    'Catálogos Línea 3',
   'catalogos-l4':    'Catálogos Línea 4',
   'catalogos-baker': 'Catálogos Baker',
@@ -586,6 +589,7 @@ async function renderMain() {
       case 'kpi-historico':  await viewKpiHistorico(el);      break;
       case 'resumen-turno':  await viewResumenTurno(el);      break;
       case 'monitor':        await viewMonitor(el);           break;
+      case 'monitor-grafico': await viewMonitorGrafico(el);  break;
       case 'catalogos-l3':   await viewCatalogos(el, 'L3');   break;
       case 'catalogos-l4':   await viewCatalogos(el, 'L4');   break;
       case 'catalogos-baker':await viewCatalogos(el, 'baker');break;
@@ -2786,6 +2790,528 @@ async function viewMonitor(el) {
   clearInterval(state._monitorTimer);
   state._monitorTimer = setInterval(cargarMonitor, 15000);
   cargarMonitor();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: MONITOREO GRÁFICO (Gantt de producción)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function viewMonitorGrafico(el) {
+  // ── estado ─────────────────────────────────────────────────────────────────
+  let activeTab      = 'L3';
+  let allCargas      = [];
+  let allParos       = [];
+  let ganttData      = [];   // [{type:'carga'|'paro', data}] — índice referenciado por data-gi en SVG
+  let semanas        = [];   // [{sem, minFecha, maxFecha, fechas:[]}]
+  let selSemana      = '';
+  let selFecha       = '';
+  let selTurno       = '';
+  let showHerr       = true;
+  let showParosFlag  = true;
+
+  // ── shell ──────────────────────────────────────────────────────────────────
+  el.innerHTML = `
+    <div class="tab-bar" id="mg-tabs">
+      <button class="tab-btn tab-active" data-tab="L3">Línea 3</button>
+      <button class="tab-btn" data-tab="L4">Línea 4</button>
+      <button class="tab-btn" data-tab="Baker">Baker</button>
+      <button class="tab-btn" data-tab="L1">Línea 1</button>
+    </div>
+    <div class="filters-bar" id="mg-filters">
+      <div><span class="flabel">Semana</span><select id="mg-semana"><option>Cargando…</option></select></div>
+      <div><span class="flabel">Día</span><select id="mg-fecha"><option value="">Todos</option></select></div>
+      <div><span class="flabel">Turno</span>
+        <select id="mg-turno">
+          <option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option>
+        </select>
+      </div>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="mg-herr" checked> Herramentales
+      </label>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="mg-paros" checked> Paros
+      </label>
+      <button class="btn btn-outline btn-sm" id="mg-refresh">↻ Actualizar</button>
+    </div>
+    <div id="mg-wrap" style="overflow-x:auto;background:#fff;border:1px solid var(--p-border);border-radius:8px 8px 0 0;min-height:120px">
+      <div class="empty-state"><div class="icon">⏳</div><p>Cargando datos…</p></div>
+    </div>
+    <div id="mg-legend" style="display:flex;gap:14px;padding:7px 12px;font-size:11px;align-items:center;flex-wrap:wrap;border:1px solid var(--p-border);border-top:none;border-radius:0 0 8px 8px;background:#f8fafc">
+      <span style="font-weight:600;color:#475569">Leyenda:</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#3b82f6" rx="2"/></svg>T1 06:30–14:30</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#10b981" rx="2"/></svg>T2 14:30–21:30</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#f59e0b" rx="2"/></svg>T3 21:30–06:30</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#6366f1" rx="2" opacity=".7"/></svg>Activo</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#dc2626" rx="2"/></svg>Paro</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#3b82f6" rx="2" stroke="#ef4444" stroke-width="1.5"/><circle cx="15" cy="4" r="2.5" fill="#ef4444"/></svg>Con defecto</span>
+      <span style="color:#94a3b8;margin-left:auto;font-size:10px">Clic en barra = detalles completos</span>
+    </div>
+    <div id="mg-tooltip" style="position:fixed;display:none;z-index:9999;background:#1e293b;color:#f1f5f9;padding:10px 14px;border-radius:8px;font-size:12px;max-width:300px;pointer-events:none;box-shadow:0 4px 24px rgba(0,0,0,.5);line-height:1.7"></div>
+  `;
+
+  // ── helpers ────────────────────────────────────────────────────────────────
+  const parseTS = (fecha, hora) => {
+    if (!fecha) return null;
+    try { return new Date(`${fecha}T${hora || '00:00'}:00`).getTime(); } catch { return null; }
+  };
+  const calcDurMin = (fc, hc, fd, hd) => {
+    const s = parseTS(fc, hc), e = parseTS(fd, hd);
+    return (s && e) ? Math.round((e - s) / 60000) : null;
+  };
+  const hasDefecto = c => {
+    if (activeTab === 'Baker' || activeTab === 'L1') {
+      if (c.herramental_tipo === 'barril')
+        return (c.cavidades || []).some(cv => cv.estado === 'defecto' || cv.estado === 'reproceso');
+      return c.estado === 'defecto' || !!c.defecto_id;
+    }
+    return c.estado === 'defecto' || c.estado === 'reproceso' || !!c.defecto_id;
+  };
+  const T_COLORS = { T1:'#3b82f6', T2:'#10b981', T3:'#f59e0b' };
+
+  // ── carga de datos ─────────────────────────────────────────────────────────
+  async function loadData() {
+    const wrap = document.getElementById('mg-wrap');
+    if (wrap) wrap.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando datos…</p></div>';
+
+    const hasta  = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const d60    = new Date(); d60.setDate(d60.getDate() - 60);
+    const desde  = d60.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+    try {
+      let cP, acP, paP;
+      if (activeTab === 'Baker') {
+        cP  = GET(`/baker/cargas?fecha_ini=${desde}&fecha_fin=${hasta}`);
+        acP = GET('/baker/cargas/activas').catch(() => []);
+        paP = GET(`/resumen/paros?linea=Baker&desde=${desde}&hasta=${hasta}`);
+      } else if (activeTab === 'L1') {
+        cP  = GET(`/l1/cargas?fecha_ini=${desde}&fecha_fin=${hasta}`);
+        acP = GET('/l1/cargas/activas').catch(() => []);
+        paP = GET(`/resumen/paros?linea=L1&desde=${desde}&hasta=${hasta}`);
+      } else {
+        cP  = GET(`/cargas/${activeTab}?fecha_ini=${desde}&fecha_fin=${hasta}`);
+        acP = GET(`/cargas/${activeTab}/activas`).catch(() => []);
+        paP = GET(`/resumen/paros?linea=${activeTab}&desde=${desde}&hasta=${hasta}`);
+      }
+
+      const [cargasRaw, activasRaw, parosRes] = await Promise.all([cP, acP, paP]);
+      const cargas  = Array.isArray(cargasRaw)  ? cargasRaw  : [];
+      const activas = Array.isArray(activasRaw) ? activasRaw : [];
+
+      // Agregar activas sin duplicar
+      const seenIds = new Set(cargas.map(c => c.id));
+      for (const a of activas) { if (!seenIds.has(a.id)) cargas.push(a); }
+      allCargas = cargas;
+      allParos  = parosRes?.paros || [];
+
+      // Construir mapa de semanas desde los datos
+      const semMap = new Map();
+      for (const c of allCargas) {
+        const sem = c.semana || ''; if (!sem) continue;
+        if (!semMap.has(sem)) semMap.set(sem, { sem, fechas: new Set(), min: c.fecha_carga||'', max: c.fecha_carga||'' });
+        const e = semMap.get(sem);
+        const fc = c.fecha_carga || '', fd = c.fecha_descarga || '';
+        e.fechas.add(fc); if (fd) e.fechas.add(fd);
+        if (fc && fc < e.min) e.min = fc;
+        if (fc && fc > e.max) e.max = fc;
+        if (fd && fd > e.max) e.max = fd;
+      }
+      semanas = [...semMap.entries()]
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([, v]) => ({ sem: v.sem, minFecha: v.min, maxFecha: v.max, fechas: [...v.fechas].filter(Boolean).sort() }));
+
+      const semSel = document.getElementById('mg-semana');
+      if (semSel) {
+        semSel.innerHTML = semanas.length
+          ? semanas.map(s => `<option value="${s.sem}">${s.sem}</option>`).join('')
+          : '<option value="">Sin datos</option>';
+        if (!selSemana || !semanas.find(s => s.sem === selSemana))
+          selSemana = semanas[0]?.sem || '';
+        semSel.value = selSemana;
+      }
+      updateFechaDropdown();
+      renderGantt();
+    } catch (err) {
+      const wrap2 = document.getElementById('mg-wrap');
+      if (wrap2) wrap2.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(err.message)}</div>`;
+    }
+  }
+
+  function updateFechaDropdown() {
+    const info = semanas.find(s => s.sem === selSemana);
+    const sel  = document.getElementById('mg-fecha'); if (!sel) return;
+    const opts = info ? info.fechas : [];
+    sel.innerHTML = `<option value="">Todos los días</option>` +
+      opts.map(f => `<option value="${f}" ${f === selFecha ? 'selected' : ''}>${f}</option>`).join('');
+    if (!opts.includes(selFecha)) { selFecha = ''; sel.value = ''; }
+  }
+
+  // ── renderizar gantt ───────────────────────────────────────────────────────
+  function renderGantt() {
+    const wrap = document.getElementById('mg-wrap'); if (!wrap) return;
+    ganttData = [];
+
+    // Filtrar cargas
+    let cargas = allCargas.filter(c => !selSemana || c.semana === selSemana);
+    if (selFecha) cargas = cargas.filter(c =>
+      c.fecha_carga === selFecha || c.fecha_descarga === selFecha);
+    if (selTurno) cargas = cargas.filter(c => {
+      if (!c.fecha_descarga) return true;  // activas siempre visibles
+      return getTurnoDeHora(c.hora_descarga || c.hora_carga || '06:30') === selTurno;
+    });
+
+    // Filtrar paros
+    let paros = allParos.filter(p => {
+      const info = semanas.find(s => s.sem === selSemana);
+      if (info && (p.fecha_inicio < info.minFecha || p.fecha_inicio > info.maxFecha)) return false;
+      if (selFecha && p.fecha_inicio !== selFecha) return false;
+      if (selTurno && p.turno !== selTurno) return false;
+      return true;
+    });
+
+    if (!cargas.length && !paros.length) {
+      wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin datos para los filtros actuales.</p></div>';
+      return;
+    }
+
+    // ── rango de tiempo ──────────────────────────────────────────────────────
+    const nowTs = Date.now();
+    const tsArr = [];
+    for (const c of cargas) {
+      const s = parseTS(c.fecha_carga, c.hora_carga);
+      const e = c.fecha_descarga ? parseTS(c.fecha_descarga, c.hora_descarga) : nowTs;
+      if (s) tsArr.push(s); if (e) tsArr.push(e);
+    }
+    for (const p of paros) {
+      const s = parseTS(p.fecha_inicio, p.hora_inicio);
+      const e = p.fecha_fin ? parseTS(p.fecha_fin, p.hora_fin) : null;
+      if (s) tsArr.push(s); if (e) tsArr.push(e);
+    }
+    if (!tsArr.length) { wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin marcas de tiempo válidas.</p></div>'; return; }
+
+    const HR = 3600000;
+    const tMin = Math.floor(Math.min(...tsArr) / HR) * HR - HR;
+    const tMax = Math.ceil( Math.max(...tsArr) / HR) * HR + HR;
+    const totalMs = tMax - tMin, totalHours = totalMs / HR;
+
+    // ── dimensiones ──────────────────────────────────────────────────────────
+    const LW = 134, RH = 34, HH = 52, BP = 5, BH = RH - BP * 2;
+    const cW0  = Math.max((wrap.clientWidth || window.innerWidth - 80) - LW - 16, 300);
+    const pxHr = Math.min(Math.max(cW0 / totalHours, 8), 90);
+    const CW   = Math.ceil(totalHours * pxHr);
+    const SW   = LW + CW + 2;
+    const tsX  = ts => LW + ((ts - tMin) / totalMs) * CW;
+
+    // ── agrupar herramentales ─────────────────────────────────────────────────
+    const herrMap = new Map();
+    for (const c of cargas) {
+      const tipo = c.herramental_tipo ? (c.herramental_tipo.charAt(0).toUpperCase() + c.herramental_tipo.slice(1) + ' ') : '';
+      const key  = `${tipo}${c.herramental_no || '#' + (c.herramental_id || c.id)}`;
+      if (!herrMap.has(key)) herrMap.set(key, []);
+      herrMap.get(key).push(c);
+    }
+    const herrRows = [...herrMap.entries()].sort((a, b) => {
+      const ta = Math.min(...a[1].map(c => parseTS(c.fecha_carga, c.hora_carga) || Infinity));
+      const tb = Math.min(...b[1].map(c => parseTS(c.fecha_carga, c.hora_carga) || Infinity));
+      return ta - tb;
+    });
+
+    const paroRow  = showParosFlag && paros.length > 0;
+    const herrCnt  = showHerr ? herrRows.length : 0;
+    const totRows  = (paroRow ? 1 : 0) + herrCnt;
+    if (totRows === 0) { wrap.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Activa al menos una capa (herramentales o paros).</p></div>'; return; }
+
+    const SH = HH + totRows * RH + 4;
+    const px = [];  // SVG parts
+
+    // ── fondos de filas ───────────────────────────────────────────────────────
+    for (let i = 0; i < totRows; i++) {
+      const fy = HH + i * RH;
+      const isP = i === 0 && paroRow;
+      px.push(`<rect x="${LW}" y="${fy}" width="${CW}" height="${RH}" fill="${isP ? '#fff5f5' : i % 2 ? '#fff' : '#f8fafc'}"/>`);
+    }
+
+    // ── eje de tiempo: días ───────────────────────────────────────────────────
+    { let d = new Date(tMin); d.setHours(0, 0, 0, 0);
+      while (d.getTime() <= tMax) {
+        const x = tsX(d.getTime()), lbl = d.toLocaleDateString('es-MX', { weekday:'short', month:'short', day:'numeric', timeZone:'America/Mexico_City' });
+        px.push(`<line x1="${x}" y1="${HH}" x2="${x}" y2="${SH}" stroke="#94a3b8" stroke-width="1" opacity=".4"/>`);
+        px.push(`<text x="${x+4}" y="16" font-size="10" fill="#e2e8f0" font-family="sans-serif" font-weight="bold">${escHtml(lbl)}</text>`);
+        d.setDate(d.getDate() + 1);
+      }
+    }
+
+    // ── eje de tiempo: límites de turno ───────────────────────────────────────
+    { const shifts = [[6*60+30,'T1','#3b82f6'],[14*60+30,'T2','#10b981'],[21*60+30,'T3','#f59e0b']];
+      let d = new Date(tMin); d.setHours(0, 0, 0, 0);
+      while (d.getTime() <= tMax) {
+        for (const [mins, lbl, col] of shifts) {
+          const t = d.getTime() + mins * 60000;
+          if (t >= tMin && t <= tMax) {
+            const x = tsX(t);
+            px.push(`<line x1="${x}" y1="0" x2="${x}" y2="${SH}" stroke="${col}" stroke-width=".8" opacity=".35" stroke-dasharray="4,3"/>`);
+            px.push(`<text x="${x+2}" y="30" font-size="9" fill="${col}" font-family="sans-serif">${lbl}</text>`);
+            px.push(`<text x="${x+2}" y="42" font-size="8" fill="${col}" font-family="sans-serif" opacity=".8">${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}</text>`);
+          }
+        }
+        d.setDate(d.getDate() + 1);
+      }
+    }
+
+    // ── ticks de hora ─────────────────────────────────────────────────────────
+    { const tInt = totalHours <= 12 ? 1 : totalHours <= 48 ? 2 : totalHours <= 96 ? 4 : 6;
+      for (let t = tMin; t <= tMax; t += HR) {
+        const d = new Date(t), h = d.getHours(), m = d.getMinutes();
+        if (m === 0 && h % tInt === 0) {
+          const x = tsX(t);
+          px.push(`<line x1="${x}" y1="${HH-6}" x2="${x}" y2="${HH}" stroke="#475569" stroke-width=".8"/>`);
+          px.push(`<text x="${x}" y="${HH-8}" text-anchor="middle" font-size="8" fill="#94a3b8" font-family="monospace">${String(h).padStart(2,'0')}h</text>`);
+        }
+      }
+    }
+
+    // ── cabecera oscura (sobre las etiquetas de tiempo) ───────────────────────
+    px.push(`<rect x="0" y="0" width="${SW}" height="${HH}" fill="#0f172a"/>`);
+    px.push(`<rect x="0" y="0" width="${LW-1}" height="${SH}" fill="#f8fafc"/>`);
+
+    // Redibujar etiquetas de día/turno sobre cabecera
+    { let d = new Date(tMin); d.setHours(0, 0, 0, 0);
+      while (d.getTime() <= tMax) {
+        const x = tsX(d.getTime()), lbl = d.toLocaleDateString('es-MX', { weekday:'short', month:'short', day:'numeric', timeZone:'America/Mexico_City' });
+        px.push(`<text x="${x+4}" y="16" font-size="10" fill="#e2e8f0" font-family="sans-serif" font-weight="bold">${escHtml(lbl)}</text>`);
+        d.setDate(d.getDate() + 1);
+      }
+      const shifts = [[6*60+30,'T1','#3b82f6'],[14*60+30,'T2','#10b981'],[21*60+30,'T3','#f59e0b']];
+      let d2 = new Date(tMin); d2.setHours(0, 0, 0, 0);
+      while (d2.getTime() <= tMax) {
+        for (const [mins, lbl, col] of shifts) {
+          const t = d2.getTime() + mins * 60000;
+          if (t >= tMin && t <= tMax) {
+            const x = tsX(t);
+            px.push(`<text x="${x+2}" y="30" font-size="9" fill="${col}" font-family="sans-serif">${lbl}</text>`);
+            px.push(`<text x="${x+2}" y="42" font-size="8" fill="${col}" font-family="sans-serif" opacity=".8">${String(Math.floor(mins/60)).padStart(2,'0')}:${String(mins%60).padStart(2,'0')}</text>`);
+            px.push(`<line x1="${x}" y1="${HH-6}" x2="${x}" y2="${HH}" stroke="${col}" stroke-width=".6"/>`);
+          }
+        }
+        d2.setDate(d2.getDate() + 1);
+      }
+      // ticks sobre cabecera
+      const tInt = totalHours <= 12 ? 1 : totalHours <= 48 ? 2 : totalHours <= 96 ? 4 : 6;
+      for (let t = tMin; t <= tMax; t += HR) {
+        const d3 = new Date(t), h = d3.getHours(), m = d3.getMinutes();
+        if (m === 0 && h % tInt === 0) {
+          const x = tsX(t);
+          px.push(`<line x1="${x}" y1="${HH-6}" x2="${x}" y2="${HH}" stroke="#475569" stroke-width=".8"/>`);
+          px.push(`<text x="${x}" y="${HH-8}" text-anchor="middle" font-size="8" fill="#94a3b8" font-family="monospace">${String(h).padStart(2,'0')}h</text>`);
+        }
+      }
+    }
+
+    // ── línea "ahora" ─────────────────────────────────────────────────────────
+    if (nowTs >= tMin && nowTs <= tMax) {
+      const nx = tsX(nowTs);
+      px.push(`<line x1="${nx}" y1="0" x2="${nx}" y2="${SH}" stroke="#f97316" stroke-width="1.5" opacity=".9"/>`);
+      px.push(`<text x="${nx+3}" y="12" font-size="9" fill="#f97316" font-family="sans-serif">ahora</text>`);
+    }
+
+    // ── barras de PAROS ───────────────────────────────────────────────────────
+    if (paroRow) {
+      const by = HH + BP;
+      for (const p of paros) {
+        const s = parseTS(p.fecha_inicio, p.hora_inicio);
+        const e = p.fecha_fin ? parseTS(p.fecha_fin, p.hora_fin) : nowTs;
+        if (!s || e < tMin || s > tMax) continue;
+        const x1 = Math.max(tsX(s), LW), x2 = Math.min(tsX(e), LW + CW), bw = Math.max(x2 - x1, 4);
+        const gi = ganttData.length; ganttData.push({ type:'paro', data: p });
+        const isOpen = !p.fecha_fin;
+        px.push(`<rect x="${x1}" y="${by}" width="${bw}" height="${BH}" fill="#dc2626" rx="3" opacity="${isOpen ? '.6' : '.85'}" ${isOpen ? 'stroke="#dc2626" stroke-dasharray="4,2"' : ''} class="mg-bar" data-gi="${gi}" style="cursor:pointer"/>`);
+        if (bw > 38) px.push(`<text x="${x1+4}" y="${by+BH/2+4}" font-size="9" fill="white" font-family="sans-serif" pointer-events="none">${escHtml((p.motivo||'').substring(0,20))}</text>`);
+      }
+    }
+
+    // ── barras de HERRAMENTALES ───────────────────────────────────────────────
+    if (showHerr) {
+      let ri = paroRow ? 1 : 0;
+      for (const [herrName, cargasH] of herrRows) {
+        const by = HH + ri * RH + BP;
+        for (const c of cargasH) {
+          const s = parseTS(c.fecha_carga, c.hora_carga); if (!s) continue;
+          const isAct = !c.fecha_descarga;
+          const e = isAct ? nowTs : parseTS(c.fecha_descarga, c.hora_descarga);
+          if (!e || e < tMin || s > tMax) continue;
+          const x1 = Math.max(tsX(s), LW), x2 = Math.min(tsX(e), LW + CW), bw = Math.max(x2 - x1, 4);
+          const hRef  = isAct ? (c.hora_carga||'06:30') : (c.hora_descarga||c.hora_carga||'06:30');
+          const color = isAct ? '#6366f1' : (T_COLORS[getTurnoDeHora(hRef)] || '#6b7280');
+          const def   = hasDefecto(c);
+          const gi    = ganttData.length; ganttData.push({ type:'carga', data: { ...c, _herrName: herrName } });
+          px.push(`<rect x="${x1}" y="${by}" width="${bw}" height="${BH}" fill="${color}" rx="3" opacity="${isAct ? '.7' : '.88'}" ${isAct ? 'stroke="'+color+'" stroke-dasharray="4,2"' : ''} class="mg-bar" data-gi="${gi}" style="cursor:pointer"/>`);
+          if (def) {
+            px.push(`<rect x="${x1}" y="${by}" width="${bw}" height="${BH}" fill="none" rx="3" stroke="#ef4444" stroke-width="2" pointer-events="none"/>`);
+            if (bw > 8) px.push(`<circle cx="${Math.min(x1+bw-5, LW+CW-5)}" cy="${by+4}" r="3.5" fill="#ef4444" pointer-events="none"/>`);
+          }
+          if (bw > 55) px.push(`<text x="${x1+4}" y="${by+BH/2+4}" font-size="9" fill="white" font-family="monospace" pointer-events="none">${escHtml(c.folio||'')}</text>`);
+        }
+        ri++;
+      }
+    }
+
+    // ── etiquetas eje Y ───────────────────────────────────────────────────────
+    { let ri = 0;
+      if (paroRow) {
+        px.push(`<text x="${LW-8}" y="${HH+ri*RH+RH/2+4}" text-anchor="end" font-size="11" font-weight="bold" fill="#dc2626" font-family="sans-serif">⛔ Paros</text>`);
+        ri++;
+      }
+      if (showHerr) {
+        for (const [herrName] of herrRows) {
+          px.push(`<text x="${LW-8}" y="${HH+ri*RH+RH/2+4}" text-anchor="end" font-size="11" fill="#1e293b" font-family="monospace">${escHtml(herrName)}</text>`);
+          ri++;
+        }
+      }
+    }
+
+    // separador Y + líneas de fila
+    px.push(`<line x1="${LW}" y1="0" x2="${LW}" y2="${SH}" stroke="#334155" stroke-width="1.5"/>`);
+    for (let i = 0; i <= totRows; i++)
+      px.push(`<line x1="0" y1="${HH+i*RH}" x2="${SW}" y2="${HH+i*RH}" stroke="#e2e8f0" stroke-width=".5"/>`);
+
+    wrap.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" id="mg-svg" width="${SW}" height="${SH}" style="display:block">${px.join('')}</svg>`;
+
+    // ── tooltip + clic ────────────────────────────────────────────────────────
+    const tooltip = document.getElementById('mg-tooltip');
+    const svg     = wrap.querySelector('#mg-svg');
+
+    const getBar = e => { let t = e.target; while (t && t !== svg) { if (t.dataset?.gi !== undefined) return t; t = t.parentElement; } return null; };
+
+    svg.addEventListener('mousemove', e => {
+      const bar = getBar(e); if (!bar) { tooltip.style.display = 'none'; return; }
+      const item = ganttData[Number(bar.dataset.gi)]; if (!item) return;
+      tooltip.innerHTML = tooltipHtml(item);
+      tooltip.style.display = 'block';
+      tooltip.style.left = Math.min(e.clientX + 16, window.innerWidth - 310) + 'px';
+      tooltip.style.top  = Math.min(e.clientY - 8,  window.innerHeight - 220) + 'px';
+    });
+    svg.addEventListener('mouseleave', () => { tooltip.style.display = 'none'; });
+    svg.addEventListener('click', e => { const bar = getBar(e); if (bar) { tooltip.style.display = 'none'; showModal(ganttData[Number(bar.dataset.gi)]); } });
+  }
+
+  // ── tooltip html ───────────────────────────────────────────────────────────
+  function tooltipHtml(item) {
+    if (item.type === 'paro') {
+      const p = item.data;
+      return `<div style="font-weight:700;color:#fca5a5;margin-bottom:4px">⛔ Paro de línea</div>
+        <div>Motivo: <b>${escHtml(p.motivo||'-')}</b></div>
+        ${p.sub_motivo ? `<div>Sub-motivo: ${escHtml(p.sub_motivo)}</div>` : ''}
+        <div>Inicio: ${escHtml(p.fecha_inicio)} ${escHtml(p.hora_inicio)}</div>
+        <div>Fin: ${escHtml(p.fecha_fin||'—')} ${escHtml(p.hora_fin||'')}</div>
+        <div>Duración: <b>${p.duracion_min||'?'} min</b></div>
+        <div>Turno: ${escHtml(p.turno||'-')}</div>
+        ${!p.fecha_fin ? '<div style="color:#fca5a5">⚠ Paro abierto</div>' : ''}
+        <div style="color:#64748b;font-size:10px;margin-top:3px">Clic = detalle</div>`;
+    }
+    const c = item.data, isAct = !c.fecha_descarga;
+    const dur = isAct ? 'en proceso…' : (calcDurMin(c.fecha_carga, c.hora_carga, c.fecha_descarga, c.hora_descarga) + ' min');
+    return `<div style="font-weight:700;color:#93c5fd;margin-bottom:4px">🏭 ${escHtml(c._herrName||c.herramental_no||'-')}</div>
+      <div>Folio: <b>${escHtml(c.folio||'-')}</b></div>
+      ${c.componente ? `<div>Componente: ${escHtml(c.componente)}</div>` : ''}
+      <div>Operador: ${escHtml(c.operador||'-')}</div>
+      <div>Carga: ${escHtml(c.fecha_carga)} ${escHtml(c.hora_carga)}</div>
+      <div>Descarga: ${escHtml(c.fecha_descarga||'—')} ${escHtml(c.hora_descarga||'')}</div>
+      <div>Duración: <b>${dur}</b></div>
+      <div>Turno: ${escHtml(c.turno||'-')}</div>
+      ${hasDefecto(c) ? '<div style="color:#fca5a5">⚠ Con defecto</div>' : ''}
+      ${isAct ? '<div style="color:#a5b4fc">🔵 Activo en línea</div>' : ''}
+      <div style="color:#64748b;font-size:10px;margin-top:3px">Clic = detalle</div>`;
+  }
+
+  // ── modal de detalle ───────────────────────────────────────────────────────
+  function showModal(item) {
+    if (!item) return;
+    let body;
+    if (item.type === 'paro') {
+      const p = item.data;
+      body = `<div style="padding:20px 24px;max-width:460px;width:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px;color:#dc2626">⛔ Detalle de Paro</h3>
+          <button id="mgmc" style="background:none;border:none;font-size:22px;cursor:pointer;line-height:1;color:#6b7280">×</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+          <div><span style="color:#6b7280;font-size:11px">Folio</span><br><b>${escHtml(p.folio||'-')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Turno</span><br><b>${escHtml(p.turno||'-')}</b></div>
+          <div style="grid-column:1/-1"><span style="color:#6b7280;font-size:11px">Motivo</span><br><b>${escHtml(p.motivo||'-')}</b></div>
+          ${p.sub_motivo?`<div style="grid-column:1/-1"><span style="color:#6b7280;font-size:11px">Sub-motivo</span><br><b>${escHtml(p.sub_motivo)}</b></div>`:''}
+          <div><span style="color:#6b7280;font-size:11px">Inicio</span><br><b>${escHtml(p.fecha_inicio||'')} ${escHtml(p.hora_inicio||'')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Fin</span><br><b>${escHtml(p.fecha_fin||'—')} ${escHtml(p.hora_fin||'')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Duración</span><br><b>${p.duracion_min||'?'} min</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Estado</span><br><b style="color:${!p.fecha_fin?'#dc2626':'#16a34a'}">${!p.fecha_fin?'Abierto':'Cerrado'}</b></div>
+        </div>
+      </div>`;
+    } else {
+      const c = item.data;
+      const dur = c.fecha_descarga ? calcDurMin(c.fecha_carga, c.hora_carga, c.fecha_descarga, c.hora_descarga) : null;
+      let cavsHtml = '';
+      if ((activeTab === 'Baker' || activeTab === 'L1') && c.herramental_tipo === 'barril' && Array.isArray(c.cavidades) && c.cavidades.length) {
+        const SC = { buena:'#16a34a', defecto:'#dc2626', vacia:'#9ca3af', reproceso:'#f59e0b' };
+        const SB = { buena:'#f0fff4', defecto:'#fef2f2', vacia:'#f9fafb', reproceso:'#fffbeb' };
+        cavsHtml = `<div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:12px">
+          <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:8px">Cavidades del barril</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:6px">
+            ${c.cavidades.map(cv=>`<div style="padding:5px 8px;border-radius:6px;font-size:11px;border:1px solid ${cv.estado==='defecto'?'#fca5a5':cv.estado==='reproceso'?'#fde68a':cv.estado==='vacia'?'#e5e7eb':'#bbf7d0'};background:${SB[cv.estado]||'#f8fafc'}">
+              <b style="color:${SC[cv.estado]||'#6b7280'}">Cav. ${cv.num}</b> — ${cv.estado||'—'}
+              ${cv.defecto?`<br><span style="color:#dc2626;font-size:10px">${escHtml(cv.defecto)}</span>`:''}
+            </div>`).join('')}
+          </div>
+        </div>`;
+      }
+      body = `<div style="padding:20px 24px;max-width:500px;width:100%">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <h3 style="margin:0;font-size:16px">🏭 Detalle de Carga</h3>
+          <button id="mgmc" style="background:none;border:none;font-size:22px;cursor:pointer;line-height:1;color:#6b7280">×</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:13px">
+          <div><span style="color:#6b7280;font-size:11px">Folio</span><br><b>${escHtml(c.folio||'-')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Herramental</span><br><b>${escHtml(c._herrName||c.herramental_no||'-')}</b></div>
+          ${c.componente?`<div><span style="color:#6b7280;font-size:11px">Componente</span><br><b>${escHtml(c.componente)}</b></div>`:''}
+          ${c.cliente?`<div><span style="color:#6b7280;font-size:11px">Cliente</span><br><b>${escHtml(c.cliente)}</b></div>`:''}
+          <div><span style="color:#6b7280;font-size:11px">Operador</span><br><b>${escHtml(c.operador||'-')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Turno</span><br><b>${escHtml(c.turno||'-')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Carga</span><br><b>${escHtml(c.fecha_carga||'')} ${escHtml(c.hora_carga||'')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Descarga</span><br><b>${escHtml(c.fecha_descarga||'—')} ${escHtml(c.hora_descarga||'')}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Duración</span><br><b>${dur != null ? dur+' min' : '🔵 En proceso'}</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Estado</span><br><b style="color:${c.estado==='defecto'?'#dc2626':!c.fecha_descarga?'#6366f1':'#16a34a'}">${escHtml(c.estado||'-')}</b></div>
+          ${c.proceso?`<div><span style="color:#6b7280;font-size:11px">Proceso</span><br><b>${escHtml(c.proceso)}</b></div>`:''}
+          ${c.acabado?`<div><span style="color:#6b7280;font-size:11px">Acabado</span><br><b>${escHtml(c.acabado)}</b></div>`:''}
+          ${c.semana?`<div><span style="color:#6b7280;font-size:11px">Semana</span><br><b>${escHtml(c.semana)}</b></div>`:''}
+          ${c.defecto?`<div style="grid-column:1/-1"><span style="color:#6b7280;font-size:11px">Defecto</span><br><b style="color:#dc2626">${escHtml(c.defecto)}</b></div>`:''}
+          ${c.cantidad!=null?`<div><span style="color:#6b7280;font-size:11px">Cantidad</span><br><b>${c.cantidad}</b></div>`:''}
+        </div>
+        ${cavsHtml}
+      </div>`;
+    }
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10000;display:flex;align-items:center;justify-content:center';
+    ov.innerHTML = `<div style="background:#fff;border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.3);overflow-y:auto;max-height:90vh">${body}</div>`;
+    document.body.appendChild(ov);
+    ov.querySelector('#mgmc').onclick = () => ov.remove();
+    ov.onclick = e => { if (e.target === ov) ov.remove(); };
+  }
+
+  // ── bindings ───────────────────────────────────────────────────────────────
+  el.querySelectorAll('#mg-tabs .tab-btn').forEach(btn =>
+    btn.addEventListener('click', () => {
+      el.querySelectorAll('#mg-tabs .tab-btn').forEach(b => b.classList.remove('tab-active'));
+      btn.classList.add('tab-active');
+      activeTab = btn.dataset.tab;
+      allCargas = []; allParos = []; selSemana = ''; selFecha = '';
+      loadData();
+    })
+  );
+  el.querySelector('#mg-semana')?.addEventListener('change', e => { selSemana = e.target.value; selFecha = ''; updateFechaDropdown(); renderGantt(); });
+  el.querySelector('#mg-fecha')?.addEventListener('change',  e => { selFecha  = e.target.value; renderGantt(); });
+  el.querySelector('#mg-turno')?.addEventListener('change',  e => { selTurno  = e.target.value; renderGantt(); });
+  el.querySelector('#mg-herr')?.addEventListener('change',   e => { showHerr      = e.target.checked; renderGantt(); });
+  el.querySelector('#mg-paros')?.addEventListener('change',  e => { showParosFlag = e.target.checked; renderGantt(); });
+  el.querySelector('#mg-refresh')?.addEventListener('click', () => loadData());
+
+  loadData();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
