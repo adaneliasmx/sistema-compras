@@ -1797,6 +1797,19 @@ function openModalDescargaBaker(carga, catalogo, onDone, linea = 'baker') {
           alert(`Selecciona el resultado de la cavidad ${nums} antes de confirmar.`);
           return;
         }
+        // Validar que cavidades defectuosas tengan motivo de defecto
+        const cavsSinMotivo = cavEls.filter(cavEl => {
+          const est = cavEl.dataset.estado;
+          if (est !== 'defecto' && est !== 'reproceso') return false;
+          const defSel = cavEl.querySelector('.bk-cav-defecto-sel');
+          return !defSel?.value;
+        });
+        if (cavsSinMotivo.length > 0) {
+          const nums = cavsSinMotivo.map(c => c.dataset.num).join(', ');
+          btn.disabled = false; btn.textContent = '⬇ Confirmar Descarga';
+          alert(`Selecciona el tipo de defecto para la cavidad ${nums}.`);
+          return;
+        }
         const cavResultados = [];
         cavEls.forEach(cavEl => {
           const num = parseInt(cavEl.dataset.num);
@@ -2235,8 +2248,9 @@ function openModalDescargar(linea, carga, catalogo, onDone) {
     const defectoSel = document.getElementById('md-defecto-sel');
     const defecto_id = defectoSel.value;
     const defecto    = defectoSel.options[defectoSel.selectedIndex]?.dataset?.nombre || '';
+    if (!defecto_id) { alert('Selecciona el defecto encontrado antes de reprocesar.'); return; }
     try {
-      await POST(`/cargas/${linea}/${carga.id}/reprocesar`, { defecto_id: defecto_id || null, defecto });
+      await POST(`/cargas/${linea}/${carga.id}/reprocesar`, { defecto_id, defecto });
       closeModal();
       onDone();
     } catch (e) { alert('Error: ' + e.message); }
@@ -4603,7 +4617,7 @@ async function showDefectosDrilldown(linea, desde, hasta, turno) {
   }
 }
 
-async function showParetoParo(linea, desde, hasta, tituloExtra) {
+async function showParetoParo(linea, desde, hasta, tituloExtra, turno = '') {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:620px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
@@ -4611,14 +4625,16 @@ async function showParetoParo(linea, desde, hasta, tituloExtra) {
       <h3 style="margin:0;font-size:16px">⏸ Paros — ${escHtml(linea)} ${tituloExtra ? '· ' + escHtml(tituloExtra) : ''}</h3>
       <button id="closePModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
     </div>
-    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${desde} al ${hasta}</p>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${desde} al ${hasta}${turno ? ' · Turno ' + escHtml(turno) : ''}</p>
     <div id="paroModalBody"><div style="text-align:center;padding:24px;color:#6b7280">⏳ Cargando...</div></div>
   </div>`;
   document.body.appendChild(overlay);
   overlay.querySelector('#closePModal').onclick = () => overlay.remove();
   overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
   try {
-    const data = await GET('/resumen/paros?desde=' + desde + '&hasta=' + hasta + '&linea=' + linea);
+    let paroUrl = '/resumen/paros?desde=' + desde + '&hasta=' + hasta + '&linea=' + linea;
+    if (turno) paroUrl += '&turno=' + turno;
+    const data = await GET(paroUrl);
     const paros = data.paros || [];
     if (!paros.length) {
       overlay.querySelector('#paroModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600">Sin paros en este período ✅</div>';
@@ -4801,6 +4817,14 @@ async function viewResumenTurno(el) {
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
           if (snap) showDefectosDrilldown(snap.linea, snap.fecha, snap.fecha, snap.turno);
+        });
+      });
+      res.querySelectorAll('.disponibilidad-click').forEach(td => {
+        td.style.cursor = 'pointer';
+        td.title = 'Clic para ver paros de este turno';
+        td.addEventListener('click', () => {
+          const snap = lastSnaps.find(s => s.id === td.dataset.sid);
+          if (snap) showParetoParo(snap.linea, snap.fecha, snap.fecha, snap.turno, snap.turno);
         });
       });
     } else if (activeSubTab === 'analisis') {
@@ -5026,7 +5050,7 @@ function renderResumenTurnoTable(snaps, linea) {
       <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
       <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${fmtPct(s.eficiencia)}</td>
       <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
-      <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)}">${fmtPct(s.disponibilidad)}</td>
+      <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)} disponibilidad-click" data-sid="${s.id}" title="Clic para ver paros">${fmtPct(s.disponibilidad)}${s.disponibilidad != null && s.disponibilidad < 1 ? ' 🔍' : ''}</td>
       <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
       <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
     </tr>`).join('');
@@ -5063,7 +5087,7 @@ function renderResumenTurnoTable(snaps, linea) {
           <thead><tr>
             <th>Sem</th><th>Fecha</th><th>Turno</th><th>Línea</th>
             <th>Ciclos Tot.</th><th>Ciclos Buenos</th>
-            <th>Eficiencia</th><th>Calidad 🔍</th><th>Disponibilidad</th>
+            <th>Eficiencia</th><th>Calidad 🔍</th><th>Disponibilidad 🔍</th>
             <th>Piezas</th><th>T. Paro</th>
           </tr></thead>
           <tbody>${rows}${weekRows}</tbody>

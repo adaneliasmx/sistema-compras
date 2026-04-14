@@ -655,9 +655,9 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
   res.json({ total: paros.length, paros });
 });
 
-// GET /resumen/paros?desde=&hasta=&linea= — paros en rango (todos los roles)
+// GET /resumen/paros?desde=&hasta=&linea=&turno= — paros en rango (todos los roles)
 router.get('/resumen/paros', (req, res) => {
-  const { desde, hasta, linea } = req.query;
+  const { desde, hasta, linea, turno } = req.query;
   const pdb = dbProd.read();
   const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker', 'L1'];
   let paros = [];
@@ -668,6 +668,7 @@ router.get('/resumen/paros', (req, res) => {
   }
   if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
   if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
+  if (turno) paros = paros.filter(p => p.turno === turno);
   paros = paros.filter(p => Number(p.duracion_min || 0) > 0);
   res.json({ total: paros.length, paros });
 });
@@ -678,37 +679,39 @@ router.get('/resumen/defectos', (req, res) => {
   const pdb = dbProd.read();
   const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker', 'L1'];
   const result = [];
-  const ft = c => c.fecha_turno || c.fecha_carga;
+  // Usar fecha de DESCARGA (mismo criterio que el KPI) para coherencia con los snapshots de turno
+  const ftD   = c => c.fecha_descarga || c.fecha_turno || c.fecha_carga;
+  const turnoD = c => getTurno(c.hora_descarga || c.hora_carga || '06:30');
   for (const l of lineasReq) {
     if (l === 'Baker' || l === 'L1') {
       const src = l === 'Baker' ? 'cargas_baker' : 'cargas_l1';
-      let cargas = pdb[src] || [];
-      if (desde) cargas = cargas.filter(c => ft(c) >= desde);
-      if (hasta) cargas = cargas.filter(c => ft(c) <= hasta);
-      if (turno) cargas = cargas.filter(c => c.turno === turno);
+      let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga);
+      if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
+      if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
+      if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
       for (const carga of cargas) {
         if (carga.herramental_tipo === 'barril') {
           const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
           for (const cav of cavsMalas) {
-            result.push({ linea: l, fecha: ft(carga), turno: carga.turno,
+            result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
               herramental: carga.herramental_no || String(carga.herramental_id || ''),
               operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
               detalle: `Cavidad ${cav.num}`, folio: carga.folio });
           }
         } else if (carga.estado === 'defecto' || carga.defecto_id) {
-          result.push({ linea: l, fecha: ft(carga), turno: carga.turno,
+          result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
             operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
             detalle: `Ciclo ${carga.folio}`, folio: carga.folio });
         }
       }
     } else {
-      let cargas = (pdb.cargas || []).filter(c => c.linea === l);
-      if (desde) cargas = cargas.filter(c => ft(c) >= desde);
-      if (hasta) cargas = cargas.filter(c => ft(c) <= hasta);
-      if (turno) cargas = cargas.filter(c => c.turno === turno);
+      let cargas = (pdb.cargas || []).filter(c => c.linea === l && !!c.fecha_descarga);
+      if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
+      if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
+      if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
       for (const c of cargas.filter(x => x.estado === 'defecto' || x.defecto_id)) {
-        result.push({ linea: l, fecha: ft(c), turno: c.turno,
+        result.push({ linea: l, fecha: ftD(c), turno: turnoD(c),
           herramental: c.herramental_no || '', operador: c.operador || '',
           defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio });
       }
@@ -1569,7 +1572,7 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = (ciclos_obj * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj * tDef.hours) : 0;
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj * tDef.hours) : null;
         const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -1613,7 +1616,7 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = (ciclos_obj_baker * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj_baker * tDef.hours) : 0;
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_baker * tDef.hours) : null;
         const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -1657,7 +1660,7 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = (ciclos_obj_l1 * tDef.hours) > 0 ? ciclos_totales / (ciclos_obj_l1 * tDef.hours) : 0;
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_l1 * tDef.hours) : null;
         const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
