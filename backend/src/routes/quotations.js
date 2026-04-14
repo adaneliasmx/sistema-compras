@@ -154,8 +154,50 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
     recalcRequisition(db, reqItem.requisition_id);
   }
 
+  // Auto-seleccionar como ganadora si se solicitó
+  const autoSelectWinner = req.body.auto_select_winner === true || req.body.auto_select_winner === 'true';
+  if (autoSelectWinner && reqItem) {
+    // Desmarcar otras ganadoras para este ítem
+    db.quotations
+      .filter(q => q.requisition_item_id === row.requisition_item_id)
+      .forEach(q => { q.is_winner = false; });
+    row.is_winner = true;
+    row.selected_at = new Date().toISOString();
+    row.selected_by_user_id = req.user.id;
+
+    const oldStatus2 = reqItem.status;
+    reqItem.supplier_id = row.supplier_id;
+    reqItem.unit_cost = row.unit_cost;
+    reqItem.currency = row.currency || reqItem.currency || 'MXN';
+    if (!reqItem.catalog_item_id && row.catalog_item_id) reqItem.catalog_item_id = row.catalog_item_id;
+    reqItem.winning_quote_id = row.id;
+    reqItem.delivery_days = row.delivery_days;
+    reqItem.payment_terms = row.payment_terms;
+    reqItem.updated_at = new Date().toISOString();
+
+    recalcRequisition(db, reqItem.requisition_id);
+    const reqRow2 = db.requisitions.find(r => r.id === reqItem.requisition_id);
+    reqItem.status = deriveItemStatus(db, Number(reqRow2?.total_amount || 0), reqItem);
+
+    addHistory(db, {
+      module: 'quotations',
+      requisition_id: reqItem.requisition_id,
+      requisition_item_id: reqItem.id,
+      old_status: oldStatus2,
+      new_status: reqItem.status,
+      changed_by_user_id: req.user.id,
+      comment: `Cotización registrada y aprobada como ganadora: ${(db.suppliers.find(s=>s.id===row.supplier_id)||{}).business_name||row.supplier_id} · $${row.unit_cost}`
+    });
+    recalcRequisition(db, reqItem.requisition_id);
+
+    // Cancelar solicitudes pendientes de otros proveedores
+    (db.quotation_requests || [])
+      .filter(r => r.requisition_item_id === row.requisition_item_id && r.supplier_id !== row.supplier_id && r.status === 'Pendiente')
+      .forEach(r => { r.status = 'Cancelada'; r.cancelled_at = new Date().toISOString(); });
+  }
+
   write(db);
-  res.status(201).json(row);
+  res.status(201).json({ ...row, requisition_item_status: reqItem?.status });
 });
 
 // Seleccionar cotización ganadora

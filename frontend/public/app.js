@@ -2851,7 +2851,7 @@ async function purchasesView() {
         <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="filterItemsTab" placeholder="Buscar ítem, proveedor..." style="flex:1;min-width:150px"/></div>
         <div style="margin-bottom:8px;font-size:13px">
           ${itemsPendientePO.length} ítem(s) con proveedor y costo · <b>${authCount}</b> autorizado(s)
-          ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización — ve a <b>Autorizaciones</b> para aprobarlos antes de generar PO</span>` : ''}
+          ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización — usa el botón <b>✔ Autorizar</b> en "Todos los ítems" o ve a <b>Autorizaciones</b></span>` : ''}
           ${authCount > 0 ? `<button class="btn-secondary" id="selectAllAuth" style="margin-left:10px;padding:2px 8px;font-size:12px">Seleccionar autorizados</button>` : ''}
         </div>
         <div id="pendientesTableWrap"><div class="table-wrap"><table>${THEAD}<tbody>
@@ -2860,7 +2860,13 @@ async function purchasesView() {
       bindTableActions(tabContent, itemsPendientePO);
       document.getElementById('filterItemsTab').oninput = e => {
         const val = e.target.value.toLowerCase();
-        const filtered = itemsPendientePO.filter(x => !val || (x.item_name||'').toLowerCase().includes(val) || (x.supplier_name||'').toLowerCase().includes(val));
+        const filtered = itemsPendientePO.filter(x => !val ||
+          (x.item_name||'').toLowerCase().includes(val) ||
+          (x.supplier_name||'').toLowerCase().includes(val) ||
+          (x.requisition_folio||'').toLowerCase().includes(val) ||
+          (x.cost_center_name||'').toLowerCase().includes(val) ||
+          (x.requester_name||'').toLowerCase().includes(val) ||
+          (x.status||'').toLowerCase().includes(val));
         const wrap = document.getElementById('pendientesTableWrap');
         wrap.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.length ? filtered.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin resultados</td></tr>'}</tbody></table></div>`;
         bindTableActions(wrap, itemsPendientePO);
@@ -2885,10 +2891,16 @@ async function purchasesView() {
       })[s] || '#6b7280';
 
       let expandedCotizId = null;
+      let cotizFilterText = '';
 
       const renderCotizTab = async () => {
-        const rows = itemsEnCotizacion;
-        tabContent.innerHTML = rows.length ? `
+        const rows = itemsEnCotizacion.filter(i => !cotizFilterText ||
+          (i.item_name||'').toLowerCase().includes(cotizFilterText) ||
+          (i.requisition_folio||'').toLowerCase().includes(cotizFilterText) ||
+          (i.quote_sub_status||'').toLowerCase().includes(cotizFilterText));
+        tabContent.innerHTML = `
+          <div style="display:flex;gap:8px;margin-bottom:10px"><input id="filterCotizTab" placeholder="Buscar ítem, folio de req..." value="${cotizFilterText}" style="flex:1;min-width:150px"/></div>` +
+          (rows.length ? `
           <div class="table-wrap"><table>
             <thead><tr>
               <th>Req.</th><th>Ítem</th><th>Cant.</th><th>Unidad</th><th>Estatus solicitud</th><th>Acciones</th>
@@ -2916,7 +2928,10 @@ async function purchasesView() {
               }).join('')}
             </tbody>
           </table></div>` :
-          '<div class="muted small" style="padding:24px;text-align:center">Sin ítems en cotización ✅</div>';
+          '<div class="muted small" style="padding:24px;text-align:center">Sin ítems en cotización ✅</div>');
+
+        const filterCotizEl = document.getElementById('filterCotizTab');
+        if (filterCotizEl) filterCotizEl.oninput = e => { cotizFilterText = e.target.value.toLowerCase(); renderCotizTab(); };
 
         tabContent.querySelectorAll('.re-quote-item').forEach(btn => {
           btn.onclick = () => openQuotationRequest(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id)));
@@ -2985,8 +3000,9 @@ async function purchasesView() {
                 <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">📎 Adjuntar cotización (PDF/imagen, máx 10 MB)</label>
                 <input type="file" id="rqFile" accept=".pdf,.jpg,.jpeg,.png" style="font-size:12px;display:block"/>
               </div>
-              <div style="display:flex;gap:8px;align-items:center">
-                <button id="rqSaveBtn" class="btn-primary">Guardar cotización</button>
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                <button id="rqSaveAndApproveBtn" class="btn-primary">✅ Guardar y aprobar como ganadora</button>
+                <button id="rqSaveBtn" class="btn-secondary">Guardar sin aprobar</button>
                 <button id="rqCancelBtn" class="btn-secondary">Cancelar</button>
                 <span id="rqMsg" class="small muted" style="flex:1"></span>
               </div>
@@ -3040,15 +3056,16 @@ async function purchasesView() {
               rqSupplier.value = '';
             };
 
-            // Guardar cotización
-            document.getElementById('rqSaveBtn').onclick = async () => {
+            // Guardar cotización (con opción de aprobar como ganadora)
+            const doSaveQuote = async (autoApprove) => {
               const msgEl = document.getElementById('rqMsg');
-              const saveBtn = document.getElementById('rqSaveBtn');
+              const saveBtn = document.getElementById(autoApprove ? 'rqSaveAndApproveBtn' : 'rqSaveBtn');
               const unitCost = document.getElementById('rqUnitCost');
               if (!rqSupplier.value || rqSupplier.value === '__new__') { msgEl.textContent = 'Selecciona o guarda primero un proveedor'; msgEl.style.color = '#dc2626'; return; }
               if (!unitCost.value || Number(unitCost.value) <= 0) { msgEl.textContent = 'Ingresa costo mayor a cero'; msgEl.style.color = '#dc2626'; return; }
-              msgEl.textContent = 'Guardando...'; msgEl.style.color = '#6b7280';
-              saveBtn.disabled = true;
+              msgEl.textContent = autoApprove ? 'Guardando y aprobando...' : 'Guardando...'; msgEl.style.color = '#6b7280';
+              document.getElementById('rqSaveBtn').disabled = true;
+              document.getElementById('rqSaveAndApproveBtn').disabled = true;
               try {
                 const rqFile = document.getElementById('rqFile');
                 if (rqFile && rqFile.files[0]) {
@@ -3062,6 +3079,7 @@ async function purchasesView() {
                   fd.append('payment_terms', document.getElementById('rqPayTerms').value);
                   fd.append('provider_code', document.getElementById('rqCode').value);
                   fd.append('official_item_name', document.getElementById('rqName').value);
+                  fd.append('auto_select_winner', autoApprove ? 'true' : 'false');
                   fd.append('attachment', rqFile.files[0]);
                   const res = await fetch('/api/quotations', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
                   if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
@@ -3075,14 +3093,17 @@ async function purchasesView() {
                     currency: document.getElementById('rqCurrency').value || 'MXN',
                     payment_terms: document.getElementById('rqPayTerms').value,
                     provider_code: document.getElementById('rqCode').value,
-                    official_item_name: document.getElementById('rqName').value
+                    official_item_name: document.getElementById('rqName').value,
+                    auto_select_winner: autoApprove
                   })});
                 }
-                msgEl.textContent = '✅ Cotización guardada';
+                msgEl.textContent = autoApprove ? '✅ Cotización guardada y aprobada como ganadora' : '✅ Cotización guardada';
                 msgEl.style.color = '#16a34a';
                 setTimeout(() => { closeModal(); renderCotizTab(); }, 900);
-              } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; saveBtn.disabled = false; }
+              } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; document.getElementById('rqSaveBtn').disabled = false; document.getElementById('rqSaveAndApproveBtn').disabled = false; }
             };
+            document.getElementById('rqSaveBtn').onclick = () => doSaveQuote(false);
+            document.getElementById('rqSaveAndApproveBtn').onclick = () => doSaveQuote(true);
           };
         });
 
@@ -3195,6 +3216,7 @@ async function purchasesView() {
   </div>` : '';
       tabContent.innerHTML = `
         <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+          <input id="filterTextItems" placeholder="🔍 Buscar ítem, proveedor, folio, C. costo..." style="flex:2;min-width:200px"/>
           <select id="filterSupplierItems"><option value="">Todos los proveedores</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select>
           <select id="filterStatusItems"><option value="">Todos los estatus</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Entregado</option><option>Facturado</option></select>
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
@@ -3213,12 +3235,18 @@ async function purchasesView() {
       const applyFilters = () => {
         const sid = Number(document.getElementById('filterSupplierItems')?.value || 0);
         const statusVal = document.getElementById('filterStatusItems')?.value || '';
+        const textVal = (document.getElementById('filterTextItems')?.value || '').toLowerCase();
         const inclCanc = document.getElementById('toggleCancelled')?.checked;
         const src = inclCanc ? allItems : itemsSolicitados;
-        const filtered = src.filter(x => (!sid || Number(x.supplier_id) === sid) && (!statusVal || x.status === statusVal));
+        const filtered = src.filter(x =>
+          (!sid || Number(x.supplier_id) === sid) &&
+          (!statusVal || x.status === statusVal) &&
+          (!textVal || (x.item_name||'').toLowerCase().includes(textVal) || (x.supplier_name||'').toLowerCase().includes(textVal) || (x.requisition_folio||'').toLowerCase().includes(textVal) || (x.cost_center_name||'').toLowerCase().includes(textVal) || (x.requester_name||'').toLowerCase().includes(textVal))
+        );
         allItemsTable.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${renderGrouped(filtered)}</tbody></table></div>`;
         bindTableActions(allItemsTable, src);
       };
+      document.getElementById('filterTextItems').oninput = applyFilters;
       document.getElementById('filterSupplierItems').onchange = applyFilters;
       document.getElementById('filterStatusItems').onchange = applyFilters;
       document.getElementById('toggleCancelled').onchange = async (e) => {
@@ -3238,6 +3266,7 @@ async function purchasesView() {
       // Filtros y ordenamiento de POs
       tabContent.innerHTML = `
         <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+          <input id="poFiltTexto" placeholder="🔍 Folio, proveedor..." style="flex:2;min-width:150px"/>
           <input id="poFiltSolicitante" placeholder="🔍 Solicitante" style="flex:1;min-width:130px"/>
           <input id="poFiltCC" placeholder="🔍 Centro de costo" style="flex:1;min-width:130px"/>
           <input id="poFiltDesde" type="date" title="Desde" style="width:130px"/>
@@ -3254,8 +3283,10 @@ async function purchasesView() {
 
       const renderPos = () => {
         let filtered = pos.filter(p => p.status !== 'Cancelada');
+        const txt = document.getElementById('poFiltTexto')?.value.trim().toLowerCase();
         const sol = document.getElementById('poFiltSolicitante')?.value.trim().toLowerCase();
         const cc  = document.getElementById('poFiltCC')?.value.trim().toLowerCase();
+        if (txt)   filtered = filtered.filter(p => (p.folio||'').toLowerCase().includes(txt) || (p.supplier_name||'').toLowerCase().includes(txt));
         const desde = document.getElementById('poFiltDesde')?.value;
         const hasta = document.getElementById('poFiltHasta')?.value;
         if (sol)   filtered = filtered.filter(p => (p.requester_name||'').toLowerCase().includes(sol));
@@ -3620,6 +3651,7 @@ async function purchasesView() {
 
       renderPos();
       document.getElementById('poFiltBtn').onclick = renderPos;
+      document.getElementById('poFiltTexto').oninput = renderPos;
 
     } else if (tab === 'requisiciones') {
       poActions.style.display = 'none';
@@ -3698,41 +3730,52 @@ async function purchasesView() {
     if (!itemsPendingScc.length) {
       tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Sin subcentros de costo propuestos pendientes ✅</div>';
     } else {
-      tabContent.innerHTML = `
-        <p class="small muted">Los siguientes ítems tienen subcentro de costo propuesto por el solicitante. Asigna el subcentro oficial antes de poder generar la PO.</p>
-        <div class="table-wrap"><table>
-          <thead><tr><th>Requisición</th><th>Ítem</th><th>Proveedor</th><th>SCC Propuesto</th><th>Asignar SCC</th></tr></thead>
-          <tbody>${itemsPendingScc.map(row => `<tr>
-            <td style="font-size:12px">${row.requisition_folio||'-'}</td>
-            <td style="font-size:12px"><b>${escapeHtml(row.item_name||'-')}</b></td>
-            <td style="font-size:12px">${escapeHtml(row.supplier_name||'-')}</td>
-            <td style="font-size:12px"><span style="background:#fffbeb;padding:2px 8px;border-radius:4px;color:#b45309;font-weight:600">${escapeHtml(row.sub_cost_center_proposed||'')}</span></td>
-            <td>
-              <select class="assign-scc-select" data-id="${row.id}" style="font-size:12px;margin-right:6px">
-                <option value="">— Selecciona SCC —</option>
-                ${sccList.map(s=>`<option value="${s.id}">${s.code} · ${s.name}</option>`).join('')}
-              </select>
-              <button class="btn-primary assign-scc-btn" data-id="${row.id}" style="padding:3px 10px;font-size:12px">Asignar</button>
-            </td>
-          </tr>`).join('')}
-          </tbody>
-        </table></div>
-      `;
-      tabContent.querySelectorAll('.assign-scc-btn').forEach(btn => {
-        btn.onclick = async () => {
-          const itemId = btn.dataset.id;
-          const sel = tabContent.querySelector(`.assign-scc-select[data-id="${itemId}"]`);
-          if (!sel?.value) { alert('Selecciona un subcentro de costo'); return; }
-          try {
-            await api(`/api/purchases/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ sub_cost_center_id: Number(sel.value) }) });
-            btn.textContent = '✅';
-            btn.disabled = true;
-            sel.disabled = true;
-            // Refresh after short delay
-            setTimeout(render, 1000);
-          } catch(e) { alert(e.message); }
-        };
-      });
+      let sccFilterText = '';
+      const renderSccTab = () => {
+        const rows = itemsPendingScc.filter(row => !sccFilterText ||
+          (row.item_name||'').toLowerCase().includes(sccFilterText) ||
+          (row.supplier_name||'').toLowerCase().includes(sccFilterText) ||
+          (row.requisition_folio||'').toLowerCase().includes(sccFilterText) ||
+          (row.sub_cost_center_proposed||'').toLowerCase().includes(sccFilterText));
+        tabContent.innerHTML = `
+          <div style="display:flex;gap:8px;margin-bottom:10px"><input id="filterSccTab" placeholder="🔍 Buscar ítem, proveedor, req, SCC..." value="${sccFilterText}" style="flex:1;min-width:150px"/></div>
+          <p class="small muted" style="margin:0 0 8px">Los siguientes ítems tienen subcentro de costo propuesto por el solicitante. Asigna el subcentro oficial antes de poder generar la PO.</p>
+          <div class="table-wrap"><table>
+            <thead><tr><th>Requisición</th><th>Ítem</th><th>Proveedor</th><th>SCC Propuesto</th><th>Asignar SCC</th></tr></thead>
+            <tbody>${rows.map(row => `<tr>
+              <td style="font-size:12px">${row.requisition_folio||'-'}</td>
+              <td style="font-size:12px"><b>${escapeHtml(row.item_name||'-')}</b></td>
+              <td style="font-size:12px">${escapeHtml(row.supplier_name||'-')}</td>
+              <td style="font-size:12px"><span style="background:#fffbeb;padding:2px 8px;border-radius:4px;color:#b45309;font-weight:600">${escapeHtml(row.sub_cost_center_proposed||'')}</span></td>
+              <td>
+                <select class="assign-scc-select" data-id="${row.id}" style="font-size:12px;margin-right:6px">
+                  <option value="">— Selecciona SCC —</option>
+                  ${sccList.map(s=>`<option value="${s.id}">${s.code} · ${s.name}</option>`).join('')}
+                </select>
+                <button class="btn-primary assign-scc-btn" data-id="${row.id}" style="padding:3px 10px;font-size:12px">Asignar</button>
+              </td>
+            </tr>`).join('')}
+            </tbody>
+          </table></div>
+        `;
+        const filterEl = document.getElementById('filterSccTab');
+        if (filterEl) filterEl.oninput = e => { sccFilterText = e.target.value.toLowerCase(); renderSccTab(); };
+        tabContent.querySelectorAll('.assign-scc-btn').forEach(btn => {
+          btn.onclick = async () => {
+            const itemId = btn.dataset.id;
+            const sel = tabContent.querySelector(`.assign-scc-select[data-id="${itemId}"]`);
+            if (!sel?.value) { alert('Selecciona un subcentro de costo'); return; }
+            try {
+              await api(`/api/purchases/items/${itemId}`, { method: 'PATCH', body: JSON.stringify({ sub_cost_center_id: Number(sel.value) }) });
+              btn.textContent = '✅';
+              btn.disabled = true;
+              sel.disabled = true;
+              setTimeout(render, 1000);
+            } catch(e) { alert(e.message); }
+          };
+        });
+      };
+      renderSccTab();
     }
     } else if (tab === 'anticipos') {
       poActions.style.display = 'none';
@@ -3748,34 +3791,44 @@ async function purchasesView() {
       if (!posConAnticipo.length) {
         tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Sin órdenes de compra con anticipo pendiente ✅</div>';
       } else {
-        tabContent.innerHTML = `
-          <h4 style="margin:0 0 12px;font-size:14px;color:#1d4ed8">Órdenes de Compra con Anticipo Pendiente</h4>
-          ${posConAnticipo.map(p => {
-            const advancePct = Number(p.advance_percentage || 0);
-            const advanceAmt = Number(p.advance_amount || 0);
-            const advStatus = p.advance_status || 'N/A';
-            const canRequest = ['Pendiente','Solicitado'].includes(advStatus) && ['Enviada','Aceptada','En proceso'].includes(p.status);
-            return `<div class="card section" style="margin-bottom:12px;border-left:4px solid #1d4ed8">
-              <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-                <div>
-                  <b style="font-size:15px">${p.folio}</b>
-                  <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
+        let anticipoFilterText = '';
+        const renderAnticipos = () => {
+          const rows = posConAnticipo.filter(p => !anticipoFilterText ||
+            (p.folio||'').toLowerCase().includes(anticipoFilterText) ||
+            (p.supplier_name||'').toLowerCase().includes(anticipoFilterText) ||
+            (p.requester_name||'').toLowerCase().includes(anticipoFilterText));
+          tabContent.innerHTML = `
+            <div style="display:flex;gap:8px;margin-bottom:12px"><input id="filterAnticipoTab" placeholder="🔍 Buscar folio, proveedor, solicitante..." value="${anticipoFilterText}" style="flex:1;min-width:150px"/></div>
+            <h4 style="margin:0 0 12px;font-size:14px;color:#1d4ed8">Órdenes de Compra con Anticipo Pendiente</h4>
+            ${rows.map(p => {
+              const advancePct = Number(p.advance_percentage || 0);
+              const advanceAmt = Number(p.advance_amount || 0);
+              const advStatus = p.advance_status || 'N/A';
+              const canRequest = ['Pendiente','Solicitado'].includes(advStatus) && ['Enviada','Aceptada','En proceso'].includes(p.status);
+              return `<div class="card section" style="margin-bottom:12px;border-left:4px solid #1d4ed8">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+                  <div>
+                    <b style="font-size:15px">${p.folio}</b>
+                    <span style="margin-left:10px;color:#6b7280">${p.supplier_name}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    ${statusPill(p.status)}
+                    <b>$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${p.currency||'MXN'}</b>
+                  </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                  ${statusPill(p.status)}
-                  <b>$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${p.currency||'MXN'}</b>
+                <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px">
+                  <span>💰 Anticipo: <b>${advancePct}%</b> = <b>$${advanceAmt.toLocaleString('es-MX',{minimumFractionDigits:2})}</b></span>
+                  <span>Estado: ${advStatusBadge(advStatus)}</span>
                 </div>
-              </div>
-              <div style="margin-top:10px;display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px">
-                <span>💰 Anticipo: <b>${advancePct}%</b> = <b>$${advanceAmt.toLocaleString('es-MX',{minimumFractionDigits:2})}</b></span>
-                <span>Estado: ${advStatusBadge(advStatus)}</span>
-              </div>
-              <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-                ${canRequest ? `<button class="btn-secondary po-req-advance-btn" data-id="${p.id}" data-pct="${advancePct}" data-amt="${advanceAmt}" style="font-size:12px;padding:5px 12px">💰 Solicitar anticipo (${advancePct}%)</button>` : ''}
-              </div>
-              <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
-            </div>`;
-          }).join('')}`;
+                <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+                  ${canRequest ? `<button class="btn-secondary po-req-advance-btn" data-id="${p.id}" data-pct="${advancePct}" data-amt="${advanceAmt}" style="font-size:12px;padding:5px 12px">💰 Solicitar anticipo (${advancePct}%)</button>` : ''}
+                </div>
+                <div id="req-msg-${p.id}" class="small" style="margin-top:6px"></div>
+              </div>`;
+            }).join('')}`;
+
+          const filterEl = document.getElementById('filterAnticipoTab');
+          if (filterEl) filterEl.oninput = e => { anticipoFilterText = e.target.value.toLowerCase(); renderAnticipos(); };
 
         // Bind solicitar anticipo buttons
         tabContent.querySelectorAll('.po-req-advance-btn').forEach(btn => {
@@ -3797,6 +3850,8 @@ async function purchasesView() {
             }
           };
         });
+        }; // close renderAnticipos
+        renderAnticipos();
       }
     }
   };

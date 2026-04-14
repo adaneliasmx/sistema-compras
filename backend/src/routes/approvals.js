@@ -179,7 +179,10 @@ router.post('/items/:id/approve', allowRoles('autorizador', 'comprador', 'pagos'
     return res.status(400).json({ error: `Este ítem no está pendiente de autorización (estado actual: ${line.status})` });
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   const rule = getApprovalRule(db, Number(reqRow?.total_amount || 0));
-  if (!canAuthorize(req.user, rule)) return res.status(403).json({ error: 'No tienes permiso para autorizar este ítem. Verifica que tu rol coincida con la regla de autorización asignada.' });
+  // El comprador puede autorizar ítems donde ya eligió una cotización ganadora
+  const compradorWithWinner = req.user.role_code === 'comprador' && !!line.winning_quote_id;
+  if (!canAuthorize(req.user, rule) && !compradorWithWinner)
+    return res.status(403).json({ error: 'No tienes permiso para autorizar este ítem. Verifica que tu rol coincida con la regla de autorización asignada.' });
   if (req.user.role_code !== 'admin' && reqRow?.requester_user_id === req.user.id)
     return res.status(403).json({ error: 'No puedes autorizar una requisición que tú mismo solicitaste.' });
   const oldStatus = line.status;
