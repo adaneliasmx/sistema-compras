@@ -810,6 +810,57 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
   if (newStatus === 'Entregado' && Number(po.advance_paid || 0) > 0) {
     response.advance_reminder = `⚠ Recuerda: esta PO tiene un anticipo pagado de $${Number(po.advance_paid).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'} (${po.advance_percentage}%). El saldo pendiente por facturar es $${(Number(po.total_amount||0) - Number(po.advance_paid||0)).toLocaleString('es-MX',{minimumFractionDigits:2})}.`;
   }
+
+  // Correo de entrega con detalles de ítems + link para registrar factura
+  if (newStatus === 'Entregado') {
+    try {
+      const { poToken } = require('./public-po');
+      const proto = req.headers['x-forwarded-proto'] || req.protocol;
+      const host = req.get('host');
+      const baseUrl = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
+      const token = poToken(po);
+      const poViewUrl = `${baseUrl}/po-view?token=${token}`;
+
+      const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
+      const lineDetails = poItems.map(poLine => {
+        const cat = db.catalog_items.find(c => c.id === poLine.catalog_item_id) || {};
+        const name = cat.name || poLine.description || poLine.manual_item_name || 'ítem';
+        const code = cat.code || '—';
+        const subtotal = (Number(poLine.quantity||0) * Number(poLine.unit_cost||0)).toFixed(2);
+        return `  • ${name} [${code}]  ×${poLine.quantity} ${poLine.unit||''}  @$${Number(poLine.unit_cost||0).toFixed(2)} ${poLine.currency||po.currency||'MXN'}  = $${subtotal}`;
+      }).join('\n');
+
+      const balancePending = Number(po.total_amount||0) - Number(po.advance_paid||0);
+      const subject = `Entrega confirmada — ${po.folio} · Registrar factura`;
+      const body = [
+        `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
+        ``,
+        `Le confirmamos la recepción de los materiales/servicios de la Orden de Compra ${po.folio}.`,
+        ``,
+        `── Ítems entregados ──────────────────────────────`,
+        lineDetails,
+        ``,
+        `Total PO : $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
+        Number(po.advance_paid||0) > 0 ? `Anticipo pagado: $${Number(po.advance_paid).toLocaleString('es-MX',{minimumFractionDigits:2})}  |  Saldo a facturar: $${balancePending.toLocaleString('es-MX',{minimumFractionDigits:2})}` : null,
+        ``,
+        `── Registrar factura ────────────────────────────`,
+        `Por favor registre su factura en el portal de proveedores:`,
+        ``,
+        poViewUrl,
+        ``,
+        `Gracias.`
+      ].filter(l => l !== null).join('\n');
+
+      const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
+      const ccEmails = buyers.map(u => u.email).filter(Boolean).join(',');
+      response.delivery_mailto = `mailto:${encodeURIComponent(supplier.email||'')}?cc=${encodeURIComponent(ccEmails)}&subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      response.supplier_email = supplier.email || '';
+      response.po_view_url = poViewUrl;
+    } catch(emailErr) {
+      console.error('[purchases] Error generando correo de entrega:', emailErr.message);
+    }
+  }
+
   res.json(response);
 });
 

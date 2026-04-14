@@ -3378,7 +3378,6 @@ async function purchasesView() {
             const card = document.getElementById(`po-card-${btn.dataset.id}`);
             if (card) {
               const nextS2 = STATUS_NEXT[updatedPO.status];
-              const btnLabel2 = STATUS_LABEL_BTN[updatedPO.status];
               // Refrescar pill
               card.querySelectorAll('.pill').forEach(p => {
                 if (['Enviada','Aceptada','En proceso','Entregado','Facturada','Facturación parcial','Cerrada'].some(s => p.textContent.trim() === s)) {
@@ -3393,6 +3392,16 @@ async function purchasesView() {
               if (msgEl) { msgEl.textContent = `✅ Estado actualizado a: ${updatedPO.status}`; msgEl.style.color='#16a34a'; setTimeout(()=>{ msgEl.textContent=''; }, 3000); }
               // Mostrar recordatorio de anticipo si aplica
               if (updatedPO.advance_reminder) { alert(updatedPO.advance_reminder); }
+              // Correo de entrega con detalles + link de facturación
+              if (updatedPO.status === 'Entregado' && updatedPO.delivery_mailto) {
+                showMailtoPanel([{
+                  po_id: updatedPO.id,
+                  po_folio: updatedPO.folio,
+                  supplier_name: updatedPO.supplier_name || '',
+                  supplier_email: updatedPO.supplier_email || '',
+                  mailto: updatedPO.delivery_mailto
+                }]);
+              }
             } else {
               render();
             }
@@ -3974,21 +3983,36 @@ async function purchasesView() {
     }
   };
 
+  // "Generar PO" siempre muestra vista previa primero — el usuario confirma exactamente qué ítems se incluirán
   genPoBtn.onclick = async () => {
     const ids = [...document.querySelectorAll('.po-check:checked')].map(c => Number(c.value));
-    if (!ids.length) { poMsg.textContent = 'Selecciona al menos un ítem'; return; }
+    if (!ids.length) { poMsg.textContent = 'Selecciona al menos un ítem para continuar'; return; }
+    lastPreviewIds = ids;
     try {
-      poMsg.textContent = 'Generando POs...';
-      const out = await doGeneratePO(ids);
-      poMsg.textContent = out.message;
-      if (out.po_mailtos?.length) showMailtoPanel(out.po_mailtos);
-      await generarPDFsPorPO(out);
-      setTimeout(render, 1800);
-    } catch (e) {
+      poMsg.textContent = 'Preparando vista previa...';
+      const preview = await api('/api/purchases/preview-po', { method:'POST', body: JSON.stringify({ item_ids: ids }) });
+      const allOk = preview.groups.every(g => g.can_generate);
+      poPreviewContent.innerHTML = `
+        <p class="small muted" style="margin-bottom:10px">Se generarán <b>${preview.total_pos}</b> PO(s) para <b>${preview.total_items}</b> ítem(s) seleccionados:</p>
+        ${preview.groups.map(g => `
+          <div style="border:1px solid ${g.can_generate?'#22c55e':'#f87171'};border-radius:8px;padding:12px;margin-bottom:10px;background:${g.can_generate?'#f0fff4':'#fff5f5'}">
+            <div style="display:flex;justify-content:space-between">
+              <b>${g.supplier_name}</b>
+              <span>${g.item_count} ítem(s) · <b>$${Number(g.total).toFixed(2)} ${g.currency}</b></span>
+            </div>
+            ${g.supplier_email ? `<div class="small muted">📧 ${g.supplier_email}</div>` : ''}
+            <div style="margin-top:6px;font-size:12px">${g.items.map(i=>`<div>· ${i.name} × ${i.quantity} ${i.unit||''} @ $${Number(i.unit_cost||0).toFixed(2)}</div>`).join('')}</div>
+            ${g.warnings.length ? `<div style="color:#dc2626;font-size:12px;margin-top:4px">${g.warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>` : '<div style="color:#16a34a;font-size:12px;margin-top:4px">✅ Listo</div>'}
+          </div>`).join('')}`;
+      confirmGenPoBtn.disabled = !allOk;
+      poPreviewSection.style.display = 'block';
       poMsg.textContent = '';
-      if (e.responseData?.error === 'stale_prices') { showStaleDialog(e.responseData.stale_items, ids); }
-      else if (e.responseData?.error === 'zero_cost') { showZeroCostError(e.responseData.zero_cost_items); }
-      else { poMsg.textContent = e.message; }
+      poPreviewSection.scrollIntoView({ behavior: 'smooth' });
+    } catch(e) {
+      poMsg.textContent = '';
+      if (e.responseData?.error === 'stale_prices') showStaleDialog(e.responseData.stale_items, ids);
+      else if (e.responseData?.error === 'zero_cost') showZeroCostError(e.responseData.zero_cost_items);
+      else poMsg.textContent = e.message;
     }
   };
 

@@ -179,6 +179,11 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
     const reqRow2 = db.requisitions.find(r => r.id === reqItem.requisition_id);
     reqItem.status = deriveItemStatus(db, Number(reqRow2?.total_amount || 0), reqItem);
 
+    // Comprador que selecciona ganadora también autoriza directamente
+    if (reqItem.status === 'En autorización' && (req.user.role_code === 'comprador' || req.user.role_code === 'admin')) {
+      reqItem.status = 'Autorizado';
+    }
+
     addHistory(db, {
       module: 'quotations',
       requisition_id: reqItem.requisition_id,
@@ -231,6 +236,10 @@ router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) =
     const reqRow = db.requisitions.find(r => r.id === reqItem.requisition_id);
     // 2. Derivar status con el total correcto
     reqItem.status = deriveItemStatus(db, Number(reqRow?.total_amount || 0), reqItem);
+    // Comprador que elige ganadora también autoriza directamente
+    if (reqItem.status === 'En autorización' && (req.user.role_code === 'comprador' || req.user.role_code === 'admin')) {
+      reqItem.status = 'Autorizado';
+    }
     reqItem.updated_at = new Date().toISOString();
 
     addHistory(db, {
