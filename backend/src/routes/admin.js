@@ -342,4 +342,63 @@ router.post('/archive-old-data', (req, res) => {
   res.json({ ...archived, _summary: summary });
 });
 
+// ── Reparar ítems atascados en 'En cotización' con cotización ganadora sin sincronizar ──
+router.post('/repair-stuck-items', (req, res) => {
+  const { deriveItemStatus, recalcRequisition, addHistory } = require('../utils/workflow');
+  const db = read();
+  const report = [];
+
+  (db.requisition_items || []).forEach(item => {
+    if (item.status !== 'En cotización') return;
+
+    // Buscar cotización ganadora para este ítem
+    const winner = (db.quotations || []).find(q => q.requisition_item_id === item.id && q.is_winner);
+    if (!winner) return; // sin ganadora → no reparar
+
+    const before = { supplier_id: item.supplier_id, unit_cost: item.unit_cost, winning_quote_id: item.winning_quote_id, status: item.status };
+
+    // Sincronizar campos del ítem desde la cotización ganadora
+    item.supplier_id    = winner.supplier_id;
+    item.unit_cost      = winner.unit_cost;
+    item.currency       = winner.currency || item.currency || 'MXN';
+    item.winning_quote_id = winner.id;
+    if (!item.catalog_item_id && winner.catalog_item_id) item.catalog_item_id = winner.catalog_item_id;
+    item.updated_at     = new Date().toISOString();
+
+    // Re-derivar status
+    recalcRequisition(db, item.requisition_id);
+    const req2 = db.requisitions.find(r => r.id === item.requisition_id);
+    item.status = deriveItemStatus(db, Number(req2?.total_amount || 0), item);
+
+    // Si sigue en 'En autorización', auto-autorizar (comprador/admin eligió la cotización)
+    if (item.status === 'En autorización') item.status = 'Autorizado';
+
+    addHistory(db, {
+      module: 'purchases',
+      requisition_id: item.requisition_id,
+      requisition_item_id: item.id,
+      old_status: before.status,
+      new_status: item.status,
+      changed_by_user_id: req.user.id,
+      comment: `Reparación automática: cotización ganadora sincronizada (quote #${winner.id})`
+    });
+
+    recalcRequisition(db, item.requisition_id);
+
+    const req3 = db.requisitions.find(r => r.id === item.requisition_id);
+    report.push({
+      item_id: item.id,
+      item_name: (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || item.manual_item_name || '—',
+      requisition_folio: req3?.folio || '—',
+      before,
+      after: { supplier_id: item.supplier_id, unit_cost: item.unit_cost, winning_quote_id: item.winning_quote_id, status: item.status },
+      winner_supplier: (db.suppliers.find(s => s.id === winner.supplier_id) || {}).business_name || '—'
+    });
+  });
+
+  if (report.length > 0) write(db);
+
+  res.json({ fixed: report.length, items: report });
+});
+
 module.exports = router;

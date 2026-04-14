@@ -6017,6 +6017,17 @@ async function adminView() {
         </div>`;
       })() : '<p class="small muted">No se pudo obtener información del sistema.</p>'}
     </div>
+    <!-- 🔧 Reparar ítems atascados -->
+    <div class="card section" style="margin-top:16px;border:2px solid #fde68a;background:#fffbeb">
+      <h3 style="color:#92400e">🔧 Reparar ítems atascados en "En cotización"</h3>
+      <p class="small muted">Busca ítems con cotización ganadora registrada pero cuyos campos (proveedor, costo, winning_quote_id) no fueron sincronizados. Los repara y los avanza a Autorizado → Pendientes de PO.</p>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn-primary" id="repairItemsBtn" style="background:#92400e;border-color:#92400e;padding:8px 20px">🔧 Ejecutar reparación</button>
+        <span id="repairItemsMsg" class="small muted"></span>
+      </div>
+      <div id="repairItemsResult" style="margin-top:10px"></div>
+    </div>
+
     <!-- ⚠ Reset de base de datos — SOLO PRUEBAS -->
     <div class="card section" style="margin-top:16px;border:2px solid #fca5a5;background:#fff8f8">
       <h3 style="color:#dc2626">⚠ Reset de base de datos (solo pruebas)</h3>
@@ -6243,6 +6254,32 @@ async function adminView() {
       e.target.value = '';
       setTimeout(render, 1200);
     } catch(err) { msgEl.textContent = err.message; msgEl.style.color = '#dc2626'; e.target.value = ''; }
+  });
+
+  document.getElementById('repairItemsBtn')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('repairItemsMsg');
+    const resultEl = document.getElementById('repairItemsResult');
+    if (!confirm('¿Ejecutar reparación de ítems atascados? Se sincronizarán cotizaciones ganadoras a sus ítems y se avanzarán a Autorizado.')) return;
+    msgEl.textContent = 'Reparando...'; msgEl.style.color = '#92400e';
+    resultEl.innerHTML = '';
+    try {
+      const data = await api('/api/admin/repair-stuck-items', { method: 'POST' });
+      msgEl.textContent = `✅ ${data.fixed} ítem(s) reparado(s)`;
+      msgEl.style.color = '#16a34a';
+      if (data.items?.length) {
+        resultEl.innerHTML = `<div class="table-wrap"><table style="font-size:12px"><thead><tr><th>Requisición</th><th>Ítem</th><th>Proveedor</th><th>Costo</th><th>Nuevo estatus</th></tr></thead><tbody>
+          ${data.items.map(r => `<tr>
+            <td>${escapeHtml(r.requisition_folio)}</td>
+            <td>${escapeHtml(r.item_name)}</td>
+            <td>${escapeHtml(r.winner_supplier)}</td>
+            <td>$${Number(r.after.unit_cost||0).toFixed(2)}</td>
+            <td style="color:#16a34a;font-weight:600">${escapeHtml(r.after.status)}</td>
+          </tr>`).join('')}
+        </tbody></table></div>`;
+      } else {
+        resultEl.innerHTML = '<p class="small muted">No se encontraron ítems para reparar.</p>';
+      }
+    } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
   });
 
   document.getElementById('resetDbBtn')?.addEventListener('click', async () => {
