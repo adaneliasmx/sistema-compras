@@ -75,8 +75,9 @@ router.get('/', rhhAuthRequired, (req, res) => {
     s => s.date >= startDate && s.date <= endDate
   );
 
+  // Pre-filtro: incluye incidencias que empezaron antes pero se extienden dentro de la semana
   const incidences = (db.rhh_incidences || []).filter(
-    i => i.date >= startDate && i.date <= endDate && i.status !== 'rechazada'
+    i => i.date <= endDate && (i.date_end || i.date) >= startDate && i.status !== 'rechazada'
   );
 
   // Cargar TE autorizadas del rango
@@ -97,7 +98,7 @@ router.get('/', rhhAuthRequired, (req, res) => {
       const dayOfWeek = new Date(date + 'T12:00:00').getDay();
       const worksThisDay = shift ? shift.work_days.includes(dayOfWeek) : false;
 
-      const incidence = incidences.find(i => i.employee_id === emp.id && i.date === date) || null;
+      const incidence = incidences.find(i => i.employee_id === emp.id && i.date <= date && (i.date_end || i.date) >= date) || null;
       const assigned = scheduleEntries.find(s => s.employee_id === emp.id && s.date === date) || null;
 
       // Verificar si hay TE autorizada para este día/turno
@@ -150,6 +151,23 @@ router.post('/assign', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admi
 
   const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id) && e.status === 'active');
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado o inactivo' });
+
+  // Verificar conflicto con incidencias aprobadas (vacaciones, incapacidad, permisos)
+  const CONFLICT_TYPES = ['vacacion', 'incapacidad', 'permiso', 'permiso_con_goce', 'permiso_sin_goce'];
+  const TYPE_LABELS = { vacacion: 'vacaciones', incapacidad: 'incapacidad', permiso: 'permiso', permiso_con_goce: 'permiso con goce', permiso_sin_goce: 'permiso sin goce' };
+  const conflictInc = (db.rhh_incidences || []).find(i =>
+    i.employee_id === Number(employee_id) &&
+    i.status === 'aprobada' &&
+    CONFLICT_TYPES.includes(i.type) &&
+    i.date <= date && (i.date_end || i.date) >= date
+  );
+  if (conflictInc) {
+    const label = TYPE_LABELS[conflictInc.type] || conflictInc.type;
+    const rangeStr = conflictInc.date_end && conflictInc.date_end !== conflictInc.date
+      ? ` del ${conflictInc.date} al ${conflictInc.date_end}`
+      : ` el ${conflictInc.date}`;
+    return res.status(409).json({ error: `Conflicto: ${emp.full_name} tiene ${label} aprobada${rangeStr}. No se puede programar en esta fecha.` });
+  }
 
   const schedule = db.rhh_schedule || [];
 
@@ -219,8 +237,9 @@ router.get('/calendar', rhhAuthRequired, (req, res) => {
     employees = employees.filter(e => e.id === targetEmployeeId);
   }
 
+  // Pre-filtro: incluye incidencias que abarcan el rango aunque empezaron antes
   const incidences = (db.rhh_incidences || []).filter(
-    i => i.date >= startDate && i.date <= endDate
+    i => i.date <= endDate && (i.date_end || i.date) >= startDate
   );
   const overtime = (db.rhh_overtime || []).filter(
     o => o.date >= startDate && o.date <= endDate
@@ -236,7 +255,7 @@ router.get('/calendar', rhhAuthRequired, (req, res) => {
     const dayData = employees.map(emp => {
       const shift = shifts.find(s => s.id === emp.shift_id) || null;
       const worksThisDay = shift ? shift.work_days.includes(dayOfWeek) : false;
-      const incidence = incidences.find(i => i.employee_id === emp.id && i.date === dateStr) || null;
+      const incidence = incidences.find(i => i.employee_id === emp.id && i.date <= dateStr && (i.date_end || i.date) >= dateStr) || null;
       const ot = overtime.find(o => o.employee_id === emp.id && o.date === dateStr) || null;
 
       return {

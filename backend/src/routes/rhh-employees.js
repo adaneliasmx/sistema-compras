@@ -6,44 +6,6 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
-function calcVacationBalance(emp, db) {
-  const currentYear = new Date().getFullYear();
-  const yearStart = `${currentYear}-01-01`;
-  const yearEnd = `${currentYear}-12-31`;
-  const incidences = db.rhh_incidences || [];
-
-  const vacApproved = incidences.filter(i =>
-    i.employee_id === emp.id &&
-    i.type === 'vacacion' &&
-    i.status === 'aprobada' &&
-    i.date >= yearStart && i.date <= yearEnd
-  );
-
-  const vacPending = incidences.filter(i =>
-    i.employee_id === emp.id &&
-    i.type === 'vacacion' &&
-    i.status === 'pendiente' &&
-    i.date >= yearStart && i.date <= yearEnd
-  );
-
-  function countDays(inc) {
-    const end = inc.date_end || inc.date;
-    if (end !== inc.date) {
-      const start = new Date(inc.date + 'T12:00:00');
-      const endD = new Date(end + 'T12:00:00');
-      return Math.round((endD - start) / (24 * 60 * 60 * 1000)) + 1;
-    }
-    return 1;
-  }
-
-  const vacation_used = vacApproved.reduce((acc, i) => acc + countDays(i), 0);
-  const vacation_pending = vacPending.reduce((acc, i) => acc + countDays(i), 0);
-  const total_vacation_days = emp.total_vacation_days || 15;
-  const vacation_remaining = Math.max(0, total_vacation_days - vacation_used);
-
-  return { vacation_used, vacation_remaining, vacation_pending, total_vacation_days };
-}
-
 function enrichEmployee(emp, db) {
   const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id) || null;
   const pos = (db.rhh_positions || []).find(p => p.id === emp.position_id) || null;
@@ -51,14 +13,18 @@ function enrichEmployee(emp, db) {
   const supervisor = emp.supervisor_id
     ? (db.rhh_employees || []).find(e => e.id === emp.supervisor_id) || null
     : null;
-  const vacBalance = calcVacationBalance(emp, db);
+  // Fuente única: calcVacBalance desde db-rhh (misma lógica que /vacation-balance/:id)
+  const vacBalance = calcVacBalance(db, emp.id, new Date().getFullYear()) || {};
   return {
     ...emp,
     department: dept,
     position: pos,
     shift,
     supervisor: supervisor ? { id: supervisor.id, full_name: supervisor.full_name } : null,
-    ...vacBalance
+    vacation_used: vacBalance.vacation_used ?? 0,
+    vacation_remaining: vacBalance.vacation_remaining ?? (emp.total_vacation_days || 15),
+    vacation_pending: vacBalance.vacation_pending ?? 0,
+    total_vacation_days: vacBalance.total_vacation_days ?? emp.total_vacation_days ?? 15
   };
 }
 
@@ -265,10 +231,48 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
     vacancy_created = true;
   }
 
+  // Limpieza al dar de baja: schedule futuro, TE pendientes e incidencias pendientes
+  let cleanup = null;
+  if (wasActive && req.body.status === 'inactive') {
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Cancelar entradas de schedule futuras
+    const schedBefore = (db.rhh_schedule || []).length;
+    db.rhh_schedule = (db.rhh_schedule || []).filter(s => !(s.employee_id === emp.id && s.date > today));
+    const schedCancelled = schedBefore - db.rhh_schedule.length;
+
+    // Rechazar postulaciones TE pendientes
+    let teAppsCancelled = 0;
+    (db.rhh_te_applications || []).forEach(app => {
+      if (app.employee_id === emp.id && app.status === 'applied') {
+        app.status = 'rejected';
+        app.notes = (app.notes ? app.notes + ' | ' : '') + 'Cancelado: empleado dado de baja';
+        app.updated_at = new Date().toISOString();
+        teAppsCancelled++;
+      }
+    });
+
+    // Rechazar incidencias pendientes del empleado
+    let incPending = 0;
+    (db.rhh_incidences || []).forEach(i => {
+      if (i.employee_id === emp.id && i.status === 'pendiente') {
+        i.status = 'rechazada';
+        i.rejection_reason = 'Empleado dado de baja';
+        i.updated_at = new Date().toISOString();
+        incPending++;
+      }
+    });
+
+    if (schedCancelled > 0 || teAppsCancelled > 0 || incPending > 0) {
+      cleanup = { schedule_cancelled: schedCancelled, te_apps_cancelled: teAppsCancelled, pending_incidences_rejected: incPending };
+    }
+  }
+
   write(db);
 
   const response = { ok: true, employee: enrichEmployee(emp, db), vacancy_created };
   if (vacancy_created) response.vacancy = vacancy;
+  if (cleanup) response.cleanup = cleanup;
   res.json(response);
 });
 

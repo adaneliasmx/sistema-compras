@@ -38,14 +38,22 @@ function syncIncToAttendance(db, inc, remove) {
     );
 
     if (remove) {
-      // Solo elimina los registros que esta incidencia generó
-      if (idx !== -1 && db.rhh_attendance[idx].incidence_id === inc.id) {
+      if (isTiempoExtra) {
+        // Revertir TE: limpiar horas si este registro fue marcado por esta incidencia
+        if (idx !== -1 && db.rhh_attendance[idx].incidence_id === inc.id) {
+          db.rhh_attendance[idx].te_hours = 0;
+          db.rhh_attendance[idx].incidence_id = null;
+          db.rhh_attendance[idx].updated_at = new Date().toISOString();
+        }
+      } else if (idx !== -1 && db.rhh_attendance[idx].incidence_id === inc.id) {
+        // Eliminar el registro de asistencia que esta incidencia generó
         db.rhh_attendance.splice(idx, 1);
       }
     } else if (isTiempoExtra) {
-      // Para TE solo actualiza te_hours si ya existe un registro ese día
+      // Para TE: actualiza te_hours y marca incidence_id para poder revertir
       if (idx !== -1) {
         db.rhh_attendance[idx].te_hours = inc.hours || 0;
+        db.rhh_attendance[idx].incidence_id = inc.id;
         db.rhh_attendance[idx].updated_at = new Date().toISOString();
       }
     } else {
@@ -380,7 +388,7 @@ router.get('/today-absences', rhhAuthRequired, (req, res) => {
   }
 
   const todayIncidences = (db.rhh_incidences || []).filter(
-    i => i.date === today && i.status !== 'rechazada'
+    i => i.date <= today && (i.date_end || i.date) >= today && i.status !== 'rechazada'
   );
 
   const absences = todayIncidences.filter(i =>
@@ -407,7 +415,7 @@ router.get('/coverage-suggestions', rhhAuthRequired, (req, res) => {
   const shiftFilter = shift_id ? Number(shift_id) : null;
 
   const incidencesOnDate = (db.rhh_incidences || []).filter(
-    i => i.date === date && i.status !== 'rechazada' &&
+    i => i.date <= date && (i.date_end || i.date) >= date && i.status !== 'rechazada' &&
     ['falta', 'vacacion', 'incapacidad', 'permiso'].includes(i.type)
   );
   const absentIds = new Set(incidencesOnDate.map(i => i.employee_id));
@@ -641,7 +649,7 @@ router.patch('/:id', rhhAuthRequired, (req, res) => {
     db.rhh_incidences[idx] = inc;
     if (newStatus === 'aprobada' && prevStatus !== 'aprobada') {
       syncIncToAttendance(db, inc, false);
-    } else if (newStatus === 'rechazada' && prevStatus === 'aprobada') {
+    } else if ((newStatus === 'rechazada' || newStatus === 'pendiente') && prevStatus === 'aprobada') {
       syncIncToAttendance(db, inc, true);
     }
   }

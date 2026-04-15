@@ -12,9 +12,10 @@ router.get('/', rhhAuthRequired, (req, res) => {
   const activeEmployees = (db.rhh_employees || []).filter(e => e.status === 'active');
   const totalEmployees = activeEmployees.length;
 
-  // Ausencias hoy
+  // Ausencias hoy — usa rango para capturar incidencias de varios días vigentes hoy
   const todayIncidences = (db.rhh_incidences || []).filter(
-    i => i.date === today && i.status !== 'rechazada' &&
+    i => i.date <= today && (i.date_end || i.date) >= today &&
+    i.status !== 'rechazada' &&
     ['falta', 'vacacion', 'incapacidad', 'permiso'].includes(i.type)
   );
   const absencesCount = todayIncidences.length;
@@ -36,14 +37,10 @@ router.get('/', rhhAuthRequired, (req, res) => {
   weekEndDate.setDate(weekStart.getDate() + 6);
   const weekEndStr = weekEndDate.toISOString().slice(0, 10);
 
-  const overtimeHours = (db.rhh_incidences || [])
-    .filter(i =>
-      i.type === 'tiempo_extra' &&
-      i.status !== 'rechazada' &&
-      i.date >= weekStartStr &&
-      i.date <= weekEndStr
-    )
-    .reduce((sum, i) => sum + (i.hours || 0), 0);
+  // Horas extra desde rhh_attendance (fuente unificada, igual que overtime-summary)
+  const overtimeHours = (db.rhh_attendance || [])
+    .filter(a => a.te_hours > 0 && a.date >= weekStartStr && a.date <= weekEndStr)
+    .reduce((sum, a) => sum + (a.te_hours || 0), 0);
 
   // Cumpleaños de hoy
   const todayMD = today.slice(5); // MM-DD
