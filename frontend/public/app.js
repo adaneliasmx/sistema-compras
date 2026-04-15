@@ -4847,21 +4847,20 @@ async function invoicingView() {
         </div>
 
         <div class="table-wrap"><table>
-          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Subtotal</th><th>IVA</th><th>Total</th><th>Estatus</th><th>Archivos</th></tr></thead>
-          <tbody>${invs.length ? invs.map(i => `<tr>
-            <td><b>${i.invoice_number}</b></td>
+          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Total</th><th>Estatus</th><th>Archivos</th><th></th></tr></thead>
+          <tbody>${invs.length ? invs.map(i => `<tr style="cursor:pointer" class="inv-row" data-id="${i.id}">
+            <td><b>${i.invoice_number}</b><div class="small muted">${String(i.created_at||'').slice(0,10)}</div></td>
             <td style="font-size:12px">${i.po_folio||'-'}</td>
             <td style="font-size:12px">${i.supplier_name||'-'}</td>
-            <td style="font-size:12px;text-align:right">$${Number(i.subtotal||0).toFixed(2)}</td>
-            <td style="font-size:12px;text-align:right">$${Number(i.taxes||0).toFixed(2)}</td>
-            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toFixed(2)}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
             <td>${statusPill(i.status)}</td>
             <td>
-              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" style="font-size:12px">📄</a>` : ''}
-              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" style="font-size:12px;margin-left:4px">📋</a>` : ''}
+              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
+              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
               ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
             </td>
-          </tr>`).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
+            <td><button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();showInvoiceDetail(${i.id})">Ver detalle</button></td>
+          </tr>`).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
           </tbody>
         </table></div>
       </div>
@@ -4961,7 +4960,175 @@ async function invoicingView() {
     } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
   };
   expInvBtn.onclick = () => downloadCsv('invoices', 'facturas.csv');
+
+  // Clic en fila de factura → mostrar detalle
+  document.querySelectorAll('.inv-row').forEach(row => {
+    row.onmouseover = () => row.style.background = '#f0f9ff';
+    row.onmouseout = () => row.style.background = '';
+    row.onclick = () => showInvoiceDetail(Number(row.dataset.id));
+  });
+
   bindCommon();
+}
+
+// ── Modal de detalle de factura ───────────────────────────────────────────────
+async function showInvoiceDetail(invId) {
+  let inv;
+  try {
+    inv = await api(`/api/invoices/${invId}`);
+  } catch(e) {
+    alert('No se pudo cargar el detalle de la factura');
+    return;
+  }
+
+  const paidTotal = (inv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  const balance = Number(inv.total || 0) - paidTotal;
+
+  // Validez / vigencia
+  let vigenciaHtml = '';
+  if (inv.credit_days > 0 && inv.due_date) {
+    const dr = inv.days_remaining;
+    if (dr === null || dr === undefined) {
+      vigenciaHtml = `<span class="small muted">Sin fecha de vencimiento</span>`;
+    } else if (dr < 0) {
+      vigenciaHtml = `<span style="color:#dc2626;font-weight:700">⚠ Vencida hace ${Math.abs(dr)} día(s)</span>`;
+    } else if (dr === 0) {
+      vigenciaHtml = `<span style="color:#f59e0b;font-weight:700">⚠ Vence HOY</span>`;
+    } else {
+      vigenciaHtml = `<span style="color:#16a34a">✅ Vigente — ${dr} día(s) restantes (vence ${inv.due_date})</span>`;
+    }
+  } else if (inv.credit_days > 0) {
+    vigenciaHtml = `<span class="small muted">${inv.credit_days} días de crédito · sin fecha de vencimiento registrada</span>`;
+  } else {
+    vigenciaHtml = `<span class="small muted">Sin días de crédito registrados</span>`;
+  }
+
+  // Tabla de ítems
+  const itemsHtml = (inv.po_items || []).length > 0
+    ? `<table style="width:100%;border-collapse:collapse;font-size:12px;margin-top:6px">
+        <thead><tr style="background:#f8fafc">
+          <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb">Descripción</th>
+          <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb">Cant.</th>
+          <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb">P.Unit</th>
+          <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb">Subtotal</th>
+        </tr></thead>
+        <tbody>
+          ${(inv.po_items).map(it => `<tr>
+            <td style="padding:5px 8px;border-bottom:1px solid #f3f4f6">${escapeHtml(it.description)}</td>
+            <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #f3f4f6">${it.quantity} ${escapeHtml(it.unit||'')}</td>
+            <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #f3f4f6">$${Number(it.unit_cost||0).toFixed(2)}</td>
+            <td style="padding:5px 8px;text-align:right;border-bottom:1px solid #f3f4f6">$${Number(it.subtotal||0).toFixed(2)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`
+    : '<p class="small muted">Sin ítems detallados para esta PO</p>';
+
+  // Pagos registrados
+  const paymentsHtml = (inv.payments || []).length > 0
+    ? `<div style="margin-top:10px"><b style="font-size:13px">Pagos registrados:</b>
+        ${inv.payments.map(p => `<div style="font-size:12px;padding:4px 0;border-bottom:1px solid #f3f4f6;display:flex;justify-content:space-between">
+          <span>${String(p.created_at||'').slice(0,10)} · ${p.payment_type||'-'} · Ref: ${p.reference||'-'}</span>
+          <span style="font-weight:700">$${Number(p.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</span>
+        </div>`).join('')}
+      </div>`
+    : '';
+
+  const isFullyPaid = inv.status === 'Pagada';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
+  panel.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px;width:620px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+        <div>
+          <h3 style="margin:0 0 4px">🧾 Factura ${escapeHtml(inv.invoice_number)}</h3>
+          <div class="small muted">PO: <b>${escapeHtml(inv.po_folio||'-')}</b> · Proveedor: <b>${escapeHtml(inv.supplier_name||'-')}</b></div>
+          ${inv.supplier_email ? `<div class="small muted">📧 ${escapeHtml(inv.supplier_email)}</div>` : ''}
+        </div>
+        <div>${statusPill(inv.status)}</div>
+      </div>
+
+      <!-- Montos -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px">
+        <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center">
+          <div class="small muted">Subtotal</div>
+          <div style="font-weight:700;font-size:15px">$${Number(inv.subtotal||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center">
+          <div class="small muted">IVA</div>
+          <div style="font-weight:700;font-size:15px">$${Number(inv.taxes||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+        </div>
+        <div style="background:${isFullyPaid?'#f0fff4':'#fef2f2'};border-radius:8px;padding:10px;text-align:center">
+          <div class="small muted">${isFullyPaid ? 'Total pagado' : 'Saldo pendiente'}</div>
+          <div style="font-weight:700;font-size:15px;color:${isFullyPaid?'#16a34a':'#dc2626'}">$${(isFullyPaid ? Number(inv.total||0) : balance).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+        </div>
+      </div>
+
+      <!-- Vigencia -->
+      <div style="background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:16px;font-size:13px">
+        <b>Vigencia: </b>${vigenciaHtml}
+        <span class="small muted" style="margin-left:12px">Registrada: ${String(inv.created_at||'').slice(0,10)}</span>
+      </div>
+
+      <!-- Ítems -->
+      <div style="margin-bottom:16px">
+        <b style="font-size:13px">Ítems de la compra:</b>
+        ${itemsHtml}
+      </div>
+
+      ${paymentsHtml}
+
+      <!-- Archivos -->
+      <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+        ${inv.pdf_path
+          ? `<a href="${inv.pdf_path}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dbeafe;color:#1d4ed8;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📄 Ver PDF</a>`
+          : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin PDF adjunto</span>`}
+        ${inv.xml_path
+          ? `<a href="${inv.xml_path}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dcfce7;color:#15803d;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📋 Ver XML (CFDI)</a>`
+          : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin XML adjunto</span>`}
+      </div>
+
+      <!-- Acciones -->
+      <div style="margin-top:20px;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        ${!isFullyPaid
+          ? `<button id="invDetailPayBtn" style="background:#16a34a;color:#fff;border:none;border-radius:6px;padding:8px 20px;cursor:pointer;font-size:13px;font-weight:700">💳 Ir a registrar pago</button>`
+          : `<span style="color:#16a34a;font-weight:700;font-size:13px">✅ Factura completamente pagada</span>`}
+        <button id="closeInvDetail" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:7px 20px;cursor:pointer;font-size:13px">Cerrar</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(panel);
+  panel.querySelector('#closeInvDetail').onclick = () => panel.remove();
+  panel.onclick = (e) => { if (e.target === panel) panel.remove(); };
+
+  const payBtn = panel.querySelector('#invDetailPayBtn');
+  if (payBtn) {
+    payBtn.onclick = () => {
+      panel.remove();
+      location.hash = '#/pagos';
+    };
+  }
+}
+
+function showPaymentNotifyPanel(mailtos, invoiceNumber) {
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1001;display:flex;align-items:center;justify-content:center';
+  panel.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px;width:480px;max-width:96vw;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 6px">✅ Pago registrado</h3>
+      <p style="font-size:13px;color:#6b7280;margin:0 0 18px">Factura <b>${escapeHtml(invoiceNumber||'')}</b> · Haz clic para abrir cada correo:</p>
+      ${mailtos.map((m, i) => `
+        <div style="margin-bottom:10px">
+          <div style="font-size:12px;color:#6b7280;margin-bottom:4px">Para: <b>${escapeHtml(m.email)}</b></div>
+          <a href="${m.mailto}" target="_blank" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;font-size:13px;padding:7px 18px;border-radius:6px;font-weight:600">${m.label}</a>
+        </div>`).join('')}
+      <div style="text-align:right;margin-top:16px">
+        <button id="closePayNotify" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:6px 18px;cursor:pointer;font-size:13px">Cerrar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(panel);
+  panel.querySelector('#closePayNotify').onclick = () => panel.remove();
+  panel.onclick = (e) => { if (e.target === panel) panel.remove(); };
 }
 
 async function paymentsView() {
@@ -5173,8 +5340,12 @@ async function paymentsView() {
       if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
       const data = await res.json();
       payMsg.textContent = '✅ Pago registrado'; payMsg.style.color = '#16a34a';
-      if (data.mailto && data.supplier_email) window.open(data.mailto, '_blank');
-      setTimeout(render, 1000);
+      // Notificar proveedor y equipo de compras
+      const mailtos = [];
+      if (data.mailto && data.supplier_email) mailtos.push({ label: '📧 Correo al proveedor', mailto: data.mailto, email: data.supplier_email });
+      if (data.compras_mailto && data.compras_emails) mailtos.push({ label: '📧 Notificar a compras/pagos', mailto: data.compras_mailto, email: data.compras_emails });
+      if (mailtos.length) showPaymentNotifyPanel(mailtos, selectedInv.number);
+      setTimeout(render, 1200);
     } catch(e) { payMsg.textContent = e.message; payMsg.style.color = '#dc2626'; savePayBtn.disabled = false; }
   };
 

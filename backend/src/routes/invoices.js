@@ -157,6 +157,57 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   res.status(201).json(row);
 });
 
+// ── Detalle de factura con ítems de PO y trazabilidad ────────────────────────
+router.get('/:id', (req, res) => {
+  const db = read();
+  const inv = db.invoices.find(i => i.id === Number(req.params.id));
+  if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+  if (req.user.supplier_id && inv.supplier_id !== req.user.supplier_id)
+    return res.status(403).json({ error: 'Sin permiso' });
+
+  const po = db.purchase_orders.find(p => p.id === inv.purchase_order_id) || {};
+  const supplier = db.suppliers.find(s => s.id === inv.supplier_id) || {};
+
+  const poItems = db.purchase_order_items
+    .filter(i => i.purchase_order_id === inv.purchase_order_id)
+    .map(item => {
+      const reqItem = db.requisition_items.find(r => r.id === item.requisition_item_id) || {};
+      return {
+        id: item.id,
+        description: reqItem.description || item.description || '-',
+        quantity: item.quantity,
+        unit: item.unit || reqItem.unit || '',
+        unit_cost: item.unit_cost,
+        subtotal: Number(item.quantity || 0) * Number(item.unit_cost || 0)
+      };
+    });
+
+  const creditDays = Number(inv.credit_days || 0);
+  const invoiceDate = inv.created_at ? new Date(inv.created_at) : null;
+  let dueDate = null;
+  let daysRemaining = null;
+  if (invoiceDate && creditDays > 0) {
+    dueDate = new Date(invoiceDate);
+    dueDate.setDate(dueDate.getDate() + creditDays);
+    daysRemaining = Math.ceil((dueDate - new Date()) / (1000 * 60 * 60 * 24));
+  }
+
+  const payments = db.payments
+    .filter(p => p.invoice_id === inv.id)
+    .map(p => ({ id: p.id, amount: p.amount, payment_type: p.payment_type, reference: p.reference, created_at: p.created_at, proof_path: p.proof_path }));
+
+  res.json({
+    ...inv,
+    supplier_name: supplier.business_name || '',
+    supplier_email: supplier.email || '',
+    po_folio: po.folio || '',
+    po_items: poItems,
+    due_date: dueDate ? dueDate.toISOString().slice(0, 10) : null,
+    days_remaining: daysRemaining,
+    payments
+  });
+});
+
 // ── Recordatorio de pago (proveedor, máx 1 por semana) ────────────────────────
 router.post('/:id/reminder', allowRoles('proveedor'), (req, res) => {
   const db = read();

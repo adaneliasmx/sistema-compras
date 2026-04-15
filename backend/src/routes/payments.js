@@ -216,14 +216,26 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
 
   write(db);
 
-  // Devolver mailto para notificar al proveedor
+  // Devolver mailto para notificar al proveedor y al equipo de compras
   const supplier = db.suppliers.find(s => s.id === row.supplier_id) || {};
   const inv2 = db.invoices.find(i => i.id === row.invoice_id) || {};
+  const po2 = db.purchase_orders.find(p => p.id === inv2.purchase_order_id) || {};
   const subject = `Pago registrado · Factura ${inv2.invoice_number || row.invoice_id}`;
-  const body = `Estimado ${supplier.contact_name || supplier.business_name},\n\nLe informamos que se ha registrado el pago correspondiente a la factura ${inv2.invoice_number || ''}.\n\nMonto pagado: $${row.amount.toFixed(2)}\nReferencia: ${row.reference || '-'}\n\nPuede consultar el comprobante en el sistema.\n\nGracias.`;
-  const mailto = `mailto:${encodeURIComponent(supplier.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const body = `Estimado ${supplier.contact_name || supplier.business_name},\n\nLe informamos que se ha registrado el pago correspondiente a la factura ${inv2.invoice_number || ''}.\n\nPO: ${po2.folio || '-'}\nMonto pagado: $${row.amount.toFixed(2)}\nReferencia: ${row.reference || '-'}\n\nPuede consultar el comprobante en el sistema.\n\nGracias.`;
+  const mailto = supplier.email
+    ? `mailto:${encodeURIComponent(supplier.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    : null;
 
-  res.status(201).json({ ...row, mailto, supplier_email: supplier.email });
+  // Notificar también al equipo de compras/pagos
+  const comprasUsers = db.users.filter(u => ['comprador', 'admin', 'pagos'].includes(u.role_code) && u.email);
+  const comprasEmails = comprasUsers.map(u => u.email).join(',');
+  const comprasSubject = `Pago registrado · ${inv2.invoice_number || ''} · ${supplier.business_name || ''}`;
+  const comprasBody = `Se ha registrado el siguiente pago:\n\nFactura: ${inv2.invoice_number || '-'}\nPO: ${po2.folio || '-'}\nProveedor: ${supplier.business_name || '-'}\nMonto pagado: $${row.amount.toFixed(2)}\nTipo: ${row.payment_type || '-'}\nReferencia: ${row.reference || '-'}\n\nRevisa el sistema para más detalles.`;
+  const compras_mailto = comprasEmails
+    ? `mailto:${encodeURIComponent(comprasEmails)}?subject=${encodeURIComponent(comprasSubject)}&body=${encodeURIComponent(comprasBody)}`
+    : null;
+
+  res.status(201).json({ ...row, mailto, supplier_email: supplier.email || '', compras_mailto, compras_emails: comprasEmails });
 });
 
 module.exports = router;
