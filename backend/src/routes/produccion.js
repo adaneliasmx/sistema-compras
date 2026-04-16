@@ -256,11 +256,14 @@ router.post('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res)
     }
   } else if (tipo === 'herramentales') {
     if (!body.numero) return res.status(400).json({ error: 'numero es requerido' });
-    item = { ...item, numero: body.numero, descripcion: body.descripcion || '' };
+    item = { ...item, numero: body.numero, nombre: body.nombre || '', descripcion: body.descripcion || '' };
     if (linea === 'baker' || linea === 'l1') {
       item.tipo = body.tipo || 'rack'; // 'rack' | 'barril'
       item.cavidades = body.cavidades ? Number(body.cavidades) : null;
       item.varillas_totales = body.varillas_totales ? Number(body.varillas_totales) : null;
+    } else {
+      // L3/L4: guardar flag de defecto contemplado
+      if (body.excluir_calidad !== undefined) item.excluir_calidad = !!body.excluir_calidad;
     }
   } else if (tipo === 'sub-motivos-paro' || tipo === 'sub-procesos') {
     const parentField = tipo === 'sub-procesos' ? 'proceso_id' : 'motivo_id';
@@ -287,7 +290,7 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
 
   const body = req.body || {};
-  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales'];
+  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales', 'excluir_calidad'];
   for (const field of allowed) {
     if (body[field] !== undefined) list[idx][field] = body[field];
   }

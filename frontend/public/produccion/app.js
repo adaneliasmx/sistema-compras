@@ -4151,8 +4151,8 @@ function collectCatalogoFields(tipo) {
       return { nombre: g('nombre'), cliente, no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
     }
     case 'herramentales': {
-      const excluirCalidad = document.getElementById('cf-excluir_calidad')?.checked ?? false;
-      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null, excluir_calidad: excluirCalidad || undefined };
+      const excluirCalidad = document.getElementById('cf-excluir_calidad')?.checked === true;
+      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null, excluir_calidad: excluirCalidad };
     }
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
