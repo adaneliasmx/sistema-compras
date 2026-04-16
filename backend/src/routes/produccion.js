@@ -1187,6 +1187,9 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       ciclos_obj:       slotObj,
       ciclos_no_vacios,
       ciclos_buenos,
+      // Conteos filtrados para calidad (excluye herramentales con defecto contemplado)
+      ciclos_no_vacios_calidad: cargasCalidad.length,
+      ciclos_buenos_calidad,
       piezas_total,
       piezas_obj_total,
       paros_min:        Math.round(paros_min * 10) / 10,
@@ -1595,12 +1598,15 @@ router.get('/kpis', (req, res) => {
         const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
         const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
         const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+        // Para calidad: usar conteos filtrados (excluyen herramentales con defecto contemplado)
+        const nv_calidad = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+        const bq_calidad = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
 
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
         const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj * tDef.hours) : null;
-        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
