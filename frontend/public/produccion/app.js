@@ -3872,6 +3872,18 @@ async function viewCatalogos(el, linea) {
       btn.addEventListener('click', () => openCatalogoModal(activeTab, linea, item, () => loadAndRender(), catalogo));
     });
 
+    el.querySelectorAll('[data-toggle-excluir]').forEach(btn => {
+      const id = btn.dataset.toggleExcluir;
+      btn.addEventListener('click', async () => {
+        const item = items.find(i => String(i.id) === String(id));
+        const newVal = !(item?.excluir_calidad);
+        try {
+          await PATCH(`/catalogos/${linea}/herramentales/${id}`, { excluir_calidad: newVal });
+          loadAndRender();
+        } catch (e) { alert('Error: ' + e.message); }
+      });
+    });
+
     el.querySelectorAll('[data-del-cat]').forEach(btn => {
       const id = btn.dataset.delCat;
       btn.addEventListener('click', async () => {
@@ -3908,7 +3920,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
 
   // Baker herramentales: different columns
   if (tipo === 'herramentales' && catalogo?.clientes !== undefined) {
-    colsMap.herramentales = ['numero', 'tipo', 'varillas_totales', 'cavidades', 'descripcion'];
+    colsMap.herramentales = ['numero', 'tipo', 'varillas_totales', 'cavidades', 'descripcion', 'excluir_calidad'];
   }
   // Baker componentes: add no_skf
   if (tipo === 'componentes' && items.some(i => i.no_skf !== undefined)) {
@@ -3969,6 +3981,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
           ${cols.map(c => `<td>${colRenderers[c] ? colRenderers[c](item[c]) : escHtml(item[c] ?? '')}</td>`).join('')}
           <td style="white-space:nowrap">
             <button class="btn btn-outline btn-xs" data-edit-cat="${item.id}">✏️ Editar</button>
+            ${tipo === 'herramentales' ? `<button class="btn btn-xs" data-toggle-excluir="${item.id}" style="margin-left:4px;${item.excluir_calidad ? 'background:#fef3c7;color:#92400e;border:1px solid #f59e0b' : 'background:#f0fdf4;color:#166534;border:1px solid #86efac'}">${item.excluir_calidad ? '⚠ Excluido KPI' : '✓ KPI Calidad'}</button>` : ''}
             <button class="btn btn-danger btn-xs" data-del-cat="${item.id}" style="margin-left:4px">🗑</button>
           </td>
         </tr>`).join('')}
@@ -4078,7 +4091,11 @@ function buildCatalogoFields(tipo, item, catalogo) {
                  </select>
                </div>` +
                inp('varillas_totales', 'Varillas totales del rack (si rack)', 'number') +
-               inp('cavidades', 'Cavidades totales (si barril)', 'number');
+               inp('cavidades', 'Cavidades totales (si barril)', 'number') +
+               `<div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+                 <input type="checkbox" id="cf-excluir_calidad" ${item?.excluir_calidad ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer"/>
+                 <label for="cf-excluir_calidad" style="margin:0;cursor:pointer;font-size:13px">Excluir del KPI de calidad <span style="color:var(--p-muted);font-size:12px">(defecto contemplado)</span></label>
+               </div>`;
       }
       return inp('numero', 'No. Herramental') +
              inp('nombre', 'Nombre') +
@@ -5710,6 +5727,7 @@ async function viewResumenTurno(el) {
 function renderResumenTurnoTable(snaps, linea) {
   const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
   const fmtNum = v => v != null ? v : '—';
+  const isBakerLike = linea === 'Baker' || linea === 'L1';
 
   const byWeek = {};
   snaps.forEach(s => { if (!byWeek[s.semana]) byWeek[s.semana] = []; byWeek[s.semana].push(s); });
@@ -5721,6 +5739,7 @@ function renderResumenTurnoTable(snaps, linea) {
       <td style="text-align:center;font-weight:600">${escHtml(s.turno)}</td>
       <td style="text-align:center">${escHtml(s.linea)}</td>
       <td style="text-align:center;font-weight:700">${fmtNum(s.ciclos_totales)}</td>
+      ${isBakerLike ? `<td style="text-align:center">${fmtNum(s.ciclos_no_vacios)}</td>` : ''}
       <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
       <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)} eficiencia-click" data-sid="${s.id}" title="Clic para ver ciclos por hora">${fmtPct(s.eficiencia)} 🔍</td>
       <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
@@ -5731,9 +5750,9 @@ function renderResumenTurnoTable(snaps, linea) {
     </tr>`).join('');
 
   const weekRows = Object.entries(byWeek).sort((a, b) => Number(a[0]) - Number(b[0])).map(([wk, ws]) => {
-    const ciclosTot = ws.reduce((s,x)=>s+x.ciclos_totales,0);
+    const ciclosTot   = ws.reduce((s,x)=>s+x.ciclos_totales,0);
     const ciclosBuenos = ws.reduce((s,x)=>s+x.ciclos_buenos,0);
-    const ciclosNoV = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
+    const ciclosNoV   = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
     const paroMin = ws.reduce((s,x)=>s+x.paros_min_total,0);
     const TURNO_H = {T1:8,T2:7,T3:9};
     let efNum=0,efDen=0; ws.forEach(x=>{if(x.eficiencia!=null){const h=TURNO_H[x.turno]||8;efNum+=x.eficiencia*h;efDen+=h;}});
@@ -5742,6 +5761,7 @@ function renderResumenTurnoTable(snaps, linea) {
     return `<tr style="background:#eff6ff;font-weight:700;border-top:2px solid #bfdbfe">
       <td colspan="4" style="padding:4px 8px;font-size:12px;color:#1d4ed8">∑ Semana ${wk} — ${ws.length} turno(s)</td>
       <td style="text-align:center">${ciclosTot}</td>
+      ${isBakerLike ? `<td style="text-align:center">${ciclosNoV}</td>` : ''}
       <td style="text-align:center">${ciclosBuenos}</td>
       <td class="${kpiColor(ef!=null?ef*100:null)}">${fmtPct(ef)}</td>
       <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
@@ -5762,7 +5782,7 @@ function renderResumenTurnoTable(snaps, linea) {
         <table>
           <thead><tr>
             <th>Sem</th><th>Fecha</th><th>Turno</th><th>Línea</th>
-            <th>Ciclos Tot.</th><th>Ciclos Buenos</th>
+            <th>Ciclos Tot.</th>${isBakerLike ? '<th>Cav. Tot.</th>' : ''}<th>${isBakerLike ? 'Cav. Buenas' : 'Ciclos Buenos'}</th>
             <th>Eficiencia 🔍</th><th>Calidad 🔍</th><th>Capacidad 🔍</th><th>Disponibilidad 🔍</th>
             <th>Piezas</th><th>T. Paro</th>
           </tr></thead>

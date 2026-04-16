@@ -261,10 +261,9 @@ router.post('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res)
       item.tipo = body.tipo || 'rack'; // 'rack' | 'barril'
       item.cavidades = body.cavidades ? Number(body.cavidades) : null;
       item.varillas_totales = body.varillas_totales ? Number(body.varillas_totales) : null;
-    } else {
-      // L3/L4: guardar flag de defecto contemplado
-      if (body.excluir_calidad !== undefined) item.excluir_calidad = !!body.excluir_calidad;
     }
+    // Guardar flag de defecto contemplado (todas las líneas)
+    if (body.excluir_calidad !== undefined) item.excluir_calidad = !!body.excluir_calidad;
   } else if (tipo === 'sub-motivos-paro' || tipo === 'sub-procesos') {
     const parentField = tipo === 'sub-procesos' ? 'proceso_id' : 'motivo_id';
     if (!body.nombre || !body[parentField]) return res.status(400).json({ error: `nombre y ${parentField} son requeridos` });
@@ -1645,12 +1644,14 @@ router.get('/kpis', (req, res) => {
         const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
         const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
         const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+        const nv_calidad       = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+        const bq_calidad       = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
 
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
         const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_baker * tDef.hours) : null;
-        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
@@ -1689,12 +1690,14 @@ router.get('/kpis', (req, res) => {
         const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
         const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
         const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+        const nv_calidad       = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+        const bq_calidad       = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
 
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
         const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_l1 * tDef.hours) : null;
-        const calidad        = ciclos_no_vacios > 0 ? ciclos_buenos / ciclos_no_vacios : null;
+        const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
@@ -1767,14 +1770,22 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const ciclos_totales = cargasEnSlot.length;
 
     // Rack: calidad = buenos / no_vacios; Barril: sum cavidades_buenas / sum cavidades_cargadas
+    // Para calidad: excluir herramentales marcados con excluir_calidad
+    const herramentalesBaker = pdb.herramentales_baker || [];
+    const excluirCalidadIdsBaker = new Set(
+      herramentalesBaker.filter(h => h.excluir_calidad).map(h => String(h.id))
+    );
     let ciclos_buenos = 0, ciclos_no_vacios = 0;
+    let ciclos_buenos_calidad = 0, ciclos_no_vacios_calidad = 0;
     let piezas_total = 0, piezas_obj_total = 0;
     for (const c of cargasEnSlot) {
+      const excluir = excluirCalidadIdsBaker.has(String(c.herramental_id));
       if (c.herramental_tipo === 'barril') {
         const carg = Number(c.cavidades_cargadas || 0);
         const buen = Number(c.cavidades_buenas   || 0);
         ciclos_no_vacios += carg;
         ciclos_buenos    += buen;
+        if (!excluir) { ciclos_no_vacios_calidad += carg; ciclos_buenos_calidad += buen; }
         piezas_total     += buen; // piezas = cavidades buenas (1 pieza por cavidad)
         piezas_obj_total += Number(c.herramental_cavidades || 0);
       } else {
@@ -1782,6 +1793,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
         if (!c.es_vacia) {
           ciclos_no_vacios++;
           if (!c.defecto_id) ciclos_buenos++;
+          if (!excluir) {
+            ciclos_no_vacios_calidad++;
+            if (!c.defecto_id) ciclos_buenos_calidad++;
+          }
           piezas_total     += Number(c.cantidad || 0);
           // For capacity: if herramental has piezas config, use it (stored on carga)
           piezas_obj_total += Number(c.piezas_objetivo_carga || 0);
@@ -1798,13 +1813,14 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const slotObj = slotCiclosObj(ciclos_obj, h);
     const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
-    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
       ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
+      ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
@@ -1849,20 +1865,32 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
 
     const ciclos_totales = cargasEnSlot.length;
 
+    // Para calidad: excluir herramentales marcados con excluir_calidad
+    const herramentalesL1 = pdb.herramentales_l1 || [];
+    const excluirCalidadIdsL1 = new Set(
+      herramentalesL1.filter(h => h.excluir_calidad).map(h => String(h.id))
+    );
     let ciclos_buenos = 0, ciclos_no_vacios = 0;
+    let ciclos_buenos_calidad = 0, ciclos_no_vacios_calidad = 0;
     let piezas_total = 0, piezas_obj_total = 0;
     for (const c of cargasEnSlot) {
+      const excluir = excluirCalidadIdsL1.has(String(c.herramental_id));
       if (c.herramental_tipo === 'barril') {
         const carg = Number(c.cavidades_cargadas || 0);
         const buen = Number(c.cavidades_buenas   || 0);
         ciclos_no_vacios += carg;
         ciclos_buenos    += buen;
+        if (!excluir) { ciclos_no_vacios_calidad += carg; ciclos_buenos_calidad += buen; }
         piezas_total     += buen;
         piezas_obj_total += Number(c.herramental_cavidades || 0);
       } else {
         if (!c.es_vacia) {
           ciclos_no_vacios++;
           if (!c.defecto_id) ciclos_buenos++;
+          if (!excluir) {
+            ciclos_no_vacios_calidad++;
+            if (!c.defecto_id) ciclos_buenos_calidad++;
+          }
           piezas_total     += Number(c.cantidad || 0);
           piezas_obj_total += Number(c.piezas_objetivo_carga || 0);
         }
@@ -1878,13 +1906,14 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const slotObj = slotCiclosObj(ciclos_obj, h);
     const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
-    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
       ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
+      ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
