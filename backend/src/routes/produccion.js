@@ -1066,10 +1066,25 @@ function addDays(dateStr, n) {
   return d.toISOString().slice(0, 10); // YYYY-MM-DD estable al mediodía UTC
 }
 
-// Objetivo de ciclos por slot: si tiene .5, alterna floor/ceil comenzando por floor en h=0
+// Objetivo de ciclos por slot con distribución Bresenham.
+// Detecta automáticamente el período de la fracción decimal y distribuye
+// los ciclos extra al final de cada período.
+// Ejemplos:
+//   4.5   → período 2 → patrón 4,5,4,5,...
+//   4.33  → período 3 → patrón 4,4,5,4,4,5,...  (hora1=4, hora2=4, hora3=5)
+//   4.25  → período 4 → patrón 4,4,4,5,...
 function slotCiclosObj(ciclos_obj, h) {
   if (Number.isInteger(ciclos_obj)) return ciclos_obj;
-  return h % 2 === 0 ? Math.floor(ciclos_obj) : Math.ceil(ciclos_obj);
+  const base = Math.floor(ciclos_obj);
+  const frac = ciclos_obj - base;
+  // Encontrar período mínimo n (2..12) tal que frac*n ≈ entero (tolerancia 0.015)
+  let period = 2;
+  for (let n = 2; n <= 12; n++) {
+    if (Math.abs(Math.round(frac * n) - frac * n) < 0.015) { period = n; break; }
+  }
+  const ceilsPerPeriod = Math.round(frac * period);
+  // Los slots "ceil" se ubican al final de cada período (ej. posición 2 de 3 para 4.33)
+  return (h % period) >= period - ceilsPerPeriod ? Math.ceil(ciclos_obj) : base;
 }
 
 function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
@@ -1116,8 +1131,16 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const cargasNoVacias  = cargasEnSlot.filter(c => !c.es_vacia);
     const ciclos_no_vacios = cargasNoVacias.length;
 
-    // Ciclos buenos: no vacíos y sin defecto
+    // Ciclos buenos: no vacíos y sin defecto (para display)
     const ciclos_buenos   = cargasNoVacias.filter(c => !c.defecto_id).length;
+
+    // Para calidad: excluir herramentales marcados con defecto contemplado (excluir_calidad)
+    const herramentalesLinea = pdb[`herramentales_${l.toLowerCase()}`] || [];
+    const excluirCalidadIds = new Set(
+      herramentalesLinea.filter(h => h.excluir_calidad).map(h => String(h.id))
+    );
+    const cargasCalidad = cargasNoVacias.filter(c => !excluirCalidadIds.has(String(c.herramental_id)));
+    const ciclos_buenos_calidad = cargasCalidad.filter(c => !c.defecto_id).length;
 
     // Capacidad: piezas reales vs objetivo del catálogo
     let piezas_total     = 0;
@@ -1146,8 +1169,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
 
     // Eficiencia = ciclos_descargados / ciclos_objetivo_por_hora (sin descuento de paros)
     const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
-    // Calidad = buenos / no_vacios (null si no hay ciclos con material)
-    const calidad       = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+    // Calidad = buenos / no_vacios — excluye herramentales con defecto contemplado
+    const calidad       = cargasCalidad.length > 0 ? r3(ciclos_buenos_calidad / cargasCalidad.length) : null;
     // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     // Disponibilidad = (60 - paros) / 60

@@ -3896,7 +3896,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     componentes:   ['nombre', 'cliente', 'carga_optima_varillas', 'piezas_objetivo'],
     procesos:      ['nombre', 'descripcion'],
     acabados:      ['nombre', 'descripcion'],
-    herramentales: ['numero', 'nombre', 'descripcion'],
+    herramentales: ['numero', 'nombre', 'descripcion', 'excluir_calidad'],
     defectos:      ['nombre', 'descripcion'],
     motivos_paro:  ['nombre', 'descripcion'],
     sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion'],
@@ -3942,7 +3942,15 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     no_skf:               'No. SKF',
     tipo:                 'Tipo',
     cavidades:            'Cavidades',
-    varillas_totales:     'Varillas totales'
+    varillas_totales:     'Varillas totales',
+    excluir_calidad:      'KPI Calidad'
+  };
+
+  // Render especial para excluir_calidad: mostrar badge
+  const colRenderers = {
+    excluir_calidad: (val) => val
+      ? '<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">⚠ Excluido</span>'
+      : '<span style="color:var(--p-muted);font-size:11px">—</span>'
   };
 
   return `
@@ -3958,7 +3966,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
       ${displayItems.map(item => `
         <tr>
           <td class="mono">${item.id}</td>
-          ${cols.map(c => `<td>${escHtml(item[c] ?? '')}</td>`).join('')}
+          ${cols.map(c => `<td>${colRenderers[c] ? colRenderers[c](item[c]) : escHtml(item[c] ?? '')}</td>`).join('')}
           <td style="white-space:nowrap">
             <button class="btn btn-outline btn-xs" data-edit-cat="${item.id}">✏️ Editar</button>
             <button class="btn btn-danger btn-xs" data-del-cat="${item.id}" style="margin-left:4px">🗑</button>
@@ -4074,7 +4082,11 @@ function buildCatalogoFields(tipo, item, catalogo) {
       }
       return inp('numero', 'No. Herramental') +
              inp('nombre', 'Nombre') +
-             inp('descripcion', 'Descripción');
+             inp('descripcion', 'Descripción') +
+             `<div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+               <input type="checkbox" id="cf-excluir_calidad" ${item?.excluir_calidad ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer"/>
+               <label for="cf-excluir_calidad" style="margin:0;cursor:pointer;font-size:13px">Excluir del KPI de calidad <span style="color:var(--p-muted);font-size:12px">(defecto contemplado)</span></label>
+             </div>`;
     case 'procesos':
     case 'acabados':
     case 'defectos':
@@ -4138,8 +4150,10 @@ function collectCatalogoFields(tipo) {
       }
       return { nombre: g('nombre'), cliente, no_skf: g('no_skf') || null, carga_optima_varillas: g('carga_optima_varillas') || null, piezas_objetivo: g('piezas_objetivo') || null };
     }
-    case 'herramentales':
-      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null };
+    case 'herramentales': {
+      const excluirCalidad = document.getElementById('cf-excluir_calidad')?.checked ?? false;
+      return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null, excluir_calidad: excluirCalidad || undefined };
+    }
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
     case 'sub_procesos':
