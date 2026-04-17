@@ -204,7 +204,11 @@ const MENU = {
     ['correcciones',       '🔧', 'Correcciones'],
     ['entrada-inventario', '📥', 'Recepción'],
     ['inventario',         '📦', 'Inventario'],
-    ['kardex',             '📜', 'Kardex']
+    ['kardex',             '📜', 'Kardex'],
+    ['---', '', 'Titulaciones'],
+    ['titulaciones',       '🔬', 'Registrar'],
+    ['tit-reporte',        '📊', 'Reporte'],
+    ['tit-estadisticas',   '📈', 'Estadísticas']
   ],
   admin: [
     ['crear-vale',         '➕', 'Crear Vale'],
@@ -214,6 +218,11 @@ const MENU = {
     ['entrada-inventario', '📥', 'Recepción'],
     ['inventario',         '📦', 'Inventario'],
     ['kardex',             '📜', 'Kardex'],
+    ['---', '', 'Titulaciones'],
+    ['titulaciones',       '🔬', 'Registrar'],
+    ['tit-reporte',        '📊', 'Reporte'],
+    ['tit-estadisticas',   '📈', 'Estadísticas'],
+    ['tit-catalogo',       '⚙️', 'Catálogo Parámetros'],
     ['---', '', 'Catálogos'],
     ['items',    '🧪', 'Productos'],
     ['tanques',  '🏭', 'Tanques'],
@@ -235,7 +244,11 @@ const SECTION_TITLES = {
   'items':             'Catálogo de Productos',
   'tanques':           'Catálogo de Tanques',
   'usuarios':          'Gestión de Usuarios',
-  'importar-sqlite':   'Importar desde Base Antigua (SQLite)'
+  'importar-sqlite':   'Importar desde Base Antigua (SQLite)',
+  'titulaciones':      'Registrar Titulación',
+  'tit-reporte':       'Reporte de Titulaciones',
+  'tit-estadisticas':  'Estadísticas SPC',
+  'tit-catalogo':      'Catálogo de Parámetros'
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -411,6 +424,10 @@ async function renderMain() {
       case 'tanques':           el.innerHTML = await viewTanques(); bindTanques(); return;
       case 'usuarios':          el.innerHTML = await viewUsuarios(); bindUsuarios(); return;
       case 'importar-sqlite':   el.innerHTML = await viewImportarSqlite(); bindImportarSqlite(); return;
+      case 'titulaciones':      el.innerHTML = await viewTitulaciones(); bindTitulaciones(); return;
+      case 'tit-reporte':       el.innerHTML = await viewTitReporte(); bindTitReporte(); return;
+      case 'tit-estadisticas':  el.innerHTML = await viewTitEstadisticas(); bindTitEstadisticas(); return;
+      case 'tit-catalogo':      el.innerHTML = await viewTitCatalogo(); bindTitCatalogo(); return;
       default: el.innerHTML = '<p>Sección no encontrada</p>';
     }
   } catch(e) {
@@ -2050,6 +2067,7 @@ function showModalTanque(tanque, items) {
       <div class="form-group"><label>No. Tanque *</label><input type="text" id="tk-no" value="${tanque?.no_tanque||''}" ${isEdit?'disabled':''} /></div>
       <div class="form-group"><label>Nombre del tanque</label><input type="text" id="tk-nombre" value="${tanque?.nombre_tanque||''}" /></div>
       <div class="form-group"><label>Tipo</label><input type="text" id="tk-tipo" value="${tanque?.tipo||''}" /></div>
+      <div class="form-group"><label>Químico activo <small style="color:#78716c">(907 / 1207 / vacío)</small></label><input type="text" id="tk-quimico" value="${tanque?.quimico_activo||''}" placeholder="Ej: 907 — vacío si no aplica" /></div>
       ${isEdit?`<div class="form-group"><label>Activo</label><select id="tk-activo"><option value="true" ${tanque?.activo?'selected':''}>Sí</option><option value="false" ${!tanque?.activo?'selected':''}>No</option></select></div>`:''}
     </div>
     <div class="form-group" style="margin-top:12px">
@@ -2073,6 +2091,7 @@ function showModalTanque(tanque, items) {
       no_tanque:        document.getElementById('tk-no').value.trim(),
       nombre_tanque:    document.getElementById('tk-nombre').value.trim(),
       tipo:             document.getElementById('tk-tipo').value.trim(),
+      quimico_activo:   document.getElementById('tk-quimico').value.trim() || null,
       items_autorizados: checked,
       ...(isEdit ? { activo: document.getElementById('tk-activo').value === 'true' } : {})
     };
@@ -2321,6 +2340,800 @@ function bindImportarSqlite() {
     } catch(e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;
     }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// MÓDULO TITULACIONES
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Helpers SPC ───────────────────────────────────────────────────────────────
+function spcStats(valores) {
+  const n = valores.length;
+  if (n === 0) return null;
+  const mean = valores.reduce((s, v) => s + v, 0) / n;
+  const variance = valores.reduce((s, v) => s + (v - mean) ** 2, 0) / Math.max(n - 1, 1);
+  const sigma = Math.sqrt(variance);
+  const rangos = valores.slice(1).map((v, i) => Math.abs(v - valores[i]));
+  const mrBar = rangos.length ? rangos.reduce((s, r) => s + r, 0) / rangos.length : 0;
+  return { n, mean, sigma, mrBar, rangos };
+}
+function spcCpCpk(mean, sigma, lsl, usl) {
+  if (!sigma || sigma === 0) return { cp: null, cpk: null };
+  const cp = (lsl != null && usl != null) ? (usl - lsl) / (6 * sigma) : null;
+  const cpkU = usl != null ? (usl - mean) / (3 * sigma) : null;
+  const cpkL = lsl != null ? (mean - lsl) / (3 * sigma) : null;
+  const cpk = cpkU != null && cpkL != null ? Math.min(cpkU, cpkL) : (cpkU ?? cpkL);
+  return { cp, cpk };
+}
+function estadoColor(estado) {
+  return estado === 'fuera' ? '#ef4444' : estado === 'limite' ? '#f59e0b' : estado === 'ok' ? '#22c55e' : '#94a3b8';
+}
+function estadoBadge(estado) {
+  const map = { ok:'✅ OK', limite:'⚠️ Límite', fuera:'🔴 Fuera', sin_dato:'—' };
+  return map[estado] || estado;
+}
+
+// ── Registrar Titulación ───────────────────────────────────────────────────────
+async function viewTitulaciones() {
+  const lineas = await GET('/lineas').catch(() => []);
+  return `
+  <div class="form-card" style="max-width:900px">
+    <h3>🔬 Nueva Titulación</h3>
+    <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
+      <div class="form-group"><label>Línea *</label>
+        <select id="tit-linea"><option value="">-- Seleccionar --</option>
+          ${lineas.map(l => `<option>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="tit-fecha" value="${today()}" /></div>
+      <div class="form-group"><label>Turno *</label>
+        <select id="tit-turno"><option value="">--</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+      </div>
+      <div class="form-group"><label>Titulación</label>
+        <select id="tit-num"><option value="1">1ª del turno (x.1)</option><option value="2">2ª del turno (x.2)</option></select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn btn-primary" id="btn-tit-cargar">Cargar formulario</button>
+      <span id="tit-clave-label" style="align-self:center;font-size:13px;color:#78716c"></span>
+    </div>
+    <div id="tit-form-area"></div>
+  </div>`;
+}
+
+function bindTitulaciones() {
+  document.getElementById('btn-tit-cargar').addEventListener('click', async () => {
+    const linea = document.getElementById('tit-linea').value;
+    const fecha = document.getElementById('tit-fecha').value;
+    const turno = document.getElementById('tit-turno').value;
+    const num   = document.getElementById('tit-num').value;
+    if (!linea || !fecha || !turno) { alert('Selecciona línea, fecha y turno'); return; }
+    const clave = `${turno}.${num}`;
+    document.getElementById('tit-clave-label').textContent = `Titulación ${clave} — ${fecha}`;
+    const area = document.getElementById('tit-form-area');
+    area.innerHTML = '<div class="empty-state"><div class="icon">⏳</div></div>';
+    try {
+      // Verificar si ya existe
+      const existentes = await GET(`/titulaciones?linea=${encodeURIComponent(linea)}&fecha_ini=${fecha}&fecha_fin=${fecha}`);
+      const yaExiste = existentes.find(h => h.turno === Number(turno) && h.numero_titulacion === Number(num));
+
+      // Cargar parámetros + tanques para saber químicos activos
+      const [tanques, params] = await Promise.all([
+        GET('/tanques?linea=' + encodeURIComponent(linea)),
+        GET('/parametros-titulacion?activo=true')
+      ]);
+      // Filtrar parámetros de esta línea
+      const paramsLinea = params.filter(p => {
+        const t = tanques.find(x => x.id === p.tanque_id);
+        if (!t || !t.activo) return false;
+        if (p.quimico && t.quimico_activo && t.quimico_activo !== p.quimico) return false;
+        if (p.frecuencia === 1 && Number(num) !== 1) return false;
+        return true;
+      });
+
+      if (paramsLinea.length === 0) {
+        area.innerHTML = `<div class="alert alert-warn">⚠️ No hay parámetros activos para <strong>${linea}</strong>.<br>
+          Ve a <em>Catálogo Parámetros</em> para configurarlos o corre el seed inicial.</div>
+          <button class="btn btn-outline" onclick="POST('/parametros-titulacion/seed',{}).then(()=>navigate('titulaciones'))">Cargar seed inicial</button>`;
+        return;
+      }
+
+      // Agrupar por tanque
+      const grupos = {};
+      paramsLinea.forEach(p => {
+        const key = p.tanque_id;
+        if (!grupos[key]) grupos[key] = { tanque: tanques.find(t => t.id === p.tanque_id), params: [] };
+        grupos[key].params.push(p);
+      });
+
+      const valoresPrevios = {};
+      if (yaExiste) {
+        yaExiste.detalle?.forEach(d => { valoresPrevios[d.parametro_id] = d.valor_registrado; });
+      }
+
+      const gruposHtml = Object.values(grupos).map(g => {
+        const t = g.t || g.tanque;
+        const quimicoLabel = t?.quimico_activo ? ` <small style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px">${t.quimico_activo}</small>` : '';
+        const rowsHtml = g.params.sort((a,b)=>a.orden-b.orden).map(p => {
+          const rangoTxt = p.tipo_rango === 'entre' ? `${p.valor_min} – ${p.valor_max}${p.objetivo!=null?' / obj:'+p.objetivo:''}` :
+                           p.tipo_rango === 'maximo' ? `máx ${p.valor_max}` :
+                           p.tipo_rango === 'minimo' ? `mín ${p.valor_min}` : '—';
+          const prev = valoresPrevios[p.id] != null ? valoresPrevios[p.id] : '';
+          return `<tr>
+            <td style="font-size:13px">${p.nombre_parametro}${p.frecuencia===1?' <small style="color:#78716c">(1×turno)</small>':''}</td>
+            <td style="font-size:12px;color:#78716c">${rangoTxt} ${p.unidad}</td>
+            <td><input type="number" step="any" class="tit-input" data-pid="${p.id}" data-min="${p.valor_min??''}" data-max="${p.valor_max??''}" data-tipo="${p.tipo_rango}" style="width:100px;padding:4px 8px;border:1.5px solid #e7e5e4;border-radius:6px" value="${prev}" oninput="titColorInput(this)" /></td>
+            <td id="tit-estado-${p.id}" style="font-size:12px;min-width:70px"></td>
+            <td><input type="text" class="tit-obs" data-pid="${p.id}" placeholder="Obs." style="width:140px;padding:4px 8px;border:1.5px solid #e7e5e4;border-radius:6px;font-size:12px" /></td>
+          </tr>`;
+        }).join('');
+        return `
+        <div class="table-card" style="margin-bottom:12px">
+          <div class="table-header" style="background:#f8fafc;padding:10px 16px">
+            <h4 style="margin:0;font-size:14px">${t?.no_tanque || ''} — ${t?.nombre_tanque || ''}${quimicoLabel}</h4>
+          </div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Parámetro</th><th>Rango / Objetivo</th><th>Valor</th><th>Estado</th><th>Observaciones</th></tr></thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </div>
+        </div>`;
+      }).join('');
+
+      area.innerHTML = `
+        ${yaExiste ? `<div class="alert alert-info" style="margin-bottom:12px">✏️ Esta titulación ya existe (ID ${yaExiste.id}). Al guardar se <strong>sobreescribirán</strong> los valores (corrección).</div>` : ''}
+        ${gruposHtml}
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-outline" onclick="navigate('tit-reporte')">Cancelar</button>
+          <button class="btn btn-primary" id="btn-tit-guardar">💾 Guardar Titulación</button>
+        </div>`;
+
+      window._titContext = { linea, fecha, turno: Number(turno), num: Number(num), yaExiste, paramsLinea };
+
+      window.titColorInput = function(input) {
+        const pid = Number(input.dataset.pid);
+        const val = parseFloat(input.value);
+        const tipo = input.dataset.tipo;
+        const min = parseFloat(input.dataset.min);
+        const max = parseFloat(input.dataset.max);
+        const estadoEl = document.getElementById('tit-estado-' + pid);
+        if (!isNaN(val)) {
+          let estado = 'ok';
+          if (tipo === 'maximo' && val > max) estado = 'fuera';
+          if (tipo === 'minimo' && val < min) estado = 'fuera';
+          if (tipo === 'entre' && (val < min || val > max)) estado = 'fuera';
+          input.style.borderColor = estadoColor(estado);
+          input.style.background = estado === 'fuera' ? '#fef2f2' : estado === 'limite' ? '#fffbeb' : '';
+          if (estadoEl) estadoEl.innerHTML = `<span style="color:${estadoColor(estado)};font-weight:600">${estadoBadge(estado)}</span>`;
+        } else {
+          input.style.borderColor = '';
+          input.style.background = '';
+          if (estadoEl) estadoEl.textContent = '';
+        }
+      };
+
+      document.getElementById('btn-tit-guardar').addEventListener('click', async () => {
+        const ctx = window._titContext;
+        const valores = {};
+        const observaciones = {};
+        document.querySelectorAll('.tit-input').forEach(inp => {
+          const pid = Number(inp.dataset.pid);
+          const v = inp.value.trim();
+          if (v !== '') valores[pid] = parseFloat(v);
+        });
+        document.querySelectorAll('.tit-obs').forEach(inp => {
+          const pid = Number(inp.dataset.pid);
+          if (inp.value.trim()) observaciones[pid] = inp.value.trim();
+        });
+
+        const btn = document.getElementById('btn-tit-guardar');
+        btn.disabled = true; btn.textContent = 'Guardando...';
+
+        try {
+          let result;
+          if (ctx.yaExiste) {
+            result = await PATCH('/titulaciones/' + ctx.yaExiste.id, { valores, observaciones });
+          } else {
+            result = await POST('/titulaciones', {
+              linea: ctx.linea, fecha: ctx.fecha, turno: ctx.turno,
+              numero_titulacion: ctx.num, valores, observaciones
+            });
+          }
+
+          // Si hay parámetros fuera de rango → modal de alerta
+          const fueraParams = (result.detalle || []).filter(d => d.estado_param === 'fuera');
+          if (fueraParams.length > 0) {
+            const listaFuera = fueraParams.map(d => {
+              const p = ctx.paramsLinea.find(x => x.id === d.parametro_id);
+              return `<li><strong>${p?.no_tanque}</strong> — ${p?.nombre_parametro}: <span style="color:#dc2626">${d.valor_registrado} ${p?.unidad||''}</span></li>`;
+            }).join('');
+            showModal(`
+              <h3 style="color:#dc2626">⚠️ Parámetros fuera de rango</h3>
+              <ul style="margin:12px 0;padding-left:20px;font-size:13px">${listaFuera}</ul>
+              <p style="font-size:13px;color:#78716c">¿Qué deseas hacer?</p>
+              <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal();navigate('tit-reporte')">Guardar sin ajuste</button>
+                <button class="btn btn-primary" onclick="closeModal();navigate('crear-vale')" style="background:#dc2626">Generar vale de adición</button>
+              </div>`);
+          } else {
+            alert(`✅ Titulación ${ctx.linea} ${ctx.turno}.${ctx.num} guardada correctamente.`);
+            navigate('tit-reporte');
+          }
+        } catch(e) {
+          if (e.message.includes('409') || e.message.includes('Ya existe')) {
+            alert('Esta titulación ya existe. Recarga el formulario para editarla.');
+          } else {
+            alert('Error: ' + e.message);
+          }
+          btn.disabled = false; btn.textContent = '💾 Guardar Titulación';
+        }
+      });
+
+    } catch(e) {
+      area.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+    }
+  });
+}
+
+// ── Reporte Titulaciones ───────────────────────────────────────────────────────
+async function viewTitReporte() {
+  const lineas = await GET('/lineas').catch(() => []);
+  return `
+  <div class="filters-bar">
+    <div><label class="flabel">Línea</label><br>
+      <select id="tr-linea"><option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
+    </div>
+    <div><label class="flabel">Desde</label><br><input type="date" id="tr-ini" value="${monthStart()}" /></div>
+    <div><label class="flabel">Hasta</label><br><input type="date" id="tr-fin" value="${today()}" /></div>
+    <div><label class="flabel">Turno</label><br>
+      <select id="tr-turno"><option value="">Todos</option><option>1</option><option>2</option><option>3</option></select>
+    </div>
+    <div><label class="flabel">Estado</label><br>
+      <select id="tr-estado"><option value="">Todos</option>
+        <option value="completo">Completo</option><option value="fuera_de_rango">Fuera rango</option>
+        <option value="corregido">Corregido</option><option value="pendiente">Pendiente</option>
+      </select>
+    </div>
+    <div style="align-self:flex-end;display:flex;gap:8px">
+      <button class="btn btn-primary" id="btn-tr-buscar">🔍 Buscar</button>
+      <button class="btn btn-outline" id="btn-tr-export">⬇️ Excel</button>
+    </div>
+  </div>
+  <div id="tr-result"></div>`;
+}
+
+function bindTitReporte() {
+  let _titData = [];
+  const buscar = async () => {
+    const linea  = document.getElementById('tr-linea').value;
+    const ini    = document.getElementById('tr-ini').value;
+    const fin    = document.getElementById('tr-fin').value;
+    const turno  = document.getElementById('tr-turno').value;
+    const estado = document.getElementById('tr-estado').value;
+    let q = '?';
+    if (linea)  q += `linea=${encodeURIComponent(linea)}&`;
+    if (ini)    q += `fecha_ini=${ini}&`;
+    if (fin)    q += `fecha_fin=${fin}&`;
+    if (turno)  q += `turno=${turno}&`;
+    if (estado) q += `estado=${estado}&`;
+    const el = document.getElementById('tr-result');
+    el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div></div>';
+    try {
+      const rows = await GET('/titulaciones' + q);
+      _titData = rows;
+      if (!rows.length) { el.innerHTML = '<div class="empty-state"><div class="icon">🔬</div><p>Sin titulaciones en este rango</p></div>'; return; }
+
+      const ESTADO_BADGE = {
+        completo: '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">✅ Completo</span>',
+        fuera_de_rango: '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera</span>',
+        corregido: '<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">✏️ Corregido</span>',
+        pendiente: '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">⏳ Pendiente</span>'
+      };
+
+      el.innerHTML = `
+      <div class="table-card">
+        <div class="table-header"><h3>${rows.length} titulación(es)</h3></div>
+        <div class="table-scroll">
+          <table>
+            <thead><tr><th>Fecha</th><th>Línea</th><th>Clave</th><th>Analista</th><th>Estado</th><th>Parámetros</th><th></th></tr></thead>
+            <tbody>${rows.map(r => {
+              const total  = (r.detalle||[]).length;
+              const fuera  = (r.detalle||[]).filter(d=>d.estado_param==='fuera').length;
+              const ok     = (r.detalle||[]).filter(d=>d.estado_param==='ok').length;
+              return `<tr>
+                <td>${r.fecha}</td>
+                <td>${r.linea}</td>
+                <td style="font-weight:700">${r.clave_titulacion}</td>
+                <td style="font-size:12px">${r.analista||'-'}</td>
+                <td>${ESTADO_BADGE[r.estado]||r.estado}</td>
+                <td style="font-size:12px">
+                  <span style="color:#16a34a">✅ ${ok}</span> /
+                  ${fuera>0?`<span style="color:#dc2626">🔴 ${fuera}</span> /`:''}
+                  total ${total}
+                </td>
+                <td style="display:flex;gap:4px">
+                  <button class="btn btn-outline btn-sm" onclick="verTitulacion(${r.id})">Ver</button>
+                  <button class="btn btn-outline btn-sm" onclick="editTitulacion(${r.id},'${r.linea}',${r.turno},${r.numero_titulacion},'${r.fecha}')">✏️</button>
+                </td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+    } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  };
+  document.getElementById('btn-tr-buscar').addEventListener('click', buscar);
+  buscar();
+
+  // Export Excel
+  document.getElementById('btn-tr-export').addEventListener('click', () => {
+    if (!_titData.length) { alert('Primero realiza una búsqueda'); return; }
+    const rows = [];
+    _titData.forEach(h => {
+      (h.detalle||[]).forEach(d => {
+        const p = d.param || {};
+        rows.push({
+          Fecha: h.fecha, Línea: h.linea, Clave: h.clave_titulacion, Turno: h.turno,
+          Analista: h.analista||'', Estado: h.estado,
+          Tanque: p.no_tanque||'', 'Nombre Tanque': p.nombre_tanque||'',
+          Parámetro: p.nombre_parametro||'', Unidad: p.unidad||'',
+          'Rango Min': p.valor_min??'', 'Rango Max': p.valor_max??'', Objetivo: p.objetivo??'',
+          Valor: d.valor_registrado??'', 'Estado Parámetro': d.estado_param,
+          Corregido: d.corregido?'Sí':'No', 'Valor Original': d.valor_original??'',
+          Observaciones: d.observaciones||''
+        });
+      });
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Titulaciones');
+    XLSX.writeFile(wb, `titulaciones_${document.getElementById('tr-ini').value}_${document.getElementById('tr-fin').value}.xlsx`);
+  });
+}
+
+window.verTitulacion = async function(id) {
+  const t = await GET('/titulaciones/' + id);
+  const grupos = {};
+  (t.detalle||[]).forEach(d => {
+    const p = d.param || {};
+    const key = p.tanque_id || 'sin';
+    if (!grupos[key]) grupos[key] = { tanque: p.no_tanque + ' — ' + p.nombre_tanque, rows: [] };
+    grupos[key].rows.push(d);
+  });
+  const html = Object.values(grupos).map(g => `
+    <div style="margin-bottom:12px">
+      <div style="font-weight:700;font-size:12px;background:#f8fafc;padding:6px 10px;border-radius:6px 6px 0 0;border:1px solid #e7e5e4">${g.tanque}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f1f5f9">
+          <th style="padding:5px 8px;border:1px solid #e7e5e4">Parámetro</th>
+          <th style="padding:5px 8px;border:1px solid #e7e5e4">Rango</th>
+          <th style="padding:5px 8px;border:1px solid #e7e5e4">Valor</th>
+          <th style="padding:5px 8px;border:1px solid #e7e5e4">Estado</th>
+          <th style="padding:5px 8px;border:1px solid #e7e5e4">Obs.</th>
+        </tr></thead>
+        <tbody>${g.rows.map(d => {
+          const p = d.param||{};
+          const rango = p.tipo_rango==='entre' ? `${p.valor_min}–${p.valor_max}` : p.tipo_rango==='maximo' ? `máx ${p.valor_max}` : '—';
+          const bg = d.estado_param==='fuera'?'#fef2f2':d.estado_param==='limite'?'#fffbeb':'';
+          return `<tr style="background:${bg}">
+            <td style="padding:5px 8px;border:1px solid #e7e5e4">${p.nombre_parametro||'?'}</td>
+            <td style="padding:5px 8px;border:1px solid #e7e5e4;color:#78716c">${rango} ${p.unidad||''}</td>
+            <td style="padding:5px 8px;border:1px solid #e7e5e4;font-weight:700">${d.valor_registrado??'—'} ${d.corregido?'<small style="color:#d97706">(corr.)</small>':''}</td>
+            <td style="padding:5px 8px;border:1px solid #e7e5e4"><span style="color:${estadoColor(d.estado_param)};font-weight:600">${estadoBadge(d.estado_param)}</span></td>
+            <td style="padding:5px 8px;border:1px solid #e7e5e4;color:#78716c">${d.observaciones||'-'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`).join('');
+  showModal(`
+    <h3>🔬 ${t.linea} · Titulación ${t.clave_titulacion} · ${t.fecha}</h3>
+    <p style="font-size:12px;color:#78716c;margin-bottom:12px">Analista: ${t.analista||'-'} · Estado: ${t.estado}</p>
+    <div style="max-height:60vh;overflow-y:auto">${html}</div>
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>`);
+};
+
+window.editTitulacion = function(id, linea, turno, num, fecha) {
+  navigate('titulaciones');
+  setTimeout(() => {
+    document.getElementById('tit-linea').value = linea;
+    document.getElementById('tit-fecha').value = fecha;
+    document.getElementById('tit-turno').value = String(turno);
+    document.getElementById('tit-num').value = String(num);
+    document.getElementById('btn-tit-cargar').click();
+  }, 200);
+};
+
+// ── Estadísticas SPC ──────────────────────────────────────────────────────────
+async function viewTitEstadisticas() {
+  const lineas = await GET('/lineas').catch(() => []);
+  return `
+  <div class="filters-bar" style="flex-wrap:wrap">
+    <div><label class="flabel">Línea *</label><br>
+      <select id="spc-linea"><option value="">-- Seleccionar --</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
+    </div>
+    <div><label class="flabel">Tanque</label><br>
+      <select id="spc-tanque" style="min-width:200px"><option value="">-- Seleccionar línea --</option></select>
+    </div>
+    <div><label class="flabel">Parámetro</label><br>
+      <select id="spc-param" style="min-width:160px"><option value="">-- Seleccionar tanque --</option></select>
+    </div>
+    <div><label class="flabel">Vista</label><br>
+      <select id="spc-vista"><option value="diaria">Diaria</option><option value="semanal">Semanal</option><option value="mensual">Mensual (SPC)</option></select>
+    </div>
+    <div><label class="flabel">Desde</label><br><input type="date" id="spc-ini" value="${monthStart()}" /></div>
+    <div><label class="flabel">Hasta</label><br><input type="date" id="spc-fin" value="${today()}" /></div>
+    <div style="align-self:flex-end"><button class="btn btn-primary" id="btn-spc-buscar">Graficar</button></div>
+  </div>
+  <div id="spc-result"></div>`;
+}
+
+function bindTitEstadisticas() {
+  document.getElementById('spc-linea').addEventListener('change', async function() {
+    const linea = this.value;
+    const selT = document.getElementById('spc-tanque');
+    selT.innerHTML = '<option value="">-- Seleccionar --</option>';
+    document.getElementById('spc-param').innerHTML = '<option value="">-- Seleccionar tanque --</option>';
+    if (!linea) return;
+    const [tanques, params] = await Promise.all([
+      GET('/tanques?linea=' + encodeURIComponent(linea)),
+      GET('/parametros-titulacion?activo=true')
+    ]);
+    const tkConParams = tanques.filter(t => params.some(p => p.tanque_id === t.id));
+    tkConParams.forEach(t => selT.add(new Option(`${t.no_tanque} — ${t.nombre_tanque}`, JSON.stringify(t))));
+  });
+
+  document.getElementById('spc-tanque').addEventListener('change', async function() {
+    const selP = document.getElementById('spc-param');
+    selP.innerHTML = '<option value="">-- Seleccionar --</option>';
+    if (!this.value) return;
+    const tanque = JSON.parse(this.value);
+    const params = await GET('/parametros-titulacion?activo=true&tanque_id=' + tanque.id);
+    params.forEach(p => selP.add(new Option(`${p.nombre_parametro} (${p.unidad||'sin ud.'})`, JSON.stringify(p))));
+  });
+
+  document.getElementById('btn-spc-buscar').addEventListener('click', async () => {
+    const paramVal = document.getElementById('spc-param').value;
+    if (!paramVal) { alert('Selecciona línea, tanque y parámetro'); return; }
+    const param = JSON.parse(paramVal);
+    const ini   = document.getElementById('spc-ini').value;
+    const fin   = document.getElementById('spc-fin').value;
+    const vista = document.getElementById('spc-vista').value;
+    const el    = document.getElementById('spc-result');
+    el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div></div>';
+    try {
+      const data = await GET(`/titulaciones/estadisticas/valores?parametro_id=${param.id}&fecha_ini=${ini}&fecha_fin=${fin}`);
+      if (!data.valores?.length) { el.innerHTML = '<div class="empty-state"><div class="icon">📈</div><p>Sin datos en el período</p></div>'; return; }
+      renderSPCCharts(el, data, vista);
+    } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  });
+}
+
+function renderSPCCharts(el, data, vista) {
+  const { param, valores } = data;
+  const vals = valores.map(v => v.valor);
+  const labels = valores.map(v => `${v.fecha} T${v.turno}.${v.clave?.split('.')[1]||''}`);
+  const lsl = param.valor_min, usl = param.valor_max, obj = param.objetivo;
+  const stats = spcStats(vals);
+  const { cp, cpk } = spcCpCpk(stats.mean, stats.sigma, lsl, usl);
+
+  const ucl = stats.mean + 3 * stats.sigma;
+  const lcl = stats.mean - 3 * stats.sigma;
+
+  // Agrupar por período si semanal/mensual
+  let groupedLabels = labels, groupedVals = vals;
+  if (vista === 'semanal' || vista === 'mensual') {
+    const grupos = {};
+    valores.forEach(v => {
+      const key = vista === 'semanal' ? v.fecha?.slice(0,7) + '-S' + Math.ceil(new Date(v.fecha).getDate()/7) : v.fecha?.slice(0,7);
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(v.valor);
+    });
+    groupedLabels = Object.keys(grupos);
+    groupedVals = groupedLabels.map(k => { const vs = grupos[k]; return vs.reduce((s,v)=>s+v,0)/vs.length; });
+  }
+
+  const canvasId1 = 'spc-chart-main', canvasId2 = 'spc-chart-mr';
+  const canvasId3 = 'spc-chart-hist', canvasId4 = 'spc-chart-np';
+
+  const statsHtml = `
+  <div class="stat-grid" style="margin-bottom:16px">
+    <div class="stat-card"><div class="stat-icon" style="background:#dbeafe">μ</div>
+      <div><div class="stat-value">${stats.mean.toFixed(3)}</div><div class="stat-label">Media</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#f3e8ff">σ</div>
+      <div><div class="stat-value">${stats.sigma.toFixed(3)}</div><div class="stat-label">Desv. Estándar</div></div></div>
+    <div class="stat-card"><div class="stat-icon" style="background:#dcfce7">n</div>
+      <div><div class="stat-value">${stats.n}</div><div class="stat-label">Observaciones</div></div></div>
+    ${cp!=null?`<div class="stat-card"><div class="stat-icon" style="background:${cp>=1.33?'#dcfce7':cp>=1?'#fef3c7':'#fee2e2'}">Cp</div>
+      <div><div class="stat-value">${cp.toFixed(3)}</div><div class="stat-label">Índice Cp${cp<1?' 🔴':cp<1.33?' ⚠️':' ✅'}</div></div></div>`:''}
+    ${cpk!=null?`<div class="stat-card"><div class="stat-icon" style="background:${cpk>=1.33?'#dcfce7':cpk>=1?'#fef3c7':'#fee2e2'}">Cpk</div>
+      <div><div class="stat-value">${cpk.toFixed(3)}</div><div class="stat-label">Índice Cpk${cpk<1?' 🔴':cpk<1.33?' ⚠️':' ✅'}</div></div></div>`:''}
+  </div>
+  ${cp!=null?`<div class="alert alert-info" style="margin-bottom:16px;font-size:13px">
+    <strong>Interpretación:</strong> ${cpk>=1.67?'Proceso altamente capaz (Cpk≥1.67)':cpk>=1.33?'Proceso capaz (Cpk≥1.33)':cpk>=1?'Proceso marginalmente capaz (1≤Cpk<1.33)':'⚠️ Proceso no capaz (Cpk<1) — requiere mejora'}
+  </div>`:''}`;
+
+  el.innerHTML = statsHtml + `
+  <div class="table-card" style="margin-bottom:16px">
+    <div class="table-header"><h3>📈 ${param.nombre_parametro} · ${param.no_tanque} (${param.nombre_tanque})</h3></div>
+    <div style="padding:16px"><canvas id="${canvasId1}" height="80"></canvas></div>
+  </div>
+  ${vista === 'mensual' ? `
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="table-card">
+      <div class="table-header"><h3>📊 Rangos Móviles</h3></div>
+      <div style="padding:16px"><canvas id="${canvasId2}" height="120"></canvas></div>
+    </div>
+    <div class="table-card">
+      <div class="table-header"><h3>📊 Histograma de Capacidad</h3></div>
+      <div style="padding:16px"><canvas id="${canvasId3}" height="120"></canvas></div>
+    </div>
+  </div>
+  <div class="table-card" style="margin-bottom:16px">
+    <div class="table-header"><h3>📉 Gráfica de Probabilidad Normal</h3></div>
+    <div style="padding:16px"><canvas id="${canvasId4}" height="80"></canvas></div>
+  </div>` : ''}`;
+
+  // Gráfica principal
+  setTimeout(() => {
+    const colors = (vista === 'mensual' ? groupedVals : vals).map(v => {
+      if (usl != null && v > usl) return '#ef4444';
+      if (lsl != null && v < lsl) return '#ef4444';
+      return '#3b82f6';
+    });
+    new Chart(document.getElementById(canvasId1), {
+      type: 'line',
+      data: {
+        labels: vista === 'mensual' ? groupedLabels : labels,
+        datasets: [
+          { label: param.nombre_parametro, data: vista==='mensual'?groupedVals:vals, borderColor: '#3b82f6', backgroundColor: colors.map(c=>c+'33'), pointBackgroundColor: colors, tension: 0.3, fill: false },
+          ...(usl!=null?[{ label:`LSC (${usl})`, data: Array(labels.length).fill(usl), borderColor:'#ef4444', borderDash:[5,5], pointRadius:0, tension:0 }]:[]),
+          ...(lsl!=null?[{ label:`LIC (${lsl})`, data: Array(labels.length).fill(lsl), borderColor:'#ef4444', borderDash:[5,5], pointRadius:0, tension:0 }]:[]),
+          ...(obj!=null?[{ label:`Objetivo (${obj})`, data: Array(labels.length).fill(obj), borderColor:'#16a34a', borderDash:[4,4], pointRadius:0, tension:0 }]:[]),
+          ...(vista==='mensual'?[
+            { label:`UCL (${ucl.toFixed(2)})`, data: Array(labels.length).fill(ucl), borderColor:'#f59e0b', borderDash:[3,3], pointRadius:0 },
+            { label:`LCL (${lcl.toFixed(2)})`, data: Array(labels.length).fill(lcl), borderColor:'#f59e0b', borderDash:[3,3], pointRadius:0 }
+          ]:[])
+        ]
+      },
+      options: { responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:`${param.nombre_parametro} (${param.unidad||''})` } } } }
+    });
+
+    if (vista === 'mensual') {
+      // Rangos móviles
+      const mrl = stats.rangos;
+      const mrcl = stats.mrBar * 3.267;
+      new Chart(document.getElementById(canvasId2), {
+        type:'bar',
+        data:{ labels: labels.slice(1), datasets:[
+          { label:'Rango Móvil', data:mrl, backgroundColor:'#a78bfa' },
+          { label:`UCL_MR (${mrcl.toFixed(2)})`, data:Array(mrl.length).fill(mrcl), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }
+        ]},
+        options:{ responsive:true, plugins:{ legend:{ position:'top' } } }
+      });
+
+      // Histograma
+      const sorted = [...vals].sort((a,b)=>a-b);
+      const bins = 8;
+      const minV = sorted[0], maxV = sorted[sorted.length-1];
+      const step = (maxV - minV) / bins || 1;
+      const buckets = Array.from({length:bins}, (_,i) => ({ label: (minV+i*step).toFixed(2), count: 0 }));
+      vals.forEach(v => {
+        const idx = Math.min(Math.floor((v-minV)/step), bins-1);
+        if (buckets[idx]) buckets[idx].count++;
+      });
+      new Chart(document.getElementById(canvasId3), {
+        type:'bar',
+        data:{ labels: buckets.map(b=>b.label), datasets:[
+          { label:'Frecuencia', data: buckets.map(b=>b.count), backgroundColor:'#60a5fa' },
+          ...(lsl!=null?[{ label:`LSL (${lsl})`, data:Array(bins).fill(0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }]:[]),
+          ...(usl!=null?[{ label:`USL (${usl})`, data:Array(bins).fill(0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }]:[])
+        ]},
+        options:{ responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:'Frecuencia' } } } }
+      });
+
+      // Normal probability plot
+      const n = sorted.length;
+      const npLabels = sorted.map((v,i) => {
+        const p = (i+0.5)/n;
+        const z = Math.sqrt(2) * erfinvApprox(2*p-1);
+        return { x: z, y: v };
+      });
+      new Chart(document.getElementById(canvasId4), {
+        type:'scatter',
+        data:{ datasets:[{ label:'Datos', data: npLabels, backgroundColor:'#3b82f6' }]},
+        options:{ responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ x:{ title:{ display:true, text:'Cuantil Normal (z)' } }, y:{ title:{ display:true, text:param.nombre_parametro } } } }
+      });
+    }
+  }, 50);
+}
+
+function erfinvApprox(x) {
+  // Aproximación Beasley-Springer-Moro
+  const a = [0, 2.50662823884, -18.61500062529, 41.39119773534, -25.44106049637];
+  const b = [0, -8.47351093090, 23.08336743743, -21.06224101826, 3.13082909833];
+  const c = [0.3374754822726147, 0.9761690190917186, 0.1607979714918209, 0.0276438810333863, 0.0038405729373609, 0.0003951896511349, 0.0000321767881768, 0.0000002888167364, 0.0000003960315187];
+  const p = (x < 0 ? 1 : 0) + Math.abs(x) * 0.5;
+  if (p < 0.02425) {
+    const q = Math.sqrt(-2*Math.log(p));
+    return (((((((c[8]*q+c[7])*q+c[6])*q+c[5])*q+c[4])*q+c[3])*q+c[2])*q+c[1]) / ((((((((1)*q+0)*q+0)*q+0)*q+0)*q+0)*q+0)*q+1) * (x<0?-1:1);
+  }
+  const q = p - 0.5, r = q*q;
+  return (((((a[4]*r+a[3])*r+a[2])*r+a[1])*r+1)*q) / ((((b[4]*r+b[3])*r+b[2])*r+b[1])*r+1) * (x<0?-1:1);
+}
+
+// ── Catálogo Parámetros (admin) ───────────────────────────────────────────────
+async function viewTitCatalogo() {
+  const [tanques, params] = await Promise.all([
+    GET('/tanques').catch(()=>[]),
+    GET('/parametros-titulacion').catch(()=>[])
+  ]);
+  const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
+  return `
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <button class="btn btn-primary" id="btn-param-nuevo">+ Nuevo Parámetro</button>
+    <button class="btn btn-outline" id="btn-param-seed">🔄 Seed inicial (carga si está vacío)</button>
+    <div style="align-self:center;margin-left:auto">
+      <label class="flabel">Filtrar línea:</label>
+      <select id="pc-filtro-linea" style="margin-left:8px">
+        <option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}
+      </select>
+    </div>
+  </div>
+  <div id="pc-table-area">
+    ${renderParamTable(params, tanques, '')}
+  </div>`;
+}
+
+function renderParamTable(params, tanques, filtroLinea) {
+  const filtered = filtroLinea ? params.filter(p => {
+    const t = tanques.find(x => x.id === p.tanque_id);
+    return t?.linea === filtroLinea;
+  }) : params;
+
+  if (!filtered.length) return '<div class="empty-state"><div class="icon">⚙️</div><p>Sin parámetros. Usa "Seed inicial" para cargar los predeterminados.</p></div>';
+
+  const lineas = [...new Set(filtered.map(p => { const t=tanques.find(x=>x.id===p.tanque_id); return t?.linea||'?'; }))].sort();
+
+  return lineas.map(linea => {
+    const pLinea = filtered.filter(p => tanques.find(t=>t.id===p.tanque_id)?.linea === linea);
+    const tanquesLinea = [...new Set(pLinea.map(p=>p.tanque_id))];
+    return `
+    <div class="table-card" style="margin-bottom:16px">
+      <div class="table-header"><h3>${linea} — ${pLinea.length} parámetro(s)</h3></div>
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Tanque</th><th>Parámetro</th><th>Químico</th><th>Tipo</th><th>Min</th><th>Max</th><th>Objetivo</th><th>Unidad</th><th>Frec.</th><th>Activo</th><th></th></tr></thead>
+          <tbody>${pLinea.sort((a,b)=>a.tanque_id-b.tanque_id||a.orden-b.orden).map(p => {
+            const t = tanques.find(x=>x.id===p.tanque_id);
+            return `<tr style="opacity:${p.activo?1:0.5}">
+              <td style="font-size:12px">${t?.no_tanque||'?'}</td>
+              <td><strong>${p.nombre_parametro}</strong></td>
+              <td>${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px">${p.quimico}</span>`:'-'}</td>
+              <td style="font-size:12px">${p.tipo_rango}</td>
+              <td style="font-size:12px">${p.valor_min??'-'}</td>
+              <td style="font-size:12px">${p.valor_max??'-'}</td>
+              <td style="font-size:12px">${p.objetivo??'-'}</td>
+              <td style="font-size:12px">${p.unidad||'-'}</td>
+              <td style="font-size:12px">${p.frecuencia}×</td>
+              <td>${p.activo?'✅':'❌'}</td>
+              <td><button class="btn btn-outline btn-xs" onclick="editParam(${p.id})">✏️</button></td>
+            </tr>`;
+          }).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function bindTitCatalogo() {
+  document.getElementById('btn-param-seed').addEventListener('click', async () => {
+    const db = await GET('/parametros-titulacion').catch(()=>[]);
+    if (db.length > 0 && !confirm(`Ya existen ${db.length} parámetros. ¿Forzar reset y recargar seed inicial?\nSe perderá el catálogo actual.`)) return;
+    try {
+      const r = await POST('/parametros-titulacion/seed', { reset: db.length > 0 });
+      alert(`✅ Seed cargado: ${r.total} parámetros`);
+      navigate('tit-catalogo');
+    } catch(e) { alert('Error: ' + e.message); }
+  });
+
+  document.getElementById('btn-param-nuevo').addEventListener('click', async () => {
+    const tanques = await GET('/tanques');
+    showModalParam(null, tanques);
+  });
+
+  document.getElementById('pc-filtro-linea').addEventListener('change', async function() {
+    const [tanques, params] = await Promise.all([GET('/tanques'), GET('/parametros-titulacion')]);
+    document.getElementById('pc-table-area').innerHTML = renderParamTable(params, tanques, this.value);
+  });
+}
+
+window.editParam = async function(id) {
+  const [params, tanques] = await Promise.all([GET('/parametros-titulacion'), GET('/tanques')]);
+  const param = params.find(p => p.id === id);
+  if (param) showModalParam(param, tanques);
+};
+
+function showModalParam(param, tanques) {
+  const isEdit = !!param;
+  const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
+  showModal(`
+    <h3>${isEdit?'✏️ Editar Parámetro':'+ Nuevo Parámetro'}</h3>
+    <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px">
+      <div class="form-group"><label>Línea *</label>
+        <select id="pm-linea" ${isEdit?'disabled':''}>
+          ${lineas.map(l=>`<option value="${l}" ${param && tanques.find(t=>t.id===param.tanque_id)?.linea===l?'selected':''}>${l}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group"><label>Tanque *</label>
+        <select id="pm-tanque">
+          ${isEdit ? `<option value="${param.tanque_id}">${param.no_tanque} — ${param.nombre_tanque}</option>` : '<option value="">-- primero elige línea --</option>'}
+        </select>
+      </div>
+      <div class="form-group"><label>Nombre parámetro *</label><input type="text" id="pm-nombre" value="${param?.nombre_parametro||''}" /></div>
+      <div class="form-group"><label>Químico (opcional)</label><input type="text" id="pm-quimico" value="${param?.quimico||''}" placeholder="907, 1207, vacío=siempre" /></div>
+      <div class="form-group"><label>Tipo rango</label>
+        <select id="pm-tipo">
+          <option value="ninguno" ${param?.tipo_rango==='ninguno'?'selected':''}>Ninguno (solo registro)</option>
+          <option value="entre" ${param?.tipo_rango==='entre'?'selected':''}>Entre min y max</option>
+          <option value="maximo" ${param?.tipo_rango==='maximo'?'selected':''}>Máximo</option>
+          <option value="minimo" ${param?.tipo_rango==='minimo'?'selected':''}>Mínimo</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Unidad</label><input type="text" id="pm-unidad" value="${param?.unidad||''}" placeholder="pts, °C, ppm, %, g/m²" /></div>
+      <div class="form-group"><label>Valor mínimo</label><input type="number" step="any" id="pm-min" value="${param?.valor_min??''}" /></div>
+      <div class="form-group"><label>Valor máximo</label><input type="number" step="any" id="pm-max" value="${param?.valor_max??''}" /></div>
+      <div class="form-group"><label>Objetivo</label><input type="number" step="any" id="pm-obj" value="${param?.objetivo??''}" /></div>
+      <div class="form-group"><label>Frecuencia por turno</label>
+        <select id="pm-frec"><option value="2" ${param?.frecuencia!==1?'selected':''}>2 veces (x.1 y x.2)</option><option value="1" ${param?.frecuencia===1?'selected':''}>1 vez (solo x.1)</option></select>
+      </div>
+      <div class="form-group"><label>Orden en pantalla</label><input type="number" id="pm-orden" value="${param?.orden||0}" min="0" /></div>
+      ${isEdit?`<div class="form-group"><label>Activo</label>
+        <select id="pm-activo"><option value="true" ${param?.activo!==false?'selected':''}>Sí</option><option value="false" ${param?.activo===false?'selected':''}>No</option></select>
+      </div>`:''}
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-pm-save">${isEdit?'Guardar cambios':'Crear'}</button>
+    </div>`);
+
+  // Línea → Tanques en el modal de creación
+  if (!isEdit) {
+    const updateTanques = async () => {
+      const linea = document.getElementById('pm-linea').value;
+      const sel = document.getElementById('pm-tanque');
+      sel.innerHTML = '<option value="">-- Seleccionar --</option>';
+      if (!linea) return;
+      const tks = tanques.filter(t=>t.linea===linea);
+      tks.forEach(t => sel.add(new Option(`${t.no_tanque} — ${t.nombre_tanque}`, t.id)));
+    };
+    document.getElementById('pm-linea').addEventListener('change', updateTanques);
+    updateTanques();
+  }
+
+  document.getElementById('btn-pm-save').addEventListener('click', async () => {
+    const body = {
+      tanque_id:       Number(document.getElementById('pm-tanque').value),
+      nombre_parametro:document.getElementById('pm-nombre').value.trim(),
+      quimico:         document.getElementById('pm-quimico').value.trim() || null,
+      tipo_rango:      document.getElementById('pm-tipo').value,
+      unidad:          document.getElementById('pm-unidad').value.trim(),
+      valor_min:       document.getElementById('pm-min').value !== '' ? document.getElementById('pm-min').value : null,
+      valor_max:       document.getElementById('pm-max').value !== '' ? document.getElementById('pm-max').value : null,
+      objetivo:        document.getElementById('pm-obj').value  !== '' ? document.getElementById('pm-obj').value  : null,
+      frecuencia:      Number(document.getElementById('pm-frec').value),
+      orden:           Number(document.getElementById('pm-orden').value) || 0,
+      ...(isEdit ? { activo: document.getElementById('pm-activo').value === 'true' } : {})
+    };
+    if (!body.tanque_id || !body.nombre_parametro) { alert('Tanque y nombre son requeridos'); return; }
+    try {
+      if (isEdit) await PATCH('/parametros-titulacion/' + param.id, body);
+      else await POST('/parametros-titulacion', body);
+      closeModal();
+      navigate('tit-catalogo');
+    } catch(e) { alert('Error: ' + e.message); }
   });
 }
 

@@ -29,7 +29,10 @@ const EMPTY_DB = {
   vales_detalle: [],      // Detalles (líneas) de vales
   vales_correccion: [],   // Correcciones de vales
   kardex_vales: [],       // Libro de kardex (inventario)
-  inventario_vales: []    // Stock actual por item
+  inventario_vales: [],   // Stock actual por item
+  parametros_titulacion: [], // Catálogo de parámetros por línea/tanque
+  titulaciones_header: [],   // Encabezados de titulaciones (1 por turno/línea/titulacion)
+  titulaciones_detalle: []   // Resultados individuales por parámetro
 };
 
 async function initDb() {

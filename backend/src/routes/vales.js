@@ -144,10 +144,11 @@ router.patch('/tanques/:id', valesAllowRoles('admin'), (req, res) => {
   const tanque = (db.tanques_vales || []).find(t => t.id === Number(req.params.id));
   if (!tanque) return res.status(404).json({ error: 'Tanque no encontrado' });
   const b = req.body;
-  if (b.nombre_tanque !== undefined)    tanque.nombre_tanque = b.nombre_tanque;
-  if (b.tipo !== undefined)             tanque.tipo = b.tipo;
+  if (b.nombre_tanque !== undefined)     tanque.nombre_tanque = b.nombre_tanque;
+  if (b.tipo !== undefined)              tanque.tipo = b.tipo;
   if (b.items_autorizados !== undefined) tanque.items_autorizados = b.items_autorizados;
-  if (b.activo !== undefined)           tanque.activo = b.activo;
+  if (b.activo !== undefined)            tanque.activo = b.activo;
+  if (b.quimico_activo !== undefined)    tanque.quimico_activo = b.quimico_activo || null;
   writeVales(db);
   res.json(tanque);
 });
@@ -1496,6 +1497,411 @@ router.post('/import-sqlite', valesAllowRoles('admin'), _upload.single('sqlite_f
     fs.unlink(tmpPath, () => {});
     return res.status(500).json({ error: 'Error durante importación: ' + e.message });
   }
+});
+
+// ── TITULACIONES: helpers ─────────────────────────────────────────────────────
+function calcEstadoParam(valor, param) {
+  const v = parseFloat(valor);
+  if (isNaN(v)) return 'sin_dato';
+  if (param.tipo_rango === 'maximo') {
+    return v > parseFloat(param.valor_max) ? 'fuera' : 'ok';
+  }
+  if (param.tipo_rango === 'minimo') {
+    return v < parseFloat(param.valor_min) ? 'fuera' : 'ok';
+  }
+  if (param.tipo_rango === 'entre') {
+    if (v < parseFloat(param.valor_min) || v > parseFloat(param.valor_max)) return 'fuera';
+    // Límite: dentro del 5% del objetivo, o dentro de un margen de los extremos
+    if (param.objetivo != null) {
+      const obj = parseFloat(param.objetivo);
+      const rango = parseFloat(param.valor_max) - parseFloat(param.valor_min);
+      if (Math.abs(v - obj) > rango * 0.35) return 'limite';
+    }
+    return 'ok';
+  }
+  return 'ok'; // tipo ninguno
+}
+
+function seedParametrosTitulacion(db) {
+  if ((db.parametros_titulacion || []).length > 0) return;
+  db.parametros_titulacion = db.parametros_titulacion || [];
+  const tanques = db.tanques_vales || [];
+  const findT = (linea, no) => tanques.find(t => t.linea === linea && t.no_tanque === no);
+
+  let id = 1;
+  function p(tanque_id, no_tanque, nombre_tanque, nombre_parametro, tipo_rango, valor_min, valor_max, objetivo, unidad, frecuencia, activo, quimico, orden) {
+    db.parametros_titulacion.push({ id: id++, tanque_id, no_tanque, nombre_tanque, nombre_parametro, quimico: quimico || null, tipo_rango, valor_min: valor_min != null ? parseFloat(valor_min) : null, valor_max: valor_max != null ? parseFloat(valor_max) : null, objetivo: objetivo != null ? parseFloat(objetivo) : null, unidad: unidad || '', frecuencia: frecuencia || 2, activo: activo !== false, orden: orden || 0 });
+  }
+
+  // ── LINEA 1 ──
+  const L1 = (no) => { const t = findT('LINEA 1', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
+  // Adhesivo 1753 (T2)
+  let tk = L1('T2: ADEHESIVO 1753'); p(tk.id,tk.no,tk.nom, '% Sólidos', 'entre', 5.2, 5.55, null, '%', 1, true, null, 1);
+  // Desengrase 1 (T8)
+  tk = L1('T8: DESENGRASE 1'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 5, 10, 7, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 61, 71, null, '°C', 2, true, null, 2);
+  // Desengrase 2 (T9)
+  tk = L1('T9: DESENGRASE 2'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 5, 10, 7, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 61, 71, null, '°C', 2, true, null, 2);
+  // Desengrase 3 (T10 — activo=false, se activa si la línea lo usa)
+  tk = L1('T10: 1ER ENJUAGUE DESENGRASE'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 5, 10, 7, 'pts', 2, false, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 61, 71, null, '°C', 2, false, null, 2);
+  // Piclado (T12)
+  tk = L1('T12: PICLADO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 4, 8, 6, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 10, null, 'ppm', 2, true, null, 2);
+  // Fosfato Micro (T14 = AMSTED / T15 = SKF)
+  tk = L1('T14: FOSFATO MACRO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 23, 33, 28, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 3, 5.5, null, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 9.5, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 5.5, 6.5, 5.5, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 5);
+
+  tk = L1('T15: FOSFATO MICRO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 38, 48, 42, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 5, 10, null, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 18, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 4, 10, 5.5, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'CA', 'entre', 15, 40, 27, 'pts', 2, true, null, 5);
+  // Sello (T18)
+  tk = L1('T18: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 3, 4, 3, 'g/L', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'ninguno', null, null, null, '', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'PPMs', 'ninguno', null, null, null, 'ppm', 2, true, null, 3);
+
+  // ── LINEA 3 ──
+  const L3 = (no) => { const t = findT('LINEA 3', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
+  // Sello (T3)
+  tk = L3('T3: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 2, 4, 3, 'g/L', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'ninguno', null, null, null, '', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'PPMs', 'maximo', null, 500, null, 'ppm', 2, true, null, 3);
+  // Desengrase 1 (T6) — soporta 907 y 1207
+  tk = L3('T6: DESENGRASE 1');
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 12, 22, 16, 'pts', 2, true, '907', 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'entre', 11, 13, null, '', 2, true, '907', 2);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 68, '°C', 2, true, '907', 3);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 8, 18, 13, 'pts', 2, false, '1207', 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 65, '°C', 2, false, '1207', 2);
+  // Desengrase 2 (T7)
+  tk = L3('T7: DESENGRASE 2');
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 12, 22, 16, 'pts', 2, true, '907', 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'entre', 11, 13, null, '', 2, true, '907', 2);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 68, '°C', 2, true, '907', 3);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 8, 18, 13, 'pts', 2, false, '1207', 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 65, '°C', 2, false, '1207', 2);
+  // Desengrase 3 (T8)
+  tk = L3('T8: DESENGRASE 3');
+  p(tk.id,tk.no,tk.nom, 'AT', 'entre', 12, 22, 16, 'pts', 2, true, '907', 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'entre', 11, 13, null, '', 2, true, '907', 2);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 61, 71, 68, '°C', 2, true, '907', 3);
+  // Piclado (T11)
+  tk = L3('T11: PICLADO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 4, 8, null, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 10, null, 'ppm', 2, true, null, 2);
+  // Fosfato Micro 1 (T14)
+  tk = L3('T14: MICRO 1'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 23, 33, 28, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 3, 5.5, null, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 9.5, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 5.5, 6.5, 5.5, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 80, 90, null, '°C', 2, true, null, 5);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
+  // Fosfato Micro 2 (T16)
+  tk = L3('T16: MICRO 2'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 23, 33, 23, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 3, 5.5, null, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 9.5, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 5.5, 6.5, null, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 75, 85, null, '°C', 2, true, null, 5);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
+
+  // ── LINEA 4 ──
+  const L4 = (no) => { const t = findT('LINEA 4', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
+  // Sello (T2)
+  tk = L4('T2: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 2, 4, 3, 'g/L', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'ninguno', null, null, null, '', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'PPMs', 'ninguno', null, null, null, 'ppm', 2, true, null, 3);
+  // Desengrase 1 (T4)
+  tk = L4('T4: DESENGRASE 1'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 12, 22, 16, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 65, '°C', 2, true, null, 2);
+  // Desengrase 2 (T5)
+  tk = L4('T5: DESENGRASE 2'); p(tk.id,tk.no,tk.nom, 'AL', 'entre', 8, 18, 13, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 60, 70, 65, '°C', 2, true, null, 2);
+  // Piclado (T7)
+  tk = L4('T7: PICLADO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 3, 8, 6, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 10, null, 'ppm', 2, true, null, 2);
+  // Sales/Refinador (T9)
+  tk = L4('T9: SALES'); p(tk.id,tk.no,tk.nom, 'pH', 'entre', 8, 10.5, 10, '', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'PPMs', 'ninguno', null, null, null, 'ppm', 2, true, null, 2);
+  // Fosfato Manganeso (T10)
+  tk = L4('T10: FOSFATO MANGANESO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 100, 135, 120, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 10, 22, 15, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 20, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 5, 10, 7, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 80, 90, 85, '°C', 2, true, null, 5);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
+
+  // ── BAKER ──
+  const BK = (no) => { const t = findT('BAKER', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
+  // Adhesivo (T02)
+  tk = BK('T02: ADH 1753'); p(tk.id,tk.no,tk.nom, '% Sólidos', 'entre', 5.2, 5.55, null, '%', 1, true, null, 1);
+  // Sello (T04)
+  tk = BK('T04: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 2, 4, 3, 'g/L', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'pH', 'ninguno', null, null, null, '', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'PPMs', 'maximo', null, 500, null, 'ppm', 2, true, null, 3);
+  // Desengrase 1 (T07)
+  tk = BK('T07: D1');
+  p(tk.id,tk.no,tk.nom, 'AT', 'entre', 10, 12, 11, 'pts', 2, true, '1207', 1);
+  // Desengrase 2 (T10)
+  tk = BK('T10: D2');
+  p(tk.id,tk.no,tk.nom, 'AT', 'entre', 10, 12, 11, 'pts', 2, true, '1207', 1);
+  // Stripper (T08)
+  tk = BK('T08: STRP'); p(tk.id,tk.no,tk.nom, 'AL', 'entre', 10, 13, 11.5, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'ninguno', null, null, null, '°C', 2, true, null, 2);
+  // Piclado (T13)
+  tk = BK('T13: PICLADO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 12, 18, null, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 6, null, 'ppm', 2, true, null, 2);
+  // Fosfato Macro (T16)
+  tk = BK('T16: MACRO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 28, 38, 32, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 4, 8, 5.5, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 18, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 4, 10, 5, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 80, 90, null, '°C', 2, true, null, 5);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
+  // Fosfato Micro (T18)
+  tk = BK('T18: MICRO'); p(tk.id,tk.no,tk.nom, 'AT', 'entre', 38, 48, 42, 'pts', 2, true, null, 1);
+  p(tk.id,tk.no,tk.nom, 'AL', 'entre', 5, 10, null, 'pts', 2, true, null, 2);
+  p(tk.id,tk.no,tk.nom, 'Fe', 'maximo', null, 18, null, 'ppm', 2, true, null, 3);
+  p(tk.id,tk.no,tk.nom, 'RA', 'entre', 4, 10, null, 'pts', 2, true, null, 4);
+  p(tk.id,tk.no,tk.nom, 'CA', 'entre', 15, 40, 27, 'pts', 2, true, null, 5);
+  p(tk.id,tk.no,tk.nom, 'Temperatura', 'entre', 75, 85, null, '°C', 2, true, null, 6);
+  p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 7);
+}
+
+// ── PARÁMETROS TITULACIÓN ─────────────────────────────────────────────────────
+router.get('/parametros-titulacion', (req, res) => {
+  const db = readVales();
+  seedParametrosTitulacion(db);
+  let params = db.parametros_titulacion || [];
+  if (req.query.linea) params = params.filter(p => p.no_tanque && (db.tanques_vales || []).find(t => t.id === p.tanque_id)?.linea === req.query.linea);
+  if (req.query.tanque_id) params = params.filter(p => p.tanque_id === Number(req.query.tanque_id));
+  if (req.query.activo !== undefined) { const a = req.query.activo === 'true'; params = params.filter(p => p.activo === a); }
+  res.json(params);
+});
+
+router.post('/parametros-titulacion', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  seedParametrosTitulacion(db);
+  const b = req.body;
+  if (!b.tanque_id || !b.nombre_parametro) return res.status(400).json({ error: 'tanque_id y nombre_parametro requeridos' });
+  const tanque = (db.tanques_vales || []).find(t => t.id === Number(b.tanque_id));
+  if (!tanque) return res.status(404).json({ error: 'Tanque no encontrado' });
+  const row = {
+    id: nextId(db.parametros_titulacion),
+    tanque_id: tanque.id,
+    no_tanque: tanque.no_tanque,
+    nombre_tanque: tanque.nombre_tanque,
+    nombre_parametro: b.nombre_parametro,
+    quimico: b.quimico || null,
+    tipo_rango: b.tipo_rango || 'ninguno',
+    valor_min: b.valor_min != null ? parseFloat(b.valor_min) : null,
+    valor_max: b.valor_max != null ? parseFloat(b.valor_max) : null,
+    objetivo: b.objetivo != null ? parseFloat(b.objetivo) : null,
+    unidad: b.unidad || '',
+    frecuencia: Number(b.frecuencia) || 2,
+    activo: b.activo !== false,
+    orden: Number(b.orden) || 0
+  };
+  db.parametros_titulacion.push(row);
+  writeVales(db);
+  res.status(201).json(row);
+});
+
+router.patch('/parametros-titulacion/:id', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const param = (db.parametros_titulacion || []).find(p => p.id === Number(req.params.id));
+  if (!param) return res.status(404).json({ error: 'Parámetro no encontrado' });
+  const b = req.body;
+  const fields = ['nombre_parametro','quimico','tipo_rango','valor_min','valor_max','objetivo','unidad','frecuencia','activo','orden'];
+  fields.forEach(f => { if (b[f] !== undefined) param[f] = ['valor_min','valor_max','objetivo'].includes(f) ? (b[f] != null ? parseFloat(b[f]) : null) : ['frecuencia','orden'].includes(f) ? Number(b[f]) : b[f]; });
+  writeVales(db);
+  res.json(param);
+});
+
+// Seed manual (admin) — re-genera el catálogo desde cero si está vacío, o fuerza reset
+router.post('/parametros-titulacion/seed', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  if (req.body.reset) db.parametros_titulacion = [];
+  seedParametrosTitulacion(db);
+  writeVales(db);
+  res.json({ ok: true, total: (db.parametros_titulacion || []).length });
+});
+
+// ── TITULACIONES ──────────────────────────────────────────────────────────────
+router.get('/titulaciones', (req, res) => {
+  const db = readVales();
+  let headers = db.titulaciones_header || [];
+  if (req.query.linea)      headers = headers.filter(h => h.linea === req.query.linea);
+  if (req.query.fecha_ini)  headers = headers.filter(h => h.fecha >= req.query.fecha_ini);
+  if (req.query.fecha_fin)  headers = headers.filter(h => h.fecha <= req.query.fecha_fin);
+  if (req.query.turno)      headers = headers.filter(h => String(h.turno) === req.query.turno);
+  if (req.query.estado)     headers = headers.filter(h => h.estado === req.query.estado);
+  const detalles = db.titulaciones_detalle || [];
+  const params   = db.parametros_titulacion || [];
+  const result = [...headers].reverse().map(h => ({
+    ...h,
+    detalle: detalles.filter(d => d.header_id === h.id).map(d => ({
+      ...d,
+      param: params.find(p => p.id === d.parametro_id) || null
+    }))
+  }));
+  res.json(result);
+});
+
+router.get('/titulaciones/:id', (req, res) => {
+  const db = readVales();
+  const header = (db.titulaciones_header || []).find(h => h.id === Number(req.params.id));
+  if (!header) return res.status(404).json({ error: 'Titulación no encontrada' });
+  const detalles = (db.titulaciones_detalle || []).filter(d => d.header_id === header.id);
+  const params = db.parametros_titulacion || [];
+  res.json({ ...header, detalle: detalles.map(d => ({ ...d, param: params.find(p => p.id === d.parametro_id) || null })) });
+});
+
+router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) => {
+  const db = readVales();
+  seedParametrosTitulacion(db);
+  const b = req.body;
+  if (!b.linea || !b.fecha || !b.turno || !b.numero_titulacion) {
+    return res.status(400).json({ error: 'linea, fecha, turno y numero_titulacion requeridos' });
+  }
+  const clave = `${b.turno}.${b.numero_titulacion}`;
+  // Evitar duplicados
+  const existing = (db.titulaciones_header || []).find(h =>
+    h.linea === b.linea && h.fecha === b.fecha &&
+    h.turno === Number(b.turno) && h.numero_titulacion === Number(b.numero_titulacion));
+  if (existing) return res.status(409).json({ error: 'Ya existe esta titulación', id: existing.id });
+
+  const now = new Date();
+  const tanques = db.tanques_vales || [];
+  // Snapshot de químicos activos en este momento
+  const quimico_snapshot = {};
+  tanques.filter(t => t.linea === b.linea && t.quimico_activo).forEach(t => {
+    quimico_snapshot[t.id] = t.quimico_activo;
+  });
+
+  db.titulaciones_header = db.titulaciones_header || [];
+  db.titulaciones_detalle = db.titulaciones_detalle || [];
+  const header = {
+    id: nextId(db.titulaciones_header),
+    linea: b.linea,
+    fecha: b.fecha,
+    turno: Number(b.turno),
+    numero_titulacion: Number(b.numero_titulacion),
+    clave_titulacion: clave,
+    analista: req.valesUser.full_name,
+    semana: b.semana || null,
+    año: b.año || null,
+    estado: 'pendiente',
+    quimico_snapshot,
+    created_at: now.toISOString(),
+    updated_at: now.toISOString()
+  };
+  db.titulaciones_header.push(header);
+
+  // Insertar detalles
+  const params = (db.parametros_titulacion || []).filter(p => {
+    const tanque = tanques.find(t => t.id === p.tanque_id);
+    if (!tanque || tanque.linea !== b.linea) return false;
+    if (!p.activo) return false;
+    // Filtro por químico
+    if (p.quimico) {
+      const quActivo = quimico_snapshot[p.tanque_id] || tanque.quimico_activo;
+      if (quActivo && quActivo !== p.quimico) return false;
+    }
+    // Parámetros frecuencia=1 solo en numero_titulacion=1
+    if (p.frecuencia === 1 && Number(b.numero_titulacion) !== 1) return false;
+    return true;
+  });
+
+  const valores = b.valores || {};
+  let hayFuera = false;
+  params.forEach(p => {
+    const valor = valores[p.id] != null ? parseFloat(valores[p.id]) : null;
+    const estado_param = valor != null ? calcEstadoParam(valor, p) : 'sin_dato';
+    if (estado_param === 'fuera') hayFuera = true;
+    db.titulaciones_detalle.push({
+      id: nextId(db.titulaciones_detalle),
+      header_id: header.id,
+      parametro_id: p.id,
+      valor_registrado: valor,
+      estado_param,
+      corregido: false,
+      valor_corregido: null,
+      valor_original: null,
+      observaciones: (b.observaciones || {})[p.id] || ''
+    });
+  });
+
+  // Calcular estado del header
+  const detalles = db.titulaciones_detalle.filter(d => d.header_id === header.id);
+  const todosSinDato = detalles.every(d => d.estado_param === 'sin_dato');
+  header.estado = todosSinDato ? 'pendiente' : hayFuera ? 'fuera_de_rango' : 'completo';
+
+  writeVales(db);
+  res.status(201).json({ ...header, detalle: detalles.map(d => ({ ...d, param: params.find(p => p.id === d.parametro_id) || null })) });
+});
+
+// Corrección / actualización de titulación
+router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, res) => {
+  const db = readVales();
+  const header = (db.titulaciones_header || []).find(h => h.id === Number(req.params.id));
+  if (!header) return res.status(404).json({ error: 'Titulación no encontrada' });
+  const b = req.body;
+  const now = new Date();
+
+  if (b.valores) {
+    const detalles = (db.titulaciones_detalle || []).filter(d => d.header_id === header.id);
+    const params = db.parametros_titulacion || [];
+    let hayFuera = false;
+    detalles.forEach(d => {
+      if (b.valores[d.parametro_id] == null) return;
+      const nuevoValor = parseFloat(b.valores[d.parametro_id]);
+      const param = params.find(p => p.id === d.parametro_id);
+      const nuevoEstado = param ? calcEstadoParam(nuevoValor, param) : 'sin_dato';
+      if (nuevoEstado === 'fuera') hayFuera = true;
+      if (d.valor_registrado !== null && !d.corregido) d.valor_original = d.valor_registrado;
+      d.valor_corregido = nuevoValor;
+      d.valor_registrado = nuevoValor;
+      d.estado_param = nuevoEstado;
+      d.corregido = true;
+      if ((b.observaciones || {})[d.parametro_id]) d.observaciones = b.observaciones[d.parametro_id];
+    });
+    header.estado = hayFuera ? 'fuera_de_rango' : 'corregido';
+  }
+  if (b.analista !== undefined) header.analista = b.analista;
+  header.updated_at = now.toISOString();
+  header.updated_by = req.valesUser.full_name;
+  writeVales(db);
+  const detalles = (db.titulaciones_detalle || []).filter(d => d.header_id === header.id);
+  res.json({ ...header, detalle: detalles });
+});
+
+// Estadísticas para SPC
+router.get('/titulaciones/estadisticas/valores', (req, res) => {
+  const db = readVales();
+  const { parametro_id, fecha_ini, fecha_fin } = req.query;
+  if (!parametro_id) return res.status(400).json({ error: 'parametro_id requerido' });
+  const param = (db.parametros_titulacion || []).find(p => p.id === Number(parametro_id));
+  if (!param) return res.status(404).json({ error: 'Parámetro no encontrado' });
+
+  let headers = db.titulaciones_header || [];
+  if (fecha_ini) headers = headers.filter(h => h.fecha >= fecha_ini);
+  if (fecha_fin) headers = headers.filter(h => h.fecha <= fecha_fin);
+
+  const headerIds = new Set(headers.map(h => h.id));
+  const detalles = (db.titulaciones_detalle || []).filter(d =>
+    d.parametro_id === Number(parametro_id) && headerIds.has(d.header_id) && d.valor_registrado != null
+  );
+  const result = detalles.map(d => {
+    const h = headers.find(x => x.id === d.header_id);
+    return { fecha: h?.fecha, clave: h?.clave_titulacion, turno: h?.turno, valor: d.valor_registrado, estado: d.estado_param };
+  }).sort((a, b) => a.fecha?.localeCompare(b.fecha) || 0);
+
+  res.json({ param, valores: result });
 });
 
 module.exports = router;
