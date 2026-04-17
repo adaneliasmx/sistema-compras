@@ -5072,13 +5072,15 @@ function renderKpiHistTable(snaps) {
   const fmtPctR = v => v != null ? (v*100).toFixed(1)+'%' : '—';
   let html = '';
   for (const snap of snaps) {
+    const bkLike = snap.linea === 'Baker' || snap.linea === 'L1';
     html += `
       <div class="table-card" style="margin-bottom:18px">
         <div class="table-header">
           <h3>${snap.linea} · Turno ${snap.turno} · ${snap.fecha} <span style="font-weight:400;font-size:12px;color:var(--p-muted)">Sem ${snap.semana}</span></h3>
           <div style="display:flex;gap:16px;font-size:13px">
             <span>Ciclos: <strong>${snap.ciclos_totales}</strong></span>
-            <span>Buenos: <strong>${snap.ciclos_buenos}</strong></span>
+            ${bkLike ? `<span>Cav. Tot.: <strong>${snap.ciclos_no_vacios}</strong></span>` : ''}
+            <span>${bkLike ? 'Cav. Buenas' : 'Buenos'}: <strong>${snap.ciclos_buenos}</strong></span>
             <span>Paros: <strong>${snap.paros_min_total}min</strong></span>
           </div>
         </div>
@@ -5087,7 +5089,7 @@ function renderKpiHistTable(snaps) {
             <thead>
               <tr>
                 <th>Slot</th><th>Hora</th>
-                <th>Ciclos</th><th>Buenos</th>
+                <th>Ciclos</th>${bkLike ? '<th>Cav. Tot.</th>' : ''}<th>${bkLike ? 'Cav. Buenas' : 'Buenos'}</th>
                 <th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>T.Paro(min)</th>
               </tr>
             </thead>
@@ -5096,6 +5098,7 @@ function renderKpiHistTable(snaps) {
                 <td style="text-align:center">${s.slot}</td>
                 <td class="mono">${s.hora_inicio}–${s.hora_fin}</td>
                 <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
+                ${bkLike ? `<td style="text-align:center">${s.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${s.ciclos_buenos}</td>
                 <td class="${kpiColor(s.eficiencia*100)}">${fmtPctR(s.eficiencia)}</td>
                 <td class="${kpiColor(s.capacidad*100)}">${fmtPctR(s.capacidad)}</td>
@@ -5106,6 +5109,7 @@ function renderKpiHistTable(snaps) {
               <tr class="totals-row">
                 <td colspan="2">TOTAL TURNO</td>
                 <td style="text-align:center;font-weight:700">${snap.ciclos_totales}</td>
+                ${bkLike ? `<td style="text-align:center">${snap.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${snap.ciclos_buenos}</td>
                 <td class="${kpiColor(snap.eficiencia*100)}">${fmtPctR(snap.eficiencia)}</td>
                 <td class="${kpiColor(snap.capacidad*100)}">${fmtPctR(snap.capacidad)}</td>
@@ -5499,7 +5503,13 @@ async function viewResumenTurno(el) {
         td.title = 'Clic para ver detalle de defectos';
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
-          if (snap) showDefectosDrilldown(snap.linea, snap.fecha, snap.fecha, snap.turno);
+          if (snap) {
+            // T3 cruza medianoche: hasta = día siguiente para incluir descargas 00:00–06:30
+            const hasta = snap.turno === 'T3'
+              ? new Date(new Date(snap.fecha+'T12:00:00').getTime()+86400000).toISOString().slice(0,10)
+              : snap.fecha;
+            showDefectosDrilldown(snap.linea, snap.fecha, hasta, snap.turno);
+          }
         });
       });
       res.querySelectorAll('.capacidad-click').forEach(td => {
@@ -5514,8 +5524,13 @@ async function viewResumenTurno(el) {
         td.title = 'Clic para ver paros de este turno';
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
-          // No filtrar por turno en API (igual que KPI: cuenta overlap de CUALQUIER paro)
-          if (snap) showParetoParo(snap.linea, snap.fecha, snap.fecha, snap.turno);
+          if (snap) {
+            // T3 cruza medianoche: hasta = día siguiente para incluir paros 00:00–06:30
+            const hasta = snap.turno === 'T3'
+              ? new Date(new Date(snap.fecha+'T12:00:00').getTime()+86400000).toISOString().slice(0,10)
+              : snap.fecha;
+            showParetoParo(snap.linea, snap.fecha, hasta, snap.turno);
+          }
         });
       });
     } else if (activeSubTab === 'analisis') {
@@ -5614,7 +5629,7 @@ async function viewResumenTurno(el) {
         const s = snaps.filter(x => x.linea === l && (filterFn ? filterFn(x) : true));
         if (!s.length) return { ef:null, cal:null };
         let efNum=0, efDen=0, buenos=0, noVacios=0;
-        s.forEach(x => { const h=TURNO_H[x.turno]||8; if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;} buenos+=x.ciclos_buenos; noVacios+=x.ciclos_no_vacios; });
+        s.forEach(x => { const h=TURNO_H[x.turno]||8; if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;} buenos+=(x.ciclos_buenos_calidad??x.ciclos_buenos); noVacios+=(x.ciclos_no_vacios_calidad??x.ciclos_no_vacios); });
         return { ef:efDen>0?efNum/efDen:null, cal:noVacios>0?buenos/noVacios:null };
       }
       function paroHrs(l, filterFn) {
