@@ -1907,7 +1907,7 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
 // ── POST /admin/import-historial ─────────────────────────────────────────────
 // Importa el seed de titulaciones 2026 (params + headers + detalles) al DB.
 // Solo se ejecuta si los arrays están vacíos, para evitar duplicados.
-router.post('/admin/import-historial', requireAdmin, (req, res) => {
+router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin'), (req, res) => {
   const path = require('path');
   const seedPath = path.resolve(__dirname, '../data/tit_2026_seed.json');
   if (!require('fs').existsSync(seedPath)) return res.status(404).json({ error: 'Archivo seed no encontrado' });
