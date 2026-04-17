@@ -1904,4 +1904,41 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
   res.json({ param, valores: result });
 });
 
+// ── POST /admin/import-historial ─────────────────────────────────────────────
+// Importa el seed de titulaciones 2026 (params + headers + detalles) al DB.
+// Solo se ejecuta si los arrays están vacíos, para evitar duplicados.
+router.post('/admin/import-historial', requireAdmin, (req, res) => {
+  const path = require('path');
+  const seedPath = path.resolve(__dirname, '../data/tit_2026_seed.json');
+  if (!require('fs').existsSync(seedPath)) return res.status(404).json({ error: 'Archivo seed no encontrado' });
+
+  const seed = JSON.parse(require('fs').readFileSync(seedPath, 'utf8'));
+  const db = read();
+
+  const yaParams  = (db.parametros_titulacion  || []).length;
+  const yaHeaders = (db.titulaciones_header    || []).length;
+  const yaDetails = (db.titulaciones_detalle   || []).length;
+
+  if (yaHeaders > 0) {
+    return res.json({
+      ok: false,
+      mensaje: `Ya existe historial (${yaHeaders} titulaciones). No se sobreescribió.`,
+      parametros: yaParams, headers: yaHeaders, detalles: yaDetails
+    });
+  }
+
+  db.parametros_titulacion = seed.parametros_titulacion || [];
+  db.titulaciones_header   = seed.titulaciones_header   || [];
+  db.titulaciones_detalle  = seed.titulaciones_detalle  || [];
+  write(db);
+
+  res.json({
+    ok: true,
+    mensaje: 'Historial 2026 importado correctamente.',
+    parametros: db.parametros_titulacion.length,
+    headers: db.titulaciones_header.length,
+    detalles: db.titulaciones_detalle.length
+  });
+});
+
 module.exports = router;

@@ -2974,6 +2974,7 @@ async function viewTitCatalogo() {
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <button class="btn btn-primary" id="btn-param-nuevo">+ Nuevo Parámetro</button>
     <button class="btn btn-outline" id="btn-param-seed">🔄 Seed inicial (carga si está vacío)</button>
+    <button class="btn btn-outline" id="btn-import-historial" style="background:#fffbeb;border-color:#f59e0b;color:#92400e">📥 Importar historial Excel 2026</button>
     <div style="align-self:center;margin-left:auto">
       <label class="flabel">Filtrar línea:</label>
       <select id="pc-filtro-linea" style="margin-left:8px">
@@ -3037,6 +3038,24 @@ function bindTitCatalogo() {
       alert(`✅ Seed cargado: ${r.total} parámetros`);
       navigate('tit-catalogo');
     } catch(e) { alert('Error: ' + e.message); }
+  });
+
+  document.getElementById('btn-import-historial').addEventListener('click', async () => {
+    if (!confirm('¿Importar el historial de titulaciones 2026 desde el Excel?\n\nSolo se ejecuta si no hay titulaciones registradas.\nEsto puede tardar unos segundos.')) return;
+    const btn = document.getElementById('btn-import-historial');
+    btn.disabled = true; btn.textContent = '⏳ Importando...';
+    try {
+      const r = await POST('/admin/import-historial', {});
+      if (r.ok) {
+        alert(`✅ ${r.mensaje}\n\nParámetros: ${r.parametros}\nTitulaciones: ${r.headers}\nLecturas: ${r.detalles}`);
+      } else {
+        alert(`ℹ️ ${r.mensaje}`);
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = '📥 Importar historial Excel 2026';
+    }
   });
 
   document.getElementById('btn-param-nuevo').addEventListener('click', async () => {
