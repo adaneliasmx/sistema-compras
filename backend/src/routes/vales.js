@@ -1907,38 +1907,55 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
 // ── POST /admin/import-historial ─────────────────────────────────────────────
 // Importa el seed de titulaciones 2026 (params + headers + detalles) al DB.
 // Solo se ejecuta si los arrays están vacíos, para evitar duplicados.
-router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin'), (req, res) => {
-  const path = require('path');
-  const seedPath = path.resolve(__dirname, '../data/tit_2026_seed.json');
-  if (!require('fs').existsSync(seedPath)) return res.status(404).json({ error: 'Archivo seed no encontrado' });
+router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin'), async (req, res) => {
+  try {
+    const nodePath = require('path');
+    const nodeFs   = require('fs');
+    const seedPath = nodePath.resolve(__dirname, '../data/tit_2026_seed.json');
 
-  const seed = JSON.parse(require('fs').readFileSync(seedPath, 'utf8'));
-  const db = read();
+    if (!nodeFs.existsSync(seedPath)) {
+      console.error('[import-historial] Seed no encontrado en:', seedPath);
+      return res.status(404).json({ error: 'Archivo seed no encontrado en servidor.' });
+    }
 
-  const yaParams  = (db.parametros_titulacion  || []).length;
-  const yaHeaders = (db.titulaciones_header    || []).length;
-  const yaDetails = (db.titulaciones_detalle   || []).length;
+    let seed;
+    try {
+      seed = JSON.parse(nodeFs.readFileSync(seedPath, 'utf8'));
+    } catch (parseErr) {
+      console.error('[import-historial] Error parseando seed:', parseErr.message);
+      return res.status(500).json({ error: 'Error leyendo seed: ' + parseErr.message });
+    }
 
-  if (yaHeaders > 0) {
-    return res.json({
-      ok: false,
-      mensaje: `Ya existe historial (${yaHeaders} titulaciones). No se sobreescribió.`,
-      parametros: yaParams, headers: yaHeaders, detalles: yaDetails
+    const db = read();
+    const yaHeaders = (db.titulaciones_header || []).length;
+
+    if (yaHeaders > 0) {
+      return res.json({
+        ok: false,
+        mensaje: `Ya existe historial (${yaHeaders} titulaciones). No se sobreescribió.`,
+        parametros: (db.parametros_titulacion || []).length,
+        headers: yaHeaders,
+        detalles: (db.titulaciones_detalle || []).length
+      });
+    }
+
+    db.parametros_titulacion = seed.parametros_titulacion || [];
+    db.titulaciones_header   = seed.titulaciones_header   || [];
+    db.titulaciones_detalle  = seed.titulaciones_detalle  || [];
+    write(db);
+
+    console.log('[import-historial] Importado OK — params:', db.parametros_titulacion.length, 'headers:', db.titulaciones_header.length);
+    res.json({
+      ok: true,
+      mensaje: 'Historial 2026 importado correctamente.',
+      parametros: db.parametros_titulacion.length,
+      headers: db.titulaciones_header.length,
+      detalles: db.titulaciones_detalle.length
     });
+  } catch (err) {
+    console.error('[import-historial] Error inesperado:', err.message, err.stack);
+    res.status(500).json({ error: err.message });
   }
-
-  db.parametros_titulacion = seed.parametros_titulacion || [];
-  db.titulaciones_header   = seed.titulaciones_header   || [];
-  db.titulaciones_detalle  = seed.titulaciones_detalle  || [];
-  write(db);
-
-  res.json({
-    ok: true,
-    mensaje: 'Historial 2026 importado correctamente.',
-    parametros: db.parametros_titulacion.length,
-    headers: db.titulaciones_header.length,
-    detalles: db.titulaciones_detalle.length
-  });
 });
 
 module.exports = router;
