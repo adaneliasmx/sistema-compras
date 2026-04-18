@@ -2987,18 +2987,20 @@ async function viewTitCatalogo() {
   </div>`;
 }
 
+function getParamLinea(p, tanques) {
+  if (p.linea) return p.linea;
+  return tanques.find(x => x.id === p.tanque_id)?.linea || '?';
+}
+
 function renderParamTable(params, tanques, filtroLinea) {
-  const filtered = filtroLinea ? params.filter(p => {
-    const t = tanques.find(x => x.id === p.tanque_id);
-    return t?.linea === filtroLinea;
-  }) : params;
+  const filtered = filtroLinea ? params.filter(p => getParamLinea(p, tanques) === filtroLinea) : params;
 
   if (!filtered.length) return '<div class="empty-state"><div class="icon">⚙️</div><p>Sin parámetros. Usa "Seed inicial" para cargar los predeterminados.</p></div>';
 
-  const lineas = [...new Set(filtered.map(p => { const t=tanques.find(x=>x.id===p.tanque_id); return t?.linea||'?'; }))].sort();
+  const lineas = [...new Set(filtered.map(p => getParamLinea(p, tanques)))].sort();
 
   return lineas.map(linea => {
-    const pLinea = filtered.filter(p => tanques.find(t=>t.id===p.tanque_id)?.linea === linea);
+    const pLinea = filtered.filter(p => getParamLinea(p, tanques) === linea);
     const tanquesLinea = [...new Set(pLinea.map(p=>p.tanque_id))];
     return `
     <div class="table-card" style="margin-bottom:16px">

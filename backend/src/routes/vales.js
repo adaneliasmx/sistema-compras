@@ -1529,11 +1529,13 @@ function seedParametrosTitulacion(db) {
   const findT = (linea, no) => tanques.find(t => t.linea === linea && t.no_tanque === no);
 
   let id = 1;
+  let _currentLinea = '';
   function p(tanque_id, no_tanque, nombre_tanque, nombre_parametro, tipo_rango, valor_min, valor_max, objetivo, unidad, frecuencia, activo, quimico, orden) {
-    db.parametros_titulacion.push({ id: id++, tanque_id, no_tanque, nombre_tanque, nombre_parametro, quimico: quimico || null, tipo_rango, valor_min: valor_min != null ? parseFloat(valor_min) : null, valor_max: valor_max != null ? parseFloat(valor_max) : null, objetivo: objetivo != null ? parseFloat(objetivo) : null, unidad: unidad || '', frecuencia: frecuencia || 2, activo: activo !== false, orden: orden || 0 });
+    db.parametros_titulacion.push({ id: id++, linea: _currentLinea, tanque_id, no_tanque, nombre_tanque, nombre_parametro, quimico: quimico || null, tipo_rango, valor_min: valor_min != null ? parseFloat(valor_min) : null, valor_max: valor_max != null ? parseFloat(valor_max) : null, objetivo: objetivo != null ? parseFloat(objetivo) : null, unidad: unidad || '', frecuencia: frecuencia || 2, activo: activo !== false, orden: orden || 0 });
   }
 
   // ── LINEA 1 ──
+  _currentLinea = 'LINEA 1';
   const L1 = (no) => { const t = findT('LINEA 1', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
   // Adhesivo 1753 (T2)
   let tk = L1('T2: ADEHESIVO 1753'); p(tk.id,tk.no,tk.nom, '% Sólidos', 'entre', 5.2, 5.55, null, '%', 1, true, null, 1);
@@ -1567,6 +1569,7 @@ function seedParametrosTitulacion(db) {
   p(tk.id,tk.no,tk.nom, 'PPMs', 'ninguno', null, null, null, 'ppm', 2, true, null, 3);
 
   // ── LINEA 3 ──
+  _currentLinea = 'LINEA 3';
   const L3 = (no) => { const t = findT('LINEA 3', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
   // Sello (T3)
   tk = L3('T3: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 2, 4, 3, 'g/L', 2, true, null, 1);
@@ -1610,6 +1613,7 @@ function seedParametrosTitulacion(db) {
   p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
 
   // ── LINEA 4 ──
+  _currentLinea = 'LINEA 4';
   const L4 = (no) => { const t = findT('LINEA 4', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
   // Sello (T2)
   tk = L4('T2: SELLO'); p(tk.id,tk.no,tk.nom, 'Concentración', 'entre', 2, 4, 3, 'g/L', 2, true, null, 1);
@@ -1636,6 +1640,7 @@ function seedParametrosTitulacion(db) {
   p(tk.id,tk.no,tk.nom, 'Peso Fosfato', 'ninguno', null, null, null, 'g/m²', 2, true, null, 6);
 
   // ── BAKER ──
+  _currentLinea = 'BAKER';
   const BK = (no) => { const t = findT('BAKER', no); return t ? { id: t.id, no: t.no_tanque, nom: t.nombre_tanque } : { id: null, no, nom: no }; };
   // Adhesivo (T02)
   tk = BK('T02: ADH 1753'); p(tk.id,tk.no,tk.nom, '% Sólidos', 'entre', 5.2, 5.55, null, '%', 1, true, null, 1);
