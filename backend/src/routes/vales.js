@@ -1940,31 +1940,39 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
       });
     }
 
-    // Remapear tanque_id del seed a los IDs reales de producción
-    // Prioridad: linea+no_tanque (único) → solo no_tanque → sin cambio
-    const tanquesProd = db.tanques_vales || [];
-    const idMap = {}; // seedTanqueId → prodTanqueId
-    (seed.parametros_titulacion || []).forEach(p => {
-      if (idMap[p.tanque_id] !== undefined) return;
-      // 1) Coincidencia exacta por linea + no_tanque
-      let match = p.linea && p.no_tanque
-        ? tanquesProd.find(t => t.linea === p.linea && t.no_tanque === p.no_tanque)
-        : null;
-      // 2) Solo no_tanque (sin linea en seed viejo)
-      if (!match && p.no_tanque)
-        match = tanquesProd.find(t => t.no_tanque === p.no_tanque);
-      idMap[p.tanque_id] = match ? match.id : p.tanque_id;
+    // PASO 1: Generar parámetros con tanque_ids REALES de producción
+    // usando la misma lógica del seed (busca por linea+no_tanque en la DB actual)
+    db.parametros_titulacion = [];
+    seedParametrosTitulacion(db); // llena db.parametros_titulacion con IDs correctos
+
+    // PASO 2: Construir mapa seedParamId → prodParamId por firma (linea+no_tanque+nombre+quimico+orden)
+    const firmaParam = (p, tanques) => {
+      const t = tanques.find(x => x.id === p.tanque_id);
+      return `${t?.linea}|${t?.no_tanque}|${p.nombre_parametro}|${p.quimico||''}|${p.orden||0}`;
+    };
+    const seedTanques = db.tanques_vales || []; // mismo en seed y prod
+    const firmasProd = {}; // firma → prod parametro_id
+    db.parametros_titulacion.forEach(p => {
+      firmasProd[firmaParam(p, seedTanques)] = p.id;
+    });
+    const paramIdMap = {}; // seedParamId → prodParamId
+    (seed.parametros_titulacion || []).forEach(sp => {
+      const firma = firmaParam(sp, seedTanques);
+      if (firmasProd[firma]) paramIdMap[sp.id] = firmasProd[firma];
     });
 
-    db.parametros_titulacion = (seed.parametros_titulacion || []).map(p => ({
-      ...p, tanque_id: idMap[p.tanque_id] ?? p.tanque_id
+    // PASO 3: Importar headers y detalles remapeando parametro_id
+    db.titulaciones_header  = seed.titulaciones_header  || [];
+    db.titulaciones_detalle = (seed.titulaciones_detalle || []).map(d => ({
+      ...d,
+      parametro_id: paramIdMap[d.parametro_id] ?? d.parametro_id
     }));
-    db.titulaciones_header = seed.titulaciones_header || [];
-    db.titulaciones_detalle = seed.titulaciones_detalle || [];
     writeVales(db);
 
-    const remapeados = Object.entries(idMap).filter(([k, v]) => Number(k) !== v).length;
-    console.log('[import-historial] OK — params:', db.parametros_titulacion.length, 'tanques remapeados:', remapeados, 'headers:', db.titulaciones_header.length);
+    const mapeados = Object.keys(paramIdMap).length;
+    console.log('[import-historial] OK — params:', db.parametros_titulacion.length,
+      'param_ids mapeados:', mapeados, '/', (seed.parametros_titulacion||[]).length,
+      'headers:', db.titulaciones_header.length);
     res.json({
       ok: true,
       mensaje: 'Historial 2026 importado correctamente.',
