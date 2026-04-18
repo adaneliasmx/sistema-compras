@@ -1928,23 +1928,39 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
 
     const db = readVales();
     const yaHeaders = (db.titulaciones_header || []).length;
+    const force = req.body && req.body.force === true;
 
-    if (yaHeaders > 0) {
+    if (yaHeaders > 0 && !force) {
       return res.json({
         ok: false,
-        mensaje: `Ya existe historial (${yaHeaders} titulaciones). No se sobreescribió.`,
+        mensaje: `Ya existe historial (${yaHeaders} titulaciones). Usa force:true para sobreescribir.`,
         parametros: (db.parametros_titulacion || []).length,
         headers: yaHeaders,
         detalles: (db.titulaciones_detalle || []).length
       });
     }
 
-    db.parametros_titulacion = seed.parametros_titulacion || [];
-    db.titulaciones_header   = seed.titulaciones_header   || [];
-    db.titulaciones_detalle  = seed.titulaciones_detalle  || [];
+    // Remapear tanque_id del seed a los IDs reales de producción (por no_tanque o nombre_tanque)
+    const tanquesProd = db.tanques_vales || [];
+    const idMap = {}; // seedTanqueId → prodTanqueId
+    (seed.parametros_titulacion || []).forEach(p => {
+      if (idMap[p.tanque_id] !== undefined) return;
+      const match = tanquesProd.find(t =>
+        (p.no_tanque     && t.no_tanque     === p.no_tanque)  ||
+        (p.nombre_tanque && t.nombre_tanque === p.nombre_tanque)
+      );
+      idMap[p.tanque_id] = match ? match.id : p.tanque_id;
+    });
+
+    db.parametros_titulacion = (seed.parametros_titulacion || []).map(p => ({
+      ...p, tanque_id: idMap[p.tanque_id] ?? p.tanque_id
+    }));
+    db.titulaciones_header = seed.titulaciones_header || [];
+    db.titulaciones_detalle = seed.titulaciones_detalle || [];
     writeVales(db);
 
-    console.log('[import-historial] Importado OK — params:', db.parametros_titulacion.length, 'headers:', db.titulaciones_header.length);
+    const remapeados = Object.entries(idMap).filter(([k, v]) => Number(k) !== v).length;
+    console.log('[import-historial] OK — params:', db.parametros_titulacion.length, 'tanques remapeados:', remapeados, 'headers:', db.titulaciones_header.length);
     res.json({
       ok: true,
       mensaje: 'Historial 2026 importado correctamente.',

@@ -3045,7 +3045,7 @@ function bindTitCatalogo() {
     const btn = document.getElementById('btn-import-historial');
     btn.disabled = true; btn.textContent = '⏳ Importando...';
     try {
-      const r = await POST('/admin/import-historial', {});
+      const r = await POST('/admin/import-historial', { force: true });
       if (r.ok) {
         alert(`✅ ${r.mensaje}\n\nParámetros: ${r.parametros}\nTitulaciones: ${r.headers}\nLecturas: ${r.detalles}`);
       } else {
