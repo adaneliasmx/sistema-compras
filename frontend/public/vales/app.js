@@ -2581,7 +2581,7 @@ function bindTitulaciones() {
 async function viewTitReporte() {
   const lineas = await GET('/lineas').catch(() => []);
   return `
-  <div class="filters-bar">
+  <div class="filters-bar" style="flex-wrap:wrap;gap:8px">
     <div><label class="flabel">Línea</label><br>
       <select id="tr-linea"><option value="">Todas</option>${lineas.map(l=>`<option>${l}</option>`).join('')}</select>
     </div>
@@ -2601,7 +2601,180 @@ async function viewTitReporte() {
       <button class="btn btn-outline" id="btn-tr-export">⬇️ Excel</button>
     </div>
   </div>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+    <span style="font-size:12px;color:#78716c;align-self:center">Período rápido:</span>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('semana')">Esta semana</button>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('semana-ant')">Semana anterior</button>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('mes')">Este mes</button>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('mes-ant')">Mes anterior</button>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('sem4')">Últimas 4 semanas</button>
+    <button class="btn btn-outline btn-sm" onclick="trPeriodo('anio')">2026 completo</button>
+    <div style="margin-left:auto;display:flex;gap:6px;align-items:center">
+      <span style="font-size:12px;color:#78716c">Vista:</span>
+      <button class="btn btn-outline btn-sm" id="tr-vista-lista" onclick="trSetVista('lista')">Lista</button>
+      <button class="btn btn-outline btn-sm" id="tr-vista-pivot" onclick="trSetVista('pivot')">Tabla</button>
+    </div>
+  </div>
   <div id="tr-result"></div>`;
+}
+
+window._trVista = 'lista';
+window.trSetVista = function(v) {
+  window._trVista = v;
+  document.getElementById('tr-vista-lista')?.classList.toggle('btn-primary', v==='lista');
+  document.getElementById('tr-vista-lista')?.classList.toggle('btn-outline', v!=='lista');
+  document.getElementById('tr-vista-pivot')?.classList.toggle('btn-primary', v==='pivot');
+  document.getElementById('tr-vista-pivot')?.classList.toggle('btn-outline', v!=='pivot');
+  document.getElementById('btn-tr-buscar')?.click();
+};
+
+window.trPeriodo = function(tipo) {
+  const now = new Date();
+  let ini, fin = today();
+  if (tipo === 'semana') {
+    const day = now.getDay() || 7; // 1=Mon..7=Sun
+    const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
+    ini = mon.toISOString().slice(0,10);
+  } else if (tipo === 'semana-ant') {
+    const day = now.getDay() || 7;
+    const mon = new Date(now); mon.setDate(now.getDate() - day - 6);
+    const sun = new Date(now); sun.setDate(now.getDate() - day);
+    ini = mon.toISOString().slice(0,10); fin = sun.toISOString().slice(0,10);
+  } else if (tipo === 'mes') {
+    ini = monthStart();
+  } else if (tipo === 'mes-ant') {
+    const prev = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    const prevEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+    ini = prev.toISOString().slice(0,10); fin = prevEnd.toISOString().slice(0,10);
+  } else if (tipo === 'sem4') {
+    const d = new Date(now); d.setDate(d.getDate()-28);
+    ini = d.toISOString().slice(0,10);
+  } else if (tipo === 'anio') {
+    ini = '2026-01-01'; fin = '2026-12-31';
+  }
+  document.getElementById('tr-ini').value = ini;
+  document.getElementById('tr-fin').value = fin;
+  document.getElementById('btn-tr-buscar').click();
+};
+
+function renderTitLista(rows) {
+  const ESTADO_BADGE = {
+    completo:      '<span style="background:#dcfce7;color:#16a34a;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">✅ OK</span>',
+    fuera_de_rango:'<span style="background:#fee2e2;color:#dc2626;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera</span>',
+    corregido:     '<span style="background:#fef3c7;color:#d97706;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">✏️ Corr.</span>',
+    pendiente:     '<span style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⏳</span>'
+  };
+  return `<div class="table-card">
+    <div class="table-header"><h3>${rows.length} titulación(es)</h3></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th>Fecha</th><th>Línea</th><th>Turno</th><th>Analista</th><th>Estado</th>
+          <th style="text-align:center">OK / Fuera / Total</th><th></th>
+        </tr></thead>
+        <tbody>${rows.map(r => {
+          const total = (r.detalle||[]).length;
+          const fuera = (r.detalle||[]).filter(d=>d.estado_param==='fuera').length;
+          const ok    = (r.detalle||[]).filter(d=>d.estado_param==='ok').length;
+          const rowBg = fuera>0 ? 'background:#fff5f5' : '';
+          return `<tr style="${rowBg}">
+            <td style="font-weight:600">${r.fecha}</td>
+            <td style="font-size:12px">${r.linea}</td>
+            <td style="text-align:center">${r.clave_titulacion}</td>
+            <td style="font-size:12px;color:#78716c">${r.analista||'-'}</td>
+            <td>${ESTADO_BADGE[r.estado]||r.estado}</td>
+            <td style="text-align:center;font-size:12px">
+              <span style="color:#16a34a;font-weight:600">${ok}</span>
+              ${fuera>0?` / <span style="color:#dc2626;font-weight:600">${fuera}</span>`:''}
+              / ${total}
+            </td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-outline btn-sm" onclick="verTitulacion(${r.id})">Ver</button>
+              <button class="btn btn-outline btn-sm" onclick="editTitulacion(${r.id},'${r.linea}',${r.turno},${r.numero_titulacion},'${r.fecha}')">✏️</button>
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function renderTitPivot(rows) {
+  // Agrupar por línea → tabla pivote: filas=titulaciones, columnas=params
+  const lines = [...new Set(rows.map(r=>r.linea))].sort();
+  return lines.map(linea => {
+    const lineRows = rows.filter(r=>r.linea===linea).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.clave_titulacion.localeCompare(b.clave_titulacion));
+    // Construir mapa de parámetros únicos
+    const paramMap = {};
+    lineRows.forEach(h => (h.detalle||[]).forEach(d => {
+      if (!paramMap[d.parametro_id]) paramMap[d.parametro_id] = d.param||{};
+    }));
+    // Agrupar params por tanque
+    const byTank = {};
+    Object.entries(paramMap).forEach(([pid, p]) => {
+      const tk = p.no_tanque||'?';
+      if (!byTank[tk]) byTank[tk] = [];
+      byTank[tk].push({ pid: Number(pid), ...p });
+    });
+    const tanks = Object.keys(byTank).sort();
+    // Ordenar params dentro de cada tanque por orden
+    tanks.forEach(tk => byTank[tk].sort((a,b)=>(a.orden||0)-(b.orden||0)));
+    const allParams = tanks.flatMap(tk => byTank[tk]);
+
+    // Header row 1: tanque grupos
+    const thTanques = tanks.map(tk => {
+      const cnt = byTank[tk].length;
+      const shortTk = tk.replace(/^T\d+:\s*/,'');
+      return `<th colspan="${cnt}" style="background:#1e3a5f;color:#fff;text-align:center;font-size:11px;padding:5px 4px;border:1px solid #334155">${shortTk}</th>`;
+    }).join('');
+
+    // Header row 2: param names
+    const thParams = allParams.map(p =>
+      `<th style="background:#334155;color:#e2e8f0;text-align:center;font-size:10px;padding:4px 3px;border:1px solid #475569;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis" title="${p.nombre_parametro}">${p.nombre_parametro.length>10?p.nombre_parametro.slice(0,9)+'…':p.nombre_parametro}</th>`
+    ).join('');
+
+    // Data rows
+    const dataRows = lineRows.map(h => {
+      const detalleMap = {};
+      (h.detalle||[]).forEach(d => { detalleMap[d.parametro_id] = d; });
+      const fuera = (h.detalle||[]).filter(d=>d.estado_param==='fuera').length;
+      const rowBg = fuera>0 ? '#fff5f5' : '';
+      const cells = allParams.map(p => {
+        const d = detalleMap[p.pid];
+        if (!d) return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;color:#ccc">—</td>`;
+        const val = d.valor_registrado;
+        const bg = d.estado_param==='fuera' ? '#fee2e2' : d.estado_param==='limite' ? '#fffbeb' : '';
+        const fc = d.estado_param==='fuera' ? '#dc2626' : '';
+        return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;padding:3px 4px;background:${bg};color:${fc};font-weight:${fc?'700':'normal'}">${val??'—'}</td>`;
+      }).join('');
+      return `<tr style="background:${rowBg}">
+        <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:12px;white-space:nowrap;font-weight:600">${h.fecha}</td>
+        <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:11px;text-align:center">${h.clave_titulacion}</td>
+        <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:11px;color:#78716c">${h.analista||'-'}</td>
+        ${cells}
+        <td style="border:1px solid #e7e5e4;padding:3px 4px"><button class="btn btn-outline btn-xs" onclick="verTitulacion(${h.id})">Ver</button></td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="table-card" style="margin-bottom:16px">
+      <div class="table-header" style="background:#1e3a5f"><h3 style="color:#fff">${linea} — ${lineRows.length} titulaciones</h3></div>
+      <div style="overflow-x:auto">
+        <table style="border-collapse:collapse;min-width:100%;font-size:12px">
+          <thead>
+            <tr>
+              <th rowspan="2" style="background:#0f2340;color:#fff;padding:5px 8px;border:1px solid #334155;white-space:nowrap">Fecha</th>
+              <th rowspan="2" style="background:#0f2340;color:#fff;padding:5px 6px;border:1px solid #334155">Turno</th>
+              <th rowspan="2" style="background:#0f2340;color:#fff;padding:5px 6px;border:1px solid #334155">Analista</th>
+              ${thTanques}
+              <th rowspan="2" style="background:#0f2340;color:#fff;border:1px solid #334155"></th>
+            </tr>
+            <tr>${thParams}</tr>
+          </thead>
+          <tbody>${dataRows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function bindTitReporte() {
@@ -2625,46 +2798,40 @@ function bindTitReporte() {
       _titData = rows;
       if (!rows.length) { el.innerHTML = '<div class="empty-state"><div class="icon">🔬</div><p>Sin titulaciones en este rango</p></div>'; return; }
 
-      const ESTADO_BADGE = {
-        completo: '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">✅ Completo</span>',
-        fuera_de_rango: '<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera</span>',
-        corregido: '<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">✏️ Corregido</span>',
-        pendiente: '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600">⏳ Pendiente</span>'
-      };
+      const total = rows.length;
+      const nFuera = rows.filter(r=>r.estado==='fuera_de_rango').length;
+      const nOk    = rows.filter(r=>r.estado==='completo').length;
+      const nCorr  = rows.filter(r=>r.estado==='corregido').length;
 
-      el.innerHTML = `
-      <div class="table-card">
-        <div class="table-header"><h3>${rows.length} titulación(es)</h3></div>
-        <div class="table-scroll">
-          <table>
-            <thead><tr><th>Fecha</th><th>Línea</th><th>Clave</th><th>Analista</th><th>Estado</th><th>Parámetros</th><th></th></tr></thead>
-            <tbody>${rows.map(r => {
-              const total  = (r.detalle||[]).length;
-              const fuera  = (r.detalle||[]).filter(d=>d.estado_param==='fuera').length;
-              const ok     = (r.detalle||[]).filter(d=>d.estado_param==='ok').length;
-              return `<tr>
-                <td>${r.fecha}</td>
-                <td>${r.linea}</td>
-                <td style="font-weight:700">${r.clave_titulacion}</td>
-                <td style="font-size:12px">${r.analista||'-'}</td>
-                <td>${ESTADO_BADGE[r.estado]||r.estado}</td>
-                <td style="font-size:12px">
-                  <span style="color:#16a34a">✅ ${ok}</span> /
-                  ${fuera>0?`<span style="color:#dc2626">🔴 ${fuera}</span> /`:''}
-                  total ${total}
-                </td>
-                <td style="display:flex;gap:4px">
-                  <button class="btn btn-outline btn-sm" onclick="verTitulacion(${r.id})">Ver</button>
-                  <button class="btn btn-outline btn-sm" onclick="editTitulacion(${r.id},'${r.linea}',${r.turno},${r.numero_titulacion},'${r.fecha}')">✏️</button>
-                </td>
-              </tr>`;
-            }).join('')}</tbody>
-          </table>
+      const resumen = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px">
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;min-width:100px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#16a34a">${total}</div>
+          <div style="font-size:11px;color:#78716c">Total</div>
         </div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px 16px;min-width:100px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#16a34a">${nOk}</div>
+          <div style="font-size:11px;color:#78716c">Completas</div>
+        </div>
+        ${nFuera>0?`<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 16px;min-width:100px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#dc2626">${nFuera}</div>
+          <div style="font-size:11px;color:#78716c">Fuera de rango</div>
+        </div>`:''}
+        ${nCorr>0?`<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 16px;min-width:100px;text-align:center">
+          <div style="font-size:22px;font-weight:700;color:#d97706">${nCorr}</div>
+          <div style="font-size:11px;color:#78716c">Corregidas</div>
+        </div>`:''}
       </div>`;
+
+      if (window._trVista === 'pivot') {
+        el.innerHTML = resumen + renderTitPivot(rows);
+      } else {
+        el.innerHTML = resumen + renderTitLista(rows);
+      }
     } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
   document.getElementById('btn-tr-buscar').addEventListener('click', buscar);
+  // Sync vista buttons on bind
+  trSetVista(window._trVista || 'lista');
   buscar();
 
   // Export Excel
@@ -2698,40 +2865,57 @@ window.verTitulacion = async function(id) {
   const grupos = {};
   (t.detalle||[]).forEach(d => {
     const p = d.param || {};
-    const key = p.tanque_id || 'sin';
-    if (!grupos[key]) grupos[key] = { tanque: p.no_tanque + ' — ' + p.nombre_tanque, rows: [] };
+    const key = p.no_tanque || p.tanque_id || 'sin';
+    if (!grupos[key]) grupos[key] = { tanque: p.no_tanque || ('Tanque ' + p.tanque_id), rows: [] };
     grupos[key].rows.push(d);
   });
-  const html = Object.values(grupos).map(g => `
-    <div style="margin-bottom:12px">
-      <div style="font-weight:700;font-size:12px;background:#f8fafc;padding:6px 10px;border-radius:6px 6px 0 0;border:1px solid #e7e5e4">${g.tanque}</div>
+
+  const fuera = (t.detalle||[]).filter(d=>d.estado_param==='fuera').length;
+  const estadoColor2 = fuera>0 ? '#dc2626' : '#16a34a';
+  const estadoTxt = fuera>0 ? `🔴 ${fuera} fuera de rango` : '✅ Todo en rango';
+
+  const html = Object.values(grupos).map(g => {
+    const tkShort = g.tanque.replace(/^T\d+:\s*/,'');
+    return `<div style="margin-bottom:10px;border:1px solid #e7e5e4;border-radius:6px;overflow:hidden">
+      <div style="background:#1e3a5f;color:#fff;font-size:12px;font-weight:700;padding:6px 12px">${g.tanque}</div>
       <table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#f1f5f9">
-          <th style="padding:5px 8px;border:1px solid #e7e5e4">Parámetro</th>
-          <th style="padding:5px 8px;border:1px solid #e7e5e4">Rango</th>
-          <th style="padding:5px 8px;border:1px solid #e7e5e4">Valor</th>
-          <th style="padding:5px 8px;border:1px solid #e7e5e4">Estado</th>
-          <th style="padding:5px 8px;border:1px solid #e7e5e4">Obs.</th>
+          <th style="padding:5px 10px;border-bottom:1px solid #e7e5e4;text-align:left">Parámetro</th>
+          <th style="padding:5px 8px;border-bottom:1px solid #e7e5e4;text-align:center">Rango</th>
+          <th style="padding:5px 10px;border-bottom:1px solid #e7e5e4;text-align:center">Valor</th>
+          <th style="padding:5px 8px;border-bottom:1px solid #e7e5e4;text-align:center">Estado</th>
+          <th style="padding:5px 8px;border-bottom:1px solid #e7e5e4;text-align:left;color:#78716c">Obs.</th>
         </tr></thead>
         <tbody>${g.rows.map(d => {
           const p = d.param||{};
-          const rango = p.tipo_rango==='entre' ? `${p.valor_min}–${p.valor_max}` : p.tipo_rango==='maximo' ? `máx ${p.valor_max}` : '—';
+          const rango = p.tipo_rango==='entre' ? `${p.valor_min??''}–${p.valor_max??''}` : p.tipo_rango==='maximo' ? `≤ ${p.valor_max}` : p.tipo_rango==='minimo' ? `≥ ${p.valor_min}` : '—';
           const bg = d.estado_param==='fuera'?'#fef2f2':d.estado_param==='limite'?'#fffbeb':'';
-          return `<tr style="background:${bg}">
-            <td style="padding:5px 8px;border:1px solid #e7e5e4">${p.nombre_parametro||'?'}</td>
-            <td style="padding:5px 8px;border:1px solid #e7e5e4;color:#78716c">${rango} ${p.unidad||''}</td>
-            <td style="padding:5px 8px;border:1px solid #e7e5e4;font-weight:700">${d.valor_registrado??'—'} ${d.corregido?'<small style="color:#d97706">(corr.)</small>':''}</td>
-            <td style="padding:5px 8px;border:1px solid #e7e5e4"><span style="color:${estadoColor(d.estado_param)};font-weight:600">${estadoBadge(d.estado_param)}</span></td>
-            <td style="padding:5px 8px;border:1px solid #e7e5e4;color:#78716c">${d.observaciones||'-'}</td>
+          const fc = d.estado_param==='fuera'?'#dc2626':'';
+          return `<tr style="background:${bg};border-bottom:1px solid #f3f4f6">
+            <td style="padding:5px 10px">${p.nombre_parametro||'?'}${p.unidad?' <span style="color:#78716c;font-size:10px">('+p.unidad+')</span>':''}</td>
+            <td style="padding:5px 8px;text-align:center;color:#64748b;font-size:11px">${rango}</td>
+            <td style="padding:5px 10px;text-align:center;font-weight:700;font-size:14px;color:${fc||'#1e293b'}">${d.valor_registrado??'—'}${d.corregido?' <small style="color:#d97706;font-size:10px">(corr.)</small>':''}</td>
+            <td style="padding:5px 8px;text-align:center"><span style="color:${estadoColor(d.estado_param)};font-weight:600;font-size:12px">${estadoBadge(d.estado_param)}</span></td>
+            <td style="padding:5px 8px;color:#78716c;font-size:11px">${d.observaciones||''}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>
-    </div>`).join('');
+    </div>`;
+  }).join('');
+
   showModal(`
-    <h3>🔬 ${t.linea} · Titulación ${t.clave_titulacion} · ${t.fecha}</h3>
-    <p style="font-size:12px;color:#78716c;margin-bottom:12px">Analista: ${t.analista||'-'} · Estado: ${t.estado}</p>
-    <div style="max-height:60vh;overflow-y:auto">${html}</div>
-    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>`);
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
+      <div>
+        <h3 style="margin:0">🔬 ${t.linea} — Turno ${t.clave_titulacion}</h3>
+        <p style="margin:4px 0 0;font-size:12px;color:#78716c">${t.fecha} · Analista: ${t.analista||'-'}</p>
+      </div>
+      <span style="font-size:13px;font-weight:700;color:${estadoColor2}">${estadoTxt}</span>
+    </div>
+    <div style="max-height:65vh;overflow-y:auto;padding-right:4px">${html}</div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="editTitulacion(${t.id},'${t.linea}',${t.turno},${t.numero_titulacion},'${t.fecha}')">✏️ Editar</button>
+      <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
+    </div>`);
 };
 
 window.editTitulacion = function(id, linea, turno, num, fecha) {
@@ -2857,22 +3041,22 @@ function renderSPCCharts(el, data, vista) {
   el.innerHTML = statsHtml + `
   <div class="table-card" style="margin-bottom:16px">
     <div class="table-header"><h3>📈 ${param.nombre_parametro} · ${param.no_tanque} (${param.nombre_tanque})</h3></div>
-    <div style="padding:16px"><canvas id="${canvasId1}" height="80"></canvas></div>
+    <div style="padding:16px;height:300px;position:relative"><canvas id="${canvasId1}"></canvas></div>
   </div>
   ${vista === 'mensual' ? `
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
     <div class="table-card">
       <div class="table-header"><h3>📊 Rangos Móviles</h3></div>
-      <div style="padding:16px"><canvas id="${canvasId2}" height="120"></canvas></div>
+      <div style="padding:16px;height:240px;position:relative"><canvas id="${canvasId2}"></canvas></div>
     </div>
     <div class="table-card">
       <div class="table-header"><h3>📊 Histograma de Capacidad</h3></div>
-      <div style="padding:16px"><canvas id="${canvasId3}" height="120"></canvas></div>
+      <div style="padding:16px;height:240px;position:relative"><canvas id="${canvasId3}"></canvas></div>
     </div>
   </div>
   <div class="table-card" style="margin-bottom:16px">
     <div class="table-header"><h3>📉 Gráfica de Probabilidad Normal</h3></div>
-    <div style="padding:16px"><canvas id="${canvasId4}" height="80"></canvas></div>
+    <div style="padding:16px;height:280px;position:relative"><canvas id="${canvasId4}"></canvas></div>
   </div>` : ''}`;
 
   // Gráfica principal
@@ -2897,7 +3081,7 @@ function renderSPCCharts(el, data, vista) {
           ]:[])
         ]
       },
-      options: { responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:`${param.nombre_parametro} (${param.unidad||''})` } } } }
+      options: { animation: false, responsive:true, maintainAspectRatio: false, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:`${param.nombre_parametro} (${param.unidad||''})` } } } }
     });
 
     if (vista === 'mensual') {
@@ -2910,7 +3094,7 @@ function renderSPCCharts(el, data, vista) {
           { label:'Rango Móvil', data:mrl, backgroundColor:'#a78bfa' },
           { label:`UCL_MR (${mrcl.toFixed(2)})`, data:Array(mrl.length).fill(mrcl), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }
         ]},
-        options:{ responsive:true, plugins:{ legend:{ position:'top' } } }
+        options:{ animation: false, responsive:true, maintainAspectRatio: false, plugins:{ legend:{ position:'top' } } }
       });
 
       // Histograma
@@ -2930,7 +3114,7 @@ function renderSPCCharts(el, data, vista) {
           ...(lsl!=null?[{ label:`LSL (${lsl})`, data:Array(bins).fill(0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }]:[]),
           ...(usl!=null?[{ label:`USL (${usl})`, data:Array(bins).fill(0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }]:[])
         ]},
-        options:{ responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:'Frecuencia' } } } }
+        options:{ animation: false, responsive:true, maintainAspectRatio: false, plugins:{ legend:{ position:'top' } }, scales:{ y:{ title:{ display:true, text:'Frecuencia' } } } }
       });
 
       // Normal probability plot
@@ -2943,10 +3127,10 @@ function renderSPCCharts(el, data, vista) {
       new Chart(document.getElementById(canvasId4), {
         type:'scatter',
         data:{ datasets:[{ label:'Datos', data: npLabels, backgroundColor:'#3b82f6' }]},
-        options:{ responsive:true, plugins:{ legend:{ position:'top' } }, scales:{ x:{ title:{ display:true, text:'Cuantil Normal (z)' } }, y:{ title:{ display:true, text:param.nombre_parametro } } } }
+        options:{ animation: false, responsive:true, maintainAspectRatio: false, plugins:{ legend:{ position:'top' } }, scales:{ x:{ title:{ display:true, text:'Cuantil Normal (z)' } }, y:{ title:{ display:true, text:param.nombre_parametro } } } }
       });
     }
-  }, 50);
+  }, 0);
 }
 
 function erfinvApprox(x) {
@@ -3001,7 +3185,6 @@ function renderParamTable(params, tanques, filtroLinea) {
 
   return lineas.map(linea => {
     const pLinea = filtered.filter(p => getParamLinea(p, tanques) === linea);
-    const tanquesLinea = [...new Set(pLinea.map(p=>p.tanque_id))];
     return `
     <div class="table-card" style="margin-bottom:16px">
       <div class="table-header"><h3>${linea} — ${pLinea.length} parámetro(s)</h3></div>
@@ -3010,8 +3193,8 @@ function renderParamTable(params, tanques, filtroLinea) {
           <thead><tr><th>Tanque</th><th>Parámetro</th><th>Químico</th><th>Tipo</th><th>Min</th><th>Max</th><th>Objetivo</th><th>Unidad</th><th>Frec.</th><th>Activo</th><th></th></tr></thead>
           <tbody>${pLinea.sort((a,b)=>a.tanque_id-b.tanque_id||a.orden-b.orden).map(p => {
             const t = tanques.find(x=>x.id===p.tanque_id);
-            return `<tr style="opacity:${p.activo?1:0.5}">
-              <td style="font-size:12px">${t?.no_tanque||'?'}</td>
+            return `<tr style="opacity:${p.activo?1:0.5};cursor:pointer" onclick="openParamChart(${p.id})" title="Ver gráfica semanal">
+              <td style="font-size:12px">${t?.no_tanque||p.no_tanque||'?'}</td>
               <td><strong>${p.nombre_parametro}</strong></td>
               <td>${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px">${p.quimico}</span>`:'-'}</td>
               <td style="font-size:12px">${p.tipo_rango}</td>
@@ -3021,7 +3204,10 @@ function renderParamTable(params, tanques, filtroLinea) {
               <td style="font-size:12px">${p.unidad||'-'}</td>
               <td style="font-size:12px">${p.frecuencia}×</td>
               <td>${p.activo?'✅':'❌'}</td>
-              <td><button class="btn btn-outline btn-xs" onclick="editParam(${p.id})">✏️</button></td>
+              <td onclick="event.stopPropagation()" style="white-space:nowrap">
+                <button class="btn btn-outline btn-xs" onclick="openParamChart(${p.id})" title="Gráfica semanal">📈</button>
+                <button class="btn btn-outline btn-xs" onclick="editParam(${p.id})">✏️</button>
+              </td>
             </tr>`;
           }).join('')}
           </tbody>
@@ -3030,6 +3216,34 @@ function renderParamTable(params, tanques, filtroLinea) {
     </div>`;
   }).join('');
 }
+
+window.openParamChart = async function(paramId) {
+  const params = await GET('/parametros-titulacion').catch(()=>[]);
+  const param = params.find(p => p.id === paramId);
+  if (!param) { alert('Parámetro no encontrado'); return; }
+
+  // Mostrar modal con loading
+  showModal(`
+    <h3>📈 ${param.nombre_parametro} — ${param.no_tanque||''}</h3>
+    <p style="font-size:12px;color:#78716c">Comportamiento semanal — 2026</p>
+    <div id="param-chart-area" style="min-height:340px"><div class="empty-state"><div class="icon">⏳</div></div></div>
+    <div class="modal-actions"><button class="btn btn-outline" onclick="closeModal()">Cerrar</button></div>
+  `);
+
+  try {
+    const data = await GET('/titulaciones/estadisticas/valores?parametro_id=' + paramId + '&fecha_ini=2026-01-01&fecha_fin=' + today());
+    const el = document.getElementById('param-chart-area');
+    if (!el) return;
+    if (!data.valores?.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">📊</div><p>Sin datos registrados</p></div>';
+      return;
+    }
+    renderSPCCharts(el, data, 'semanal');
+  } catch(e) {
+    const el = document.getElementById('param-chart-area');
+    if (el) el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+  }
+};
 
 function bindTitCatalogo() {
   document.getElementById('btn-param-seed').addEventListener('click', async () => {
