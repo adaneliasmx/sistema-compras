@@ -1940,15 +1940,19 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
       });
     }
 
-    // Remapear tanque_id del seed a los IDs reales de producción (por no_tanque o nombre_tanque)
+    // Remapear tanque_id del seed a los IDs reales de producción
+    // Prioridad: linea+no_tanque (único) → solo no_tanque → sin cambio
     const tanquesProd = db.tanques_vales || [];
     const idMap = {}; // seedTanqueId → prodTanqueId
     (seed.parametros_titulacion || []).forEach(p => {
       if (idMap[p.tanque_id] !== undefined) return;
-      const match = tanquesProd.find(t =>
-        (p.no_tanque     && t.no_tanque     === p.no_tanque)  ||
-        (p.nombre_tanque && t.nombre_tanque === p.nombre_tanque)
-      );
+      // 1) Coincidencia exacta por linea + no_tanque
+      let match = p.linea && p.no_tanque
+        ? tanquesProd.find(t => t.linea === p.linea && t.no_tanque === p.no_tanque)
+        : null;
+      // 2) Solo no_tanque (sin linea en seed viejo)
+      if (!match && p.no_tanque)
+        match = tanquesProd.find(t => t.no_tanque === p.no_tanque);
       idMap[p.tanque_id] = match ? match.id : p.tanque_id;
     });
 
