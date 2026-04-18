@@ -1926,7 +1926,7 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
       return res.status(500).json({ error: 'Error leyendo seed: ' + parseErr.message });
     }
 
-    const db = read();
+    const db = readVales();
     const yaHeaders = (db.titulaciones_header || []).length;
 
     if (yaHeaders > 0) {
@@ -1942,7 +1942,7 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
     db.parametros_titulacion = seed.parametros_titulacion || [];
     db.titulaciones_header   = seed.titulaciones_header   || [];
     db.titulaciones_detalle  = seed.titulaciones_detalle  || [];
-    write(db);
+    writeVales(db);
 
     console.log('[import-historial] Importado OK — params:', db.parametros_titulacion.length, 'headers:', db.titulaciones_header.length);
     res.json({
