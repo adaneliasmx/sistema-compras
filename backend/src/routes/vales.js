@@ -2086,8 +2086,6 @@ router.post('/admin/import-excel-compact', valesAuthRequired, valesAllowRoles('a
 });
 
 // ── POST /admin/import-excel — recibe el .xlsx y lo procesa en el servidor ────
-const multer  = require('multer');
-const _upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 const IMPORT_EXACT_COLS = {
   'LINEA 1': [
