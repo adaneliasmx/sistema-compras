@@ -1914,26 +1914,9 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
 // Solo se ejecuta si los arrays están vacíos, para evitar duplicados.
 router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin'), async (req, res) => {
   try {
-    const nodePath = require('path');
-    const nodeFs   = require('fs');
-    const seedPath = nodePath.resolve(__dirname, '../data/tit_2026_seed.json');
-
-    if (!nodeFs.existsSync(seedPath)) {
-      console.error('[import-historial] Seed no encontrado en:', seedPath);
-      return res.status(404).json({ error: 'Archivo seed no encontrado en servidor.' });
-    }
-
-    let seed;
-    try {
-      seed = JSON.parse(nodeFs.readFileSync(seedPath, 'utf8'));
-    } catch (parseErr) {
-      console.error('[import-historial] Error parseando seed:', parseErr.message);
-      return res.status(500).json({ error: 'Error leyendo seed: ' + parseErr.message });
-    }
-
-    const db = readVales();
+    const db    = readVales();
+    const force = req.body?.force === true;
     const yaHeaders = (db.titulaciones_header || []).length;
-    const force = req.body && req.body.force === true;
 
     if (yaHeaders > 0 && !force) {
       return res.json({
@@ -1945,38 +1928,60 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
       });
     }
 
-    // PASO 1: Generar parámetros con tanque_ids REALES de producción
-    // usando la misma lógica del seed (busca por linea+no_tanque en la DB actual)
-    db.parametros_titulacion = [];
-    seedParametrosTitulacion(db); // llena db.parametros_titulacion con IDs correctos
+    // ── Flujo A: datos cargados desde Excel en el navegador ───────────────────
+    if (req.body?.headers && req.body?.detalles) {
+      // El frontend ya hizo el mapeo con param IDs reales del servidor
+      // Solo actualizamos headers y detalles; los parámetros ya están en DB
+      db.titulaciones_header  = req.body.headers;
+      db.titulaciones_detalle = req.body.detalles;
+      writeVales(db);
+      console.log('[import-historial] Excel directo — headers:', db.titulaciones_header.length,
+        'detalles:', db.titulaciones_detalle.length);
+      return res.json({
+        ok: true,
+        mensaje: `Historial importado desde Excel (${req.body.headers.length} titulaciones).`,
+        parametros: (db.parametros_titulacion || []).length,
+        headers: db.titulaciones_header.length,
+        detalles: db.titulaciones_detalle.length
+      });
+    }
 
-    // PASO 2: Construir mapa seedParamId → prodParamId por firma (linea+no_tanque+nombre+quimico+orden)
+    // ── Flujo B: seed preconstruido (botón clásico) ───────────────────────────
+    const nodePath = require('path');
+    const nodeFs   = require('fs');
+    const seedPath = nodePath.resolve(__dirname, '../data/tit_2026_seed.json');
+    if (!nodeFs.existsSync(seedPath)) {
+      return res.status(404).json({ error: 'Archivo seed no encontrado en servidor.' });
+    }
+    let seed;
+    try { seed = JSON.parse(nodeFs.readFileSync(seedPath, 'utf8')); }
+    catch (e) { return res.status(500).json({ error: 'Error leyendo seed: ' + e.message }); }
+
+    // Generar parámetros con tanque_ids reales de producción
+    db.parametros_titulacion = [];
+    seedParametrosTitulacion(db);
+
+    // Mapear seedParamId → prodParamId por firma
     const firmaParam = (p, tanques) => {
       const t = tanques.find(x => x.id === p.tanque_id);
       return `${t?.linea}|${t?.no_tanque}|${p.nombre_parametro}|${p.quimico||''}|${p.orden||0}`;
     };
-    const seedTanques = db.tanques_vales || []; // mismo en seed y prod
-    const firmasProd = {}; // firma → prod parametro_id
-    db.parametros_titulacion.forEach(p => {
-      firmasProd[firmaParam(p, seedTanques)] = p.id;
-    });
-    const paramIdMap = {}; // seedParamId → prodParamId
+    const seedTanques = db.tanques_vales || [];
+    const firmasProd = {};
+    db.parametros_titulacion.forEach(p => { firmasProd[firmaParam(p, seedTanques)] = p.id; });
+    const paramIdMap = {};
     (seed.parametros_titulacion || []).forEach(sp => {
       const firma = firmaParam(sp, seedTanques);
       if (firmasProd[firma]) paramIdMap[sp.id] = firmasProd[firma];
     });
 
-    // PASO 3: Importar headers y detalles remapeando parametro_id
-    db.titulaciones_header  = seed.titulaciones_header  || [];
+    db.titulaciones_header  = seed.titulaciones_header || [];
     db.titulaciones_detalle = (seed.titulaciones_detalle || []).map(d => ({
-      ...d,
-      parametro_id: paramIdMap[d.parametro_id] ?? d.parametro_id
+      ...d, parametro_id: paramIdMap[d.parametro_id] ?? d.parametro_id
     }));
     writeVales(db);
 
-    const mapeados = Object.keys(paramIdMap).length;
-    console.log('[import-historial] OK — params:', db.parametros_titulacion.length,
-      'param_ids mapeados:', mapeados, '/', (seed.parametros_titulacion||[]).length,
+    console.log('[import-historial] Seed — params:', db.parametros_titulacion.length,
       'headers:', db.titulaciones_header.length);
     res.json({
       ok: true,

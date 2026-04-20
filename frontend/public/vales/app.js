@@ -3147,6 +3147,245 @@ function erfinvApprox(x) {
   return (((((a[4]*r+a[3])*r+a[2])*r+a[1])*r+1)*q) / ((((b[4]*r+b[3])*r+b[2])*r+b[1])*r+1) * (x<0?-1:1);
 }
 
+// ── Lectura de Excel y carga directa ─────────────────────────────────────────
+const TIT_EXACT_COLS = {
+  'LINEA 1': [
+    { no: 'T2: ADEHESIVO 1753',      nom: '% Sólidos',    qui: null,   col: 3  },
+    { no: 'T18: SELLO',              nom: 'Concentración', qui: null,   col: 4  },
+    { no: 'T18: SELLO',              nom: 'pH',            qui: null,   col: 5  },
+    { no: 'T18: SELLO',              nom: 'PPMs',          qui: null,   col: 6  },
+    { no: 'T8: DESENGRASE 1',        nom: 'AT',            qui: null,   col: 10 },
+    { no: 'T8: DESENGRASE 1',        nom: 'Temperatura',   qui: null,   col: 13 },
+    { no: 'T9: DESENGRASE 2',        nom: 'AT',            qui: null,   col: 14 },
+    { no: 'T9: DESENGRASE 2',        nom: 'Temperatura',   qui: null,   col: 15 },
+    { no: 'T12: PICLADO',            nom: 'AT',            qui: null,   col: 30 },
+    { no: 'T12: PICLADO',            nom: 'Fe',            qui: null,   col: 31 },
+    { no: 'T14: FOSFATO MACRO',      nom: 'AT',            qui: null,   col: 39 },
+    { no: 'T14: FOSFATO MACRO',      nom: 'AL',            qui: null,   col: 40 },
+    { no: 'T14: FOSFATO MACRO',      nom: 'Fe',            qui: null,   col: 41 },
+    { no: 'T14: FOSFATO MACRO',      nom: 'Peso Fosfato',  qui: null,   col: 42 },
+    { no: 'T14: FOSFATO MACRO',      nom: 'RA',            qui: null,   col: 43 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'AT',            qui: null,   col: 48 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'AL',            qui: null,   col: 49 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'Fe',            qui: null,   col: 50 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'CA',            qui: null,   col: 51 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'Peso Fosfato',  qui: null,   col: 52 },
+    { no: 'T15: FOSFATO MICRO',      nom: 'RA',            qui: null,   col: 53 },
+  ],
+  'LINEA 3': [
+    { no: 'T3: SELLO',               nom: 'Concentración', qui: null,   col: 6  },
+    { no: 'T3: SELLO',               nom: 'pH',            qui: null,   col: 7  },
+    { no: 'T3: SELLO',               nom: 'PPMs',          qui: null,   col: 8  },
+    { no: 'T6: DESENGRASE 1',        nom: 'AL',            qui: '907',  col: 11 },
+    { no: 'T6: DESENGRASE 1',        nom: 'pH',            qui: '907',  col: 12 },
+    { no: 'T6: DESENGRASE 1',        nom: 'Temperatura',   qui: '907',  col: 13 },
+    { no: 'T6: DESENGRASE 1',        nom: 'AL',            qui: '1207', col: 11 },
+    { no: 'T6: DESENGRASE 1',        nom: 'Temperatura',   qui: '1207', col: 13 },
+    { no: 'T7: DESENGRASE 2',        nom: 'AL',            qui: '907',  col: 15 },
+    { no: 'T7: DESENGRASE 2',        nom: 'pH',            qui: '907',  col: 16 },
+    { no: 'T7: DESENGRASE 2',        nom: 'Temperatura',   qui: '907',  col: 18 },
+    { no: 'T7: DESENGRASE 2',        nom: 'AL',            qui: '1207', col: 15 },
+    { no: 'T7: DESENGRASE 2',        nom: 'Temperatura',   qui: '1207', col: 18 },
+    { no: 'T8: DESENGRASE 3',        nom: 'AT',            qui: '907',  col: 19 },
+    { no: 'T8: DESENGRASE 3',        nom: 'pH',            qui: '907',  col: 20 },
+    { no: 'T8: DESENGRASE 3',        nom: 'Temperatura',   qui: '907',  col: 22 },
+    { no: 'T11: PICLADO',            nom: 'AT',            qui: null,   col: 27 },
+    { no: 'T11: PICLADO',            nom: 'Fe',            qui: null,   col: 28 },
+    { no: 'T14: MICRO 1',            nom: 'AT',            qui: null,   col: 33 },
+    { no: 'T14: MICRO 1',            nom: 'AL',            qui: null,   col: 34 },
+    { no: 'T14: MICRO 1',            nom: 'RA',            qui: null,   col: 35 },
+    { no: 'T14: MICRO 1',            nom: 'Fe',            qui: null,   col: 36 },
+    { no: 'T14: MICRO 1',            nom: 'Peso Fosfato',  qui: null,   col: 37 },
+    { no: 'T14: MICRO 1',            nom: 'Temperatura',   qui: null,   col: 39 },
+    { no: 'T16: MICRO 2',            nom: 'AT',            qui: null,   col: 42 },
+    { no: 'T16: MICRO 2',            nom: 'AL',            qui: null,   col: 43 },
+    { no: 'T16: MICRO 2',            nom: 'RA',            qui: null,   col: 44 },
+    { no: 'T16: MICRO 2',            nom: 'Fe',            qui: null,   col: 45 },
+    { no: 'T16: MICRO 2',            nom: 'Peso Fosfato',  qui: null,   col: 46 },
+    { no: 'T16: MICRO 2',            nom: 'Temperatura',   qui: null,   col: 48 },
+  ],
+  'LINEA 4': [
+    { no: 'T2: SELLO',               nom: 'Concentración', qui: null,   col: 3  },
+    { no: 'T2: SELLO',               nom: 'pH',            qui: null,   col: 4  },
+    { no: 'T2: SELLO',               nom: 'PPMs',          qui: null,   col: 5  },
+    { no: 'T4: DESENGRASE 1',        nom: 'AT',            qui: null,   col: 9  },
+    { no: 'T4: DESENGRASE 1',        nom: 'Temperatura',   qui: null,   col: 12 },
+    { no: 'T5: DESENGRASE 2',        nom: 'AL',            qui: null,   col: 13 },
+    { no: 'T5: DESENGRASE 2',        nom: 'Temperatura',   qui: null,   col: 17 },
+    { no: 'T7: PICLADO',             nom: 'AT',            qui: null,   col: 21 },
+    { no: 'T7: PICLADO',             nom: 'Fe',            qui: null,   col: 22 },
+    { no: 'T9: SALES',               nom: 'pH',            qui: null,   col: 26 },
+    { no: 'T9: SALES',               nom: 'PPMs',          qui: null,   col: 27 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'AT',            qui: null,   col: 28 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'AL',            qui: null,   col: 29 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'Fe',            qui: null,   col: 30 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'Peso Fosfato',  qui: null,   col: 31 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'RA',            qui: null,   col: 32 },
+    { no: 'T10: FOSFATO MANGANESO',  nom: 'Temperatura',   qui: null,   col: 33 },
+  ],
+  'BAKER': [
+    { no: 'T02: ADH 1753',           nom: '% Sólidos',    qui: null,   col: 3  },
+    { no: 'T04: SELLO',              nom: 'Concentración', qui: null,   col: 4  },
+    { no: 'T04: SELLO',              nom: 'pH',            qui: null,   col: 5  },
+    { no: 'T04: SELLO',              nom: 'PPMs',          qui: null,   col: 6  },
+    { no: 'T07: D1',                 nom: 'AT',            qui: '1207', col: 10 },
+    { no: 'T08: STRP',               nom: 'AL',            qui: null,   col: 14 },
+    { no: 'T08: STRP',               nom: 'Temperatura',   qui: null,   col: 15 },
+    { no: 'T10: D2',                 nom: 'AT',            qui: '1207', col: 20 },
+    { no: 'T13: PICLADO',            nom: 'AT',            qui: null,   col: 30 },
+    { no: 'T13: PICLADO',            nom: 'Fe',            qui: null,   col: 31 },
+    { no: 'T16: MACRO',              nom: 'AT',            qui: null,   col: 39 },
+    { no: 'T16: MACRO',              nom: 'AL',            qui: null,   col: 40 },
+    { no: 'T16: MACRO',              nom: 'Fe',            qui: null,   col: 41 },
+    { no: 'T16: MACRO',              nom: 'Peso Fosfato',  qui: null,   col: 42 },
+    { no: 'T16: MACRO',              nom: 'RA',            qui: null,   col: 43 },
+    { no: 'T16: MACRO',              nom: 'Temperatura',   qui: null,   col: 44 },
+    { no: 'T18: MICRO',              nom: 'AT',            qui: null,   col: 48 },
+    { no: 'T18: MICRO',              nom: 'AL',            qui: null,   col: 49 },
+    { no: 'T18: MICRO',              nom: 'Fe',            qui: null,   col: 50 },
+    { no: 'T18: MICRO',              nom: 'CA',            qui: null,   col: 51 },
+    { no: 'T18: MICRO',              nom: 'Peso Fosfato',  qui: null,   col: 52 },
+    { no: 'T18: MICRO',              nom: 'RA',            qui: null,   col: 53 },
+    { no: 'T18: MICRO',              nom: 'Temperatura',   qui: null,   col: 54 },
+  ]
+};
+
+const TIT_HOJAS = [
+  { linea: 'LINEA 1', hoja: 'Titulacion linea 1', skipRows: 3 },
+  { linea: 'LINEA 3', hoja: 'Titulación L3',       skipRows: 1 },
+  { linea: 'LINEA 4', hoja: 'Titulación L4',       skipRows: 1 },
+  { linea: 'BAKER',   hoja: 'Titulacion Baker',    skipRows: 1 },
+];
+
+async function readExcelTitulaciones(file, params) {
+  const ab = await file.arrayBuffer();
+  const wb = XLSX.read(ab, { type: 'array' });
+
+  // Lookup param por (no_tanque, nombre_param, quimico) → param object
+  const paramLookup = {};
+  params.forEach(p => {
+    const no = p.no_tanque || p.nombre_tanque || '';
+    const key = `${no}||${p.nombre_parametro}||${p.quimico||''}`;
+    paramLookup[key] = p;
+  });
+
+  // paramColMap por línea: param.id → colIndex
+  const getParamColMap = (linea) => {
+    const map = {};
+    (TIT_EXACT_COLS[linea] || []).forEach(entry => {
+      const key = `${entry.no}||${entry.nom}||${entry.qui||''}`;
+      const param = paramLookup[key];
+      if (param) map[param.id] = entry.col;
+    });
+    return map;
+  };
+
+  // Helpers
+  const excelDateToISO = (v) => {
+    if (!v) return null;
+    if (typeof v === 'number') {
+      const d = new Date(Math.round((v - 25569) * 86400000));
+      return isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+    }
+    const s = String(v).trim();
+    return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null;
+  };
+
+  const calcEstadoExcel = (valor, param) => {
+    if (valor == null) return 'sin_dato';
+    if (param.tipo_rango === 'maximo') return valor > param.valor_max ? 'fuera' : 'ok';
+    if (param.tipo_rango === 'minimo') return valor < param.valor_min ? 'fuera' : 'ok';
+    if (param.tipo_rango === 'entre') return (valor < param.valor_min || valor > param.valor_max) ? 'fuera' : 'ok';
+    return 'ok';
+  };
+
+  const SERIAL_2026 = 46023;
+  let hId = 1, dId = 1;
+  const headers = [], detalles = [];
+  const warnings = [];
+
+  TIT_HOJAS.forEach(({ linea, hoja, skipRows }) => {
+    const ws = wb.Sheets[hoja];
+    if (!ws) { warnings.push(`Hoja no encontrada: "${hoja}"`); return; }
+
+    // Limitar columnas a 70 (Baker tiene rango enorme)
+    if (ws['!ref']) {
+      const m = ws['!ref'].match(/^([A-Z]+\d+):([A-Z]+)(\d+)$/);
+      if (m) {
+        const colN = m[2].split('').reduce((n,c) => n*26 + c.charCodeAt(0)-64, 0);
+        if (colN > 70) {
+          const lim = (n => { let s=''; while(n>0){s=String.fromCharCode(64+(n%26||26))+s;n=Math.floor((n-(n%26||26))/26);} return s; })(70);
+          ws['!ref'] = `${m[1]}:${lim}${m[3]}`;
+        }
+      }
+    }
+
+    const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
+    const rows = data.slice(skipRows).filter(r => {
+      if (!r[0]) return false;
+      if (typeof r[0] === 'number') return r[0] >= SERIAL_2026;
+      return String(r[0]).startsWith('2026');
+    });
+
+    const paramColMap = getParamColMap(linea);
+    const lineaParams = params.filter(p => {
+      const no = p.no_tanque || p.nombre_tanque || '';
+      return (TIT_EXACT_COLS[linea] || []).some(e => e.no === no);
+    });
+
+    if (lineaParams.length === 0) { warnings.push(`Sin parámetros en DB para ${linea}`); return; }
+
+    rows.forEach(row => {
+      const fecha = excelDateToISO(row[0]);
+      if (!fecha) return;
+      const claveRaw = row[1];
+      if (!claveRaw) return;
+      const parts = String(claveRaw).trim().split('.');
+      const turno  = parseInt(parts[0]);
+      const numTit = parseInt(parts[1]);
+      if (isNaN(turno)||isNaN(numTit)||turno<1||turno>3||numTit<1||numTit>2) return;
+
+      const analista = row[2] && typeof row[2] === 'string' ? row[2].trim() : 'Importado Excel';
+      const header = {
+        id: hId++, linea, fecha, turno,
+        numero_titulacion: numTit,
+        clave_titulacion: `${turno}.${numTit}`,
+        analista, semana: null, año: parseInt(fecha.slice(0,4)),
+        estado: 'completo', quimico_snapshot: {}, importado: true,
+        created_at: fecha + 'T00:00:00.000Z',
+        updated_at: fecha + 'T00:00:00.000Z'
+      };
+
+      let hayFuera = false, hayValor = false;
+      const rowDets = [];
+      lineaParams.forEach(param => {
+        if (param.frecuencia === 1 && numTit !== 1) return;
+        const colIdx = paramColMap[param.id];
+        let valor = null;
+        if (colIdx != null && row[colIdx] != null) {
+          const v = parseFloat(row[colIdx]);
+          if (!isNaN(v)) { valor = v; hayValor = true; }
+        }
+        const estadoP = calcEstadoExcel(valor, param);
+        if (estadoP === 'fuera') hayFuera = true;
+        rowDets.push({
+          id: dId++, header_id: header.id, parametro_id: param.id,
+          valor_registrado: valor, estado_param: estadoP,
+          corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+        });
+      });
+
+      if (hayValor || rowDets.length > 0) {
+        header.estado = hayFuera ? 'fuera_de_rango' : 'completo';
+        headers.push(header);
+        detalles.push(...rowDets);
+      }
+    });
+  });
+
+  return { headers, detalles, warnings };
+}
+
 // ── Catálogo Parámetros (admin) ───────────────────────────────────────────────
 async function viewTitCatalogo() {
   const [tanques, params] = await Promise.all([
@@ -3159,6 +3398,8 @@ async function viewTitCatalogo() {
     <button class="btn btn-primary" id="btn-param-nuevo">+ Nuevo Parámetro</button>
     <button class="btn btn-outline" id="btn-param-seed">🔄 Seed inicial (carga si está vacío)</button>
     <button class="btn btn-outline" id="btn-import-historial" style="background:#fffbeb;border-color:#f59e0b;color:#92400e">📥 Importar historial Excel 2026</button>
+    <button class="btn btn-outline" id="btn-excel-upload" style="background:#f0fdf4;border-color:#86efac;color:#15803d">📤 Cargar desde Excel</button>
+    <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none" />
     <div style="align-self:center;margin-left:auto">
       <label class="flabel">Filtrar línea:</label>
       <select id="pc-filtro-linea" style="margin-left:8px">
@@ -3271,6 +3512,51 @@ function bindTitCatalogo() {
       alert('Error: ' + e.message);
     } finally {
       btn.disabled = false; btn.textContent = '📥 Importar historial Excel 2026';
+    }
+  });
+
+  // ── Cargar desde Excel ──────────────────────────────────────────────────────
+  document.getElementById('btn-excel-upload').addEventListener('click', () => {
+    document.getElementById('excel-file-input').value = '';
+    document.getElementById('excel-file-input').click();
+  });
+
+  document.getElementById('excel-file-input').addEventListener('change', async function() {
+    const file = this.files[0];
+    if (!file) return;
+    const btn = document.getElementById('btn-excel-upload');
+    btn.disabled = true; btn.textContent = '⏳ Leyendo Excel...';
+    try {
+      const params = await GET('/parametros-titulacion');
+      if (!params.length) { alert('Primero carga el catálogo de parámetros (Seed inicial).'); btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return; }
+
+      const { headers, detalles, warnings } = await readExcelTitulaciones(file, params);
+
+      if (!headers.length) {
+        alert('No se encontraron titulaciones 2026 en el archivo.\n\nVerifica que el archivo sea el correcto (4-CA-102 Rev. 0 Reporte titulaciones.xlsx).');
+        btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return;
+      }
+
+      // Resumen por línea
+      const byLinea = {};
+      headers.forEach(h => { byLinea[h.linea] = (byLinea[h.linea]||0)+1; });
+      const resumenLineas = Object.entries(byLinea).map(([l,n]) => `• ${l}: ${n} titulaciones`).join('\n');
+      const warnTxt = warnings.length ? '\n\n⚠️ Avisos:\n' + warnings.join('\n') : '';
+
+      const ok = confirm(`✅ Excel leído correctamente:\n\n${resumenLineas}\nTotal: ${headers.length} titulaciones, ${detalles.length} lecturas${warnTxt}\n\n¿Importar a la base de datos? (Sobreescribirá el historial existente)`);
+      if (!ok) { btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return; }
+
+      btn.textContent = '⏳ Importando...';
+      const r = await POST('/admin/import-historial', { force: true, headers, detalles });
+      if (r.ok) {
+        alert(`✅ ${r.mensaje}\n\nTitulaciones: ${r.headers}\nLecturas: ${r.detalles}`);
+      } else {
+        alert(`ℹ️ ${r.mensaje}`);
+      }
+    } catch(e) {
+      alert('Error: ' + e.message);
+    } finally {
+      btn.disabled=false; btn.textContent='📤 Cargar desde Excel';
     }
   });
 
