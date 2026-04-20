@@ -3527,34 +3527,50 @@ function bindTitCatalogo() {
     const btn = document.getElementById('btn-excel-upload');
     btn.disabled = true; btn.textContent = '⏳ Leyendo Excel...';
     try {
+      // Preview rápido en el navegador
       const params = await GET('/parametros-titulacion');
-      if (!params.length) { alert('Primero carga el catálogo de parámetros (Seed inicial).'); btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return; }
-
-      const { headers, detalles, warnings } = await readExcelTitulaciones(file, params);
-
-      if (!headers.length) {
-        alert('No se encontraron titulaciones 2026 en el archivo.\n\nVerifica que el archivo sea el correcto (4-CA-102 Rev. 0 Reporte titulaciones.xlsx).');
+      if (!params.length) {
+        alert('Primero carga el catálogo de parámetros (Seed inicial).');
         btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return;
       }
 
-      // Resumen por línea
-      const byLinea = {};
-      headers.forEach(h => { byLinea[h.linea] = (byLinea[h.linea]||0)+1; });
-      const resumenLineas = Object.entries(byLinea).map(([l,n]) => `• ${l}: ${n} titulaciones`).join('\n');
-      const warnTxt = warnings.length ? '\n\n⚠️ Avisos:\n' + warnings.join('\n') : '';
+      const { headers: previewHeaders, warnings } = await readExcelTitulaciones(file, params);
 
-      const ok = confirm(`✅ Excel leído correctamente:\n\n${resumenLineas}\nTotal: ${headers.length} titulaciones, ${detalles.length} lecturas${warnTxt}\n\n¿Importar a la base de datos? (Sobreescribirá el historial existente)`);
+      if (!previewHeaders.length) {
+        alert('No se encontraron titulaciones 2026 en el archivo.\nVerifica que sea: 4-CA-102 Rev. 0 Reporte titulaciones.xlsx');
+        btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return;
+      }
+
+      const byLinea = {};
+      previewHeaders.forEach(h => { byLinea[h.linea] = (byLinea[h.linea]||0)+1; });
+      const resumenTxt = Object.entries(byLinea).map(([l,n]) => `• ${l}: ${n} titulaciones`).join('\n');
+      const warnTxt = warnings.length ? '\n\n⚠️ ' + warnings.join('\n') : '';
+
+      const ok = confirm(`✅ Excel leído:\n\n${resumenTxt}\nTotal: ${previewHeaders.length} titulaciones${warnTxt}\n\n¿Importar a la base de datos?\n(Sobreescribirá el historial existente)`);
       if (!ok) { btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return; }
 
+      // Subir el archivo directamente al servidor para procesamiento
       btn.textContent = '⏳ Importando...';
-      const r = await POST('/admin/import-historial', { force: true, headers, detalles });
-      if (r.ok) {
-        alert(`✅ ${r.mensaje}\n\nTitulaciones: ${r.headers}\nLecturas: ${r.detalles}`);
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('force', 'true');
+
+      const res = await fetch('/api/vales/admin/import-excel', {
+        method: 'POST',
+        headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
+        body: fd
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+
+      if (data.ok) {
+        const lineas = Object.entries(data.resumen||{}).map(([l,n])=>`• ${l}: ${n}`).join('\n');
+        alert(`✅ ${data.mensaje}\n\n${lineas}`);
       } else {
-        alert(`ℹ️ ${r.mensaje}`);
+        alert(`ℹ️ ${data.mensaje}`);
       }
     } catch(e) {
-      alert('Error: ' + e.message);
+      alert('Error al importar: ' + e.message);
     } finally {
       btn.disabled=false; btn.textContent='📤 Cargar desde Excel';
     }
