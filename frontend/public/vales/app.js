@@ -3261,26 +3261,23 @@ async function readExcelTitulaciones(file, params) {
   const ab = await file.arrayBuffer();
   const wb = XLSX.read(ab, { type: 'array' });
 
-  // Lookup param por (no_tanque, nombre_param, quimico) → param object
+  // Lookup param por (no_tanque, nombre_param, quimico) → param
   const paramLookup = {};
   params.forEach(p => {
     const no = p.no_tanque || p.nombre_tanque || '';
-    const key = `${no}||${p.nombre_parametro}||${p.quimico||''}`;
-    paramLookup[key] = p;
+    paramLookup[`${no}||${p.nombre_parametro}||${p.quimico||''}`] = p;
   });
 
   // paramColMap por línea: param.id → colIndex
   const getParamColMap = (linea) => {
     const map = {};
-    (TIT_EXACT_COLS[linea] || []).forEach(entry => {
-      const key = `${entry.no}||${entry.nom}||${entry.qui||''}`;
-      const param = paramLookup[key];
-      if (param) map[param.id] = entry.col;
+    (TIT_EXACT_COLS[linea] || []).forEach(e => {
+      const p = paramLookup[`${e.no}||${e.nom}||${e.qui||''}`];
+      if (p) map[p.id] = e.col;
     });
     return map;
   };
 
-  // Helpers
   const excelDateToISO = (v) => {
     if (!v) return null;
     if (typeof v === 'number') {
@@ -3291,37 +3288,30 @@ async function readExcelTitulaciones(file, params) {
     return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : null;
   };
 
-  const calcEstadoExcel = (valor, param) => {
-    if (valor == null) return 'sin_dato';
-    if (param.tipo_rango === 'maximo') return valor > param.valor_max ? 'fuera' : 'ok';
-    if (param.tipo_rango === 'minimo') return valor < param.valor_min ? 'fuera' : 'ok';
-    if (param.tipo_rango === 'entre') return (valor < param.valor_min || valor > param.valor_max) ? 'fuera' : 'ok';
-    return 'ok';
-  };
-
   const SERIAL_2026 = 46023;
-  let hId = 1, dId = 1;
-  const headers = [], detalles = [];
+  // Formato compacto: rows = [{l, f, t, n, a, v: {pid: valor}}]
+  // Solo se incluyen valores no-nulos para mantener el payload pequeño (~300KB)
+  const rows = [];
+  const previewHeaders = [];
   const warnings = [];
 
   TIT_HOJAS.forEach(({ linea, hoja, skipRows }) => {
     const ws = wb.Sheets[hoja];
     if (!ws) { warnings.push(`Hoja no encontrada: "${hoja}"`); return; }
 
-    // Limitar columnas a 70 (Baker tiene rango enorme)
     if (ws['!ref']) {
       const m = ws['!ref'].match(/^([A-Z]+\d+):([A-Z]+)(\d+)$/);
       if (m) {
-        const colN = m[2].split('').reduce((n,c) => n*26 + c.charCodeAt(0)-64, 0);
+        const colN = m[2].split('').reduce((n,c) => n*26+c.charCodeAt(0)-64, 0);
         if (colN > 70) {
-          const lim = (n => { let s=''; while(n>0){s=String.fromCharCode(64+(n%26||26))+s;n=Math.floor((n-(n%26||26))/26);} return s; })(70);
+          const lim = (n=>{let s='';while(n>0){s=String.fromCharCode(64+(n%26||26))+s;n=Math.floor((n-(n%26||26))/26);}return s;})(70);
           ws['!ref'] = `${m[1]}:${lim}${m[3]}`;
         }
       }
     }
 
     const data = XLSX.utils.sheet_to_json(ws, { header: 1, defval: null });
-    const rows = data.slice(skipRows).filter(r => {
+    const sheetRows = data.slice(skipRows).filter(r => {
       if (!r[0]) return false;
       if (typeof r[0] === 'number') return r[0] >= SERIAL_2026;
       return String(r[0]).startsWith('2026');
@@ -3333,57 +3323,35 @@ async function readExcelTitulaciones(file, params) {
       return (TIT_EXACT_COLS[linea] || []).some(e => e.no === no);
     });
 
-    if (lineaParams.length === 0) { warnings.push(`Sin parámetros en DB para ${linea}`); return; }
+    if (!lineaParams.length) { warnings.push(`Sin parámetros en DB para ${linea}`); return; }
 
-    rows.forEach(row => {
+    sheetRows.forEach(row => {
       const fecha = excelDateToISO(row[0]);
       if (!fecha) return;
-      const claveRaw = row[1];
-      if (!claveRaw) return;
-      const parts = String(claveRaw).trim().split('.');
-      const turno  = parseInt(parts[0]);
-      const numTit = parseInt(parts[1]);
+      const parts = String(row[1]||'').trim().split('.');
+      const turno = parseInt(parts[0]), numTit = parseInt(parts[1]);
       if (isNaN(turno)||isNaN(numTit)||turno<1||turno>3||numTit<1||numTit>2) return;
 
-      const analista = row[2] && typeof row[2] === 'string' ? row[2].trim() : 'Importado Excel';
-      const header = {
-        id: hId++, linea, fecha, turno,
-        numero_titulacion: numTit,
-        clave_titulacion: `${turno}.${numTit}`,
-        analista, semana: null, año: parseInt(fecha.slice(0,4)),
-        estado: 'completo', quimico_snapshot: {}, importado: true,
-        created_at: fecha + 'T00:00:00.000Z',
-        updated_at: fecha + 'T00:00:00.000Z'
-      };
-
-      let hayFuera = false, hayValor = false;
-      const rowDets = [];
+      const analista = row[2] && typeof row[2]==='string' ? row[2].trim() : '';
+      const vals = {};
+      let hayValor = false;
       lineaParams.forEach(param => {
         if (param.frecuencia === 1 && numTit !== 1) return;
-        const colIdx = paramColMap[param.id];
-        let valor = null;
-        if (colIdx != null && row[colIdx] != null) {
-          const v = parseFloat(row[colIdx]);
-          if (!isNaN(v)) { valor = v; hayValor = true; }
+        const col = paramColMap[param.id];
+        if (col != null && row[col] != null) {
+          const v = parseFloat(row[col]);
+          if (!isNaN(v)) { vals[param.id] = v; hayValor = true; }
         }
-        const estadoP = calcEstadoExcel(valor, param);
-        if (estadoP === 'fuera') hayFuera = true;
-        rowDets.push({
-          id: dId++, header_id: header.id, parametro_id: param.id,
-          valor_registrado: valor, estado_param: estadoP,
-          corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
-        });
       });
 
-      if (hayValor || rowDets.length > 0) {
-        header.estado = hayFuera ? 'fuera_de_rango' : 'completo';
-        headers.push(header);
-        detalles.push(...rowDets);
+      if (hayValor) {
+        rows.push({ l: linea, f: fecha, t: turno, n: numTit, a: analista, v: vals });
+        previewHeaders.push({ linea, fecha });
       }
     });
   });
 
-  return { headers, detalles, warnings };
+  return { rows, previewHeaders, warnings };
 }
 
 // ── Catálogo Parámetros (admin) ───────────────────────────────────────────────
@@ -3534,7 +3502,7 @@ function bindTitCatalogo() {
         btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return;
       }
 
-      const { headers: previewHeaders, warnings } = await readExcelTitulaciones(file, params);
+      const { rows, previewHeaders, warnings } = await readExcelTitulaciones(file, params);
 
       if (!previewHeaders.length) {
         alert('No se encontraron titulaciones 2026 en el archivo.\nVerifica que sea: 4-CA-102 Rev. 0 Reporte titulaciones.xlsx');
@@ -3545,29 +3513,18 @@ function bindTitCatalogo() {
       previewHeaders.forEach(h => { byLinea[h.linea] = (byLinea[h.linea]||0)+1; });
       const resumenTxt = Object.entries(byLinea).map(([l,n]) => `• ${l}: ${n} titulaciones`).join('\n');
       const warnTxt = warnings.length ? '\n\n⚠️ ' + warnings.join('\n') : '';
+      const payloadKB = Math.round(JSON.stringify(rows).length / 1024);
 
-      const ok = confirm(`✅ Excel leído:\n\n${resumenTxt}\nTotal: ${previewHeaders.length} titulaciones${warnTxt}\n\n¿Importar a la base de datos?\n(Sobreescribirá el historial existente)`);
+      const ok = confirm(`✅ Excel leído (${payloadKB} KB de datos):\n\n${resumenTxt}\nTotal: ${previewHeaders.length} titulaciones${warnTxt}\n\n¿Importar a la base de datos?\n(Sobreescribirá el historial existente)`);
       if (!ok) { btn.disabled=false; btn.textContent='📤 Cargar desde Excel'; return; }
 
-      // Subir el archivo directamente al servidor para procesamiento
       btn.textContent = '⏳ Importando...';
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('force', 'true');
-
-      const res = await fetch('/api/vales/admin/import-excel', {
-        method: 'POST',
-        headers: state.token ? { Authorization: `Bearer ${state.token}` } : {},
-        body: fd
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
-
-      if (data.ok) {
-        const lineas = Object.entries(data.resumen||{}).map(([l,n])=>`• ${l}: ${n}`).join('\n');
-        alert(`✅ ${data.mensaje}\n\n${lineas}`);
+      const r = await POST('/admin/import-excel-compact', { force: true, rows });
+      if (r.ok) {
+        const lineas = Object.entries(r.resumen||{}).map(([l,n])=>`• ${l}: ${n}`).join('\n');
+        alert(`✅ ${r.mensaje}\n\n${lineas}`);
       } else {
-        alert(`ℹ️ ${data.mensaje}`);
+        alert(`ℹ️ ${r.mensaje}`);
       }
     } catch(e) {
       alert('Error al importar: ' + e.message);

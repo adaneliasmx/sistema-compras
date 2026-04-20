@@ -1996,6 +1996,95 @@ router.post('/admin/import-historial', valesAuthRequired, valesAllowRoles('admin
   }
 });
 
+// ── POST /admin/import-excel-compact — recibe filas compactas del browser ─────
+// Formato: { force, rows: [{l,f,t,n,a,v:{pid:valor}}] }
+// El browser parsea el Excel y envía solo los valores no-nulos (~300KB total)
+router.post('/admin/import-excel-compact', valesAuthRequired, valesAllowRoles('admin'), (req, res) => {
+  try {
+    const db    = readVales();
+    const force = req.body?.force === true;
+    const rows  = req.body?.rows;
+
+    if (!Array.isArray(rows) || !rows.length) {
+      return res.status(400).json({ error: 'No se recibieron datos.' });
+    }
+
+    const yaHeaders = (db.titulaciones_header || []).length;
+    if (yaHeaders > 0 && !force) {
+      return res.json({ ok: false, mensaje: `Ya existe historial (${yaHeaders} titulaciones). Usa force:true para sobreescribir.` });
+    }
+
+    // Asegurar que los parámetros estén cargados
+    if ((db.parametros_titulacion || []).length === 0) {
+      seedParametrosTitulacion(db);
+    }
+
+    // Lookup de parámetros para calcular estado
+    const paramById = {};
+    (db.parametros_titulacion || []).forEach(p => { paramById[p.id] = p; });
+
+    const calcE = (valor, param) => {
+      if (valor == null) return 'sin_dato';
+      if (param.tipo_rango === 'maximo') return valor > param.valor_max ? 'fuera' : 'ok';
+      if (param.tipo_rango === 'minimo') return valor < param.valor_min ? 'fuera' : 'ok';
+      if (param.tipo_rango === 'entre')  return (valor < param.valor_min || valor > param.valor_max) ? 'fuera' : 'ok';
+      return 'ok';
+    };
+
+    let hId = 1, dId = 1;
+    const headers = [], detalles = [];
+    const resumen = {};
+
+    rows.forEach(row => {
+      const { l: linea, f: fecha, t: turno, n: numTit, a: analista, v: vals } = row;
+      if (!linea || !fecha || !turno || !numTit || !vals) return;
+
+      const header = {
+        id: hId++, linea, fecha, turno, numero_titulacion: numTit,
+        clave_titulacion: `${turno}.${numTit}`,
+        analista: analista || 'Importado Excel',
+        semana: null, estado: 'completo', quimico_snapshot: {}, importado: true,
+        created_at: fecha + 'T00:00:00.000Z', updated_at: fecha + 'T00:00:00.000Z'
+      };
+
+      let hayFuera = false;
+      Object.entries(vals).forEach(([pidStr, valor]) => {
+        const pid = Number(pidStr);
+        const param = paramById[pid];
+        if (!param) return;
+        const estadoP = calcE(valor, param);
+        if (estadoP === 'fuera') hayFuera = true;
+        detalles.push({
+          id: dId++, header_id: header.id, parametro_id: pid,
+          valor_registrado: valor, estado_param: estadoP,
+          corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+        });
+      });
+
+      header.estado = hayFuera ? 'fuera_de_rango' : 'completo';
+      headers.push(header);
+      resumen[linea] = (resumen[linea] || 0) + 1;
+    });
+
+    db.titulaciones_header  = headers;
+    db.titulaciones_detalle = detalles;
+    writeVales(db);
+
+    console.log('[import-excel-compact] OK —', JSON.stringify(resumen));
+    res.json({
+      ok: true,
+      mensaje: `Importado: ${headers.length} titulaciones, ${detalles.length} lecturas.`,
+      resumen,
+      parametros: (db.parametros_titulacion || []).length,
+      headers: headers.length,
+      detalles: detalles.length
+    });
+  } catch (err) {
+    console.error('[import-excel-compact] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── POST /admin/import-excel — recibe el .xlsx y lo procesa en el servidor ────
 const multer  = require('multer');
 const _upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
