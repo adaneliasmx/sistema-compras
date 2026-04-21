@@ -3907,54 +3907,70 @@ async function purchasesView() {
       tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Cargando KPI de costos...</div>';
       try {
         const kpi = await api('/api/purchases/kpi-costs');
-        const months = kpi.months_labels || [];
         const fmt = (n) => '$' + Number(n||0).toLocaleString('es-MX', {minimumFractionDigits:0, maximumFractionDigits:0});
         let expandedCC = null;
+        let kpiPeriod = 'month'; // 'week' | 'month'
 
         const renderKpi = () => {
+          const periods = kpiPeriod === 'week' ? (kpi.weeks_labels || []) : (kpi.months_labels || []);
+          const byKey = kpiPeriod === 'week' ? 'by_week' : 'by_month';
+          const cols = 2 + periods.length;
           tabContent.innerHTML = `
-            <h4 style="margin:0 0 12px;font-size:15px;color:#1d4ed8">📊 KPI de Costos por Centro de Costo</h4>
-            <p class="small muted" style="margin:0 0 12px">Gasto acumulado por CC y SCC en los últimos 6 meses (ítems activos con costo). Haz clic en una fila para ver el desglose por SCC.</p>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+              <h4 style="margin:0;font-size:15px;color:#1d4ed8">📊 KPI de Costos por Centro de Costo</h4>
+              <div style="display:flex;gap:4px">
+                <button id="kpi-toggle-week" class="btn-${kpiPeriod==='week'?'primary':'secondary'}" style="padding:4px 14px;font-size:12px">Por semana</button>
+                <button id="kpi-toggle-month" class="btn-${kpiPeriod==='month'?'primary':'secondary'}" style="padding:4px 14px;font-size:12px">Por mes</button>
+              </div>
+            </div>
+            <p class="small muted" style="margin:0 0 12px">
+              ${kpiPeriod==='week' ? 'Últimas 8 semanas' : 'Últimos 6 meses'} · ítems activos con costo · clic en CC para ver SCC
+            </p>
             <div class="table-wrap">
               <table style="font-size:12px">
                 <thead><tr style="background:#f1f5f9">
                   <th style="text-align:left;padding:6px 10px">Centro de Costo</th>
                   <th style="text-align:right;padding:6px 8px">Total</th>
-                  ${months.map(m => `<th style="text-align:right;padding:6px 8px;white-space:nowrap">${escapeHtml(m)}</th>`).join('')}
+                  ${periods.map(p => `<th style="text-align:right;padding:6px 8px;white-space:nowrap">${escapeHtml(p)}</th>`).join('')}
                 </tr></thead>
                 <tbody>
                   ${kpi.cost_centers.length ? kpi.cost_centers.map(cc => {
                     const isExpanded = expandedCC === cc.id;
                     const hasSccs = cc.sub_cost_centers && cc.sub_cost_centers.length > 0;
+                    const byPeriod = cc[byKey] || [];
                     return `
                       <tr class="kpi-cc-row" data-ccid="${cc.id}" style="cursor:${hasSccs?'pointer':'default'};background:${isExpanded?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb" title="${hasSccs?'Clic para ver sub-centros':''}">
-                        <td style="padding:7px 10px;font-weight:600">${hasSccs?'▶ ':''}<b>${escapeHtml(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
+                        <td style="padding:7px 10px;font-weight:600">${hasSccs?(isExpanded?'▼ ':'▶ '):''}<b>${escapeHtml(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
                         <td style="text-align:right;padding:7px 8px;font-weight:600;color:#1d4ed8">${fmt(cc.total)}</td>
-                        ${cc.by_month.map(m => `<td style="text-align:right;padding:7px 8px;color:${m.amount>0?'#374151':'#d1d5db'}">${m.amount>0?fmt(m.amount):'—'}</td>`).join('')}
+                        ${byPeriod.map(p => `<td style="text-align:right;padding:7px 8px;color:${p.amount>0?'#374151':'#d1d5db'}">${p.amount>0?fmt(p.amount):'—'}</td>`).join('')}
                       </tr>
-                      ${isExpanded && hasSccs ? cc.sub_cost_centers.map(scc => `
-                        <tr style="background:#f8faff">
-                          <td style="padding:5px 10px 5px 28px;font-size:11px">↳ ${escapeHtml(scc.name)} <span style="color:#9ca3af">${scc.code||''}</span>
+                      ${isExpanded && hasSccs ? cc.sub_cost_centers.map(scc => {
+                        const sccByPeriod = scc[byKey] || [];
+                        return `
+                        <tr style="background:#f0f5ff">
+                          <td style="padding:5px 10px 5px 28px;font-size:11px">↳ <b>${escapeHtml(scc.name)}</b> <span style="color:#9ca3af">${scc.code||''}</span>
                             ${scc.items && scc.items.length ? `<span style="color:#6b7280"> · ${scc.items.length} ítem(s)</span>` : ''}
                           </td>
-                          <td style="text-align:right;padding:5px 8px;font-size:11px;color:#4b5563">${fmt(scc.total)}</td>
-                          ${scc.by_month.map(m => `<td style="text-align:right;padding:5px 8px;font-size:11px;color:${m.amount>0?'#4b5563':'#d1d5db'}">${m.amount>0?fmt(m.amount):'—'}</td>`).join('')}
+                          <td style="text-align:right;padding:5px 8px;font-size:11px;color:#4b5563;font-weight:600">${fmt(scc.total)}</td>
+                          ${sccByPeriod.map(p => `<td style="text-align:right;padding:5px 8px;font-size:11px;color:${p.amount>0?'#4b5563':'#d1d5db'}">${p.amount>0?fmt(p.amount):'—'}</td>`).join('')}
                         </tr>
                         ${scc.items && scc.items.length ? `
-                        <tr style="background:#f8faff">
-                          <td colspan="${2 + months.length}" style="padding:4px 10px 8px 40px">
-                            <div style="display:flex;flex-wrap:wrap;gap:6px">
-                              ${scc.items.slice(0, 8).map(it => `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:10px;font-size:10px">${escapeHtml(it.name)} · ${fmt(it.total)} ${it.currency||'MXN'} · ${it.status}</span>`).join('')}
-                              ${scc.items.length > 8 ? `<span style="color:#6b7280;font-size:10px">+${scc.items.length-8} más...</span>` : ''}
+                        <tr style="background:#f0f5ff">
+                          <td colspan="${cols}" style="padding:3px 10px 8px 40px">
+                            <div style="display:flex;flex-wrap:wrap;gap:5px">
+                              ${scc.items.slice(0, 10).map(it => `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:10px;font-size:10px">${escapeHtml(it.name)} · ${fmt(it.total)} ${it.currency||'MXN'}</span>`).join('')}
+                              ${scc.items.length > 10 ? `<span style="color:#6b7280;font-size:10px">+${scc.items.length-10} más...</span>` : ''}
                             </div>
                           </td>
-                        </tr>` : ''}
-                      `).join('') : ''}`;
-                  }).join('') : '<tr><td colspan="8" class="muted" style="padding:24px;text-align:center">Sin centros de costo activos o sin gasto registrado</td></tr>'}
+                        </tr>` : ''}`;
+                      }).join('') : ''}`;
+                  }).join('') : `<tr><td colspan="${cols}" class="muted" style="padding:24px;text-align:center">Sin centros de costo activos o sin gasto registrado</td></tr>`}
                 </tbody>
               </table>
             </div>`;
 
+          document.getElementById('kpi-toggle-week').onclick = () => { kpiPeriod = 'week'; renderKpi(); };
+          document.getElementById('kpi-toggle-month').onclick = () => { kpiPeriod = 'month'; renderKpi(); };
           tabContent.querySelectorAll('.kpi-cc-row').forEach(row => {
             row.onclick = () => {
               const ccid = Number(row.dataset.ccid);

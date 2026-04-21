@@ -933,6 +933,15 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
       .filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
       .reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0);
 
+  // Últimas 8 semanas
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    const to = new Date(now); to.setDate(to.getDate() - i * 7); to.setHours(23,59,59,999);
+    const from = new Date(to); from.setDate(from.getDate() - 6); from.setHours(0,0,0,0);
+    const label = `S${String(from.getDate()).padStart(2,'0')}/${String(from.getMonth()+1).padStart(2,'0')}`;
+    return { label, from: new Date(from), to: new Date(to) };
+  }).reverse();
+
+  // Últimos 6 meses
   const months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
@@ -947,13 +956,15 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     return {
       id: cc.id, code: cc.code, name: cc.name,
       total: ccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
-      by_month: months.map(m => ({ label: m.label, amount: sumSpend(ccItems, m.from, m.to) })),
+      by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(ccItems, p.from, p.to) })),
+      by_month: months.map(p => ({ label: p.label, amount: sumSpend(ccItems, p.from, p.to) })),
       sub_cost_centers: ccSccs.map(scc => {
         const sccItems = ccItems.filter(ri => ri.sub_cost_center_id === scc.id);
         return {
           id: scc.id, code: scc.code, name: scc.name,
           total: sccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
-          by_month: months.map(m => ({ label: m.label, amount: sumSpend(sccItems, m.from, m.to) })),
+          by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(sccItems, p.from, p.to) })),
+          by_month: months.map(p => ({ label: p.label, amount: sumSpend(sccItems, p.from, p.to) })),
           items: sccItems.map(ri => ({
             id: ri.id,
             name: (db.catalog_items.find(c => c.id === ri.catalog_item_id) || {}).name || ri.manual_item_name || '-',
@@ -966,7 +977,11 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     };
   });
 
-  res.json({ cost_centers: result, months_labels: months.map(m => m.label) });
+  res.json({
+    cost_centers: result,
+    weeks_labels: weeks.map(p => p.label),
+    months_labels: months.map(p => p.label)
+  });
 });
 
 // Cancelar PO completa (comprador/admin) — libera los ítems para re-proceso
