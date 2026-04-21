@@ -3925,6 +3925,7 @@ async function purchasesView() {
             </div>
             <p class="small muted" style="margin:0 0 12px">
               ${kpiPeriod==='week' ? 'Últimas 8 semanas' : 'Últimos 6 meses'} · ítems activos con costo · clic en CC para ver SCC
+              ${kpi.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(kpi.usd_rate).toFixed(2)}</span>` : ''}
             </p>
             <div class="table-wrap">
               <table style="font-size:12px">

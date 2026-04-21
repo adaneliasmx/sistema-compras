@@ -917,11 +917,34 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
   res.json(response);
 });
 
+// Cache del tipo de cambio USD→MXN (6 horas)
+let _usdRateCache = { rate: 17, fetchedAt: 0 };
+function getUsdToMxn() {
+  const SIX_HOURS = 6 * 60 * 60 * 1000;
+  if (Date.now() - _usdRateCache.fetchedAt < SIX_HOURS) return Promise.resolve(_usdRateCache.rate);
+  return new Promise(resolve => {
+    require('https').get('https://api.frankfurter.app/latest?from=USD&to=MXN', res => {
+      let raw = '';
+      res.on('data', d => raw += d);
+      res.on('end', () => {
+        try {
+          const rate = JSON.parse(raw).rates.MXN;
+          if (rate) { _usdRateCache = { rate, fetchedAt: Date.now() }; }
+          resolve(_usdRateCache.rate);
+        } catch (_) { resolve(_usdRateCache.rate); }
+      });
+    }).on('error', () => resolve(_usdRateCache.rate));
+  });
+}
+
 // FASE 4: KPI de costos por Centro de Costo / Sub-Centro de Costo
-router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), (req, res) => {
+router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), async (req, res) => {
   const db = read();
   const now = new Date();
   const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const usdRate = await getUsdToMxn();
+
+  const toMxn = ri => Number(ri.quantity || 0) * Number(ri.unit_cost || 0) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
 
   const activeItems = (db.requisition_items || []).filter(ri =>
     !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
@@ -931,7 +954,7 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
   const sumSpend = (items, from, to) =>
     items
       .filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
-      .reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0);
+      .reduce((s, ri) => s + toMxn(ri), 0);
 
   // Últimas 8 semanas
   const weeks = Array.from({ length: 8 }, (_, i) => {
@@ -955,14 +978,14 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     const ccSccs = subCostCenters.filter(scc => scc.cost_center_id === cc.id);
     return {
       id: cc.id, code: cc.code, name: cc.name,
-      total: ccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
+      total: ccItems.reduce((s, ri) => s + toMxn(ri), 0),
       by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(ccItems, p.from, p.to) })),
       by_month: months.map(p => ({ label: p.label, amount: sumSpend(ccItems, p.from, p.to) })),
       sub_cost_centers: ccSccs.map(scc => {
         const sccItems = ccItems.filter(ri => ri.sub_cost_center_id === scc.id);
         return {
           id: scc.id, code: scc.code, name: scc.name,
-          total: sccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
+          total: sccItems.reduce((s, ri) => s + toMxn(ri), 0),
           by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(sccItems, p.from, p.to) })),
           by_month: months.map(p => ({ label: p.label, amount: sumSpend(sccItems, p.from, p.to) })),
           items: sccItems.map(ri => ({
@@ -970,7 +993,7 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
             name: (db.catalog_items.find(c => c.id === ri.catalog_item_id) || {}).name || ri.manual_item_name || '-',
             quantity: ri.quantity, unit: ri.unit, unit_cost: ri.unit_cost,
             currency: ri.currency || 'MXN', status: ri.status,
-            total: Number(ri.quantity || 0) * Number(ri.unit_cost || 0)
+            total: toMxn(ri)
           }))
         };
       })
@@ -980,7 +1003,8 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
   res.json({
     cost_centers: result,
     weeks_labels: weeks.map(p => p.label),
-    months_labels: months.map(p => p.label)
+    months_labels: months.map(p => p.label),
+    usd_rate: usdRate
   });
 });
 
