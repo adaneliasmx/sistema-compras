@@ -52,11 +52,16 @@ router.post('/preview-po', allowRoles('comprador', 'admin'), (req, res) => {
       item_count: groupLines.length,
       total,
       currency: currencies.length === 1 ? currencies[0] : 'MXN',
-      items: groupLines.map(l => ({
-        id: l.id, status: l.status,
-        name: (db.catalog_items.find(c => c.id === l.catalog_item_id) || {}).name || l.manual_item_name,
-        quantity: l.quantity, unit: l.unit, unit_cost: l.unit_cost
-      })),
+      items: groupLines.map(l => {
+        const winQuote = l.winning_quote_id ? (db.quotations || []).find(q => q.id === l.winning_quote_id) : null;
+        return {
+          id: l.id, status: l.status,
+          name: (db.catalog_items.find(c => c.id === l.catalog_item_id) || {}).name || l.manual_item_name,
+          quantity: l.quantity, unit: l.unit, unit_cost: l.unit_cost,
+          currency: l.currency || 'MXN',
+          winning_quote_cost: winQuote ? Number(winQuote.unit_cost || 0) : null
+        };
+      }),
       warnings,
       can_generate: warnings.length === 0
     };
@@ -111,6 +116,15 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();
   const line = db.requisition_items.find(i => i.id === Number(req.params.id));
   if (!line) return res.status(404).json({ error: 'Ítem no encontrado' });
+
+  // FASE 5: Bloquear edición si la PO está Aceptada o más avanzada
+  if (line.purchase_order_id) {
+    const po = db.purchase_orders.find(p => p.id === line.purchase_order_id);
+    if (po && ['Aceptada', 'En proceso', 'Entregado', 'Facturada', 'Facturación parcial', 'Cerrada'].includes(po.status)) {
+      return res.status(400).json({ error: `El ítem pertenece a la PO ${po.folio} (estado: ${po.status}) y ya no puede editarse.` });
+    }
+  }
+
   const oldStatus = line.status;
   if (req.body.supplier_id !== undefined) line.supplier_id = req.body.supplier_id ? Number(req.body.supplier_id) : null;
   if (req.body.catalog_item_id !== undefined) line.catalog_item_id = req.body.catalog_item_id ? Number(req.body.catalog_item_id) : null;
@@ -127,6 +141,15 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
     if (line.sub_cost_center_id) line.sub_cost_center_proposed = null;
   }
   if (req.body.sub_cost_center_proposed !== undefined) line.sub_cost_center_proposed = req.body.sub_cost_center_proposed || null;
+
+  // FASE 5: Validar que el SCC pertenezca al CC seleccionado
+  if (line.sub_cost_center_id && line.cost_center_id) {
+    const scc = (db.sub_cost_centers || []).find(s => s.id === line.sub_cost_center_id);
+    if (scc && scc.cost_center_id !== line.cost_center_id) {
+      return res.status(400).json({ error: `El subcentro "${scc.name}" no pertenece al centro de costo seleccionado. Verifica la asignación.` });
+    }
+  }
+
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
   recalcRequisition(db, line.requisition_id);
   // Re-derivar status solo en etapas pre-autorización; no regresar ítems ya Autorizados manualmente
@@ -603,6 +626,36 @@ router.post('/items/:id/restore', allowRoles('comprador', 'admin'), (req, res) =
   res.json({ ok: true, item: line });
 });
 
+// FASE 3: Reabrir ítem a "En Autorización" (para POs canceladas/rechazadas)
+router.post('/items/:id/reopen-to-auth', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const line = db.requisition_items.find(i => i.id === Number(req.params.id));
+  if (!line) return res.status(404).json({ error: 'Ítem no encontrado' });
+
+  // Permitir reabrir si está cancelado o si su PO fue rechazada/cancelada
+  let canReopen = line.status === 'Cancelado';
+  if (!canReopen && line.purchase_order_id) {
+    const po = db.purchase_orders.find(p => p.id === line.purchase_order_id);
+    if (po && ['Cancelada', 'Rechazada por proveedor'].includes(po.status)) canReopen = true;
+  }
+  if (!canReopen) {
+    return res.status(400).json({ error: 'Solo se pueden reabrir ítems cancelados o cuya PO fue rechazada/cancelada.' });
+  }
+
+  const oldStatus = line.status;
+  line.purchase_order_id = null;
+  line.status = 'En autorización';
+  line.cancel_reason = null;
+  line.cancelled_at = null;
+  line.cancelled_by = null;
+  line.updated_at = new Date().toISOString();
+
+  addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: 'En autorización', changed_by_user_id: req.user.id, comment: 'Ítem reabierto a "En Autorización" para re-proceso' });
+  recalcRequisition(db, line.requisition_id);
+  write(db);
+  res.json({ ok: true, item: line });
+});
+
 router.get('/purchase-orders', allowRoles('comprador', 'proveedor', 'admin'), (req, res) => {
   const db = read();
   const rows = db.purchase_orders
@@ -862,6 +915,58 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
   }
 
   res.json(response);
+});
+
+// FASE 4: KPI de costos por Centro de Costo / Sub-Centro de Costo
+router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), (req, res) => {
+  const db = read();
+  const now = new Date();
+  const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  const activeItems = (db.requisition_items || []).filter(ri =>
+    !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
+    Number(ri.unit_cost || 0) > 0
+  );
+
+  const sumSpend = (items, from, to) =>
+    items
+      .filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
+      .reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0);
+
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+  }).reverse();
+
+  const costCenters = (db.cost_centers || []).filter(cc => cc.active !== false);
+  const subCostCenters = (db.sub_cost_centers || []).filter(scc => scc.active !== false);
+
+  const result = costCenters.map(cc => {
+    const ccItems = activeItems.filter(ri => ri.cost_center_id === cc.id);
+    const ccSccs = subCostCenters.filter(scc => scc.cost_center_id === cc.id);
+    return {
+      id: cc.id, code: cc.code, name: cc.name,
+      total: ccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
+      by_month: months.map(m => ({ label: m.label, amount: sumSpend(ccItems, m.from, m.to) })),
+      sub_cost_centers: ccSccs.map(scc => {
+        const sccItems = ccItems.filter(ri => ri.sub_cost_center_id === scc.id);
+        return {
+          id: scc.id, code: scc.code, name: scc.name,
+          total: sccItems.reduce((s, ri) => s + Number(ri.quantity || 0) * Number(ri.unit_cost || 0), 0),
+          by_month: months.map(m => ({ label: m.label, amount: sumSpend(sccItems, m.from, m.to) })),
+          items: sccItems.map(ri => ({
+            id: ri.id,
+            name: (db.catalog_items.find(c => c.id === ri.catalog_item_id) || {}).name || ri.manual_item_name || '-',
+            quantity: ri.quantity, unit: ri.unit, unit_cost: ri.unit_cost,
+            currency: ri.currency || 'MXN', status: ri.status,
+            total: Number(ri.quantity || 0) * Number(ri.unit_cost || 0)
+          }))
+        };
+      })
+    };
+  });
+
+  res.json({ cost_centers: result, months_labels: months.map(m => m.label) });
 });
 
 // Cancelar PO completa (comprador/admin) — libera los ítems para re-proceso

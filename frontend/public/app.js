@@ -2235,6 +2235,9 @@ async function purchasesView() {
         <button class="tab-btn" data-tab="anticipos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:${posConAnticipo.length?'#1d4ed8':'#6b7280'}">
           💰 Anticipos ${posConAnticipo.length ? `<span style="background:#1d4ed8;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${posConAnticipo.length}</span>` : ''}
         </button>
+        <button class="tab-btn" data-tab="kpi_costos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
+          📊 KPI Costos
+        </button>
       </div>
 
       <div id="tabContent"></div>
@@ -2504,27 +2507,31 @@ async function purchasesView() {
   const itemRow = (i, canSelect = false) => {
     const total = Number(i.quantity || 0) * Number(i.unit_cost || 0);
     const rowBg = i.status === 'Autorizado' ? 'background:#f0fff4' : i.status === 'En proceso' ? 'background:#eff6ff' : i.status === 'Cancelado' ? 'opacity:.5' : '';
+    // FASE 5: PO Aceptada o más avanzada = lectura solamente
+    const poLocked = ['Aceptada','En proceso','Entregado','Facturada','Facturación parcial','Cerrada'].includes(i.status) && i.purchase_order_id;
+    const isDisabled = ['Cancelado','En proceso','Cerrado'].includes(i.status) || poLocked;
     return `<tr style="${rowBg}" data-id="${i.id}">
-      <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
+      <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && !poLocked && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
       <td>
         <b>${i.item_name}</b>
+        ${poLocked ? `<br><small style="color:#7c3aed;font-size:10px">🔒 PO ${i.po_folio||''} (${i.status})</small>` : ''}
         ${i.cancel_reason ? `<br><small style="color:#dc2626">Cancelado: ${i.cancel_reason}${i.cancelled_by_name ? ` · por ${i.cancelled_by_name}` : ''}</small>` : ''}
         ${i.web_link ? `<br><a href="${escapeHtml(i.web_link)}" target="_blank" rel="noopener" style="font-size:11px;color:#2563eb">🔗 Liga</a>` : ''}
         ${i.comments ? `<br><small style="color:#6b7280;font-style:italic" title="${escapeHtml(i.comments)}">💬 ${escapeHtml(i.comments.length > 60 ? i.comments.slice(0,60) + '…' : i.comments)}</small>` : ''}
       </td>
       <td>
-        <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}>
+        <select class="edit-supplier" data-id="${i.id}" style="max-width:150px" ${isDisabled||i.winning_quote_id?'disabled':''}>
           <option value="">Sin proveedor</option>
           ${suppliers.map(s => `<option value="${s.id}" ${Number(i.supplier_id)===s.id?'selected':''}>${s.business_name}</option>`).join('')}
         </select>
         ${i.winning_quote_id ? `<br><small style="color:#6b7280;font-size:10px" title="Asignado por cotización ganadora">🔒 cotización</small>` : ''}
       </td>
-      <td><input type="number" class="edit-qty" data-id="${i.id}" value="${Number(i.quantity||0)}" style="width:60px" min="0.01" step="any" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}/></td>
-      <td><input type="text" class="edit-unit" data-id="${i.id}" value="${escapeHtml(i.unit||'')}" style="width:55px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)?'disabled':''}/></td>
-      <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}/></td>
+      <td><input type="number" class="edit-qty" data-id="${i.id}" value="${Number(i.quantity||0)}" style="width:60px" min="0.01" step="any" ${isDisabled?'disabled':''}/></td>
+      <td><input type="text" class="edit-unit" data-id="${i.id}" value="${escapeHtml(i.unit||'')}" style="width:55px" ${isDisabled?'disabled':''}/></td>
+      <td><input type="number" class="edit-cost" data-id="${i.id}" value="${Number(i.unit_cost||0)}" style="width:75px" ${isDisabled||i.winning_quote_id?'disabled':''}/></td>
       <td><b>$${Number(total).toFixed(2)}</b></td>
-      <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${['Cancelado','En proceso','Cerrado'].includes(i.status)||i.winning_quote_id?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
+      <td><select class="edit-currency" data-id="${i.id}" style="width:65px" ${isDisabled||i.winning_quote_id?'disabled':''}><option ${String(i.currency||'MXN')==='MXN'?'selected':''}>MXN</option><option ${String(i.currency||'MXN')==='USD'?'selected':''}>USD</option></select></td>
       <td style="font-size:11px;white-space:nowrap">${escapeHtml(i.requester_name||'-')}</td>
       <td style="font-size:11px;white-space:nowrap">${escapeHtml(i.cost_center_name||'-')}</td>
       <td style="font-size:11px;white-space:nowrap">${i.request_date||'-'}</td>
@@ -2532,12 +2539,12 @@ async function purchasesView() {
       <td style="font-size:11px">${i.po_folio||'-'}</td>
       <td style="white-space:nowrap">
         <button class="btn-secondary open-edit-modal" data-id="${i.id}" style="padding:2px 7px;font-size:11px" title="Editar ítem">✏️</button>
-        ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary save-edit" data-id="${i.id}" style="padding:2px 7px;font-size:11px">💾</button>` : ''}
-        ${!i.catalog_item_id && !['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
-        ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
+        ${!isDisabled ? `<button class="btn-secondary save-edit" data-id="${i.id}" style="padding:2px 7px;font-size:11px">💾</button>` : ''}
+        ${!i.catalog_item_id && !isDisabled ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
+        ${!['Cancelado','En cotización','En proceso','Cerrado'].includes(i.status) && !poLocked ? `<button class="btn-secondary quote-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📩</button>` : ''}
         ${i.status === 'Autorizado' && i.supplier_id && i.unit_cost && !i.purchase_order_id ? `<button class="btn-primary single-po" data-id="${i.id}" style="padding:2px 7px;font-size:11px">PO</button>` : ''}
         ${i.status === 'En autorización' && i.winning_quote_id && i.supplier_id && i.unit_cost ? `<button class="btn-secondary authorize-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px;color:#16a34a;border-color:#16a34a" title="Autorizar ítem con cotización ganadora">✔ Autorizar</button>` : ''}
-        ${!['Cancelado','En proceso','Cerrado'].includes(i.status) ? `<button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">✖</button>` : ''}
+        ${!isDisabled && !['Cerrado'].includes(i.status) ? `<button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">✖</button>` : ''}
         ${i.status === 'Cancelado' ? `<button class="btn-secondary restore-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px;color:#2563eb" title="Restaurar ítem cancelado">↩</button>` : ''}
       </td>
     </tr>`;
@@ -2608,7 +2615,9 @@ async function purchasesView() {
 
   // Modal de edición completa de ítem (doble clic)
   const openItemEditModal = (item) => {
-    const isLocked = ['Cancelado','Cerrado'].includes(item.status);
+    // FASE 5: PO Aceptada o avanzada = campo solo lectura en modal también
+    const poLocked = ['Aceptada','En proceso','Entregado','Facturada','Facturación parcial','Cerrada'].includes(item.status) && item.purchase_order_id;
+    const isLocked = ['Cancelado','Cerrado'].includes(item.status) || poLocked;
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
     modal.innerHTML = `
@@ -3308,6 +3317,8 @@ async function purchasesView() {
         const invoiceRequested = p.invoice_requested;
         const canManualInvoice = p.status === 'Entregado';
         const canCancel = !['Facturada','Facturación parcial','Cerrada','Cancelada','Rechazada por proveedor'].includes(p.status);
+        // FASE 3: Reabrir ítems a "En Autorización" para POs rechazadas o canceladas
+        const canReopen = ['Cancelada','Rechazada por proveedor'].includes(p.status);
         const respTag = p.supplier_response ? `<span style="font-size:11px;color:#6b7280"> · Proveedor: ${p.supplier_response}</span>` : '';
         const commitTag = p.supplier_commitment_date ? `<span style="font-size:11px;margin-left:8px;padding:2px 8px;border-radius:10px;background:#d1fae5;color:#065f46">📅 Compromiso proveedor: ${p.supplier_commitment_date}</span>` : '';
         const reqTag = invoiceRequested ? `<span style="font-size:11px;color:#2563eb;margin-left:8px">📧 Factura solicitada al proveedor</span>` : '';
@@ -3341,6 +3352,7 @@ async function purchasesView() {
             ${canRequestInvoice ? `<button class="btn-secondary po-req-invoice-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📧 Solicitar factura al proveedor</button>` : ''}
             ${canManualInvoice ? `<button class="btn-secondary po-manual-invoice-btn" data-id="${p.id}" data-supplier="${p.supplier_id}" style="font-size:12px;padding:5px 12px;color:#6b7280">🧾 Registrar manualmente</button>` : ''}
             ${canCancel ? `<button class="btn-danger po-cancel-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">✖ Cancelar PO</button>` : ''}
+            ${canReopen ? `<button class="btn-secondary po-reopen-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px;color:#7c3aed;border-color:#7c3aed">↩ Reabrir ítems</button>` : ''}
             <button class="btn-secondary po-print-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">🖨 Ver/Imprimir PO</button>
             <button class="btn-secondary po-items-btn" data-id="${p.id}" style="font-size:12px;padding:5px 12px">📦 Ver ítems</button>
             <button class="btn-secondary po-resend-mail-btn" data-id="${p.id}" data-folio="${p.folio}" style="font-size:12px;padding:5px 12px">📧 Reenviar correo</button>
@@ -3450,6 +3462,33 @@ async function purchasesView() {
               document.getElementById('poCancelMsg').style.color = '#dc2626';
             }
           };
+        };
+      });
+
+      // FASE 3: Reabrir ítems de PO cancelada/rechazada a "En Autorización"
+      tabContent.querySelectorAll('.po-reopen-btn').forEach(btn => {
+        btn.onclick = async () => {
+          const folio = btn.dataset.folio;
+          if (!confirm(`¿Reabrir los ítems de la PO ${folio} a "En Autorización"?\n\nLos ítems volverán al flujo de autorización para ser revisados antes de generar una nueva PO.`)) return;
+          try {
+            btn.disabled = true; btn.textContent = '⏳ Reabriendo...';
+            const poId = btn.dataset.id;
+            // Obtener ítems de esta PO y reabrir cada uno
+            const detail = await api(`/api/purchases/purchase-orders/${poId}`);
+            const poItems = detail.po_items || detail.items || [];
+            let ok = 0; let errs = [];
+            for (const pi of poItems) {
+              const riId = pi.requisition_item_id;
+              if (!riId) continue;
+              try {
+                await api(`/api/purchases/items/${riId}/reopen-to-auth`, { method: 'POST' });
+                ok++;
+              } catch(e2) { errs.push(e2.message); }
+            }
+            const msgEl = document.getElementById(`req-msg-${poId}`);
+            if (msgEl) { msgEl.textContent = ok ? `✅ ${ok} ítem(s) reabiertos a "En Autorización"${errs.length?' · '+errs.length+' error(es)':''}` : `Sin ítems reabiertos. ${errs.join('; ')}`; msgEl.style.color = ok ? '#16a34a' : '#dc2626'; }
+            setTimeout(render, 1500);
+          } catch(e) { alert(e.message); btn.disabled = false; btn.textContent = '↩ Reabrir ítems'; }
         };
       });
 
@@ -3862,6 +3901,72 @@ async function purchasesView() {
         }; // close renderAnticipos
         renderAnticipos();
       }
+    } else if (tab === 'kpi_costos') {
+      // FASE 4: Vista KPI de costos por Centro de Costo / Sub-Centro de Costo
+      poActions.style.display = 'none';
+      tabContent.innerHTML = '<div class="muted small" style="padding:24px;text-align:center">Cargando KPI de costos...</div>';
+      try {
+        const kpi = await api('/api/purchases/kpi-costs');
+        const months = kpi.months_labels || [];
+        const fmt = (n) => '$' + Number(n||0).toLocaleString('es-MX', {minimumFractionDigits:0, maximumFractionDigits:0});
+        let expandedCC = null;
+
+        const renderKpi = () => {
+          tabContent.innerHTML = `
+            <h4 style="margin:0 0 12px;font-size:15px;color:#1d4ed8">📊 KPI de Costos por Centro de Costo</h4>
+            <p class="small muted" style="margin:0 0 12px">Gasto acumulado por CC y SCC en los últimos 6 meses (ítems activos con costo). Haz clic en una fila para ver el desglose por SCC.</p>
+            <div class="table-wrap">
+              <table style="font-size:12px">
+                <thead><tr style="background:#f1f5f9">
+                  <th style="text-align:left;padding:6px 10px">Centro de Costo</th>
+                  <th style="text-align:right;padding:6px 8px">Total</th>
+                  ${months.map(m => `<th style="text-align:right;padding:6px 8px;white-space:nowrap">${escapeHtml(m)}</th>`).join('')}
+                </tr></thead>
+                <tbody>
+                  ${kpi.cost_centers.length ? kpi.cost_centers.map(cc => {
+                    const isExpanded = expandedCC === cc.id;
+                    const hasSccs = cc.sub_cost_centers && cc.sub_cost_centers.length > 0;
+                    return `
+                      <tr class="kpi-cc-row" data-ccid="${cc.id}" style="cursor:${hasSccs?'pointer':'default'};background:${isExpanded?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb" title="${hasSccs?'Clic para ver sub-centros':''}">
+                        <td style="padding:7px 10px;font-weight:600">${hasSccs?'▶ ':''}<b>${escapeHtml(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
+                        <td style="text-align:right;padding:7px 8px;font-weight:600;color:#1d4ed8">${fmt(cc.total)}</td>
+                        ${cc.by_month.map(m => `<td style="text-align:right;padding:7px 8px;color:${m.amount>0?'#374151':'#d1d5db'}">${m.amount>0?fmt(m.amount):'—'}</td>`).join('')}
+                      </tr>
+                      ${isExpanded && hasSccs ? cc.sub_cost_centers.map(scc => `
+                        <tr style="background:#f8faff">
+                          <td style="padding:5px 10px 5px 28px;font-size:11px">↳ ${escapeHtml(scc.name)} <span style="color:#9ca3af">${scc.code||''}</span>
+                            ${scc.items && scc.items.length ? `<span style="color:#6b7280"> · ${scc.items.length} ítem(s)</span>` : ''}
+                          </td>
+                          <td style="text-align:right;padding:5px 8px;font-size:11px;color:#4b5563">${fmt(scc.total)}</td>
+                          ${scc.by_month.map(m => `<td style="text-align:right;padding:5px 8px;font-size:11px;color:${m.amount>0?'#4b5563':'#d1d5db'}">${m.amount>0?fmt(m.amount):'—'}</td>`).join('')}
+                        </tr>
+                        ${scc.items && scc.items.length ? `
+                        <tr style="background:#f8faff">
+                          <td colspan="${2 + months.length}" style="padding:4px 10px 8px 40px">
+                            <div style="display:flex;flex-wrap:wrap;gap:6px">
+                              ${scc.items.slice(0, 8).map(it => `<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;border-radius:10px;font-size:10px">${escapeHtml(it.name)} · ${fmt(it.total)} ${it.currency||'MXN'} · ${it.status}</span>`).join('')}
+                              ${scc.items.length > 8 ? `<span style="color:#6b7280;font-size:10px">+${scc.items.length-8} más...</span>` : ''}
+                            </div>
+                          </td>
+                        </tr>` : ''}
+                      `).join('') : ''}`;
+                  }).join('') : '<tr><td colspan="8" class="muted" style="padding:24px;text-align:center">Sin centros de costo activos o sin gasto registrado</td></tr>'}
+                </tbody>
+              </table>
+            </div>`;
+
+          tabContent.querySelectorAll('.kpi-cc-row').forEach(row => {
+            row.onclick = () => {
+              const ccid = Number(row.dataset.ccid);
+              expandedCC = expandedCC === ccid ? null : ccid;
+              renderKpi();
+            };
+          });
+        };
+        renderKpi();
+      } catch(e) {
+        tabContent.innerHTML = `<div style="color:#dc2626;padding:16px">Error al cargar KPI: ${e.message}</div>`;
+      }
     }
   };
 
@@ -3869,26 +3974,80 @@ async function purchasesView() {
   document.querySelectorAll('.tab-btn').forEach(btn => btn.onclick = () => renderTab(btn.dataset.tab));
 
   // Vista previa PO
+  // FASE 2: Render del preview con precios editables y detección de varianza
+  const renderPoPreview = (preview) => {
+    const VARIANCE_THRESHOLD = 0.05; // 5%
+    poPreviewContent.innerHTML = `
+      <p class="small muted" style="margin-bottom:10px">Se generarán <b>${preview.total_pos}</b> PO(s) para <b>${preview.total_items}</b> ítem(s). Puedes editar precios antes de confirmar:</p>
+      ${preview.groups.map((g, gi) => `
+        <div style="border:1px solid ${g.can_generate?'#22c55e':'#f87171'};border-radius:8px;padding:12px;margin-bottom:10px;background:${g.can_generate?'#f0fff4':'#fff5f5'}">
+          <div style="display:flex;justify-content:space-between">
+            <b>${g.supplier_name}</b>
+            <span>${g.item_count} ítem(s) · <b id="prev-total-${gi}">$${Number(g.total).toFixed(2)} ${g.currency}</b></span>
+          </div>
+          ${g.supplier_email ? `<div class="small muted">📧 ${g.supplier_email}</div>` : ''}
+          <div style="margin-top:8px">
+            ${g.items.map((i, ii) => {
+              const hasQuote = i.winning_quote_cost != null;
+              const variance = hasQuote && i.winning_quote_cost > 0 ? (i.unit_cost - i.winning_quote_cost) / i.winning_quote_cost : 0;
+              const highVariance = Math.abs(variance) > VARIANCE_THRESHOLD;
+              return `<div style="display:flex;gap:8px;align-items:center;padding:4px 0;border-bottom:1px solid #f0f0f0;flex-wrap:wrap" data-grp="${gi}" data-item="${i.id}">
+                <span style="flex:1;min-width:140px;font-size:12px"><b>${escapeHtml(i.name)}</b><br><span class="muted">× ${i.quantity} ${i.unit||''}</span></span>
+                <div style="display:flex;gap:4px;align-items:center">
+                  <span style="font-size:11px;color:#6b7280">$</span>
+                  <input type="number" class="prev-price-input" data-id="${i.id}" data-grp="${gi}" data-orig="${i.unit_cost}" data-quote="${i.winning_quote_cost ?? ''}" value="${Number(i.unit_cost||0).toFixed(2)}" min="0.01" step="any" style="width:80px;font-size:12px;padding:2px 4px"/>
+                  <span style="font-size:11px;color:#6b7280">${i.currency||'MXN'}</span>
+                  <button class="btn-secondary prev-save-price" data-id="${i.id}" data-grp="${gi}" style="padding:1px 8px;font-size:11px">💾</button>
+                  <span class="prev-save-msg" data-id="${i.id}" style="font-size:11px;color:#16a34a"></span>
+                </div>
+                ${highVariance ? `<div style="color:#b45309;font-size:11px;background:#fffbeb;padding:2px 8px;border-radius:4px;width:100%">⚠ Varianza ${variance>0?'+':''}${(variance*100).toFixed(1)}% vs cotización ($${Number(i.winning_quote_cost).toFixed(2)}) — requiere re-autorización</div>` : ''}
+              </div>`;
+            }).join('')}
+          </div>
+          ${g.warnings.length ? `<div style="color:#dc2626;font-size:12px;margin-top:8px">${g.warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>` : '<div style="color:#16a34a;font-size:12px;margin-top:6px">✅ Listo para generar</div>'}
+        </div>`).join('')}`;
+
+    // Bind: save price inline from preview
+    poPreviewContent.querySelectorAll('.prev-save-price').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.dataset.id;
+        const input = poPreviewContent.querySelector(`.prev-price-input[data-id="${id}"]`);
+        const msgEl = poPreviewContent.querySelector(`.prev-save-msg[data-id="${id}"]`);
+        const newCost = Number(input?.value || 0);
+        if (newCost <= 0) { alert('El precio debe ser > $0'); return; }
+        const origCost = Number(input.dataset.orig || 0);
+        const quoteCost = input.dataset.quote ? Number(input.dataset.quote) : null;
+        const variance = quoteCost && quoteCost > 0 ? (newCost - quoteCost) / quoteCost : 0;
+        try {
+          btn.disabled = true;
+          await api(`/api/purchases/items/${id}`, { method: 'PATCH', body: JSON.stringify({ unit_cost: newCost }) });
+          input.dataset.orig = newCost;
+          if (msgEl) { msgEl.textContent = '✅'; setTimeout(() => { msgEl.textContent = ''; }, 2000); }
+          if (Math.abs(variance) > 0.05) {
+            const varDiv = input.closest('[data-item]')?.querySelector('[style*="Varianza"]') || input.closest('[data-item]');
+            if (varDiv) {
+              const warn = input.closest('[data-item]').querySelector('[style*="color:#b45309"]');
+              if (warn) warn.style.color = '#dc2626';
+            }
+            if (msgEl) msgEl.textContent = `⚠ ${(variance*100).toFixed(1)}% varianza vs cotización`;
+          }
+        } catch(e) { if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; } }
+        finally { btn.disabled = false; }
+      };
+    });
+
+    const allOk = preview.groups.every(g => g.can_generate);
+    confirmGenPoBtn.disabled = !allOk;
+  };
+
   previewPoBtn.onclick = async () => {
-    const ids = [...document.querySelectorAll('.po-check:checked')].map(c => Number(c.value));
+    // FASE 1: Scoped al tabContent para evitar selección cruzada entre tabs
+    const ids = [...new Set([...tabContent.querySelectorAll('.po-check:checked')].map(c => Number(c.value)))].filter(Boolean);
     if (!ids.length) { poMsg.textContent = 'Selecciona al menos un ítem'; return; }
     lastPreviewIds = ids;
     try {
       const preview = await api('/api/purchases/preview-po', { method:'POST', body: JSON.stringify({ item_ids: ids }) });
-      const allOk = preview.groups.every(g => g.can_generate);
-      poPreviewContent.innerHTML = `
-        <p class="small muted" style="margin-bottom:10px">Se generarán <b>${preview.total_pos}</b> PO(s) para <b>${preview.total_items}</b> ítem(s):</p>
-        ${preview.groups.map(g => `
-          <div style="border:1px solid ${g.can_generate?'#22c55e':'#f87171'};border-radius:8px;padding:12px;margin-bottom:10px;background:${g.can_generate?'#f0fff4':'#fff5f5'}">
-            <div style="display:flex;justify-content:space-between">
-              <b>${g.supplier_name}</b>
-              <span>${g.item_count} ítem(s) · <b>$${Number(g.total).toFixed(2)} ${g.currency}</b></span>
-            </div>
-            ${g.supplier_email ? `<div class="small muted">📧 ${g.supplier_email}</div>` : ''}
-            <div style="margin-top:6px;font-size:12px">${g.items.map(i=>`<div>· ${i.name} × ${i.quantity} ${i.unit||''} @ $${Number(i.unit_cost||0).toFixed(2)}</div>`).join('')}</div>
-            ${g.warnings.length ? `<div style="color:#dc2626;font-size:12px;margin-top:4px">${g.warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>` : '<div style="color:#16a34a;font-size:12px;margin-top:4px">✅ Listo</div>'}
-          </div>`).join('')}`;
-      confirmGenPoBtn.disabled = !allOk;
+      renderPoPreview(preview);
       poPreviewSection.style.display = 'block';
       poPreviewSection.scrollIntoView({ behavior: 'smooth' });
     } catch (e) { poMsg.textContent = e.message; }
@@ -3985,26 +4144,14 @@ async function purchasesView() {
 
   // "Generar PO" siempre muestra vista previa primero — el usuario confirma exactamente qué ítems se incluirán
   genPoBtn.onclick = async () => {
-    const ids = [...document.querySelectorAll('.po-check:checked')].map(c => Number(c.value));
+    // FASE 1: Scoped al tabContent para evitar selección cruzada entre tabs
+    const ids = [...new Set([...tabContent.querySelectorAll('.po-check:checked')].map(c => Number(c.value)))].filter(Boolean);
     if (!ids.length) { poMsg.textContent = 'Selecciona al menos un ítem para continuar'; return; }
     lastPreviewIds = ids;
     try {
       poMsg.textContent = 'Preparando vista previa...';
       const preview = await api('/api/purchases/preview-po', { method:'POST', body: JSON.stringify({ item_ids: ids }) });
-      const allOk = preview.groups.every(g => g.can_generate);
-      poPreviewContent.innerHTML = `
-        <p class="small muted" style="margin-bottom:10px">Se generarán <b>${preview.total_pos}</b> PO(s) para <b>${preview.total_items}</b> ítem(s) seleccionados:</p>
-        ${preview.groups.map(g => `
-          <div style="border:1px solid ${g.can_generate?'#22c55e':'#f87171'};border-radius:8px;padding:12px;margin-bottom:10px;background:${g.can_generate?'#f0fff4':'#fff5f5'}">
-            <div style="display:flex;justify-content:space-between">
-              <b>${g.supplier_name}</b>
-              <span>${g.item_count} ítem(s) · <b>$${Number(g.total).toFixed(2)} ${g.currency}</b></span>
-            </div>
-            ${g.supplier_email ? `<div class="small muted">📧 ${g.supplier_email}</div>` : ''}
-            <div style="margin-top:6px;font-size:12px">${g.items.map(i=>`<div>· ${i.name} × ${i.quantity} ${i.unit||''} @ $${Number(i.unit_cost||0).toFixed(2)}</div>`).join('')}</div>
-            ${g.warnings.length ? `<div style="color:#dc2626;font-size:12px;margin-top:4px">${g.warnings.map(w=>`⚠ ${w}`).join('<br>')}</div>` : '<div style="color:#16a34a;font-size:12px;margin-top:4px">✅ Listo</div>'}
-          </div>`).join('')}`;
-      confirmGenPoBtn.disabled = !allOk;
+      renderPoPreview(preview); // FASE 2: usa preview enriquecido con edición y varianza
       poPreviewSection.style.display = 'block';
       poMsg.textContent = '';
       poPreviewSection.scrollIntoView({ behavior: 'smooth' });
