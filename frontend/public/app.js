@@ -3646,6 +3646,8 @@ async function purchasesView() {
             if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
             const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
             if (!res.ok) throw new Error((await res.json()).error || 'Error');
+            const out = await res.json();
+            if (out.mailto_comprador) { const a = document.createElement('a'); a.href = out.mailto_comprador; a.click(); }
             msgEl.textContent = '✅ Factura guardada'; msgEl.style.color = '#16a34a';
             setTimeout(render, 900);
           } catch(e) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; }
@@ -4490,6 +4492,8 @@ async function proveedorPOView() {
         if (xmlEl && xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
         const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
         if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+        const out2 = await res.json();
+        if (out2.mailto_comprador) { const a = document.createElement('a'); a.href = out2.mailto_comprador; a.click(); }
         msgEl.textContent = isAnticipo ? '✅ Factura de anticipo subida. El área de pagos recibirá la solicitud.' : '✅ Factura subida correctamente';
         msgEl.style.color = '#16a34a';
         btn.disabled = true;
@@ -5042,6 +5046,73 @@ async function invoicingView() {
         </table></div>
       </div>
     </div>
+
+    <!-- ── Factura mensual agrupada ─────────────────────────────────────── -->
+    <div class="card section" style="margin-top:16px">
+      <h3 style="margin:0 0 4px">🗓 Factura mensual <span class="small muted" style="font-weight:400">— agrupa múltiples POs del mismo proveedor</span></h3>
+      <p class="small muted" style="margin:0 0 12px">Selecciona proveedor y periodo, elige las POs a incluir y registra una sola factura.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;align-items:flex-end">
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:3px">Proveedor</label>
+          <select id="mInvSupp" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:200px">
+            <option value="">— Selecciona —</option>
+            ${[...new Set(pos.map(p => p.supplier_id))].map(sid => {
+              const p0 = pos.find(p => p.supplier_id === sid);
+              return `<option value="${sid}">${escapeHtml(p0?.supplier_name || sid)}</option>`;
+            }).join('')}
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;display:block;margin-bottom:3px">Mes</label>
+          <input type="month" id="mInvMonth" value="${new Date().toISOString().slice(0,7)}" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>
+        </div>
+        <button id="mInvLoadBtn" class="btn-secondary" style="font-size:12px;padding:6px 14px">Buscar POs</button>
+      </div>
+
+      <div id="mInvPOsSection" style="display:none">
+        <div class="table-wrap" style="margin-bottom:12px">
+          <table style="font-size:12px">
+            <thead><tr style="background:#f1f5f9">
+              <th style="padding:6px 8px"><input type="checkbox" id="mInvSelectAll" title="Seleccionar todas"/></th>
+              <th style="padding:6px 8px">Folio PO</th>
+              <th style="padding:6px 8px">Fecha</th>
+              <th style="padding:6px 8px">Estatus</th>
+              <th style="padding:6px 8px;text-align:right">Total</th>
+              <th style="padding:6px 8px">Ítems</th>
+            </tr></thead>
+            <tbody id="mInvPOsBody"></tbody>
+          </table>
+        </div>
+
+        <div id="mInvItemsSection" style="display:none;margin-bottom:14px">
+          <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Ítems de las POs seleccionadas</h4>
+          <div class="table-wrap">
+            <table style="font-size:12px">
+              <thead><tr style="background:#f1f5f9">
+                <th style="padding:5px 8px">PO</th><th style="padding:5px 8px">Ítem</th>
+                <th style="padding:5px 8px;text-align:right">Cant.</th>
+                <th style="padding:5px 8px;text-align:right">P.U.</th>
+                <th style="padding:5px 8px;text-align:right">Subtotal</th>
+              </tr></thead>
+              <tbody id="mInvItemsBody"></tbody>
+              <tfoot id="mInvItemsFoot"></tfoot>
+            </table>
+          </div>
+        </div>
+
+        <div id="mInvForm" style="display:none">
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-bottom:10px">
+            <div><label style="font-size:12px">No. de factura *</label><input id="mInvNumber" placeholder="FACT-001" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/></div>
+            <div><label style="font-size:12px">Subtotal *</label><input id="mInvSubtotal" type="number" placeholder="0.00" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px" oninput="document.getElementById('mInvTaxes').value=(+this.value*0.16).toFixed(2)"/></div>
+            <div><label style="font-size:12px">IVA (16%)</label><input id="mInvTaxes" type="number" placeholder="0.00" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/></div>
+            <div><label style="font-size:12px">📄 PDF</label><input type="file" id="mInvPdf" accept=".pdf" style="font-size:12px"/></div>
+            <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="mInvXml" accept=".xml" style="font-size:12px"/></div>
+          </div>
+          <button id="mInvSaveBtn" class="btn-primary" style="font-size:12px;padding:6px 18px">💾 Guardar factura mensual</button>
+          <span id="mInvMsg" style="font-size:12px;margin-left:12px"></span>
+        </div>
+      </div>
+    </div>
   `, 'facturacion');
 
   // Al seleccionar PO → cargar ítems y pre-llenar montos
@@ -5143,6 +5214,113 @@ async function invoicingView() {
     row.onmouseover = () => row.style.background = '#f0f9ff';
     row.onmouseout = () => row.style.background = '';
     row.onclick = () => showInvoiceDetail(Number(row.dataset.id));
+  });
+
+  // ── Factura mensual ──────────────────────────────────────────────────────────
+  let mInvPOsData = [];
+
+  const refreshMInvItems = () => {
+    const checked = [...document.querySelectorAll('.mInvPoCheck:checked')].map(c => c.value);
+    if (!checked.length) {
+      document.getElementById('mInvItemsSection').style.display = 'none';
+      document.getElementById('mInvForm').style.display = 'none';
+      return;
+    }
+    const selectedPOs = mInvPOsData.filter(p => checked.includes(String(p.id)));
+    let allItems = [], total = 0;
+    selectedPOs.forEach(p => {
+      (p.po_items || []).forEach(item => {
+        const sub = Number(item.quantity || 0) * Number(item.unit_cost || 0);
+        total += sub;
+        allItems.push(`<tr>
+          <td style="padding:4px 8px;color:#6b7280;font-size:11px">${escapeHtml(p.folio)}</td>
+          <td style="padding:4px 8px">${escapeHtml(item.description || '-')}</td>
+          <td style="padding:4px 8px;text-align:right">${item.quantity} ${escapeHtml(item.unit || '')}</td>
+          <td style="padding:4px 8px;text-align:right">$${Number(item.unit_cost||0).toFixed(2)}</td>
+          <td style="padding:4px 8px;text-align:right;font-weight:600">$${sub.toFixed(2)}</td>
+        </tr>`);
+      });
+    });
+    const iva = total * 0.16;
+    document.getElementById('mInvItemsBody').innerHTML = allItems.join('') || '<tr><td colspan="5" class="muted small" style="text-align:center">Sin ítems</td></tr>';
+    document.getElementById('mInvItemsFoot').innerHTML = `<tr style="background:#f1f5f9;font-weight:600">
+      <td colspan="4" style="padding:5px 8px;text-align:right">Subtotal:</td><td style="padding:5px 8px;text-align:right">$${total.toFixed(2)}</td></tr>
+      <tr style="background:#f1f5f9"><td colspan="4" style="padding:5px 8px;text-align:right">IVA (16%):</td><td style="padding:5px 8px;text-align:right">$${iva.toFixed(2)}</td></tr>
+      <tr style="background:#eff6ff;font-weight:700"><td colspan="4" style="padding:5px 8px;text-align:right;color:#1d4ed8">Total:</td><td style="padding:5px 8px;text-align:right;color:#1d4ed8">$${(total+iva).toFixed(2)}</td></tr>`;
+    document.getElementById('mInvSubtotal').value = total.toFixed(2);
+    document.getElementById('mInvTaxes').value = iva.toFixed(2);
+    document.getElementById('mInvItemsSection').style.display = '';
+    document.getElementById('mInvForm').style.display = '';
+  };
+
+  document.getElementById('mInvLoadBtn')?.addEventListener('click', async () => {
+    const suppId = document.getElementById('mInvSupp').value;
+    const month = document.getElementById('mInvMonth').value;
+    if (!suppId || !month) { alert('Selecciona proveedor y mes'); return; }
+    try {
+      const allPos = await api('/api/purchases/purchase-orders');
+      const eligible = allPos.filter(p =>
+        p.supplier_id === Number(suppId) &&
+        ['Enviada','Aceptada','En proceso','Entregado'].includes(p.status) &&
+        (p.created_at || '').slice(0, 7) === month
+      );
+      mInvPOsData = eligible;
+      const tbody = document.getElementById('mInvPOsBody');
+      tbody.innerHTML = eligible.length ? eligible.map(p => `
+        <tr style="border-top:1px solid #f1f5f9">
+          <td style="padding:5px 8px"><input type="checkbox" class="mInvPoCheck" value="${p.id}"/></td>
+          <td style="padding:5px 8px;font-family:monospace;font-size:11px;color:#2563eb">${escapeHtml(p.folio)}</td>
+          <td style="padding:5px 8px">${String(p.created_at||'').slice(0,10)}</td>
+          <td style="padding:5px 8px">${statusPill(p.status)}</td>
+          <td style="padding:5px 8px;text-align:right;font-weight:600">$${Number(p.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+          <td style="padding:5px 8px;color:#6b7280">${(p.po_items||[]).length} ítem(s)</td>
+        </tr>`).join('')
+        : '<tr><td colspan="6" style="text-align:center;padding:16px;color:#9ca3af">Sin POs en ese periodo para este proveedor</td></tr>';
+      document.getElementById('mInvPOsSection').style.display = '';
+      document.getElementById('mInvItemsSection').style.display = 'none';
+      document.getElementById('mInvForm').style.display = 'none';
+
+      document.getElementById('mInvSelectAll')?.addEventListener('change', e => {
+        document.querySelectorAll('.mInvPoCheck').forEach(c => c.checked = e.target.checked);
+        refreshMInvItems();
+      });
+      document.querySelectorAll('.mInvPoCheck').forEach(c => c.addEventListener('change', refreshMInvItems));
+    } catch(e) { alert('Error al cargar POs: ' + e.message); }
+  });
+
+  document.getElementById('mInvSaveBtn')?.addEventListener('click', async () => {
+    const poIds = [...document.querySelectorAll('.mInvPoCheck:checked')].map(c => Number(c.value));
+    const num = document.getElementById('mInvNumber').value;
+    const sub = Number(document.getElementById('mInvSubtotal').value || 0);
+    const tax = Number(document.getElementById('mInvTaxes').value || 0);
+    const msgEl = document.getElementById('mInvMsg');
+    if (!poIds.length) { msgEl.textContent = 'Selecciona al menos una PO'; msgEl.style.color = '#dc2626'; return; }
+    if (!num) { msgEl.textContent = 'Ingresa el número de factura'; msgEl.style.color = '#dc2626'; return; }
+    if (!sub) { msgEl.textContent = 'Ingresa subtotal mayor a cero'; msgEl.style.color = '#dc2626'; return; }
+    try {
+      document.getElementById('mInvSaveBtn').disabled = true;
+      const fd = new FormData();
+      fd.append('po_ids', JSON.stringify(poIds));
+      fd.append('supplier_id', document.getElementById('mInvSupp').value);
+      fd.append('invoice_number', num);
+      fd.append('subtotal', sub);
+      fd.append('taxes', tax);
+      fd.append('total', sub + tax);
+      const pdfEl = document.getElementById('mInvPdf');
+      const xmlEl = document.getElementById('mInvXml');
+      if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
+      if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
+      const res = await fetch('/api/invoices/monthly', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error');
+      const out = await res.json();
+      if (out.mailto_comprador) { const a = document.createElement('a'); a.href = out.mailto_comprador; a.click(); }
+      msgEl.textContent = `✅ Factura mensual guardada (${poIds.length} POs)`;
+      msgEl.style.color = '#16a34a';
+      setTimeout(invoicingView, 1200);
+    } catch(e) {
+      msgEl.textContent = e.message; msgEl.style.color = '#dc2626';
+      document.getElementById('mInvSaveBtn').disabled = false;
+    }
   });
 
   bindCommon();

@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const multer = require('multer');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
@@ -61,8 +62,47 @@ router.post('/request/:po_id', allowRoles('comprador', 'admin'), (req, res) => {
   po.invoice_requested_at = new Date().toISOString();
   po.invoice_requested_by = req.user.id;
   write(db);
+
+  const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+  const secret = process.env.JWT_SECRET || 'cambia-esta-clave';
+  const token = crypto.createHmac('sha256', secret).update(`po:${po.id}:${po.folio}`).digest('hex').slice(0, 32);
+
+  // Ítems de la PO
+  const poItems = (db.purchase_order_items || []).filter(i => i.purchase_order_id === po.id);
+  const itemLines = poItems.map((item, idx) => {
+    const name = item.description || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || item.manual_item_name || 'Artículo';
+    const subtotal = (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2);
+    return `  ${idx + 1}. ${name}\n     Cant: ${item.quantity} ${item.unit || ''}   P.U.: $${Number(item.unit_cost || 0).toFixed(2)} ${po.currency || 'MXN'}   Subtotal: $${subtotal}`;
+  }).join('\n\n');
+
   const subject = `Solicitud de factura · ${po.folio}`;
-  const body = `Estimado ${supplier.contact_name || supplier.business_name},\n\nLe solicitamos amablemente registrar la factura correspondiente a la Orden de Compra ${po.folio} en el sistema.\n\nGracias.`;
+  const body = [
+    `Estimado(a) ${supplier.contact_name || supplier.business_name},`,
+    ``,
+    `Le solicitamos amablemente emitir la factura correspondiente a la siguiente Orden de Compra:`,
+    ``,
+    `── Datos de la Orden de Compra ──────────────────────────`,
+    `Folio:   ${po.folio}`,
+    `Fecha:   ${String(po.created_at || '').slice(0, 10)}`,
+    `Moneda:  ${po.currency || 'MXN'}`,
+    ``,
+    `── Ítems a facturar (${poItems.length}) ──────────────────────────────`,
+    itemLines || '  (Ver detalle en el sistema)',
+    ``,
+    `────────────────────────────────────────────────────────`,
+    `Total de la orden: $${Number(po.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${po.currency || 'MXN'}`,
+    ``,
+    `► Para cargar su factura (PDF y XML) ingrese al sistema:`,
+    `${baseUrl}/#/cotizaciones`,
+    ``,
+    `► Ver detalle de esta orden:`,
+    `${baseUrl}/api/public/po/${token}`,
+    ``,
+    `Por favor incluya el folio ${po.folio} en su factura.`,
+    ``,
+    `Gracias por su atención.`
+  ].join('\n');
+
   const mailto = `mailto:${encodeURIComponent(supplier.email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   res.json({ ok: true, mailto, supplier_email: supplier.email });
 });
@@ -154,7 +194,129 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   }
 
   write(db);
-  res.status(201).json(row);
+
+  // Si el proveedor sube la factura, generar mailto de notificación al área de compras
+  let mailto_comprador = null;
+  if (req.user.role_code === 'proveedor') {
+    const buyers = (db.users || []).filter(u => (u.role_code === 'comprador' || u.role_code === 'pagos') && u.active !== false);
+    const buyerEmails = buyers.map(u => u.email).filter(Boolean).join(',');
+    if (buyerEmails && po) {
+      const supplier2 = (db.suppliers || []).find(s => s.id === po.supplier_id) || {};
+      const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+      const notifSubject = `Factura registrada · ${po.folio} · ${row.invoice_number}`;
+      const notifBody = [
+        `Estimado(a) equipo de compras,`,
+        ``,
+        `El proveedor ${supplier2.business_name || ''} ha registrado una factura en el sistema.`,
+        ``,
+        `── Datos ────────────────────────────────────────────`,
+        `PO:          ${po.folio}`,
+        `Factura:     ${row.invoice_number}`,
+        `Tipo:        ${invoiceType === 'anticipo' ? 'Anticipo' : 'Normal'}`,
+        `Subtotal:    $${Number(row.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `IVA:         $${Number(row.taxes || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `Total:       $${Number(row.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `PDF:         ${row.pdf_original || 'No adjunto'}`,
+        `XML:         ${row.xml_original || 'No adjunto'}`,
+        ``,
+        `► Revisar en el sistema:`,
+        `${baseUrl}/#/facturacion`,
+        `────────────────────────────────────────────────────`
+      ].join('\n');
+      mailto_comprador = `mailto:${encodeURIComponent(buyerEmails)}?subject=${encodeURIComponent(notifSubject)}&body=${encodeURIComponent(notifBody)}`;
+    }
+  }
+
+  res.status(201).json({ ...row, mailto_comprador });
+});
+
+// ── Factura mensual agrupada (múltiples POs del mismo proveedor) ──────────────
+router.post('/monthly', allowRoles('comprador', 'proveedor', 'admin'), upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', maxCount: 1 }]), (req, res) => {
+  const db = read();
+  const isSupplier = req.user.role_code === 'proveedor';
+  const supplierId = isSupplier ? req.user.supplier_id : Number(req.body.supplier_id || 0);
+  const poIds = JSON.parse(req.body.po_ids || '[]').map(Number).filter(Boolean);
+
+  if (!poIds.length) return res.status(400).json({ error: 'Selecciona al menos una PO' });
+  if (!supplierId) return res.status(400).json({ error: 'Proveedor requerido' });
+  if (!req.body.invoice_number) return res.status(400).json({ error: 'Número de factura requerido' });
+
+  // Validar que todas las POs pertenezcan al proveedor
+  const selectedPOs = poIds.map(id => db.purchase_orders.find(p => p.id === id)).filter(Boolean);
+  if (isSupplier && selectedPOs.some(p => p.supplier_id !== supplierId)) {
+    return res.status(403).json({ error: 'Solo puedes facturar tus propias órdenes' });
+  }
+
+  const pdfFile = req.files?.pdf?.[0];
+  const xmlFile = req.files?.xml?.[0];
+
+  const row = {
+    id: nextId(db.invoices),
+    purchase_order_id: poIds[0],
+    grouped_po_ids: poIds,
+    supplier_id: supplierId,
+    invoice_number: req.body.invoice_number,
+    invoice_type: 'mensual',
+    subtotal: Number(req.body.subtotal || 0),
+    taxes: Number(req.body.taxes || 0),
+    total: Number(req.body.total || 0) || (Number(req.body.subtotal || 0) + Number(req.body.taxes || 0)),
+    status: 'Pendiente de pago',
+    pdf_path: pdfFile ? `/storage/invoices/${pdfFile.filename}` : null,
+    xml_path: xmlFile ? `/storage/invoices/${xmlFile.filename}` : null,
+    pdf_original: pdfFile?.originalname || null,
+    xml_original: xmlFile?.originalname || null,
+    registered_by_role: req.user.role_code,
+    created_at: new Date().toISOString(),
+    created_by_user_id: req.user.id
+  };
+
+  db.invoices.push(row);
+
+  // Actualizar todas las POs y sus ítems a Facturado
+  selectedPOs.forEach(po => {
+    const poItems = db.purchase_order_items.filter(i => i.purchase_order_id === po.id);
+    poItems.forEach(poLine => {
+      poLine.status = 'Facturado';
+      const reqItem = db.requisition_items.find(i => i.id === poLine.requisition_item_id);
+      if (reqItem) {
+        reqItem.status = 'Facturado';
+        reqItem.updated_at = new Date().toISOString();
+        addHistory(db, { module: 'invoices', requisition_id: reqItem.requisition_id, requisition_item_id: reqItem.id, invoice_id: row.id, old_status: reqItem.status, new_status: 'Facturado', changed_by_user_id: req.user.id, comment: `Factura mensual ${row.invoice_number}` });
+        recalcRequisition(db, reqItem.requisition_id);
+      }
+    });
+    po.status = 'Facturada';
+    po.updated_at = new Date().toISOString();
+  });
+
+  write(db);
+
+  // Notificación al área de compras si lo sube el proveedor
+  let mailto_comprador = null;
+  if (isSupplier) {
+    const buyers = (db.users || []).filter(u => (u.role_code === 'comprador' || u.role_code === 'pagos') && u.active !== false);
+    const buyerEmails = buyers.map(u => u.email).filter(Boolean).join(',');
+    if (buyerEmails) {
+      const supplier2 = (db.suppliers || []).find(s => s.id === supplierId) || {};
+      const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+      const poFolios = selectedPOs.map(p => p.folio).join(', ');
+      const notifSubject = `Factura mensual registrada · ${row.invoice_number} · ${supplier2.business_name || ''}`;
+      const notifBody = [
+        `Estimado(a) equipo de compras,`,
+        ``,
+        `El proveedor ${supplier2.business_name || ''} ha registrado una factura mensual en el sistema.`,
+        ``,
+        `Factura: ${row.invoice_number}`,
+        `POs cubiertas: ${poFolios}`,
+        `Total: $${Number(row.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        ``,
+        `► Revisar en el sistema: ${baseUrl}/#/facturacion`
+      ].join('\n');
+      mailto_comprador = `mailto:${encodeURIComponent(buyerEmails)}?subject=${encodeURIComponent(notifSubject)}&body=${encodeURIComponent(notifBody)}`;
+    }
+  }
+
+  res.status(201).json({ ...row, mailto_comprador });
 });
 
 // ── Detalle de factura con ítems de PO y trazabilidad ────────────────────────
