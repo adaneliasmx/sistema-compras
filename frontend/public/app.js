@@ -10,7 +10,7 @@ function clearDraftStorage() {
 }
 
 const state = {
-  token: localStorage.getItem('token'),
+  token: null, // token lives in httpOnly cookie; not exposed to JS
   user: JSON.parse(localStorage.getItem('user') || 'null'),
   itemsDraft: [],
   pendingRoute: null
@@ -49,7 +49,7 @@ let inactivityTimer = null;
 
 function resetInactivityTimer() {
   clearTimeout(inactivityTimer);
-  if (state.token) {
+  if (state.user) {
     inactivityTimer = setTimeout(() => {
       logout();
       alert('Sesión cerrada por inactividad. Por favor, inicia sesión de nuevo.');
@@ -67,8 +67,7 @@ function initInactivityWatcher() {
 async function api(path, options = {}) {
   const headers = { ...(options.headers || {}) };
   if (!(options.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  if (state.token) headers.Authorization = `Bearer ${state.token}`;
-  const res = await fetch(path, { ...options, headers });
+  const res = await fetch(path, { ...options, headers, credentials: 'include' });
   const contentType = res.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await res.json() : await res.text();
   if (res.status === 401) {
@@ -85,15 +84,14 @@ async function api(path, options = {}) {
 }
 
 function setAuth(token, user) {
-  state.token = token;
+  // token is stored in httpOnly cookie (set by server); we only keep user data locally
   state.user = user;
-  localStorage.setItem('token', token);
   localStorage.setItem('user', JSON.stringify(user));
 }
 
 function logout() {
-  localStorage.clear();
-  state.token = null;
+  fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+  localStorage.removeItem('user');
   state.user = null;
   location.hash = '#/login';
   render();
@@ -118,7 +116,7 @@ const priorityColor = { urgent: '#dc2626', high: '#d97706', medium: '#3b82f6', l
 const priorityBg = { urgent: '#fef2f2', high: '#fffbeb', medium: '#eff6ff', low: '#f9fafb' };
 
 async function loadNotifications() {
-  if (!state.token) return;
+  if (!state.user) return;
   try {
     const notes = await api('/api/notifications');
     const badge = document.getElementById('notifBadge');
@@ -178,7 +176,7 @@ function bindCommon() {
 async function downloadCsv(entity, filename, params = {}) {
   const qs = new URLSearchParams(params).toString();
   const url = `/api/exports/${entity}.csv${qs ? `?${qs}` : ''}`;
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${state.token}` } });
+  const res = await fetch(url, { credentials: 'include' });
   const text = await res.text();
   if (!res.ok) throw new Error(text || 'No se pudo exportar');
   const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
@@ -3103,7 +3101,7 @@ async function purchasesView() {
                   fd.append('official_item_name', document.getElementById('rqName').value);
                   fd.append('auto_select_winner', autoApprove ? 'true' : 'false');
                   fd.append('attachment', rqFile.files[0]);
-                  const res = await fetch('/api/quotations', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+                  const res = await fetch('/api/quotations', { method: 'POST', credentials: 'include', body: fd });
                   if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
                 } else {
                   await api('/api/quotations', { method: 'POST', body: JSON.stringify({
@@ -3644,7 +3642,7 @@ async function purchasesView() {
             fd.append('total', sub + tax);
             if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
             if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
-            const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+            const res = await fetch('/api/invoices', { method: 'POST', credentials: 'include', body: fd });
             if (!res.ok) throw new Error((await res.json()).error || 'Error');
             const out = await res.json();
             if (out.mailto_comprador) { const a = document.createElement('a'); a.href = out.mailto_comprador; a.click(); }
@@ -4490,7 +4488,7 @@ async function proveedorPOView() {
         fd.append('total', sub + tax);
         if (pdfEl && pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
         if (xmlEl && xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
-        const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+        const res = await fetch('/api/invoices', { method: 'POST', credentials: 'include', body: fd });
         if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
         const out2 = await res.json();
         if (out2.mailto_comprador) { const a = document.createElement('a'); a.href = out2.mailto_comprador; a.click(); }
@@ -4873,7 +4871,7 @@ async function quotationsView() {
           fd.append('provider_code', quoteCode.value);
           fd.append('official_item_name', quoteName.value);
           fd.append('attachment', qFile.files[0]);
-          const res = await fetch('/api/quotations', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+          const res = await fetch('/api/quotations', { method: 'POST', credentials: 'include', body: fd });
           if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
           quoteResult = await res.json();
         } else {
@@ -5200,7 +5198,7 @@ async function invoicingView() {
       fd.append('total', sub + tax);
       if (invPdf.files[0]) fd.append('pdf', invPdf.files[0]);
       if (invXml.files[0]) fd.append('xml', invXml.files[0]);
-      const res = await fetch('/api/invoices', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      const res = await fetch('/api/invoices', { method: 'POST', credentials: 'include', body: fd });
       if (!res.ok) throw new Error((await res.json()).error || 'Error');
       invMsg.textContent = '✅ Factura guardada';
       invMsg.style.color = '#16a34a';
@@ -5310,7 +5308,7 @@ async function invoicingView() {
       const xmlEl = document.getElementById('mInvXml');
       if (pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
       if (xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
-      const res = await fetch('/api/invoices/monthly', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      const res = await fetch('/api/invoices/monthly', { method: 'POST', credentials: 'include', body: fd });
       if (!res.ok) throw new Error((await res.json()).error || 'Error');
       const out = await res.json();
       if (out.mailto_comprador) { const a = document.createElement('a'); a.href = out.mailto_comprador; a.click(); }
@@ -5691,7 +5689,7 @@ async function paymentsView() {
       fd.append('delivery_date', payDelivery.value);
       fd.append('credit_days', payCreditDays.value || 0);
       if (payProof.files[0]) fd.append('proof', payProof.files[0]);
-      const res = await fetch('/api/payments', { method: 'POST', headers: { Authorization: `Bearer ${state.token}` }, body: fd });
+      const res = await fetch('/api/payments', { method: 'POST', credentials: 'include', body: fd });
       if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
       const data = await res.json();
       payMsg.textContent = '✅ Pago registrado'; payMsg.style.color = '#16a34a';
@@ -6752,7 +6750,7 @@ async function adminView() {
   document.getElementById('expSuppliersBtn')?.addEventListener('click', async () => {
     try {
       const resp = await fetch('/api/catalogs/suppliers/export-csv', {
-        headers: { 'Authorization': `Bearer ${state.token}` }
+        credentials: 'include'
       });
       if (!resp.ok) throw new Error('Error al exportar');
       const blob = await resp.blob();
@@ -6829,7 +6827,7 @@ async function adminView() {
       msgEl.style.color = '#6b7280';
       // Usamos fetch directo para obtener el blob del archivo
       const resp = await fetch('/api/admin/export-db', {
-        headers: { 'Authorization': `Bearer ${state.token}` }
+        credentials: 'include'
       });
       if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || resp.statusText); }
       const blob = await resp.blob();
@@ -6875,7 +6873,8 @@ async function adminView() {
       msgEl.textContent = 'Archivando...'; msgEl.style.color = '#6b7280';
       const resp = await fetch('/api/admin/archive-old-data', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify({ confirm: 'ARCHIVE_CONFIRMAR', cutoff_date: cutoff })
       });
       if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || resp.statusText); }
@@ -7147,7 +7146,7 @@ async function render() {
     const token = params.get('token');
     if (token) return resetPasswordView(token);
   }
-  if (!state.token || !state.user) {
+  if (!state.user) {
     if (route && route !== 'login') state.pendingRoute = route;
     return loginView();
   }
@@ -7181,6 +7180,6 @@ async function render() {
   location.hash = `#/${defaultRoute}`;
 }
 
-window.addEventListener('hashchange', () => { render().then(() => { if (state.token) initNotifications(); }); });
-if (state.token) initInactivityWatcher();
-render().then(() => { if (state.token) initNotifications(); });
+window.addEventListener('hashchange', () => { render().then(() => { if (state.user) initNotifications(); }); });
+if (state.user) initInactivityWatcher();
+render().then(() => { if (state.user) initNotifications(); });

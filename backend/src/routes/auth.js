@@ -6,16 +6,58 @@ const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
+// ── Rate limiting: 5 intentos fallidos por IP cada 15 minutos ────────────────
+const _loginAttempts = new Map(); // ip → { count, resetAt }
+const RATE_MAX = 5;
+const RATE_WINDOW = 15 * 60 * 1000;
+
+function _getIp(req) {
+  return ((req.headers['x-forwarded-for'] || '').split(',')[0] || req.socket?.remoteAddress || '').trim();
+}
+function _checkLimit(ip) {
+  const now = Date.now();
+  const e = _loginAttempts.get(ip);
+  if (!e || now > e.resetAt) return { blocked: false };
+  if (e.count >= RATE_MAX) return { blocked: true, wait: Math.ceil((e.resetAt - now) / 60000) };
+  return { blocked: false };
+}
+function _recordFail(ip) {
+  const now = Date.now();
+  const e = _loginAttempts.get(ip) || { count: 0, resetAt: now + RATE_WINDOW };
+  if (now > e.resetAt) { e.count = 0; e.resetAt = now + RATE_WINDOW; }
+  e.count++;
+  _loginAttempts.set(ip, e);
+}
+function _clearLimit(ip) { _loginAttempts.delete(ip); }
+
+// ── Cookie helpers ────────────────────────────────────────────────────────────
+function _setSessionCookie(res, token) {
+  const secure = process.env.NODE_ENV === 'production' ? 'Secure; ' : '';
+  res.setHeader('Set-Cookie', `session=${token}; HttpOnly; ${secure}SameSite=Strict; Max-Age=${8 * 3600}; Path=/`);
+}
+function _clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', 'session=; HttpOnly; SameSite=Strict; Max-Age=0; Path=/');
+}
+
 router.post('/login', (req, res) => {
+  const ip = _getIp(req);
+  const limit = _checkLimit(ip);
+  if (limit.blocked) {
+    return res.status(429).json({ error: `Demasiados intentos fallidos. Intenta en ${limit.wait} minuto${limit.wait !== 1 ? 's' : ''}.` });
+  }
+
   const { email, password } = req.body || {};
   const db = read();
   const user = db.users.find(u => u.email?.toLowerCase() === String(email || '').toLowerCase() && u.active);
-  if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!user) { _recordFail(ip); return res.status(401).json({ error: 'Credenciales inválidas' }); }
   const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
-  if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!ok) { _recordFail(ip); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+
+  _clearLimit(ip);
   const token = jwt.sign({ sub: user.id, module: 'compras', role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
+  _setSessionCookie(res, token);
   res.json({
-    token,
+    token, // kept for non-browser/API clients
     user: {
       id: user.id,
       name: user.full_name,
@@ -28,6 +70,11 @@ router.post('/login', (req, res) => {
       allowed_scc_ids: user.allowed_scc_ids || []
     }
   });
+});
+
+router.post('/logout', (req, res) => {
+  _clearSessionCookie(res);
+  res.json({ ok: true });
 });
 
 router.get('/me', authRequired, (req, res) => res.json(req.user));

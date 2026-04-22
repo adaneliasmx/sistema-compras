@@ -1,9 +1,18 @@
 const jwt = require('jsonwebtoken');
 const { read } = require('../db');
 
+function _getCookieToken(req) {
+  for (const part of (req.headers.cookie || '').split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === 'session') return v.join('=');
+  }
+  return null;
+}
+
 function authRequired(req, res, next) {
   const auth = req.headers.authorization || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  const bearerToken = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+  const token = _getCookieToken(req) || bearerToken;
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'cambia-esta-clave');
