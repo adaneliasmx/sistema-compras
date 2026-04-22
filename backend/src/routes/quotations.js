@@ -13,7 +13,11 @@ const quotationStorage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, quotationsUploadDir),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`)
 });
-const quotationUpload = multer({ storage: quotationStorage, limits: { fileSize: 10 * 1024 * 1024 } });
+const quotationFileFilter = (req, file, cb) => {
+  const allowed = ['.pdf', '.xml', '.jpg', '.jpeg', '.png', '.webp', '.xlsx', '.xls'];
+  cb(null, allowed.includes(path.extname(file.originalname).toLowerCase()));
+};
+const quotationUpload = multer({ storage: quotationStorage, fileFilter: quotationFileFilter, limits: { fileSize: 10 * 1024 * 1024 } });
 
 const router = express.Router();
 router.use(authRequired);

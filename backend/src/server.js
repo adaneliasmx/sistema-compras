@@ -1,6 +1,18 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
 const path = require('path');
+
+// ── Validación de seguridad al arrancar ───────────────────────────────────────
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET || JWT_SECRET === 'cambia-esta-clave') {
+  console.error('\n⛔  SEGURIDAD: JWT_SECRET no está configurado o usa el valor por defecto.');
+  console.error('    Configura la variable de entorno JWT_SECRET con un valor aleatorio seguro.');
+  console.error('    Ejemplo: openssl rand -hex 32\n');
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1); // En producción, detiene el servidor
+  }
+}
 
 // ── Módulo Compras ────────────────────────────────────────────────────────────
 const authRoutes = require('./routes/auth');
@@ -47,7 +59,29 @@ const { initDb: initValesDb } = require('./db-vales');
 const { initDb: initProduccionDb } = require('./db-produccion');
 
 const app = express();
-app.use(cors());
+
+// ── Seguridad de headers HTTP (helmet) ────────────────────────────────────────
+app.use(helmet({
+  contentSecurityPolicy: false, // La SPA usa inline scripts; CSP requiere configuración específica
+  crossOriginEmbedderPolicy: false
+}));
+
+// ── CORS restringido a dominios autorizados ───────────────────────────────────
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',').map(o => o.trim()).filter(Boolean);
+// Siempre permitir localhost en desarrollo
+if (!ALLOWED_ORIGINS.length || process.env.NODE_ENV !== 'production') {
+  ALLOWED_ORIGINS.push('http://localhost:3000', 'http://127.0.0.1:3000');
+}
+app.use(cors({
+  origin: (origin, cb) => {
+    // Requests sin origin (Postman, server-to-server) o origins permitidos
+    if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
+    cb(new Error(`CORS: origin no autorizado — ${origin}`));
+  },
+  credentials: true
+}));
+
 app.use(express.json({ limit: '8mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
