@@ -16,18 +16,28 @@ router.get('/', (req, res) => {
   const role = user.role_code;
   const notes = [];
 
-  // ── Autorizador ────────────────────────────────────────────────────────────
-  if (role === 'autorizador' || role === 'admin') {
+  // ── Autorizador / Pagos ────────────────────────────────────────────────────
+  if (role === 'autorizador' || role === 'pagos' || role === 'admin') {
     const pending = db.requisition_items.filter(i => i.status === 'En autorización');
-    if (pending.length) notes.push({
-      id: 'auth_pending',
-      priority: 'high',
-      icon: '✅',
-      title: `${pending.length} ítem(s) pendientes de autorización`,
-      body: 'Hay ítems esperando tu aprobación.',
-      route: '#/autorizaciones',
-      count: pending.length
-    });
+    if (pending.length) {
+      const reqIds = [...new Set(pending.map(i => i.requisition_id))];
+      const preview = pending.slice(0, 4).map(i => {
+        const req = db.requisitions.find(r => r.id === i.requisition_id);
+        const name = i.manual_item_name || (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || 'Artículo';
+        return `<b>${req?.folio || ''}</b>: ${name} — $${(Number(i.quantity||0)*Number(i.unit_cost||0)).toLocaleString('es-MX',{minimumFractionDigits:2})}`;
+      });
+      const bodyText = preview.join('<br>') + (pending.length > 4 ? `<br><span style="color:#9ca3af">+${pending.length - 4} más...</span>` : '');
+      notes.push({
+        id: 'auth_pending',
+        priority: 'high',
+        icon: '✅',
+        title: `${pending.length} ítem(s) en ${reqIds.length} req. pendiente(s) de autorización`,
+        body: bodyText,
+        route: '#/autorizaciones',
+        count: pending.length,
+        req_count: reqIds.length
+      });
+    }
   }
 
   // ── Comprador ──────────────────────────────────────────────────────────────

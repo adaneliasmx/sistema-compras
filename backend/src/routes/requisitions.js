@@ -298,14 +298,39 @@ router.post('/:id/send', (req, res) => {
   let mailto_authorizer = null;
   if (authItems.length && authorizers.length) {
     const authEmails = authorizers.map(u => u.email).filter(Boolean).join(',');
-    const authSubject = `Solicitud de autorización · ${reqRow.folio}`;
+    const buyerCcAuth = buyers.map(u => u.email).filter(Boolean).join(',');
+    const requesterName = (db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name || '';
+    const authSubject = `⚠ AUTORIZACIÓN REQUERIDA · ${reqRow.folio} · ${authItems.length} ítem(s)`;
     const authItemLines = authItems.map((item, idx) => {
       const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
-      const subtotal = (Number(item.quantity) * Number(item.unit_cost)).toFixed(2);
-      return `  ${idx + 1}. ${name}   Cant: ${item.quantity} ${item.unit}   P.U.: $${Number(item.unit_cost).toFixed(2)}   Subtotal: $${subtotal} ${item.currency || reqRow.currency || 'MXN'}`;
-    }).join('\n');
-    const authBody = `Estimado autorizador,\n\nSe requiere su autorización para la siguiente requisición:\n\nFolio: ${reqRow.folio}\nSolicitante: ${(db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name||''}\nDepartamento: ${reqRow.department}\n\n── Ítems pendientes de autorización ──\n${authItemLines}\n──────────────────────────────────────\nTotal: $${Number(reqRow.total_amount||0).toFixed(2)} ${reqRow.currency||'MXN'}\n\nVer en sistema: ${previewUrl.replace('requisiciones','autorizaciones')}`;
-    mailto_authorizer = `mailto:${encodeURIComponent(authEmails)}?subject=${encodeURIComponent(authSubject)}&body=${encodeURIComponent(authBody)}`;
+      const cc = (db.cost_centers.find(c => c.id === item.cost_center_id)||{}).name || '';
+      const subtotal = (Number(item.quantity||0) * Number(item.unit_cost||0)).toFixed(2);
+      return `  ${idx + 1}. ${name}\n     Cant: ${item.quantity} ${item.unit||''}   P.U.: $${Number(item.unit_cost).toFixed(2)} ${item.currency||'MXN'}   Subtotal: $${subtotal}\n     Centro de costo: ${cc}`;
+    }).join('\n\n');
+    const authUrl = previewUrl.replace('requisiciones','autorizaciones');
+    const authBody = [
+      `Estimado(a) autorizador(a),`,
+      ``,
+      `Se requiere su autorización para la siguiente requisición. Por favor ingrese al sistema para aprobar o rechazar.`,
+      ``,
+      `── Datos de la requisición ───────────────────────────`,
+      `Folio:        ${reqRow.folio}`,
+      `Solicitante:  ${requesterName}`,
+      `Departamento: ${reqRow.department || '-'}`,
+      `Fecha:        ${new Date().toLocaleDateString('es-MX')}`,
+      ``,
+      `── Ítems que requieren autorización (${authItems.length}) ─────────`,
+      authItemLines,
+      ``,
+      `─────────────────────────────────────────────────────`,
+      `Total de la requisición: $${Number(reqRow.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${reqRow.currency||'MXN'}`,
+      ``,
+      `► Acceder al sistema para autorizar:`,
+      authUrl,
+      ``,
+      `Este mensaje fue generado automáticamente al enviar la requisición.`
+    ].join('\n');
+    mailto_authorizer = `mailto:${encodeURIComponent(authEmails)}?${buyerCcAuth ? `cc=${encodeURIComponent(buyerCcAuth)}&` : ''}subject=${encodeURIComponent(authSubject)}&body=${encodeURIComponent(authBody)}`;
   }
   const allBuyersCc = [buyerCc, requesterEmail].filter(Boolean).join(',');
   res.json({

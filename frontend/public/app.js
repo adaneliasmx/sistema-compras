@@ -133,7 +133,7 @@ async function loadNotifications() {
               <span style="font-size:18px">${n.icon}</span>
               <div style="flex:1">
                 <div style="font-size:13px;font-weight:600;color:${priorityColor[n.priority]||'#111'}">${n.title}</div>
-                ${n.body ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${n.body}</div>` : ''}
+                ${n.body ? `<div style="font-size:12px;color:#6b7280;margin-top:2px;line-height:1.5">${n.body}</div>` : ''}
               </div>
             </div>
           </a>`).join('')
@@ -1802,9 +1802,10 @@ async function approvalsView() {
     <div class="card section">
       <div class="module-title">
         <h3>Autorizaciones pendientes <span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${rows.length}</span></h3>
-        <div style="display:flex;gap:8px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn-primary" id="approveAllBtn" style="font-size:12px;padding:5px 12px" ${!rows.length?'disabled':''}>✅ Autorizar seleccionados</button>
           <button class="btn-danger" id="rejectAllBtn" style="font-size:12px;padding:5px 12px" ${!rows.length?'disabled':''}>✖ Rechazar seleccionados</button>
+          <button class="btn-secondary" id="requestAuthBtn" style="font-size:12px;padding:5px 12px" ${!rows.length?'disabled':''} title="Envía correo de recordatorio a los autorizadores con los ítems pendientes">📧 Solicitar autorización</button>
           <button class="btn-secondary" id="expReqItemsBtn">Exportar</button>
         </div>
       </div>
@@ -2158,6 +2159,17 @@ async function approvalsView() {
     }
     approveMsg.textContent = `✖ ${ok} rechazado(s)${fail ? `, ${fail} con error` : ''}`;
     setTimeout(approvalsView, 900);
+  });
+
+  // ── Solicitar autorización (correo a autorizadores) ───────────────────────
+  document.getElementById('requestAuthBtn')?.addEventListener('click', async () => {
+    try {
+      const out = await api('/api/approvals/request-auth-mailto');
+      if (!out.mailto) { alert('No hay ítems pendientes de autorización.'); return; }
+      const a = document.createElement('a');
+      a.href = out.mailto;
+      a.click();
+    } catch(e) { alert('Error al generar el correo.'); }
   });
 
   const expReqItemsBtn = document.getElementById('expReqItemsBtn');

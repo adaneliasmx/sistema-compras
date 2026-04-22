@@ -343,4 +343,58 @@ router.post('/requisitions/:id/reject-all', allowRoles('autorizador', 'comprador
   res.json({ ok: true, rejected: items.length, mailto });
 });
 
+// Generar mailto de recordatorio de autorización (para botón "Solicitar autorización")
+router.get('/request-auth-mailto', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), (req, res) => {
+  const db = read();
+  const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+  const authUrl = `${baseUrl}/#/autorizaciones`;
+
+  const pendingItems = db.requisition_items.filter(i => i.status === 'En autorización');
+  if (!pendingItems.length) return res.json({ mailto: null, count: 0 });
+
+  const authorizers = db.users.filter(u => (u.role_code === 'autorizador' || u.role_code === 'pagos') && u.active !== false);
+  const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
+  const authEmails = authorizers.map(u => u.email).filter(Boolean).join(',');
+  const ccEmails = buyers.map(u => u.email).filter(Boolean).join(',');
+
+  // Agrupar por requisición
+  const groups = new Map();
+  pendingItems.forEach(item => {
+    const reqRow = (db.requisitions || []).find(r => r.id === item.requisition_id);
+    if (!reqRow) return;
+    if (!groups.has(reqRow.id)) {
+      const requester = db.users.find(u => u.id === reqRow.requester_user_id);
+      groups.set(reqRow.id, { folio: reqRow.folio, requester: requester?.full_name || '', total: reqRow.total_amount, currency: reqRow.currency || 'MXN', items: [] });
+    }
+    const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
+    const cc = (db.cost_centers.find(c => c.id === item.cost_center_id) || {}).name || '';
+    const subtotal = (Number(item.quantity || 0) * Number(item.unit_cost || 0)).toFixed(2);
+    groups.get(reqRow.id).items.push(`  • ${name}   ×${item.quantity} ${item.unit || ''}   @$${Number(item.unit_cost).toFixed(2)} ${item.currency||'MXN'}   Subtotal: $${subtotal}\n    CC: ${cc}`);
+  });
+
+  const groupLines = [...groups.values()].map(g => [
+    `📋 ${g.folio}  ·  Solicitante: ${g.requester}  ·  Total REQ: $${Number(g.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${g.currency}`,
+    ...g.items
+  ].join('\n')).join('\n\n');
+
+  const subject = `⚠ Recordatorio: ${pendingItems.length} ítem(s) pendiente(s) de autorización`;
+  const body = [
+    `Estimado(a) autorizador(a),`,
+    ``,
+    `Le recordamos que hay ${pendingItems.length} ítem(s) en ${groups.size} requisición(es) pendiente(s) de su autorización.`,
+    ``,
+    `── Ítems pendientes ───────────────────────────────────`,
+    groupLines,
+    `──────────────────────────────────────────────────────`,
+    ``,
+    `Por favor ingrese al sistema para autorizar o rechazar:`,
+    `► ${authUrl}`,
+    ``,
+    `Generado el ${new Date().toLocaleDateString('es-MX', { weekday:'long', year:'numeric', month:'long', day:'numeric' })}.`
+  ].join('\n');
+
+  const mailto = `mailto:${encodeURIComponent(authEmails)}?${ccEmails ? `cc=${encodeURIComponent(ccEmails)}&` : ''}subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  res.json({ mailto, count: pendingItems.length, req_count: groups.size });
+});
+
 module.exports = router;
