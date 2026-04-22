@@ -15,6 +15,7 @@ const adminRoutes = require('./routes/admin');
 const approvalsRoutes = require('./routes/approvals');
 const exportsRoutes = require('./routes/exports');
 const notificationsRoutes = require('./routes/notifications');
+const auditRoutes = require('./routes/audit');
 
 // ── Super Admin ───────────────────────────────────────────────────────────────
 const superAdminRoutes = require('./routes/super-admin');
@@ -68,6 +69,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/approvals', approvalsRoutes);
 app.use('/api/exports', exportsRoutes);
 app.use('/api/notifications', notificationsRoutes);
+app.use('/api/audit', auditRoutes);
 
 // ── API Vales ─────────────────────────────────────────────────────────────────
 app.use('/api/vales/auth', valesAuthRoutes);

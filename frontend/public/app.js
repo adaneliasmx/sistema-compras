@@ -27,17 +27,18 @@ const navItems = [
   ['facturacion', 'Facturación'],
   ['pagos', 'Pagos'],
   ['inventarios', 'Inventarios'],
+  ['auditoria', 'Auditoría'],
   ['admin', 'Admin']
 ];
 
 const MENU_BY_ROLE = {
   cliente_requisicion: ['dashboard', 'requisiciones', 'seguimiento'],
-  comprador: ['dashboard', 'requisiciones', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos'],
+  comprador: ['dashboard', 'requisiciones', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos', 'auditoria'],
   autorizador: ['dashboard', 'autorizaciones', 'seguimiento'],
   proveedor: ['cotizaciones', 'facturacion'],
   pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones'],
   inventarios: ['dashboard', 'inventarios'],
-  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'inventarios', 'admin']
+  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'inventarios', 'auditoria', 'admin']
 };
 
 const app = document.getElementById('app');
@@ -6711,6 +6712,254 @@ async function adminView() {
   bindCommon();
 }
 
+// ── AUDITORÍA ────────────────────────────────────────────────────────────────
+async function auditView() {
+  const fmtMXN = v => Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  const statusColors = { 'En autorización': '#f59e0b', 'Autorizado': '#10b981', 'En cotización': '#3b82f6', 'En proceso': '#6366f1', 'Entregado': '#059669', 'Cancelado': '#ef4444', 'Rechazado': '#dc2626', 'Facturado': '#7c3aed' };
+
+  let sortCol = 'created_at', sortDir = 'desc';
+  let searchVal = '', filterStatus = '', filterCc = '';
+  let editingId = null;
+
+  const [catalogs, costCenters, subCostCenters, suppliers] = await Promise.all([
+    api('/api/catalogs/items').catch(() => []),
+    api('/api/catalogs/cost-centers').catch(() => []),
+    api('/api/catalogs/sub-cost-centers').catch(() => []),
+    api('/api/catalogs/suppliers').catch(() => [])
+  ]);
+
+  const allStatuses = ['En cotización','En autorización','Autorizado','En proceso','Entregado','Facturado','Cancelado','Rechazado'];
+
+  const load = () => {
+    const qs = new URLSearchParams({ sort: sortCol, order: sortDir, search: searchVal, status: filterStatus, cc_id: filterCc }).toString();
+    return api(`/api/audit/items?${qs}`);
+  };
+
+  const colHeader = (col, label) => {
+    const active = sortCol === col;
+    const arrow = active ? (sortDir === 'asc' ? ' ▲' : ' ▼') : '';
+    return `<th data-col="${col}" style="padding:6px 10px;cursor:pointer;white-space:nowrap;user-select:none;background:${active?'#e0e7ff':'#f1f5f9'};border-bottom:2px solid ${active?'#6366f1':'#e5e7eb'}">${label}${arrow}</th>`;
+  };
+
+  const render = async () => {
+    const rows = await load().catch(() => []);
+
+    app.innerHTML = shell(`
+      <div class="card section">
+        <div class="module-title" style="margin-bottom:12px">
+          <h3 style="margin:0">🔎 Auditoría de Compras <span style="background:#6366f1;color:white;border-radius:10px;padding:2px 10px;font-size:13px;margin-left:8px">${rows.length}</span></h3>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
+          <input id="auditSearch" type="text" placeholder="Buscar ítem, folio, proveedor, CC..." value="${escapeHtml(searchVal)}"
+            style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:260px;flex:1"/>
+          <select id="auditStatus" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">Todos los estados</option>
+            ${allStatuses.map(s => `<option value="${s}" ${filterStatus===s?'selected':''}>${s}</option>`).join('')}
+          </select>
+          <select id="auditCc" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+            <option value="">Todos los CC</option>
+            ${costCenters.map(c => `<option value="${c.id}" ${filterCc==c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+          </select>
+          <button id="auditClearBtn" class="btn-secondary" style="font-size:12px;padding:5px 12px">Limpiar</button>
+        </div>
+
+        <div class="table-wrap">
+          <table id="auditTable" style="font-size:12px;width:100%">
+            <thead><tr>
+              ${colHeader('req_folio','Folio REQ')}
+              ${colHeader('req_date','Fecha')}
+              ${colHeader('requester_name','Solicitante')}
+              ${colHeader('item_name','Ítem')}
+              ${colHeader('supplier_name','Proveedor')}
+              ${colHeader('cost_center_name','Centro de Costo')}
+              <th style="padding:6px 10px;background:#f1f5f9">Sub CC</th>
+              ${colHeader('quantity','Cant.')}
+              ${colHeader('unit_cost','P.U.')}
+              ${colHeader('total','Total')}
+              <th style="padding:6px 10px;background:#f1f5f9">Moneda</th>
+              ${colHeader('status','Estatus')}
+              <th style="padding:6px 10px;background:#f1f5f9">PO</th>
+            </tr></thead>
+            <tbody>
+              ${rows.length ? rows.map(r => {
+                const isEditing = editingId === r.id;
+                const sccFiltered = subCostCenters.filter(s => s.cost_center_id === r.cost_center_id);
+                const statusColor = statusColors[r.status] || '#6b7280';
+                return `
+                  <tr class="audit-row" data-id="${r.id}" style="cursor:pointer;background:${isEditing?'#eff6ff':'white'};border-top:1px solid #f1f5f9"
+                    title="Clic para editar">
+                    <td style="padding:6px 10px;font-family:monospace;font-size:11px;color:#2563eb">${escapeHtml(r.req_folio)}</td>
+                    <td style="padding:6px 10px;white-space:nowrap">${r.req_date || '-'}</td>
+                    <td style="padding:6px 10px">${escapeHtml(r.requester_name)}</td>
+                    <td style="padding:6px 10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(r.item_name)}"><b>${escapeHtml(r.item_name)}</b></td>
+                    <td style="padding:6px 10px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(r.supplier_name)}</td>
+                    <td style="padding:6px 10px">${escapeHtml(r.cost_center_name)}</td>
+                    <td style="padding:6px 10px;color:#6b7280">${escapeHtml(r.sub_cost_center_name)}</td>
+                    <td style="padding:6px 10px;text-align:right">${r.quantity} ${escapeHtml(r.unit||'')}</td>
+                    <td style="padding:6px 10px;text-align:right">$${fmtMXN(r.unit_cost)}</td>
+                    <td style="padding:6px 10px;text-align:right;font-weight:600">$${fmtMXN(r.total)}</td>
+                    <td style="padding:6px 10px;text-align:center">${escapeHtml(r.currency)}</td>
+                    <td style="padding:6px 10px">
+                      <span style="background:${statusColor}20;color:${statusColor};border-radius:4px;padding:2px 7px;font-size:11px;white-space:nowrap">${escapeHtml(r.status)}</span>
+                    </td>
+                    <td style="padding:6px 10px;font-family:monospace;font-size:11px">${r.po_folio ? `<span style="color:#059669">${escapeHtml(r.po_folio)}</span>` : '<span style="color:#d1d5db">—</span>'}</td>
+                  </tr>
+                  <tr class="audit-edit-row" id="edit-row-${r.id}" style="display:${isEditing?'':'none'};background:#f8fafc">
+                    <td colspan="13" style="padding:0">
+                      <div style="padding:16px 20px;border-top:2px solid #6366f1;border-bottom:2px solid #6366f1">
+                        <div style="font-size:13px;font-weight:700;color:#4338ca;margin-bottom:12px">✏️ Editar ítem · ${escapeHtml(r.item_name)}</div>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Nombre del ítem
+                            <input id="ae_name_${r.id}" type="text" value="${escapeHtml(r.manual_item_name||r.item_name)}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Proveedor
+                            <select id="ae_supp_${r.id}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px">
+                              <option value="">Sin proveedor</option>
+                              ${suppliers.map(s => `<option value="${s.id}" ${r.supplier_id===s.id?'selected':''}>${escapeHtml(s.business_name)}</option>`).join('')}
+                            </select>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Centro de Costo
+                            <select id="ae_cc_${r.id}" data-item-id="${r.id}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px">
+                              <option value="">— Sin CC —</option>
+                              ${costCenters.map(c => `<option value="${c.id}" ${r.cost_center_id===c.id?'selected':''}>${escapeHtml(c.name)}</option>`).join('')}
+                            </select>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Sub Centro de Costo
+                            <select id="ae_scc_${r.id}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px">
+                              <option value="">— Sin Sub CC —</option>
+                              ${subCostCenters.filter(s => s.cost_center_id === (Number(document.getElementById(`ae_cc_${r.id}`)?.value) || r.cost_center_id)).map(s => `<option value="${s.id}" ${r.sub_cost_center_id===s.id?'selected':''}>${escapeHtml(s.name)}</option>`).join('')}
+                            </select>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Cantidad
+                            <input id="ae_qty_${r.id}" type="number" min="0" step="any" value="${r.quantity}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Unidad
+                            <input id="ae_unit_${r.id}" type="text" value="${escapeHtml(r.unit||'')}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Precio Unitario
+                            <input id="ae_cost_${r.id}" type="number" min="0" step="any" value="${r.unit_cost}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px">
+                            Moneda
+                            <select id="ae_cur_${r.id}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px">
+                              <option value="MXN" ${r.currency==='MXN'?'selected':''}>MXN</option>
+                              <option value="USD" ${r.currency==='USD'?'selected':''}>USD</option>
+                            </select>
+                          </label>
+                          <label style="display:flex;flex-direction:column;gap:4px;font-size:12px;grid-column:span 2">
+                            Comentarios
+                            <input id="ae_comments_${r.id}" type="text" value="${escapeHtml(r.comments||'')}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px"/>
+                          </label>
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:14px">
+                          <button class="btn-primary audit-save-btn" data-id="${r.id}" style="font-size:12px;padding:5px 16px">💾 Guardar cambios</button>
+                          <button class="btn-secondary audit-cancel-btn" data-id="${r.id}" style="font-size:12px;padding:5px 12px">Cancelar</button>
+                          <span class="audit-save-msg" id="audit-msg-${r.id}" style="font-size:12px;color:#059669;align-self:center"></span>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>`;
+              }).join('') : '<tr><td colspan="13" style="text-align:center;padding:32px;color:#9ca3af">Sin ítems para los filtros seleccionados</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `, 'auditoria');
+
+    // ── Ordenar por columna ───────────────────────────────────────────────────
+    document.querySelectorAll('#auditTable th[data-col]').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = th.dataset.col;
+        if (sortCol === col) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        else { sortCol = col; sortDir = 'asc'; }
+        render();
+      });
+    });
+
+    // ── Filtros ───────────────────────────────────────────────────────────────
+    const searchEl = document.getElementById('auditSearch');
+    let _st;
+    searchEl?.addEventListener('input', e => {
+      clearTimeout(_st);
+      _st = setTimeout(() => { searchVal = e.target.value; render(); }, 350);
+    });
+    document.getElementById('auditStatus')?.addEventListener('change', e => { filterStatus = e.target.value; render(); });
+    document.getElementById('auditCc')?.addEventListener('change', e => { filterCc = e.target.value; render(); });
+    document.getElementById('auditClearBtn')?.addEventListener('click', () => {
+      searchVal = ''; filterStatus = ''; filterCc = ''; sortCol = 'created_at'; sortDir = 'desc';
+      render();
+    });
+
+    // ── Click en fila → abrir/cerrar edición ─────────────────────────────────
+    document.querySelectorAll('.audit-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const id = Number(row.dataset.id);
+        editingId = editingId === id ? null : id;
+        render();
+      });
+    });
+
+    // ── CC cambia → actualizar Sub CC dinámicamente ───────────────────────────
+    document.querySelectorAll('select[id^="ae_cc_"]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const id = sel.dataset.itemId;
+        const ccId = Number(sel.value);
+        const sccSel = document.getElementById(`ae_scc_${id}`);
+        if (!sccSel) return;
+        const opts = subCostCenters.filter(s => s.cost_center_id === ccId);
+        sccSel.innerHTML = '<option value="">— Sin Sub CC —</option>' +
+          opts.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+      });
+    });
+
+    // ── Cancelar edición ─────────────────────────────────────────────────────
+    document.querySelectorAll('.audit-cancel-btn').forEach(btn => {
+      btn.addEventListener('click', e => { e.stopPropagation(); editingId = null; render(); });
+    });
+
+    // ── Guardar cambios ───────────────────────────────────────────────────────
+    document.querySelectorAll('.audit-save-btn').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const id = Number(btn.dataset.id);
+        const payload = {
+          manual_item_name: document.getElementById(`ae_name_${id}`)?.value || '',
+          supplier_id: document.getElementById(`ae_supp_${id}`)?.value || null,
+          cost_center_id: document.getElementById(`ae_cc_${id}`)?.value || null,
+          sub_cost_center_id: document.getElementById(`ae_scc_${id}`)?.value || null,
+          quantity: document.getElementById(`ae_qty_${id}`)?.value,
+          unit: document.getElementById(`ae_unit_${id}`)?.value || '',
+          unit_cost: document.getElementById(`ae_cost_${id}`)?.value,
+          currency: document.getElementById(`ae_cur_${id}`)?.value || 'MXN',
+          comments: document.getElementById(`ae_comments_${id}`)?.value || ''
+        };
+        const msgEl = document.getElementById(`audit-msg-${id}`);
+        btn.disabled = true;
+        try {
+          await api(`/api/audit/items/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
+          if (msgEl) { msgEl.textContent = '✅ Guardado'; msgEl.style.color = '#059669'; }
+          setTimeout(() => { editingId = null; render(); }, 800);
+        } catch(err) {
+          if (msgEl) { msgEl.textContent = `⚠ ${err.message || 'Error al guardar'}`; msgEl.style.color = '#dc2626'; }
+          btn.disabled = false;
+        }
+      });
+    });
+
+    bindCommon();
+  };
+
+  await render();
+}
+
 async function render() {
   const route = (location.hash || '').replace('#/', '');
   const requestedModule = route.split('/')[0];
@@ -6749,6 +6998,7 @@ async function render() {
   if (route === 'facturacion') return invoicingView();
   if (route === 'pagos') return paymentsView();
   if (route === 'inventarios') return inventoryView();
+  if (route === 'auditoria') return auditView();
   if (route === 'admin') return adminView();
   location.hash = `#/${defaultRoute}`;
 }
