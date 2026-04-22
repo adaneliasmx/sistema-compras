@@ -66,19 +66,16 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false
 }));
 
-// ── CORS restringido a dominios autorizados ───────────────────────────────────
+// ── CORS: restringido si ALLOWED_ORIGINS está configurado, abierto si no ──────
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(o => o.trim()).filter(Boolean);
-// Siempre permitir localhost en desarrollo
-if (!ALLOWED_ORIGINS.length || process.env.NODE_ENV !== 'production') {
-  ALLOWED_ORIGINS.push('http://localhost:3000', 'http://127.0.0.1:3000');
-}
 app.use(cors({
-  origin: (origin, cb) => {
-    // Requests sin origin (Postman, server-to-server) o origins permitidos
-    if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
-    cb(new Error(`CORS: origin no autorizado — ${origin}`));
-  },
+  origin: ALLOWED_ORIGINS.length > 0
+    ? (origin, cb) => {
+        if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
+        cb(new Error(`CORS: origin no autorizado — ${origin}`));
+      }
+    : true, // Si no se configura ALLOWED_ORIGINS, permite todo (modo permisivo)
   credentials: true
 }));
 
