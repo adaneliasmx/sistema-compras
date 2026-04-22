@@ -2522,7 +2522,7 @@ async function purchasesView() {
     const poLocked = ['Aceptada','En proceso','Entregado','Facturada','Facturación parcial','Cerrada'].includes(i.status) && i.purchase_order_id;
     const isDisabled = ['Cancelado','En proceso','Cerrado'].includes(i.status) || poLocked;
     return `<tr style="${rowBg}" data-id="${i.id}">
-      <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización'].includes(i.status) && !poLocked && i.supplier_id && i.unit_cost ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
+      <td>${canSelect && !['Cancelado','En proceso','Cerrado','En autorización','En cotización'].includes(i.status) && !poLocked && i.supplier_id && Number(i.unit_cost) > 0 ? `<input type="checkbox" class="po-check" value="${i.id}"/>` : ''}</td>
       <td style="font-size:11px">${i.requisition_folio||'-'}</td>
       <td>
         <b>${i.item_name}</b>
@@ -4066,8 +4066,24 @@ async function purchasesView() {
       };
     });
 
-    const allOk = preview.groups.every(g => g.can_generate);
-    confirmGenPoBtn.disabled = !allOk;
+    const readyGroups = preview.groups.filter(g => g.can_generate);
+    const blockedGroups = preview.groups.filter(g => !g.can_generate);
+    confirmGenPoBtn.disabled = readyGroups.length === 0;
+    const partialMsg = document.getElementById('poPreviewPartialMsg');
+    if (partialMsg) partialMsg.remove();
+    if (blockedGroups.length > 0 && readyGroups.length > 0) {
+      const msg = document.createElement('p');
+      msg.id = 'poPreviewPartialMsg';
+      msg.style.cssText = 'color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin-top:8px;font-size:0.85rem';
+      msg.innerHTML = `⚠ <b>${blockedGroups.length} grupo(s) con advertencias serán omitidos</b> (${blockedGroups.map(g=>g.supplier_name).join(', ')}). Solo se generarán POs para los grupos marcados en verde.`;
+      document.getElementById('poPreviewContent').after(msg);
+    } else if (blockedGroups.length > 0 && readyGroups.length === 0) {
+      const msg = document.createElement('p');
+      msg.id = 'poPreviewPartialMsg';
+      msg.style.cssText = 'color:#dc2626;background:#fff5f5;border:1px solid #fca5a5;border-radius:6px;padding:8px 12px;margin-top:8px;font-size:0.85rem';
+      msg.innerHTML = `⛔ Ningún grupo está listo para generar. Resuelve las advertencias primero.`;
+      document.getElementById('poPreviewContent').after(msg);
+    }
   };
 
   previewPoBtn.onclick = async () => {
