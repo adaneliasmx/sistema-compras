@@ -4006,6 +4006,24 @@ async function purchasesView() {
   // Vista previa PO
   // FASE 2: Render del preview con precios editables y detección de varianza
   const renderPoPreview = (preview) => {
+    // Filtrar: solo mostrar ítems que coincidan con los seleccionados (lastPreviewIds)
+    // Esto evita que ítems de la misma requisición no seleccionados aparezcan en el preview
+    const selectedIds = new Set((lastPreviewIds || []).map(Number));
+    if (selectedIds.size > 0) {
+      const filteredGroups = preview.groups
+        .map(g => ({
+          ...g,
+          items: g.items.filter(i => selectedIds.has(Number(i.id)))
+        }))
+        .filter(g => g.items.length > 0)
+        .map(g => ({
+          ...g,
+          item_count: g.items.length,
+          total: g.items.reduce((s, i) => s + Number(i.quantity||0) * Number(i.unit_cost||0), 0),
+          warnings: g.warnings.filter(w => g.items.some(i => w.includes(i.name)))
+        }));
+      preview = { ...preview, groups: filteredGroups, total_pos: filteredGroups.length, total_items: filteredGroups.reduce((s,g) => s + g.items.length, 0) };
+    }
     const VARIANCE_THRESHOLD = 0.05; // 5%
     poPreviewContent.innerHTML = `
       <p class="small muted" style="margin-bottom:10px">Se generarán <b>${preview.total_pos}</b> PO(s) para <b>${preview.total_items}</b> ítem(s). Puedes editar precios antes de confirmar:</p>
@@ -4068,6 +4086,8 @@ async function purchasesView() {
 
     const readyGroups = preview.groups.filter(g => g.can_generate);
     const blockedGroups = preview.groups.filter(g => !g.can_generate);
+    // Solo enviar a generate-po los IDs de grupos listos
+    lastPreviewIds = readyGroups.flatMap(g => g.items.map(i => Number(i.id)));
     confirmGenPoBtn.disabled = readyGroups.length === 0;
     const partialMsg = document.getElementById('poPreviewPartialMsg');
     if (partialMsg) partialMsg.remove();
