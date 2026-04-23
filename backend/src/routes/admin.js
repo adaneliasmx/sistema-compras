@@ -404,6 +404,11 @@ router.post('/repair-stuck-items', (req, res) => {
 // ── Migración: reparar IDs duplicados en requisition_items ──────────────────
 // Bug: buildItems llamaba nextId() dentro del .map() sin pushear al array,
 // causando que todos los ítems de un mismo lote recibieran el mismo ID.
+//
+// IMPORTANTE: Solo repara grupos donde NINGÚN ítem tiene purchase_order_id.
+// Los ítems que ya tienen PO generada se dejan intactos — sus referencias en
+// purchase_order_items ya están establecidas y cambiarlas sería arriesgado.
+// (Esos ítems están en estado Enviada/En proceso/Entregado y no necesitan PO nueva.)
 router.post('/migrate-fix-item-ids', (req, res) => {
   const db = read();
   const items = db.requisition_items;
@@ -418,38 +423,50 @@ router.post('/migrate-fix-item-ids', (req, res) => {
   }
 
   let maxId = Math.max(...items.map(i => Number(i.id) || 0));
-  const idMap = {}; // oldId+catalogItemId+reqId → newId (para actualizar referencias)
   const fixed = [];
+  const skipped = [];
 
-  // Para cada grupo de duplicados, mantener el primer ítem con su ID original
-  // y reasignar IDs únicos a los restantes
   duplicateIds.forEach(dupId => {
     const group = items.filter(i => i.id === dupId);
-    // El primero conserva su ID; los demás reciben IDs nuevos
+
+    // Si CUALQUIER ítem del grupo ya tiene PO → no tocar (datos históricos seguros)
+    const anyHasPO = group.some(i => i.purchase_order_id);
+    if (anyHasPO) {
+      skipped.push({ id: dupId, reason: 'Tiene PO generada — no se modifica', count: group.length });
+      return;
+    }
+
+    // Todos sin PO → asignar IDs únicos. El primero conserva su ID original.
     group.slice(1).forEach(item => {
       const oldId = item.id;
       const newId = ++maxId;
-      // Actualizar referencias en purchase_order_items
-      db.purchase_order_items.forEach(poi => {
-        if (poi.requisition_item_id === oldId && poi.purchase_order_id === item.purchase_order_id) {
-          poi.requisition_item_id = newId;
-        }
-      });
-      // Actualizar referencias en quotations
+      // Solo actualizar quotations y quotation_requests (no hay purchase_order_items para estos)
       (db.quotations || []).forEach(q => {
         if (q.requisition_item_id === oldId) q.requisition_item_id = newId;
       });
-      // Actualizar referencias en quotation_requests
       (db.quotation_requests || []).forEach(qr => {
         if (qr.requisition_item_id === oldId) qr.requisition_item_id = newId;
       });
-      fixed.push({ requisition_id: item.requisition_id, old_id: oldId, new_id: newId, catalog_item_id: item.catalog_item_id });
+      const cat = db.catalog_items.find(c => c.id === item.catalog_item_id);
+      fixed.push({
+        requisition_id: item.requisition_id,
+        name: cat?.name || item.manual_item_name || '?',
+        old_id: oldId,
+        new_id: newId
+      });
       item.id = newId;
     });
   });
 
-  write(db);
-  res.json({ fixed: fixed.length, duplicate_ids_repaired: duplicateIds, items: fixed });
+  if (fixed.length > 0) write(db);
+
+  res.json({
+    fixed: fixed.length,
+    skipped: skipped.length,
+    message: `${fixed.length} ítems reparados. ${skipped.length} grupos omitidos (ya tienen PO).`,
+    items_fixed: fixed,
+    groups_skipped: skipped
+  });
 });
 
 module.exports = router;
