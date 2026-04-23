@@ -2,9 +2,9 @@ function getApprovalRule(db, total) {
   const active = (db.approval_rules || [])
     .filter(r => r.active)
     .sort((a, b) => Number(a.min_amount || 0) - Number(b.min_amount || 0));
-  // Si el total cae fuera de todos los rangos, usa la primera regla (la más baja) como fallback
+  // Retorna null si ninguna regla cubre el total — NO hay fallback a la primera regla
+  // (el fallback anterior podía auto-aprobar totales fuera de rango)
   return active.find(r => total >= Number(r.min_amount || 0) && total <= Number(r.max_amount || 0))
-    || active[0]
     || null;
 }
 

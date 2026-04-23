@@ -151,15 +151,24 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   }
 
   const reqRow = db.requisitions.find(r => r.id === line.requisition_id);
+  // Recalcular total ANTES de re-derivar para que todos los ítems usen el total correcto
   recalcRequisition(db, line.requisition_id);
-  // Re-derivar status solo en etapas pre-autorización; no regresar ítems ya Autorizados manualmente
-  const EARLY_STATUSES = ['En cotización', 'En autorización'];
-  if (EARLY_STATUSES.includes(line.status)) {
-    line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
-  } else if (line.status === 'Autorizado' && (!Number(line.unit_cost || 0) || !line.supplier_id)) {
-    // Solo regresar a cotización si se quita explícitamente proveedor o costo
-    line.status = 'En cotización';
-  }
+
+  // Re-derivar TODOS los ítems de la requisición que estén en etapas pre-autorización
+  // o que hayan sido auto-aprobados (para que un aumento del total los revierta correctamente).
+  // Statuses terminales (En proceso, Entregado, etc.) se dejan intactos.
+  const RE_DERIVE_STATUSES = ['En cotización', 'En autorización', 'Autorizado'];
+  const siblings = db.requisition_items.filter(i =>
+    i.requisition_id === line.requisition_id && RE_DERIVE_STATUSES.includes(i.status)
+  );
+  siblings.forEach(i => {
+    i.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), i);
+    i.updated_at = new Date().toISOString();
+  });
+
+  // Si el ítem editado perdió proveedor o costo, asegurarlo en cotización
+  if (!Number(line.unit_cost || 0) || !line.supplier_id) line.status = 'En cotización';
+
   line.updated_at = new Date().toISOString();
   addHistory(db, { module: 'purchases', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: line.status, changed_by_user_id: req.user.id, comment: 'Edición de ítem por compras' });
   recalcRequisition(db, line.requisition_id);

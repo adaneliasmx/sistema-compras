@@ -252,6 +252,8 @@ router.post('/:id/send', (req, res) => {
   if (!reqRow) return res.status(404).json({ error: 'No encontrada' });
   if (!canEditReq(req.user, reqRow, db)) return res.status(403).json({ error: 'No se puede enviar esta requisición' });
   const lines = db.requisition_items.filter(i => i.requisition_id === reqRow.id);
+  // Recalcular total primero para que deriveItemStatus use el valor correcto
+  recalcRequisition(db, reqRow.id);
   lines.forEach(line => {
     const oldStatus = line.status;
     line.status = deriveItemStatus(db, Number(reqRow.total_amount || 0), line);
