@@ -4106,19 +4106,6 @@ async function purchasesView() {
     }
   };
 
-  previewPoBtn.onclick = async () => {
-    // FASE 1: Scoped al tabContent para evitar selección cruzada entre tabs
-    const ids = [...new Set([...tabContent.querySelectorAll('.po-check:checked')].map(c => Number(c.value)))].filter(Boolean);
-    if (!ids.length) { poMsg.textContent = 'Selecciona al menos un ítem'; return; }
-    lastPreviewIds = ids;
-    try {
-      const preview = await api('/api/purchases/preview-po', { method:'POST', body: JSON.stringify({ item_ids: ids }) });
-      renderPoPreview(preview);
-      poPreviewSection.style.display = 'block';
-      poPreviewSection.scrollIntoView({ behavior: 'smooth' });
-    } catch (e) { poMsg.textContent = e.message; }
-  };
-
   closePreviewBtn.onclick = () => { poPreviewSection.style.display = 'none'; };
 
   // Panel de correos para abrir manualmente (evita bloqueo de popups del navegador)
