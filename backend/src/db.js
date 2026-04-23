@@ -32,6 +32,33 @@ const EMPTY_DB = {
   settings: {}
 };
 
+// Repara IDs duplicados en requisition_items (solo items sin PO generada)
+function fixDuplicateItemIds(data) {
+  const items = data.requisition_items || [];
+  const idCount = {};
+  items.forEach(i => { idCount[i.id] = (idCount[i.id] || 0) + 1; });
+  const duplicateIds = Object.keys(idCount).filter(id => idCount[id] > 1).map(Number);
+  if (!duplicateIds.length) return false;
+
+  let maxId = Math.max(...items.map(i => Number(i.id) || 0));
+  let fixed = 0;
+
+  duplicateIds.forEach(dupId => {
+    const group = items.filter(i => i.id === dupId);
+    if (group.some(i => i.purchase_order_id)) return; // ya tiene PO → no tocar
+    group.slice(1).forEach(item => {
+      const newId = ++maxId;
+      (data.quotations || []).forEach(q => { if (q.requisition_item_id === item.id) q.requisition_item_id = newId; });
+      (data.quotation_requests || []).forEach(qr => { if (qr.requisition_item_id === item.id) qr.requisition_item_id = newId; });
+      item.id = newId;
+      fixed++;
+    });
+  });
+
+  if (fixed > 0) console.log(`[db] Auto-migración: ${fixed} IDs duplicados de requisition_items reparados.`);
+  return fixed > 0;
+}
+
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)
 async function initDb() {
   if (pool) {
@@ -58,6 +85,11 @@ async function initDb() {
       console.log('[db] PostgreSQL inicializado con datos seed.');
     } else {
       _cache = rows[0].data;
+      // Aplicar auto-migración de IDs duplicados si es necesario
+      if (fixDuplicateItemIds(_cache)) {
+        await pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [JSON.stringify(_cache)]);
+        console.log('[db] Auto-migración persistida en PostgreSQL.');
+      }
       console.log('[db] Datos cargados desde PostgreSQL.');
     }
   } else {
@@ -67,6 +99,9 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    if (fixDuplicateItemIds(_cache)) {
+      fs.writeFileSync(dbPath, JSON.stringify(_cache, null, 2));
+    }
     console.log('[db] Datos cargados desde JSON local:', dbPath);
   }
 }

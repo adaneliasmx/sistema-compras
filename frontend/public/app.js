@@ -2253,8 +2253,8 @@ async function purchasesView() {
 
       <div id="tabContent"></div>
       <div class="actions" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px" id="poActions">
-        <button class="btn-secondary" id="previewPoBtn">👁 Vista previa PO</button>
-        <button class="btn-primary" id="genPoBtn">⚡ Generar PO</button>
+        <button class="btn-primary" id="genPoBtn">✅ PO de Selección</button>
+        <button class="btn-secondary" id="genAllPendingBtn">📦 Generar POs Faltantes</button>
         <div id="poMsg" class="small muted"></div>
       </div>
     </div>
@@ -4227,6 +4227,32 @@ async function purchasesView() {
       else if (e.responseData?.error === 'zero_cost') showZeroCostError(e.responseData.zero_cost_items);
       else poMsg.textContent = e.message;
     }
+  };
+
+  // "Generar POs Faltantes" — genera automáticamente POs para TODOS los ítems
+  // Autorizados con proveedor y costo, sin necesidad de seleccionar checkboxes.
+  document.getElementById('genAllPendingBtn').onclick = async () => {
+    const btn = document.getElementById('genAllPendingBtn');
+    const readyIds = allItems
+      .filter(i => i.status === 'Autorizado' && i.supplier_id && Number(i.unit_cost) > 0 && !i.purchase_order_id)
+      .map(i => i.id);
+    if (!readyIds.length) { poMsg.textContent = '✅ No hay ítems pendientes listos para PO'; return; }
+    if (!confirm(`Se generarán POs para ${readyIds.length} ítem(s) autorizado(s). ¿Continuar?`)) return;
+    btn.disabled = true;
+    poMsg.textContent = `Generando POs para ${readyIds.length} ítem(s)...`;
+    try {
+      lastPreviewIds = readyIds;
+      const out = await doGeneratePO(readyIds);
+      poMsg.textContent = out.message;
+      if (out.po_mailtos?.length) showMailtoPanel(out.po_mailtos);
+      await generarPDFsPorPO(out);
+      setTimeout(render, 1800);
+    } catch(e) {
+      poMsg.textContent = '';
+      if (e.responseData?.error === 'stale_prices') showStaleDialog(e.responseData.stale_items, readyIds);
+      else if (e.responseData?.error === 'zero_cost') showZeroCostError(e.responseData.zero_cost_items);
+      else poMsg.textContent = '❌ ' + e.message;
+    } finally { btn.disabled = false; }
   };
 
   expPoBtn.onclick = () => downloadCsv('compras_db', 'compras_db.csv', {});
