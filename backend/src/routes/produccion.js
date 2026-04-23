@@ -1116,8 +1116,10 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const crossesMid = ssR > seR; // slot cruza la medianoche
 
     // Solo ciclos COMPLETADOS (descargados) — se asignan por hora_descarga
+    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
     const cargasEnSlot = (pdb.cargas || []).filter(c => {
       if (c.linea !== l || !c.fecha_descarga || !c.hora_descarga) return false;
+      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -1763,8 +1765,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
+    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
     const cargasEnSlot = (pdb.cargas_baker || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
+      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -1859,8 +1863,10 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
+    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
     const cargasEnSlot = (pdb.cargas_l1 || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
+      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -2481,6 +2487,10 @@ router.post('/baker/cargas', (req, res) => {
       }
     });
     if (errCav.length) return res.status(400).json({ error: `Campos requeridos: ${errCav.join(', ')}` });
+    // Bloquear barril con todas las cavidades vacías (ciclo en blanco)
+    if (cavidades.filter(cv => !cv.es_vacia).length === 0) {
+      return res.status(400).json({ error: 'El barril debe tener al menos una cavidad con material' });
+    }
   }
 
   const proceso    = (pdb.procesos_baker      || []).find(p => String(p.id) === String(proceso_id));
@@ -2689,6 +2699,7 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
     original.estado = 'defecto';
     original.fecha_descarga = nowDateStr();
     original.hora_descarga  = nowTimeStr();
+    original.turno          = getTurno(nowTimeStr());
   }
 
   const activos = pdb.cargas_baker.filter(c => c.estado === 'activo');
