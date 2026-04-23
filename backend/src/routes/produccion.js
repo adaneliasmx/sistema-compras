@@ -1089,6 +1089,36 @@ function slotCiclosObj(ciclos_obj, h) {
   return (h % period) >= period - ceilsPerPeriod ? Math.ceil(ciclos_obj) : base;
 }
 
+// Horas realmente transcurridas en un turno.
+// Si el turno está en curso HOY devuelve las horas parciales; si ya terminó o es
+// un día histórico devuelve las horas totales del turno (para no distorsionar históricos).
+function elapsedHoursForTurno(t, targetDate) {
+  const tDef    = TURNOS_DEF[t];
+  const nowDate = nowDateStr();
+  const nowMins = toMins(nowTimeStr());
+  const nextDay = addDays(targetDate, 1);
+  const T3_END  = 6 * 60 + 30; // 06:30 — fin del T3 en el día siguiente
+
+  if (t === 'T3') {
+    if (nowDate === targetDate && nowMins >= tDef.start) {
+      // Primera mitad del T3 (21:30 → 23:59)
+      return Math.min(tDef.hours, (nowMins - tDef.start) / 60);
+    }
+    if (nowDate === nextDay && nowMins < T3_END) {
+      // Segunda mitad del T3 (00:00 → 06:30)
+      return Math.min(tDef.hours, (1440 - tDef.start + nowMins) / 60);
+    }
+    return tDef.hours; // T3 ya terminó o es fecha histórica
+  }
+
+  // T1 y T2
+  if (nowDate !== targetDate) return tDef.hours; // fecha histórica → completo
+  const turnoEnd = tDef.start + tDef.hours * 60;
+  if (nowMins >= turnoEnd) return tDef.hours;    // turno ya terminó hoy
+  if (nowMins <= tDef.start) return tDef.hours;  // aún no inicia (no debería llegar aquí)
+  return (nowMins - tDef.start) / 60;            // turno en curso → horas parciales
+}
+
 function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const ciclos_obj = l === 'L3'
     ? (config.ciclos_objetivo_l3 ?? 2)
@@ -1214,7 +1244,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       ? (config.ciclos_objetivo_l3 ?? 2)
       : (config.ciclos_objetivo_l4 ?? 2);
 
-    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, daySlots = 0;
+    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, daySlots = 0, dayElapHours = 0;
 
     for (const t of turnos) {
       const tDef  = TURNOS_DEF[t];
@@ -1226,7 +1256,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       const tPz    = slots.reduce((s, x) => s + x.piezas_total,     0);
       const tPzObj = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
       const tParos = slots.reduce((s, x) => s + x.paros_min,        0);
-      const turnoMins = tDef.hours * 60;
+      const turnoMins  = tDef.hours * 60;
+      const tElap      = elapsedHoursForTurno(t, targetDate); // horas reales transcurridas
 
       result[l][t] = {
         slots,
@@ -1237,24 +1268,22 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_total:     tPz,
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
-          // Eficiencia turno = ciclos / (ciclos_obj × horas_turno)
-          eficiencia:    r3((ciclos_obj * tDef.hours) > 0 ? tC / (ciclos_obj * tDef.hours) : 0),
-          // Calidad turno = buenos / no_vacios
+          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          eficiencia:    r3(tElap > 0 ? tC / (ciclos_obj * tElap) : 0),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
-          // Capacidad turno = piezas_total / piezas_obj_total
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
-          // Disponibilidad turno = (turno_min - paros) / turno_min
           disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
         }
       };
 
-      dayC     += tC;
-      dayNV    += tNV;
-      dayB     += tB;
-      dayPz    += tPz;
-      dayPzObj += tPzObj;
-      dayParos += tParos;
-      daySlots += tDef.hours;
+      dayC          += tC;
+      dayNV         += tNV;
+      dayB          += tB;
+      dayPz         += tPz;
+      dayPzObj      += tPzObj;
+      dayParos      += tParos;
+      daySlots      += tDef.hours;   // horas totales planeadas (para disponibilidad)
+      dayElapHours  += tElap;        // horas reales transcurridas (para eficiencia)
     }
 
     const totalMins = daySlots * 60;
@@ -1265,7 +1294,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    r3(daySlots > 0 ? dayC / (ciclos_obj * daySlots) : 0),
+      eficiencia:    r3(dayElapHours > 0 ? dayC / (ciclos_obj * dayElapHours) : 0),
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
@@ -1302,7 +1331,7 @@ router.get('/pizarron', (req, res) => {
   function addBakerLike(lineaLabel, buildFn, ciclosObjKey) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const turnData = {};
-    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dSlots = 0;
+    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dSlots = 0, dElapHours = 0;
     for (const t of targetTurnos) {
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
@@ -1312,25 +1341,29 @@ router.get('/pizarron', (req, res) => {
       const tPz  = slots.reduce((s, x) => s + x.piezas_total,     0);
       const tPzO = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
       const tParos = slots.reduce((s, x) => s + x.paros_min,      0);
-      const turnoMins = tDef.hours * 60;
+      const turnoMins  = tDef.hours * 60;
+      const tElap      = elapsedHoursForTurno(t, targetDate);
       const ciclos_obj = config[ciclosObjKey] ?? 2;
       turnData[t] = {
         slots,
         totals: {
-          eficiencia:    (ciclos_obj * tDef.hours) > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : 0,
+          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          eficiencia:    tElap > 0 ? r3(tC / (ciclos_obj * tElap)) : 0,
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
         }
       };
       dC += tC; dNV += tNV; dB += tB; dPz += tPz; dPzO += tPzO;
-      dParos += tParos; dSlots += tDef.hours;
+      dParos += tParos;
+      dSlots     += tDef.hours;  // horas totales planeadas (para disponibilidad)
+      dElapHours += tElap;       // horas reales transcurridas (para eficiencia)
     }
     const ciclos_obj = config[ciclosObjKey] ?? 2;
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    (ciclos_obj * dSlots) > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dSlots)) : 0,
+        eficiencia:    dElapHours > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dElapHours)) : 0,
         calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
         capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
         disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null
