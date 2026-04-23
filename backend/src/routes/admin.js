@@ -401,4 +401,55 @@ router.post('/repair-stuck-items', (req, res) => {
   res.json({ fixed: report.length, items: report });
 });
 
+// ── Migración: reparar IDs duplicados en requisition_items ──────────────────
+// Bug: buildItems llamaba nextId() dentro del .map() sin pushear al array,
+// causando que todos los ítems de un mismo lote recibieran el mismo ID.
+router.post('/migrate-fix-item-ids', (req, res) => {
+  const db = read();
+  const items = db.requisition_items;
+
+  // Encontrar IDs duplicados
+  const idCount = {};
+  items.forEach(i => { idCount[i.id] = (idCount[i.id] || 0) + 1; });
+  const duplicateIds = Object.keys(idCount).filter(id => idCount[id] > 1).map(Number);
+
+  if (!duplicateIds.length) {
+    return res.json({ fixed: 0, message: 'No se encontraron IDs duplicados.' });
+  }
+
+  let maxId = Math.max(...items.map(i => Number(i.id) || 0));
+  const idMap = {}; // oldId+catalogItemId+reqId → newId (para actualizar referencias)
+  const fixed = [];
+
+  // Para cada grupo de duplicados, mantener el primer ítem con su ID original
+  // y reasignar IDs únicos a los restantes
+  duplicateIds.forEach(dupId => {
+    const group = items.filter(i => i.id === dupId);
+    // El primero conserva su ID; los demás reciben IDs nuevos
+    group.slice(1).forEach(item => {
+      const oldId = item.id;
+      const newId = ++maxId;
+      // Actualizar referencias en purchase_order_items
+      db.purchase_order_items.forEach(poi => {
+        if (poi.requisition_item_id === oldId && poi.purchase_order_id === item.purchase_order_id) {
+          poi.requisition_item_id = newId;
+        }
+      });
+      // Actualizar referencias en quotations
+      (db.quotations || []).forEach(q => {
+        if (q.requisition_item_id === oldId) q.requisition_item_id = newId;
+      });
+      // Actualizar referencias en quotation_requests
+      (db.quotation_requests || []).forEach(qr => {
+        if (qr.requisition_item_id === oldId) qr.requisition_item_id = newId;
+      });
+      fixed.push({ requisition_id: item.requisition_id, old_id: oldId, new_id: newId, catalog_item_id: item.catalog_item_id });
+      item.id = newId;
+    });
+  });
+
+  write(db);
+  res.json({ fixed: fixed.length, duplicate_ids_repaired: duplicateIds, items: fixed });
+});
+
 module.exports = router;

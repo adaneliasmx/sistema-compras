@@ -37,6 +37,10 @@ function validateItems(requisition, payloadItems = []) {
 }
 
 function buildItems(db, requisition, payloadItems = [], changedByUserId, isDraft) {
+  // Calcular el próximo ID UNA sola vez y luego incrementarlo para cada ítem del batch.
+  // Si se llamara nextId() dentro del .map(), todos los ítems del lote recibirían el mismo ID
+  // porque el array aún no se actualiza durante la iteración.
+  let nextItemId = nextId(db.requisition_items);
   return payloadItems.map((item, index) => {
     const cat = item.catalog_item_id ? db.catalog_items.find(c => c.id === Number(item.catalog_item_id)) : null;
     const unitCost = cat && Number(cat.unit_price || 0) ? Number(cat.unit_price) : Number(item.unit_cost || 0);
@@ -46,7 +50,7 @@ function buildItems(db, requisition, payloadItems = [], changedByUserId, isDraft
     const itemSCC = item.sub_cost_center_id ? Number(item.sub_cost_center_id) : (cat?.sub_cost_center_id || requisition.sub_cost_center_id || null);
     const status = isDraft ? 'Borrador' : deriveItemStatus(db, 0, { ...item, catalog_item_id: cat?.id || null, supplier_id: supplierId, unit_cost: unitCost });
     return {
-      id: nextId(db.requisition_items),
+      id: nextItemId++,
       requisition_id: requisition.id,
       line_no: index + 1,
       catalog_item_id: cat?.id || null,
