@@ -1258,8 +1258,10 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const crossesMid = ssR > seR; // slot cruza la medianoche
 
     // Ciclos COMPLETADOS — se cuentan por cuándo se descargan, sin importar cuándo se cargaron
+    // Se excluyen registros marcados como cancelados por admin
     const cargasEnSlot = (pdb.cargas || []).filter(c => {
       if (c.linea !== l || !c.fecha_descarga || !c.hora_descarga) return false;
+      if (c.estado === 'cancelado') return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -1378,8 +1380,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_total:     tPz,
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
-          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
-          eficiencia:    r3(tElap > 0 ? tC / (ciclos_obj * tElap) : 0),
+          // Eficiencia: usa horas totales del turno (consistente con KPI Histórico)
+          eficiencia:    tC > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : null,
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
           disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1404,7 +1406,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    r3(dayElapHours > 0 ? dayC / (ciclos_obj * dayElapHours) : 0),
+      eficiencia:    dayC > 0 ? r3(dayC / (ciclos_obj * daySlots)) : null,
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
@@ -1457,8 +1459,11 @@ router.get('/pizarron', (req, res) => {
       turnData[t] = {
         slots,
         totals: {
-          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
-          eficiencia:    tElap > 0 ? r3(tC / (ciclos_obj * tElap)) : 0,
+          ciclos_totales:   tC,
+          ciclos_no_vacios: tNV,
+          ciclos_buenos:    tB,
+          // Eficiencia: usa horas totales del turno (consistente con KPI Histórico)
+          eficiencia:    tC > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : null,
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1473,7 +1478,7 @@ router.get('/pizarron', (req, res) => {
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    dElapHours > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dElapHours)) : 0,
+        eficiencia:    dC > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dSlots)) : null,
         calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
         capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
         disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null
@@ -1986,9 +1991,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
-    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan
+    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan; se excluyen cancelados
     const cargasEnSlot = (pdb.cargas_baker || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
+      if (c.estado === 'cancelado') return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -2083,9 +2089,10 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
-    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan
+    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan; se excluyen cancelados
     const cargasEnSlot = (pdb.cargas_l1 || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
+      if (c.estado === 'cancelado') return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||

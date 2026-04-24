@@ -710,6 +710,66 @@ async function viewDashboard(el) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MODAL: Ciclos hora×hora del turno (desde tarjetero)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function openModalCiclosHora(lineaLabel, turno, slots, totals) {
+  const fmtPctR = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
+  const slotsArr = (slots || []).filter(s => s.ciclos_totales > 0 || s.ciclos_obj > 0);
+
+  const rows = slotsArr.map(s => {
+    const ef = s.eficiencia != null ? s.eficiencia * 100 : null;
+    return `<tr style="border-bottom:1px solid #e5e7eb">
+      <td style="padding:7px 12px;font-family:monospace;font-size:12px">${s.hora_inicio}–${s.hora_fin}</td>
+      <td style="padding:7px 8px;text-align:center;font-weight:700;color:${s.ciclos_totales > 0 ? '#0f172a' : '#94a3b8'}">${s.ciclos_totales}</td>
+      <td style="padding:7px 8px;text-align:center;color:#64748b">${s.ciclos_obj ?? '—'}</td>
+      <td style="padding:7px 8px;text-align:center" class="${kpiColor(ef)}">${fmtPctR(s.eficiencia)}</td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="4" style="padding:16px;text-align:center;color:#94a3b8">Sin ciclos registrados en este turno</td></tr>`;
+
+  const ciclosTotal = totals?.ciclos_totales ?? slotsArr.reduce((a, s) => a + (s.ciclos_totales || 0), 0);
+  const objTotal    = slotsArr.reduce((a, s) => a + (s.ciclos_obj || 0), 0);
+  const efTotal     = totals?.eficiencia;
+  const efTotalPct  = efTotal != null ? efTotal * 100 : null;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <h3 class="modal-title">📊 ${escHtml(lineaLabel)} — ${escHtml(turno)} · Ciclos por hora</h3>
+        <button class="modal-close" id="ciclos-modal-close">✕</button>
+      </div>
+      <div class="modal-body" style="padding:0;overflow:auto;max-height:60vh">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="background:#f1f5f9;border-bottom:2px solid #e2e8f0">
+              <th style="padding:8px 12px;text-align:left;font-weight:600">Hora</th>
+              <th style="padding:8px 8px;text-align:center;font-weight:600">Ciclos</th>
+              <th style="padding:8px 8px;text-align:center;font-weight:600">Objetivo</th>
+              <th style="padding:8px 8px;text-align:center;font-weight:600">Eficiencia</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="background:#1e293b;color:#f8fafc;font-weight:700">
+              <td style="padding:9px 12px">TOTAL TURNO</td>
+              <td style="padding:9px 8px;text-align:center;font-size:15px">${ciclosTotal}</td>
+              <td style="padding:9px 8px;text-align:center">${objTotal}</td>
+              <td style="padding:9px 8px;text-align:center" class="${kpiColor(efTotalPct)}">${fmtPctR(efTotal)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.querySelector('#ciclos-modal-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // VISTA: LÍNEA (tarjetero activo)
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -825,7 +885,7 @@ async function viewLinea(el, linea) {
       <div class="tarjetero-header">
         <h3>Línea ${linea.replace('L','')} — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activas</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+          <div id="btn-ciclos-turno" style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px;cursor:pointer" title="Ver ciclos hora×hora">
             🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
           </div>
           ${paroMiniCard}
@@ -839,6 +899,12 @@ async function viewLinea(el, linea) {
       ${tarjetasHtml}`;
 
     // Bind events
+    el.querySelector('#btn-ciclos-turno')?.addEventListener('click', () => {
+      const slots  = pizarronData?.data?.[linea]?.[turnoActual]?.slots  || [];
+      const totals = pizarronData?.data?.[linea]?.[turnoActual]?.totals || {};
+      openModalCiclosHora(`Línea ${linea.replace('L', '')}`, turnoActual, slots, totals);
+    });
+
     el.querySelector('#btn-nueva-carga')?.addEventListener('click', () => {
       const pa = state.paroActivo[linea];
       if (pa && pa.tipo !== 'cambio_turno') {
@@ -964,7 +1030,7 @@ async function viewBaker(el) {
       <div class="tarjetero-header">
         <h3>Baker — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activos</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+          <div id="btn-ciclos-turno-baker" style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px;cursor:pointer" title="Ver ciclos hora×hora">
             🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
           </div>
           ${capacidadBar}
@@ -977,6 +1043,12 @@ async function viewBaker(el) {
         </div>
       </div>
       ${tarjetasHtml}`;
+
+    el.querySelector('#btn-ciclos-turno-baker')?.addEventListener('click', () => {
+      const slots  = pizarronData?.data?.['Baker']?.[turnoActual]?.slots  || [];
+      const totals = pizarronData?.data?.['Baker']?.[turnoActual]?.totals || {};
+      openModalCiclosHora('Baker', turnoActual, slots, totals);
+    });
 
     el.querySelector('#btn-baker-carga')?.addEventListener('click', () => {
       if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
@@ -1127,7 +1199,7 @@ async function viewL1(el) {
       <div class="tarjetero-header">
         <h3>Línea 1 — Tarjetero Activo <span class="badge badge-activo">${cargas.length} activos</span></h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px">
+          <div id="btn-ciclos-turno-l1" style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700;letter-spacing:.5px;cursor:pointer" title="Ver ciclos hora×hora">
             🔄 ${turnoActual}: <span style="color:${ciclosTurno >= objetivoTurno ? '#4ade80' : '#38bdf8'};font-size:16px">${ciclosTurno}</span><span style="color:#94a3b8;font-size:12px;font-weight:400;margin-left:5px">/ ${objetivoTurno} ciclos</span>
           </div>
           ${capacidadBar}
@@ -1139,6 +1211,12 @@ async function viewL1(el) {
         </div>
       </div>
       ${tarjetasHtml}`;
+
+    el.querySelector('#btn-ciclos-turno-l1')?.addEventListener('click', () => {
+      const slots  = pizarronData?.data?.['L1']?.[turnoActual]?.slots  || [];
+      const totals = pizarronData?.data?.['L1']?.[turnoActual]?.totals || {};
+      openModalCiclosHora('Línea 1', turnoActual, slots, totals);
+    });
 
     el.querySelector('#btn-l1-carga')?.addEventListener('click', () => {
       if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
@@ -3775,7 +3853,7 @@ async function viewReportes(el) {
 
   // ── Modal edición carga (admin) ───────────────────────────────────────────
   function openRptCargaModal(carga, onSaved) {
-    const estados = ['activo','buena','defecto','reproceso','vacia'];
+    const estados = ['activo','buena','defecto','reproceso','vacia','cancelado'];
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.innerHTML = `
