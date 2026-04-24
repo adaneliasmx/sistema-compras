@@ -3702,7 +3702,7 @@ async function viewReportes(el) {
 
   // ── Render result (orquesta las secciones) ────────────────────────────────
   function renderResult(cargas, cavs) {
-    const isAdmin = state.user?.rol === 'admin';
+    const isAdmin = state.user?.role === 'admin';
     const res = document.getElementById('rpt-resultado');
     if (activeRptTab === 'Baker' || activeRptTab === 'L1') {
       const racks = cargas.filter(c => c.herramental_tipo !== 'barril');
