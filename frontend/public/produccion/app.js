@@ -728,16 +728,19 @@ async function viewLinea(el, linea) {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
 
+    // Para el conteo de ciclos necesitamos incluir el día anterior:
+    // cargas cargadas en T3 (ayer) pueden descargarse en T1 (hoy).
+    const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
     const [cargasData, catalogData, parosData, todasHoyData, cfgData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
       GET(`/catalogos/${linea}`),
       GET(`/paros/${linea}/activo`).catch(() => null),
-      GET(`/cargas/${linea}?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({}))
     ]);
 
-    // Contar ciclos DESCARGADOS en el turno vigente.
-    // Para L3/L4 el campo turno refleja la carga (no la descarga), por eso usamos hora_descarga.
+    // Ciclos DESCARGADOS en el turno vigente — por hora de descarga, sin importar cuándo se cargaron.
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const ciclosTurno = todasHoy.filter(c =>
       c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual
@@ -910,11 +913,13 @@ async function viewBaker(el) {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
 
+    const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
     const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
       GET('/baker/cargas/activas'),
       GET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
-      GET(`/baker/cargas?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET(`/baker/cargas?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({}))
     ]);
 
@@ -924,10 +929,8 @@ async function viewBaker(el) {
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
-    // Ciclos DESCARGADOS del turno.
-    // Baker sobreescribe el campo turno al descargar, por lo que turno = turno de descarga.
-    // Un registro en cargas_baker = un ciclo (barril o rack), no cavidades individuales.
-    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && c.turno === turnoActual).length;
+    // Ciclos DESCARGADOS del turno — por hora de descarga (Baker actualiza turno al descargar).
+    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual).length;
     const ciclosObjBaker = cfg.ciclos_objetivo_baker ?? 2;
     const objetivoTurno = Math.round(ciclosObjBaker * (HORAS_TURNO[turnoActual] ?? 8));
 
@@ -1074,11 +1077,13 @@ async function viewL1(el) {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
 
+    const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
     const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
       GET('/l1/cargas/activas'),
       GET('/catalogos/l1'),
       GET('/l1/paros/activo').catch(() => null),
-      GET(`/l1/cargas?fecha_ini=${shiftFechaIni}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET(`/l1/cargas?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({}))
     ]);
 
@@ -1088,7 +1093,8 @@ async function viewL1(el) {
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const cfg = (cfgData?.config || cfgData) ?? {};
 
-    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && c.turno === turnoActual).length;
+    // Ciclos DESCARGADOS en el turno vigente — por hora de descarga
+    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual).length;
     const ciclosObjL1 = cfg.ciclos_objetivo_l1 ?? 2;
     const objetivoTurno = Math.round(ciclosObjL1 * (HORAS_TURNO[turnoActual] ?? 8));
 
