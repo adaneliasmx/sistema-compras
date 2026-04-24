@@ -1380,8 +1380,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_total:     tPz,
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
-          // Eficiencia: usa horas totales del turno (consistente con KPI Histórico)
-          eficiencia:    tC > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : null,
+          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          eficiencia:    r3(tElap > 0 ? tC / (ciclos_obj * tElap) : 0),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
           disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1406,7 +1406,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    dayC > 0 ? r3(dayC / (ciclos_obj * daySlots)) : null,
+      eficiencia:    r3(dayElapHours > 0 ? dayC / (ciclos_obj * dayElapHours) : 0),
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
@@ -1462,8 +1462,8 @@ router.get('/pizarron', (req, res) => {
           ciclos_totales:   tC,
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
-          // Eficiencia: usa horas totales del turno (consistente con KPI Histórico)
-          eficiencia:    tC > 0 ? r3(tC / (ciclos_obj * tDef.hours)) : null,
+          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          eficiencia:    tElap > 0 ? r3(tC / (ciclos_obj * tElap)) : 0,
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1478,7 +1478,7 @@ router.get('/pizarron', (req, res) => {
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    dC > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dSlots)) : null,
+        eficiencia:    dElapHours > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dElapHours)) : 0,
         calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
         capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
         disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null
