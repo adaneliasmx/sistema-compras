@@ -732,19 +732,18 @@ async function viewLinea(el, linea) {
     // cargas cargadas en T3 (ayer) pueden descargarse en T1 (hoy).
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-    const [cargasData, catalogData, parosData, todasHoyData, cfgData] = await Promise.all([
+    const [cargasData, catalogData, parosData, todasHoyData, cfgData, pizarronData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
       GET(`/catalogos/${linea}`),
       GET(`/paros/${linea}/activo`).catch(() => null),
       GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
-      GET('/config').catch(() => ({}))
+      GET('/config').catch(() => ({})),
+      GET(`/pizarron?linea=${linea}&turno=${turnoActual}`).catch(() => null)
     ]);
 
-    // Ciclos DESCARGADOS en el turno vigente — por hora de descarga, sin importar cuándo se cargaron.
+    // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
-    const ciclosTurno = todasHoy.filter(c =>
-      c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual
-    ).length;
+    const ciclosTurno = pizarronData?.data?.[linea]?.[turnoActual]?.totals?.ciclos_totales ?? 0;
     const cfg = (cfgData?.config || cfgData) ?? {};
     const ciclosObjHora = cfg[`ciclos_objetivo_${linea.toLowerCase()}`] ?? 2;
     const objetivoTurno = Math.round(ciclosObjHora * (HORAS_TURNO[turnoActual] ?? 8));
@@ -915,22 +914,21 @@ async function viewBaker(el) {
 
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-    const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
+    const [cargasData, catalogData, paroData, pizarronData, cfgData] = await Promise.all([
       GET('/baker/cargas/activas'),
       GET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
-      GET(`/baker/cargas?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET(`/pizarron?linea=baker&turno=${turnoActual}`).catch(() => null),
       GET('/config').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
-    const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
-    // Ciclos DESCARGADOS del turno — por hora de descarga (Baker actualiza turno al descargar).
-    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual).length;
+    // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
+    const ciclosTurno = pizarronData?.data?.['Baker']?.[turnoActual]?.totals?.ciclos_totales ?? 0;
     const ciclosObjBaker = cfg.ciclos_objetivo_baker ?? 2;
     const objetivoTurno = Math.round(ciclosObjBaker * (HORAS_TURNO[turnoActual] ?? 8));
 
@@ -1079,22 +1077,21 @@ async function viewL1(el) {
 
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-    const [cargasData, catalogData, paroData, todasHoyData, cfgData] = await Promise.all([
+    const [cargasData, catalogData, paroData, pizarronData, cfgData] = await Promise.all([
       GET('/l1/cargas/activas'),
       GET('/catalogos/l1'),
       GET('/l1/paros/activo').catch(() => null),
-      GET(`/l1/cargas?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
+      GET(`/pizarron?linea=L1&turno=${turnoActual}`).catch(() => null),
       GET('/config').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
-    const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
     const cfg = (cfgData?.config || cfgData) ?? {};
 
-    // Ciclos DESCARGADOS en el turno vigente — por hora de descarga
-    const ciclosTurno = todasHoy.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turnoActual).length;
+    // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
+    const ciclosTurno = pizarronData?.data?.['L1']?.[turnoActual]?.totals?.ciclos_totales ?? 0;
     const ciclosObjL1 = cfg.ciclos_objetivo_l1 ?? 2;
     const objetivoTurno = Math.round(ciclosObjL1 * (HORAS_TURNO[turnoActual] ?? 8));
 
