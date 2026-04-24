@@ -1257,11 +1257,9 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR; // slot cruza la medianoche
 
-    // Solo ciclos COMPLETADOS (descargados) — se asignan por hora_descarga
-    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
+    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan, sin importar cuándo se cargaron
     const cargasEnSlot = (pdb.cargas || []).filter(c => {
       if (c.linea !== l || !c.fecha_descarga || !c.hora_descarga) return false;
-      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -1534,20 +1532,20 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
   const activas_baker = (pdb.cargas_baker || []).filter(c => c.estado === 'activo').length;
   const activas_l1    = (pdb.cargas_l1    || []).filter(c => c.estado === 'activo').length;
 
-  // Canastas completadas hoy (cualquier línea, fecha_turno = hoy)
+  // Canastas completadas hoy — por fecha de DESCARGA
   const completadasHoy = [
     ...(pdb.cargas       || []),
     ...(pdb.cargas_baker || []),
     ...(pdb.cargas_l1    || [])
-  ].filter(c => c.fecha_descarga && (c.fecha_turno || c.fecha_carga) === hoy).length;
+  ].filter(c => c.fecha_descarga === hoy).length;
 
-  // Canastas completadas en el turno actual
+  // Canastas completadas en el turno actual — por hora de descarga
   const turnoActual = getTurno(nowTimeStr());
   const completadasTurno = [
     ...(pdb.cargas       || []),
     ...(pdb.cargas_baker || []),
     ...(pdb.cargas_l1    || [])
-  ].filter(c => c.fecha_descarga && (c.fecha_turno || c.fecha_carga) === hoy && c.turno === turnoActual).length;
+  ].filter(c => c.fecha_descarga === hoy && getTurno(c.hora_descarga) === turnoActual).length;
 
   // Mini pizarron: últimas 3 horas L3 y L4
   const now   = nowTimeStr();
@@ -1988,10 +1986,9 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
-    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
+    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan
     const cargasEnSlot = (pdb.cargas_baker || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
-      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
@@ -2086,10 +2083,9 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const seR        = se % 1440;
     const crossesMid = ssR > seR;
 
-    // Solo cargas cuya fecha_turno pertenece a este día (evita contar T3-de-ayer en T1-de-hoy)
+    // Ciclos COMPLETADOS — se cuentan por cuándo se descargan
     const cargasEnSlot = (pdb.cargas_l1 || []).filter(c => {
       if (!c.fecha_descarga || !c.hora_descarga) return false;
-      if ((c.fecha_turno || c.fecha_carga) !== targetDate) return false;
       const dm = toMins(c.hora_descarga);
       if (crossesMid) {
         return (c.fecha_descarga === slotDate && dm >= ssR) ||
