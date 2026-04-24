@@ -673,28 +673,35 @@ async function viewDashboard(el) {
         <div class="stat-icon" style="background:#fef3c7">🏭</div>
         <div>
           <div class="stat-value">${stats.activas_l3 ?? 0}</div>
-          <div class="stat-label">Cargas activas hoy L3</div>
+          <div class="stat-label">Activas L3</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#dbeafe">🏭</div>
         <div>
           <div class="stat-value">${stats.activas_l4 ?? 0}</div>
-          <div class="stat-label">Cargas activas hoy L4</div>
+          <div class="stat-label">Activas L4</div>
+        </div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-icon" style="background:#fce7f3">🔧</div>
+        <div>
+          <div class="stat-value">${stats.activas_baker ?? 0}</div>
+          <div class="stat-label">Activas Baker</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon" style="background:#dcfce7">✅</div>
         <div>
           <div class="stat-value">${stats.cargas_hoy ?? 0}</div>
-          <div class="stat-label">Cargas completadas hoy</div>
+          <div class="stat-label">Canastas descargadas hoy</div>
         </div>
       </div>
       <div class="stat-card">
-        <div class="stat-icon" style="background:#f3e8ff">📊</div>
+        <div class="stat-icon" style="background:#e0f2fe">🔄</div>
         <div>
-          <div class="stat-value">${stats.eficiencia_hoy != null ? parseFloat(stats.eficiencia_hoy).toFixed(1) + '%' : '—'}</div>
-          <div class="stat-label">Eficiencia promedio hoy</div>
+          <div class="stat-value">${stats.cargas_turno ?? 0}</div>
+          <div class="stat-label">Descargadas turno ${stats.turno_actual ?? ''}</div>
         </div>
       </div>
     </div>

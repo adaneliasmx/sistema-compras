@@ -1522,6 +1522,74 @@ router.get('/reportes', (req, res) => {
   res.json({ total: cargas.length, cargas });
 });
 
+// ─── Dashboard ────────────────────────────────────────────────────────────────
+
+router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
+  const pdb  = dbProd.read();
+  const hoy  = nowDateStr();
+
+  // Cargas activas por línea
+  const activas_l3 = (pdb.cargas || []).filter(c => c.linea === 'L3' && c.estado === 'activo').length;
+  const activas_l4 = (pdb.cargas || []).filter(c => c.linea === 'L4' && c.estado === 'activo').length;
+  const activas_baker = (pdb.cargas_baker || []).filter(c => c.estado === 'activo').length;
+  const activas_l1    = (pdb.cargas_l1    || []).filter(c => c.estado === 'activo').length;
+
+  // Canastas completadas hoy (cualquier línea, fecha_turno = hoy)
+  const completadasHoy = [
+    ...(pdb.cargas       || []),
+    ...(pdb.cargas_baker || []),
+    ...(pdb.cargas_l1    || [])
+  ].filter(c => c.fecha_descarga && (c.fecha_turno || c.fecha_carga) === hoy).length;
+
+  // Canastas completadas en el turno actual
+  const turnoActual = getTurno(nowTimeStr());
+  const completadasTurno = [
+    ...(pdb.cargas       || []),
+    ...(pdb.cargas_baker || []),
+    ...(pdb.cargas_l1    || [])
+  ].filter(c => c.fecha_descarga && (c.fecha_turno || c.fecha_carga) === hoy && c.turno === turnoActual).length;
+
+  // Mini pizarron: últimas 3 horas L3 y L4
+  const now   = nowTimeStr();
+  const nowM  = now.split(':').map(Number).reduce((h, m) => h * 60 + m);
+  const mini_pizarron = [];
+  for (let delta = 2; delta >= 0; delta--) {
+    const slotM = nowM - delta * 60;
+    if (slotM < 0) continue;
+    const h = Math.floor(slotM / 60);
+    const slotHora = String(h).padStart(2, '0') + ':00';
+    const slotFin  = String(h + 1).padStart(2, '0') + ':00';
+    for (const linea of ['L3', 'L4']) {
+      const slot = (pdb.cargas || []).filter(c =>
+        c.linea === linea &&
+        c.fecha_descarga === hoy &&
+        c.hora_descarga >= slotHora && c.hora_descarga < slotFin
+      );
+      if (slot.length === 0) continue;
+      const buenos = slot.filter(c => !c.defecto_id && !c.es_vacia).length;
+      mini_pizarron.push({
+        hora:          slotHora,
+        linea,
+        ciclos:        slot.length,
+        eficiencia:    null,
+        calidad:       slot.length > 0 ? buenos / slot.length : null,
+        disponibilidad: null
+      });
+    }
+  }
+
+  res.json({
+    activas_l3,
+    activas_l4,
+    activas_baker,
+    activas_l1,
+    cargas_hoy:     completadasHoy,
+    cargas_turno:   completadasTurno,
+    turno_actual:   turnoActual,
+    mini_pizarron
+  });
+});
+
 // ─── Backup ───────────────────────────────────────────────────────────────────
 
 router.get('/backup', produccionAllowRoles('admin'), (req, res) => {
