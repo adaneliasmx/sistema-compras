@@ -1522,6 +1522,16 @@ router.get('/reportes', (req, res) => {
   res.json({ total: cargas.length, cargas });
 });
 
+// ─── Backup ───────────────────────────────────────────────────────────────────
+
+router.get('/backup', produccionAllowRoles('admin'), (req, res) => {
+  const pdb = dbProd.read();
+  const fecha = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="produccion-backup-${fecha}.json"`);
+  res.send(JSON.stringify(pdb, null, 2));
+});
+
 // ─── Config ───────────────────────────────────────────────────────────────────
 
 router.get('/config', produccionAllowRoles('produccion'), (req, res) => {

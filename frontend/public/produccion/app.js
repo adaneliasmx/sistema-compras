@@ -4919,6 +4919,13 @@ async function viewConfiguracion(el) {
         <button class="btn btn-primary" id="cfg-save">💾 Guardar cambios</button>
         <span id="cfg-msg" style="margin-left:12px;font-size:13px;color:var(--p-success)"></span>
       </div>
+    </div>
+
+    <div class="form-card config-section" style="margin-top:24px">
+      <h3>Base de Datos</h3>
+      <p style="font-size:13px;color:var(--p-muted);margin:0 0 16px">Descarga una copia completa de todos los registros de producción (cargas, paros, catálogos, configuración).</p>
+      <button class="btn btn-outline" id="cfg-backup-btn">📥 Descargar Backup de BD</button>
+      <span id="cfg-backup-msg" style="margin-left:12px;font-size:13px"></span>
     </div>`;
 
   document.getElementById('cfg-save').addEventListener('click', async () => {
@@ -4958,6 +4965,35 @@ async function viewConfiguracion(el) {
       msg.textContent = '⚠️ Error: ' + e.message;
     } finally {
       btn.disabled = false; btn.textContent = '💾 Guardar cambios';
+    }
+  });
+
+  document.getElementById('cfg-backup-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('cfg-backup-btn');
+    const msg = document.getElementById('cfg-backup-msg');
+    btn.disabled = true; btn.textContent = 'Descargando...';
+    try {
+      const res = await fetch('/api/produccion/backup', {
+        headers: { Authorization: `Bearer ${state.token}` }
+      });
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      const cd   = res.headers.get('Content-Disposition') || '';
+      const match = cd.match(/filename="(.+?)"/);
+      a.href     = url;
+      a.download = match ? match[1] : 'produccion-backup.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      msg.style.color = 'var(--p-success)';
+      msg.textContent = '✅ Descarga iniciada';
+      setTimeout(() => { msg.textContent = ''; }, 3000);
+    } catch (e) {
+      msg.style.color = 'var(--p-danger)';
+      msg.textContent = '⚠️ Error: ' + e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '📥 Descargar Backup de BD';
     }
   });
 
