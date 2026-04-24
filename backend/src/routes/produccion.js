@@ -631,6 +631,118 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   res.status(201).json(nuevaCarga);
 });
 
+// ─── Admin: editar / eliminar cargas ──────────────────────────────────────────
+
+router.patch('/cargas/:id/admin-editar', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb  = dbProd.read();
+  const body = req.body || {};
+
+  const collections = [
+    { key: 'cargas',       arr: pdb.cargas       || [] },
+    { key: 'cargas_baker', arr: pdb.cargas_baker  || [] },
+    { key: 'cargas_l1',   arr: pdb.cargas_l1     || [] },
+  ];
+
+  let found = null;
+  for (const col of collections) {
+    const idx = col.arr.findIndex(c => String(c.id) === String(id));
+    if (idx !== -1) { found = { ...col, idx }; break; }
+  }
+  if (!found) return res.status(404).json({ error: 'Carga no encontrada' });
+
+  const carga  = found.arr[found.idx];
+  const campos = [
+    'turno', 'fecha_carga', 'hora_carga', 'fecha_descarga', 'hora_descarga',
+    'herramental_no', 'componente', 'proceso', 'sub_proceso', 'operador',
+    'cantidad', 'varillas', 'piezas_por_varilla',
+    'estado', 'resultado', 'defecto', 'defecto_id'
+  ];
+  for (const f of campos) {
+    if (body[f] !== undefined) carga[f] = body[f] !== '' ? body[f] : null;
+  }
+  carga.editado_por = req.prodUser?.nombre || 'Admin';
+  carga.editado_at  = new Date().toISOString();
+
+  pdb[found.key] = found.arr;
+  dbProd.write(pdb);
+  res.json(carga);
+});
+
+router.delete('/cargas/:id', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+
+  const collections = [
+    { key: 'cargas',       arr: pdb.cargas       || [] },
+    { key: 'cargas_baker', arr: pdb.cargas_baker  || [] },
+    { key: 'cargas_l1',   arr: pdb.cargas_l1     || [] },
+  ];
+
+  for (const col of collections) {
+    const idx = col.arr.findIndex(c => String(c.id) === String(id));
+    if (idx !== -1) {
+      const [eliminado] = col.arr.splice(idx, 1);
+      pdb[col.key] = col.arr;
+      dbProd.write(pdb);
+      return res.json({ ok: true, eliminado });
+    }
+  }
+  return res.status(404).json({ error: 'Carga no encontrada' });
+});
+
+// Admin: editar / eliminar cavidades Baker/L1
+router.patch('/cavidades/:id/admin-editar', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb  = dbProd.read();
+  const body = req.body || {};
+
+  const collections = [
+    { key: 'cavidades_baker', arr: pdb.cavidades_baker || [] },
+    { key: 'cavidades_l1',   arr: pdb.cavidades_l1    || [] },
+  ];
+
+  let found = null;
+  for (const col of collections) {
+    const idx = col.arr.findIndex(c => String(c.id) === String(id));
+    if (idx !== -1) { found = { ...col, idx }; break; }
+  }
+  if (!found) return res.status(404).json({ error: 'Cavidad no encontrada' });
+
+  const cav    = found.arr[found.idx];
+  const campos = ['estado', 'resultado', 'defecto', 'defecto_id', 'cantidad', 'operador', 'proceso', 'sub_proceso'];
+  for (const f of campos) {
+    if (body[f] !== undefined) cav[f] = body[f] !== '' ? body[f] : null;
+  }
+  cav.editado_por = req.prodUser?.nombre || 'Admin';
+  cav.editado_at  = new Date().toISOString();
+
+  pdb[found.key] = found.arr;
+  dbProd.write(pdb);
+  res.json(cav);
+});
+
+router.delete('/cavidades/:id', produccionAllowRoles('admin'), (req, res) => {
+  const { id } = req.params;
+  const pdb = dbProd.read();
+
+  const collections = [
+    { key: 'cavidades_baker', arr: pdb.cavidades_baker || [] },
+    { key: 'cavidades_l1',   arr: pdb.cavidades_l1    || [] },
+  ];
+
+  for (const col of collections) {
+    const idx = col.arr.findIndex(c => String(c.id) === String(id));
+    if (idx !== -1) {
+      const [eliminado] = col.arr.splice(idx, 1);
+      pdb[col.key] = col.arr;
+      dbProd.write(pdb);
+      return res.json({ ok: true, eliminado });
+    }
+  }
+  return res.status(404).json({ error: 'Cavidad no encontrada' });
+});
+
 // ─── Paros ────────────────────────────────────────────────────────────────────
 
 // Reporte general de paros (admin) — todas las líneas con filtros

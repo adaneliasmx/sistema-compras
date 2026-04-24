@@ -3501,7 +3501,7 @@ async function viewReportes(el) {
   }
 
   // ── Tabla principal L3/L4 ─────────────────────────────────────────────────
-  function renderTablaLinea(cargas, linea) {
+  function renderTablaLinea(cargas, linea, isAdmin) {
     if (!cargas.length) return '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para este período / filtros.</p></div>';
     return `
       ${renderSummaryBar(cargas)}
@@ -3517,9 +3517,10 @@ async function viewReportes(el) {
               <th>Herramental</th><th>Componente</th><th>Cantidad</th>
               <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
               <th>Resultado / Defecto</th><th>Tipo</th>
+              ${isAdmin ? '<th>Acciones</th>' : ''}
             </tr></thead>
             <tbody>
-              ${cargas.map(c => `<tr${rowStyle(c)}>
+              ${cargas.map(c => `<tr data-carga-id="${c.id}" style="${hasDefecto(c)?'background:rgba(239,68,68,.07);':''}cursor:${isAdmin?'pointer':'default'}">
                 <td class="mono">${escHtml(c.folio || c.id)}</td>
                 <td style="text-align:center">${escHtml(c.turno || '—')}</td>
                 <td>${escHtml(c.fecha_carga || '—')}</td>
@@ -3534,20 +3535,23 @@ async function viewReportes(el) {
                 <td>${escHtml(c.operador || '—')}</td>
                 <td>${rptResultBadge(c)}</td>
                 <td>${rptTipoLabel(c)}</td>
+                ${isAdmin ? `<td style="white-space:nowrap"><button class="btn btn-sm" style="padding:2px 8px;font-size:11px;background:#ef4444;color:#fff;border:none" data-del-carga="${c.id}" title="Eliminar registro">🗑</button></td>` : ''}
               </tr>`).join('')}
             </tbody>
           </table>
         </div>
+        ${isAdmin ? '<p style="font-size:11px;color:var(--p-muted);padding:8px 16px;margin:0">Doble clic en una fila para editar</p>' : ''}
       </div>`;
   }
 
   // ── Tabla cavidades Baker ─────────────────────────────────────────────────
-  function renderTablaCavidades(cavs) {
+  function renderTablaCavidades(cavs, isAdmin) {
     if (!cavs.length) return '';
+    const label = activeRptTab === 'L1' ? 'L1' : 'Baker';
     return `
       <div class="table-card" style="margin-top:18px">
         <div class="table-header">
-          <h3>Baker — Barriles por cavidad</h3>
+          <h3>${label} — Barriles por cavidad</h3>
           <span class="badge badge-activo">${cavs.length} cavidades</span>
         </div>
         <div class="table-scroll">
@@ -3557,9 +3561,10 @@ async function viewReportes(el) {
               <th>Herramental</th><th>Componente</th><th>No. SKF</th><th>Cantidad</th>
               <th>Proceso</th><th>Operador</th>
               <th>Resultado / Defecto</th>
+              ${isAdmin ? '<th>Acciones</th>' : ''}
             </tr></thead>
             <tbody>
-              ${cavs.map(c => `<tr${rowStyle(c)}>
+              ${cavs.map(c => `<tr data-cav-id="${c.id}" style="${hasDefecto(c)?'background:rgba(239,68,68,.07);':''}cursor:${isAdmin?'pointer':'default'}">
                 <td class="mono">${escHtml(c.folio_barril || '—')}</td>
                 <td style="text-align:center;font-weight:700">${c.cavidad_num ?? '—'}</td>
                 <td style="text-align:center">${escHtml(c.turno || '—')}</td>
@@ -3574,10 +3579,12 @@ async function viewReportes(el) {
                 <td>${escHtml(c.proceso || '—')}</td>
                 <td>${escHtml(c.operador || '—')}</td>
                 <td>${rptResultBadge(c)}</td>
+                ${isAdmin ? `<td style="white-space:nowrap"><button class="btn btn-sm" style="padding:2px 8px;font-size:11px;background:#ef4444;color:#fff;border:none" data-del-cav="${c.id}" title="Eliminar cavidad">🗑</button></td>` : ''}
               </tr>`).join('')}
             </tbody>
           </table>
         </div>
+        ${isAdmin ? '<p style="font-size:11px;color:var(--p-muted);padding:8px 16px;margin:0">Doble clic en una fila para editar</p>' : ''}
       </div>`;
   }
 
@@ -3695,18 +3702,212 @@ async function viewReportes(el) {
 
   // ── Render result (orquesta las secciones) ────────────────────────────────
   function renderResult(cargas, cavs) {
+    const isAdmin = state.user?.rol === 'admin';
     const res = document.getElementById('rpt-resultado');
     if (activeRptTab === 'Baker' || activeRptTab === 'L1') {
       const racks = cargas.filter(c => c.herramental_tipo !== 'barril');
       const lineaLabel = activeRptTab === 'L1' ? 'L1' : 'Baker';
-      res.innerHTML = renderTablaLinea(racks, `${lineaLabel} — Racks`)
-                    + renderTablaCavidades(cavs)
+      res.innerHTML = renderTablaLinea(racks, `${lineaLabel} — Racks`, isAdmin)
+                    + renderTablaCavidades(cavs, isAdmin)
                     + renderAnalisisDefectos(cavs, `${lineaLabel} Barriles`);
     } else {
       const label = activeRptTab === 'L3' ? 'Línea 3' : 'Línea 4';
-      res.innerHTML = renderTablaLinea(cargas, label)
+      res.innerHTML = renderTablaLinea(cargas, label, isAdmin)
                     + renderAnalisisDefectos(cargas, label);
     }
+
+    if (!isAdmin) return;
+
+    // ── Dblclick en fila de carga → abrir modal de edición ────────────────
+    res.querySelectorAll('tr[data-carga-id]').forEach(tr => {
+      tr.addEventListener('dblclick', () => {
+        const id = tr.dataset.cargaId;
+        const carga = [...allCargas].find(c => String(c.id) === String(id));
+        if (carga) openRptCargaModal(carga, ejecutarConsulta);
+      });
+    });
+
+    // ── Dblclick en fila de cavidad → abrir modal de edición ─────────────
+    res.querySelectorAll('tr[data-cav-id]').forEach(tr => {
+      tr.addEventListener('dblclick', () => {
+        const id = tr.dataset.cavId;
+        const cav = [...allCavidades].find(c => String(c.id) === String(id));
+        if (cav) openRptCavidadModal(cav, ejecutarConsulta);
+      });
+    });
+
+    // ── Botón eliminar carga ──────────────────────────────────────────────
+    res.querySelectorAll('[data-del-carga]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm('¿Eliminar este registro de carga? Esta acción no se puede deshacer.')) return;
+        const id = btn.dataset.delCarga;
+        try {
+          await DEL(`/cargas/${id}`);
+          await ejecutarConsulta();
+        } catch (err) { alert('Error al eliminar: ' + err.message); }
+      });
+    });
+
+    // ── Botón eliminar cavidad ────────────────────────────────────────────
+    res.querySelectorAll('[data-del-cav]').forEach(btn => {
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!confirm('¿Eliminar este registro de cavidad? Esta acción no se puede deshacer.')) return;
+        const id = btn.dataset.delCav;
+        try {
+          await DEL(`/cavidades/${id}`);
+          await ejecutarConsulta();
+        } catch (err) { alert('Error al eliminar: ' + err.message); }
+      });
+    });
+  }
+
+  // ── Modal edición carga (admin) ───────────────────────────────────────────
+  function openRptCargaModal(carga, onSaved) {
+    const estados = ['activo','buena','defecto','reproceso','vacia'];
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:540px">
+        <div class="modal-header">
+          <h3 class="modal-title">✏️ Editar Carga — ${escHtml(carga.folio || carga.id)}</h3>
+          <button class="modal-close" id="rpt-modal-close">✕</button>
+        </div>
+        <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label>Turno</label>
+            <select id="rm-turno" class="form-control">
+              <option value="">—</option>
+              ${['T1','T2','T3'].map(t=>`<option value="${t}" ${carga.turno===t?'selected':''}>${t}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>Estado / Resultado</label>
+            <select id="rm-estado" class="form-control">
+              ${estados.map(s=>`<option value="${s}" ${(carga.estado||carga.resultado)===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>Fecha Carga</label>
+            <input type="date" id="rm-fecha-carga" class="form-control" value="${carga.fecha_carga||''}"/>
+          </div>
+          <div class="form-group"><label>Hora Carga</label>
+            <input type="time" id="rm-hora-carga" class="form-control" value="${carga.hora_carga||''}"/>
+          </div>
+          <div class="form-group"><label>Fecha Descarga</label>
+            <input type="date" id="rm-fecha-descarga" class="form-control" value="${carga.fecha_descarga||''}"/>
+          </div>
+          <div class="form-group"><label>Hora Descarga</label>
+            <input type="time" id="rm-hora-descarga" class="form-control" value="${carga.hora_descarga||''}"/>
+          </div>
+          <div class="form-group"><label>Herramental No.</label>
+            <input type="text" id="rm-herramental" class="form-control" value="${escHtml(carga.herramental_no||carga.herramental||'')}"/>
+          </div>
+          <div class="form-group"><label>Componente</label>
+            <input type="text" id="rm-componente" class="form-control" value="${escHtml(carga.componente||'')}"/>
+          </div>
+          <div class="form-group"><label>Proceso</label>
+            <input type="text" id="rm-proceso" class="form-control" value="${escHtml(carga.proceso||'')}"/>
+          </div>
+          <div class="form-group"><label>Operador</label>
+            <input type="text" id="rm-operador" class="form-control" value="${escHtml(carga.operador||'')}"/>
+          </div>
+          <div class="form-group"><label>Cantidad</label>
+            <input type="number" id="rm-cantidad" class="form-control" value="${carga.cantidad??''}"/>
+          </div>
+          <div class="form-group"><label>Defecto</label>
+            <input type="text" id="rm-defecto" class="form-control" value="${escHtml(carga.defecto||'')}"/>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="rpt-modal-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="rpt-modal-save">💾 Guardar cambios</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#rpt-modal-close').addEventListener('click', close);
+    overlay.querySelector('#rpt-modal-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#rpt-modal-save').addEventListener('click', async () => {
+      const estadoVal = overlay.querySelector('#rm-estado').value;
+      const body = {
+        turno:          overlay.querySelector('#rm-turno').value,
+        estado:         estadoVal,
+        resultado:      estadoVal,
+        fecha_carga:    overlay.querySelector('#rm-fecha-carga').value,
+        hora_carga:     overlay.querySelector('#rm-hora-carga').value,
+        fecha_descarga: overlay.querySelector('#rm-fecha-descarga').value || null,
+        hora_descarga:  overlay.querySelector('#rm-hora-descarga').value || null,
+        herramental_no: overlay.querySelector('#rm-herramental').value,
+        componente:     overlay.querySelector('#rm-componente').value || null,
+        proceso:        overlay.querySelector('#rm-proceso').value || null,
+        operador:       overlay.querySelector('#rm-operador').value || null,
+        cantidad:       overlay.querySelector('#rm-cantidad').value !== '' ? Number(overlay.querySelector('#rm-cantidad').value) : null,
+        defecto:        overlay.querySelector('#rm-defecto').value || null,
+      };
+      try {
+        await PATCH(`/cargas/${carga.id}/admin-editar`, body);
+        close();
+        await onSaved();
+      } catch (err) { alert('Error al guardar: ' + err.message); }
+    });
+  }
+
+  // ── Modal edición cavidad Baker/L1 (admin) ────────────────────────────────
+  function openRptCavidadModal(cav, onSaved) {
+    const estados = ['buena','defecto','vacia'];
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay active';
+    overlay.innerHTML = `
+      <div class="modal" style="max-width:420px">
+        <div class="modal-header">
+          <h3 class="modal-title">✏️ Editar Cavidad — ${escHtml(cav.folio_barril||'')} Cav.${cav.cavidad_num??''}</h3>
+          <button class="modal-close" id="rpt-cav-close">✕</button>
+        </div>
+        <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <div class="form-group"><label>Estado / Resultado</label>
+            <select id="rc-estado" class="form-control">
+              ${estados.map(s=>`<option value="${s}" ${(cav.estado||cav.resultado)===s?'selected':''}>${s}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group"><label>Cantidad</label>
+            <input type="number" id="rc-cantidad" class="form-control" value="${cav.cantidad??''}"/>
+          </div>
+          <div class="form-group"><label>Operador</label>
+            <input type="text" id="rc-operador" class="form-control" value="${escHtml(cav.operador||'')}"/>
+          </div>
+          <div class="form-group"><label>Defecto</label>
+            <input type="text" id="rc-defecto" class="form-control" value="${escHtml(cav.defecto||'')}"/>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" id="rpt-cav-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="rpt-cav-save">💾 Guardar cambios</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+    overlay.querySelector('#rpt-cav-close').addEventListener('click', close);
+    overlay.querySelector('#rpt-cav-cancel').addEventListener('click', close);
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+    overlay.querySelector('#rpt-cav-save').addEventListener('click', async () => {
+      const estadoVal = overlay.querySelector('#rc-estado').value;
+      const body = {
+        estado:    estadoVal,
+        resultado: estadoVal,
+        defecto:   overlay.querySelector('#rc-defecto').value || null,
+        cantidad:  overlay.querySelector('#rc-cantidad').value !== '' ? Number(overlay.querySelector('#rc-cantidad').value) : null,
+        operador:  overlay.querySelector('#rc-operador').value || null,
+      };
+      try {
+        await PATCH(`/cavidades/${cav.id}/admin-editar`, body);
+        close();
+        await onSaved();
+      } catch (err) { alert('Error al guardar: ' + err.message); }
+    });
   }
 
   // ── Consulta al servidor ──────────────────────────────────────────────────
