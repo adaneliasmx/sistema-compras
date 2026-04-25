@@ -620,6 +620,62 @@ body.ss-light .ss-dia-header { background: #e2e8f0; color: #64748b; }
   font-size: 18px;
 }
 
+/* ── Pareto charts ────────────────────────────────────────────────────────── */
+.ss-pareto-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+  flex-shrink: 0;
+}
+.ss-pareto-col { display: flex; flex-direction: column; gap: 3px; }
+.ss-pareto-title {
+  font-size: .72em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #94a3b8;
+  margin-bottom: 4px;
+}
+body.ss-light .ss-pareto-title { color: #64748b; }
+.ss-pareto-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 46px;
+  align-items: center;
+  gap: 6px;
+  font-size: .77em;
+}
+.ss-pareto-lbl {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: #e2e8f0;
+}
+body.ss-light .ss-pareto-lbl { color: #1e293b; }
+.ss-pareto-bar-bg {
+  background: #334155;
+  border-radius: 3px;
+  height: 9px;
+  overflow: hidden;
+}
+body.ss-light .ss-pareto-bar-bg { background: #e2e8f0; }
+.ss-pareto-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+.ss-bar-amber { background: #d97706; }
+.ss-bar-red   { background: #dc2626; }
+.ss-pareto-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  font-size: .95em;
+}
+body.ss-light .ss-pareto-val { color: #64748b; }
+.ss-pareto-empty { font-size: .8em; color: #64748b; padding: 6px 0; }
+
 /* "Total del Día" separador */
 .ss-dia-total-sep {
   font-size: 1em;

@@ -14,6 +14,7 @@
     { id:'k5', cfgId:4, scope:'dia',   linea:'L3'    },
     { id:'k6', cfgId:5, scope:'dia',   linea:'L4'    },
     { id:'k7', cfgId:8, scope:'dia',   linea:'Baker' },
+    { id:'k8', cfgId:6, scope:'dia',   linea:'all'   },  // Todas las líneas día
   ];
 
   const LINEA_LABELS = { L3:'Línea 3', L4:'Línea 4', Baker:'Baker' };
@@ -212,6 +213,8 @@
     const stage = document.getElementById('ss-stage');
     if (slide.type === 'imagen') {
       stage.innerHTML = renderImageSlide(slide);
+    } else if (slide.scope === 'dia' && slide.linea === 'all') {
+      stage.innerHTML = renderAllDiaSlide();
     } else if (slide.linea === 'all') {
       stage.innerHTML = renderAllSlide(slide);
     } else if (slide.scope === 'dia') {
@@ -299,6 +302,27 @@
       </div>`;
   }
 
+  /* ── Pareto bar chart helper ──────────────────────────────────────────── */
+  function buildParetoHtml(items, labelKey, valueKey, colorClass) {
+    if (!items || items.length === 0) {
+      return '<div class="ss-pareto-empty">Sin datos</div>';
+    }
+    const top    = items.slice(0, 6);
+    const maxVal = top[0][valueKey] || 1;
+    return top.map(item => {
+      const pct     = Math.round((item[valueKey] / maxVal) * 100);
+      const valText = valueKey === 'duracion_min' ? `${item[valueKey]} min` : `${item[valueKey]}`;
+      return `
+        <div class="ss-pareto-row">
+          <span class="ss-pareto-lbl" title="${escHtml(item[labelKey])}">${escHtml(item[labelKey])}</span>
+          <div class="ss-pareto-bar-bg">
+            <div class="ss-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+          </div>
+          <span class="ss-pareto-val">${valText}</span>
+        </div>`;
+    }).join('');
+  }
+
   /* ── Diapositiva: acumulado del día de una línea ─────────────────────── */
   function renderDiaSlide(slide) {
     const l      = slide.linea;
@@ -343,6 +367,77 @@
           ${kpiCard('Capacidad',      diaT.capacidad)}
           ${kpiCard('Calidad',        diaT.calidad)}
           ${kpiCard('Disponibilidad', diaT.disponibilidad)}
+        </div>
+
+        <!-- Pareto acumulado del día -->
+        <div class="ss-pareto-section">
+          <div class="ss-pareto-col">
+            <div class="ss-pareto-title">&#9201; Tiempos de Paro</div>
+            ${buildParetoHtml(ld.pareto_paros, 'motivo', 'duracion_min', 'ss-bar-amber')}
+          </div>
+          <div class="ss-pareto-col">
+            <div class="ss-pareto-title">&#128308; Rechazos de Calidad</div>
+            ${buildParetoHtml(ld.pareto_defectos, 'defecto', 'cantidad', 'ss-bar-red')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ── Diapositiva: acumulado del día — TODAS las líneas ───────────────── */
+  function renderAllDiaSlide() {
+    const lineas = ['L3', 'L4', 'Baker'];
+    const fecha  = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
+
+    // Agregar pareto de todas las líneas
+    const parosAgg = {}, defectosAgg = {};
+    for (const l of lineas) {
+      for (const p of (kpiData[l]?.pareto_paros || [])) {
+        parosAgg[p.motivo] = (parosAgg[p.motivo] || 0) + p.duracion_min;
+      }
+      for (const d of (kpiData[l]?.pareto_defectos || [])) {
+        defectosAgg[d.defecto] = (defectosAgg[d.defecto] || 0) + d.cantidad;
+      }
+    }
+    const parosAll = Object.entries(parosAgg)
+      .map(([motivo, duracion_min]) => ({ motivo, duracion_min: Math.round(duracion_min) }))
+      .sort((a, b) => b.duracion_min - a.duracion_min);
+    const defectosAll = Object.entries(defectosAgg)
+      .map(([defecto, cantidad]) => ({ defecto, cantidad }))
+      .sort((a, b) => b.cantidad - a.cantidad);
+
+    const panels = lineas.map(l => {
+      const ld      = kpiData[l] || {};
+      const diaT    = ld.totales_dia || {};
+      const ciclosDia = lineas.length > 0
+        ? ['T1','T2','T3'].reduce((s, t) => s + ((ld[t]?.slots || []).reduce((a, x) => a + (x.ciclos_totales || 0), 0)), 0)
+        : 0;
+      return `
+        <div class="ss-linea-panel">
+          <h3>${LINEA_LABELS[l] || l}</h3>
+          <div class="ss-mini-kpi-grid">
+            ${miniKpiCard('Eficiencia',     diaT.eficiencia)}
+            ${miniKpiCard('Capacidad',      diaT.capacidad)}
+            ${miniKpiCard('Calidad',        diaT.calidad)}
+            ${miniKpiCard('Disponibilidad', diaT.disponibilidad)}
+          </div>
+          <div style="text-align:center;font-size:.8em;color:#94a3b8;margin-top:4px">Ciclos día: <strong>${ciclosDia}</strong></div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="ss-slide">
+        <div class="ss-slide-title">${fecha} · Todas las Líneas (L3, L4 y Baker)</div>
+        <div class="ss-slide-subtitle">${nowDateLong()}</div>
+        <div class="ss-tres-grid" style="margin-bottom:10px">${panels}</div>
+        <div class="ss-pareto-section">
+          <div class="ss-pareto-col">
+            <div class="ss-pareto-title">&#9201; Tiempos de Paro (todas las líneas)</div>
+            ${buildParetoHtml(parosAll, 'motivo', 'duracion_min', 'ss-bar-amber')}
+          </div>
+          <div class="ss-pareto-col">
+            <div class="ss-pareto-title">&#128308; Rechazos de Calidad (todas las líneas)</div>
+            ${buildParetoHtml(defectosAll, 'defecto', 'cantidad', 'ss-bar-red')}
+          </div>
         </div>
       </div>`;
   }
