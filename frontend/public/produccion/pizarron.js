@@ -366,10 +366,12 @@
       return `
         <div class="pzs-pareto-row">
           <span class="pzs-pareto-lbl" title="${escHtml(item[labelKey])}">${escHtml(item[labelKey])}</span>
-          <div class="pzs-pareto-bar-bg">
-            <div class="pzs-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+          <div class="pzs-pareto-bar-line">
+            <div class="pzs-pareto-bar-bg">
+              <div class="pzs-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+            </div>
+            <span class="pzs-pareto-val">${valText}</span>
           </div>
-          <span class="pzs-pareto-val">${valText}</span>
         </div>`;
     }).join('');
   }

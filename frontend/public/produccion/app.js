@@ -798,7 +798,7 @@ async function viewLinea(el, linea) {
       GET(`/paros/${linea}/activo`).catch(() => null),
       GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({})),
-      GET(`/pizarron?linea=${linea}&turno=${turnoActual}`).catch(() => null)
+      GET(`/pizarron?linea=${linea}&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null)
     ]);
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -984,7 +984,7 @@ async function viewBaker(el) {
       GET('/baker/cargas/activas'),
       GET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
-      GET(`/pizarron?linea=baker&turno=${turnoActual}`).catch(() => null),
+      GET(`/pizarron?linea=baker&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
       GET('/config').catch(() => ({}))
     ]);
 
@@ -1153,7 +1153,7 @@ async function viewL1(el) {
       GET('/l1/cargas/activas'),
       GET('/catalogos/l1'),
       GET('/l1/paros/activo').catch(() => null),
-      GET(`/pizarron?linea=L1&turno=${turnoActual}`).catch(() => null),
+      GET(`/pizarron?linea=L1&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
       GET('/config').catch(() => ({}))
     ]);
 

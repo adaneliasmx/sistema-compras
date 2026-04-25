@@ -660,10 +660,9 @@ body.ss-light .ss-dia-header { background: #e2e8f0; color: #64748b; }
 }
 body.ss-light .ss-pareto-title { color: #64748b; }
 .ss-pareto-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 46px;
-  align-items: center;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: .77em;
 }
 .ss-pareto-lbl {
@@ -674,7 +673,13 @@ body.ss-light .ss-pareto-title { color: #64748b; }
   color: #e2e8f0;
 }
 body.ss-light .ss-pareto-lbl { color: #1e293b; }
+.ss-pareto-bar-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .ss-pareto-bar-bg {
+  flex: 1;
   background: #334155;
   border-radius: 3px;
   height: 9px;
@@ -689,10 +694,12 @@ body.ss-light .ss-pareto-bar-bg { background: #e2e8f0; }
 .ss-bar-amber { background: #d97706; }
 .ss-bar-red   { background: #dc2626; }
 .ss-pareto-val {
+  flex-shrink: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: #64748b;
   font-size: .95em;
+  min-width: 44px;
 }
 body.ss-light .ss-pareto-val { color: #64748b; }
 .ss-pareto-empty { font-size: .8em; color: #64748b; padding: 6px 0; }

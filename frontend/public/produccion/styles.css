@@ -962,10 +962,9 @@ body.pizarron-dark .pzs-dia-total-label { color: #f1f5f9; }
 }
 body.pizarron-dark .pzs-pareto-title { color: #94a3b8; }
 .pzs-pareto-row {
-  display: grid;
-  grid-template-columns: 110px 1fr 48px;
-  align-items: center;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: .78em;
 }
 .pzs-pareto-lbl {
@@ -974,7 +973,13 @@ body.pizarron-dark .pzs-pareto-title { color: #94a3b8; }
   text-overflow: ellipsis;
   font-weight: 600;
 }
+.pzs-pareto-bar-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .pzs-pareto-bar-bg {
+  flex: 1;
   background: #e2e8f0;
   border-radius: 3px;
   height: 10px;
@@ -989,10 +994,12 @@ body.pizarron-dark .pzs-pareto-bar-bg { background: #334155; }
 .pzs-bar-amber { background: #d97706; }
 .pzs-bar-red   { background: #dc2626; }
 .pzs-pareto-val {
+  flex-shrink: 0;
   text-align: right;
   font-variant-numeric: tabular-nums;
   color: #64748b;
   font-size: .95em;
+  min-width: 44px;
 }
 body.pizarron-dark .pzs-pareto-val { color: #94a3b8; }
 .pzs-pareto-empty { font-size: .8em; color: #94a3b8; padding: 6px 0; }

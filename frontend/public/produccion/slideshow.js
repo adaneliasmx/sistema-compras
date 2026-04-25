@@ -325,10 +325,12 @@
       return `
         <div class="ss-pareto-row">
           <span class="ss-pareto-lbl" title="${escHtml(item[labelKey])}">${escHtml(item[labelKey])}</span>
-          <div class="ss-pareto-bar-bg">
-            <div class="ss-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+          <div class="ss-pareto-bar-line">
+            <div class="ss-pareto-bar-bg">
+              <div class="ss-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+            </div>
+            <span class="ss-pareto-val">${valText}</span>
           </div>
-          <span class="ss-pareto-val">${valText}</span>
         </div>`;
     }).join('');
   }
