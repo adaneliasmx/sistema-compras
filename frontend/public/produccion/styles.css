@@ -944,6 +944,60 @@ body.pizarron-dark .pzs-dia-ciclos-cell { color: #94a3b8; }
 }
 body.pizarron-dark .pzs-dia-total-label { color: #f1f5f9; }
 
+/* ── Pareto charts (pizarrón día) ─────────────────────────────── */
+.pzs-pareto-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+.pzs-pareto-col { display: flex; flex-direction: column; gap: 4px; }
+.pzs-pareto-title {
+  font-size: .75em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+body.pizarron-dark .pzs-pareto-title { color: #94a3b8; }
+.pzs-pareto-row {
+  display: grid;
+  grid-template-columns: 110px 1fr 48px;
+  align-items: center;
+  gap: 6px;
+  font-size: .78em;
+}
+.pzs-pareto-lbl {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+}
+.pzs-pareto-bar-bg {
+  background: #e2e8f0;
+  border-radius: 3px;
+  height: 10px;
+  overflow: hidden;
+}
+body.pizarron-dark .pzs-pareto-bar-bg { background: #334155; }
+.pzs-pareto-bar {
+  height: 100%;
+  border-radius: 3px;
+  transition: width .4s ease;
+}
+.pzs-bar-amber { background: #d97706; }
+.pzs-bar-red   { background: #dc2626; }
+.pzs-pareto-val {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  font-size: .95em;
+}
+body.pizarron-dark .pzs-pareto-val { color: #94a3b8; }
+.pzs-pareto-empty { font-size: .8em; color: #94a3b8; padding: 6px 0; }
+.pzs-all-dia-slide { display: flex; flex-direction: column; gap: 12px; }
+
 /* Responsive */
 @media (max-width: 1024px) {
   .pzs-kpi-grid { grid-template-columns: repeat(2, 1fr); }

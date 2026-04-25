@@ -11,6 +11,7 @@
     { id: 5, scope: 'dia',   linea: 'L3'    },
     { id: 6, scope: 'dia',   linea: 'L4'    },
     { id: 7, scope: 'dia',   linea: 'Baker' },
+    { id: 8, scope: 'dia',   linea: 'all'   },
   ];
 
   const LINEA_LABELS = { L3: 'Línea 3', L4: 'Línea 4', Baker: 'Baker' };
@@ -79,7 +80,10 @@
   // ── Fetch & Transform ─────────────────────────────────────────────────────
   async function fetchData() {
     try {
-      const res = await fetch(`/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`);
+      const token = localStorage.getItem('prod_token') || '';
+      const res = await fetch(`/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const raw = await res.json();
       const pct = v => (v != null ? v * 100 : null);
@@ -114,7 +118,12 @@
           calidad:        pct(tdia.calidad),
           disponibilidad: pct(tdia.disponibilidad)
         };
-        transformed[l] = { horas, totales };
+        transformed[l] = {
+          horas,
+          totales,
+          pareto_paros:    raw?.data?.[l]?.pareto_paros    || [],
+          pareto_defectos: raw?.data?.[l]?.pareto_defectos || []
+        };
       }
 
       state.data        = transformed;
@@ -187,7 +196,10 @@
         : LINEA_LABELS[slide.linea] || slide.linea;
       return `${turno} · ${label}`;
     } else {
-      return `${state.fecha} · ${LINEA_LABELS[slide.linea] || slide.linea}`;
+      const label = slide.linea === 'all'
+        ? 'Todas las Líneas (L3, L4 y Baker)'
+        : LINEA_LABELS[slide.linea] || slide.linea;
+      return `${state.fecha} · Día acumulado · ${label}`;
     }
   }
 
@@ -265,6 +277,7 @@
       if (slide.linea === 'all') return buildAllTurnoSlide(turno);
       return buildTurnoSlide(slide.linea, turno);
     }
+    if (slide.linea === 'all') return buildAllDiaSlide();
     return buildDiaSlide(slide.linea);
   }
 
@@ -340,6 +353,27 @@
     return `<div class="pzs-all-slide">${blocks}</div>`;
   }
 
+  /* ── Pareto bar chart helper ──────────────────────────────────────────── */
+  function buildParetoHtml(items, labelKey, valueKey, colorClass) {
+    if (!items || items.length === 0) {
+      return '<div class="pzs-pareto-empty">Sin datos</div>';
+    }
+    const top    = items.slice(0, 6);
+    const maxVal = top[0][valueKey] || 1;
+    return top.map(item => {
+      const pct     = Math.round((item[valueKey] / maxVal) * 100);
+      const valText = valueKey === 'duracion_min' ? `${item[valueKey]} min` : `${item[valueKey]}`;
+      return `
+        <div class="pzs-pareto-row">
+          <span class="pzs-pareto-lbl" title="${escHtml(item[labelKey])}">${escHtml(item[labelKey])}</span>
+          <div class="pzs-pareto-bar-bg">
+            <div class="pzs-pareto-bar ${colorClass}" style="width:${pct}%"></div>
+          </div>
+          <span class="pzs-pareto-val">${valText}</span>
+        </div>`;
+    }).join('');
+  }
+
   /* ── Diapositiva acumulado del día ────────────────────────────────────── */
   function buildDiaSlide(linea) {
     const ld  = state.data?.[linea];
@@ -379,6 +413,75 @@
           ${kpiCard('Capacidad',      dia.capacidad,      true)}
           ${kpiCard('Calidad',        dia.calidad,        true)}
           ${kpiCard('Disponibilidad', dia.disponibilidad, true)}
+        </div>
+
+        <!-- Pareto acumulado del día -->
+        <div class="pzs-pareto-section">
+          <div class="pzs-pareto-col">
+            <div class="pzs-pareto-title">&#9201; Tiempos de Paro</div>
+            ${buildParetoHtml(ld?.pareto_paros, 'motivo', 'duracion_min', 'pzs-bar-amber')}
+          </div>
+          <div class="pzs-pareto-col">
+            <div class="pzs-pareto-title">&#128308; Rechazos de Calidad</div>
+            ${buildParetoHtml(ld?.pareto_defectos, 'defecto', 'cantidad', 'pzs-bar-red')}
+          </div>
+        </div>
+      </div>`;
+  }
+
+  /* ── Diapositiva acumulado del día — TODAS las líneas ─────────────────── */
+  function buildAllDiaSlide() {
+    const lineas = ['L3', 'L4', 'Baker'];
+
+    // Agregar pareto de todas las líneas
+    const parosAgg = {}, defectosAgg = {};
+    for (const l of lineas) {
+      for (const p of (state.data?.[l]?.pareto_paros || [])) {
+        parosAgg[p.motivo] = (parosAgg[p.motivo] || 0) + p.duracion_min;
+      }
+      for (const d of (state.data?.[l]?.pareto_defectos || [])) {
+        defectosAgg[d.defecto] = (defectosAgg[d.defecto] || 0) + d.cantidad;
+      }
+    }
+    const parosAll = Object.entries(parosAgg)
+      .map(([motivo, duracion_min]) => ({ motivo, duracion_min: Math.round(duracion_min) }))
+      .sort((a, b) => b.duracion_min - a.duracion_min);
+    const defectosAll = Object.entries(defectosAgg)
+      .map(([defecto, cantidad]) => ({ defecto, cantidad }))
+      .sort((a, b) => b.cantidad - a.cantidad);
+
+    const blocks = lineas.map(l => {
+      const ld        = state.data?.[l];
+      const dia       = ld?.totales?.dia || {};
+      const ciclosDia = ['T1', 'T2', 'T3'].reduce((s, t) => {
+        const tot = ld?.totales?.[t] || {};
+        return s + (tot.ciclos ?? (ld?.horas?.[t] || []).reduce((a, h) => a + (h.ciclos || 0), 0));
+      }, 0);
+      return `
+        <div class="pzs-all-linea-block">
+          <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
+          <div class="pzs-kpi-grid pzs-kpi-grid-compact">
+            ${kpiCard('Eficiencia',     dia.eficiencia)}
+            ${kpiCard('Capacidad',      dia.capacidad)}
+            ${kpiCard('Calidad',        dia.calidad)}
+            ${kpiCard('Disponibilidad', dia.disponibilidad)}
+          </div>
+          <div class="pzs-ciclos-badge-sm">Ciclos día: <strong>${ciclosDia}</strong></div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="pzs-all-dia-slide">
+        <div class="pzs-all-slide">${blocks}</div>
+        <div class="pzs-pareto-section">
+          <div class="pzs-pareto-col">
+            <div class="pzs-pareto-title">&#9201; Tiempos de Paro (todas las líneas)</div>
+            ${buildParetoHtml(parosAll, 'motivo', 'duracion_min', 'pzs-bar-amber')}
+          </div>
+          <div class="pzs-pareto-col">
+            <div class="pzs-pareto-title">&#128308; Rechazos de Calidad (todas las líneas)</div>
+            ${buildParetoHtml(defectosAll, 'defecto', 'cantidad', 'pzs-bar-red')}
+          </div>
         </div>
       </div>`;
   }

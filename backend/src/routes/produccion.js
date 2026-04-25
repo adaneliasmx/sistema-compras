@@ -1416,6 +1416,60 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
   return result;
 }
 
+// ─── Pareto helpers ───────────────────────────────────────────────────────────
+
+function buildParetoParos(pdb, lineaLabel, fecha) {
+  let paros = [];
+  if (lineaLabel === 'Baker') {
+    paros = (pdb.paros_baker || []).slice();
+  } else if (lineaLabel === 'L1') {
+    paros = (pdb.paros_l1 || []).slice();
+  } else {
+    paros = (pdb.paros || []).filter(p => p.linea === lineaLabel);
+  }
+  paros = paros.filter(p => p.fecha_inicio === fecha && Number(p.duracion_min || 0) > 0);
+  const agg = {};
+  for (const p of paros) {
+    const key = p.motivo || 'Sin motivo';
+    agg[key] = (agg[key] || 0) + Number(p.duracion_min || 0);
+  }
+  return Object.entries(agg)
+    .map(([motivo, duracion_min]) => ({ motivo, duracion_min: Math.round(duracion_min) }))
+    .sort((a, b) => b.duracion_min - a.duracion_min);
+}
+
+function buildParetoDefectos(pdb, lineaLabel, fecha) {
+  const agg = {};
+  const ftD = c => c.fecha_descarga || c.fecha_carga;
+  if (lineaLabel === 'Baker' || lineaLabel === 'L1') {
+    const src = lineaLabel === 'Baker' ? 'cargas_baker' : 'cargas_l1';
+    const cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga && ftD(c) === fecha);
+    for (const carga of cargas) {
+      if (carga.herramental_tipo === 'barril') {
+        for (const cav of (carga.cavidades || []).filter(cv => cv.estado === 'defecto')) {
+          const key = cav.defecto || 'Sin motivo';
+          agg[key] = (agg[key] || 0) + 1;
+        }
+      } else if (carga.estado === 'defecto' || carga.defecto_id) {
+        const key = carga.defecto || 'Sin motivo';
+        agg[key] = (agg[key] || 0) + 1;
+      }
+    }
+  } else {
+    const cargas = (pdb.cargas || []).filter(c =>
+      c.linea === lineaLabel && !!c.fecha_descarga && ftD(c) === fecha &&
+      (c.estado === 'defecto' || c.defecto_id)
+    );
+    for (const c of cargas) {
+      const key = c.defecto || 'Sin motivo';
+      agg[key] = (agg[key] || 0) + 1;
+    }
+  }
+  return Object.entries(agg)
+    .map(([defecto, cantidad]) => ({ defecto, cantidad }))
+    .sort((a, b) => b.cantidad - a.cantidad);
+}
+
 // ─── Pizarrón KPIs ────────────────────────────────────────────────────────────
 
 router.get('/pizarron', (req, res) => {
@@ -1488,6 +1542,12 @@ router.get('/pizarron', (req, res) => {
 
   if (linea === 'ambas' || linea === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
   if (linea === 'ambas' || linea === 'L1')    addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
+
+  // Añadir datos pareto del día a cada línea
+  for (const l of Object.keys(data)) {
+    data[l].pareto_paros    = buildParetoParos(pdb, l, targetDate);
+    data[l].pareto_defectos = buildParetoDefectos(pdb, l, targetDate);
+  }
 
   res.json({ fecha: targetDate, linea, turno, data });
 });
