@@ -194,7 +194,10 @@ body {
   padding: 20px 32px;
   box-sizing: border-box;
   animation: ssSlideIn 0.4s ease;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
+.ss-slide::-webkit-scrollbar { display: none; }
 
 @keyframes ssSlideIn {
   from { opacity: 0; transform: translateX(40px); }
@@ -619,6 +622,11 @@ body.ss-light .ss-dia-header { background: #e2e8f0; color: #64748b; }
   color: #475569;
   font-size: 18px;
 }
+
+/* ── KPI grid compacto (diapositivas día con pareto) ─────────────────────── */
+.ss-kpi-sm .ss-kpi-card  { padding: 10px 12px; }
+.ss-kpi-sm .ss-kpi-value { font-size: 34px; }
+.ss-kpi-sm               { margin-bottom: 8px; }
 
 /* ── Pareto charts ────────────────────────────────────────────────────────── */
 .ss-pareto-section {

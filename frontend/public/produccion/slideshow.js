@@ -362,7 +362,7 @@
 
         <!-- Total del día grande -->
         <div class="ss-dia-total-sep">Total del Día</div>
-        <div class="ss-kpi-grid">
+        <div class="ss-kpi-grid ss-kpi-sm">
           ${kpiCard('Eficiencia',     diaT.eficiencia)}
           ${kpiCard('Capacidad',      diaT.capacidad)}
           ${kpiCard('Calidad',        diaT.calidad)}
