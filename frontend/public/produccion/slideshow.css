@@ -189,6 +189,7 @@ body {
 .ss-slide {
   width: 100%;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 20px 32px;
@@ -627,6 +628,18 @@ body.ss-light .ss-dia-header { background: #e2e8f0; color: #64748b; }
 .ss-kpi-sm .ss-kpi-card  { padding: 10px 12px; }
 .ss-kpi-sm .ss-kpi-value { font-size: 34px; }
 .ss-kpi-sm               { margin-bottom: 8px; }
+
+/* ── Día slide: layout dos columnas (KPIs izq + Pareto der) ─────────────── */
+.ss-dia-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  flex: 1;
+  min-height: 0;
+  margin-top: 8px;
+}
+.ss-dia-kpi-col { display: flex; flex-direction: column; }
+.ss-dia-pareto-col { display: flex; flex-direction: column; overflow: hidden; }
 
 /* ── Pareto charts ────────────────────────────────────────────────────────── */
 .ss-pareto-section {

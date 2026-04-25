@@ -252,12 +252,13 @@
         <div style="flex:1;overflow:auto">
           <table class="ss-slots-table">
             <thead><tr>
-              <th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
+              <th>Hora</th><th>Ciclos</th><th>Obj.</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
             </tr></thead>
             <tbody>
               ${slots.map(s => `<tr>
                 <td>${escHtml(s.hora_inicio)}–${escHtml(s.hora_fin)}</td>
                 <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
+                <td style="text-align:center;color:#64748b">${s.ciclos_obj ?? '—'}</td>
                 <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)}</td>
                 <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)}</td>
                 <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)}</td>
@@ -325,11 +326,11 @@
 
   /* ── Diapositiva: acumulado del día de una línea ─────────────────────── */
   function renderDiaSlide(slide) {
-    const l      = slide.linea;
-    const ld     = kpiData[l] || {};
-    const diaT   = ld.totales_dia || {};
-    const label  = LINEA_LABELS[l] || l;
-    const fecha  = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
+    const l     = slide.linea;
+    const ld    = kpiData[l] || {};
+    const diaT  = ld.totales_dia || {};
+    const label = LINEA_LABELS[l] || l;
+    const fecha = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
 
     const turnoRows = ['T1', 'T2', 'T3'].map(t => {
       const tot    = ld[t]?.totals || {};
@@ -348,7 +349,6 @@
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">${fecha} · ${label}</div>
-        <div class="ss-slide-subtitle">${nowDateLong()}</div>
 
         <!-- Subtotales por turno -->
         <div class="ss-dia-turnos">
@@ -360,24 +360,26 @@
           ${turnoRows}
         </div>
 
-        <!-- Total del día grande -->
-        <div class="ss-dia-total-sep">Total del Día</div>
-        <div class="ss-kpi-grid ss-kpi-sm">
-          ${kpiCard('Eficiencia',     diaT.eficiencia)}
-          ${kpiCard('Capacidad',      diaT.capacidad)}
-          ${kpiCard('Calidad',        diaT.calidad)}
-          ${kpiCard('Disponibilidad', diaT.disponibilidad)}
-        </div>
-
-        <!-- Pareto acumulado del día -->
-        <div class="ss-pareto-section">
-          <div class="ss-pareto-col">
-            <div class="ss-pareto-title">&#9201; Tiempos de Paro</div>
-            ${buildParetoHtml(ld.pareto_paros, 'motivo', 'duracion_min', 'ss-bar-amber')}
+        <!-- Fila inferior: KPI totales (izq) + Pareto (der) -->
+        <div class="ss-dia-two-col">
+          <div class="ss-dia-kpi-col">
+            <div class="ss-dia-total-sep">Total del Día</div>
+            <div class="ss-kpi-grid ss-kpi-sm">
+              ${kpiCard('Eficiencia',     diaT.eficiencia)}
+              ${kpiCard('Capacidad',      diaT.capacidad)}
+              ${kpiCard('Calidad',        diaT.calidad)}
+              ${kpiCard('Disponibilidad', diaT.disponibilidad)}
+            </div>
           </div>
-          <div class="ss-pareto-col">
-            <div class="ss-pareto-title">&#128308; Rechazos de Calidad</div>
-            ${buildParetoHtml(ld.pareto_defectos, 'defecto', 'cantidad', 'ss-bar-red')}
+          <div class="ss-dia-pareto-col">
+            <div class="ss-pareto-col">
+              <div class="ss-pareto-title">&#9201; Tiempos de Paro</div>
+              ${buildParetoHtml(ld.pareto_paros, 'motivo', 'duracion_min', 'ss-bar-amber')}
+            </div>
+            <div class="ss-pareto-col" style="margin-top:10px">
+              <div class="ss-pareto-title">&#128308; Rechazos de Calidad</div>
+              ${buildParetoHtml(ld.pareto_defectos, 'defecto', 'cantidad', 'ss-bar-red')}
+            </div>
           </div>
         </div>
       </div>`;
