@@ -1418,7 +1418,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
 
 // ─── Pareto helpers ───────────────────────────────────────────────────────────
 
-function buildParetoParos(pdb, lineaLabel, fecha) {
+function buildParetoParos(pdb, lineaLabel, fecha, turno) {
   let paros = [];
   if (lineaLabel === 'Baker') {
     paros = (pdb.paros_baker || []).slice();
@@ -1428,6 +1428,7 @@ function buildParetoParos(pdb, lineaLabel, fecha) {
     paros = (pdb.paros || []).filter(p => p.linea === lineaLabel);
   }
   paros = paros.filter(p => p.fecha_inicio === fecha && Number(p.duracion_min || 0) > 0);
+  if (turno) paros = paros.filter(p => p.turno === turno);
   const agg = {};
   for (const p of paros) {
     const key = p.motivo || 'Sin motivo';
@@ -1438,12 +1439,14 @@ function buildParetoParos(pdb, lineaLabel, fecha) {
     .sort((a, b) => b.duracion_min - a.duracion_min);
 }
 
-function buildParetoDefectos(pdb, lineaLabel, fecha) {
+function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
   const agg = {};
-  const ftD = c => c.fecha_descarga || c.fecha_carga;
+  const ftD  = c => c.fecha_descarga || c.fecha_carga;
+  const tnoD = c => getTurno(c.hora_descarga || c.hora_carga || '06:30');
   if (lineaLabel === 'Baker' || lineaLabel === 'L1') {
     const src = lineaLabel === 'Baker' ? 'cargas_baker' : 'cargas_l1';
-    const cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga && ftD(c) === fecha);
+    let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga && ftD(c) === fecha);
+    if (turno) cargas = cargas.filter(c => tnoD(c) === turno);
     for (const carga of cargas) {
       if (carga.herramental_tipo === 'barril') {
         for (const cav of (carga.cavidades || []).filter(cv => cv.estado === 'defecto')) {
@@ -1456,10 +1459,11 @@ function buildParetoDefectos(pdb, lineaLabel, fecha) {
       }
     }
   } else {
-    const cargas = (pdb.cargas || []).filter(c =>
+    let cargas = (pdb.cargas || []).filter(c =>
       c.linea === lineaLabel && !!c.fecha_descarga && ftD(c) === fecha &&
       (c.estado === 'defecto' || c.defecto_id)
     );
+    if (turno) cargas = cargas.filter(c => tnoD(c) === turno);
     for (const c of cargas) {
       const key = c.defecto || 'Sin motivo';
       agg[key] = (agg[key] || 0) + 1;
@@ -1543,10 +1547,16 @@ router.get('/pizarron', (req, res) => {
   if (linea === 'ambas' || linea === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
   if (linea === 'ambas' || linea === 'L1')    addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
 
-  // Añadir datos pareto del día a cada línea
+  // Añadir datos pareto del día y por turno a cada línea
   for (const l of Object.keys(data)) {
     data[l].pareto_paros    = buildParetoParos(pdb, l, targetDate);
     data[l].pareto_defectos = buildParetoDefectos(pdb, l, targetDate);
+    for (const t of ['T1', 'T2', 'T3']) {
+      if (data[l][t]) {
+        data[l][t].pareto_paros    = buildParetoParos(pdb, l, targetDate, t);
+        data[l][t].pareto_defectos = buildParetoDefectos(pdb, l, targetDate, t);
+      }
+    }
   }
 
   res.json({ fecha: targetDate, linea, turno, data });

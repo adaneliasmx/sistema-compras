@@ -276,15 +276,17 @@
     const lineas = ['L3', 'L4', 'Baker'];
 
     const panels = lineas.map(l => {
-      const ld  = kpiData[l] || {};
-      const tot = ld[turno]?.totals || {};
-      const ciclos = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
+      const ld      = kpiData[l] || {};
+      const tot     = ld[turno]?.totals || {};
+      const ciclos  = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
+      const paretoP = (ld[turno]?.pareto_paros    || []).slice(0, 3);
+      const paretoD = (ld[turno]?.pareto_defectos || []).slice(0, 3);
       return `
         <div class="ss-linea-panel">
           <h3>${LINEA_LABELS[l] || l}</h3>
-          <div class="ss-summary-row" style="margin-bottom:12px">
-            <div class="ss-stat-chip"><span class="val" style="font-size:22px">${ciclos}</span><span class="lbl">Ciclos</span></div>
-            <div class="ss-stat-chip"><span class="val" style="font-size:22px;color:#f59e0b">${tot.paros_min != null ? Math.round(tot.paros_min) : 0}</span><span class="lbl">Paros min</span></div>
+          <div class="ss-summary-row" style="margin-bottom:8px">
+            <div class="ss-stat-chip"><span class="val" style="font-size:20px">${ciclos}</span><span class="lbl">Ciclos</span></div>
+            <div class="ss-stat-chip"><span class="val" style="font-size:20px;color:#f59e0b">${tot.paros_min != null ? Math.round(tot.paros_min) : 0}</span><span class="lbl">Paros min</span></div>
           </div>
           <div class="ss-mini-kpi-grid">
             ${miniKpiCard('Eficiencia',     tot.eficiencia)}
@@ -292,14 +294,21 @@
             ${miniKpiCard('Calidad',        tot.calidad)}
             ${miniKpiCard('Disponibilidad', tot.disponibilidad)}
           </div>
+          <div class="ss-pareto-col" style="margin-top:8px">
+            <div class="ss-pareto-title">&#9201; Paros</div>
+            ${buildParetoHtml(paretoP, 'motivo', 'duracion_min', 'ss-bar-amber')}
+          </div>
+          <div class="ss-pareto-col" style="margin-top:6px">
+            <div class="ss-pareto-title">&#128308; Rechazos</div>
+            ${buildParetoHtml(paretoD, 'defecto', 'cantidad', 'ss-bar-red')}
+          </div>
         </div>`;
     }).join('');
 
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">Turno ${turno.slice(1)} · Todas las Líneas (L3, L4 y Baker)</div>
-        <div class="ss-slide-subtitle">${nowDateLong()}</div>
-        <div class="ss-tres-grid" style="flex:1;margin-top:8px">${panels}</div>
+        <div class="ss-tres-grid" style="flex:1;margin-top:10px">${panels}</div>
       </div>`;
   }
 
