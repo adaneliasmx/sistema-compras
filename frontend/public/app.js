@@ -661,8 +661,17 @@ async function catalogsView() {
     if (pageSel) itemsPageSize = Number(pageSel.value);
     const shown = itemsPageSize > 0 ? filtered.slice(0, itemsPageSize) : filtered;
     const hiddenCount = filtered.length - shown.length;
-    itemsTableWrap.innerHTML = `<table><thead><tr><th>Código</th><th>Nombre</th><th>Unidad</th><th>Proveedor</th><th>Precio</th><th>Acciones</th></tr></thead>
+    itemsTableWrap.innerHTML = `
+    <div id="itemsBulkBar" style="display:none;padding:8px 12px;background:#dbeafe;border-radius:6px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap">
+      <span id="itemsSelCount" style="font-size:13px;font-weight:600;color:#1d4ed8">0 seleccionados</span>
+      <button class="btn-danger" id="deleteSelectedItemsBtn" style="font-size:12px;padding:4px 10px">🗑 Eliminar seleccionados</button>
+    </div>
+    <table><thead><tr>
+      <th style="width:32px"><input type="checkbox" id="selectAllItems" title="Seleccionar todos"/></th>
+      <th>Código</th><th>Nombre</th><th>Unidad</th><th>Proveedor</th><th>Precio</th><th>Acciones</th>
+    </tr></thead>
     <tbody>${shown.map(i => `<tr>
+      <td><input type="checkbox" class="item-check" value="${i.id}"/></td>
       <td style="font-size:12px"><b>${i.code}</b></td>
       <td>${i.name}</td>
       <td>${i.unit}</td>
@@ -673,8 +682,8 @@ async function catalogsView() {
         <button class="btn-danger delete-item-btn" data-id="${i.id}" style="padding:2px 8px;font-size:12px">🗑</button>
       </td>
     </tr>`).join('')}
-    ${filtered.length === 0 ? '<tr><td colspan="6" class="muted" style="text-align:center;padding:12px">Sin ítems</td></tr>' : ''}
-    ${hiddenCount > 0 ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más. Cambia el límite de visualización arriba.</td></tr>` : ''}
+    ${filtered.length === 0 ? '<tr><td colspan="7" class="muted" style="text-align:center;padding:12px">Sin ítems</td></tr>' : ''}
+    ${hiddenCount > 0 ? `<tr><td colspan="7" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más. Cambia el límite de visualización arriba.</td></tr>` : ''}
     </tbody></table>`;
 
     itemsTableWrap.querySelectorAll('.edit-item-btn').forEach(btn => btn.onclick = () => {
@@ -703,6 +712,29 @@ async function catalogsView() {
         render();
       } catch (e) { itemMsg.textContent = e.message; }
     });
+
+    // ── Bulk select / delete ─────────────────────────────────────────────
+    const updateItemsBulkBar = () => {
+      const checked = itemsTableWrap.querySelectorAll('.item-check:checked');
+      const bar = itemsTableWrap.querySelector('#itemsBulkBar');
+      const cnt = itemsTableWrap.querySelector('#itemsSelCount');
+      if (bar) bar.style.display = checked.length ? 'flex' : 'none';
+      if (cnt) cnt.textContent = `${checked.length} seleccionado(s)`;
+    };
+    itemsTableWrap.querySelector('#selectAllItems')?.addEventListener('change', e => {
+      itemsTableWrap.querySelectorAll('.item-check').forEach(c => c.checked = e.target.checked);
+      updateItemsBulkBar();
+    });
+    itemsTableWrap.querySelectorAll('.item-check').forEach(c => c.addEventListener('change', updateItemsBulkBar));
+    itemsTableWrap.querySelector('#deleteSelectedItemsBtn')?.addEventListener('click', async () => {
+      const ids = [...itemsTableWrap.querySelectorAll('.item-check:checked')].map(c => c.value);
+      if (!ids.length) return;
+      if (!confirm(`¿Eliminar ${ids.length} ítem(s) seleccionado(s)? Esta acción no se puede deshacer.`)) return;
+      try {
+        await Promise.all(ids.map(id => api(`/api/catalogs/items/${id}`, { method: 'DELETE' })));
+        render();
+      } catch(e) { itemMsg.textContent = e.message; }
+    });
   };
   renderItemsTable();
 
@@ -717,9 +749,21 @@ async function catalogsView() {
     const shown = suppliersPageSize > 0 ? suppliers.slice(0, suppliersPageSize) : suppliers;
     const hiddenCount = suppliers.length - shown.length;
     const supTableWrap = document.getElementById('supTableWrap');
-    if (supTableWrap) supTableWrap.innerHTML = `<table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th></tr></thead>
-    <tbody>${shown.map(s => `<tr><td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td><td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td></tr>`).join('')}
-    ${hiddenCount > 0 ? `<tr><td colspan="5" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más.</td></tr>` : ''}
+    if (supTableWrap) supTableWrap.innerHTML = `
+    <div id="supBulkBar" style="display:none;padding:8px 12px;background:#dbeafe;border-radius:6px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap">
+      <span id="supSelCount" style="font-size:13px;font-weight:600;color:#1d4ed8">0 seleccionados</span>
+      <button class="btn-danger" id="deleteSelectedSupBtn" style="font-size:12px;padding:4px 10px">🗑 Eliminar seleccionados</button>
+    </div>
+    <table><thead><tr>
+      <th style="width:32px"><input type="checkbox" id="selectAllSup" title="Seleccionar todos"/></th>
+      <th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th>
+    </tr></thead>
+    <tbody>${shown.map(s => `<tr>
+      <td><input type="checkbox" class="sup-check" value="${s.id}"/></td>
+      <td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
+      <td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td>
+    </tr>`).join('')}
+    ${hiddenCount > 0 ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más.</td></tr>` : ''}
     </tbody></table>`;
     supTableWrap?.querySelectorAll('.edit-sup-row').forEach(btn => {
       btn.onclick = () => {
@@ -732,6 +776,29 @@ async function catalogsView() {
         supEmail.value = s.email || '';
         supPhone.value = s.phone || '';
       };
+    });
+
+    // ── Bulk select / delete ─────────────────────────────────────────────
+    const updateSupBulkBar = () => {
+      const checked = supTableWrap.querySelectorAll('.sup-check:checked');
+      const bar = supTableWrap.querySelector('#supBulkBar');
+      const cnt = supTableWrap.querySelector('#supSelCount');
+      if (bar) bar.style.display = checked.length ? 'flex' : 'none';
+      if (cnt) cnt.textContent = `${checked.length} seleccionado(s)`;
+    };
+    supTableWrap?.querySelector('#selectAllSup')?.addEventListener('change', e => {
+      supTableWrap.querySelectorAll('.sup-check').forEach(c => c.checked = e.target.checked);
+      updateSupBulkBar();
+    });
+    supTableWrap?.querySelectorAll('.sup-check').forEach(c => c.addEventListener('change', updateSupBulkBar));
+    supTableWrap?.querySelector('#deleteSelectedSupBtn')?.addEventListener('click', async () => {
+      const ids = [...supTableWrap.querySelectorAll('.sup-check:checked')].map(c => c.value);
+      if (!ids.length) return;
+      if (!confirm(`¿Eliminar ${ids.length} proveedor(es) seleccionado(s)? Esta acción no se puede deshacer.`)) return;
+      try {
+        await Promise.all(ids.map(id => api(`/api/catalogs/suppliers/${id}`, { method: 'DELETE' })));
+        catalogsView();
+      } catch(e) { alert(e.message); }
     });
   };
   renderSuppliersTable();
@@ -2876,8 +2943,20 @@ async function purchasesView() {
         </div>
         <div id="pendientesTableWrap"><div class="table-wrap"><table>${THEAD}<tbody>
           ${itemsPendientePO.length ? itemsPendientePO.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin ítems listos para PO.<br><small>Los ítems deben tener proveedor y costo asignados.</small></td></tr>'}
-        </tbody></table></div></div>`;
+        </tbody></table></div></div>
+        ${waitingAuthCount > 0 ? `
+        <div style="margin-top:12px;display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">
+          <span style="font-size:13px;color:#92400e">⏳ <b>${waitingAuthCount}</b> ítem(s) pendientes de autorización</span>
+          <button class="btn-secondary" id="pendPORequestAuthBtn" style="font-size:12px;padding:5px 12px">📧 Solicitar autorización</button>
+        </div>` : ''}`;
       bindTableActions(tabContent, itemsPendientePO);
+      document.getElementById('pendPORequestAuthBtn')?.addEventListener('click', async () => {
+        try {
+          const out = await api('/api/approvals/request-auth-mailto');
+          if (!out.mailto) { alert('No hay ítems pendientes de autorización.'); return; }
+          const a = document.createElement('a'); a.href = out.mailto; a.click();
+        } catch(e) { alert('Error al generar el correo.'); }
+      });
       document.getElementById('filterItemsTab').oninput = e => {
         const val = e.target.value.toLowerCase();
         const filtered = itemsPendientePO.filter(x => !val ||

@@ -230,6 +230,16 @@ router.patch('/suppliers/:id', (req, res) => {
   res.json(row);
 });
 
+router.delete('/suppliers/:id', (req, res) => {
+  if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  const idx = db.suppliers.findIndex(x => x.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Proveedor no encontrado' });
+  db.suppliers.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
+});
+
 // ── Asignaciones de subcentros por usuario ────────────────────────────────
 router.get('/user-scc-assignments', (req, res) => {
   if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
