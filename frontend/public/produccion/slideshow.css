@@ -715,3 +715,52 @@ body.ss-light .ss-pareto-val { color: #64748b; }
   margin: 6px 0 10px;
 }
 body.ss-light .ss-dia-total-sep { color: #475569; }
+
+/* ── Botón de pausa ───────────────────────────────────────────────────────── */
+.ss-pause-btn {
+  font-size: 14px !important;
+  padding: 2px 10px !important;
+  color: #60a5fa !important;
+  border-color: #60a5fa !important;
+}
+.ss-pause-btn:hover {
+  background: rgba(96,165,250,.15) !important;
+}
+body.ss-light .ss-pause-btn { color: #2563eb !important; border-color: #2563eb !important; }
+
+/* ── Diapositiva: tendencia semanal ──────────────────────────────────────── */
+.ss-trend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+}
+
+.ss-trend-card {
+  background: #1e293b;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+body.ss-light .ss-trend-card { background: #f8fafc; border: 1px solid #e2e8f0; }
+
+.ss-trend-card-title {
+  font-size: .75em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: #94a3b8;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+body.ss-light .ss-trend-card-title { color: #475569; }
+
+.ss-trend-card svg {
+  flex: 1;
+  min-height: 0;
+}

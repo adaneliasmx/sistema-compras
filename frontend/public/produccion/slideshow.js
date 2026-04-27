@@ -15,6 +15,7 @@
     { id:'k6', cfgId:5, scope:'dia',   linea:'L4'    },
     { id:'k7', cfgId:8, scope:'dia',   linea:'Baker' },
     { id:'k8', cfgId:6, scope:'dia',   linea:'all'   },  // Todas las líneas día
+    { id:'k9', cfgId:9, scope:'trend_semana', linea:'all' }, // Tendencia semanal
   ];
 
   const LINEA_LABELS = { L3:'Línea 3', L4:'Línea 4', Baker:'Baker' };
@@ -27,8 +28,10 @@
   let slideTimer  = null;
   let progressInt = null;
   let kpiData     = {};
+  let weeklyData  = {};
   let ssConfig    = { default_duracion_seg: 120, slides: [] };
   let slideDurSec = 120;
+  let isPaused    = false;
   let darkMode    = localStorage.getItem('ss_theme') !== 'light'; // dark por defecto
   let fontSize    = localStorage.getItem('ss_font') || 'md';
 
@@ -168,6 +171,33 @@
     } catch {}
   }
 
+  function getWeekRange() {
+    const d = new Date();
+    const day = d.getDay(); // 0=Dom, 1=Lun...
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const mon = new Date(d);
+    mon.setDate(diff);
+    const desde = mon.toLocaleDateString('en-CA');
+    const hasta  = nowDateShort();
+    return { desde, hasta };
+  }
+
+  async function fetchWeeklyKpi() {
+    try {
+      const { desde, hasta } = getWeekRange();
+      const [dL3, dL4, dBk] = await Promise.all([
+        apiFetch(`/kpis?linea=L3&desde=${desde}&hasta=${hasta}`),
+        apiFetch(`/kpis?linea=L4&desde=${desde}&hasta=${hasta}`),
+        apiFetch(`/kpis?linea=Baker&desde=${desde}&hasta=${hasta}`)
+      ]);
+      weeklyData = {
+        L3:    dL3?.snapshots  || [],
+        L4:    dL4?.snapshots  || [],
+        Baker: dBk?.snapshots  || []
+      };
+    } catch {}
+  }
+
   // ── Build slides list ─────────────────────────────────────────────────────
   function buildSlides() {
     const cfgSlides = ssConfig.slides || [];
@@ -213,6 +243,8 @@
     const stage = document.getElementById('ss-stage');
     if (slide.type === 'imagen') {
       stage.innerHTML = renderImageSlide(slide);
+    } else if (slide.scope === 'trend_semana') {
+      stage.innerHTML = renderTrendSemanaSlide();
     } else if (slide.scope === 'dia' && slide.linea === 'all') {
       stage.innerHTML = renderAllDiaSlide();
     } else if (slide.linea === 'all') {
@@ -455,6 +487,135 @@
       </div>`;
   }
 
+  /* ── SVG mini line chart para diapositiva de tendencia ───────────────── */
+  function buildSVGTrend(series, xLabels, opts = {}) {
+    const W = 420, H = 120;
+    const PAD = { top: 12, right: 12, bottom: 28, left: 32 };
+    const cW = W - PAD.left - PAD.right;
+    const cH = H - PAD.top - PAD.bottom;
+
+    const allVals = series.flatMap(s => s.data.filter(v => v != null));
+    if (!allVals.length) return '<div class="ss-no-data">Sin datos</div>';
+
+    const minV = opts.minVal != null ? opts.minVal : Math.max(0, Math.min(...allVals) - 5);
+    const maxV = opts.maxVal != null ? opts.maxVal : Math.min(100, Math.max(...allVals) + 5);
+    const range = maxV - minV || 1;
+
+    const n = xLabels.length;
+    const xPos = i => PAD.left + (n <= 1 ? cW / 2 : i / (n - 1) * cW);
+    const yPos = v => PAD.top + cH - (v - minV) / range * cH;
+
+    const gridVals = [0, 0.5, 1].map(t => minV + t * range);
+    const grid = gridVals.map(v => {
+      const y = yPos(v).toFixed(1);
+      return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + cW}" y2="${y}" stroke="#334155" stroke-width="1"/>` +
+             `<text x="${PAD.left - 3}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#64748b">${Math.round(v)}%</text>`;
+    }).join('');
+
+    const xAxis = xLabels.map((l, i) =>
+      `<text x="${xPos(i).toFixed(1)}" y="${(PAD.top + cH + 12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b">${escHtml(String(l))}</text>`
+    ).join('');
+
+    let targetLine = '';
+    if (opts.target != null) {
+      const ty = yPos(Math.max(minV, Math.min(maxV, opts.target))).toFixed(1);
+      targetLine = `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+    }
+
+    const lines = series.map(s => {
+      const pts = s.data.map((v, i) => v != null ? [xPos(i), yPos(v)] : null);
+      let path = '';
+      pts.forEach((pt, i) => {
+        if (!pt) return;
+        path += (i === 0 || !pts[i - 1]) ? `M${pt[0].toFixed(1)},${pt[1].toFixed(1)}` : `L${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
+      });
+      const dots = pts.filter(Boolean).map(pt =>
+        `<circle cx="${pt[0].toFixed(1)}" cy="${pt[1].toFixed(1)}" r="2.5" fill="${s.color}" stroke="#0f172a" stroke-width="1"/>`
+      ).join('');
+      return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>${dots}`;
+    }).join('');
+
+    const legW = series.length * 68;
+    const legX = (W - legW) / 2;
+    const legY = H - 4;
+    const legend = series.map((s, i) => {
+      const x = legX + i * 68;
+      return `<rect x="${x.toFixed(0)}" y="${legY - 5}" width="10" height="3" rx="1" fill="${s.color}"/>` +
+             `<text x="${(x + 13).toFixed(0)}" y="${legY}" font-size="8" fill="#94a3b8">${escHtml(s.label)}</text>`;
+    }).join('');
+
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${lines}${legend}</svg>`;
+  }
+
+  /* ── Diapositiva: tendencia semanal de KPIs por línea ────────────────── */
+  function renderTrendSemanaSlide() {
+    const { desde, hasta } = getWeekRange();
+    const LINEAS = ['L3', 'L4', 'Baker'];
+    const COLORS = { L3: '#3b82f6', L4: '#10b981', Baker: '#f59e0b' };
+    const TURNO_H = { T1: 8, T2: 7, T3: 9 };
+
+    const allDates = new Set();
+    const dailyByLinea = {};
+    LINEAS.forEach(l => {
+      const snaps = weeklyData[l] || [];
+      const byDate = {};
+      snaps.forEach(s => {
+        allDates.add(s.fecha);
+        if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0 };
+        const d = byDate[s.fecha];
+        const h = TURNO_H[s.turno] || 8;
+        if (s.eficiencia  != null) { d.efN  += s.eficiencia  * h; d.efD  += h; }
+        if (s.capacidad   != null) { d.capN += s.capacidad   * h; d.capD += h; }
+        d.calB     += (s.ciclos_buenos_calidad   ?? s.ciclos_buenos   ?? 0);
+        d.calN     += (s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
+        d.paroMin  += s.paros_min_total || 0;
+        d.tMin     += h * 60;
+      });
+      dailyByLinea[l] = byDate;
+    });
+
+    const dias   = [...allDates].sort();
+    const labels = dias.map(f => f.slice(5));
+
+    function getSeries(kpiFn) {
+      return LINEAS.map(l => ({
+        label: l,
+        color: COLORS[l],
+        data:  dias.map(f => { const d = dailyByLinea[l][f]; return d ? kpiFn(d) : null; })
+      }));
+    }
+
+    const efSeries   = getSeries(d => d.efD  > 0 ? +(d.efN /d.efD *100).toFixed(1) : null);
+    const calSeries  = getSeries(d => d.calN > 0 ? +(d.calB/d.calN*100).toFixed(1) : null);
+    const capSeries  = getSeries(d => d.capD > 0 ? +(d.capN/d.capD*100).toFixed(1) : null);
+    const dispSeries = getSeries(d => d.tMin > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
+
+    const noData = '<div class="ss-no-data">Sin datos esta semana</div>';
+
+    return `
+      <div class="ss-slide">
+        <div class="ss-slide-title">Tendencia Semanal de KPIs · ${escHtml(desde)} – ${escHtml(hasta)}</div>
+        <div class="ss-trend-grid">
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">📈 Eficiencia (obj. 90%)</div>
+            ${dias.length ? buildSVGTrend(efSeries,   labels, { minVal:0, maxVal:100, target:90  }) : noData}
+          </div>
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">✅ Calidad (obj. 99%)</div>
+            ${dias.length ? buildSVGTrend(calSeries,  labels, { minVal:0, maxVal:100, target:99  }) : noData}
+          </div>
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">⏱ Disponibilidad (obj. 90%)</div>
+            ${dias.length ? buildSVGTrend(dispSeries, labels, { minVal:0, maxVal:100, target:90  }) : noData}
+          </div>
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">🔧 Capacidad (obj. 85%)</div>
+            ${dias.length ? buildSVGTrend(capSeries,  labels, { minVal:0, maxVal:100, target:85  }) : noData}
+          </div>
+        </div>
+      </div>`;
+  }
+
   /* ── Slide de imagen ──────────────────────────────────────────────────── */
   function renderImageSlide(slide) {
     return `
@@ -489,6 +650,7 @@
 
   function startSlideTimer() {
     clearTimers();
+    if (isPaused) return;
     const durMs  = slideDurSec * 1000;
     const tickMs = 300;
     let elapsed  = 0;
@@ -505,24 +667,37 @@
     }, tickMs);
   }
 
+  function togglePause() {
+    isPaused = !isPaused;
+    const btn = document.getElementById('ss-pause');
+    if (isPaused) {
+      clearTimers();
+      updateProgress(0);
+      if (btn) { btn.textContent = '▶'; btn.title = 'Reanudar'; }
+    } else {
+      if (btn) { btn.textContent = '⏸'; btn.title = 'Pausar'; }
+      startSlideTimer();
+    }
+  }
+
   function nextSlide() {
     if (!slides.length) return;
     slideIdx = (slideIdx + 1) % slides.length;
     renderCurrentSlide();
-    startSlideTimer();
+    if (!isPaused) startSlideTimer();
   }
 
   function prevSlide() {
     if (!slides.length) return;
     slideIdx = (slideIdx - 1 + slides.length) % slides.length;
     renderCurrentSlide();
-    startSlideTimer();
+    if (!isPaused) startSlideTimer();
   }
 
   function goToSlide(i) {
     slideIdx = i;
     renderCurrentSlide();
-    startSlideTimer();
+    if (!isPaused) startSlideTimer();
   }
 
   function updateProgress(pct) {
@@ -564,6 +739,7 @@
   function startDataRefresh() {
     setInterval(async () => {
       await fetchKpi();
+      await fetchWeeklyKpi();
       await fetchConfig();
       buildSlides();
       renderCurrentSlide();
@@ -574,7 +750,7 @@
   async function boot() {
     document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">⏳ Cargando datos...</div>';
     await fetchConfig();
-    await fetchKpi();
+    await Promise.all([fetchKpi(), fetchWeeklyKpi()]);
     buildSlides();
     if (!slides.length) {
       document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">Sin diapositivas activas.</div>';
@@ -612,6 +788,7 @@
     document.getElementById('ss-exit').addEventListener('click', doLogout);
     document.getElementById('ss-prev').addEventListener('click', prevSlide);
     document.getElementById('ss-next').addEventListener('click', nextSlide);
+    document.getElementById('ss-pause').addEventListener('click', togglePause);
 
     // Theme toggle
     document.getElementById('ss-theme-btn')?.addEventListener('click', () => {
@@ -632,6 +809,7 @@
     document.addEventListener('keydown', e => {
       if (e.key === 'ArrowRight') nextSlide();
       if (e.key === 'ArrowLeft')  prevSlide();
+      if (e.key === ' ')          togglePause();
       if (e.key === 'Escape')     doLogout();
     });
 
