@@ -5488,6 +5488,62 @@ function renderHBarChart(items, colorFn) {
     </div>`).join('')}</div>`;
 }
 
+function renderSVGLineChart(series, xLabels, opts = {}) {
+  const W = 480, H = opts.height || 175;
+  const PAD = { top: 18, right: 16, bottom: 38, left: 40 };
+  const cW = W - PAD.left - PAD.right;
+  const cH = H - PAD.top - PAD.bottom;
+
+  const allVals = series.flatMap(s => s.data.filter(v => v != null));
+  if (!allVals.length) return '<div style="color:#6b7280;font-size:12px;padding:8px">Sin datos</div>';
+
+  const rawMin = Math.min(...allVals);
+  const rawMax = Math.max(...allVals);
+  const minV = opts.minVal != null ? opts.minVal : Math.max(0, rawMin - 5);
+  const maxV = opts.maxVal != null ? opts.maxVal : rawMax + 5;
+  const range = maxV - minV || 1;
+
+  const n = xLabels.length;
+  const xPos = i => PAD.left + (n <= 1 ? cW / 2 : i / (n - 1) * cW);
+  const yPos = v => PAD.top + cH - (v - minV) / range * cH;
+
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(t => minV + t * range);
+  const grid = gridVals.map(v => {
+    const y = yPos(v).toFixed(1);
+    const lbl = opts.pct ? Math.round(v) + '%' : v.toFixed(1);
+    return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + cW}" y2="${y}" stroke="#e5e7eb" stroke-width="1"/>` +
+           `<text x="${PAD.left - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#9ca3af">${lbl}</text>`;
+  }).join('');
+
+  const xAxisHtml = xLabels.map((l, i) =>
+    `<text x="${xPos(i).toFixed(1)}" y="${(PAD.top + cH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${escHtml(String(l))}</text>`
+  ).join('');
+
+  const lines = series.map(s => {
+    const pts = s.data.map((v, i) => v != null ? [xPos(i), yPos(v)] : null);
+    let path = '';
+    pts.forEach((pt, i) => {
+      if (!pt) return;
+      path += (i === 0 || !pts[i - 1]) ? `M${pt[0].toFixed(1)},${pt[1].toFixed(1)}` : `L${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
+    });
+    const dots = pts.filter(Boolean).map(pt =>
+      `<circle cx="${pt[0].toFixed(1)}" cy="${pt[1].toFixed(1)}" r="3" fill="${s.color}" stroke="#fff" stroke-width="1.5"/>`
+    ).join('');
+    return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>${dots}`;
+  }).join('');
+
+  const totalLegW = Math.min(series.length * 75, W - 20);
+  const legStartX = (W - totalLegW) / 2;
+  const legendY = H - 8;
+  const legend = series.map((s, i) => {
+    const x = legStartX + i * (totalLegW / series.length);
+    return `<rect x="${x.toFixed(0)}" y="${legendY - 6}" width="12" height="3" rx="1" fill="${s.color}"/>` +
+           `<text x="${(x + 15).toFixed(0)}" y="${legendY}" font-size="9" fill="#374151">${escHtml(s.label)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${xAxisHtml}${lines}${legend}</svg>`;
+}
+
 async function showDefectosDrilldown(linea, desde, hasta, turno) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -5581,6 +5637,50 @@ async function showParetoParo(linea, desde, hasta, tituloExtra, turno = '') {
       ${renderHBarChart(diasParos, () => '#3b82f6')}`;
   } catch (e) {
     overlay.querySelector('#paroModalBody').innerHTML = `<div style="color:#dc2626;padding:16px">Error: ${escHtml(e.message)}</div>`;
+  }
+}
+
+async function showSemanaPareto(linea, desde, hasta, titulo) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
+  overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:700px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="margin:0;font-size:16px">Pareto ${escHtml(titulo)} — ${escHtml(linea)}</h3>
+      <button id="closeSPModal" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280;line-height:1">×</button>
+    </div>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 16px">${desde} al ${hasta}</p>
+    <div id="spModalBody"><div style="text-align:center;padding:24px;color:#6b7280">⏳ Cargando...</div></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#closeSPModal').onclick = () => overlay.remove();
+  overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+  try {
+    const [parosData, defData] = await Promise.all([
+      GET('/resumen/paros?desde=' + desde + '&hasta=' + hasta + '&linea=' + linea),
+      GET('/resumen/defectos?desde=' + desde + '&hasta=' + hasta + '&linea=' + linea)
+    ]);
+    const paros = parosData.paros || [];
+    const defs  = defData.defectos || [];
+    const motivoTiempo = {};
+    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+    const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
+    const defTipo = {};
+    defs.forEach(d => { defTipo[d.defecto] = (defTipo[d.defecto] || 0) + 1; });
+    const paretoDefectos = Object.entries(defTipo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+    const totalParoMin = paros.reduce((s, p) => s + Number(p.duracion_min || 0), 0);
+    overlay.querySelector('#spModalBody').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div>
+          <h4 style="font-size:13px;margin:0 0 8px;color:#374151">⏸ Paros por Motivo (${paros.length} · ${(totalParoMin / 60).toFixed(1)}h)</h4>
+          ${paretoParos.length ? renderHBarChart(paretoParos, () => '#f59e0b') : '<div style="color:#16a34a;font-size:12px">Sin paros ✅</div>'}
+        </div>
+        <div>
+          <h4 style="font-size:13px;margin:0 0 8px;color:#374151">❌ Defectos por Tipo (${defs.length} total)</h4>
+          ${paretoDefectos.length ? renderHBarChart(paretoDefectos, () => '#ef4444') : '<div style="color:#16a34a;font-size:12px">Sin defectos ✅</div>'}
+        </div>
+      </div>`;
+  } catch (e) {
+    overlay.querySelector('#spModalBody').innerHTML = `<div style="color:#dc2626;padding:16px">Error: ${escHtml(e.message)}</div>`;
   }
 }
 
@@ -5858,6 +5958,11 @@ async function viewResumenTurno(el) {
           }
         });
       });
+      res.querySelectorAll('.semana-pareto-click').forEach(btn => {
+        btn.addEventListener('click', () => {
+          showSemanaPareto(btn.dataset.linea, btn.dataset.desde, btn.dataset.hasta, 'Sem ' + btn.dataset.wk);
+        });
+      });
     } else if (activeSubTab === 'analisis') {
       renderAnalisisSemanal(res);
     }
@@ -5897,6 +6002,29 @@ async function viewResumenTurno(el) {
       lastSnaps.forEach(s => { efPorDia[s.fecha] = (efPorDia[s.fecha] || 0) + (s.eficiencia || 0); efPorDiaCnt[s.fecha] = (efPorDiaCnt[s.fecha] || 0) + 1; });
       const diasEf = Object.keys(efPorDia).sort().map(f => { const v = Math.round(efPorDia[f] / efPorDiaCnt[f] * 100); return { label: f, value: v, label2: v + '%' }; });
 
+      // Daily trend aggregation (weighted by turno hours)
+      const TURNO_H = {T1:8,T2:7,T3:9};
+      const dailyAgg = {};
+      lastSnaps.forEach(s => {
+        if (!dailyAgg[s.fecha]) dailyAgg[s.fecha] = {efNum:0,efDen:0,calB:0,calN:0,capNum:0,capDen:0,paroMin:0,tMin:0};
+        const d = dailyAgg[s.fecha];
+        const h = TURNO_H[s.turno] || 8;
+        if (s.eficiencia != null) { d.efNum += s.eficiencia * h; d.efDen += h; }
+        d.calB += s.ciclos_buenos_calidad ?? s.ciclos_buenos;
+        d.calN += s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios;
+        if (s.capacidad != null) { d.capNum += s.capacidad * h; d.capDen += h; }
+        d.paroMin += s.paros_min_total || 0;
+        d.tMin += h * 60;
+      });
+      const trendDias   = Object.keys(dailyAgg).sort();
+      const trendLabels = trendDias.map(f => f.slice(5));
+      const trendSeries = [
+        { label: 'Eficiencia',     color: '#3b82f6', data: trendDias.map(f => { const d=dailyAgg[f]; return d.efDen>0  ? +(d.efNum/d.efDen*100).toFixed(1) : null; }) },
+        { label: 'Calidad',        color: '#10b981', data: trendDias.map(f => { const d=dailyAgg[f]; return d.calN>0   ? +(d.calB/d.calN*100).toFixed(1) : null; }) },
+        { label: 'Capacidad',      color: '#8b5cf6', data: trendDias.map(f => { const d=dailyAgg[f]; return d.capDen>0 ? +(d.capNum/d.capDen*100).toFixed(1) : null; }) },
+        { label: 'Disponibilidad', color: '#f59e0b', data: trendDias.map(f => { const d=dailyAgg[f]; return d.tMin>0  ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null; }) }
+      ];
+
       const cardStyle = 'background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05)';
       container.innerHTML = `
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
@@ -5917,6 +6045,10 @@ async function viewResumenTurno(el) {
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📈 Eficiencia por Día — ${escHtml(activeTab)}</h4>
             ${diasEf.length ? renderHBarChart(diasEf, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444') : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+          </div>
+          <div style="${cardStyle};grid-column:1/-1">
+            <h4 style="margin:0 0 10px;font-size:14px">📈 Tendencia Diaria de KPIs — ${escHtml(activeTab)}</h4>
+            ${renderSVGLineChart(trendSeries, trendLabels, { pct: true, minVal: 0, maxVal: 100 })}
           </div>
         </div>`;
     } catch (e) {
@@ -5966,66 +6098,69 @@ async function viewResumenTurno(el) {
       const clr  = v => v==null?'':v>=0.9?'color:#16a34a;font-weight:700':v>=0.7?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700';
 
       const weeks = [...new Set(allSnaps.map(s=>s.semana))].sort((a,b)=>a-b);
-      const rows = [{ label: mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1), type:'month', filter:()=>true, pFilter:()=>true, desde:primerDia, hasta:ultimoDia }];
-      weeks.forEach(w => {
-        const r = getISOWeekRangeFE(w, year);
-        rows.push({ label:'Sem '+w, type:'week', week:w, desde:r.desde, hasta:r.hasta, filter:s=>s.semana===w, pFilter:p=>p.fecha_inicio>=r.desde&&p.fecha_inicio<=r.hasta });
-      });
+      const weekRanges = weeks.map(w => ({ w, ...getISOWeekRangeFE(w, year) }));
 
-      const th = s => `<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px">${s}</th>`;
-      const thead = `<tr style="background:#1e3a5f;color:#fff">
-        <th style="padding:7px 10px;text-align:left;min-width:110px;position:sticky;left:0;background:#1e3a5f">Período</th>
-        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Eficiencia ${l}">Eff ${LLAB[l]}</th>`).join('')}
-        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Horas paro ${l}">Paro ${LLAB[l]}</th>`).join('')}
-        ${LINEAS.map(l=>`<th style="padding:7px 6px;text-align:center;min-width:72px;font-size:12px" title="Calidad ${l}">Cal ${LLAB[l]}</th>`).join('')}
-      </tr>`;
+      const COLORS = { Baker:'#f59e0b', L1:'#10b981', L3:'#3b82f6', L4:'#8b5cf6' };
+      const weekLabels = weeks.map(w => 'S' + w);
 
-      const tbodyRows = rows.map((row, ri) => {
-        const bg = row.type==='month'?'#f0f9ff':ri%2===0?'#fafafa':'#fff';
-        const wt = row.type==='month'?'font-weight:700':'';
-        const efCells = LINEAS.map(l => {
-          const { ef } = aggKPI(allSnaps, l, row.filter);
-          return `<td data-action="ef" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" data-week="${row.week||''}" style="padding:6px;text-align:center;${wt};${clr(ef)};cursor:pointer">${fmtP(ef)}</td>`;
-        }).join('');
-        const paroCells = LINEAS.map(l => {
-          const h = paroHrs(l, row.pFilter);
-          return `<td data-action="paro" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};color:${h>0?'#dc2626':'#16a34a'};cursor:pointer">${fmtH(h)}</td>`;
-        }).join('');
-        const calCells = LINEAS.map(l => {
-          const { cal } = aggKPI(allSnaps, l, row.filter);
-          return `<td data-action="cal" data-linea="${l}" data-desde="${row.desde}" data-hasta="${row.hasta}" style="padding:6px;text-align:center;${wt};${clr(cal)};cursor:pointer">${fmtP(cal)}</td>`;
-        }).join('');
-        return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb">
-          <td style="padding:6px 10px;${wt};position:sticky;left:0;background:${bg}">${escHtml(row.label)}</td>
-          ${efCells}${paroCells}${calCells}
-        </tr>`;
-      }).join('');
+      // Build per-week KPI series per linea
+      const seriesEf  = LINEAS.map(l => ({
+        label: LLAB[l], color: COLORS[l],
+        data: weeks.map(w => { const {ef} = aggKPI(allSnaps, l, s=>s.semana===w); return ef!=null?+(ef*100).toFixed(1):null; })
+      }));
+      const seriesCal = LINEAS.map(l => ({
+        label: LLAB[l], color: COLORS[l],
+        data: weeks.map(w => { const {cal} = aggKPI(allSnaps, l, s=>s.semana===w); return cal!=null?+(cal*100).toFixed(1):null; })
+      }));
+      const seriesParo = LINEAS.map(l => ({
+        label: LLAB[l], color: COLORS[l],
+        data: weeks.map((w, i) => { const r=weekRanges[i]; return +paroHrs(l, p=>p.fecha_inicio>=r.desde&&p.fecha_inicio<=r.hasta).toFixed(1); })
+      }));
+
+      // Month totals for summary header
+      const mesEf  = LINEAS.map(l => { const {ef}  = aggKPI(allSnaps, l); return { l, v: ef  }; });
+      const mesCal = LINEAS.map(l => { const {cal} = aggKPI(allSnaps, l); return { l, v: cal }; });
+      const mesParo = LINEAS.map(l => ({ l, v: paroHrs(l) }));
+
+      const cardStyle = 'background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05)';
+      const mesCapTitle = mesLabel.charAt(0).toUpperCase() + mesLabel.slice(1);
+
+      // Summary pills per linea
+      const summaryHtml = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        ${LINEAS.map(l => {
+          const ef  = mesEf.find(x=>x.l===l)?.v;
+          const cal = mesCal.find(x=>x.l===l)?.v;
+          const ph  = mesParo.find(x=>x.l===l)?.v || 0;
+          return `<div style="background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;min-width:110px">
+            <div style="font-size:11px;font-weight:700;color:#1e3a5f;margin-bottom:4px">${LLAB[l]}</div>
+            <div style="font-size:12px;${ef!=null?(ef>=0.9?'color:#16a34a':ef>=0.7?'color:#d97706':'color:#dc2626'):'color:#6b7280'}">Eff: ${ef!=null?(ef*100).toFixed(1)+'%':'—'}</div>
+            <div style="font-size:12px;${cal!=null?(cal>=0.9?'color:#16a34a':cal>=0.7?'color:#d97706':'color:#dc2626'):'color:#6b7280'}">Cal: ${cal!=null?(cal*100).toFixed(1)+'%':'—'}</div>
+            <div style="font-size:12px;color:${ph>0?'#dc2626':'#16a34a'}">Paro: ${ph>0?ph.toFixed(1)+'h':'—'}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
 
       container.innerHTML = `
-        <div style="margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-          <span style="font-size:14px;font-weight:700">${escHtml(mesLabel.charAt(0).toUpperCase()+mesLabel.slice(1))} — Score Card</span>
-          <span style="font-size:11px;color:#6b7280">Clic en celda para desglosar</span>
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+          <span style="font-size:15px;font-weight:700">${escHtml(mesCapTitle)} — Score Card</span>
         </div>
-        <div style="overflow-x:auto">
-          <table style="border-collapse:collapse;min-width:900px;font-size:13px">
-            <thead>${thead}</thead>
-            <tbody>${tbodyRows}</tbody>
-          </table>
+        ${summaryHtml}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:13px">📈 Eficiencia por Semana (%)</h4>
+            ${weeks.length ? renderSVGLineChart(seriesEf, weekLabels, { pct: true, minVal: 0, maxVal: 100 }) : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:13px">✅ Calidad por Semana (%)</h4>
+            ${weeks.length ? renderSVGLineChart(seriesCal, weekLabels, { pct: true, minVal: 0, maxVal: 100 }) : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+          </div>
+          <div style="${cardStyle};grid-column:1/-1">
+            <h4 style="margin:0 0 10px;font-size:13px">⏸ Horas de Paro por Semana</h4>
+            ${weeks.length ? renderSVGLineChart(seriesParo, weekLabels, { pct: false }) : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+          </div>
         </div>`;
 
-      container.querySelectorAll('td[data-action]').forEach(td => {
-        td.addEventListener('click', () => {
-          const { action, linea, desde, hasta, week } = td.dataset;
-          if (action === 'ef') {
-            const ws = week ? allSnaps.filter(s=>s.linea===linea&&s.semana===Number(week)) : allSnaps.filter(s=>s.linea===linea);
-            showEficienciaDetalle(ws, linea, week ? 'Sem '+week : mesLabel);
-          } else if (action === 'paro') {
-            showParetoParo(linea, desde, hasta, '');
-          } else if (action === 'cal') {
-            showDefectosDrilldown(linea, desde, hasta, '');
-          }
-        });
-      });
+      // Clickable dots are not interactive — keep drilldown accessible via Detalle tab.
     } catch (e) {
       container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
@@ -6090,23 +6225,37 @@ function renderResumenTurnoTable(snaps, linea) {
     </tr>`).join('');
 
   const weekRows = Object.entries(byWeek).sort((a, b) => Number(a[0]) - Number(b[0])).map(([wk, ws]) => {
-    const ciclosTot   = ws.reduce((s,x)=>s+x.ciclos_totales,0);
+    const ciclosTot    = ws.reduce((s,x)=>s+x.ciclos_totales,0);
     const ciclosBuenos = ws.reduce((s,x)=>s+x.ciclos_buenos,0);
-    const ciclosNoV   = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
-    const paroMin = ws.reduce((s,x)=>s+x.paros_min_total,0);
+    const ciclosNoV    = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
+    const paroMin      = ws.reduce((s,x)=>s+x.paros_min_total,0);
     const TURNO_H = {T1:8,T2:7,T3:9};
-    let efNum=0,efDen=0; ws.forEach(x=>{if(x.eficiencia!=null){const h=TURNO_H[x.turno]||8;efNum+=x.eficiencia*h;efDen+=h;}});
-    const ef  = efDen>0?efNum/efDen:null;
-    const cal = ciclosNoV>0?ciclosBuenos/ciclosNoV:null;
+    let efNum=0,efDen=0,capNum=0,capDen=0;
+    ws.forEach(x=>{
+      const h=TURNO_H[x.turno]||8;
+      if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;}
+      if(x.capacidad!=null){capNum+=x.capacidad*h;capDen+=h;}
+    });
+    const ef   = efDen>0?efNum/efDen:null;
+    const cal  = ciclosNoV>0?ciclosBuenos/ciclosNoV:null;
+    const cap  = capDen>0?capNum/capDen:null;
+    const totalMin = ws.reduce((s,x)=>s+(TURNO_H[x.turno]||8)*60,0);
+    const disp = totalMin>0?(totalMin-paroMin)/totalMin:null;
+    const wkFechas = ws.map(x=>x.fecha).sort();
+    const wkDesde = wkFechas[0];
+    const wkHasta = wkFechas[wkFechas.length-1];
     return `<tr style="background:#eff6ff;font-weight:700;border-top:2px solid #bfdbfe">
-      <td colspan="4" style="padding:4px 8px;font-size:12px;color:#1d4ed8">∑ Semana ${wk} — ${ws.length} turno(s)</td>
+      <td colspan="4" style="padding:4px 8px;font-size:12px;color:#1d4ed8">
+        ∑ Semana ${wk} — ${ws.length} turno(s)
+        <button class="semana-pareto-click" data-linea="${escHtml(linea)}" data-desde="${wkDesde}" data-hasta="${wkHasta}" data-wk="${wk}" style="margin-left:8px;background:#dbeafe;border:1px solid #93c5fd;border-radius:5px;padding:2px 8px;font-size:10px;cursor:pointer;color:#1d4ed8;font-weight:600">Pareto</button>
+      </td>
       <td style="text-align:center">${ciclosTot}</td>
       ${isBakerLike ? `<td style="text-align:center">${ciclosNoV}</td>` : ''}
       <td style="text-align:center">${ciclosBuenos}</td>
       <td class="${kpiColor(ef!=null?ef*100:null)}">${fmtPct(ef)}</td>
       <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
-      <td>—</td>
-      <td>—</td>
+      <td class="${kpiColor(cap!=null?cap*100:null)}">${fmtPct(cap)}</td>
+      <td class="${kpiColor(disp!=null?disp*100:null)}">${fmtPct(disp)}</td>
       <td style="text-align:center">${ws.reduce((s,x)=>s+x.piezas_total,0)}</td>
       <td style="text-align:center">${paroMin.toFixed(0)} min</td>
     </tr>`;
