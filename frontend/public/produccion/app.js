@@ -5541,7 +5541,16 @@ function renderSVGLineChart(series, xLabels, opts = {}) {
            `<text x="${(x + 15).toFixed(0)}" y="${legendY}" font-size="9" fill="#374151">${escHtml(s.label)}</text>`;
   }).join('');
 
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${xAxisHtml}${lines}${legend}</svg>`;
+  let targetLine = '';
+  if (opts.target != null) {
+    const ty = yPos(Math.max(minV, Math.min(maxV, opts.target))).toFixed(1);
+    const tc = opts.targetColor || '#ef4444';
+    const tl = opts.pct ? Math.round(opts.target) + '%' : opts.target.toFixed(1);
+    targetLine = `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="${tc}" stroke-width="1.5" stroke-dasharray="5,3"/>` +
+                 `<text x="${(PAD.left + cW + 3).toFixed(0)}" y="${(+ty + 3).toFixed(1)}" font-size="8" fill="${tc}">${tl}</text>`;
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxisHtml}${lines}${legend}</svg>`;
 }
 
 async function showDefectosDrilldown(linea, desde, hasta, turno) {
@@ -6018,12 +6027,14 @@ async function viewResumenTurno(el) {
       });
       const trendDias   = Object.keys(dailyAgg).sort();
       const trendLabels = trendDias.map(f => f.slice(5));
-      const trendSeries = [
-        { label: 'Eficiencia',     color: '#3b82f6', data: trendDias.map(f => { const d=dailyAgg[f]; return d.efDen>0  ? +(d.efNum/d.efDen*100).toFixed(1) : null; }) },
-        { label: 'Calidad',        color: '#10b981', data: trendDias.map(f => { const d=dailyAgg[f]; return d.calN>0   ? +(d.calB/d.calN*100).toFixed(1) : null; }) },
-        { label: 'Capacidad',      color: '#8b5cf6', data: trendDias.map(f => { const d=dailyAgg[f]; return d.capDen>0 ? +(d.capNum/d.capDen*100).toFixed(1) : null; }) },
-        { label: 'Disponibilidad', color: '#f59e0b', data: trendDias.map(f => { const d=dailyAgg[f]; return d.tMin>0  ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null; }) }
-      ];
+      const kpiTrend = {
+        ef:   trendDias.map(f => { const d=dailyAgg[f]; return d.efDen>0  ? +(d.efNum/d.efDen*100).toFixed(1) : null; }),
+        cal:  trendDias.map(f => { const d=dailyAgg[f]; return d.calN>0   ? +(d.calB/d.calN*100).toFixed(1) : null; }),
+        cap:  trendDias.map(f => { const d=dailyAgg[f]; return d.capDen>0 ? +(d.capNum/d.capDen*100).toFixed(1) : null; }),
+        disp: trendDias.map(f => { const d=dailyAgg[f]; return d.tMin>0  ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null; })
+      };
+      const trendOpts = (target, color) => ({ pct: true, minVal: 0, maxVal: 100, height: 150, target, targetColor: '#ef4444' });
+      const mkSeries = (label, color, data) => [{ label, color, data }];
 
       const cardStyle = 'background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05)';
       container.innerHTML = `
@@ -6046,9 +6057,21 @@ async function viewResumenTurno(el) {
             <h4 style="margin:0 0 10px;font-size:14px">📈 Eficiencia por Día — ${escHtml(activeTab)}</h4>
             ${diasEf.length ? renderHBarChart(diasEf, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444') : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
           </div>
-          <div style="${cardStyle};grid-column:1/-1">
-            <h4 style="margin:0 0 10px;font-size:14px">📈 Tendencia Diaria de KPIs — ${escHtml(activeTab)}</h4>
-            ${renderSVGLineChart(trendSeries, trendLabels, { pct: true, minVal: 0, maxVal: 100 })}
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">📈 Tendencia Eficiencia — ${escHtml(activeTab)}</h4>
+            ${renderSVGLineChart(mkSeries('Eficiencia', '#3b82f6', kpiTrend.ef), trendLabels, trendOpts(90, '#ef4444'))}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">✅ Tendencia Calidad — ${escHtml(activeTab)}</h4>
+            ${renderSVGLineChart(mkSeries('Calidad', '#10b981', kpiTrend.cal), trendLabels, trendOpts(99, '#ef4444'))}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">🔧 Tendencia Capacidad — ${escHtml(activeTab)}</h4>
+            ${renderSVGLineChart(mkSeries('Capacidad', '#8b5cf6', kpiTrend.cap), trendLabels, trendOpts(85, '#ef4444'))}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">⏱ Tendencia Disponibilidad — ${escHtml(activeTab)}</h4>
+            ${renderSVGLineChart(mkSeries('Disponibilidad', '#f59e0b', kpiTrend.disp), trendLabels, trendOpts(90, '#ef4444'))}
           </div>
         </div>`;
     } catch (e) {
@@ -6140,6 +6163,45 @@ async function viewResumenTurno(el) {
         }).join('')}
       </div>`;
 
+      // Build inverted-axis table: rows = linea/KPI, columns = Mes + weeks
+      const periods = [
+        { label: mesCapTitle.split(' ')[0], filter: () => true, pFilter: () => true },
+        ...weeks.map((w, i) => { const r = weekRanges[i]; return { label: 'S' + w, filter: s => s.semana === w, pFilter: p => p.fecha_inicio >= r.desde && p.fecha_inicio <= r.hasta }; })
+      ];
+      const thStyle = 'padding:6px 8px;text-align:center;font-size:11px;white-space:nowrap';
+      const tdStyle = 'padding:5px 8px;text-align:center;font-size:12px';
+      const groupHdr = (label, colspan) => `<tr style="background:#1e3a5f;color:#fff"><td colspan="${colspan}" style="padding:5px 10px;font-size:11px;font-weight:700">${label}</td></tr>`;
+
+      const tableRows = (kpiLabel, getCellVal, colorFn) => {
+        const hdr = groupHdr(kpiLabel, 2 + periods.length);
+        const lRows = LINEAS.map(l => {
+          const cells = periods.map(p => {
+            const v = getCellVal(l, p);
+            const cs = colorFn ? colorFn(v) : '';
+            return `<td style="${tdStyle};${cs}">${v}</td>`;
+          }).join('');
+          return `<tr style="border-bottom:1px solid #f3f4f6"><td style="${tdStyle};font-weight:600;color:#374151">${LLAB[l]}</td>${cells}</tr>`;
+        }).join('');
+        return hdr + lRows;
+      };
+
+      const tableHtml = `<div style="overflow-x:auto;margin-top:16px">
+        <table style="border-collapse:collapse;width:100%;font-size:12px">
+          <thead><tr style="background:#f8fafc">
+            <th style="${thStyle};text-align:left;min-width:50px">Línea</th>
+            ${periods.map(p => `<th style="${thStyle};min-width:70px">${escHtml(p.label)}</th>`).join('')}
+          </tr></thead>
+          <tbody>
+            ${tableRows('Eficiencia', (l, p) => { const {ef} = aggKPI(allSnaps, l, p.filter); return ef!=null?fmtP(ef):'—'; },
+              v => v==='—'?'':parseFloat(v)>=90?'color:#16a34a;font-weight:700':parseFloat(v)>=70?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700')}
+            ${tableRows('Calidad', (l, p) => { const {cal} = aggKPI(allSnaps, l, p.filter); return cal!=null?fmtP(cal):'—'; },
+              v => v==='—'?'':parseFloat(v)>=99?'color:#16a34a;font-weight:700':parseFloat(v)>=95?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700')}
+            ${tableRows('Horas de Paro', (l, p) => fmtH(paroHrs(l, p.pFilter)),
+              v => v==='—'?'color:#16a34a':'color:#dc2626')}
+          </tbody>
+        </table>
+      </div>`;
+
       container.innerHTML = `
         <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
           <span style="font-size:15px;font-weight:700">${escHtml(mesCapTitle)} — Score Card</span>
@@ -6158,9 +6220,11 @@ async function viewResumenTurno(el) {
             <h4 style="margin:0 0 10px;font-size:13px">⏸ Horas de Paro por Semana</h4>
             ${weeks.length ? renderSVGLineChart(seriesParo, weekLabels, { pct: false }) : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
           </div>
+          <div style="${cardStyle};grid-column:1/-1">
+            <h4 style="margin:0 0 10px;font-size:13px">Tabla Comparativa por Semana</h4>
+            ${tableHtml}
+          </div>
         </div>`;
-
-      // Clickable dots are not interactive — keep drilldown accessible via Detalle tab.
     } catch (e) {
       container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
