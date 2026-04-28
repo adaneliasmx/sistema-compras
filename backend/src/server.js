@@ -50,6 +50,9 @@ const rhhNotificationsRoutes = require('./routes/rhh-notifications');
 // ── Módulo Producción ─────────────────────────────────────────────────────
 const produccionRoutes = require('./routes/produccion');
 
+// ── Módulo Inventarios ────────────────────────────────────────────────────────
+const inventariosRoutes = require('./routes/inventarios');
+
 // ── PO Pública (proveedor) ────────────────────────────────────────────────────
 const publicPoRoutes = require('./routes/public-po');
 
@@ -57,6 +60,7 @@ const { initDb } = require('./db');
 const { initDb: initRhhDb } = require('./db-rhh');
 const { initDb: initValesDb } = require('./db-vales');
 const { initDb: initProduccionDb } = require('./db-produccion');
+const { initDb: initInventariosDb } = require('./db-inventarios');
 
 const app = express();
 
@@ -112,6 +116,9 @@ app.use('/api/super-admin', superAdminRoutes);
 // ── API Producción ────────────────────────────────────────────────────────
 app.use('/api/produccion', produccionRoutes);
 
+// ── API Inventarios ───────────────────────────────────────────────────────────
+app.use('/api/inv', inventariosRoutes);
+
 // ── API Pública (sin auth) ────────────────────────────────────────────────────
 app.use('/api/public/po', publicPoRoutes);
 
@@ -164,6 +171,10 @@ app.get('/vales/*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
 });
 
+// Módulo Inventarios
+app.get('/inventarios', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/inventarios/index.html')));
+app.get('/inventarios/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/inventarios/index.html')));
+
 // Módulo Producción
 app.get('/produccion', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
 app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
@@ -182,7 +193,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);
