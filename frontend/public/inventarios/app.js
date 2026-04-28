@@ -426,21 +426,35 @@ async function renderConteo(main, inv_type) {
   const curWeek = isoWeek(now);
   const existing = conteos.find(c => c.year === curYear && c.week === curWeek);
 
-  // Build input rows
-  const rowsHtml = activeItems.map(item => {
-    const ex = existing?.items.find(i => i.item_key === item.item_key);
-    const showTambos = inv_type === 'quimicos_proceso';
-    return `<tr data-key="${esc(item.item_key)}">
-      <td>${esc(item.item_label)}</td>
-      ${showTambos ? `<td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" value="${ex?.tambos ?? ''}" min="0" step="0.01" style="width:90px"/></td>
-      <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${ex?.porrones ?? ''}" min="0" step="0.01" style="width:90px"/></td>` : ''}
-      <td><input type="number" class="form-input conteo-qty" data-key="${esc(item.item_key)}" value="${ex?.cantidad ?? ''}" min="0" step="0.01" style="width:100px"/></td>
-      <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${ex?.kg ?? ''}" min="0" step="0.01" style="width:100px"/></td>
-      <td><span class="text-muted" style="font-size:.8rem">${esc(item.unidad || (inv_type==='quimicos_proceso'?'kg':'—'))}</span></td>
-    </tr>`;
-  }).join('');
-
   const showTambos = inv_type === 'quimicos_proceso';
+
+  // Build input rows grouped by proveedor
+  const conteoColCount = showTambos ? 6 : 4;
+  const conteoGrouped = {};
+  activeItems.forEach(item => {
+    const prov = item.proveedor || '(Sin proveedor)';
+    if (!conteoGrouped[prov]) conteoGrouped[prov] = [];
+    conteoGrouped[prov].push(item);
+  });
+  const conteoProveedores = Object.keys(conteoGrouped).sort((a, b) =>
+    a === '(Sin proveedor)' ? 1 : b === '(Sin proveedor)' ? -1 : a.localeCompare(b)
+  );
+  const rowsHtml = conteoProveedores.flatMap(prov => {
+    const provItems = conteoGrouped[prov];
+    const headerRow = `<tr><td colspan="${conteoColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${provItems.length})</span></td></tr>`;
+    const itemRows = provItems.map(item => {
+      const ex = existing?.items.find(i => i.item_key === item.item_key);
+      return `<tr data-key="${esc(item.item_key)}">
+        <td>${esc(item.item_label)}</td>
+        ${showTambos ? `<td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" value="${ex?.tambos ?? ''}" min="0" step="0.01" style="width:90px"/></td>
+        <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${ex?.porrones ?? ''}" min="0" step="0.01" style="width:90px"/></td>` : ''}
+        <td><input type="number" class="form-input conteo-qty" data-key="${esc(item.item_key)}" value="${ex?.cantidad ?? ''}" min="0" step="0.01" style="width:100px"/></td>
+        <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${ex?.kg ?? ''}" min="0" step="0.01" style="width:100px"/></td>
+        <td><span class="text-muted" style="font-size:.8rem">${esc(item.unidad || (inv_type==='quimicos_proceso'?'kg':'—'))}</span></td>
+      </tr>`;
+    });
+    return [headerRow, ...itemRows];
+  }).join('');
   main.innerHTML = `
     <div class="page-title">${tipoInfo.icon} Conteo Semanal — ${esc(tipoInfo.label)}</div>
     <div class="card">
@@ -583,12 +597,13 @@ async function loadCompradorTab(tab, inv_type) {
 
     function renderSemana(u) {
       const isTambos = u === 'tambos';
-      const rows = data.rows.map(row => {
+      const semColCount = 7;
+
+      function rowHtml(row) {
         const curVal    = isTambos ? (row.cur_tambos ?? row.cur_tambos_raw) : row.cur_kg;
         const prevVal   = isTambos ? row.prev_tambos : row.prev_kg;
         const consumoVal= isTambos ? row.consumo_tambos : row.consumo_kg;
         const minVal    = row.min_val;
-        const maxVal    = row.max_val;
 
         let statusClass = '', statusDot = 'ok', stockLabel = 'OK';
         if (curVal === null || curVal === undefined) { statusClass = ''; statusDot = 'gray'; stockLabel = 'S/D'; }
@@ -604,6 +619,21 @@ async function loadCompradorTab(tab, inv_type) {
           <td class="text-right">${row.max_val != null ? fmt(row.max_val, 0) : '—'}</td>
           <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':'badge-gray'}">${stockLabel}</span></td>
         </tr>`;
+      }
+
+      const semGrouped = {};
+      data.rows.forEach(row => {
+        const prov = row.proveedor || '(Sin proveedor)';
+        if (!semGrouped[prov]) semGrouped[prov] = [];
+        semGrouped[prov].push(row);
+      });
+      const semProveedores = Object.keys(semGrouped).sort((a, b) =>
+        a === '(Sin proveedor)' ? 1 : b === '(Sin proveedor)' ? -1 : a.localeCompare(b)
+      );
+      const rows = semProveedores.flatMap(prov => {
+        const provRows = semGrouped[prov];
+        const hdr = `<tr><td colspan="${semColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${provRows.length})</span></td></tr>`;
+        return [hdr, ...provRows.map(rowHtml)];
       }).join('');
 
       return `
@@ -1073,6 +1103,75 @@ async function renderAdminUsers(main) {
 }
 
 // ── ADMIN ITEMS ───────────────────────────────────────────────────────────────
+// ── Buscador de catálogo de compras (compartido) ──────────────────────────────
+function buildComprasSearchWidget(catalogCompras, addedKeys, onSelect) {
+  // Returns HTML string + a function to wire events after insertion
+  const html = `
+    <div class="form-group" style="margin-bottom:6px">
+      <label>Ligar a catálogo de Compras <span style="color:#999;font-weight:400">(para requisiciones)</span></label>
+      <input class="form-input" id="im-search" placeholder="Buscar por nombre o código..." autocomplete="off"/>
+    </div>
+    <div id="im-search-list" style="max-height:180px;overflow-y:auto;border:1px solid #e0e4ec;border-radius:8px;margin-bottom:10px;display:none"></div>
+    <div id="im-selected-compras" style="display:none;margin-bottom:10px" class="alert alert-info"></div>
+    <input type="hidden" id="im-cat-id"/>
+    <input type="hidden" id="im-cat-label"/>
+    <input type="hidden" id="im-cat-unit"/>
+    <input type="hidden" id="im-cat-supplier"/>
+  `;
+  function wire() {
+    const searchInput = document.getElementById('im-search');
+    const listEl      = document.getElementById('im-search-list');
+    const selInfo     = document.getElementById('im-selected-compras');
+
+    function renderResults(q) {
+      const term = q.toLowerCase().trim();
+      if (!term) { listEl.style.display = 'none'; return; }
+      const matches = catalogCompras
+        .filter(c => !addedKeys.has(`c_${c.id}`) &&
+          (c.name.toLowerCase().includes(term) || (c.sku||'').toLowerCase().includes(term)))
+        .slice(0, 40);
+      if (!matches.length) {
+        listEl.innerHTML = '<div style="padding:10px 14px;color:#999;font-size:.85rem">Sin resultados</div>';
+        listEl.style.display = ''; return;
+      }
+      listEl.innerHTML = matches.map(c =>
+        `<div class="csr-item" data-id="${c.id}" style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;font-size:.88rem">
+          <strong>${esc(c.name)}</strong>
+          ${c.sku ? `<span style="color:#999;margin-left:8px;font-size:.8rem">${esc(c.sku)}</span>` : ''}
+          ${c.supplier_name ? `<span style="float:right;color:#059669;font-size:.8rem">${esc(c.supplier_name)}</span>` : ''}
+        </div>`
+      ).join('');
+      listEl.style.display = '';
+      listEl.querySelectorAll('.csr-item').forEach(el => {
+        el.onmouseover = () => el.style.background = '#f0f7ff';
+        el.onmouseout  = () => el.style.background = '';
+        el.onclick = () => {
+          const c = matches.find(x => x.id === Number(el.dataset.id));
+          if (!c) return;
+          document.getElementById('im-cat-id').value       = c.id;
+          document.getElementById('im-cat-label').value    = c.name;
+          document.getElementById('im-cat-unit').value     = c.unit || '';
+          document.getElementById('im-cat-supplier').value = c.supplier_name || '';
+          selInfo.textContent = `✓ ${c.name}${c.supplier_name ? ' — '+c.supplier_name : ''}`;
+          selInfo.style.display = '';
+          listEl.style.display  = 'none';
+          searchInput.value = c.name;
+          if (onSelect) onSelect(c);
+        };
+      });
+    }
+
+    searchInput.oninput = () => renderResults(searchInput.value);
+    document.addEventListener('click', function hide(e) {
+      if (!listEl.contains(e.target) && e.target !== searchInput) {
+        listEl.style.display = 'none';
+        document.removeEventListener('click', hide);
+      }
+    });
+  }
+  return { html, wire };
+}
+
 async function renderAdminItems(main) {
   let selType = INV_TYPES[0].key;
   let catalogVales   = [];
@@ -1090,19 +1189,39 @@ async function renderAdminItems(main) {
 
   function renderPage(items) {
     const isVales = selType === 'quimicos_proceso';
-    const tbody = items.map(i => `<tr>
-      <td>${esc(i.item_label)}</td>
-      <td class="text-muted" style="font-size:.8rem">${esc(i.item_key)}</td>
-      <td class="text-right">${i.min_val ?? '—'}</td>
-      <td class="text-right">${i.max_val ?? '—'}</td>
-      <td>${esc(i.unidad||'—')}</td>
-      ${isVales ? `<td>${i.peso_kg ? fmt(i.peso_kg)+' kg' : '—'}</td>` : ''}
-      <td><span class="badge ${i.activo!==false?'badge-green':'badge-gray'}">${i.activo!==false?'Activo':'Inactivo'}</span></td>
-      <td class="td-actions">
-        <button class="btn btn-outline btn-sm" onclick="editItem(${i.id})">Editar</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteItem(${i.id})">Eliminar</button>
-      </td>
-    </tr>`).join('');
+
+    // Agrupar por proveedor
+    const groups = [];
+    const seen   = new Map();
+    for (const i of items) {
+      const prov = i.proveedor || '(Sin proveedor)';
+      if (!seen.has(prov)) { seen.set(prov, []); groups.push(prov); }
+      seen.get(prov).push(i);
+    }
+
+    let tbody = '';
+    for (const prov of groups) {
+      const provItems = seen.get(prov);
+      tbody += `<tr style="background:#f0f7ff">
+        <td colspan="${isVales ? 8 : 7}" style="font-weight:700;font-size:.8rem;color:#1d4ed8;padding:6px 12px;letter-spacing:.04em">
+          🏢 ${esc(prov)} <span style="font-weight:400;color:#666">(${provItems.length})</span>
+        </td>
+      </tr>`;
+      tbody += provItems.map(i => `<tr>
+        <td>${esc(i.item_label)}</td>
+        <td>${esc(i.proveedor||'—')}</td>
+        ${isVales ? `<td>${i.densidad != null ? fmt(i.densidad,4) : '—'}</td>` : ''}
+        <td class="text-right">${i.min_val ?? '—'}</td>
+        <td class="text-right">${i.max_val ?? '—'}</td>
+        <td>${esc(i.unidad||'—')}</td>
+        ${isVales ? `<td>${i.peso_kg ? fmt(i.peso_kg)+' kg' : '—'}</td>` : ''}
+        <td><span class="badge ${i.activo!==false?'badge-green':'badge-gray'}">${i.activo!==false?'Activo':'Inactivo'}</span></td>
+        <td class="td-actions">
+          <button class="btn btn-outline btn-sm" onclick="editItem(${i.id})">Editar</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteItem(${i.id})">Eliminar</button>
+        </td>
+      </tr>`).join('');
+    }
 
     main.innerHTML = `
       <div class="page-title">📋 Items por Inventario</div>
@@ -1119,7 +1238,9 @@ async function renderAdminItems(main) {
         </div>
         ${items.length ? `<div class="table-wrap"><table>
           <thead><tr>
-            <th>Nombre</th><th>Clave</th><th>Min</th><th>Max</th><th>Unidad</th>
+            <th>Nombre</th><th>Proveedor</th>
+            ${isVales ? '<th>Densidad</th>' : ''}
+            <th>Min</th><th>Max</th><th>Unidad</th>
             ${isVales ? '<th>Peso/tambo</th>' : ''}
             <th>Estado</th><th></th>
           </tr></thead>
@@ -1155,12 +1276,14 @@ async function renderAdminItems(main) {
     const isVales  = selType === 'quimicos_proceso';
 
     if (isNew && isVales) {
-      // ── Quimicos Proceso: dropdown de items_vales ──
-      const existingKeys = new Set((/* will fill after loadItems */[]));
-      // Filter out already-added items
+      // ── Quimicos Proceso: dropdown de items_vales + opcional link a compras ──
       loadItems().then(existing => {
-        const addedKeys = new Set(existing.map(i => i.item_key));
-        const available = catalogVales.filter(v => !addedKeys.has(`v_${v.id}`));
+        const addedKeys  = new Set(existing.map(i => i.item_key));
+        const available  = catalogVales.filter(v => !addedKeys.has(`v_${v.id}`));
+        // Map id → catalog object para acceso sin data-attributes
+        const valesMap   = Object.fromEntries(catalogVales.map(v => [v.id, v]));
+
+        const comprasWidget = buildComprasSearchWidget(catalogCompras, new Set(), null);
 
         openModal('Agregar item — Quimicos Proceso', `
           <div class="form-group" style="margin-bottom:12px">
@@ -1168,53 +1291,69 @@ async function renderAdminItems(main) {
             <select class="form-input" id="im-vales-sel">
               <option value="">— Seleccionar producto —</option>
               ${available.map(v =>
-                `<option value="${v.id}" data-nombre="${esc(v.nombre)}" data-peso="${v.peso_kg||''}">${esc(v.nombre)}${v.peso_kg ? ' — '+v.peso_kg+' kg/tambo' : ''}</option>`
+                `<option value="${v.id}">${esc(v.nombre)}${v.proveedor ? ' ['+esc(v.proveedor)+']' : ''}${v.peso_kg ? ' — '+v.peso_kg+' kg/tambo' : ''}</option>`
               ).join('')}
             </select>
           </div>
           <div id="im-vales-detail" style="display:none">
-            <div class="alert alert-info" id="im-vales-info" style="margin-bottom:12px"></div>
+            <div class="alert alert-info" id="im-vales-info" style="margin-bottom:10px"></div>
             <div class="form-row cols-2" style="margin-bottom:10px">
-              <div class="form-group"><label>Minimo (kg, alerta)</label><input type="number" class="form-input" id="im-min" step="0.01" placeholder="0"/></div>
-              <div class="form-group"><label>Maximo (kg)</label><input type="number" class="form-input" id="im-max" step="0.01" placeholder="0"/></div>
+              <div class="form-group"><label>Min (kg)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
+              <div class="form-group"><label>Max (kg)</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
             </div>
-            <div class="form-row cols-2" style="margin-bottom:14px">
+            <div class="form-row cols-2" style="margin-bottom:10px">
               <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" step="0.01"/></div>
-              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="kg"/></div>
+              <div class="form-group"><label>Densidad</label><input type="number" class="form-input" id="im-densidad" step="0.0001"/></div>
             </div>
+            <div class="form-row cols-2" style="margin-bottom:12px">
+              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="KG"/></div>
+              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+            </div>
+            <hr class="divider"/>
+            ${comprasWidget.html}
           </div>
           <div id="im-err" class="alert alert-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
         `);
 
+        comprasWidget.wire();
+
         document.getElementById('im-vales-sel').onchange = function() {
-          const opt = this.selectedOptions[0];
-          const detail = document.getElementById('im-vales-detail');
+          const detail  = document.getElementById('im-vales-detail');
           const saveBtn = document.getElementById('im-save');
-          if (!opt.value) { detail.style.display = 'none'; saveBtn.disabled = true; return; }
+          if (!this.value) { detail.style.display = 'none'; saveBtn.disabled = true; return; }
+          const v = valesMap[Number(this.value)];
+          if (!v) return;
           detail.style.display = '';
           saveBtn.disabled = false;
-          document.getElementById('im-peso').value = opt.dataset.peso || '';
+          document.getElementById('im-peso').value      = v.peso_kg    ?? '';
+          document.getElementById('im-densidad').value  = v.densidad   ?? '';
+          document.getElementById('im-proveedor').value = v.proveedor  ?? '';
           document.getElementById('im-vales-info').textContent =
-            `Producto: ${opt.dataset.nombre}${opt.dataset.peso ? ' · '+opt.dataset.peso+' kg por tambo' : ''}`;
+            `${v.nombre}${v.proveedor ? ' · '+v.proveedor : ''}${v.peso_kg ? ' · '+v.peso_kg+' kg/tambo' : ''}`;
         };
 
         document.getElementById('im-save').onclick = async () => {
-          const sel = document.getElementById('im-vales-sel');
-          const opt = sel.selectedOptions[0];
-          if (!opt?.value) return;
-          const item_key   = `v_${opt.value}`;
-          const item_label = opt.dataset.nombre;
-          const peso_kg    = document.getElementById('im-peso').value ? Number(document.getElementById('im-peso').value) : null;
-          const min_val    = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-          const max_val    = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-          const unidad     = document.getElementById('im-unidad').value.trim() || 'kg';
-          const errEl      = document.getElementById('im-err');
+          const selEl    = document.getElementById('im-vales-sel');
+          if (!selEl.value) return;
+          const v        = valesMap[Number(selEl.value)];
+          if (!v) return;
+          const item_key  = `v_${v.id}`;
+          const peso_kg   = document.getElementById('im-peso').value      ? Number(document.getElementById('im-peso').value)     : null;
+          const densidad  = document.getElementById('im-densidad').value  ? Number(document.getElementById('im-densidad').value) : null;
+          const proveedor = document.getElementById('im-proveedor').value.trim() || null;
+          const min_val   = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+          const max_val   = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+          const unidad    = document.getElementById('im-unidad').value.trim() || 'KG';
+          const catId     = document.getElementById('im-cat-id').value;
+          const errEl     = document.getElementById('im-err');
           errEl.style.display = 'none';
           const r = await apiPost('/items-config', {
-            inv_type: selType, item_key, item_label,
-            min_val, max_val, unidad, peso_kg,
-            compras_item_id: Number(opt.value), activo: true
+            inv_type: selType, item_key, item_label: v.nombre,
+            min_val, max_val, unidad, peso_kg, densidad, proveedor,
+            vales_item_id: v.id,
+            compras_item_id: catId ? Number(catId) : null,
+            activo: true
           });
           if (!r) return;
           const d = await r.json();
@@ -1224,106 +1363,52 @@ async function renderAdminItems(main) {
           renderPage(its);
         };
       });
-      return; // openItemModal returns early while loadItems resolves
+      return;
 
     } else if (isNew && !isVales) {
       // ── EPP / Insumos / Titulacion: buscador de catalog_items ──
-      openModal(`Agregar item — ${INV_TYPES.find(t=>t.key===selType)?.label}`, `
-        <div class="form-group" style="margin-bottom:6px">
-          <label>Buscar en catálogo de Compras</label>
-          <input class="form-input" id="im-search" placeholder="Escribir nombre o SKU para filtrar..." autocomplete="off"/>
-        </div>
-        <div id="im-search-list" style="max-height:200px;overflow-y:auto;border:1px solid #e0e4ec;border-radius:8px;margin-bottom:12px;display:none"></div>
-        <div id="im-selected-item" class="alert alert-info" style="display:none;margin-bottom:12px"></div>
-        <input type="hidden" id="im-cat-id"/>
-        <input type="hidden" id="im-cat-label"/>
-        <input type="hidden" id="im-cat-unit"/>
-        <div id="im-detail-fields" style="display:none">
-          <div class="form-row cols-2" style="margin-bottom:10px">
-            <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" step="0.01" placeholder="0"/></div>
-            <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" step="0.01" placeholder="0"/></div>
-          </div>
-          <div class="form-group" style="margin-bottom:14px">
-            <label>Unidad</label>
-            <input class="form-input" id="im-unidad" placeholder="pza, kg, lt..."/>
-          </div>
-        </div>
-        <div id="im-err" class="alert alert-error" style="display:none"></div>
-        <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
-      `);
-
-      // Load existing to avoid duplicates
       loadItems().then(existing => {
-        const addedKeys = new Set(existing.map(i => i.item_key));
-
-        const searchInput  = document.getElementById('im-search');
-        const listEl       = document.getElementById('im-search-list');
-        const selectedInfo = document.getElementById('im-selected-item');
-        const detailFields = document.getElementById('im-detail-fields');
-        const saveBtn      = document.getElementById('im-save');
-
-        function renderSearchResults(q) {
-          const term = q.toLowerCase().trim();
-          if (!term) { listEl.style.display = 'none'; return; }
-          const matches = catalogCompras
-            .filter(c => !addedKeys.has(`c_${c.id}`) &&
-              (c.name.toLowerCase().includes(term) || (c.sku||'').toLowerCase().includes(term)))
-            .slice(0, 40);
-          if (!matches.length) {
-            listEl.innerHTML = '<div style="padding:10px 14px;color:#999;font-size:.85rem">Sin resultados</div>';
-            listEl.style.display = '';
-            return;
-          }
-          listEl.innerHTML = matches.map(c =>
-            `<div class="search-result-item" data-id="${c.id}" data-name="${esc(c.name)}" data-unit="${esc(c.unit||'')}"
-              style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;font-size:.88rem">
-              <strong>${esc(c.name)}</strong>${c.sku ? `<span style="color:#999;margin-left:8px;font-size:.8rem">${esc(c.sku)}</span>` : ''}
-              <span style="float:right;color:#666;font-size:.8rem">${esc(c.unit||'')}</span>
-            </div>`
-          ).join('');
-          listEl.style.display = '';
-          listEl.querySelectorAll('.search-result-item').forEach(el => {
-            el.onmouseover = () => el.style.background = '#f0f7ff';
-            el.onmouseout  = () => el.style.background = '';
-            el.onclick = () => selectComprasItem(el.dataset.id, el.dataset.name, el.dataset.unit);
-          });
-        }
-
-        function selectComprasItem(id, name, unit) {
-          document.getElementById('im-cat-id').value    = id;
-          document.getElementById('im-cat-label').value = name;
-          document.getElementById('im-cat-unit').value  = unit;
-          document.getElementById('im-unidad').value    = unit;
-          selectedInfo.textContent = `✓ Seleccionado: ${name}${unit ? ' ('+unit+')' : ''}`;
-          selectedInfo.style.display = '';
-          listEl.style.display = 'none';
-          searchInput.value = name;
-          detailFields.style.display = '';
-          saveBtn.disabled = false;
-        }
-
-        searchInput.oninput = () => renderSearchResults(searchInput.value);
-        searchInput.onfocus = () => { if (searchInput.value) renderSearchResults(searchInput.value); };
-        document.addEventListener('click', function onOutside(e) {
-          if (!listEl.contains(e.target) && e.target !== searchInput) {
-            listEl.style.display = 'none';
-            document.removeEventListener('click', onOutside);
-          }
+        const addedKeys    = new Set(existing.map(i => i.item_key));
+        const comprasWidget = buildComprasSearchWidget(catalogCompras, addedKeys, (c) => {
+          // Auto-fill cuando se selecciona del catálogo
+          document.getElementById('im-unidad').value    = c.unit || '';
+          document.getElementById('im-proveedor').value = c.supplier_name || '';
+          document.getElementById('im-detail-fields').style.display = '';
+          document.getElementById('im-save').disabled = false;
         });
 
-        saveBtn.onclick = async () => {
-          const catId    = document.getElementById('im-cat-id').value;
-          const catLabel = document.getElementById('im-cat-label').value;
+        openModal(`Agregar item — ${INV_TYPES.find(t=>t.key===selType)?.label}`, `
+          ${comprasWidget.html}
+          <div id="im-detail-fields" style="display:none">
+            <div class="form-row cols-2" style="margin-bottom:10px">
+              <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
+              <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
+            </div>
+            <div class="form-row cols-2" style="margin-bottom:14px">
+              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" placeholder="pza, kg, lt..."/></div>
+              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+            </div>
+          </div>
+          <div id="im-err" class="alert alert-error" style="display:none"></div>
+          <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
+        `);
+
+        comprasWidget.wire();
+
+        document.getElementById('im-save').onclick = async () => {
+          const catId      = document.getElementById('im-cat-id').value;
+          const catLabel   = document.getElementById('im-cat-label').value;
           if (!catId || !catLabel) { document.getElementById('im-err').textContent = 'Selecciona un item del catálogo'; document.getElementById('im-err').style.display = ''; return; }
-          const item_key = `c_${catId}`;
-          const min_val  = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-          const max_val  = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-          const unidad   = document.getElementById('im-unidad').value.trim() || null;
-          const errEl    = document.getElementById('im-err');
+          const min_val    = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+          const max_val    = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+          const unidad     = document.getElementById('im-unidad').value.trim() || null;
+          const proveedor  = document.getElementById('im-proveedor').value.trim() || null;
+          const errEl      = document.getElementById('im-err');
           errEl.style.display = 'none';
           const r = await apiPost('/items-config', {
-            inv_type: selType, item_key, item_label: catLabel,
-            min_val, max_val, unidad, compras_item_id: Number(catId), activo: true
+            inv_type: selType, item_key: `c_${catId}`, item_label: catLabel,
+            min_val, max_val, unidad, proveedor,
+            compras_item_id: Number(catId), activo: true
           });
           if (!r) return;
           const d = await r.json();
@@ -1336,7 +1421,7 @@ async function renderAdminItems(main) {
       return;
 
     } else {
-      // ── Editar item existente (min/max/unidad/peso/activo) ──
+      // ── Editar item existente ──
       const showPeso = selType === 'quimicos_proceso';
       openModal('Editar item', `
         <div class="alert alert-info" style="margin-bottom:14px">${esc(item.item_label)}</div>
@@ -1346,8 +1431,12 @@ async function renderAdminItems(main) {
         </div>
         <div class="form-row cols-2" style="margin-bottom:10px">
           <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="${esc(item.unidad||'')}"/></div>
-          ${showPeso ? `<div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" value="${item.peso_kg??''}" step="0.01"/></div>` : '<div></div>'}
+          <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" value="${esc(item.proveedor||'')}"/></div>
         </div>
+        ${showPeso ? `<div class="form-row cols-2" style="margin-bottom:10px">
+          <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" value="${item.peso_kg??''}" step="0.01"/></div>
+          <div class="form-group"><label>Densidad</label><input type="number" class="form-input" id="im-densidad" value="${item.densidad??''}" step="0.0001"/></div>
+        </div>` : ''}
         <div class="form-group" style="margin-bottom:16px">
           <label style="display:flex;align-items:center;gap:8px">
             <input type="checkbox" id="im-activo" ${item.activo!==false?'checked':''}/> Activo
@@ -1357,14 +1446,16 @@ async function renderAdminItems(main) {
         <button class="btn btn-primary btn-block" id="im-save">Guardar</button>
       `);
       document.getElementById('im-save').onclick = async () => {
-        const min_val = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-        const max_val = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-        const unidad  = document.getElementById('im-unidad').value.trim() || null;
-        const peso_kg = showPeso && document.getElementById('im-peso')?.value ? Number(document.getElementById('im-peso').value) : null;
-        const activo  = document.getElementById('im-activo').checked;
-        const errEl   = document.getElementById('im-err');
+        const min_val   = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+        const max_val   = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+        const unidad    = document.getElementById('im-unidad').value.trim() || null;
+        const proveedor = document.getElementById('im-proveedor').value.trim() || null;
+        const peso_kg   = showPeso && document.getElementById('im-peso')?.value   ? Number(document.getElementById('im-peso').value)    : null;
+        const densidad  = showPeso && document.getElementById('im-densidad')?.value ? Number(document.getElementById('im-densidad').value) : null;
+        const activo    = document.getElementById('im-activo').checked;
+        const errEl     = document.getElementById('im-err');
         errEl.style.display = 'none';
-        const r = await apiPut('/items-config/'+item.id, { min_val, max_val, unidad, peso_kg, activo });
+        const r = await apiPut('/items-config/'+item.id, { min_val, max_val, unidad, proveedor, peso_kg, densidad, activo });
         if (!r) return;
         const d = await r.json();
         if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }

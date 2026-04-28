@@ -167,7 +167,7 @@ router.get('/items-config', invAuthRequired, (req, res) => {
 });
 
 router.post('/items-config', invAuthRequired, invAllowRoles('admin'), (req, res) => {
-  const { inv_type, item_key, item_label, min_val, max_val, compras_item_id, unidad, peso_kg, activo } = req.body;
+  const { inv_type, item_key, item_label, min_val, max_val, compras_item_id, vales_item_id, unidad, peso_kg, densidad, proveedor, activo } = req.body;
   if (!inv_type || !item_key || !item_label) return res.status(400).json({ error: 'inv_type, item_key e item_label son requeridos' });
   const db = readInv();
   db.inv_items_config = db.inv_items_config || [];
@@ -179,8 +179,11 @@ router.post('/items-config', invAuthRequired, invAllowRoles('admin'), (req, res)
     inv_type, item_key, item_label,
     min_val: min_val ?? null, max_val: max_val ?? null,
     compras_item_id: compras_item_id || null,
+    vales_item_id: vales_item_id || null,
     unidad: unidad || null,
     peso_kg: peso_kg || null,
+    densidad: densidad || null,
+    proveedor: proveedor || null,
     activo: activo !== false
   };
   db.inv_items_config.push(item);
@@ -193,7 +196,7 @@ router.put('/items-config/:id', invAuthRequired, invAllowRoles('admin'), (req, r
   const db = readInv();
   const item = (db.inv_items_config || []).find(i => i.id === id);
   if (!item) return res.status(404).json({ error: 'Ítem no encontrado' });
-  const fields = ['item_label','min_val','max_val','compras_item_id','unidad','peso_kg','activo'];
+  const fields = ['item_label','min_val','max_val','compras_item_id','vales_item_id','unidad','peso_kg','densidad','proveedor','activo'];
   for (const f of fields) if (req.body[f] !== undefined) item[f] = req.body[f];
   writeInv(db);
   res.json({ ok: true });
@@ -217,19 +220,30 @@ router.post('/items-config/sync-vales', invAuthRequired, invAllowRoles('admin'),
     const valesItems = (valesDb.items_vales || []).filter(i => i.activo !== false);
     for (const vi of valesItems) {
       const item_key = `v_${vi.id}`;
-      if (!db.inv_items_config.find(i => i.inv_type === 'quimicos_proceso' && i.item_key === item_key)) {
+      const existing = db.inv_items_config.find(i => i.inv_type === 'quimicos_proceso' && i.item_key === item_key);
+      if (!existing) {
         db.inv_items_config.push({
           id: nextId(db.inv_items_config),
           inv_type: 'quimicos_proceso',
           item_key,
-          item_label: vi.nombre,
+          item_label: vi.item,
           min_val: null, max_val: null,
-          compras_item_id: vi.id,
-          unidad: 'kg',
+          vales_item_id: vi.id,
+          compras_item_id: null,
+          unidad: vi.unidad_base || 'KG',
           peso_kg: vi.peso_kg || null,
+          densidad: vi.densidad || null,
+          proveedor: vi.proveedor || null,
           activo: true
         });
         created++;
+      } else {
+        // Actualizar campos del catálogo si ya existe (nombre, peso, densidad, proveedor)
+        existing.item_label = vi.item;
+        existing.vales_item_id = vi.id;
+        existing.peso_kg  = vi.peso_kg  || existing.peso_kg;
+        existing.densidad = vi.densidad || existing.densidad;
+        existing.proveedor = vi.proveedor || existing.proveedor;
       }
     }
     writeInv(db);
@@ -248,21 +262,30 @@ router.get('/catalog/vales-items', invAuthRequired, (req, res) => {
   try {
     const db = readVales();
     const items = (db.items_vales || []).filter(i => i.activo !== false).map(i => ({
-      id: i.id, nombre: i.nombre, clave: i.clave,
-      unidad: i.unidad, peso_kg: i.peso_kg || null, densidad: i.densidad || null
+      id: i.id, nombre: i.item, codigo: i.codigo || null,
+      presentacion: i.presentacion || null,
+      unidad: i.unidad_base || i.unidad || 'KG',
+      peso_kg: i.peso_kg || null, densidad: i.densidad || null,
+      proveedor: i.proveedor || null
     }));
     res.json(items);
   } catch { res.json([]); }
 });
 
-// Catalog items de Compras (EPP, insumos, titulacion)
+// Catalog items de Compras (EPP, insumos, titulacion) — incluye nombre de proveedor
 router.get('/catalog/compras-items', invAuthRequired, (req, res) => {
   try {
     const db = readCompras();
-    const items = (db.catalog_items || []).filter(i => i.active !== false).map(i => ({
-      id: i.id, name: i.name, sku: i.sku, unit: i.unit,
-      category: i.category, supplier_id: i.supplier_id
-    }));
+    const suppliers = db.suppliers || [];
+    const items = (db.catalog_items || []).filter(i => i.active !== false).map(i => {
+      const sup = suppliers.find(s => s.id === i.supplier_id);
+      return {
+        id: i.id, name: i.name, sku: i.code || i.sku || null,
+        unit: i.unit, category: i.category || null,
+        supplier_id: i.supplier_id || null,
+        supplier_name: sup?.name || sup?.business_name || null
+      };
+    });
     res.json(items);
   } catch { res.json([]); }
 });
@@ -478,7 +501,8 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
       prev_tambos: (pesoKg && prevKg !== null) ? Math.round((prevKg / pesoKg) * 100) / 100 : null,
       // consumo
       consumo_kg:     consumo,
-      consumo_tambos: (pesoKg && consumo !== null) ? Math.round((consumo / pesoKg) * 100) / 100 : null
+      consumo_tambos: (pesoKg && consumo !== null) ? Math.round((consumo / pesoKg) * 100) / 100 : null,
+      proveedor: item.proveedor || null
     };
   });
 
