@@ -1370,41 +1370,56 @@ function bindReportes() {
     }
     const weeks  = data.weeks;
     const months = data.months;
-    const totalCols = weeks.length + months.length + 1;
+
+    // Paleta KPI Costos (azul/slate)
+    const C = {
+      thead:      { bg: '#1d4ed8', color: '#fff' },
+      theadMonth: { bg: '#1e40af', color: '#bfdbfe' },
+      theadTotal: { bg: '#1e3a8a', color: '#fff' },
+      linea:      { bg: '#1e3a8a', color: '#fff', sticky: '#1e3a8a' },
+      lineaMes:   { bg: '#1e40af', color: '#bfdbfe' },
+      lineaTot:   { bg: '#172554', color: '#fff' },
+      tipo:       { bg: '#dbeafe', color: '#1e40af', sticky: '#dbeafe' },
+      tipoMes:    { bg: '#bfdbfe', color: '#1e40af' },
+      tipoTot:    { bg: '#93c5fd', color: '#1e3a8a' },
+      item:       { bg: '#fff',    color: '#374151', sticky: '#fff' },
+      itemMes:    { bg: '#eff6ff', color: '#374151' },
+      itemTot:    { bg: '#dbeafe', color: '#1e40af' },
+    };
 
     // Header row
-    const thWeeks  = weeks.map(w  => `<th style="text-align:right;min-width:60px;font-size:11px;white-space:nowrap">S${w}</th>`).join('');
-    const thMonths = months.map(m => `<th style="text-align:right;min-width:72px;font-size:11px;white-space:nowrap;background:#fef9c3">${MESES_PROC[m-1]}</th>`).join('');
-    const thTotal  = `<th style="text-align:right;min-width:80px;font-size:11px;background:#fef3c7;font-weight:700">TOTAL</th>`;
+    const thWeeks  = weeks.map(w  => `<th style="text-align:right;min-width:60px;font-size:11px;white-space:nowrap;background:${C.thead.bg};color:${C.thead.color}">S${w}</th>`).join('');
+    const thMonths = months.map(m => `<th style="text-align:right;min-width:72px;font-size:11px;white-space:nowrap;background:${C.theadMonth.bg};color:${C.theadMonth.color}">${MESES_PROC[m-1]}</th>`).join('');
+    const thTotal  = `<th style="text-align:right;min-width:80px;font-size:11px;font-weight:700;background:${C.theadTotal.bg};color:${C.theadTotal.color}">TOTAL</th>`;
 
     let rows = '';
     data.lineas.forEach(linea => {
       // Fila TOTAL línea
-      const lwCells = weeks.map(w => `<td style="text-align:right;font-weight:700;font-size:12px">${fmtProc(linea.weeks[w], modo)}</td>`).join('');
-      const lmCells = months.map(m => `<td style="text-align:right;font-weight:700;font-size:12px;background:#fef9c3">${fmtProc(linea.months[m], modo)}</td>`).join('');
-      const ltCell  = `<td style="text-align:right;font-weight:700;font-size:12px;background:#fef3c7">${fmtProc(linea.total, modo)}</td>`;
-      rows += `<tr style="background:#1c1917;color:#fff">
-        <td style="font-weight:700;padding:6px 10px;font-size:13px;white-space:nowrap;position:sticky;left:0;background:#1c1917;z-index:2">${linea.linea}</td>
+      const lwCells = weeks.map(w  => `<td style="text-align:right;font-weight:700;font-size:12px;background:${C.linea.bg};color:${C.linea.color}">${fmtProc(linea.weeks[w], modo)}</td>`).join('');
+      const lmCells = months.map(m => `<td style="text-align:right;font-weight:700;font-size:12px;background:${C.lineaMes.bg};color:${C.lineaMes.color}">${fmtProc(linea.months[m], modo)}</td>`).join('');
+      const ltCell  = `<td style="text-align:right;font-weight:700;font-size:12px;background:${C.lineaTot.bg};color:${C.lineaTot.color}">${fmtProc(linea.total, modo)}</td>`;
+      rows += `<tr>
+        <td style="font-weight:800;padding:7px 10px;font-size:13px;white-space:nowrap;position:sticky;left:0;background:${C.linea.sticky};color:${C.linea.color};z-index:2;border-top:2px solid #1d4ed8">${linea.linea}</td>
         ${lwCells}${lmCells}${ltCell}
       </tr>`;
 
       linea.tipos.forEach(tipo => {
         // Fila subtotal por tipo
-        const twCells = weeks.map(w => `<td style="text-align:right;font-weight:600;font-size:12px">${fmtProc(tipo.weeks[w], modo)}</td>`).join('');
-        const tmCells = months.map(m => `<td style="text-align:right;font-weight:600;font-size:12px;background:#fef9c3">${fmtProc(tipo.months[m], modo)}</td>`).join('');
-        const ttCell  = `<td style="text-align:right;font-weight:600;font-size:12px;background:#fef3c7">${fmtProc(tipo.total, modo)}</td>`;
-        rows += `<tr style="background:#292524;color:#e7e5e4">
-          <td style="padding:4px 10px 4px 20px;font-size:12px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#292524;z-index:2">↳ ${tipo.tipo}</td>
+        const twCells = weeks.map(w  => `<td style="text-align:right;font-weight:600;font-size:12px;background:${C.tipo.bg};color:${C.tipo.color}">${fmtProc(tipo.weeks[w], modo)}</td>`).join('');
+        const tmCells = months.map(m => `<td style="text-align:right;font-weight:600;font-size:12px;background:${C.tipoMes.bg};color:${C.tipo.color}">${fmtProc(tipo.months[m], modo)}</td>`).join('');
+        const ttCell  = `<td style="text-align:right;font-weight:700;font-size:12px;background:${C.tipoTot.bg};color:${C.linea.bg}">${fmtProc(tipo.total, modo)}</td>`;
+        rows += `<tr>
+          <td style="padding:5px 10px 5px 22px;font-size:12px;font-weight:700;white-space:nowrap;position:sticky;left:0;background:${C.tipo.sticky};color:${C.tipo.color};z-index:2">↳ ${tipo.tipo}</td>
           ${twCells}${tmCells}${ttCell}
         </tr>`;
 
         tipo.items.forEach(item => {
           // Fila por ítem
-          const iwCells = weeks.map(w => `<td style="text-align:right;font-size:11px">${fmtProc(item.weeks[w], modo)}</td>`).join('');
-          const imCells = months.map(m => `<td style="text-align:right;font-size:11px;background:#fefce8">${fmtProc(item.months[m], modo)}</td>`).join('');
-          const itCell  = `<td style="text-align:right;font-size:11px;font-weight:600;background:#fef9c3">${fmtProc(item.total, modo)}</td>`;
-          rows += `<tr style="background:#fff">
-            <td style="padding:3px 10px 3px 36px;font-size:11px;color:#57534e;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:#fff;z-index:2" title="${item.item}">${item.item}</td>
+          const iwCells = weeks.map(w  => `<td style="text-align:right;font-size:11px;background:${C.item.bg};color:${C.item.color}">${fmtProc(item.weeks[w], modo)}</td>`).join('');
+          const imCells = months.map(m => `<td style="text-align:right;font-size:11px;background:${C.itemMes.bg};color:${C.item.color}">${fmtProc(item.months[m], modo)}</td>`).join('');
+          const itCell  = `<td style="text-align:right;font-size:11px;font-weight:600;background:${C.itemTot.bg};color:${C.tipo.color}">${fmtProc(item.total, modo)}</td>`;
+          rows += `<tr>
+            <td style="padding:3px 10px 3px 38px;font-size:11px;color:#374151;white-space:nowrap;max-width:240px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.sticky};z-index:2" title="${item.item}">${item.item}</td>
             ${iwCells}${imCells}${itCell}
           </tr>`;
         });
@@ -1416,8 +1431,8 @@ function bindReportes() {
       <div style="overflow-x:auto;max-height:70vh;overflow-y:auto">
         <table style="border-collapse:collapse;font-size:12px;min-width:100%">
           <thead style="position:sticky;top:0;z-index:3">
-            <tr style="background:#57534e;color:#fff">
-              <th style="text-align:left;padding:8px 10px;min-width:220px;position:sticky;left:0;background:#57534e;z-index:4">Línea / Tipo / Ítem</th>
+            <tr>
+              <th style="text-align:left;padding:8px 10px;min-width:220px;position:sticky;left:0;background:${C.thead.bg};color:${C.thead.color};z-index:4">Línea / Tipo / Ítem</th>
               ${thWeeks}
               ${thMonths}
               ${thTotal}
