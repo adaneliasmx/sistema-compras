@@ -127,9 +127,18 @@ tbody tr:hover { background: #f7f9fc; }
 .alert-error { background: #fdecea; color: #c0392b; border: 1px solid #f5b7b1; }
 
 /* ── Print ────────────────────────────────────────────────────────── */
+.print-header { display: none; }
 @media print {
   .sidebar, .toolbar, .btn, .modal-overlay, #btn-logout, #btn-change-pass { display: none !important; }
   .main-content { padding: 0; }
   .card { box-shadow: none; border: 1px solid #ccc; }
   body { background: #fff; }
+  .print-header {
+    display: block !important;
+    text-align: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #1d4ed8;
+  }
+  .page-title { display: none; }
 }

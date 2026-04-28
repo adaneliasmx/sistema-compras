@@ -470,39 +470,86 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
   const cfg        = (db.inv_items_config || []).filter(i => i.inv_type === inv_type && i.activo !== false);
 
   const cCur  = allConteos.find(c => c.inv_type === inv_type && c.year === curYear  && c.week === curWeek);
-  const cPrev = allConteos.find(c => c.inv_type === inv_type && c.year === prevYear && c.week === prevWeek);
+  const itemsCur = cCur ? allItems.filter(i => i.conteo_id === cCur.id) : [];
 
-  const itemsCur  = cCur  ? allItems.filter(i => i.conteo_id === cCur.id)  : [];
-  const itemsPrev = cPrev ? allItems.filter(i => i.conteo_id === cPrev.id) : [];
+  // Recibido semana actual (recepciones dentro del rango de la semana ISO actual)
+  const curWeekStart = isoWeekStart(curYear, curWeek);
+  const curWeekEnd   = new Date(curWeekStart); curWeekEnd.setDate(curWeekEnd.getDate() + 6);
+  const curStartStr  = curWeekStart.toISOString().slice(0, 10);
+  const curEndStr    = curWeekEnd.toISOString().slice(0, 10);
+  const recepciones  = (db.inv_recepciones || []).filter(r =>
+    r.inv_type === inv_type && r.fecha >= curStartStr && r.fecha <= curEndStr
+  );
 
-  // Calcular consumo = semana_anterior - semana_actual (si ambas existen)
+  // Consumo desde vales de adición (semana anterior) — solo quimicos_proceso
+  const valesConsumoMap = {};
+  if (inv_type === 'quimicos_proceso') {
+    try {
+      const dbVales = readVales();
+      const valesItems = dbVales.items_vales || [];
+      const prevWeekStart = isoWeekStart(prevYear, prevWeek);
+      const prevWeekEnd   = new Date(prevWeekStart); prevWeekEnd.setDate(prevWeekEnd.getDate() + 6);
+      const prevStartStr  = prevWeekStart.toISOString().slice(0, 10);
+      const prevEndStr    = prevWeekEnd.toISOString().slice(0, 10);
+      const prevFolios = new Set(
+        (dbVales.vales_header || []).filter(h => h.fecha >= prevStartStr && h.fecha <= prevEndStr).map(h => h.folio_vale)
+      );
+      const kgByCode = {};
+      for (const det of (dbVales.vales_detalle || []).filter(d => prevFolios.has(d.folio_vale))) {
+        kgByCode[det.item] = (kgByCode[det.item] || 0) + (det.kg_equivalentes || 0);
+      }
+      for (const cfgItem of cfg) {
+        if (cfgItem.vales_item_id) {
+          const vi = valesItems.find(v => v.id === cfgItem.vales_item_id);
+          if (vi && kgByCode[vi.item] !== undefined) {
+            valesConsumoMap[cfgItem.item_key] = Math.round(kgByCode[vi.item] * 100) / 100;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  // Pendiente de recibir — OCs en estado Enviada o Aprobada
+  const pendienteMap = {};
+  try {
+    const dbCompras = readCompras();
+    const openPOIds = new Set(
+      (dbCompras.purchase_orders || []).filter(po => po.status === 'Enviada' || po.status === 'Aprobada').map(po => po.id)
+    );
+    const openPOItems = (dbCompras.purchase_order_items || []).filter(i => openPOIds.has(i.purchase_order_id));
+    for (const cfgItem of cfg) {
+      if (cfgItem.compras_item_id) {
+        const qty = openPOItems
+          .filter(i => i.catalog_item_id === cfgItem.compras_item_id)
+          .reduce((s, i) => s + (Number(i.quantity) || 0), 0);
+        if (qty > 0) pendienteMap[cfgItem.item_key] = qty;
+      }
+    }
+  } catch (_) {}
+
   const rows = cfg.map(item => {
-    const cur  = itemsCur.find(i  => i.item_key === item.item_key);
-    const prev = itemsPrev.find(i => i.item_key === item.item_key);
-    const curKg   = cur?.kg  ?? null;
-    const prevKg  = prev?.kg ?? null;
-    const consumo = (prevKg !== null && curKg !== null) ? Math.max(0, prevKg - curKg) : null;
-    // tambos = kg / peso_kg
+    const cur    = itemsCur.find(i => i.item_key === item.item_key);
+    const curKg  = cur?.kg ?? null;
     const pesoKg = item.peso_kg || null;
+    const recibidoKg = recepciones
+      .filter(r => r.item_key === item.item_key)
+      .reduce((s, r) => s + (Number(r.kg) || 0), 0) || null;
     return {
-      item_key:   item.item_key,
-      item_label: item.item_label,
-      unidad:     item.unidad || 'kg',
-      min_val:    item.min_val,
-      max_val:    item.max_val,
-      peso_kg:    pesoKg,
-      // semana actual
-      cur_kg:     curKg,
-      cur_tambos: (pesoKg && curKg !== null) ? Math.round((curKg / pesoKg) * 100) / 100 : null,
+      item_key:       item.item_key,
+      item_label:     item.item_label,
+      unidad:         item.unidad || 'kg',
+      min_val:        item.min_val,
+      max_val:        item.max_val,
+      peso_kg:        pesoKg,
+      proveedor:      item.proveedor || null,
+      cur_kg:         curKg,
+      cur_tambos:     (pesoKg && curKg !== null) ? Math.round((curKg / pesoKg) * 100) / 100 : null,
       cur_tambos_raw: cur?.tambos ?? null,
       cur_porrones:   cur?.porrones ?? null,
-      // semana anterior
-      prev_kg:    prevKg,
-      prev_tambos: (pesoKg && prevKg !== null) ? Math.round((prevKg / pesoKg) * 100) / 100 : null,
-      // consumo
-      consumo_kg:     consumo,
-      consumo_tambos: (pesoKg && consumo !== null) ? Math.round((consumo / pesoKg) * 100) / 100 : null,
-      proveedor: item.proveedor || null
+      consumo_kg:     valesConsumoMap[item.item_key] ?? null,
+      recibido_kg:    recibidoKg,
+      pendiente_qty:  pendienteMap[item.item_key] ?? null,
+      pendiente_unit: item.unidad || null
     };
   });
 
@@ -510,8 +557,6 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
     inv_type,
     cur_year: curYear, cur_week: curWeek,
     cur_fecha: cCur?.fecha || null,
-    prev_year: prevYear, prev_week: prevWeek,
-    prev_fecha: cPrev?.fecha || null,
     rows
   });
 });

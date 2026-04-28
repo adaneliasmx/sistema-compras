@@ -404,12 +404,16 @@ window.delRecepcion = async (id) => {
 async function renderConteo(main, inv_type) {
   const tipoInfo = INV_TYPES.find(t => t.key === inv_type) || { label: inv_type, icon: '📦' };
   const now = new Date();
-  // Get current week conteo
-  const rConteos = await apiGet(`/conteos?inv_type=${inv_type}`);
-  const conteos  = rConteos.ok ? await rConteos.json() : [];
-  // Get items config
-  const rItems = await apiGet(`/items-config?inv_type=${inv_type}`);
-  const itemsCfg = rItems.ok ? await rItems.json() : [];
+  // Get current week conteo, items config, and form config in parallel
+  const [rConteos, rItems, rCfg] = await Promise.all([
+    apiGet(`/conteos?inv_type=${inv_type}`),
+    apiGet(`/items-config?inv_type=${inv_type}`),
+    apiGet('/config')
+  ]);
+  const conteos  = rConteos?.ok ? await rConteos.json() : [];
+  const itemsCfg = rItems?.ok  ? await rItems.json()   : [];
+  const allCfgs  = rCfg?.ok   ? await rCfg.json()     : [];
+  const formCfg  = allCfgs.find(c => c.inv_type === inv_type) || {};
   const activeItems = itemsCfg.filter(i => i.activo !== false);
 
   // Current ISO week
@@ -426,10 +430,11 @@ async function renderConteo(main, inv_type) {
   const curWeek = isoWeek(now);
   const existing = conteos.find(c => c.year === curYear && c.week === curWeek);
 
-  const showTambos = inv_type === 'quimicos_proceso';
+  const isQuimicos = inv_type === 'quimicos_proceso';
+  // colCount: quimicos = Item+Tambos+Porrones+Kg+Unidad=5, others = Item+Cantidad+Unidad=3
+  const conteoColCount = isQuimicos ? 5 : 3;
 
   // Build input rows grouped by proveedor
-  const conteoColCount = showTambos ? 6 : 4;
   const conteoGrouped = {};
   activeItems.forEach(item => {
     const prov = item.proveedor || '(Sin proveedor)';
@@ -444,18 +449,40 @@ async function renderConteo(main, inv_type) {
     const headerRow = `<tr><td colspan="${conteoColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${provItems.length})</span></td></tr>`;
     const itemRows = provItems.map(item => {
       const ex = existing?.items.find(i => i.item_key === item.item_key);
-      return `<tr data-key="${esc(item.item_key)}">
-        <td>${esc(item.item_label)}</td>
-        ${showTambos ? `<td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" value="${ex?.tambos ?? ''}" min="0" step="0.01" style="width:90px"/></td>
-        <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${ex?.porrones ?? ''}" min="0" step="0.01" style="width:90px"/></td>` : ''}
-        <td><input type="number" class="form-input conteo-qty" data-key="${esc(item.item_key)}" value="${ex?.cantidad ?? ''}" min="0" step="0.01" style="width:100px"/></td>
-        <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${ex?.kg ?? ''}" min="0" step="0.01" style="width:100px"/></td>
-        <td><span class="text-muted" style="font-size:.8rem">${esc(item.unidad || (inv_type==='quimicos_proceso'?'kg':'—'))}</span></td>
-      </tr>`;
+      const pesoKg   = item.peso_kg   || 0;
+      const densidad = item.densidad  || 0;
+      if (isQuimicos) {
+        const tambosVal   = ex?.tambos   ?? '';
+        const porronesVal = ex?.porrones ?? '';
+        const kgCalc = (Number(tambosVal) * pesoKg + Number(porronesVal) * 15 * densidad).toFixed(2);
+        const kgShow = (tambosVal !== '' || porronesVal !== '') ? kgCalc : (ex?.kg ?? '');
+        return `<tr data-key="${esc(item.item_key)}">
+          <td>${esc(item.item_label)}</td>
+          <td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" data-peso="${pesoKg}" data-densidad="${densidad}" value="${tambosVal}" min="0" step="0.01" style="width:80px"/></td>
+          <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${porronesVal}" min="0" step="0.01" style="width:80px"/></td>
+          <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${kgShow}" min="0" step="0.01" style="width:90px;background:#f8fafc" readonly/></td>
+          <td><span class="text-muted" style="font-size:.8rem">kg</span></td>
+        </tr>`;
+      } else {
+        return `<tr data-key="${esc(item.item_key)}">
+          <td>${esc(item.item_label)}</td>
+          <td><input type="number" class="form-input conteo-qty" data-key="${esc(item.item_key)}" value="${ex?.cantidad ?? ''}" min="0" step="0.01" style="width:110px"/></td>
+          <td><span class="text-muted" style="font-size:.8rem">${esc(item.unidad || '—')}</span></td>
+        </tr>`;
+      }
     });
     return [headerRow, ...itemRows];
   }).join('');
+
+  const printCode = formCfg.form_code ? `${esc(formCfg.form_code)} ${esc(formCfg.form_rev||'')}` : '';
+  const printTitle = esc(formCfg.form_title || tipoInfo.label);
+
   main.innerHTML = `
+    <div class="print-header" style="display:none">
+      <div style="font-size:11px;color:#64748b">${printCode}</div>
+      <div style="font-size:15px;font-weight:800">${printTitle}</div>
+      <div style="font-size:12px">Semana ${curWeek} / ${curYear}</div>
+    </div>
     <div class="page-title">${tipoInfo.icon} Conteo Semanal — ${esc(tipoInfo.label)}</div>
     <div class="card">
       <div class="card-header">
@@ -473,8 +500,7 @@ async function renderConteo(main, inv_type) {
         <table id="conteo-table">
           <thead><tr>
             <th>Item</th>
-            ${showTambos ? '<th>Tambos</th><th>Porrones</th>' : ''}
-            <th>Cantidad</th><th>Kg</th><th>Unidad</th>
+            ${isQuimicos ? '<th>Tambos</th><th>Porrones 15L</th><th>Kg (calculado)</th><th>Unidad</th>' : '<th>Cantidad</th><th>Unidad</th>'}
           </tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -491,6 +517,22 @@ async function renderConteo(main, inv_type) {
 
   if (!activeItems.length) return;
 
+  // Auto-calc kg for quimicos_proceso
+  if (isQuimicos) {
+    document.getElementById('conteo-table').addEventListener('input', e => {
+      const inp = e.target;
+      if (!inp.classList.contains('conteo-tambos') && !inp.classList.contains('conteo-porrones')) return;
+      const key = inp.dataset.key;
+      const tambosEl   = document.querySelector(`.conteo-tambos[data-key="${key}"]`);
+      const porronesEl = document.querySelector(`.conteo-porrones[data-key="${key}"]`);
+      const kgEl       = document.querySelector(`.conteo-kg[data-key="${key}"]`);
+      const pesoKg   = Number(tambosEl.dataset.peso)    || 0;
+      const densidad = Number(tambosEl.dataset.densidad) || 0;
+      const kg = (Number(tambosEl.value) || 0) * pesoKg + (Number(porronesEl.value) || 0) * 15 * densidad;
+      kgEl.value = kg > 0 ? kg.toFixed(2) : '';
+    });
+  }
+
   document.getElementById('conteo-save').onclick = async () => {
     const fecha = document.getElementById('conteo-fecha').value;
     const errEl = document.getElementById('conteo-err');
@@ -498,11 +540,15 @@ async function renderConteo(main, inv_type) {
     if (!fecha) { errEl.textContent = 'Indica la fecha del conteo'; errEl.style.display = ''; return; }
     const items = activeItems.map(item => {
       const key = item.item_key;
-      const tambos   = showTambos ? Number(document.querySelector(`.conteo-tambos[data-key="${key}"]`)?.value) || null : null;
-      const porrones = showTambos ? Number(document.querySelector(`.conteo-porrones[data-key="${key}"]`)?.value) || null : null;
-      const cantidad = Number(document.querySelector(`.conteo-qty[data-key="${key}"]`)?.value) || null;
-      const kg       = Number(document.querySelector(`.conteo-kg[data-key="${key}"]`)?.value) || null;
-      return { item_key: key, tambos, porrones, cantidad, kg, unidad: item.unidad };
+      if (isQuimicos) {
+        const tambos   = Number(document.querySelector(`.conteo-tambos[data-key="${key}"]`)?.value) || null;
+        const porrones = Number(document.querySelector(`.conteo-porrones[data-key="${key}"]`)?.value) || null;
+        const kg       = Number(document.querySelector(`.conteo-kg[data-key="${key}"]`)?.value) || null;
+        return { item_key: key, tambos, porrones, cantidad: tambos, kg, unidad: 'kg' };
+      } else {
+        const cantidad = Number(document.querySelector(`.conteo-qty[data-key="${key}"]`)?.value) || null;
+        return { item_key: key, tambos: null, porrones: null, cantidad, kg: null, unidad: item.unidad };
+      }
     });
     const r = await apiPost('/conteos', { inv_type, fecha, items });
     if (!r) return;
@@ -597,24 +643,32 @@ async function loadCompradorTab(tab, inv_type) {
 
     function renderSemana(u) {
       const isTambos = u === 'tambos';
-      const semColCount = 7;
+      const isQ = inv_type === 'quimicos_proceso';
+      // columns: Item | Stock actual | Consumo (vales) | Recibido | Pendiente | Min | Max | Estado
+      const semColCount = isQ ? (isTambos ? 8 : 8) : 7;
 
       function rowHtml(row) {
-        const curVal    = isTambos ? (row.cur_tambos ?? row.cur_tambos_raw) : row.cur_kg;
-        const prevVal   = isTambos ? row.prev_tambos : row.prev_kg;
-        const consumoVal= isTambos ? row.consumo_tambos : row.consumo_kg;
-        const minVal    = row.min_val;
+        const curVal     = isTambos ? (row.cur_tambos ?? row.cur_tambos_raw) : row.cur_kg;
+        const consumoVal = row.consumo_kg != null
+          ? (isTambos && row.peso_kg ? Math.round((row.consumo_kg / row.peso_kg) * 100) / 100 : row.consumo_kg)
+          : null;
+        const minVal = row.min_val;
+        const unit   = isTambos ? 'T' : 'kg';
 
         let statusClass = '', statusDot = 'ok', stockLabel = 'OK';
         if (curVal === null || curVal === undefined) { statusClass = ''; statusDot = 'gray'; stockLabel = 'S/D'; }
         else if (minVal !== null && curVal <= 0)     { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; }
         else if (minVal !== null && curVal < minVal) { statusClass = 'stock-low';   statusDot = 'low';   stockLabel = 'BAJO'; }
 
+        const recibidoStr  = row.recibido_kg != null  ? `${fmt(row.recibido_kg)} kg`  : '—';
+        const pendienteStr = row.pendiente_qty != null ? `${fmt(row.pendiente_qty)} ${row.pendiente_unit || ''}` : '—';
+
         return `<tr class="${statusClass}">
           <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
-          <td class="text-right">${fmt(curVal)} ${isTambos ? 'T' : 'kg'}</td>
-          <td class="text-right">${fmt(prevVal)} ${isTambos ? 'T' : 'kg'}</td>
-          <td class="text-right">${fmt(consumoVal)} ${isTambos ? 'T' : 'kg'}</td>
+          <td class="text-right">${curVal != null ? fmt(curVal)+' '+unit : '—'}</td>
+          <td class="text-right">${consumoVal != null ? fmt(consumoVal)+' '+unit : '—'}</td>
+          <td class="text-right">${recibidoStr}</td>
+          <td class="text-right">${pendienteStr}</td>
           <td class="text-right">${row.min_val != null ? fmt(row.min_val, 0) : '—'}</td>
           <td class="text-right">${row.max_val != null ? fmt(row.max_val, 0) : '—'}</td>
           <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':'badge-gray'}">${stockLabel}</span></td>
@@ -636,12 +690,13 @@ async function loadCompradorTab(tab, inv_type) {
         return [hdr, ...provRows.map(rowHtml)];
       }).join('');
 
+      const unitLabel = isTambos ? 'Tambos' : 'Kg';
       return `
         <div class="card">
           <div class="card-header">
             <div>
               <div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div>
-              <div class="page-subtitle">Conteo actual: ${data.cur_fecha || 'Sin conteo'} | Anterior: ${data.prev_fecha || 'Sin conteo'}</div>
+              <div class="page-subtitle">Conteo actual: ${data.cur_fecha || 'Sin conteo'}</div>
             </div>
             ${showTambos ? `<div class="toggle-unit" id="unit-toggle">
               <button data-u="kg" class="${u==='kg'?'active':''}">Kg</button>
@@ -649,7 +704,14 @@ async function loadCompradorTab(tab, inv_type) {
             </div>` : ''}
           </div>
           ${data.rows.length ? `<div class="table-wrap"><table>
-            <thead><tr><th>Item</th><th>Actual</th><th>Semana Anterior</th><th>Consumo</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
+            <thead><tr>
+              <th>Item</th>
+              <th>Stock actual (${unitLabel})</th>
+              <th>Consumo sem. ant. (vales)</th>
+              <th>Recibido sem.</th>
+              <th>Pendiente recibir</th>
+              <th>Min</th><th>Max</th><th>Estado</th>
+            </tr></thead>
             <tbody>${rows}</tbody>
           </table></div>` : '<div class="empty-msg">Sin datos de conteo</div>'}
           <div style="margin-top:12px;display:flex;gap:8px">
