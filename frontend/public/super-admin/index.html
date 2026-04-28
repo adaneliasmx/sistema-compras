@@ -197,11 +197,12 @@
                 <th style="min-width:190px;">📋 Registros de Calidad</th>
                 <th style="min-width:170px;">🏭 Producción</th>
                 <th style="min-width:170px;">🔧 Mantenimiento</th>
+                <th style="min-width:190px;">📦 Inventarios</th>
                 <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="7" class="empty">Cargando...</td></tr>
+              <tr><td colspan="8" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -354,6 +355,37 @@
   </div>
 </div>
 
+<!-- MODAL PERMISOS INVENTARIOS -->
+<div class="modal-overlay" id="invPermisosModal">
+  <div class="modal-box" style="max-width:400px;">
+    <div class="modal-title">
+      <span>📦 Permisos Inventarios</span>
+      <button class="modal-close" onclick="closeInvPermisosModal()">×</button>
+    </div>
+    <p id="ipModalName" style="font-size:13px;color:var(--muted);margin-bottom:14px;"></p>
+    <p style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Puede hacer conteo en:</p>
+    <div style="display:grid;gap:8px;margin-bottom:16px;">
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="checkbox" id="ip-quimicos_proceso" style="width:auto;margin:0;"/> ⚗️ Quimicos Proceso
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="checkbox" id="ip-epp" style="width:auto;margin:0;"/> 🦺 EPP
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="checkbox" id="ip-insumos_consumibles" style="width:auto;margin:0;"/> 🔧 Insumos y Consumibles
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;cursor:pointer;font-size:13px;font-weight:600;">
+        <input type="checkbox" id="ip-quimicos_titulacion" style="width:auto;margin:0;"/> 🧪 Quimicos Titulacion
+      </label>
+    </div>
+    <div class="modal-err" id="ipErr"></div>
+    <div class="modal-actions">
+      <button class="btn-modal-cancel" onclick="closeInvPermisosModal()">Cancelar</button>
+      <button class="btn-modal-save" onclick="saveInvPermisos()">Guardar permisos</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL ADD TO MODULE -->
 <div class="modal-overlay" id="addModModal">
   <div class="modal-box" style="max-width:380px;">
@@ -379,7 +411,16 @@ const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', r
 const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
 const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
 const ROLE_LABELS_MANT       = { admin:'Admin' };
+const ROLE_LABELS_INV        = { admin:'Admin', inventarios:'Inventarios', recepcion:'Recepción', comprador:'Comprador' };
+const INV_TYPES_LIST = [
+  { key:'quimicos_proceso',    label:'Quimicos Proceso' },
+  { key:'epp',                 label:'EPP' },
+  { key:'insumos_consumibles', label:'Insumos y Consumibles' },
+  { key:'quimicos_titulacion', label:'Quimicos Titulacion' }
+];
 const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', produccion:'#b45309', mantenimiento:'#92400e' };
+
+let _invUsers = []; // cache de usuarios_inv
 
 let _unifiedData = { internal: [], external: [] };
 let _currentPageTab = 'users';
@@ -434,11 +475,14 @@ function switchPageTab(tab) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    _unifiedData = await api('/api/super-admin/unified-users');
+    [_unifiedData, _invUsers] = await Promise.all([
+      api('/api/super-admin/unified-users'),
+      api('/api/super-admin/inv-users').catch(() => [])
+    ]);
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="7" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="8" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -451,7 +495,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="7" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="8" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -517,9 +561,24 @@ function renderUsersTable() {
            </select>
          </div>`;
 
+    const invUser = _invUsers.find(iu => iu.email === (u.email||'').toLowerCase() && iu.activo);
+    const ir = invUser?.role || null;
+    const invCell = `<div class="mod-cell">
+           <span class="dot ${ir ? 'dot-on' : 'dot-off'}" id="dot-inv-${uidKey}"></span>
+           <select class="role-sel" style="color:${ir ? '#059669' : '#9ca3af'}"
+             onchange="changeInvRole('${esc(u.email)}', this.value, this, '${uidKey}')">
+             <option value="">— Sin acceso —</option>
+             <option value="admin"       ${ir==='admin'       ?'selected':''}>Admin</option>
+             <option value="inventarios" ${ir==='inventarios' ?'selected':''}>Inventarios</option>
+             <option value="recepcion"   ${ir==='recepcion'   ?'selected':''}>Recepción</option>
+             <option value="comprador"   ${ir==='comprador'   ?'selected':''}>Comprador</option>
+           </select>
+           ${ir === 'inventarios' ? `<button class="btn-add-mod" style="font-size:10px;padding:2px 6px;" onclick="openInvPermisosModal('${esc(u.email)}','${esc(u.full_name)}',${invUser?.id||'null'})">Permisos</button>` : ''}
+         </div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
-        <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🔑 Reset</button>
+        <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'},'${esc(u.email)}')">🔑 Reset</button>
         <button class="btn-edit" onclick="openEditUserModal(${JSON.stringify(u).replace(/"/g,'&quot;')})">✏️ Editar</button>
         <button class="btn-del" onclick="confirmDeleteUser('${esc(u.full_name)}','${esc(u.email)}',${u.compras?.id||'null'},${u.rhh?.id||'null'})">🗑️ Eliminar</button>
       </div>`;
@@ -534,6 +593,7 @@ function renderUsersTable() {
       <td>${calidadCell}</td>
       <td>${produccionCell}</td>
       <td>${mantCell}</td>
+      <td>${invCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -627,6 +687,51 @@ async function changeMantRole(email, mantRole, sel, dotKey) {
   }
 }
 
+async function changeInvRole(email, invRole, sel, dotKey) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/inv-role', { method:'PATCH', body: JSON.stringify({ email, inv_role: invRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = invRole ? '#059669' : '#9ca3af';
+    const dot = document.getElementById('dot-inv-' + dotKey);
+    if (dot) dot.className = 'dot ' + (invRole ? 'dot-on' : 'dot-off');
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+    await loadData(); // reload to show/hide Permisos button
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
+let _invPermisosData = {};
+function openInvPermisosModal(email, name, invUserId) {
+  _invPermisosData = { email, name, invUserId };
+  const invUser = _invUsers.find(u => u.email === email.toLowerCase() && u.activo);
+  const permisos = invUser?.permisos_inv || [];
+  document.getElementById('ipModalName').textContent = name + ' · ' + email;
+  INV_TYPES_LIST.forEach(t => {
+    const cb = document.getElementById('ip-' + t.key);
+    if (cb) cb.checked = permisos.includes(t.key);
+  });
+  document.getElementById('ipErr').textContent = '';
+  document.getElementById('invPermisosModal').classList.add('open');
+}
+function closeInvPermisosModal() { document.getElementById('invPermisosModal').classList.remove('open'); }
+async function saveInvPermisos() {
+  const permisos_inv = INV_TYPES_LIST.filter(t => document.getElementById('ip-' + t.key)?.checked).map(t => t.key);
+  try {
+    // Update via inv-role endpoint (preserves role, updates permisos)
+    const invUser = _invUsers.find(u => u.email === _invPermisosData.email.toLowerCase() && u.activo);
+    await api('/api/super-admin/unified-users/inv-role', {
+      method: 'PATCH',
+      body: JSON.stringify({ email: _invPermisosData.email, inv_role: invUser?.role || 'inventarios', permisos_inv })
+    });
+    closeInvPermisosModal();
+    await loadData();
+  } catch(e) { document.getElementById('ipErr').textContent = e.message; }
+}
+
 async function changeRole(module, userId, role, sel) {
   const prev = sel.dataset.prev || role;
   sel.dataset.prev = role;
@@ -646,9 +751,9 @@ async function changeRole(module, userId, role, sel) {
 }
 
 // ── Password modal ────────────────────────────────────────────────────────────
-let _pwdComprasId = null, _pwdRhhId = null;
-function openPwdModal(name, comprasId, rhhId) {
-  _pwdComprasId = comprasId; _pwdRhhId = rhhId;
+let _pwdComprasId = null, _pwdRhhId = null, _pwdEmail = null;
+function openPwdModal(name, comprasId, rhhId, email) {
+  _pwdComprasId = comprasId; _pwdRhhId = rhhId; _pwdEmail = email || null;
   document.getElementById('pwdModalName').textContent = name;
   document.getElementById('pwdNew').value = '0000';
   document.getElementById('pwdErr').textContent = '';
@@ -660,10 +765,22 @@ async function savePwd() {
   const pwd = document.getElementById('pwdNew').value;
   if (!pwd || pwd.length < 4) { document.getElementById('pwdErr').textContent = 'Mínimo 4 caracteres'; return; }
   try {
-    await api('/api/super-admin/unified-users/password', {
-      method:'PATCH',
-      body: JSON.stringify({ compras_user_id: _pwdComprasId, rhh_user_id: _pwdRhhId, new_password: pwd })
-    });
+    const calls = [
+      api('/api/super-admin/unified-users/password', {
+        method:'PATCH',
+        body: JSON.stringify({ compras_user_id: _pwdComprasId, rhh_user_id: _pwdRhhId, new_password: pwd })
+      })
+    ];
+    // También resetear en Inventarios si tiene cuenta ahí
+    if (_pwdEmail) {
+      const invUser = _invUsers.find(u => u.email === _pwdEmail.toLowerCase() && u.activo);
+      if (invUser) {
+        calls.push(api('/api/super-admin/inv-users/password', {
+          method:'PATCH', body: JSON.stringify({ email: _pwdEmail, new_password: pwd })
+        }).catch(() => {}));
+      }
+    }
+    await Promise.all(calls);
     closePwdModal();
     alert('✅ Contraseña actualizada en todos los módulos vinculados');
   } catch(e) { document.getElementById('pwdErr').textContent = e.message; }

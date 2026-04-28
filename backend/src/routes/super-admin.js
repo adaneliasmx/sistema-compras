@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const { read: readCompras, write: writeCompras, nextId: nextIdCompras } = require('../db');
 const { read: readRhh, write: writeRhh, nextId: nextIdRhh, forceSeedFromJson } = require('../db-rhh');
 const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = require('../db-produccion');
+const { read: readInv, write: writeInv, nextId: nextIdInv } = require('../db-inventarios');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -676,6 +677,99 @@ router.patch('/produccion/operadores/:linea/:id', superAdminRequired, (req, res)
   writeProduccion(db);
   const { pin_hash, ...safe } = op;
   res.json(safe);
+});
+
+// ── Inventarios users ─────────────────────────────────────────────────────────
+
+// GET /api/super-admin/inv-users — lista todos los usuarios_inv
+router.get('/inv-users', superAdminRequired, (req, res) => {
+  const db = readInv();
+  const users = (db.usuarios_inv || []).map(u => ({
+    id: u.id, nombre: u.nombre, email: u.email,
+    role: u.role, permisos_inv: u.permisos_inv || [], activo: u.activo !== false
+  }));
+  res.json(users);
+});
+
+// PATCH /api/super-admin/unified-users/inv-role — asignar/revocar rol en Inventarios
+// Crea el usuario en usuarios_inv si no existe (usando password hash de compras o rhh)
+// Si inv_role es null/'' desactiva al usuario en inventarios
+router.patch('/unified-users/inv-role', superAdminRequired, (req, res) => {
+  const { email, inv_role, permisos_inv } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email requerido' });
+  const validRoles = ['admin', 'inventarios', 'recepcion', 'comprador'];
+  if (inv_role && !validRoles.includes(inv_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, inventarios, recepcion, comprador o null' });
+
+  const emailLow = email.toLowerCase();
+  const invDb = readInv();
+  invDb.usuarios_inv = invDb.usuarios_inv || [];
+
+  if (!inv_role) {
+    // Revocar: desactivar si existe
+    const u = invDb.usuarios_inv.find(u => u.email === emailLow);
+    if (u) { u.activo = false; writeInv(invDb); }
+    return res.json({ ok: true });
+  }
+
+  // Obtener password hash del usuario en compras o rhh
+  let passwordHash = bcrypt.hashSync('0000', 10);
+  let nombre = emailLow;
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  const comprasUser = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  const rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (comprasUser) { passwordHash = comprasUser.password_hash; nombre = comprasUser.full_name; }
+  else if (rhhUser) { passwordHash = rhhUser.password_hash; nombre = rhhUser.full_name; }
+
+  const existing = invDb.usuarios_inv.find(u => u.email === emailLow);
+  if (existing) {
+    existing.role = inv_role;
+    existing.activo = true;
+    if (inv_role === 'inventarios' && permisos_inv !== undefined) existing.permisos_inv = permisos_inv || [];
+    if (inv_role !== 'inventarios') existing.permisos_inv = [];
+    writeInv(invDb);
+    return res.json({ ok: true });
+  }
+
+  // Crear nuevo
+  const newUser = {
+    id: nextIdInv(invDb.usuarios_inv),
+    nombre, email: emailLow,
+    password_hash: passwordHash,
+    role: inv_role,
+    permisos_inv: inv_role === 'inventarios' ? (permisos_inv || []) : [],
+    activo: true,
+    created_at: new Date().toISOString()
+  };
+  invDb.usuarios_inv.push(newUser);
+  writeInv(invDb);
+  res.json({ ok: true, created: true, id: newUser.id });
+});
+
+// PATCH /api/super-admin/inv-users/:id/permisos — actualizar permisos_inv
+router.patch('/inv-users/:id/permisos', superAdminRequired, (req, res) => {
+  const id = Number(req.params.id);
+  const { permisos_inv } = req.body || {};
+  const db = readInv();
+  const user = (db.usuarios_inv || []).find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado en Inventarios' });
+  user.permisos_inv = Array.isArray(permisos_inv) ? permisos_inv : [];
+  writeInv(db);
+  res.json({ ok: true });
+});
+
+// PATCH /api/super-admin/inv-users/password — resetear contraseña de usuario inventarios
+router.patch('/inv-users/password', superAdminRequired, (req, res) => {
+  const { email, new_password } = req.body || {};
+  if (!email || !new_password || new_password.length < 4)
+    return res.status(400).json({ error: 'email y contraseña (min 4 chars) requeridos' });
+  const db = readInv();
+  const user = (db.usuarios_inv || []).find(u => u.email === email.toLowerCase());
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado en Inventarios' });
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  writeInv(db);
+  res.json({ ok: true });
 });
 
 // POST /api/super-admin/rhh-reseed
