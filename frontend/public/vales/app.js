@@ -1218,6 +1218,10 @@ async function viewReportes() {
       </div>
       <button class="btn btn-primary" id="proc-btn">🔍 Generar</button>
       <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+        <button id="proc-periodo-week"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="procSetPeriodo('week')">Semanas</button>
+        <button id="proc-periodo-month" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="procSetPeriodo('month')">Meses</button>
+      </div>
+      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
         <button id="proc-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="procSetModo('kg')">kg</button>
         <button id="proc-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="procSetModo('mxn')">$</button>
       </div>
@@ -1343,7 +1347,8 @@ function bindReportes() {
 
   // ── Tab: Reporte para Procesos ──────────────────────────────────────────────
   let _procData = null;
-  let _procModo = 'kg';
+  let _procModo    = 'kg';
+  let _procPeriodo = 'week';
 
   window.procSetModo = function(m) {
     _procModo = m;
@@ -1351,7 +1356,16 @@ function bindReportes() {
     document.getElementById('proc-modo-kg') ?.classList.toggle('btn-outline',  m !== 'kg');
     document.getElementById('proc-modo-mxn')?.classList.toggle('btn-primary', m === 'mxn');
     document.getElementById('proc-modo-mxn')?.classList.toggle('btn-outline',  m !== 'mxn');
-    if (_procData) renderProcesos(_procData, _procModo);
+    if (_procData) renderProcesos(_procData, _procModo, _procPeriodo);
+  };
+
+  window.procSetPeriodo = function(p) {
+    _procPeriodo = p;
+    document.getElementById('proc-periodo-week') ?.classList.toggle('btn-primary', p === 'week');
+    document.getElementById('proc-periodo-week') ?.classList.toggle('btn-outline',  p !== 'week');
+    document.getElementById('proc-periodo-month')?.classList.toggle('btn-primary', p === 'month');
+    document.getElementById('proc-periodo-month')?.classList.toggle('btn-outline',  p !== 'month');
+    if (_procData) renderProcesos(_procData, _procModo, _procPeriodo);
   };
 
   const MESES_PROC = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -1362,14 +1376,16 @@ function bindReportes() {
     return cell.kg > 0 ? cell.kg.toFixed(1) : '<span style="color:#e7e5e4">—</span>';
   }
 
-  function renderProcesos(data, modo) {
+  function renderProcesos(data, modo, periodo = 'week') {
     const res = document.getElementById('proc-result');
     if (!data || !data.lineas || data.lineas.length === 0) {
       res.innerHTML = '<div class="empty-state"><div class="icon">🏭</div><p>Sin datos para este año.</p></div>';
       return;
     }
-    const weeks  = data.weeks;
-    const months = data.months;
+    const showWeeks  = periodo === 'week';
+    const showMonths = periodo === 'month';
+    const weeks  = showWeeks  ? data.weeks  : [];
+    const months = showMonths ? data.months : [];
 
     // Paleta KPI Costos (azul/slate)
     const C = {
@@ -1451,7 +1467,7 @@ function bindReportes() {
     try {
       const data = await GET(`/reportes/procesos?year=${year}`);
       _procData = data;
-      renderProcesos(data, _procModo);
+      renderProcesos(data, _procModo, _procPeriodo);
     } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
 
