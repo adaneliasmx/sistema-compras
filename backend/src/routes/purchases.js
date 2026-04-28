@@ -965,12 +965,33 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
       .filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
       .reduce((s, ri) => s + toMxn(ri), 0);
 
-  // Últimas 8 semanas
+  // ISO week helpers
+  function isoWeekNum(date) {
+    const d = new Date(date); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const w1 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+  }
+  function isoWeekYearOf(date) {
+    const d = new Date(date); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    return d.getFullYear();
+  }
+  function isoWeekMonday(year, week) {
+    const jan4 = new Date(year, 0, 4);
+    const dow = (jan4.getDay() + 6) % 7;
+    const mon = new Date(jan4); mon.setDate(jan4.getDate() - dow + (week - 1) * 7); mon.setHours(0,0,0,0);
+    return mon;
+  }
+
+  // Últimas 8 semanas ISO
+  const curWk = isoWeekNum(now);
+  const curWkYear = isoWeekYearOf(now);
   const weeks = Array.from({ length: 8 }, (_, i) => {
-    const to = new Date(now); to.setDate(to.getDate() - i * 7); to.setHours(23,59,59,999);
-    const from = new Date(to); from.setDate(from.getDate() - 6); from.setHours(0,0,0,0);
-    const label = `S${String(from.getDate()).padStart(2,'0')}/${String(from.getMonth()+1).padStart(2,'0')}`;
-    return { label, from: new Date(from), to: new Date(to) };
+    let wk = curWk - i, yr = curWkYear;
+    if (wk <= 0) { yr--; wk += isoWeekNum(new Date(yr, 11, 28)); } // últimas semanas del año anterior
+    const from = isoWeekMonday(yr, wk);
+    const to = new Date(from); to.setDate(to.getDate() + 6); to.setHours(23,59,59,999);
+    return { label: `Sem ${wk}`, from, to };
   }).reverse();
 
   // Últimos 6 meses
