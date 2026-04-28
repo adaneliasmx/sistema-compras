@@ -1075,6 +1075,13 @@ async function renderAdminUsers(main) {
 // ── ADMIN ITEMS ───────────────────────────────────────────────────────────────
 async function renderAdminItems(main) {
   let selType = INV_TYPES[0].key;
+  let catalogVales   = [];
+  let catalogCompras = [];
+
+  // Pre-cargar catálogos externos
+  const [rv, rc] = await Promise.all([apiGet('/catalog/vales-items'), apiGet('/catalog/compras-items')]);
+  if (rv?.ok)  catalogVales   = await rv.json();
+  if (rc?.ok)  catalogCompras = await rc.json();
 
   async function loadItems() {
     const r = await apiGet('/items-config?inv_type=' + selType);
@@ -1082,13 +1089,14 @@ async function renderAdminItems(main) {
   }
 
   function renderPage(items) {
+    const isVales = selType === 'quimicos_proceso';
     const tbody = items.map(i => `<tr>
       <td>${esc(i.item_label)}</td>
-      <td>${esc(i.item_key)}</td>
+      <td class="text-muted" style="font-size:.8rem">${esc(i.item_key)}</td>
       <td class="text-right">${i.min_val ?? '—'}</td>
       <td class="text-right">${i.max_val ?? '—'}</td>
       <td>${esc(i.unidad||'—')}</td>
-      <td>${i.peso_kg ? fmt(i.peso_kg)+' kg' : '—'}</td>
+      ${isVales ? `<td>${i.peso_kg ? fmt(i.peso_kg)+' kg' : '—'}</td>` : ''}
       <td><span class="badge ${i.activo!==false?'badge-green':'badge-gray'}">${i.activo!==false?'Activo':'Inactivo'}</span></td>
       <td class="td-actions">
         <button class="btn btn-outline btn-sm" onclick="editItem(${i.id})">Editar</button>
@@ -1103,68 +1111,268 @@ async function renderAdminItems(main) {
           <select class="form-input" id="ai-type" style="width:220px">
             ${INV_TYPES.map(t=>`<option value="${t.key}" ${t.key===selType?'selected':''}>${esc(t.label)}</option>`).join('')}
           </select>
-          <button class="btn btn-primary btn-sm" id="add-item-btn">+ Nuevo item</button>
+          ${isVales
+            ? `<button class="btn btn-success btn-sm" id="sync-vales-btn">↻ Sincronizar desde Vales</button>
+               <button class="btn btn-primary btn-sm" id="add-item-btn">+ Agregar item</button>`
+            : `<button class="btn btn-primary btn-sm" id="add-item-btn">+ Agregar item del catálogo</button>`
+          }
         </div>
         ${items.length ? `<div class="table-wrap"><table>
-          <thead><tr><th>Nombre</th><th>Clave</th><th>Min</th><th>Max</th><th>Unidad</th><th>Peso kg</th><th>Estado</th><th></th></tr></thead>
+          <thead><tr>
+            <th>Nombre</th><th>Clave</th><th>Min</th><th>Max</th><th>Unidad</th>
+            ${isVales ? '<th>Peso/tambo</th>' : ''}
+            <th>Estado</th><th></th>
+          </tr></thead>
           <tbody>${tbody}</tbody>
-        </table></div>` : '<div class="empty-msg">Sin items para este inventario</div>'}
+        </table></div>` : `<div class="empty-msg">${isVales ? 'Sin items. Usa "Sincronizar desde Vales" para importar todos.' : 'Sin items para este inventario'}</div>`}
       </div>
     `;
+
     document.getElementById('ai-type').onchange = async function() {
       selType = this.value;
       const its = await loadItems();
       renderPage(its);
     };
     document.getElementById('add-item-btn').onclick = () => openItemModal(null);
+
+    if (isVales) {
+      document.getElementById('sync-vales-btn').onclick = async () => {
+        if (!confirm('¿Importar todos los productos activos del catálogo de Vales a Quimicos Proceso? Solo se agregan los que no existen aún.')) return;
+        const r = await apiPost('/items-config/sync-vales', {});
+        if (!r) return;
+        const d = await r.json();
+        if (!r.ok) { alert('Error: ' + d.error); return; }
+        alert(`✓ Sincronización completa.\n${d.created} items nuevos agregados (${d.total} en catálogo).`);
+        const its = await loadItems();
+        renderPage(its);
+      };
+    }
   }
 
+  // ── Modal agregar item ───────────────────────────────────────────────────────
   function openItemModal(item) {
-    const isNew = !item;
-    const showPeso = selType === 'quimicos_proceso';
-    openModal(isNew ? 'Nuevo item' : 'Editar item', `
-      <div class="form-row cols-2" style="margin-bottom:10px">
-        <div class="form-group"><label>Nombre / Descripcion</label><input class="form-input" id="im-label" value="${esc(item?.item_label||'')}"/></div>
-        <div class="form-group"><label>Clave (item_key, sin espacios)</label><input class="form-input" id="im-key" value="${esc(item?.item_key||'')}" ${!isNew?'readonly':''}/></div>
-      </div>
-      <div class="form-row cols-2" style="margin-bottom:10px">
-        <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" value="${item?.min_val??''}" step="0.01"/></div>
-        <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" value="${item?.max_val??''}" step="0.01"/></div>
-      </div>
-      <div class="form-row cols-2" style="margin-bottom:10px">
-        <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="${esc(item?.unidad||'kg')}"/></div>
-        ${showPeso ? `<div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" value="${item?.peso_kg??''}" step="0.01"/></div>` : '<div></div>'}
-      </div>
-      <div class="form-group" style="margin-bottom:16px">
-        <label style="display:flex;align-items:center;gap:8px">
-          <input type="checkbox" id="im-activo" ${item?.activo!==false?'checked':''}/> Activo
-        </label>
-      </div>
-      <div id="im-err" class="alert alert-error" style="display:none"></div>
-      <button class="btn btn-primary btn-block" id="im-save">Guardar</button>
-    `);
-    document.getElementById('im-save').onclick = async () => {
-      const item_label = document.getElementById('im-label').value.trim();
-      const item_key   = isNew ? document.getElementById('im-key').value.trim().replace(/\s+/g,'_') : item.item_key;
-      const min_val    = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-      const max_val    = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-      const unidad     = document.getElementById('im-unidad').value.trim() || null;
-      const peso_kg    = showPeso && document.getElementById('im-peso')?.value ? Number(document.getElementById('im-peso').value) : null;
-      const activo     = document.getElementById('im-activo').checked;
-      const errEl = document.getElementById('im-err');
-      errEl.style.display = 'none';
-      if (!item_label || !item_key) { errEl.textContent = 'Nombre y clave son requeridos'; errEl.style.display = ''; return; }
-      const body = { item_label, min_val, max_val, unidad, peso_kg, activo };
-      const r = isNew
-        ? await apiPost('/items-config', { inv_type: selType, item_key, ...body })
-        : await apiPut('/items-config/'+item.id, body);
-      if (!r) return;
-      const d = await r.json();
-      if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
-      closeModal();
-      const its = await loadItems();
-      renderPage(its);
-    };
+    const isNew    = !item;
+    const isVales  = selType === 'quimicos_proceso';
+
+    if (isNew && isVales) {
+      // ── Quimicos Proceso: dropdown de items_vales ──
+      const existingKeys = new Set((/* will fill after loadItems */[]));
+      // Filter out already-added items
+      loadItems().then(existing => {
+        const addedKeys = new Set(existing.map(i => i.item_key));
+        const available = catalogVales.filter(v => !addedKeys.has(`v_${v.id}`));
+
+        openModal('Agregar item — Quimicos Proceso', `
+          <div class="form-group" style="margin-bottom:12px">
+            <label>Producto del catálogo de Vales</label>
+            <select class="form-input" id="im-vales-sel">
+              <option value="">— Seleccionar producto —</option>
+              ${available.map(v =>
+                `<option value="${v.id}" data-nombre="${esc(v.nombre)}" data-peso="${v.peso_kg||''}">${esc(v.nombre)}${v.peso_kg ? ' — '+v.peso_kg+' kg/tambo' : ''}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div id="im-vales-detail" style="display:none">
+            <div class="alert alert-info" id="im-vales-info" style="margin-bottom:12px"></div>
+            <div class="form-row cols-2" style="margin-bottom:10px">
+              <div class="form-group"><label>Minimo (kg, alerta)</label><input type="number" class="form-input" id="im-min" step="0.01" placeholder="0"/></div>
+              <div class="form-group"><label>Maximo (kg)</label><input type="number" class="form-input" id="im-max" step="0.01" placeholder="0"/></div>
+            </div>
+            <div class="form-row cols-2" style="margin-bottom:14px">
+              <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" step="0.01"/></div>
+              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="kg"/></div>
+            </div>
+          </div>
+          <div id="im-err" class="alert alert-error" style="display:none"></div>
+          <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
+        `);
+
+        document.getElementById('im-vales-sel').onchange = function() {
+          const opt = this.selectedOptions[0];
+          const detail = document.getElementById('im-vales-detail');
+          const saveBtn = document.getElementById('im-save');
+          if (!opt.value) { detail.style.display = 'none'; saveBtn.disabled = true; return; }
+          detail.style.display = '';
+          saveBtn.disabled = false;
+          document.getElementById('im-peso').value = opt.dataset.peso || '';
+          document.getElementById('im-vales-info').textContent =
+            `Producto: ${opt.dataset.nombre}${opt.dataset.peso ? ' · '+opt.dataset.peso+' kg por tambo' : ''}`;
+        };
+
+        document.getElementById('im-save').onclick = async () => {
+          const sel = document.getElementById('im-vales-sel');
+          const opt = sel.selectedOptions[0];
+          if (!opt?.value) return;
+          const item_key   = `v_${opt.value}`;
+          const item_label = opt.dataset.nombre;
+          const peso_kg    = document.getElementById('im-peso').value ? Number(document.getElementById('im-peso').value) : null;
+          const min_val    = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+          const max_val    = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+          const unidad     = document.getElementById('im-unidad').value.trim() || 'kg';
+          const errEl      = document.getElementById('im-err');
+          errEl.style.display = 'none';
+          const r = await apiPost('/items-config', {
+            inv_type: selType, item_key, item_label,
+            min_val, max_val, unidad, peso_kg,
+            compras_item_id: Number(opt.value), activo: true
+          });
+          if (!r) return;
+          const d = await r.json();
+          if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
+          closeModal();
+          const its = await loadItems();
+          renderPage(its);
+        };
+      });
+      return; // openItemModal returns early while loadItems resolves
+
+    } else if (isNew && !isVales) {
+      // ── EPP / Insumos / Titulacion: buscador de catalog_items ──
+      openModal(`Agregar item — ${INV_TYPES.find(t=>t.key===selType)?.label}`, `
+        <div class="form-group" style="margin-bottom:6px">
+          <label>Buscar en catálogo de Compras</label>
+          <input class="form-input" id="im-search" placeholder="Escribir nombre o SKU para filtrar..." autocomplete="off"/>
+        </div>
+        <div id="im-search-list" style="max-height:200px;overflow-y:auto;border:1px solid #e0e4ec;border-radius:8px;margin-bottom:12px;display:none"></div>
+        <div id="im-selected-item" class="alert alert-info" style="display:none;margin-bottom:12px"></div>
+        <input type="hidden" id="im-cat-id"/>
+        <input type="hidden" id="im-cat-label"/>
+        <input type="hidden" id="im-cat-unit"/>
+        <div id="im-detail-fields" style="display:none">
+          <div class="form-row cols-2" style="margin-bottom:10px">
+            <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" step="0.01" placeholder="0"/></div>
+            <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" step="0.01" placeholder="0"/></div>
+          </div>
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Unidad</label>
+            <input class="form-input" id="im-unidad" placeholder="pza, kg, lt..."/>
+          </div>
+        </div>
+        <div id="im-err" class="alert alert-error" style="display:none"></div>
+        <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
+      `);
+
+      // Load existing to avoid duplicates
+      loadItems().then(existing => {
+        const addedKeys = new Set(existing.map(i => i.item_key));
+
+        const searchInput  = document.getElementById('im-search');
+        const listEl       = document.getElementById('im-search-list');
+        const selectedInfo = document.getElementById('im-selected-item');
+        const detailFields = document.getElementById('im-detail-fields');
+        const saveBtn      = document.getElementById('im-save');
+
+        function renderSearchResults(q) {
+          const term = q.toLowerCase().trim();
+          if (!term) { listEl.style.display = 'none'; return; }
+          const matches = catalogCompras
+            .filter(c => !addedKeys.has(`c_${c.id}`) &&
+              (c.name.toLowerCase().includes(term) || (c.sku||'').toLowerCase().includes(term)))
+            .slice(0, 40);
+          if (!matches.length) {
+            listEl.innerHTML = '<div style="padding:10px 14px;color:#999;font-size:.85rem">Sin resultados</div>';
+            listEl.style.display = '';
+            return;
+          }
+          listEl.innerHTML = matches.map(c =>
+            `<div class="search-result-item" data-id="${c.id}" data-name="${esc(c.name)}" data-unit="${esc(c.unit||'')}"
+              style="padding:9px 14px;cursor:pointer;border-bottom:1px solid #f0f2f5;font-size:.88rem">
+              <strong>${esc(c.name)}</strong>${c.sku ? `<span style="color:#999;margin-left:8px;font-size:.8rem">${esc(c.sku)}</span>` : ''}
+              <span style="float:right;color:#666;font-size:.8rem">${esc(c.unit||'')}</span>
+            </div>`
+          ).join('');
+          listEl.style.display = '';
+          listEl.querySelectorAll('.search-result-item').forEach(el => {
+            el.onmouseover = () => el.style.background = '#f0f7ff';
+            el.onmouseout  = () => el.style.background = '';
+            el.onclick = () => selectComprasItem(el.dataset.id, el.dataset.name, el.dataset.unit);
+          });
+        }
+
+        function selectComprasItem(id, name, unit) {
+          document.getElementById('im-cat-id').value    = id;
+          document.getElementById('im-cat-label').value = name;
+          document.getElementById('im-cat-unit').value  = unit;
+          document.getElementById('im-unidad').value    = unit;
+          selectedInfo.textContent = `✓ Seleccionado: ${name}${unit ? ' ('+unit+')' : ''}`;
+          selectedInfo.style.display = '';
+          listEl.style.display = 'none';
+          searchInput.value = name;
+          detailFields.style.display = '';
+          saveBtn.disabled = false;
+        }
+
+        searchInput.oninput = () => renderSearchResults(searchInput.value);
+        searchInput.onfocus = () => { if (searchInput.value) renderSearchResults(searchInput.value); };
+        document.addEventListener('click', function onOutside(e) {
+          if (!listEl.contains(e.target) && e.target !== searchInput) {
+            listEl.style.display = 'none';
+            document.removeEventListener('click', onOutside);
+          }
+        });
+
+        saveBtn.onclick = async () => {
+          const catId    = document.getElementById('im-cat-id').value;
+          const catLabel = document.getElementById('im-cat-label').value;
+          if (!catId || !catLabel) { document.getElementById('im-err').textContent = 'Selecciona un item del catálogo'; document.getElementById('im-err').style.display = ''; return; }
+          const item_key = `c_${catId}`;
+          const min_val  = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+          const max_val  = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+          const unidad   = document.getElementById('im-unidad').value.trim() || null;
+          const errEl    = document.getElementById('im-err');
+          errEl.style.display = 'none';
+          const r = await apiPost('/items-config', {
+            inv_type: selType, item_key, item_label: catLabel,
+            min_val, max_val, unidad, compras_item_id: Number(catId), activo: true
+          });
+          if (!r) return;
+          const d = await r.json();
+          if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
+          closeModal();
+          const its = await loadItems();
+          renderPage(its);
+        };
+      });
+      return;
+
+    } else {
+      // ── Editar item existente (min/max/unidad/peso/activo) ──
+      const showPeso = selType === 'quimicos_proceso';
+      openModal('Editar item', `
+        <div class="alert alert-info" style="margin-bottom:14px">${esc(item.item_label)}</div>
+        <div class="form-row cols-2" style="margin-bottom:10px">
+          <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" value="${item.min_val??''}" step="0.01"/></div>
+          <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" value="${item.max_val??''}" step="0.01"/></div>
+        </div>
+        <div class="form-row cols-2" style="margin-bottom:10px">
+          <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="${esc(item.unidad||'')}"/></div>
+          ${showPeso ? `<div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" value="${item.peso_kg??''}" step="0.01"/></div>` : '<div></div>'}
+        </div>
+        <div class="form-group" style="margin-bottom:16px">
+          <label style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" id="im-activo" ${item.activo!==false?'checked':''}/> Activo
+          </label>
+        </div>
+        <div id="im-err" class="alert alert-error" style="display:none"></div>
+        <button class="btn btn-primary btn-block" id="im-save">Guardar</button>
+      `);
+      document.getElementById('im-save').onclick = async () => {
+        const min_val = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
+        const max_val = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
+        const unidad  = document.getElementById('im-unidad').value.trim() || null;
+        const peso_kg = showPeso && document.getElementById('im-peso')?.value ? Number(document.getElementById('im-peso').value) : null;
+        const activo  = document.getElementById('im-activo').checked;
+        const errEl   = document.getElementById('im-err');
+        errEl.style.display = 'none';
+        const r = await apiPut('/items-config/'+item.id, { min_val, max_val, unidad, peso_kg, activo });
+        if (!r) return;
+        const d = await r.json();
+        if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
+        closeModal();
+        const its = await loadItems();
+        renderPage(its);
+      };
+    }
   }
 
   window.editItem = async (id) => {

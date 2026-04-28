@@ -207,6 +207,38 @@ router.delete('/items-config/:id', invAuthRequired, invAllowRoles('admin'), (req
   res.json({ ok: true });
 });
 
+// Sincronizar todos los items_vales activos → inv_items_config para quimicos_proceso
+router.post('/items-config/sync-vales', invAuthRequired, invAllowRoles('admin'), (req, res) => {
+  const db = readInv();
+  db.inv_items_config = db.inv_items_config || [];
+  let created = 0;
+  try {
+    const valesDb = readVales();
+    const valesItems = (valesDb.items_vales || []).filter(i => i.activo !== false);
+    for (const vi of valesItems) {
+      const item_key = `v_${vi.id}`;
+      if (!db.inv_items_config.find(i => i.inv_type === 'quimicos_proceso' && i.item_key === item_key)) {
+        db.inv_items_config.push({
+          id: nextId(db.inv_items_config),
+          inv_type: 'quimicos_proceso',
+          item_key,
+          item_label: vi.nombre,
+          min_val: null, max_val: null,
+          compras_item_id: vi.id,
+          unidad: 'kg',
+          peso_kg: vi.peso_kg || null,
+          activo: true
+        });
+        created++;
+      }
+    }
+    writeInv(db);
+    res.json({ ok: true, created, total: valesItems.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // CATÁLOGO EXTERNO (read-only: items de vales y compras)
 // ═══════════════════════════════════════════════════════════════════════════════
