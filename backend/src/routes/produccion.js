@@ -1902,7 +1902,8 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj * tDef.hours) : null;
+        const elapHours      = elapsedHoursForTurno(t, date);
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj * elapHours) : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -1921,11 +1922,12 @@ router.get('/kpis', (req, res) => {
           ciclos_buenos_calidad:    bq_calidad,
           piezas_total,
           piezas_obj_total,
-          paros_min_total: Math.round(paros_min_total * 10) / 10,
-          eficiencia:      r3(eficiencia),
-          calidad:         r3(calidad),
-          capacidad:       r3(capacidad),
-          disponibilidad:  r3(disponibilidad),
+          paros_min_total:    Math.round(paros_min_total * 10) / 10,
+          horas_eficiencia:   Math.round(elapHours * 1000) / 1000,
+          eficiencia:         r3(eficiencia),
+          calidad:            r3(calidad),
+          capacidad:          r3(capacidad),
+          disponibilidad:     r3(disponibilidad),
           slots
         });
       }
@@ -1950,7 +1952,8 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_baker * tDef.hours) : null;
+        const elapHours      = elapsedHoursForTurno(t, date);
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_baker * elapHours) : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -1969,11 +1972,12 @@ router.get('/kpis', (req, res) => {
           ciclos_buenos_calidad:    bq_calidad,
           piezas_total,
           piezas_obj_total,
-          paros_min_total: Math.round(paros_min_total * 10) / 10,
-          eficiencia:      r3(eficiencia),
-          calidad:         r3(calidad),
-          capacidad:       r3(capacidad),
-          disponibilidad:  r3(disponibilidad),
+          paros_min_total:    Math.round(paros_min_total * 10) / 10,
+          horas_eficiencia:   Math.round(elapHours * 1000) / 1000,
+          eficiencia:         r3(eficiencia),
+          calidad:            r3(calidad),
+          capacidad:          r3(capacidad),
+          disponibilidad:     r3(disponibilidad),
           slots
         });
       }
@@ -1998,7 +2002,8 @@ router.get('/kpis', (req, res) => {
         if (ciclos_totales === 0 && paros_min_total === 0) continue;
 
         const turnoMins      = tDef.hours * 60;
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_l1 * tDef.hours) : null;
+        const elapHours      = elapsedHoursForTurno(t, date);
+        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_l1 * elapHours) : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -2017,11 +2022,12 @@ router.get('/kpis', (req, res) => {
           ciclos_buenos_calidad:    bq_calidad,
           piezas_total,
           piezas_obj_total,
-          paros_min_total: Math.round(paros_min_total * 10) / 10,
-          eficiencia:      r3(eficiencia),
-          calidad:         r3(calidad),
-          capacidad:       r3(capacidad),
-          disponibilidad:  r3(disponibilidad),
+          paros_min_total:    Math.round(paros_min_total * 10) / 10,
+          horas_eficiencia:   Math.round(elapHours * 1000) / 1000,
+          eficiencia:         r3(eficiencia),
+          calidad:            r3(calidad),
+          capacidad:          r3(capacidad),
+          disponibilidad:     r3(disponibilidad),
           slots
         });
       }

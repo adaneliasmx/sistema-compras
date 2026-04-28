@@ -562,10 +562,11 @@
       snaps.forEach(s => {
         allDates.add(s.fecha);
         if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0 };
-        const d = byDate[s.fecha];
-        const h = TURNO_H[s.turno] || 8;
-        if (s.eficiencia  != null) { d.efN  += s.eficiencia  * h; d.efD  += h; }
-        if (s.capacidad   != null) { d.capN += s.capacidad   * h; d.capD += h; }
+        const d  = byDate[s.fecha];
+        const h  = TURNO_H[s.turno] || 8;
+        const he = s.horas_eficiencia || h; // horas reales del turno (parciales si está en curso)
+        if (s.eficiencia  != null) { d.efN  += s.eficiencia  * he; d.efD  += he; }
+        if (s.capacidad   != null) { d.capN += s.capacidad   * h;  d.capD += h; }
         d.calB     += (s.ciclos_buenos_calidad   ?? s.ciclos_buenos   ?? 0);
         d.calN     += (s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
         d.paroMin  += s.paros_min_total || 0;
