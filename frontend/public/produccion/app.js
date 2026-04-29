@@ -3480,6 +3480,9 @@ async function viewReportes(el) {
             <option value="sin">Solo sin defecto</option>
           </select>
         </div>
+        <div><span class="flabel">Componente / No. SKF</span>
+          <input type="text" id="rf-buscar" placeholder="🔍 Buscar componente o SKF…" style="min-width:200px"/>
+        </div>
       </div>
     </div>
     <div id="rpt-resultado">
@@ -3526,7 +3529,8 @@ async function viewReportes(el) {
       operador:    document.getElementById('rf-operador')?.value    || '',
       herramental: document.getElementById('rf-herramental')?.value || '',
       proceso:     document.getElementById('rf-proceso')?.value     || '',
-      defecto:     document.getElementById('rf-defecto')?.value     || ''
+      defecto:     document.getElementById('rf-defecto')?.value     || '',
+      buscar:      (document.getElementById('rf-buscar')?.value     || '').trim().toLowerCase()
     };
   }
 
@@ -3535,12 +3539,22 @@ async function viewReportes(el) {
   }
 
   function fltItem(c, f) {
-    if (f.turno       && c.turno       !== f.turno)       return false;
-    if (f.operador    && c.operador    !== f.operador)     return false;
+    if (f.turno       && c.turno       !== f.turno)         return false;
+    if (f.operador    && c.operador    !== f.operador)       return false;
     if (f.herramental && c.herramental_no !== f.herramental) return false;
-    if (f.proceso     && c.proceso     !== f.proceso)     return false;
+    if (f.proceso     && c.proceso     !== f.proceso)       return false;
     if (f.defecto === 'con' && !hasDefecto(c)) return false;
     if (f.defecto === 'sin' &&  hasDefecto(c)) return false;
+    if (f.buscar) {
+      const comp = (c.componente || '').toLowerCase();
+      const skf  = (c.no_skf    || '').toLowerCase();
+      // Para registros de barril, buscar también en cavidades
+      const cavMatch = Array.isArray(c.cavidades) && c.cavidades.some(cv =>
+        (cv.componente || '').toLowerCase().includes(f.buscar) ||
+        (cv.no_skf     || '').toLowerCase().includes(f.buscar)
+      );
+      if (!comp.includes(f.buscar) && !skf.includes(f.buscar) && !cavMatch) return false;
+    }
     return true;
   }
 
@@ -3549,11 +3563,14 @@ async function viewReportes(el) {
     renderResult(allCargas.filter(c => fltItem(c, f)), allCavidades.filter(c => fltItem(c, f)));
   }
 
-  // React to filter dropdowns
+  // React to filter dropdowns and search input
   el.addEventListener('change', e => {
     if (['rf-turno','rf-operador','rf-herramental','rf-proceso','rf-defecto'].includes(e.target.id)) {
       applyFilters();
     }
+  });
+  el.addEventListener('input', e => {
+    if (e.target.id === 'rf-buscar') applyFilters();
   });
 
   // ── Badge helpers ─────────────────────────────────────────────────────────
