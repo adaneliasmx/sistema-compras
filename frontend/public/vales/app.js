@@ -1144,6 +1144,9 @@ function navFecha(dir) {
 
 async function viewReportes() {
   const lineas = await GET('/lineas').catch(() => []);
+  const _hoy = today();
+  const _d30 = new Date(_hoy + 'T12:00:00Z'); _d30.setUTCDate(_d30.getUTCDate() - 30);
+  const _ini30 = _d30.toISOString().slice(0, 10);
   return `
   <!-- Tabs principales de Reportes -->
   <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
@@ -1251,11 +1254,11 @@ async function viewReportes() {
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px">
       <div>
         <label class="flabel">Fecha inicio</label><br>
-        <input type="date" id="dia-fecha-ini" style="font-size:13px"/>
+        <input type="date" id="dia-fecha-ini" value="${_ini30}" style="font-size:13px"/>
       </div>
       <div>
         <label class="flabel">Fecha fin</label><br>
-        <input type="date" id="dia-fecha-fin" style="font-size:13px"/>
+        <input type="date" id="dia-fecha-fin" value="${_hoy}" style="font-size:13px"/>
       </div>
       <div>
         <label class="flabel">Línea</label><br>
@@ -1304,8 +1307,8 @@ async function viewReportes() {
           <select id="dia-graf-tanque" style="font-size:13px">
             <option value="">Todos los tanques</option>
           </select>
-          <input type="date" id="dia-graf-ini" style="font-size:13px" title="Fecha inicio gráfica"/>
-          <input type="date" id="dia-graf-fin" style="font-size:13px" title="Fecha fin gráfica"/>
+          <input type="date" id="dia-graf-ini" value="${_ini30}" style="font-size:13px" title="Fecha inicio gráfica"/>
+          <input type="date" id="dia-graf-fin" value="${_hoy}" style="font-size:13px" title="Fecha fin gráfica"/>
           <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
             <button id="dia-gran-turno"  class="btn btn-sm btn-outline"  style="border-radius:0;border:none"                            onclick="diaSetGran('turno')">Turno</button>
             <button id="dia-gran-dia"    class="btn btn-sm btn-primary"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('dia')">Día</button>
@@ -1605,15 +1608,7 @@ function bindReportes() {
       DIA._catItems.forEach(i => {
         [selItem, selGItem].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${i}">${i}</option>`); });
       });
-      // Rango default: últimos 30 días
-      const hoy  = today();
-      const ini30 = new Date(hoy + 'T12:00:00Z'); ini30.setUTCDate(ini30.getUTCDate() - 30);
-      const iniStr = ini30.toISOString().slice(0,10);
-      document.getElementById('dia-fecha-ini').value = iniStr;
-      document.getElementById('dia-fecha-fin').value = hoy;
-      document.getElementById('dia-graf-ini').value  = iniStr;
-      document.getElementById('dia-graf-fin').value  = hoy;
-    } catch(e) { /* silencioso */ }
+    } catch(e) { /* silencioso — las fechas ya están seteadas desde el HTML */ }
   };
 
   window.diaSetGran = function(g) {
@@ -1622,6 +1617,12 @@ function bindReportes() {
       document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-primary', x === g);
       document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-outline',  x !== g);
     });
+    const item = document.getElementById('dia-graf-item')?.value;
+    if (!item) {
+      const cont = document.getElementById('dia-graf-container');
+      if (cont) cont.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">📈</div><p>Selecciona un producto en el selector de arriba para ver la gráfica</p></div>';
+      return;
+    }
     diaLoadGrafica();
   };
 
@@ -1750,8 +1751,8 @@ function bindReportes() {
     afterDatasetsDraw(chart) {
       const ctx = chart.ctx;
       chart.data.datasets.forEach((ds, i) => {
+        if (!chart.isDatasetVisible(i)) return;
         const meta = chart.getDatasetMeta(i);
-        if (!meta.visible) return;
         meta.data.forEach((bar, j) => {
           const val = ds.data[j];
           if (!val || val <= 0) return;
