@@ -189,7 +189,8 @@ router.post('/items/:id/approve', allowRoles('autorizador', 'comprador', 'pagos'
   line.status = 'Autorizado';
   line.paused_until = null;
   line.pause_reason = null;
-  line.updated_at = new Date().toISOString();
+  line.authorized_at = new Date().toISOString();
+  line.updated_at = line.authorized_at;
   addHistory(db, { module: 'approvals', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Autorizado', changed_by_user_id: req.user.id, comment: req.body.comment || 'Autorizado' });
   recalcRequisition(db, line.requisition_id);
   write(db);
@@ -301,7 +302,8 @@ router.post('/requisitions/:id/approve-all', allowRoles('autorizador', 'comprado
     line.status = 'Autorizado';
     line.paused_until = null;
     line.pause_reason = null;
-    line.updated_at = new Date().toISOString();
+    line.authorized_at = new Date().toISOString();
+    line.updated_at = line.authorized_at;
     addHistory(db, { module: 'approvals', requisition_id: requisitionId, requisition_item_id: line.id, old_status: oldStatus, new_status: 'Autorizado', changed_by_user_id: req.user.id, comment: req.body.comment || 'Autorizado (requisición completa)' });
   });
   recalcRequisition(db, requisitionId);

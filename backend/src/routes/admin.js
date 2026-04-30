@@ -371,7 +371,7 @@ router.post('/repair-stuck-items', (req, res) => {
     item.status = deriveItemStatus(db, Number(req2?.total_amount || 0), item);
 
     // Si sigue en 'En autorización', auto-autorizar (comprador/admin eligió la cotización)
-    if (item.status === 'En autorización') item.status = 'Autorizado';
+    if (item.status === 'En autorización') { item.status = 'Autorizado'; item.authorized_at = new Date().toISOString(); }
 
     addHistory(db, {
       module: 'purchases',

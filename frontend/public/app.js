@@ -7377,16 +7377,18 @@ async function kpiView() {
           </thead>
           <tbody>
             ${secRow('📊 EFICIENCIA')}
-            ${pctRow('% Entregado (req. fincadas)', 'pct_entregado', avgPeriods)}
-            ${pctRow('% Cumplimiento a PO', 'pct_cumplimiento', avgPeriods)}
+            ${pctRow('% Envío de PO a tiempo (≤3 días)', 'pct_po_a_tiempo',  avgPeriods)}
+            ${pctRow('% Cumplimiento a PO',              'pct_cumplimiento', avgPeriods)}
+            ${pctRow('% Facturado',                      'pct_facturado',    avgPeriods)}
             ${secRow('📦 FLUJO DE ÍTEMS')}
-            ${cntRow('Items solicitados',             'solicitados',  '#f8fafc')}
-            ${cntRow('Items en cotización',           'cotizacion',   '#fff')}
-            ${cntRow('Items en autorización',         'autorizacion', '#f8fafc')}
-            ${cntRow('Items asignados a PO',          'asignados_po', '#fff')}
-            ${cntRow('Items en proceso de entrega',   'en_entrega',   '#f8fafc')}
-            ${cntRow('Items entregados',              'entregados',   '#fff')}
-            ${cntRow('Items rechazados/cancelados',   'rechazados',   '#f8fafc')}
+            ${cntRow('Items solicitados a tiempo',        'solicitados_a_tiempo',     '#f8fafc')}
+            ${cntRow('Items solicitados fuera de tiempo', 'solicitados_fuera_tiempo', '#fff')}
+            ${cntRow('Items en cotización',               'cotizacion',               '#f8fafc')}
+            ${cntRow('Items en autorización',             'autorizacion',             '#fff')}
+            ${cntRow('Items asignados a PO',              'asignados_po',             '#f8fafc')}
+            ${cntRow('Items en proceso de entrega',       'en_entrega',               '#fff')}
+            ${cntRow('Items entregados/facturados',       'entregados',               '#f8fafc')}
+            ${cntRow('Items rechazados/cancelados',       'rechazados',               '#fff')}
           </tbody>
         </table>
       </div>`;

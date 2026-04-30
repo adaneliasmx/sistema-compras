@@ -186,6 +186,7 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
     // Comprador que selecciona ganadora también autoriza directamente
     if (reqItem.status === 'En autorización' && (req.user.role_code === 'comprador' || req.user.role_code === 'admin')) {
       reqItem.status = 'Autorizado';
+      reqItem.authorized_at = new Date().toISOString();
     }
 
     addHistory(db, {
@@ -243,6 +244,7 @@ router.post('/:id/select-winner', allowRoles('comprador', 'admin'), (req, res) =
     // Comprador que elige ganadora también autoriza directamente
     if (reqItem.status === 'En autorización' && (req.user.role_code === 'comprador' || req.user.role_code === 'admin')) {
       reqItem.status = 'Autorizado';
+      reqItem.authorized_at = new Date().toISOString();
     }
     reqItem.updated_at = new Date().toISOString();
 

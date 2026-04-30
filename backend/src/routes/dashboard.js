@@ -255,6 +255,8 @@ router.get('/kpi-eficiencia', (req, res) => {
 
   const allItems = db.requisition_items || [];
   const allReqs  = db.requisitions || [];
+  const posById  = new Map((db.purchase_orders || []).map(po => [po.id, po]));
+  const nowMs    = Date.now();
 
   function buildPeriodData(periods) {
     return periods.map(p => {
@@ -271,39 +273,51 @@ router.get('/kpi-eficiencia', (req, res) => {
       const autorizacion = periodItems.filter(i => ['Pendiente','En autorización'].includes(i.status)).length;
       const asignados_po = periodItems.filter(i => i.status === 'Autorizado').length;
       const en_entrega   = periodItems.filter(i => i.status === 'Enviada').length;
-      const entregados   = periodItems.filter(i => i.status === 'Cerrado').length;
+      const entregados   = periodItems.filter(i => ['Entregado','Facturado','Pago parcial','Cerrado'].includes(i.status)).length;
       const rechazados   = periodItems.filter(i => ['Rechazado','Cancelado'].includes(i.status)).length;
+      const facturado    = periodItems.filter(i => i.status === 'Facturado').length;
 
       const con_po = asignados_po + en_entrega + entregados;
       const pct_cumplimiento = solicitados > 0 ? Math.round((con_po / solicitados) * 100) : null;
+      const pct_facturado    = solicitados > 0 ? Math.round((facturado / solicitados) * 100) : null;
 
-      const FINCADO_ST  = new Set(['Autorizado','Enviada','Cerrado','Rechazado','Cancelado']);
-      const ENTREGADO_ST = new Set(['Cerrado','Rechazado','Cancelado']);
-      const fincadas = periodReqs.filter(r => {
-        const ri = allItems.filter(i => i.requisition_id === r.id);
-        return ri.length > 0 && ri.every(i => FINCADO_ST.has(i.status));
+      // % Envío de PO a tiempo (3 días desde authorized_at)
+      let solicitados_a_tiempo = 0;
+      let solicitados_fuera_tiempo = 0;
+      periodItems.filter(i => i.status !== 'Borrador' && i.authorized_at).forEach(i => {
+        const authMs = new Date(i.authorized_at).getTime();
+        if (i.purchase_order_id) {
+          const po = posById.get(i.purchase_order_id);
+          if (po?.created_at) {
+            const days = (new Date(po.created_at).getTime() - authMs) / 86400000;
+            if (days <= 3) solicitados_a_tiempo++;
+            else solicitados_fuera_tiempo++;
+          }
+        } else if (i.status === 'Autorizado') {
+          // Sin PO aún — fuera de tiempo si ya pasaron > 3 días
+          if ((nowMs - authMs) / 86400000 > 3) solicitados_fuera_tiempo++;
+        }
       });
-      const entregadasReq = fincadas.filter(r => {
-        const ri = allItems.filter(i => i.requisition_id === r.id);
-        return ri.every(i => ENTREGADO_ST.has(i.status));
-      });
-      const pct_entregado = fincadas.length > 0 ? Math.round((entregadasReq.length / fincadas.length) * 100) : null;
+      const totalTiempo = solicitados_a_tiempo + solicitados_fuera_tiempo;
+      const pct_po_a_tiempo = totalTiempo > 0 ? Math.round((solicitados_a_tiempo / totalTiempo) * 100) : null;
 
       return {
         label: p.label,
-        pct_entregado, pct_cumplimiento,
-        solicitados, cotizacion, autorizacion,
-        asignados_po, en_entrega, entregados, rechazados,
-        req_fincadas: fincadas.length, req_entregadas: entregadasReq.length
+        pct_po_a_tiempo, pct_cumplimiento, pct_facturado,
+        solicitados, solicitados_a_tiempo, solicitados_fuera_tiempo,
+        cotizacion, autorizacion,
+        asignados_po, en_entrega, entregados, rechazados, facturado
       };
     });
   }
 
+  const by_week  = buildPeriodData(weeks);
+  const by_month = buildPeriodData(months);
   res.json({
     weeks_labels:  weeks.map(p => p.label),
     months_labels: months.map(p => p.label),
-    by_week:  buildPeriodData(weeks),
-    by_month: buildPeriodData(months)
+    by_week,
+    by_month
   });
 });
 
