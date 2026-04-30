@@ -32,11 +32,14 @@ router.get('/', (req, res) => {
     ? db.purchase_orders.filter(po => po.supplier_id === req.user.supplier_id)
     : db.purchase_orders;
 
+  const EXCLUDED = ['Rechazado', 'Cancelado'];
+  const activeItems = visibleItems.filter(x => !EXCLUDED.includes(x.status));
+
   const pending = isSupplier
-    ? visibleItems.filter(x => x.status === 'En proceso').length
+    ? activeItems.filter(x => x.status === 'En proceso').length
     : isAuthorizer
     ? db.requisition_items.filter(x => x.status === 'En autorización').length
-    : visibleItems.filter(x => ['En cotización','En autorización','Autorizado','En proceso','Entregado','Facturado','Pago parcial'].includes(x.status)).length;
+    : activeItems.filter(x => ['En cotización','En autorización','Autorizado','En proceso','Entregado','Facturado','Pago parcial','Enviada'].includes(x.status)).length;
 
   const recent = visibleReqs.slice().sort((a, b) => b.id - a.id).slice(0, 5).map(r => ({
     ...r,
@@ -46,9 +49,9 @@ router.get('/', (req, res) => {
 
   res.json({
     totalReq: visibleReqs.length,
-    totalItems: visibleItems.length,
+    totalItems: activeItems.length,
     pending,
-    completed: visibleItems.filter(x => ['Cerrado', 'Rechazado'].includes(x.status)).length,
+    completed: activeItems.filter(x => x.status === 'Cerrado').length,
     poCount: visiblePOs.length,
     recent
   });
@@ -206,5 +209,102 @@ function generateBuckets(start, end, period) {
   }
   return [...new Set(buckets)];
 }
+
+// ── KPI Eficiencia de Compras ─────────────────────────────────────────────────
+router.get('/kpi-eficiencia', (req, res) => {
+  const db = read();
+  const now = new Date();
+  const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  function isoWeekNum(date) {
+    const d = new Date(date); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const w1 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+  }
+  function isoWeekYearOf(date) {
+    const d = new Date(date); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    return d.getFullYear();
+  }
+  function isoWeekMonday(year, week) {
+    const jan4 = new Date(year, 0, 4);
+    const dow = (jan4.getDay() + 6) % 7;
+    const mon = new Date(jan4); mon.setDate(jan4.getDate() - dow + (week - 1) * 7); mon.setHours(0,0,0,0);
+    return mon;
+  }
+
+  const curWk = isoWeekNum(now);
+  const curWkYear = isoWeekYearOf(now);
+
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    let wk = curWk - i, yr = curWkYear;
+    if (wk <= 0) { yr--; wk += isoWeekNum(new Date(yr, 11, 28)); }
+    const from = isoWeekMonday(yr, wk);
+    const to = new Date(from); to.setDate(to.getDate() + 6); to.setHours(23,59,59,999);
+    return { label: `Sem ${wk}`, from, to };
+  }).reverse();
+
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return {
+      label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`,
+      from: new Date(d.getFullYear(), d.getMonth(), 1),
+      to: new Date(d.getFullYear(), d.getMonth() + 1, 1)
+    };
+  }).reverse();
+
+  const allItems = db.requisition_items || [];
+  const allReqs  = db.requisitions || [];
+
+  function buildPeriodData(periods) {
+    return periods.map(p => {
+      const periodReqs = allReqs.filter(r => {
+        if (!r.created_at) return false;
+        const d = new Date(r.created_at);
+        return d >= p.from && d <= p.to;
+      });
+      const reqIds = new Set(periodReqs.map(r => r.id));
+      const periodItems = allItems.filter(i => reqIds.has(i.requisition_id));
+
+      const solicitados  = periodItems.filter(i => i.status !== 'Borrador').length;
+      const cotizacion   = periodItems.filter(i => i.status === 'En cotización').length;
+      const autorizacion = periodItems.filter(i => ['Pendiente','En autorización'].includes(i.status)).length;
+      const asignados_po = periodItems.filter(i => i.status === 'Autorizado').length;
+      const en_entrega   = periodItems.filter(i => i.status === 'Enviada').length;
+      const entregados   = periodItems.filter(i => i.status === 'Cerrado').length;
+      const rechazados   = periodItems.filter(i => ['Rechazado','Cancelado'].includes(i.status)).length;
+
+      const con_po = asignados_po + en_entrega + entregados;
+      const pct_cumplimiento = solicitados > 0 ? Math.round((con_po / solicitados) * 100) : null;
+
+      const FINCADO_ST  = new Set(['Autorizado','Enviada','Cerrado','Rechazado','Cancelado']);
+      const ENTREGADO_ST = new Set(['Cerrado','Rechazado','Cancelado']);
+      const fincadas = periodReqs.filter(r => {
+        const ri = allItems.filter(i => i.requisition_id === r.id);
+        return ri.length > 0 && ri.every(i => FINCADO_ST.has(i.status));
+      });
+      const entregadasReq = fincadas.filter(r => {
+        const ri = allItems.filter(i => i.requisition_id === r.id);
+        return ri.every(i => ENTREGADO_ST.has(i.status));
+      });
+      const pct_entregado = fincadas.length > 0 ? Math.round((entregadasReq.length / fincadas.length) * 100) : null;
+
+      return {
+        label: p.label,
+        pct_entregado, pct_cumplimiento,
+        solicitados, cotizacion, autorizacion,
+        asignados_po, en_entrega, entregados, rechazados,
+        req_fincadas: fincadas.length, req_entregadas: entregadasReq.length
+      };
+    });
+  }
+
+  res.json({
+    weeks_labels:  weeks.map(p => p.label),
+    months_labels: months.map(p => p.label),
+    by_week:  buildPeriodData(weeks),
+    by_month: buildPeriodData(months)
+  });
+});
 
 module.exports = router;

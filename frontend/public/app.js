@@ -26,6 +26,7 @@ const navItems = [
   ['cotizaciones', 'Cotizaciones'],
   ['facturacion', 'Facturación'],
   ['pagos', 'Pagos'],
+  ['kpis', '📊 KPIs'],
   ['inventarios', 'Inventarios'],
   ['auditoria', 'Auditoría'],
   ['admin', 'Admin']
@@ -33,12 +34,12 @@ const navItems = [
 
 const MENU_BY_ROLE = {
   cliente_requisicion: ['dashboard', 'requisiciones', 'seguimiento'],
-  comprador: ['dashboard', 'requisiciones', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos', 'auditoria'],
+  comprador: ['dashboard', 'requisiciones', 'compras', 'catalogos', 'seguimiento', 'cotizaciones', 'facturacion', 'pagos', 'kpis', 'auditoria'],
   autorizador: ['dashboard', 'autorizaciones', 'seguimiento'],
   proveedor: ['cotizaciones', 'facturacion'],
-  pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones'],
+  pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones', 'kpis'],
   inventarios: ['dashboard', 'inventarios'],
-  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'inventarios', 'auditoria', 'admin']
+  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'kpis', 'inventarios', 'auditoria', 'admin']
 };
 
 const app = document.getElementById('app');
@@ -2312,9 +2313,6 @@ async function purchasesView() {
         </button>
         <button class="tab-btn" data-tab="anticipos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:${posConAnticipo.length?'#1d4ed8':'#6b7280'}">
           💰 Anticipos ${posConAnticipo.length ? `<span style="background:#1d4ed8;color:white;border-radius:10px;padding:1px 7px;font-size:11px;margin-left:4px">${posConAnticipo.length}</span>` : ''}
-        </button>
-        <button class="tab-btn" data-tab="kpi_costos" style="padding:8px 16px;border:none;background:none;cursor:pointer;color:#6b7280">
-          📊 KPI Costos
         </button>
       </div>
 
@@ -7303,9 +7301,223 @@ async function render() {
   if (route === 'facturacion') return invoicingView();
   if (route === 'pagos') return paymentsView();
   if (route === 'inventarios') return inventoryView();
+  if (route === 'kpis') return kpiView();
   if (route === 'auditoria') return auditView();
   if (route === 'admin') return adminView();
   location.hash = `#/${defaultRoute}`;
+}
+
+// ── KPI View (Eficiencia + Costos) ────────────────────────────────────────────
+async function kpiView() {
+  app.innerHTML = shell('<div class="muted small" style="padding:24px;text-align:center">Cargando KPIs...</div>', 'kpis');
+  bindCommon();
+
+  const fmt$  = n => '$' + Number(n||0).toLocaleString('es-MX', {maximumFractionDigits:0});
+  const fmtPct = n => n !== null && n !== undefined ? `${n}%` : '—';
+  const fmtN   = n => n !== null && n !== undefined ? String(n) : '—';
+  const esc    = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  // Palette (same as KPI Costos / Inventarios)
+  const TH_BG   = '#f1f5f9';
+  const SEC_BG  = '#1e3a8a';  // section header bg
+  const PCT_BG  = '#dbeafe';  // % rows bg
+  const TOT_BG  = '#dbeafe';  // total col bg
+
+  function buildEficienciaTable(data, period) {
+    const periods = period === 'week' ? data.by_week : data.by_month;
+    const cols = 1 + periods.length + 1; // label + periods + total
+
+    const thCols = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111">${esc(p.label)}</th>`).join('');
+    const thTotal = `<th style="text-align:right;padding:6px 10px;background:${TOT_BG};color:#111;font-weight:700">TOTAL</th>`;
+
+    function sumPeriods(field) {
+      const vals = periods.map(p => p[field]);
+      if (vals.every(v => v === null)) return null;
+      return vals.reduce((s,v) => s + (v||0), 0);
+    }
+    function avgPeriods(field) {
+      const vals = periods.map(p => p[field]).filter(v => v !== null);
+      if (!vals.length) return null;
+      return Math.round(vals.reduce((s,v) => s+v, 0) / vals.length);
+    }
+
+    function secRow(label) {
+      return `<tr>
+        <td colspan="${cols}" style="background:${SEC_BG};color:#fff;font-weight:700;padding:7px 12px;font-size:12px;letter-spacing:.5px">${label}</td>
+      </tr>`;
+    }
+    function pctRow(label, field, totalFn) {
+      const cells = periods.map(p => `<td style="text-align:right;padding:6px 10px;background:${PCT_BG};color:#111">${fmtPct(p[field])}</td>`).join('');
+      const tot = totalFn ? fmtPct(totalFn(field)) : '—';
+      return `<tr>
+        <td style="padding:6px 14px;font-size:12px;color:#111">${label}</td>
+        ${cells}
+        <td style="text-align:right;padding:6px 10px;background:${TOT_BG};color:#111;font-weight:600">${tot}</td>
+      </tr>`;
+    }
+    function cntRow(label, field, bg) {
+      const cells = periods.map(p => `<td style="text-align:right;padding:5px 10px;background:${bg||'#fff'};color:#111;font-size:12px">${fmtN(p[field])}</td>`).join('');
+      const tot = fmtN(sumPeriods(field));
+      return `<tr>
+        <td style="padding:5px 14px;font-size:12px;color:#111">${label}</td>
+        ${cells}
+        <td style="text-align:right;padding:5px 10px;background:${TOT_BG};color:#111;font-weight:600;font-size:12px">${tot}</td>
+      </tr>`;
+    }
+
+    return `
+      <div class="table-wrap">
+        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px">Indicador</th>
+              ${thCols}
+              ${thTotal}
+            </tr>
+          </thead>
+          <tbody>
+            ${secRow('📊 EFICIENCIA')}
+            ${pctRow('% Entregado (req. fincadas)', 'pct_entregado', avgPeriods)}
+            ${pctRow('% Cumplimiento a PO', 'pct_cumplimiento', avgPeriods)}
+            ${secRow('📦 FLUJO DE ÍTEMS')}
+            ${cntRow('Items solicitados',             'solicitados',  '#f8fafc')}
+            ${cntRow('Items en cotización',           'cotizacion',   '#fff')}
+            ${cntRow('Items en autorización',         'autorizacion', '#f8fafc')}
+            ${cntRow('Items asignados a PO',          'asignados_po', '#fff')}
+            ${cntRow('Items en proceso de entrega',   'en_entrega',   '#f8fafc')}
+            ${cntRow('Items entregados',              'entregados',   '#fff')}
+            ${cntRow('Items rechazados/cancelados',   'rechazados',   '#f8fafc')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function buildCostosTable(kpi, period, expandedCC) {
+    const periods = period === 'week' ? (kpi.weeks_labels||[]) : (kpi.months_labels||[]);
+    const byKey   = period === 'week' ? 'by_week' : 'by_month';
+    const cols    = 2 + periods.length;
+    const thCols  = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111">${esc(p)}</th>`).join('');
+    if (!kpi.cost_centers.length) return '<div class="muted small" style="padding:16px">Sin centros de costo activos</div>';
+    return `
+      <div class="table-wrap">
+        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:200px">Centro de Costo</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total</th>
+              ${thCols}
+            </tr>
+          </thead>
+          <tbody>
+            ${kpi.cost_centers.map(cc => {
+              const isExp = expandedCC === cc.id;
+              const hasScc = cc.sub_cost_centers?.length > 0;
+              const byP = cc[byKey] || [];
+              return `
+                <tr class="kpi-cc-row" data-ccid="${cc.id}" style="cursor:${hasScc?'pointer':'default'};background:${isExp?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb">
+                  <td style="padding:7px 12px;font-weight:600;color:#111">${hasScc?(isExp?'▼ ':'▶ '):''}<b>${esc(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
+                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmt$(cc.total)}</td>
+                  ${byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
+                </tr>
+                ${isExp && hasScc ? cc.sub_cost_centers.map(scc => {
+                  const sP = scc[byKey]||[];
+                  return `<tr style="background:#f0f5ff">
+                    <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">↳ <b>${esc(scc.name)}</b> <span style="color:#9ca3af">${scc.code||''}</span></td>
+                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#111;font-size:11px">${fmt$(scc.total)}</td>
+                    ${sP.map(p => `<td style="text-align:right;padding:5px 10px;color:#111;font-size:11px">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
+                  </tr>`;
+                }).join('') : ''}`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  try {
+    const [efData, cosData] = await Promise.all([
+      api('/api/dashboard/kpi-eficiencia'),
+      api('/api/purchases/kpi-costs')
+    ]);
+
+    let efPeriod   = 'week';
+    let cosPeriod  = 'week';
+    let expandedCC = null;
+
+    function renderEf() {
+      document.getElementById('kpi-ef-body').innerHTML = buildEficienciaTable(efData, efPeriod);
+      document.getElementById('kpi-ef-wk').className  = `btn-${efPeriod==='week'?'primary':'secondary'}`;
+      document.getElementById('kpi-ef-mo').className  = `btn-${efPeriod==='month'?'primary':'secondary'}`;
+    }
+    function renderCos() {
+      document.getElementById('kpi-cos-body').innerHTML = buildCostosTable(cosData, cosPeriod, expandedCC);
+      document.getElementById('kpi-cos-wk').className  = `btn-${cosPeriod==='week'?'primary':'secondary'}`;
+      document.getElementById('kpi-cos-mo').className  = `btn-${cosPeriod==='month'?'primary':'secondary'}`;
+      document.querySelectorAll('.kpi-cc-row').forEach(row => {
+        row.onclick = () => {
+          const id = Number(row.dataset.ccid);
+          expandedCC = expandedCC === id ? null : id;
+          renderCos();
+        };
+      });
+    }
+
+    app.innerHTML = shell(`
+      <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0">
+        <button id="kpi-main-ef"  class="tab-btn tab-active"  style="padding:10px 20px;font-size:13px;font-weight:700">📊 KPI Eficiencia de Compras</button>
+        <button id="kpi-main-cos" class="tab-btn"              style="padding:10px 20px;font-size:13px;font-weight:700">💰 KPI Costos por CC</button>
+      </div>
+
+      <div id="kpi-panel-ef">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">📊 KPI Eficiencia de Compras</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-ef-wk" class="btn-primary" style="padding:4px 14px;font-size:12px" onclick="kpiEfPeriod('week')">Por semana</button>
+            <button id="kpi-ef-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px" onclick="kpiEfPeriod('month')">Por mes</button>
+          </div>
+        </div>
+        <div id="kpi-ef-body"></div>
+      </div>
+
+      <div id="kpi-panel-cos" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">💰 KPI de Costos por Centro de Costo</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-cos-wk" class="btn-primary" style="padding:4px 14px;font-size:12px" onclick="kpiCosPeriod('week')">Por semana</button>
+            <button id="kpi-cos-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px" onclick="kpiCosPeriod('month')">Por mes</button>
+          </div>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">
+          ${cosPeriod==='week'?'Últimas 8 semanas':'Últimos 6 meses'} · clic en CC para ver sub-centros
+          ${cosData.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(cosData.usd_rate).toFixed(2)}</span>` : ''}
+        </p>
+        <div id="kpi-cos-body"></div>
+      </div>
+    `, 'kpis');
+
+    window.kpiEfPeriod = p => { efPeriod = p; renderEf(); };
+    window.kpiCosPeriod = p => { cosPeriod = p; renderCos(); };
+
+    document.getElementById('kpi-main-ef').onclick = () => {
+      document.getElementById('kpi-panel-ef').style.display  = '';
+      document.getElementById('kpi-panel-cos').style.display = 'none';
+      document.getElementById('kpi-main-ef').classList.add('tab-active');
+      document.getElementById('kpi-main-cos').classList.remove('tab-active');
+    };
+    document.getElementById('kpi-main-cos').onclick = () => {
+      document.getElementById('kpi-panel-ef').style.display  = 'none';
+      document.getElementById('kpi-panel-cos').style.display = '';
+      document.getElementById('kpi-main-ef').classList.remove('tab-active');
+      document.getElementById('kpi-main-cos').classList.add('tab-active');
+    };
+
+    bindCommon();
+    renderEf();
+    renderCos();
+
+  } catch(e) {
+    app.innerHTML = shell(`<div style="color:#dc2626;padding:16px">Error al cargar KPIs: ${e.message}</div>`, 'kpis');
+    bindCommon();
+  }
 }
 
 window.addEventListener('hashchange', () => { render().then(() => { if (state.user) initNotifications(); }); });
