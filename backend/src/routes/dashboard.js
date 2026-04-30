@@ -258,6 +258,21 @@ router.get('/kpi-eficiencia', (req, res) => {
   const posById  = new Map((db.purchase_orders || []).map(po => [po.id, po]));
   const nowMs    = Date.now();
 
+  // Fallback: obtener authorized_at desde status_history para ítems sin el campo
+  const authFromHistory = new Map();
+  (db.status_history || [])
+    .filter(h => h.new_status === 'Autorizado' && h.requisition_item_id && h.changed_at)
+    .sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at)) // el más antiguo primero
+    .forEach(h => {
+      if (!authFromHistory.has(h.requisition_item_id)) {
+        authFromHistory.set(h.requisition_item_id, h.changed_at);
+      }
+    });
+
+  function getAuthorizedAt(item) {
+    return item.authorized_at || authFromHistory.get(item.id) || null;
+  }
+
   function buildPeriodData(periods) {
     return periods.map(p => {
       const periodReqs = allReqs.filter(r => {
@@ -284,8 +299,8 @@ router.get('/kpi-eficiencia', (req, res) => {
       // % Envío de PO a tiempo (3 días desde authorized_at)
       let solicitados_a_tiempo = 0;
       let solicitados_fuera_tiempo = 0;
-      periodItems.filter(i => i.status !== 'Borrador' && i.authorized_at).forEach(i => {
-        const authMs = new Date(i.authorized_at).getTime();
+      periodItems.filter(i => i.status !== 'Borrador' && getAuthorizedAt(i)).forEach(i => {
+        const authMs = new Date(getAuthorizedAt(i)).getTime();
         if (i.purchase_order_id) {
           const po = posById.get(i.purchase_order_id);
           if (po?.created_at) {
