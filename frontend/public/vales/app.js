@@ -1250,7 +1250,7 @@ async function viewReportes() {
 
   <!-- Panel: Consumo Diario -->
   <div id="rpt-panel-diario" style="display:none">
-    <!-- Filtros -->
+    <!-- Filtros únicos (tabla + gráfica comparten el mismo contexto) -->
     <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px">
       <div>
         <label class="flabel">Fecha inicio</label><br>
@@ -1279,7 +1279,7 @@ async function viewReportes() {
         </select>
       </div>
       <button class="btn btn-primary btn-sm" id="dia-btn-consultar">🔍 Consultar</button>
-      <button class="btn btn-outline btn-sm" id="dia-btn-csv">📥 CSV</button>
+      <button class="btn btn-outline btn-sm" id="dia-btn-csv">📥 CSV datos filtrados</button>
     </div>
 
     <!-- Tabla resultado -->
@@ -1293,22 +1293,11 @@ async function viewReportes() {
       </div>
     </div>
 
-    <!-- Gráfica -->
+    <!-- Gráfica — controles solo granularidad + unidad -->
     <div class="table-card">
       <div class="table-header" style="flex-wrap:wrap;gap:8px">
-        <h3>📈 Adiciones del producto</h3>
+        <h3>📈 Adiciones · <em id="dia-graf-item-label" style="font-style:normal;color:#d97706">haz clic en un producto de la tabla</em></h3>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <select id="dia-graf-item" style="font-size:13px;min-width:160px">
-            <option value="">— Selecciona un producto —</option>
-          </select>
-          <select id="dia-graf-linea" style="font-size:13px">
-            <option value="">Todas las líneas</option>
-          </select>
-          <select id="dia-graf-tanque" style="font-size:13px">
-            <option value="">Todos los tanques</option>
-          </select>
-          <input type="date" id="dia-graf-ini" value="${_ini30}" style="font-size:13px" title="Fecha inicio gráfica"/>
-          <input type="date" id="dia-graf-fin" value="${_hoy}" style="font-size:13px" title="Fecha fin gráfica"/>
           <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
             <button id="dia-gran-turno"  class="btn btn-sm btn-outline"  style="border-radius:0;border:none"                            onclick="diaSetGran('turno')">Turno</button>
             <button id="dia-gran-dia"    class="btn btn-sm btn-primary"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('dia')">Día</button>
@@ -1321,12 +1310,12 @@ async function viewReportes() {
           </div>
         </div>
       </div>
-      <div style="padding:12px 14px 4px">
-        <div id="dia-graf-titulo" style="display:none;padding:8px 12px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px;font-size:13px;color:#78350f;line-height:1.5"></div>
+      <div style="padding:8px 14px 0">
+        <div id="dia-graf-titulo" style="display:none;padding:7px 12px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#78350f;line-height:1.6"></div>
       </div>
-      <div style="padding:0 12px 12px">
-        <div id="dia-graf-container" style="height:380px;position:relative">
-          <div class="empty-state" style="padding:24px"><div class="icon">📈</div><p>Selecciona un producto para ver la gráfica</p></div>
+      <div style="padding:8px 12px 12px">
+        <div id="dia-graf-container" style="height:400px;position:relative;overflow:hidden">
+          <div class="empty-state" style="padding:24px"><div class="icon">📈</div><p>Haz clic en un producto de la tabla para ver su gráfica</p></div>
         </div>
       </div>
     </div>
@@ -1583,32 +1572,21 @@ function bindReportes() {
   // ── fin Tab Procesos ──────────────────────────────────────────────────────────
 
   // ── Tab: Consumo Diario ───────────────────────────────────────────────────────
-  const DIA = { gran: 'dia', modo: 'kg', _chart: null, _data: null, _catLineas: [], _catTanques: [], _catItems: [] };
+  const DIA = { gran: 'dia', modo: 'kg', _chart: null, _data: null, _chartData: null, _catItems: [] };
 
-  // Poblar selects de filtros al iniciar el tab
+  // Poblar selects de filtros al iniciar el tab (solo catálogos)
   window.diaInitFiltros = async function() {
-    if (DIA._catItems.length) return; // ya inicializados
+    if (DIA._catItems.length) return;
     try {
       const d = await GET('/reportes/diario?fecha_ini=2020-01-01&fecha_fin=2099-12-31');
-      DIA._catLineas  = d.lineas  || [];
-      DIA._catTanques = d.tanques || [];
-      DIA._catItems   = d.items   || [];
+      DIA._catItems = d.items || [];
       const selLinea  = document.getElementById('dia-linea');
       const selTanque = document.getElementById('dia-tanque');
       const selItem   = document.getElementById('dia-item');
-      const selGLinea  = document.getElementById('dia-graf-linea');
-      const selGTanque = document.getElementById('dia-graf-tanque');
-      const selGItem   = document.getElementById('dia-graf-item');
-      DIA._catLineas.forEach(l => {
-        [selLinea, selGLinea].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${l}">${l}</option>`); });
-      });
-      DIA._catTanques.forEach(t => {
-        [selTanque, selGTanque].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${t}">${t}</option>`); });
-      });
-      DIA._catItems.forEach(i => {
-        [selItem, selGItem].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${i}">${i}</option>`); });
-      });
-    } catch(e) { /* silencioso — las fechas ya están seteadas desde el HTML */ }
+      (d.lineas  || []).forEach(l => selLinea ?.insertAdjacentHTML('beforeend', `<option value="${l}">${l}</option>`));
+      (d.tanques || []).forEach(t => selTanque?.insertAdjacentHTML('beforeend', `<option value="${t}">${t}</option>`));
+      (d.items   || []).forEach(i => selItem  ?.insertAdjacentHTML('beforeend', `<option value="${i}">${i}</option>`));
+    } catch(e) { /* silencioso */ }
   };
 
   window.diaSetGran = function(g) {
@@ -1617,10 +1595,9 @@ function bindReportes() {
       document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-primary', x === g);
       document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-outline',  x !== g);
     });
-    const item = document.getElementById('dia-graf-item')?.value;
-    if (!item) {
+    if (!DIA._chartData) {
       const cont = document.getElementById('dia-graf-container');
-      if (cont) cont.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">📈</div><p>Selecciona un producto en el selector de arriba para ver la gráfica</p></div>';
+      if (cont) cont.innerHTML = '<div class="empty-state" style="padding:20px"><div class="icon">📈</div><p>Haz clic en un producto de la tabla para ver su gráfica</p></div>';
       return;
     }
     diaLoadGrafica();
@@ -1652,6 +1629,8 @@ function bindReportes() {
       const d = await GET(q);
       DIA._data = d;
       renderDiaTablaCuerpo(d);
+      // Si hay un producto seleccionado en el filtro, auto-cargar su gráfica
+      if (item) diaLoadGrafica();
     } catch(e) {
       tbody.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
     }
@@ -1671,10 +1650,7 @@ function bindReportes() {
       <table>
         <thead>
           <tr>
-            <th>Fecha</th>
-            <th>Línea</th>
-            <th>Tanque</th>
-            <th>Producto</th>
+            <th>Fecha</th><th>Línea</th><th>Tanque</th><th>Producto</th>
             <th style="text-align:right">Adiciones</th>
             <th style="text-align:right">Total kg</th>
             <th style="text-align:right">Total $</th>
@@ -1682,10 +1658,10 @@ function bindReportes() {
         </thead>
         <tbody>
           ${d.rows.map(r => `
-            <tr style="cursor:pointer" onclick="diaSeleccionarItem('${r.item.replace(/'/g,"\\'")}')">
+            <tr style="cursor:pointer" title="Clic para graficar este producto" onclick="diaSeleccionarItem('${r.item.replace(/'/g,"\\'")}')">
               <td style="white-space:nowrap">${r.fecha}</td>
               <td><span style="background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700">${r.linea||'—'}</span></td>
-              <td style="white-space:nowrap"><span style="font-weight:600">${r.no_tanque||'—'}</span>${r.nombre_tanque ? `<br><span style="font-size:11px;color:#78716c">${r.nombre_tanque}</span>` : ''}</td>
+              <td style="white-space:nowrap"><span style="font-weight:600">${r.no_tanque||'—'}</span>${r.nombre_tanque?`<br><span style="font-size:11px;color:#78716c">${r.nombre_tanque}</span>`:''}</td>
               <td style="font-weight:600;font-size:13px">${r.item}</td>
               <td style="text-align:right;color:#78716c">${r.adiciones}</td>
               <td style="text-align:right;font-weight:600">${fmtKg(r.kg)}</td>
@@ -1701,20 +1677,24 @@ function bindReportes() {
     if (totEl) totEl.textContent = `${d.rows.length} registros · ${fmtKg(d.totales.kg)} · ${fmtMxn(d.totales.dinero)}`;
   }
 
+  // Clic en fila de tabla → selecciona item en filtro unificado y carga gráfica
   window.diaSeleccionarItem = function(item) {
-    const sel = document.getElementById('dia-graf-item');
-    if (sel) { sel.value = item; diaLoadGrafica(); }
+    const sel = document.getElementById('dia-item');
+    if (sel) sel.value = item;
+    diaLoadGrafica();
   };
 
   async function diaLoadGrafica() {
-    const item   = document.getElementById('dia-graf-item')?.value;
-    const linea  = document.getElementById('dia-graf-linea')?.value;
-    const tanque = document.getElementById('dia-graf-tanque')?.value;
-    const fIni   = document.getElementById('dia-graf-ini')?.value  || document.getElementById('dia-fecha-ini')?.value;
-    const fFin   = document.getElementById('dia-graf-fin')?.value  || document.getElementById('dia-fecha-fin')?.value;
+    // Lee SIEMPRE de los filtros unificados
+    const item   = document.getElementById('dia-item')?.value;
+    const linea  = document.getElementById('dia-linea')?.value;
+    const tanque = document.getElementById('dia-tanque')?.value;
+    const fIni   = document.getElementById('dia-fecha-ini')?.value;
+    const fFin   = document.getElementById('dia-fecha-fin')?.value;
     if (!item) return;
-    const cont  = document.getElementById('dia-graf-container');
+    const cont   = document.getElementById('dia-graf-container');
     const titulo = document.getElementById('dia-graf-titulo');
+    const lbl    = document.getElementById('dia-graf-item-label');
     if (!cont) return;
     cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando gráfica...</p></div>';
     if (titulo) titulo.style.display = 'none';
@@ -1727,25 +1707,29 @@ function bindReportes() {
       const d = await GET(q);
       DIA._chartData = d;
       // Encabezado dinámico
+      if (lbl) lbl.textContent = d.item;
       if (titulo) {
-        const granLabel = { turno: 'por Turno', dia: 'por Día', semana: 'por Semana', mes: 'por Mes' }[d.granularidad] || d.granularidad;
-        const partes = [`<strong>Producto:</strong> ${d.item}`, `<strong>Período:</strong> ${fIni || '—'} → ${fFin || '—'}`, `<strong>Vista:</strong> ${granLabel}`];
+        const granLabel = { turno:'por Turno', dia:'por Día', semana:'por Semana', mes:'por Mes' }[d.granularidad] || d.granularidad;
+        const partes = [
+          `<strong>Producto:</strong> ${d.item}`,
+          `<strong>Período:</strong> ${fIni||'—'} → ${fFin||'—'}`,
+          `<strong>Vista:</strong> ${granLabel}`
+        ];
         if (linea)  partes.push(`<strong>Línea:</strong> ${linea}`);
         if (tanque) partes.push(`<strong>Tanque:</strong> ${tanque}`);
         titulo.innerHTML = partes.join('&nbsp;&nbsp;·&nbsp;&nbsp;');
         titulo.style.display = '';
       }
-      const nBuckets = d.buckets ? d.buckets.length : 0;
-      const chartH   = Math.max(380, nBuckets * 38 + 80);
+      // Altura FIJA — no dinámica (evita problemas de render con muchos datos)
       cont.innerHTML = '<canvas id="dia-chart" style="width:100%;height:100%"></canvas>';
-      cont.style.height = chartH + 'px';
+      cont.style.height = '400px';
       renderDiaChart(d);
     } catch(e) {
-      cont.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+      cont.innerHTML = `<div class="alert alert-warn">Error al cargar gráfica: ${e.message}</div>`;
     }
   }
 
-  // Plugin inline para mostrar valores dentro de las barras
+  // Plugin inline: valores dentro de las barras
   const _diaBarLabels = {
     id: '_diaBarLabels',
     afterDatasetsDraw(chart) {
@@ -1764,7 +1748,7 @@ function bindReportes() {
           ctx.fillStyle = '#fff';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.shadowColor = 'rgba(0,0,0,0.35)';
+          ctx.shadowColor = 'rgba(0,0,0,0.4)';
           ctx.shadowBlur = 2;
           ctx.fillText(label, bar.x, (bar.y + bar.base) / 2);
           ctx.restore();
@@ -1777,84 +1761,74 @@ function bindReportes() {
     const canvas = document.getElementById('dia-chart');
     if (!canvas) return;
     if (DIA._chart) { DIA._chart.destroy(); DIA._chart = null; }
-    const useMxn   = DIA.modo === '$';
-    const fmtShort = v => useMxn
+    const useMxn    = DIA.modo === '$';
+    const fmtShort  = v => useMxn
       ? '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0))
-      : (v >= 1000 ? (v/1000).toFixed(2)+'t' : v.toFixed(1)+' kg');
-    const fmtTick  = v => useMxn
+      : v.toFixed(1) + ' kg';
+    const fmtTick   = v => useMxn
       ? '$' + v.toLocaleString('es-MX', { maximumFractionDigits: 0 })
       : v.toFixed(1) + ' kg';
-    const fmtTooltip = v => useMxn
+    const fmtTip    = v => useMxn
       ? '$' + v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
       : v.toFixed(3) + ' kg';
 
-    const commonScaleY = {
-      beginAtZero: true,
-      ticks: { font: { size: 11 }, callback: fmtTick },
-      grid: { color: 'rgba(0,0,0,0.06)' }
-    };
-    const commonScaleX = { ticks: { font: { size: 10 }, maxRotation: 45 } };
-    const commonPlugins = {
+    const scaleY = { beginAtZero: true, ticks: { font: { size: 11 }, callback: fmtTick }, grid: { color: 'rgba(0,0,0,0.05)' } };
+    const scaleX = { ticks: { font: { size: 10 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 30 } };
+    const plugCfg = {
       legend:  { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } },
-      tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtTooltip(ctx.raw)}` } }
+      tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label || ''}: ${fmtTip(ctx.raw)}` } }
     };
 
     if (d.granularidad === 'turno') {
-      const mkDs = (lbl, vals, bg, bc) => ({ label: lbl, data: vals, backgroundColor: bg, borderColor: bc, borderWidth: 1, _fmtLabel: fmtShort });
-      const datasets = [
-        mkDs('T1', d.buckets.map(b => useMxn ? b.T1d : b.T1), '#3b82f6cc', '#3b82f6'),
-        mkDs('T2', d.buckets.map(b => useMxn ? b.T2d : b.T2), '#f59e0bcc', '#f59e0b'),
-        mkDs('T3', d.buckets.map(b => useMxn ? b.T3d : b.T3), '#8b5cf6cc', '#8b5cf6')
-      ];
+      const mk = (lbl, vals, bg, bc) => ({ label: lbl, data: vals, backgroundColor: bg, borderColor: bc, borderWidth: 1, _fmtLabel: fmtShort });
       DIA._chart = new Chart(canvas, {
         type: 'bar',
-        data: { labels: d.buckets.map(b => b.label), datasets },
+        data: {
+          labels: d.buckets.map(b => b.label),
+          datasets: [
+            mk('T1', d.buckets.map(b => useMxn ? b.T1d : b.T1), '#3b82f6cc', '#3b82f6'),
+            mk('T2', d.buckets.map(b => useMxn ? b.T2d : b.T2), '#f59e0bcc', '#f59e0b'),
+            mk('T3', d.buckets.map(b => useMxn ? b.T3d : b.T3), '#8b5cf6cc', '#8b5cf6')
+          ]
+        },
         plugins: [_diaBarLabels],
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: commonPlugins,
-          scales: { x: { ...commonScaleX, stacked: true }, y: { ...commonScaleY, stacked: true } }
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: plugCfg,
+          scales: { x: { ...scaleX, stacked: true }, y: { ...scaleY, stacked: true } } }
       });
     } else {
-      const ds = {
-        label: useMxn ? `$ · ${d.item}` : `kg · ${d.item}`,
-        data: d.buckets.map(b => useMxn ? b.dinero : b.kg),
-        backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5,
-        _fmtLabel: fmtShort
-      };
       DIA._chart = new Chart(canvas, {
         type: 'bar',
-        data: { labels: d.buckets.map(b => b.label), datasets: [ds] },
+        data: {
+          labels: d.buckets.map(b => b.label),
+          datasets: [{
+            label: useMxn ? `$ · ${d.item}` : `kg · ${d.item}`,
+            data:  d.buckets.map(b => useMxn ? b.dinero : b.kg),
+            backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5,
+            _fmtLabel: fmtShort
+          }]
+        },
         plugins: [_diaBarLabels],
-        options: {
-          responsive: true, maintainAspectRatio: false,
-          plugins: commonPlugins,
-          scales: { y: commonScaleY, x: commonScaleX }
-        }
+        options: { responsive: true, maintainAspectRatio: false, plugins: plugCfg,
+          scales: { y: scaleY, x: scaleX } }
       });
     }
   }
 
-  document.getElementById('dia-graf-item')?.addEventListener('change',  diaLoadGrafica);
-  document.getElementById('dia-graf-linea')?.addEventListener('change',  diaLoadGrafica);
-  document.getElementById('dia-graf-tanque')?.addEventListener('change', diaLoadGrafica);
-  document.getElementById('dia-graf-ini')?.addEventListener('change',    diaLoadGrafica);
-  document.getElementById('dia-graf-fin')?.addEventListener('change',    diaLoadGrafica);
-
   document.getElementById('dia-btn-csv').addEventListener('click', () => {
     const d = DIA._data;
     if (!d || !d.rows || d.rows.length === 0) { alert('Primero consulta datos'); return; }
-    const hdr = ['Fecha','Línea','Tanque No','Tanque Nombre','Producto','Adiciones','kg','$'];
+    const fIni = document.getElementById('dia-fecha-ini').value;
+    const fFin = document.getElementById('dia-fecha-fin').value;
+    const hdr  = ['Fecha','Línea','Tanque No','Tanque Nombre','Producto','Adiciones','kg','$'];
     const rows = d.rows.map(r => [
       r.fecha, `"${r.linea||''}"`, `"${r.no_tanque||''}"`, `"${r.nombre_tanque||''}"`,
       `"${r.item}"`, r.adiciones, r.kg.toFixed(3), r.dinero.toFixed(2)
     ].join(','));
-    const csv = [hdr.join(','), ...rows].join('\r\n');
+    const csv  = [hdr.join(','), ...rows, ['','','','','TOTAL','',d.totales.kg.toFixed(3),d.totales.dinero.toFixed(2)].join(',')].join('\r\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = `consumo_diario_${document.getElementById('dia-fecha-ini').value}_${document.getElementById('dia-fecha-fin').value}.csv`;
+    a.download = `consumo_diario_${fIni}_${fFin}.csv`;
     a.click();
   });
   // ── fin Tab Consumo Diario ────────────────────────────────────────────────────
