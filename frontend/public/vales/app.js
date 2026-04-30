@@ -1304,6 +1304,8 @@ async function viewReportes() {
           <select id="dia-graf-tanque" style="font-size:13px">
             <option value="">Todos los tanques</option>
           </select>
+          <input type="date" id="dia-graf-ini" style="font-size:13px" title="Fecha inicio gráfica"/>
+          <input type="date" id="dia-graf-fin" style="font-size:13px" title="Fecha fin gráfica"/>
           <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
             <button id="dia-gran-turno"  class="btn btn-sm btn-outline"  style="border-radius:0;border:none"                            onclick="diaSetGran('turno')">Turno</button>
             <button id="dia-gran-dia"    class="btn btn-sm btn-primary"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('dia')">Día</button>
@@ -1316,8 +1318,11 @@ async function viewReportes() {
           </div>
         </div>
       </div>
-      <div style="padding:12px">
-        <div id="dia-graf-container" style="height:260px;position:relative">
+      <div style="padding:12px 14px 4px">
+        <div id="dia-graf-titulo" style="display:none;padding:8px 12px;background:#fef9c3;border:1px solid #fde68a;border-radius:6px;margin-bottom:10px;font-size:13px;color:#78350f;line-height:1.5"></div>
+      </div>
+      <div style="padding:0 12px 12px">
+        <div id="dia-graf-container" style="height:380px;position:relative">
           <div class="empty-state" style="padding:24px"><div class="icon">📈</div><p>Selecciona un producto para ver la gráfica</p></div>
         </div>
       </div>
@@ -1603,8 +1608,11 @@ function bindReportes() {
       // Rango default: últimos 30 días
       const hoy  = today();
       const ini30 = new Date(hoy + 'T12:00:00Z'); ini30.setUTCDate(ini30.getUTCDate() - 30);
-      document.getElementById('dia-fecha-ini').value = ini30.toISOString().slice(0,10);
+      const iniStr = ini30.toISOString().slice(0,10);
+      document.getElementById('dia-fecha-ini').value = iniStr;
       document.getElementById('dia-fecha-fin').value = hoy;
+      document.getElementById('dia-graf-ini').value  = iniStr;
+      document.getElementById('dia-graf-fin').value  = hoy;
     } catch(e) { /* silencioso */ }
   };
 
@@ -1701,12 +1709,14 @@ function bindReportes() {
     const item   = document.getElementById('dia-graf-item')?.value;
     const linea  = document.getElementById('dia-graf-linea')?.value;
     const tanque = document.getElementById('dia-graf-tanque')?.value;
-    const fIni   = document.getElementById('dia-fecha-ini')?.value;
-    const fFin   = document.getElementById('dia-fecha-fin')?.value;
+    const fIni   = document.getElementById('dia-graf-ini')?.value  || document.getElementById('dia-fecha-ini')?.value;
+    const fFin   = document.getElementById('dia-graf-fin')?.value  || document.getElementById('dia-fecha-fin')?.value;
     if (!item) return;
-    const cont = document.getElementById('dia-graf-container');
+    const cont  = document.getElementById('dia-graf-container');
+    const titulo = document.getElementById('dia-graf-titulo');
     if (!cont) return;
     cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando gráfica...</p></div>';
+    if (titulo) titulo.style.display = 'none';
     try {
       let q = `/reportes/diario/grafica?item=${encodeURIComponent(item)}&granularidad=${DIA.gran}`;
       if (linea)  q += `&linea=${encodeURIComponent(linea)}`;
@@ -1715,63 +1725,121 @@ function bindReportes() {
       if (fFin)   q += `&fecha_fin=${fFin}`;
       const d = await GET(q);
       DIA._chartData = d;
+      // Encabezado dinámico
+      if (titulo) {
+        const granLabel = { turno: 'por Turno', dia: 'por Día', semana: 'por Semana', mes: 'por Mes' }[d.granularidad] || d.granularidad;
+        const partes = [`<strong>Producto:</strong> ${d.item}`, `<strong>Período:</strong> ${fIni || '—'} → ${fFin || '—'}`, `<strong>Vista:</strong> ${granLabel}`];
+        if (linea)  partes.push(`<strong>Línea:</strong> ${linea}`);
+        if (tanque) partes.push(`<strong>Tanque:</strong> ${tanque}`);
+        titulo.innerHTML = partes.join('&nbsp;&nbsp;·&nbsp;&nbsp;');
+        titulo.style.display = '';
+      }
+      const nBuckets = d.buckets ? d.buckets.length : 0;
+      const chartH   = Math.max(380, nBuckets * 38 + 80);
       cont.innerHTML = '<canvas id="dia-chart" style="width:100%;height:100%"></canvas>';
-      cont.style.height = '260px';
+      cont.style.height = chartH + 'px';
       renderDiaChart(d);
     } catch(e) {
       cont.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
     }
   }
 
+  // Plugin inline para mostrar valores dentro de las barras
+  const _diaBarLabels = {
+    id: '_diaBarLabels',
+    afterDatasetsDraw(chart) {
+      const ctx = chart.ctx;
+      chart.data.datasets.forEach((ds, i) => {
+        const meta = chart.getDatasetMeta(i);
+        if (!meta.visible) return;
+        meta.data.forEach((bar, j) => {
+          const val = ds.data[j];
+          if (!val || val <= 0) return;
+          const barH = Math.abs(bar.y - bar.base);
+          if (barH < 14) return;
+          const label = ds._fmtLabel ? ds._fmtLabel(val) : String(val);
+          ctx.save();
+          ctx.font = `bold ${barH < 22 ? 9 : 10}px sans-serif`;
+          ctx.fillStyle = '#fff';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.shadowColor = 'rgba(0,0,0,0.35)';
+          ctx.shadowBlur = 2;
+          ctx.fillText(label, bar.x, (bar.y + bar.base) / 2);
+          ctx.restore();
+        });
+      });
+    }
+  };
+
   function renderDiaChart(d) {
     const canvas = document.getElementById('dia-chart');
     if (!canvas) return;
     if (DIA._chart) { DIA._chart.destroy(); DIA._chart = null; }
-    const useMxn = DIA.modo === '$';
-    const fmtTick = v => useMxn ? '$' + v.toLocaleString('es-MX', { maximumFractionDigits: 0 }) : v.toFixed(1) + ' kg';
+    const useMxn   = DIA.modo === '$';
+    const fmtShort = v => useMxn
+      ? '$' + (v >= 1000 ? (v/1000).toFixed(1)+'k' : v.toFixed(0))
+      : (v >= 1000 ? (v/1000).toFixed(2)+'t' : v.toFixed(1)+' kg');
+    const fmtTick  = v => useMxn
+      ? '$' + v.toLocaleString('es-MX', { maximumFractionDigits: 0 })
+      : v.toFixed(1) + ' kg';
+    const fmtTooltip = v => useMxn
+      ? '$' + v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+      : v.toFixed(3) + ' kg';
+
+    const commonScaleY = {
+      beginAtZero: true,
+      ticks: { font: { size: 11 }, callback: fmtTick },
+      grid: { color: 'rgba(0,0,0,0.06)' }
+    };
+    const commonScaleX = { ticks: { font: { size: 10 }, maxRotation: 45 } };
+    const commonPlugins = {
+      legend:  { position: 'bottom', labels: { font: { size: 11 }, padding: 12 } },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtTooltip(ctx.raw)}` } }
+    };
 
     if (d.granularidad === 'turno') {
+      const mkDs = (lbl, vals, bg, bc) => ({ label: lbl, data: vals, backgroundColor: bg, borderColor: bc, borderWidth: 1, _fmtLabel: fmtShort });
       const datasets = [
-        { label: 'T1', data: d.buckets.map(b => useMxn ? b.T1d : b.T1), backgroundColor: '#3b82f6cc', borderColor: '#3b82f6', borderWidth: 1 },
-        { label: 'T2', data: d.buckets.map(b => useMxn ? b.T2d : b.T2), backgroundColor: '#f59e0bcc', borderColor: '#f59e0b', borderWidth: 1 },
-        { label: 'T3', data: d.buckets.map(b => useMxn ? b.T3d : b.T3), backgroundColor: '#8b5cf6cc', borderColor: '#8b5cf6', borderWidth: 1 }
+        mkDs('T1', d.buckets.map(b => useMxn ? b.T1d : b.T1), '#3b82f6cc', '#3b82f6'),
+        mkDs('T2', d.buckets.map(b => useMxn ? b.T2d : b.T2), '#f59e0bcc', '#f59e0b'),
+        mkDs('T3', d.buckets.map(b => useMxn ? b.T3d : b.T3), '#8b5cf6cc', '#8b5cf6')
       ];
       DIA._chart = new Chart(canvas, {
         type: 'bar',
         data: { labels: d.buckets.map(b => b.label), datasets },
+        plugins: [_diaBarLabels],
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
-                     tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtTick(ctx.raw)}` } } },
-          scales: { x: { stacked: true, ticks: { font: { size: 10 } } },
-                    y: { stacked: true, beginAtZero: true, ticks: { font: { size: 11 }, callback: fmtTick } } }
+          plugins: commonPlugins,
+          scales: { x: { ...commonScaleX, stacked: true }, y: { ...commonScaleY, stacked: true } }
         }
       });
     } else {
+      const ds = {
+        label: useMxn ? `$ · ${d.item}` : `kg · ${d.item}`,
+        data: d.buckets.map(b => useMxn ? b.dinero : b.kg),
+        backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5,
+        _fmtLabel: fmtShort
+      };
       DIA._chart = new Chart(canvas, {
         type: 'bar',
-        data: {
-          labels: d.buckets.map(b => b.label),
-          datasets: [{
-            label: useMxn ? `$ (${d.item})` : `kg (${d.item})`,
-            data: d.buckets.map(b => useMxn ? b.dinero : b.kg),
-            backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5
-          }]
-        },
+        data: { labels: d.buckets.map(b => b.label), datasets: [ds] },
+        plugins: [_diaBarLabels],
         options: {
           responsive: true, maintainAspectRatio: false,
-          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
-                     tooltip: { callbacks: { label: ctx => ` ${fmtTick(ctx.raw)}` } } },
-          scales: { y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: fmtTick } },
-                    x: { ticks: { font: { size: 10 } } } }
+          plugins: commonPlugins,
+          scales: { y: commonScaleY, x: commonScaleX }
         }
       });
     }
   }
 
-  document.getElementById('dia-graf-item')?.addEventListener('change', diaLoadGrafica);
-  document.getElementById('dia-graf-linea')?.addEventListener('change', diaLoadGrafica);
+  document.getElementById('dia-graf-item')?.addEventListener('change',  diaLoadGrafica);
+  document.getElementById('dia-graf-linea')?.addEventListener('change',  diaLoadGrafica);
   document.getElementById('dia-graf-tanque')?.addEventListener('change', diaLoadGrafica);
+  document.getElementById('dia-graf-ini')?.addEventListener('change',    diaLoadGrafica);
+  document.getElementById('dia-graf-fin')?.addEventListener('change',    diaLoadGrafica);
 
   document.getElementById('dia-btn-csv').addEventListener('click', () => {
     const d = DIA._data;
