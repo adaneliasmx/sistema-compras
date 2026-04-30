@@ -1148,6 +1148,7 @@ async function viewReportes() {
   <!-- Tabs principales de Reportes -->
   <div class="tab-bar" style="display:flex;gap:4px;margin-bottom:16px;border-bottom:2px solid #e7e5e4">
     <button class="tab-btn tab-active" id="rpt-main-tab-consumo" onclick="switchRptMainTab('consumo')">📊 Consumo</button>
+    <button class="tab-btn" id="rpt-main-tab-diario" onclick="switchRptMainTab('diario')">📅 Consumo Diario</button>
     <button class="tab-btn" id="rpt-main-tab-comp" onclick="switchRptMainTab('comp')">🔬 Real vs Teórico</button>
     <button class="tab-btn" id="rpt-main-tab-procesos" onclick="switchRptMainTab('procesos')">🏭 Reporte para Procesos</button>
   </div>
@@ -1242,6 +1243,85 @@ async function viewReportes() {
       <button class="btn btn-outline" id="comp-export-btn">📥 CSV</button>
     </div>
     <div id="comp-result"></div>
+  </div>
+
+  <!-- Panel: Consumo Diario -->
+  <div id="rpt-panel-diario" style="display:none">
+    <!-- Filtros -->
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:12px 14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px">
+      <div>
+        <label class="flabel">Fecha inicio</label><br>
+        <input type="date" id="dia-fecha-ini" style="font-size:13px"/>
+      </div>
+      <div>
+        <label class="flabel">Fecha fin</label><br>
+        <input type="date" id="dia-fecha-fin" style="font-size:13px"/>
+      </div>
+      <div>
+        <label class="flabel">Línea</label><br>
+        <select id="dia-linea" style="font-size:13px">
+          <option value="">Todas las líneas</option>
+        </select>
+      </div>
+      <div>
+        <label class="flabel">Tanque</label><br>
+        <select id="dia-tanque" style="font-size:13px">
+          <option value="">Todos los tanques</option>
+        </select>
+      </div>
+      <div>
+        <label class="flabel">Producto</label><br>
+        <select id="dia-item" style="font-size:13px">
+          <option value="">Todos</option>
+        </select>
+      </div>
+      <button class="btn btn-primary btn-sm" id="dia-btn-consultar">🔍 Consultar</button>
+      <button class="btn btn-outline btn-sm" id="dia-btn-csv">📥 CSV</button>
+    </div>
+
+    <!-- Tabla resultado -->
+    <div class="table-card" style="margin-bottom:16px">
+      <div class="table-header">
+        <h3>📋 Consumo por Día · Línea · Tanque · Producto</h3>
+        <span id="dia-tabla-totales" style="font-size:12px;color:#78716c"></span>
+      </div>
+      <div class="table-scroll" id="dia-tabla-body">
+        <div class="empty-state" style="padding:24px"><div class="icon">📅</div><p>Selecciona un rango de fechas y consulta</p></div>
+      </div>
+    </div>
+
+    <!-- Gráfica -->
+    <div class="table-card">
+      <div class="table-header" style="flex-wrap:wrap;gap:8px">
+        <h3>📈 Adiciones del producto</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <select id="dia-graf-item" style="font-size:13px;min-width:160px">
+            <option value="">— Selecciona un producto —</option>
+          </select>
+          <select id="dia-graf-linea" style="font-size:13px">
+            <option value="">Todas las líneas</option>
+          </select>
+          <select id="dia-graf-tanque" style="font-size:13px">
+            <option value="">Todos los tanques</option>
+          </select>
+          <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+            <button id="dia-gran-turno"  class="btn btn-sm btn-outline"  style="border-radius:0;border:none"                            onclick="diaSetGran('turno')">Turno</button>
+            <button id="dia-gran-dia"    class="btn btn-sm btn-primary"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('dia')">Día</button>
+            <button id="dia-gran-semana" class="btn btn-sm btn-outline"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('semana')">Semana</button>
+            <button id="dia-gran-mes"    class="btn btn-sm btn-outline"  style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetGran('mes')">Mes</button>
+          </div>
+          <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+            <button id="dia-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none"                            onclick="diaSetModo('kg')">kg</button>
+            <button id="dia-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="diaSetModo('$')">$</button>
+          </div>
+        </div>
+      </div>
+      <div style="padding:12px">
+        <div id="dia-graf-container" style="height:260px;position:relative">
+          <div class="empty-state" style="padding:24px"><div class="icon">📈</div><p>Selecciona un producto para ver la gráfica</p></div>
+        </div>
+      </div>
+    </div>
   </div>`;
 }
 
@@ -1284,12 +1364,13 @@ function bindReportes() {
   };
 
   window.switchRptMainTab = function(tab) {
-    ['consumo','comp','procesos'].forEach(t => {
+    ['consumo','diario','comp','procesos'].forEach(t => {
       const panel = document.getElementById(`rpt-panel-${t}`);
       const btn   = document.getElementById(`rpt-main-tab-${t}`);
       if (panel) panel.style.display = t === tab ? '' : 'none';
       if (btn)   btn.classList.toggle('tab-active', t === tab);
     });
+    if (tab === 'diario') diaInitFiltros();
   };
 
   const runComparativo = async () => {
@@ -1492,6 +1573,222 @@ function bindReportes() {
     a.download = `procesos_${data.year}.csv`; a.click();
   });
   // ── fin Tab Procesos ──────────────────────────────────────────────────────────
+
+  // ── Tab: Consumo Diario ───────────────────────────────────────────────────────
+  const DIA = { gran: 'dia', modo: 'kg', _chart: null, _data: null, _catLineas: [], _catTanques: [], _catItems: [] };
+
+  // Poblar selects de filtros al iniciar el tab
+  window.diaInitFiltros = async function() {
+    if (DIA._catItems.length) return; // ya inicializados
+    try {
+      const d = await GET('/reportes/diario?fecha_ini=2020-01-01&fecha_fin=2099-12-31');
+      DIA._catLineas  = d.lineas  || [];
+      DIA._catTanques = d.tanques || [];
+      DIA._catItems   = d.items   || [];
+      const selLinea  = document.getElementById('dia-linea');
+      const selTanque = document.getElementById('dia-tanque');
+      const selItem   = document.getElementById('dia-item');
+      const selGLinea  = document.getElementById('dia-graf-linea');
+      const selGTanque = document.getElementById('dia-graf-tanque');
+      const selGItem   = document.getElementById('dia-graf-item');
+      DIA._catLineas.forEach(l => {
+        [selLinea, selGLinea].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${l}">${l}</option>`); });
+      });
+      DIA._catTanques.forEach(t => {
+        [selTanque, selGTanque].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${t}">${t}</option>`); });
+      });
+      DIA._catItems.forEach(i => {
+        [selItem, selGItem].forEach(s => { if(s) s.insertAdjacentHTML('beforeend', `<option value="${i}">${i}</option>`); });
+      });
+      // Rango default: últimos 30 días
+      const hoy  = today();
+      const ini30 = new Date(hoy + 'T12:00:00Z'); ini30.setUTCDate(ini30.getUTCDate() - 30);
+      document.getElementById('dia-fecha-ini').value = ini30.toISOString().slice(0,10);
+      document.getElementById('dia-fecha-fin').value = hoy;
+    } catch(e) { /* silencioso */ }
+  };
+
+  window.diaSetGran = function(g) {
+    DIA.gran = g;
+    ['turno','dia','semana','mes'].forEach(x => {
+      document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-primary', x === g);
+      document.getElementById(`dia-gran-${x}`)?.classList.toggle('btn-outline',  x !== g);
+    });
+    diaLoadGrafica();
+  };
+
+  window.diaSetModo = function(m) {
+    DIA.modo = m;
+    document.getElementById('dia-modo-kg') ?.classList.toggle('btn-primary', m === 'kg');
+    document.getElementById('dia-modo-kg') ?.classList.toggle('btn-outline',  m !== 'kg');
+    document.getElementById('dia-modo-mxn')?.classList.toggle('btn-primary', m === '$');
+    document.getElementById('dia-modo-mxn')?.classList.toggle('btn-outline',  m !== '$');
+    if (DIA._chartData) renderDiaChart(DIA._chartData);
+  };
+
+  document.getElementById('dia-btn-consultar').addEventListener('click', async () => {
+    const fIni  = document.getElementById('dia-fecha-ini').value;
+    const fFin  = document.getElementById('dia-fecha-fin').value;
+    const linea  = document.getElementById('dia-linea').value;
+    const tanque = document.getElementById('dia-tanque').value;
+    const item   = document.getElementById('dia-item').value;
+    if (!fIni || !fFin) { alert('Selecciona el rango de fechas'); return; }
+    const tbody = document.getElementById('dia-tabla-body');
+    tbody.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+    try {
+      let q = `/reportes/diario?fecha_ini=${fIni}&fecha_fin=${fFin}`;
+      if (linea)  q += `&linea=${encodeURIComponent(linea)}`;
+      if (tanque) q += `&no_tanque=${encodeURIComponent(tanque)}`;
+      if (item)   q += `&item=${encodeURIComponent(item)}`;
+      const d = await GET(q);
+      DIA._data = d;
+      renderDiaTablaCuerpo(d);
+    } catch(e) {
+      tbody.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+    }
+  });
+
+  function renderDiaTablaCuerpo(d) {
+    const tbody = document.getElementById('dia-tabla-body');
+    const totEl = document.getElementById('dia-tabla-totales');
+    if (!d.rows || d.rows.length === 0) {
+      tbody.innerHTML = '<div class="empty-state"><div class="icon">🔍</div><p>Sin datos para los filtros seleccionados</p></div>';
+      if (totEl) totEl.textContent = '';
+      return;
+    }
+    const fmtKg  = v => v.toFixed(2) + ' kg';
+    const fmtMxn = v => '$' + v.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    tbody.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Línea</th>
+            <th>Tanque</th>
+            <th>Producto</th>
+            <th style="text-align:right">Adiciones</th>
+            <th style="text-align:right">Total kg</th>
+            <th style="text-align:right">Total $</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${d.rows.map(r => `
+            <tr style="cursor:pointer" onclick="diaSeleccionarItem('${r.item.replace(/'/g,"\\'")}')">
+              <td style="white-space:nowrap">${r.fecha}</td>
+              <td><span style="background:#fef9c3;color:#854d0e;padding:2px 7px;border-radius:4px;font-size:12px;font-weight:700">${r.linea||'—'}</span></td>
+              <td style="white-space:nowrap"><span style="font-weight:600">${r.no_tanque||'—'}</span>${r.nombre_tanque ? `<br><span style="font-size:11px;color:#78716c">${r.nombre_tanque}</span>` : ''}</td>
+              <td style="font-weight:600;font-size:13px">${r.item}</td>
+              <td style="text-align:right;color:#78716c">${r.adiciones}</td>
+              <td style="text-align:right;font-weight:600">${fmtKg(r.kg)}</td>
+              <td style="text-align:right;color:#16a34a;font-weight:600">${fmtMxn(r.dinero)}</td>
+            </tr>`).join('')}
+          <tr style="background:#f5f5f4;font-weight:700;border-top:2px solid #d6d3d1">
+            <td colspan="5" style="text-align:right">TOTAL</td>
+            <td style="text-align:right">${fmtKg(d.totales.kg)}</td>
+            <td style="text-align:right;color:#16a34a">${fmtMxn(d.totales.dinero)}</td>
+          </tr>
+        </tbody>
+      </table>`;
+    if (totEl) totEl.textContent = `${d.rows.length} registros · ${fmtKg(d.totales.kg)} · ${fmtMxn(d.totales.dinero)}`;
+  }
+
+  window.diaSeleccionarItem = function(item) {
+    const sel = document.getElementById('dia-graf-item');
+    if (sel) { sel.value = item; diaLoadGrafica(); }
+  };
+
+  async function diaLoadGrafica() {
+    const item   = document.getElementById('dia-graf-item')?.value;
+    const linea  = document.getElementById('dia-graf-linea')?.value;
+    const tanque = document.getElementById('dia-graf-tanque')?.value;
+    const fIni   = document.getElementById('dia-fecha-ini')?.value;
+    const fFin   = document.getElementById('dia-fecha-fin')?.value;
+    if (!item) return;
+    const cont = document.getElementById('dia-graf-container');
+    if (!cont) return;
+    cont.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando gráfica...</p></div>';
+    try {
+      let q = `/reportes/diario/grafica?item=${encodeURIComponent(item)}&granularidad=${DIA.gran}`;
+      if (linea)  q += `&linea=${encodeURIComponent(linea)}`;
+      if (tanque) q += `&no_tanque=${encodeURIComponent(tanque)}`;
+      if (fIni)   q += `&fecha_ini=${fIni}`;
+      if (fFin)   q += `&fecha_fin=${fFin}`;
+      const d = await GET(q);
+      DIA._chartData = d;
+      cont.innerHTML = '<canvas id="dia-chart" style="width:100%;height:100%"></canvas>';
+      cont.style.height = '260px';
+      renderDiaChart(d);
+    } catch(e) {
+      cont.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+    }
+  }
+
+  function renderDiaChart(d) {
+    const canvas = document.getElementById('dia-chart');
+    if (!canvas) return;
+    if (DIA._chart) { DIA._chart.destroy(); DIA._chart = null; }
+    const useMxn = DIA.modo === '$';
+    const fmtTick = v => useMxn ? '$' + v.toLocaleString('es-MX', { maximumFractionDigits: 0 }) : v.toFixed(1) + ' kg';
+
+    if (d.granularidad === 'turno') {
+      const datasets = [
+        { label: 'T1', data: d.buckets.map(b => useMxn ? b.T1d : b.T1), backgroundColor: '#3b82f6cc', borderColor: '#3b82f6', borderWidth: 1 },
+        { label: 'T2', data: d.buckets.map(b => useMxn ? b.T2d : b.T2), backgroundColor: '#f59e0bcc', borderColor: '#f59e0b', borderWidth: 1 },
+        { label: 'T3', data: d.buckets.map(b => useMxn ? b.T3d : b.T3), backgroundColor: '#8b5cf6cc', borderColor: '#8b5cf6', borderWidth: 1 }
+      ];
+      DIA._chart = new Chart(canvas, {
+        type: 'bar',
+        data: { labels: d.buckets.map(b => b.label), datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                     tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtTick(ctx.raw)}` } } },
+          scales: { x: { stacked: true, ticks: { font: { size: 10 } } },
+                    y: { stacked: true, beginAtZero: true, ticks: { font: { size: 11 }, callback: fmtTick } } }
+        }
+      });
+    } else {
+      DIA._chart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+          labels: d.buckets.map(b => b.label),
+          datasets: [{
+            label: useMxn ? `$ (${d.item})` : `kg (${d.item})`,
+            data: d.buckets.map(b => useMxn ? b.dinero : b.kg),
+            backgroundColor: '#d97706cc', borderColor: '#d97706', borderWidth: 1.5
+          }]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
+                     tooltip: { callbacks: { label: ctx => ` ${fmtTick(ctx.raw)}` } } },
+          scales: { y: { beginAtZero: true, ticks: { font: { size: 11 }, callback: fmtTick } },
+                    x: { ticks: { font: { size: 10 } } } }
+        }
+      });
+    }
+  }
+
+  document.getElementById('dia-graf-item')?.addEventListener('change', diaLoadGrafica);
+  document.getElementById('dia-graf-linea')?.addEventListener('change', diaLoadGrafica);
+  document.getElementById('dia-graf-tanque')?.addEventListener('change', diaLoadGrafica);
+
+  document.getElementById('dia-btn-csv').addEventListener('click', () => {
+    const d = DIA._data;
+    if (!d || !d.rows || d.rows.length === 0) { alert('Primero consulta datos'); return; }
+    const hdr = ['Fecha','Línea','Tanque No','Tanque Nombre','Producto','Adiciones','kg','$'];
+    const rows = d.rows.map(r => [
+      r.fecha, `"${r.linea||''}"`, `"${r.no_tanque||''}"`, `"${r.nombre_tanque||''}"`,
+      `"${r.item}"`, r.adiciones, r.kg.toFixed(3), r.dinero.toFixed(2)
+    ].join(','));
+    const csv = [hdr.join(','), ...rows].join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `consumo_diario_${document.getElementById('dia-fecha-ini').value}_${document.getElementById('dia-fecha-fin').value}.csv`;
+    a.click();
+  });
+  // ── fin Tab Consumo Diario ────────────────────────────────────────────────────
 
   document.getElementById('comp-btn').addEventListener('click', runComparativo);
   document.getElementById('comp-export-btn').addEventListener('click', () => {

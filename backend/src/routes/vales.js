@@ -996,6 +996,197 @@ router.get('/reportes/periodo', valesAllowRoles('admin'), (req, res) => {
   });
 });
 
+// ── Reporte consumo diario por línea/tanque/ítem (admin) ──────────────────────
+router.get('/reportes/diario', valesAllowRoles('admin'), (req, res) => {
+  const { fecha_ini, fecha_fin, linea: filtLinea, no_tanque: filtTanque, item: filtItem } = req.query;
+
+  const db = readVales();
+  const headers  = db.vales_header  || [];
+  const detalles = db.vales_detalle || [];
+  const itemsCat = db.items_vales   || [];
+
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+  const itemPrecioMap = {};
+  itemsCat.forEach(i => { itemPrecioMap[i.item] = parseFloat(i.precio_kg) || 0; });
+
+  let rows = detalles.map(d => {
+    const h = hdrMap[d.folio_vale] || {};
+    const kg = parseFloat(d.kg_equivalentes) || 0;
+    const precio_kg = itemPrecioMap[d.item] || 0;
+    return {
+      folio_vale:    d.folio_vale,
+      fecha:         h.fecha   || '',
+      turno:         h.turno   || '',
+      linea:         h.linea   || '',
+      no_tanque:     d.no_tanque     || '',
+      nombre_tanque: d.nombre_tanque || '',
+      item:          d.item    || '',
+      kg,
+      dinero: kg * precio_kg,
+      precio_kg
+    };
+  });
+
+  if (fecha_ini)   rows = rows.filter(r => r.fecha >= fecha_ini);
+  if (fecha_fin)   rows = rows.filter(r => r.fecha <= fecha_fin);
+  if (filtLinea)   rows = rows.filter(r => r.linea === filtLinea);
+  if (filtTanque)  rows = rows.filter(r => r.no_tanque === filtTanque);
+  if (filtItem)    rows = rows.filter(r => r.item === filtItem);
+
+  // Agrupar por (fecha, linea, no_tanque, item)
+  const groupMap = {};
+  rows.forEach(r => {
+    const key = `${r.fecha}|${r.linea}|${r.no_tanque}|${r.item}`;
+    if (!groupMap[key]) {
+      groupMap[key] = {
+        fecha: r.fecha, linea: r.linea,
+        no_tanque: r.no_tanque, nombre_tanque: r.nombre_tanque,
+        item: r.item, precio_kg: r.precio_kg,
+        kg: 0, dinero: 0, adiciones: 0
+      };
+    }
+    groupMap[key].kg       += r.kg;
+    groupMap[key].dinero   += r.dinero;
+    groupMap[key].adiciones++;
+  });
+
+  const grouped = Object.values(groupMap)
+    .sort((a, b) =>
+      b.fecha.localeCompare(a.fecha) ||
+      (a.linea || '').localeCompare(b.linea || '') ||
+      (a.no_tanque || '').localeCompare(b.no_tanque || '') ||
+      (a.item || '').localeCompare(b.item || '')
+    );
+
+  // Catálogos para filtros (sin filtros aplicados — siempre del universo completo)
+  const allRows = detalles.map(d => {
+    const h = hdrMap[d.folio_vale] || {};
+    return { linea: h.linea || '', no_tanque: d.no_tanque || '', item: d.item || '' };
+  });
+  const allLineas  = [...new Set(allRows.map(r => r.linea))].filter(Boolean).sort();
+  const allTanques = [...new Set(allRows.map(r => r.no_tanque))].filter(Boolean).sort();
+  const allItems   = [...new Set(allRows.map(r => r.item))].filter(Boolean).sort();
+
+  res.json({
+    rows: grouped,
+    totales: {
+      kg:     grouped.reduce((s, r) => s + r.kg, 0),
+      dinero: grouped.reduce((s, r) => s + r.dinero, 0)
+    },
+    lineas:  allLineas,
+    tanques: allTanques,
+    items:   allItems
+  });
+});
+
+// ── Gráfica consumo por ítem (turno/día/semana/mes) ──────────────────────────
+router.get('/reportes/diario/grafica', valesAllowRoles('admin'), (req, res) => {
+  const { item: filtItem, granularidad = 'dia', linea: filtLinea, no_tanque: filtTanque, fecha_ini, fecha_fin } = req.query;
+  if (!filtItem) return res.status(400).json({ error: 'item requerido' });
+
+  const db = readVales();
+  const headers  = db.vales_header  || [];
+  const detalles = db.vales_detalle || [];
+  const itemsCat = db.items_vales   || [];
+
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+  const itemInfo  = itemsCat.find(i => i.item === filtItem) || {};
+  const precio_kg = parseFloat(itemInfo.precio_kg) || 0;
+
+  let rows = detalles
+    .filter(d => d.item === filtItem)
+    .map(d => {
+      const h = hdrMap[d.folio_vale] || {};
+      const kg = parseFloat(d.kg_equivalentes) || 0;
+      return {
+        fecha:     h.fecha  || '',
+        turno:     h.turno  || '',
+        linea:     h.linea  || '',
+        no_tanque: d.no_tanque || '',
+        folio_vale: d.folio_vale,
+        kg,
+        dinero: kg * precio_kg
+      };
+    });
+
+  if (fecha_ini)  rows = rows.filter(r => r.fecha >= fecha_ini);
+  if (fecha_fin)  rows = rows.filter(r => r.fecha <= fecha_fin);
+  if (filtLinea)  rows = rows.filter(r => r.linea === filtLinea);
+  if (filtTanque) rows = rows.filter(r => r.no_tanque === filtTanque);
+
+  const DIAS  = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const MESES_S = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  let buckets;
+
+  if (granularidad === 'turno') {
+    // Un bucket por día, barras apiladas T1/T2/T3
+    const m = {};
+    rows.forEach(r => {
+      if (!r.fecha) return;
+      if (!m[r.fecha]) m[r.fecha] = { T1:0, T2:0, T3:0, T1d:0, T2d:0, T3d:0 };
+      const t = r.turno || 'T1';
+      m[r.fecha][t]       = (m[r.fecha][t] || 0)  + r.kg;
+      m[r.fecha][t + 'd'] = (m[r.fecha][t + 'd'] || 0) + r.dinero;
+    });
+    buckets = Object.keys(m).sort().map(f => {
+      const d = new Date(f + 'T12:00:00Z');
+      return { label: `${DIAS[d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth()+1}`, fecha: f,
+               T1: m[f].T1, T2: m[f].T2, T3: m[f].T3,
+               T1d: m[f].T1d, T2d: m[f].T2d, T3d: m[f].T3d };
+    });
+
+  } else if (granularidad === 'dia') {
+    const m = {};
+    rows.forEach(r => {
+      if (!r.fecha) return;
+      if (!m[r.fecha]) m[r.fecha] = { kg: 0, dinero: 0 };
+      m[r.fecha].kg     += r.kg;
+      m[r.fecha].dinero += r.dinero;
+    });
+    buckets = Object.keys(m).sort().map(f => {
+      const d = new Date(f + 'T12:00:00Z');
+      return { label: `${DIAS[d.getUTCDay()]} ${d.getUTCDate()}/${d.getUTCMonth()+1}`,
+               fecha: f, kg: m[f].kg, dinero: m[f].dinero };
+    });
+
+  } else if (granularidad === 'semana') {
+    const m = {};
+    rows.forEach(r => {
+      if (!r.fecha) return;
+      const d = new Date(r.fecha + 'T12:00:00Z');
+      const dow = d.getUTCDay() || 7;
+      const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - dow + 1);
+      const y = mon.getUTCFullYear();
+      const startOfYear = new Date(Date.UTC(y, 0, 1));
+      const wn = Math.ceil(((mon - startOfYear) / 86400000 + startOfYear.getUTCDay() + 1) / 7);
+      const key = `${y}-W${String(wn).padStart(2, '0')}`;
+      if (!m[key]) m[key] = { label: `S${wn} ${y}`, kg: 0, dinero: 0 };
+      m[key].kg     += r.kg;
+      m[key].dinero += r.dinero;
+    });
+    buckets = Object.entries(m).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
+
+  } else { // mes
+    const m = {};
+    rows.forEach(r => {
+      if (!r.fecha) return;
+      const key = r.fecha.slice(0, 7);
+      if (!m[key]) {
+        const [y, mo] = key.split('-').map(Number);
+        m[key] = { label: `${MESES_S[mo - 1]} ${y}`, kg: 0, dinero: 0 };
+      }
+      m[key].kg     += r.kg;
+      m[key].dinero += r.dinero;
+    });
+    buckets = Object.entries(m).sort((a, b) => a[0].localeCompare(b[0])).map(([, v]) => v);
+  }
+
+  res.json({ item: filtItem, precio_kg, granularidad, buckets });
+});
+
 // ── Reporte para Procesos (admin) ─────────────────────────────────────────────
 router.get('/reportes/procesos', valesAllowRoles('admin'), (req, res) => {
   const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
