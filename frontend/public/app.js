@@ -2245,6 +2245,9 @@ async function approvalsView() {
 }
 
 async function purchasesView() {
+  app.innerHTML = shell('<div class="muted small" style="padding:32px;text-align:center">⏳ Cargando módulo de compras...</div>', 'compras');
+  bindCommon();
+
   const CANCEL_REASONS = [
     'Presupuesto insuficiente',
     'Proveedor no disponible',
@@ -3219,9 +3222,9 @@ async function purchasesView() {
               const detail = await api(`/api/quotations/item-detail/${itemId}`);
               const item = itemsEnCotizacion.find(x => x.id === itemId);
               if (!detail.length) {
-                td.innerHTML = `<div style="padding:12px">
-                  <p class="small muted">Sin solicitudes enviadas aún.</p>
-                  <button class="btn-primary do-request-btn" data-id="${itemId}" style="font-size:12px;padding:4px 12px">📩 Solicitar cotización</button>
+                td.innerHTML = `<div style="padding:12px;background:#fffbeb;border-radius:6px">
+                  <p style="margin:0 0 8px;font-size:13px;color:#92400e">⚠ No se han enviado solicitudes de cotización a ningún proveedor para este ítem.</p>
+                  <button class="btn-primary do-request-btn" data-id="${itemId}" style="font-size:12px;padding:4px 12px">📩 Solicitar cotización al proveedor</button>
                 </div>`;
                 td.querySelector('.do-request-btn').onclick = () => { detailRow.style.display='none'; openQuotationRequest(item); };
                 return;
@@ -3286,7 +3289,10 @@ async function purchasesView() {
               });
 
             } catch(e) {
-              td.innerHTML = `<div style="padding:12px;color:#dc2626">Error al cargar: ${e.message}</div>`;
+              td.innerHTML = `<div style="padding:12px;color:#dc2626;background:#fef2f2;border-radius:6px">
+                <b>Error al cargar cotizaciones:</b> ${escapeHtml(e.message)}<br>
+                <small style="color:#9ca3af">Si persiste, recarga la página (F5)</small>
+              </div>`;
             }
           };
         });
@@ -4715,6 +4721,9 @@ window.respondPO = async (poId, decision) => {
 async function quotationsView() {
   // El proveedor no puede acceder a pending-items → vista propia
   if (roleCan('proveedor')) return proveedorPOView();
+
+  app.innerHTML = shell('<div class="muted small" style="padding:32px;text-align:center">⏳ Cargando cotizaciones...</div>', 'cotizaciones');
+  bindCommon();
 
   const [quotes, pending, suppliers] = await Promise.all([
     api('/api/quotations'),
@@ -7323,8 +7332,8 @@ async function render() {
   if (route === 'seguimiento') return trackingListView();
   if (route.startsWith('seguimiento/')) return trackingDetailView(route.split('/')[1]);
   if (route === 'autorizaciones') return approvalsView();
-  if (route === 'compras') return purchasesView();
-  if (route === 'cotizaciones') return quotationsView();
+  if (route === 'compras') return purchasesView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Compras:</b> ${e.message}</div>`, 'compras'); bindCommon(); });
+  if (route === 'cotizaciones') return quotationsView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Cotizaciones:</b> ${e.message}</div>`, 'cotizaciones'); bindCommon(); });
   if (route === 'facturacion') return invoicingView();
   if (route === 'pagos') return paymentsView();
   if (route === 'inventarios') return inventoryView();
