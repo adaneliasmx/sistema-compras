@@ -138,11 +138,12 @@ function read() {
 function write(data) {
   _cache = data;
   if (pool) {
-    const snapshot = JSON.stringify(data);
-    _writeQueue = _writeQueue.then(() =>
-      pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
-        .catch(err => console.error('[db] Error persistiendo en PostgreSQL:', err.message))
-    );
+    // JSON.stringify dentro de la cola asíncrona para no bloquear el event loop
+    _writeQueue = _writeQueue.then(() => {
+      const snapshot = JSON.stringify(data);
+      return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
+        .catch(err => console.error('[db] Error persistiendo en PostgreSQL:', err.message));
+    });
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
