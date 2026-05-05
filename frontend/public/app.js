@@ -2716,7 +2716,7 @@ async function purchasesView() {
       try {
         await api(`/api/approvals/items/${btn.dataset.id}/approve`, { method: 'POST', body: JSON.stringify({ comment: 'Autorizado desde módulo Compras' }) });
         btn.textContent = '✅'; setTimeout(render, 800);
-      } catch(e) { poMsg.textContent = e.message; }
+      } catch(e) { alert('No se pudo autorizar: ' + e.message); }
     });
     tableEl.querySelectorAll('.cancel-item').forEach(btn => btn.onclick = () => {
       const row = sourceList.find(x => Number(x.id) === Number(btn.dataset.id));
@@ -2994,7 +2994,7 @@ async function purchasesView() {
           ${authCount > 0 ? `<button class="btn-secondary" id="selectAllAuth" style="margin-left:10px;padding:2px 8px;font-size:12px">Seleccionar autorizados</button>` : ''}
         </div>
         <div id="pendientesTableWrap"><div class="table-wrap"><table>${THEAD}<tbody>
-          ${itemsPendientePO.length ? itemsPendientePO.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin ítems listos para PO.<br><small>Los ítems deben tener proveedor y costo asignados.</small></td></tr>'}
+          ${itemsPendientePO.length ? renderGrouped(itemsPendientePO) : '<tr><td colspan="15" class="muted" style="text-align:center;padding:16px">Sin ítems listos para PO.<br><small>Los ítems deben tener proveedor y costo asignados.</small></td></tr>'}
         </tbody></table></div></div>
         ${waitingAuthCount > 0 ? `
         <div style="margin-top:12px;display:flex;align-items:center;gap:12px;padding:10px 14px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">
@@ -3019,7 +3019,7 @@ async function purchasesView() {
           (x.requester_name||'').toLowerCase().includes(val) ||
           (x.status||'').toLowerCase().includes(val));
         const wrap = document.getElementById('pendientesTableWrap');
-        wrap.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.length ? filtered.map(i => itemRow(i, true)).join('') : '<tr><td colspan="12" class="muted" style="text-align:center;padding:16px">Sin resultados</td></tr>'}</tbody></table></div>`;
+        wrap.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.length ? renderGrouped(filtered) : '<tr><td colspan="15" class="muted" style="text-align:center;padding:16px">Sin resultados</td></tr>'}</tbody></table></div>`;
         bindTableActions(wrap, itemsPendientePO);
       };
 
