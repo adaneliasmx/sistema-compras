@@ -401,6 +401,73 @@ router.post('/repair-stuck-items', (req, res) => {
   res.json({ fixed: report.length, items: report });
 });
 
+// ── Reparar IDs duplicados (incluyendo ítems con PO) ────────────────────────
+router.post('/repair-duplicate-ids', (req, res) => {
+  const db = read();
+  const items = db.requisition_items || [];
+
+  const idCount = {};
+  items.forEach(i => { idCount[i.id] = (idCount[i.id] || 0) + 1; });
+  const duplicateIds = Object.keys(idCount).filter(id => idCount[id] > 1).map(Number);
+
+  if (!duplicateIds.length) {
+    return res.json({ fixed: 0, message: 'No se encontraron IDs duplicados.' });
+  }
+
+  let maxId = Math.max(...items.map(i => Number(i.id) || 0));
+  const fixed = [];
+
+  duplicateIds.forEach(dupId => {
+    const group = items.filter(i => i.id === dupId);
+    group.slice(1).forEach(item => {
+      const newId = ++maxId;
+
+      // Actualizar purchase_order_items — identificar por purchase_order_id
+      (db.purchase_order_items || []).forEach(poi => {
+        if (poi.requisition_item_id === dupId && poi.purchase_order_id === item.purchase_order_id)
+          poi.requisition_item_id = newId;
+      });
+
+      // Actualizar status_history — identificar por purchase_order_id
+      (db.status_history || []).forEach(h => {
+        if (h.requisition_item_id === dupId && h.purchase_order_id === item.purchase_order_id)
+          h.requisition_item_id = newId;
+      });
+
+      // Actualizar quotation ganadora (identificada por winning_quote_id)
+      if (item.winning_quote_id) {
+        (db.quotations || []).forEach(q => {
+          if (q.id === item.winning_quote_id && q.requisition_item_id === dupId)
+            q.requisition_item_id = newId;
+        });
+      } else if (!item.purchase_order_id) {
+        (db.quotations || []).forEach(q => { if (q.requisition_item_id === dupId) q.requisition_item_id = newId; });
+        (db.quotation_requests || []).forEach(qr => { if (qr.requisition_item_id === dupId) qr.requisition_item_id = newId; });
+      }
+
+      const cat = (db.catalog_items || []).find(c => c.id === item.catalog_item_id);
+      fixed.push({
+        old_id: dupId,
+        new_id: newId,
+        name: cat?.name || item.manual_item_name || '?',
+        po_id: item.purchase_order_id || null
+      });
+
+      item.id = newId;
+    });
+  });
+
+  if (fixed.length > 0) write(db);
+
+  res.json({
+    fixed: fixed.length,
+    message: fixed.length > 0
+      ? `${fixed.length} IDs duplicados reparados.`
+      : 'No se encontraron IDs duplicados.',
+    items: fixed
+  });
+});
+
 // ── Migración: reparar IDs duplicados en requisition_items ──────────────────
 // Bug: buildItems llamaba nextId() dentro del .map() sin pushear al array,
 // causando que todos los ítems de un mismo lote recibieran el mismo ID.

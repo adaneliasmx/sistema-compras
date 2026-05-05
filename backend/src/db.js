@@ -45,11 +45,29 @@ function fixDuplicateItemIds(data) {
 
   duplicateIds.forEach(dupId => {
     const group = items.filter(i => i.id === dupId);
-    if (group.some(i => i.purchase_order_id)) return; // ya tiene PO → no tocar
+    // Mantener el primero con su ID original, reasignar los demás
     group.slice(1).forEach(item => {
       const newId = ++maxId;
-      (data.quotations || []).forEach(q => { if (q.requisition_item_id === item.id) q.requisition_item_id = newId; });
-      (data.quotation_requests || []).forEach(qr => { if (qr.requisition_item_id === item.id) qr.requisition_item_id = newId; });
+      // Actualizar purchase_order_items — identificar por purchase_order_id
+      (data.purchase_order_items || []).forEach(poi => {
+        if (poi.requisition_item_id === dupId && poi.purchase_order_id === item.purchase_order_id)
+          poi.requisition_item_id = newId;
+      });
+      // Actualizar status_history — identificar por purchase_order_id
+      (data.status_history || []).forEach(h => {
+        if (h.requisition_item_id === dupId && h.purchase_order_id === item.purchase_order_id)
+          h.requisition_item_id = newId;
+      });
+      // Actualizar quotations sin PO (ítems nuevos sin PO aún)
+      if (!item.purchase_order_id) {
+        (data.quotations || []).forEach(q => { if (q.requisition_item_id === dupId) q.requisition_item_id = newId; });
+        (data.quotation_requests || []).forEach(qr => { if (qr.requisition_item_id === dupId) qr.requisition_item_id = newId; });
+      } else if (item.winning_quote_id) {
+        // Con PO: solo actualizar la cotización ganadora identificada por su ID
+        (data.quotations || []).forEach(q => {
+          if (q.id === item.winning_quote_id && q.requisition_item_id === dupId) q.requisition_item_id = newId;
+        });
+      }
       item.id = newId;
       fixed++;
     });
