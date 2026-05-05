@@ -1804,7 +1804,7 @@ async function approvalsView() {
         requisition_id: r.requisition_id,
         folio: r.requisition_folio,
         requester: r.requester_name,
-        total: r.requisition_total,
+        total: 0,
         rule: r.approval_rule,
         items: []
       });
@@ -1812,6 +1812,7 @@ async function approvalsView() {
     groupMap.get(r.requisition_id).items.push(r);
   });
   const groups = [...groupMap.values()];
+  groups.forEach(g => { g.total = g.items.reduce((s, i) => s + Number(i.quantity||0)*Number(i.unit_cost||0), 0); });
 
   const itemRows = groups.map(g => `
     <tr class="req-group-header" style="background:#eff6ff;border-top:2px solid #bfdbfe">
@@ -2013,8 +2014,58 @@ async function approvalsView() {
           </div>
         </div>` : `<div class="muted small" style="margin-bottom:12px">Sin historial de compras para este ítem.</div>`}
 
+        ${ctx.item_history && ctx.item_history.length ? `
+        <div style="margin-bottom:12px">
+          <div class="small muted" style="font-weight:600;margin-bottom:6px">📋 Historial del ítem (${ctx.item_history.length} evento(s))</div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;font-size:12px;border-collapse:collapse">
+              <thead><tr style="background:#f1f5f9">
+                <th style="padding:4px 8px;text-align:left">Fecha</th>
+                <th style="padding:4px 8px;text-align:left">Evento</th>
+                <th style="padding:4px 8px;text-align:left">Por</th>
+                <th style="padding:4px 8px;text-align:left">Comentario</th>
+              </tr></thead>
+              <tbody>${ctx.item_history.map((h, idx) => {
+                const statusColor = h.new_status === 'Autorizado' ? '#15803d'
+                  : h.new_status === 'Rechazado' ? '#dc2626'
+                  : h.new_status === 'En autorización' ? '#d97706'
+                  : '#374151';
+                return `<tr style="background:${idx%2?'#f8fafc':'white'};border-bottom:1px solid #e5e7eb">
+                  <td style="padding:3px 8px;white-space:nowrap">${String(h.changed_at||'').slice(0,16).replace('T',' ')}</td>
+                  <td style="padding:3px 8px">
+                    ${h.old_status ? `<span class="muted">${escapeHtml(h.old_status)}</span> → ` : ''}
+                    <b style="color:${statusColor}">${escapeHtml(h.new_status||'')}</b>
+                  </td>
+                  <td style="padding:3px 8px">${escapeHtml(h.changed_by_name||'-')}</td>
+                  <td style="padding:3px 8px;font-style:italic;color:#6b7280">${escapeHtml(h.comment||'')}</td>
+                </tr>`;
+              }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+        ${ctx.item_spending ? `
+        <div style="margin-bottom:16px">
+          <div class="small muted" style="font-weight:600;margin-bottom:8px">🏷️ Gasto histórico del ítem <b>${escapeHtml(cat?.name || ctx.item.manual_item_name || '')}</b> (empresa / ${cc}${sub ? ' / '+sub : ''})</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Últimas 8 semanas</div>
+              ${spendTable(ctx.item_spending.weekly, cc, sub)}
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Últimos 12 meses</div>
+              ${spendTable(ctx.item_spending.monthly, cc, sub)}
+            </div>
+            <div>
+              <div class="small muted" style="margin-bottom:4px">Por año</div>
+              ${spendTable(ctx.item_spending.annual, cc, sub)}
+            </div>
+          </div>
+        </div>` : ''}
+
         <div>
-          <div class="small muted" style="font-weight:600;margin-bottom:8px">📊 Gasto histórico (empresa / ${cc}${sub ? ' / '+sub : ''})</div>
+          <div class="small muted" style="font-weight:600;margin-bottom:8px">📊 Gasto histórico total empresa / ${cc}${sub ? ' / '+sub : ''}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
             <div>
               <div class="small muted" style="margin-bottom:4px">Últimas 8 semanas</div>

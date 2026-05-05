@@ -113,47 +113,59 @@ router.get('/items/:id/context', allowRoles('autorizador', 'comprador', 'pagos',
     ? activeItems.filter(ri => ri.sub_cost_center_id === item.sub_cost_center_id)
     : [];
 
+  // Ítems del mismo artículo de catálogo (gasto específico del ítem)
+  const catalogItemItems = catItem
+    ? activeItems.filter(ri => ri.catalog_item_id === catItem.id)
+    : [];
+
   const now = new Date();
   const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-  // Semanal — últimas 8 semanas
-  const weekly = Array.from({ length: 8 }, (_, i) => {
-    const to = new Date(now); to.setDate(to.getDate() - i * 7);
-    const from = new Date(to); from.setDate(from.getDate() - 7);
-    return {
-      label: `S-${i + 1}`,
-      from: from.toISOString().slice(0, 10),
-      total: sumSpend(activeItems, from, to),
-      cost_center: sumSpend(ccItems, from, to),
-      sub_cost_center: item.sub_cost_center_id ? sumSpend(subCcItems, from, to) : null
-    };
-  }).reverse();
+  const buildPeriods = (periodFn) => ({
+    weekly: Array.from({ length: 8 }, (_, i) => {
+      const to = new Date(now); to.setDate(to.getDate() - i * 7);
+      const from = new Date(to); from.setDate(from.getDate() - 7);
+      return { label: `S-${i + 1}`, ...periodFn(from, to) };
+    }).reverse(),
+    monthly: Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const from = new Date(d.getFullYear(), d.getMonth(), 1);
+      const to = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+      return { label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`, ...periodFn(from, to) };
+    }).reverse(),
+    annual: Array.from({ length: 3 }, (_, i) => {
+      const year = now.getFullYear() - i;
+      const from = new Date(year, 0, 1);
+      const to = new Date(year + 1, 0, 1);
+      return { label: String(year), ...periodFn(from, to) };
+    }).reverse()
+  });
 
-  // Mensual — últimos 12 meses
-  const monthly = Array.from({ length: 12 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const from = new Date(d.getFullYear(), d.getMonth(), 1);
-    const to = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-    return {
-      label: `${MONTHS[d.getMonth()]} ${d.getFullYear()}`,
-      total: sumSpend(activeItems, from, to),
-      cost_center: sumSpend(ccItems, from, to),
-      sub_cost_center: item.sub_cost_center_id ? sumSpend(subCcItems, from, to) : null
-    };
-  }).reverse();
+  const { weekly, monthly, annual } = buildPeriods((from, to) => ({
+    total: sumSpend(activeItems, from, to),
+    cost_center: sumSpend(ccItems, from, to),
+    sub_cost_center: item.sub_cost_center_id ? sumSpend(subCcItems, from, to) : null
+  }));
 
-  // Anual — últimos 3 años
-  const annual = Array.from({ length: 3 }, (_, i) => {
-    const year = now.getFullYear() - i;
-    const from = new Date(year, 0, 1);
-    const to = new Date(year + 1, 0, 1);
-    return {
-      label: String(year),
-      total: sumSpend(activeItems, from, to),
-      cost_center: sumSpend(ccItems, from, to),
-      sub_cost_center: item.sub_cost_center_id ? sumSpend(subCcItems, from, to) : null
-    };
-  }).reverse();
+  // Gasto histórico del ítem de catálogo (empresa / c.costo / sub)
+  const itemSpending = catItem ? buildPeriods((from, to) => ({
+    total: sumSpend(catalogItemItems, from, to),
+    cost_center: sumSpend(catalogItemItems.filter(ri => ri.cost_center_id === item.cost_center_id), from, to),
+    sub_cost_center: item.sub_cost_center_id
+      ? sumSpend(catalogItemItems.filter(ri => ri.sub_cost_center_id === item.sub_cost_center_id), from, to)
+      : null
+  })) : null;
+
+  // Historial de eventos del ítem (status_history)
+  const itemHistory = (db.status_history || [])
+    .filter(h => h.requisition_item_id === item.id)
+    .map(h => ({
+      ...h,
+      changed_by_name: h.changed_by_user_id
+        ? (db.users.find(u => u.id === h.changed_by_user_id) || {}).full_name || null
+        : null
+    }))
+    .sort((a, b) => new Date(a.changed_at) - new Date(b.changed_at));
 
   res.json({
     item,
@@ -166,6 +178,8 @@ router.get('/items/:id/context', allowRoles('autorizador', 'comprador', 'pagos',
     winning_quote: winnerQuote || null,
     all_quotes: allQuotes,
     purchase_history: purchaseHistory,
+    item_history: itemHistory,
+    item_spending: itemSpending,
     spending: { weekly, monthly, annual }
   });
 });
