@@ -6033,9 +6033,10 @@ const checadorState = {
   absenceLoading: false,
   parseFrom: '',
   parseTo: '',
+  calWeekOff: 0,
 };
 
-const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias'];
+const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias', '📅 Calendario'];
 const TURNO_COLORS = { 'Turno 1': '#1d4ed8', 'Turno 2': '#0f766e', 'Turno 3': '#7c3aed', 'Administrativo': '#b45309', 'Turno Administrativo': '#10b981' };
 
 function turnoChip(name) {
@@ -6085,6 +6086,7 @@ function renderChecador() {
   else if (checadorState.tab === 2) body = renderChecadorRegistros();
   else if (checadorState.tab === 3) body = renderChecadorValidar();
   else if (checadorState.tab === 4) body = renderChecadorInasistencias();
+  else if (checadorState.tab === 5) body = renderChecadorCalendario();
   const content = '<div class="section-header"><h2>&#128336; Checador &mdash; Importaci&oacute;n y An&aacute;lisis</h2></div>' +
     '<div class="tab-bar" style="margin-bottom:16px;">' + tabsHtml + '</div>' + body;
   el.innerHTML = shell(content, 'checador');
@@ -6664,8 +6666,9 @@ function renderChecadorRegistros() {
                 <td>${r.retardo_minutes > 0
                   ? `<span style="color:#dc2626;font-weight:600;">⏱ ${fmtWorked(r.retardo_minutes)}</span>`
                   : '<span style="color:#15803d;font-size:12px;">Sin retardo</span>'}</td>
-                <td>${r.overtime_minutes > 0
-                  ? `<span style="color:#7c3aed;font-weight:600;">+${fmtWorked(r.overtime_minutes)}</span>`
+                <td oncontextmenu="${r.overtime_minutes > 0 ? `event.preventDefault();checadorOvertimeMenu(event,${r.id})` : ''}">
+                  ${r.overtime_minutes > 0
+                  ? `<span style="color:#7c3aed;font-weight:600;cursor:context-menu;" title="Clic derecho para opciones">+${fmtWorked(r.overtime_minutes)}</span>`
                   : '<span style="color:var(--muted);font-size:12px;">—</span>'}</td>
                 <td>${statusChipCh(r.status)}</td>
                 <td>
@@ -6929,6 +6932,108 @@ function renderChecadorInasistencias() {
   `;
 }
 
+// ── Tab 5: Calendario semanal del checador ────────────────────────────────────
+function renderChecadorCalendario() {
+  const allRecs = checadorState.records;
+  if (allRecs.length === 0) {
+    return `<div class="card section"><div class="empty-state"><div class="empty-icon">📅</div>
+      <p>Importa y guarda registros del checador para ver el calendario.</p>
+      <button class="btn" onclick="checadorSetTab(0)">← Ir a Importar</button></div></div>`;
+  }
+
+  // Semana activa
+  const base = getWeekStart();
+  base.setDate(base.getDate() + checadorState.calWeekOff * 7);
+  const weekDates = getWeekDates(base); // 7 días Lun–Dom
+  const weekIsos  = weekDates.map(d => fmtDate(d));
+  const rangeLbl  = `${weekIsos[0]} – ${weekIsos[6]}`;
+
+  // Índice: employee_key → { name, shift_name, byDate: {date: record} }
+  const byEmp = {};
+  for (const r of allRecs) {
+    const key  = r.employee_id != null ? `e${r.employee_id}` : `c${r.checador_id}`;
+    const name = r.employee_name || r.checador_name;
+    if (!byEmp[key]) byEmp[key] = { name, shift_name: r.shift_name, byDate: {} };
+    // Si hay múltiples registros el mismo día, queda el más reciente (no normal)
+    byEmp[key].byDate[r.date] = r;
+  }
+  // Agregar ausencias detectadas como "falta" si no hay registro ese día
+  for (const a of checadorState.absences) {
+    if (!weekIsos.includes(a.date)) continue;
+    const key = `e${a.employee_id}`;
+    if (!byEmp[key]) byEmp[key] = { name: a.employee_name, shift_name: a.shift_name, byDate: {} };
+    if (!byEmp[key].byDate[a.date]) byEmp[key].byDate[a.date] = { _absence: true, shift_name: a.shift_name };
+  }
+
+  const empKeys = Object.keys(byEmp).sort((a, b) => byEmp[a].name.localeCompare(byEmp[b].name));
+
+  function cellFor(emp, dateIso) {
+    const r = emp.byDate[dateIso];
+    if (!r) return '<td style="text-align:center;"><span style="color:#d1d5db;">—</span></td>';
+    if (r._absence) return '<td style="text-align:center;"><span class="cell-chip cell-falta" style="font-size:11px;">Falta</span></td>';
+
+    let cls = 'cell-asignado', lbl = '✓';
+    if (!r.exit_time)           { cls = 'cell-permiso';     lbl = '?sal'; }
+    if (r.retardo_minutes > 0)  { cls = 'cell-vacacion';    lbl = '⏱Ret'; }
+    if (r.overtime_minutes > 0) { cls = 'cell-tiempo_extra'; lbl = `+${fmtWorked(r.overtime_minutes)}`; }
+    if (r.retardo_minutes > 0 && r.overtime_minutes > 0) { cls = 'cell-incapacidad'; lbl = '⏱+TE'; }
+
+    const tip = `${r.entry_time || '?'}–${r.exit_time || '?'} | Ret:${r.retardo_minutes||0}m | TE:${r.overtime_minutes||0}m`;
+    return `<td style="text-align:center;" title="${tip}">
+      <span class="cell-chip ${cls}" style="font-size:11px;cursor:default;">${lbl}</span></td>`;
+  }
+
+  const headerCells = weekDates.map(d => {
+    const iso = fmtDate(d);
+    const isToday = iso === fmtDate(new Date());
+    const dow = DAYS_SHORT[d.getDay()];
+    return `<th style="${isToday ? 'background:#d1fae5;' : ''}text-align:center;">${dow}<br><span style="font-size:11px;font-weight:400;">${d.getDate()}/${d.getMonth()+1}</span></th>`;
+  }).join('');
+
+  const rows = empKeys.map(key => {
+    const emp = byEmp[key];
+    const cells = weekIsos.map(iso => cellFor(emp, iso)).join('');
+    return `<tr>
+      <td style="white-space:nowrap;padding:6px 8px;">
+        <strong style="font-size:13px;">${emp.name}</strong><br>
+        <span style="font-size:11px;color:var(--muted);">${turnoChip(emp.shift_name)}</span>
+      </td>${cells}</tr>`;
+  }).join('');
+
+  return `
+    <div class="card section">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        <h3 style="margin:0;">Calendario semanal — Checador</h3>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <button class="btn btn-secondary" style="font-size:13px;padding:4px 12px;"
+            onclick="checadorState.calWeekOff--;renderChecador()">‹ Anterior</button>
+          <span style="font-size:13px;font-weight:600;padding:0 8px;">📅 ${rangeLbl}</span>
+          <button class="btn btn-secondary" style="font-size:13px;padding:4px 12px;"
+            onclick="checadorState.calWeekOff++;renderChecador()">Siguiente ›</button>
+          <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;"
+            onclick="checadorState.calWeekOff=0;renderChecador()">Hoy</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="cal-week-table">
+          <thead><tr>
+            <th style="text-align:left;min-width:150px;">Empleado</th>${headerCells}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <strong style="font-size:12px;">Leyenda:</strong>
+        <span class="cell-chip cell-asignado" style="font-size:11px;">✓ Asistencia</span>
+        <span class="cell-chip cell-vacacion" style="font-size:11px;">⏱ Retardo</span>
+        <span class="cell-chip cell-tiempo_extra" style="font-size:11px;">+ T. Extra</span>
+        <span class="cell-chip cell-incapacidad" style="font-size:11px;">⏱+ Ret+TE</span>
+        <span class="cell-chip cell-permiso" style="font-size:11px;">?sal Sin salida</span>
+        <span class="cell-chip cell-falta" style="font-size:11px;">Falta</span>
+      </div>
+    </div>`;
+}
+
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 async function checadorLoadFile(input) {
@@ -7075,6 +7180,47 @@ async function checadorCrearFalta(recId, empId, date) {
     });
     await checadorSetStatus(recId, 'validado');
     toast('Falta registrada');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Context menu para tiempo extra ────────────────────────────────────────────
+(function() {
+  const menu = document.createElement('div');
+  menu.id = 'ch-ctx-menu';
+  menu.style.cssText = 'position:fixed;display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;min-width:180px;padding:4px 0;font-size:13px;';
+  document.body.appendChild(menu);
+  document.addEventListener('click', () => { menu.style.display = 'none'; });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.style.display = 'none'; });
+})();
+
+function checadorOvertimeMenu(event, recId) {
+  const menu = document.getElementById('ch-ctx-menu');
+  menu.innerHTML = `
+    <div style="padding:6px 14px;color:#64748b;font-size:11px;border-bottom:1px solid #f1f5f9;">T. Extra — Opciones</div>
+    <div onclick="checadorBorrarOvertime(${recId})"
+      style="padding:8px 14px;cursor:pointer;color:#dc2626;display:flex;align-items:center;gap:6px;"
+      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">
+      🗑 Borrar tiempo extra
+    </div>`;
+  menu.style.display = 'block';
+  const x = Math.min(event.clientX, window.innerWidth - 200);
+  const y = Math.min(event.clientY, window.innerHeight - 80);
+  menu.style.left = x + 'px';
+  menu.style.top  = y + 'px';
+}
+
+async function checadorBorrarOvertime(recId) {
+  document.getElementById('ch-ctx-menu').style.display = 'none';
+  if (!confirm('¿Borrar el tiempo extra de este registro?')) return;
+  try {
+    await api(`/api/rhh/checador/records/${recId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ overtime_minutes: 0 }),
+    });
+    const idx = checadorState.records.findIndex(r => r.id === recId);
+    if (idx !== -1) { checadorState.records[idx].overtime_minutes = 0; checadorState.records[idx].overtime_type = null; }
+    toast('Tiempo extra eliminado');
+    renderChecador();
   } catch (err) { toast(err.message, 'error'); }
 }
 

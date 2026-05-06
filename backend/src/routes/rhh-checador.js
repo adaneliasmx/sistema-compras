@@ -108,10 +108,12 @@ function detectShift(shifts, entryMin) {
 
 /**
  * Agrupa las checadas de un empleado en sesiones (turno completo).
- * Nueva sesión si la brecha entre checadas consecutivas es > 10 h (600 min).
+ * Si se conoce el turno asignado, el SESSION_GAP se ajusta dinámicamente:
+ *   gap = max(600, 24h - duración_turno - 1h_buffer)
+ * Esto evita dividir sesiones de trabajadores que llegan muy antes de su turno.
  * Deduplica checadas con diferencia ≤ 1 min.
  */
-function buildSessions(rows) {
+function buildSessions(rows, assignedShift = null) {
   // Ordenar cronológicamente
   rows.sort((a, b) => {
     if (a.dateIso !== b.dateIso) return a.dateIso < b.dateIso ? -1 : 1;
@@ -128,7 +130,15 @@ function buildSessions(rows) {
 
   if (deduped.length === 0) return [];
 
-  const SESSION_GAP = 600; // 10 horas
+  // Gap dinámico: si conocemos el turno, usamos 24h - duración_turno - 60 min
+  let SESSION_GAP = 600; // 10 horas por defecto
+  if (assignedShift) {
+    const startMin = timeToMin(assignedShift.start_time);
+    const endMin   = timeToMin(assignedShift.end_time);
+    const shiftDur = endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin;
+    SESSION_GAP = Math.max(600, 1440 - shiftDur - 60);
+  }
+
   const sessions = [[deduped[0]]];
 
   for (let i = 1; i < deduped.length; i++) {
@@ -150,8 +160,10 @@ function buildSessions(rows) {
 
 /**
  * Procesa filas del CSV → registros estructurados por sesión/turno.
+ * Usa el turno asignado al empleado (vía mapping + employees) para ajustar
+ * el SESSION_GAP y confirmar el turno sin depender solo de la hora de entrada.
  */
-function processRows(rows, shifts, mappings) {
+function processRows(rows, shifts, mappings, employees = []) {
   // Agrupar por checadorId
   const byId = {};
   for (const r of rows) {
@@ -162,19 +174,23 @@ function processRows(rows, shifts, mappings) {
   const records = [];
 
   for (const [cidStr, { name, rows: empRows }] of Object.entries(byId)) {
-    const checadorId = parseInt(cidStr, 10);
-    const mapping    = mappings.find(m => m.checador_id === checadorId);
-    const employeeId = mapping ? mapping.employee_id : null;
+    const checadorId   = parseInt(cidStr, 10);
+    const mapping      = mappings.find(m => m.checador_id === checadorId);
+    const employeeId   = mapping ? mapping.employee_id : null;
 
-    const sessions = buildSessions(empRows);
+    // Turno asignado en el sistema → prioridad sobre detección por hora
+    const employee     = employeeId ? employees.find(e => e.id === employeeId) : null;
+    const assignedShift = employee ? shifts.find(s => s.id === employee.shift_id) : null;
+
+    const sessions = buildSessions(empRows, assignedShift);
 
     for (const session of sessions) {
       const entry   = session[0];
       const exit    = session[session.length - 1];
       const hasExit = session.length > 1;
 
-      // Detectar turno por hora de entrada
-      const shift = detectShift(shifts, entry.timeMin);
+      // Turno: usar el asignado en sistema si existe; si no, detectar por hora de entrada
+      const shift = assignedShift || detectShift(shifts, entry.timeMin);
 
       // Calcular retardo (tolerancia 15 min)
       let retardoMin = 0;
@@ -262,7 +278,7 @@ router.post('/parse', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
   if (date_to)   rows = rows.filter(r => r.dateIso <= date_to);
   if (rows.length === 0) return res.status(400).json({ error: 'Sin registros en el rango de fechas indicado' });
 
-  const records = processRows(rows, shifts, mappings);
+  const records = processRows(rows, shifts, mappings, employees);
 
   // Lista de trabajadores únicos del CSV
   const workerMap = {};
@@ -347,6 +363,7 @@ router.post('/process', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, re
   const db       = read();
   const shifts   = db.rhh_shifts || [];
   const mappings = db.rhh_checador_mappings || [];
+  const employees = db.rhh_employees || [];
 
   let rows = parseChecadorCSV(csv_text);
   if (rows.length === 0) return res.status(400).json({ error: 'No se encontraron registros válidos' });
@@ -354,7 +371,7 @@ router.post('/process', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, re
   if (date_from) rows = rows.filter(r => r.dateIso >= date_from);
   if (date_to)   rows = rows.filter(r => r.dateIso <= date_to);
 
-  const processed = processRows(rows, shifts, mappings);
+  const processed = processRows(rows, shifts, mappings, employees);
 
   const base   = replace ? [] : (db.rhh_checador_records || []);
   let nextRecId = base.length > 0 ? Math.max(...base.map(r => r.id || 0)) : 0;
@@ -401,12 +418,13 @@ router.patch('/records/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
   const idx  = recs.findIndex(r => r.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
 
-  const { status, notes } = req.body || {};
+  const { status, notes, overtime_minutes } = req.body || {};
   const VALID = ['pendiente', 'validado', 'ignorado'];
   if (status && !VALID.includes(status)) return res.status(400).json({ error: 'Estado inválido' });
 
-  if (status !== undefined) recs[idx].status = status;
-  if (notes  !== undefined) recs[idx].notes  = notes;
+  if (status           !== undefined) recs[idx].status           = status;
+  if (notes            !== undefined) recs[idx].notes            = notes;
+  if (overtime_minutes !== undefined) { recs[idx].overtime_minutes = overtime_minutes; recs[idx].overtime_type = null; }
   recs[idx].reviewed_by = req.rhhUser.id;
   recs[idx].reviewed_at = new Date().toISOString();
 
