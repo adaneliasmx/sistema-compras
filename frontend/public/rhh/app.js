@@ -6031,6 +6031,8 @@ const checadorState = {
   absenceFrom: '',
   absenceTo: '',
   absenceLoading: false,
+  parseFrom: '',
+  parseTo: '',
 };
 
 const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias'];
@@ -6390,7 +6392,19 @@ function renderChecadorImportar() {
       <label style="font-size:13px;font-weight:600;">O pegar CSV aquí:</label>
       <textarea id="ch-csv-text" rows="8" style="width:100%;font-family:monospace;font-size:12px;margin-top:4px;border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical;"
         oninput="checadorState.csvText=this.value">${checadorState.csvText}</textarea>
-      <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;">
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Filtrar desde</label>
+          <input type="date" value="${checadorState.parseFrom}"
+            onchange="checadorState.parseFrom=this.value"
+            style="font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;" />
+        </div>
+        <div>
+          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Filtrar hasta</label>
+          <input type="date" value="${checadorState.parseTo}"
+            onchange="checadorState.parseTo=this.value"
+            style="font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;" />
+        </div>
         <button class="btn" onclick="checadorParsear()">🔍 Analizar CSV</button>
         ${hasRecords ? `<button class="btn btn-secondary" onclick="checadorProcesar(true)">↩️ Reemplazar registros guardados</button>` : ''}
         ${preview ? `<button class="btn" style="background:#15803d;" onclick="checadorProcesar(false)">💾 Guardar registros procesados</button>` : ''}
@@ -6866,7 +6880,7 @@ async function checadorParsear() {
   try {
     const data = await api('/api/rhh/checador/parse', {
       method: 'POST',
-      body: JSON.stringify({ csv_text: text }),
+      body: JSON.stringify({ csv_text: text, date_from: checadorState.parseFrom || undefined, date_to: checadorState.parseTo || undefined }),
     });
     checadorState.preview  = data;
     checadorState.mappings = data.workers.filter(w => w.mapped).map(w => ({
@@ -6885,7 +6899,7 @@ async function checadorProcesar(replace) {
   try {
     await api('/api/rhh/checador/process', {
       method: 'POST',
-      body: JSON.stringify({ csv_text: text, replace }),
+      body: JSON.stringify({ csv_text: text, replace, date_from: checadorState.parseFrom || undefined, date_to: checadorState.parseTo || undefined }),
     });
     checadorState.records = await api('/api/rhh/checador/records');
     toast(`Registros guardados: ${checadorState.records.length}`);

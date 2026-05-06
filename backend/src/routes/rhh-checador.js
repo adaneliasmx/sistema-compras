@@ -227,7 +227,7 @@ function processRows(rows, shifts, mappings) {
 
 // ── POST /api/rhh/checador/parse  (preview sin guardar) ──────────────────────
 router.post('/parse', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
-  const { csv_text } = req.body || {};
+  const { csv_text, date_from, date_to } = req.body || {};
   if (!csv_text) return res.status(400).json({ error: 'csv_text es requerido' });
 
   const db       = read();
@@ -235,8 +235,12 @@ router.post('/parse', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
   const mappings = db.rhh_checador_mappings || [];
   const employees = db.rhh_employees || [];
 
-  const rows = parseChecadorCSV(csv_text);
+  let rows = parseChecadorCSV(csv_text);
   if (rows.length === 0) return res.status(400).json({ error: 'No se encontraron registros válidos en el CSV' });
+
+  if (date_from) rows = rows.filter(r => r.dateIso >= date_from);
+  if (date_to)   rows = rows.filter(r => r.dateIso <= date_to);
+  if (rows.length === 0) return res.status(400).json({ error: 'Sin registros en el rango de fechas indicado' });
 
   const records = processRows(rows, shifts, mappings);
 
@@ -317,15 +321,18 @@ router.post('/mappings', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, r
 
 // ── POST /api/rhh/checador/process  (guardar en DB) ──────────────────────────
 router.post('/process', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
-  const { csv_text, replace } = req.body || {};
+  const { csv_text, replace, date_from, date_to } = req.body || {};
   if (!csv_text) return res.status(400).json({ error: 'csv_text es requerido' });
 
   const db       = read();
   const shifts   = db.rhh_shifts || [];
   const mappings = db.rhh_checador_mappings || [];
 
-  const rows = parseChecadorCSV(csv_text);
+  let rows = parseChecadorCSV(csv_text);
   if (rows.length === 0) return res.status(400).json({ error: 'No se encontraron registros válidos' });
+
+  if (date_from) rows = rows.filter(r => r.dateIso >= date_from);
+  if (date_to)   rows = rows.filter(r => r.dateIso <= date_to);
 
   const processed = processRows(rows, shifts, mappings);
 
