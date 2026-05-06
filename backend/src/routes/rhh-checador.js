@@ -192,15 +192,34 @@ function processRows(rows, shifts, mappings) {
         workedMin = Math.round((exitDT - entryDT) / 60000);
       }
 
-      // Calcular duración esperada del turno y tiempo extra (>15 min sobre el turno)
+      // Calcular tiempo extra:
+      //   - Salida tardía: exit > shift_end + 15 min → cuenta desde shift_end
+      //   - Llegada anticipada >80 min (1h20) antes del turno → cuenta toda la anticipación
+      //   - Llegar antes sin exceder 80 min NO es tiempo extra
       let overtimeMin = 0;
-      if (shift && workedMin !== null) {
-        const shiftStartMin = timeToMin(shift.start_time);
-        const shiftEndMin   = timeToMin(shift.end_time);
-        const shiftDuration = shiftEndMin > shiftStartMin
-          ? shiftEndMin - shiftStartMin
-          : (1440 - shiftStartMin) + shiftEndMin;
-        if (workedMin > shiftDuration + 15) overtimeMin = workedMin - shiftDuration;
+      let overtimeType = null; // 'salida' | 'llegada_anticipada' | 'ambos'
+
+      if (shift && hasExit) {
+        const overnight = timeToMin(shift.end_time) < timeToMin(shift.start_time);
+
+        const entryDT = new Date(`${entry.dateIso}T${entry.timeStr}:00`);
+        const exitDT  = new Date(`${exit.dateIso}T${exit.timeStr}:00`);
+
+        // Fin de turno esperado (siguiente día si es nocturno)
+        let expectedEndDT = new Date(`${entry.dateIso}T${shift.end_time}:00`);
+        if (overnight) expectedEndDT.setDate(expectedEndDT.getDate() + 1);
+
+        // Salida tardía
+        const lateMin = Math.round((exitDT - expectedEndDT) / 60000);
+        if (lateMin > 15) { overtimeMin += lateMin; overtimeType = 'salida'; }
+
+        // Llegada anticipada excepcional (>80 min antes del inicio del turno)
+        const expectedStartDT = new Date(`${entry.dateIso}T${shift.start_time}:00`);
+        const earlyMin = Math.round((expectedStartDT - entryDT) / 60000);
+        if (earlyMin > 80) {
+          overtimeMin += earlyMin;
+          overtimeType = overtimeType ? 'ambos' : 'llegada_anticipada';
+        }
       }
 
       records.push({
@@ -216,6 +235,7 @@ function processRows(rows, shifts, mappings) {
         worked_minutes:   workedMin,
         retardo_minutes:  retardoMin,
         overtime_minutes: overtimeMin,
+        overtime_type:    overtimeType,
         checada_count:    session.length,
         status:           'pendiente',
       });

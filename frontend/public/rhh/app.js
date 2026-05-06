@@ -6055,6 +6055,11 @@ function fmtWorked(minutes) {
   return h + 'h ' + String(m).padStart(2,'0') + 'm';
 }
 
+function diaSemana(dateIso) {
+  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  return dias[new Date(dateIso + 'T12:00:00Z').getUTCDay()];
+}
+
 async function checadorView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando checador...</div>', 'checador');
@@ -6456,12 +6461,12 @@ function renderChecadorPreview() {
       </div>
     </div>
     <div class="card section">
-      <h3>Registros procesados (primeros 50)</h3>
+      <h3>Registros procesados (primeros 50 por fecha)</h3>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Trabajador</th><th>Fecha</th><th>Turno detectado</th><th>Entrada</th><th>Salida</th><th>Tiempo trabajado</th><th>Retardo</th></tr></thead>
+          <thead><tr><th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno detectado</th><th>Entrada</th><th>Salida</th><th>Tiempo trabajado</th><th>Retardo</th></tr></thead>
           <tbody>
-            ${p.records.slice(0, 50).map(r => {
+            ${[...p.records].sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).slice(0, 50).map(r => {
               const empName = r.employee_id
                 ? (checadorState.mappings.find(m => m.checador_id === r.checador_id) || {}).employee_name || r.checador_name
                 : r.checador_name;
@@ -6469,6 +6474,7 @@ function renderChecadorPreview() {
               <tr>
                 <td>${empName}</td>
                 <td>${r.date}</td>
+                <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
                 <td>${turnoChip(r.shift_name)}</td>
                 <td>${r.entry_time}</td>
                 <td>${r.exit_time || '<span style="color:#dc2626;">Sin salida</span>'}</td>
@@ -6481,7 +6487,7 @@ function renderChecadorPreview() {
           </tbody>
         </table>
       </div>
-      ${p.records.length > 50 ? `<p style="color:var(--muted);font-size:12px;margin-top:8px;">Mostrando 50 de ${p.records.length} registros. Guarda para ver todos.</p>` : ''}
+      ${p.records.length > 50 ? `<p style="color:var(--muted);font-size:12px;margin-top:8px;">Mostrando 50 de ${p.records.length} registros por fecha. Guarda para ver todos.</p>` : ''}
     </div>
   `;
 }
@@ -6507,6 +6513,9 @@ function renderChecadorMapear() {
       </div>`;
   }
 
+  const activeEmps = state.employees.filter(e=>e.status==='active')
+    .sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
+
   return `
     <div class="card section">
       <h3>Paso 2 — Vincular ID del checador con empleados del sistema</h3>
@@ -6514,30 +6523,40 @@ function renderChecadorMapear() {
         Cada trabajador del reloj tiene un número de ID propio. Aquí los vinculas con el empleado correcto del sistema.
         Esta vinculación se guarda y no hay que repetirla en futuros imports.
       </p>
+      <datalist id="emplist-ch">
+        ${activeEmps.map(e=>`<option value="${e.full_name}"></option>`).join('')}
+      </datalist>
       <div class="table-wrap">
         <table>
           <thead><tr><th>ID Checador</th><th>Nombre en checador</th><th>Empleado en sistema</th><th>Estado</th></tr></thead>
           <tbody>
-            ${workers.map(w => `
+            ${workers.map(w => {
+              const currentName = w.employee_id
+                ? (activeEmps.find(e=>e.id===w.employee_id)||{}).full_name || ''
+                : '';
+              return `
               <tr>
                 <td><strong>${w.checador_id}</strong></td>
                 <td>${w.checador_name}</td>
                 <td>
-                  <select id="chmap-${w.checador_id}" style="width:100%;font-size:13px;"
-                    onchange="checadorUpdateMapLocal(${w.checador_id},'${(w.checador_name||'').replace(/'/g,"\\'")}',this.value)">
-                    <option value="">-- Sin vincular --</option>
-                    ${state.employees.filter(e=>e.status==='active')
-                      .sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''))
-                      .map(e=>`<option value="${e.id}" ${w.employee_id===e.id?'selected':''}>${e.full_name}</option>`)
-                      .join('')}
-                  </select>
+                  <input type="text" list="emplist-ch"
+                    id="chmap-${w.checador_id}"
+                    value="${currentName.replace(/"/g,'&quot;')}"
+                    placeholder="Escribe para buscar empleado..."
+                    style="width:100%;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;"
+                    oninput="checadorSelectEmpByText(${w.checador_id},'${(w.checador_name||'').replace(/'/g,"\\'")}',this.value)" />
+                  <div style="margin-top:4px;">
+                    <button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;"
+                      onclick="checadorNuevoEmpleado()">+ Nuevo empleado</button>
+                  </div>
                 </td>
                 <td id="chmap-st-${w.checador_id}">
                   ${w.mapped
                     ? '<span style="color:#15803d;font-weight:600;">✅ Vinculado</span>'
                     : '<span style="color:#dc2626;font-weight:600;">⚠️ Sin mapear</span>'}
                 </td>
-              </tr>`).join('')}
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
@@ -6618,14 +6637,14 @@ function renderChecadorRegistros() {
         <table>
           <thead>
             <tr>
-              <th>Trabajador</th><th>Fecha</th><th>Turno detectado</th>
+              <th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno detectado</th>
               <th>Entrada</th><th>Salida</th><th>Tiempo trabajado</th><th>Retardo</th><th>T. Extra</th>
               <th>Estado</th><th>Acciones</th>
             </tr>
           </thead>
           <tbody>
             ${recs.length === 0
-              ? '<tr><td colspan="10" style="text-align:center;color:var(--muted);padding:24px;">Sin registros para los filtros seleccionados</td></tr>'
+              ? '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px;">Sin registros para los filtros seleccionados</td></tr>'
               : recs.map(r => `
               <tr style="${!r.employee_id ? 'background:#fef9c3;' : r.retardo_minutes>0 ? 'background:#fef2f2;' : r.overtime_minutes>0 ? 'background:#f5f3ff;' : ''}">
                 <td>
@@ -6633,6 +6652,7 @@ function renderChecadorRegistros() {
                   <div style="font-size:11px;color:var(--muted);">ID checador: ${r.checador_id}${!r.employee_id ? ' · <span style="color:#dc2626;">Sin vincular</span>' : ''}</div>
                 </td>
                 <td>${r.date}</td>
+                <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
                 <td>${turnoChip(r.shift_name)}</td>
                 <td style="font-weight:600;">${r.entry_time}</td>
                 <td>${r.exit_time
@@ -6683,16 +6703,17 @@ function renderChecadorValidar() {
       </div>`;
   }
 
-  const validated = checadorState.records.filter(r => r.status === 'validado');
-  const retardos  = validated.filter(r => r.retardo_minutes > 0);
-  const sinSalida = validated.filter(r => !r.exit_time);
+  const validated  = checadorState.records.filter(r => r.status === 'validado');
+  const retardos   = validated.filter(r => r.retardo_minutes > 0);
+  const sinSalida  = validated.filter(r => !r.exit_time);
+  const overtimes  = validated.filter(r => r.overtime_minutes > 0);
 
   return `
     <div class="card section">
       <h3>Validación de incidencias detectadas</h3>
       <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
         Compara los registros del checador con los del sistema. Desde aquí puedes crear incidencias
-        de retardo o falta para los registros validados.
+        de retardo, falta o tiempo extra para los registros validados.
       </p>
       <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
         <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;flex:1;min-width:150px;">
@@ -6702,6 +6723,10 @@ function renderChecadorValidar() {
         <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;flex:1;min-width:150px;">
           <div style="font-size:24px;font-weight:700;color:#dc2626;">${retardos.length}</div>
           <div style="color:#dc2626;font-size:13px;">Con retardo detectado</div>
+        </div>
+        <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:16px;flex:1;min-width:150px;">
+          <div style="font-size:24px;font-weight:700;color:#7c3aed;">${overtimes.length}</div>
+          <div style="color:#7c3aed;font-size:13px;">Con tiempo extra</div>
         </div>
         <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;flex:1;min-width:150px;">
           <div style="font-size:24px;font-weight:700;color:#b45309;">${sinSalida.length}</div>
@@ -6730,6 +6755,46 @@ function renderChecadorValidar() {
                       ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#dc2626;"
                            onclick="checadorCrearRetardo(${r.id},${r.employee_id},'${r.date}',${r.retardo_minutes},'${(r.shift_name||'').replace(/'/g,"\\'")}')">
                            + Crear retardo</button>`
+                      : '<span style="color:#64748b;font-size:12px;">Sin vincular</span>'}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : ''}
+
+      ${overtimes.length > 0 ? `
+        <div style="margin-bottom:24px;">
+          <h4 style="margin:0 0 8px;color:#7c3aed;">Tiempo extra detectado (${overtimes.length})</h4>
+          <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
+            Salida tardía (&gt;15 min sobre fin de turno) o llegada anticipada (&gt;80 min antes del turno).
+            Confirma antes de crear el registro de tiempo extra.
+          </p>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno</th><th>Entrada</th><th>Salida</th><th>T. Extra</th><th>Tipo</th><th>Acción</th></tr>
+              </thead>
+              <tbody>
+                ${overtimes.map(r => `
+                <tr style="background:#f5f3ff;">
+                  <td>${r.employee_name || r.checador_name}</td>
+                  <td>${r.date}</td>
+                  <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
+                  <td>${turnoChip(r.shift_name)}</td>
+                  <td>${r.entry_time}</td>
+                  <td>${r.exit_time || '—'}</td>
+                  <td><span style="color:#7c3aed;font-weight:600;">+${fmtWorked(r.overtime_minutes)}</span></td>
+                  <td><span style="font-size:11px;color:var(--muted);">${
+                    r.overtime_type === 'salida' ? 'Salida tardía' :
+                    r.overtime_type === 'llegada_anticipada' ? '⚠️ Llegada anticipada' :
+                    r.overtime_type === 'ambos' ? 'Salida + Llegada' : '—'
+                  }</span></td>
+                  <td>
+                    ${r.employee_id
+                      ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#7c3aed;"
+                           onclick="checadorCrearOvertime(${r.id},${r.employee_id},'${r.date}',${r.overtime_minutes},'${(r.shift_name||'').replace(/'/g,"\\'")}','${r.overtime_type||''}')">
+                           + Tiempo extra</button>`
                       : '<span style="color:#64748b;font-size:12px;">Sin vincular</span>'}
                   </td>
                 </tr>`).join('')}
@@ -6907,6 +6972,19 @@ async function checadorProcesar(replace) {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+function checadorSelectEmpByText(checadorId, checadorName, text) {
+  const emp = state.employees.find(e => e.status === 'active' && e.full_name === text);
+  const employeeId = emp ? emp.id : null;
+  checadorUpdateMapLocal(checadorId, checadorName, employeeId);
+}
+
+function checadorNuevoEmpleado() {
+  if (!confirm('Se abrirá el formulario de nuevo empleado. Al regresar al Checador, el nuevo empleado aparecerá en la búsqueda.')) return;
+  empTab = 'nuevo';
+  empEditId = null;
+  location.hash = '#empleados';
+}
+
 const _pendingMaps = {};
 function checadorUpdateMapLocal(checadorId, checadorName, employeeId) {
   _pendingMaps[checadorId] = { checador_id: checadorId, checador_name: checadorName, employee_id: employeeId ? Number(employeeId) : null };
@@ -6997,6 +7075,30 @@ async function checadorCrearFalta(recId, empId, date) {
     });
     await checadorSetStatus(recId, 'validado');
     toast('Falta registrada');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function checadorCrearOvertime(recId, empId, date, minutes, shiftName, overtimeType) {
+  const tipoMsg = overtimeType === 'llegada_anticipada'
+    ? `\n⚠️ NOTA: Este tiempo extra es por llegada anticipada (más de 1h20 antes del turno).\nVerifica que corresponda realmente a tiempo extra autorizado.`
+    : overtimeType === 'ambos'
+    ? `\n⚠️ NOTA: Incluye tiempo de llegada anticipada y salida tardía.`
+    : '';
+  if (!confirm(`¿Registrar tiempo extra para el ${date}?\nTurno: ${shiftName}\nTiempo extra: ${fmtWorked(minutes)}${tipoMsg}`)) return;
+  try {
+    await api('/api/rhh/overtime', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: empId,
+        date,
+        date_end: date,
+        hours: Math.round(minutes / 60 * 100) / 100,
+        notes: `Tiempo extra detectado por checador. Turno: ${shiftName}. Tipo: ${overtimeType || 'salida'}. Tiempo: ${fmtWorked(minutes)}.`,
+        status: 'pendiente',
+      }),
+    });
+    await checadorSetStatus(recId, 'validado');
+    toast('Tiempo extra registrado');
   } catch (err) { toast(err.message, 'error'); }
 }
 
