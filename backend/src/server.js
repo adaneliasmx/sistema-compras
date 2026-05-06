@@ -46,6 +46,7 @@ const rhhDashboardRoutes = require('./routes/rhh-dashboard');
 const rhhVacanciesRoutes = require('./routes/rhh-vacancies');
 const rhhEvaluationsRoutes = require('./routes/rhh-evaluations');
 const rhhNotificationsRoutes = require('./routes/rhh-notifications');
+const rhhChecadorRoutes = require('./routes/rhh-checador');
 
 // ── Módulo Producción ─────────────────────────────────────────────────────
 const produccionRoutes = require('./routes/produccion');
@@ -132,6 +133,7 @@ app.use('/api/rhh/dashboard', rhhDashboardRoutes);
 app.use('/api/rhh/vacancies', rhhVacanciesRoutes);
 app.use('/api/rhh/evaluations', rhhEvaluationsRoutes);
 app.use('/api/rhh/notifications', rhhNotificationsRoutes);
+app.use('/api/rhh/checador', rhhChecadorRoutes);
 
 // ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
 // Portal principal
