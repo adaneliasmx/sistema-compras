@@ -6036,7 +6036,7 @@ const checadorState = {
   calWeekOff: 0,
 };
 
-const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias', '📅 Calendario'];
+const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias', '📅 Calendario', '🗑 Limpieza'];
 const TURNO_COLORS = { 'Turno 1': '#1d4ed8', 'Turno 2': '#0f766e', 'Turno 3': '#7c3aed', 'Administrativo': '#b45309', 'Turno Administrativo': '#10b981' };
 
 function turnoChip(name) {
@@ -6087,6 +6087,7 @@ function renderChecador() {
   else if (checadorState.tab === 3) body = renderChecadorValidar();
   else if (checadorState.tab === 4) body = renderChecadorInasistencias();
   else if (checadorState.tab === 5) body = renderChecadorCalendario();
+  else if (checadorState.tab === 6) body = renderChecadorLimpieza();
   const content = '<div class="section-header"><h2>&#128336; Checador &mdash; Importaci&oacute;n y An&aacute;lisis</h2></div>' +
     '<div class="tab-bar" style="margin-bottom:16px;">' + tabsHtml + '</div>' + body;
   el.innerHTML = shell(content, 'checador');
@@ -6666,9 +6667,13 @@ function renderChecadorRegistros() {
                 <td>${r.retardo_minutes > 0
                   ? `<span style="color:#dc2626;font-weight:600;">⏱ ${fmtWorked(r.retardo_minutes)}</span>`
                   : '<span style="color:#15803d;font-size:12px;">Sin retardo</span>'}</td>
-                <td oncontextmenu="${r.overtime_minutes > 0 ? `event.preventDefault();checadorOvertimeMenu(event,${r.id})` : ''}">
+                <td>
                   ${r.overtime_minutes > 0
-                  ? `<span style="color:#7c3aed;font-weight:600;cursor:context-menu;" title="Clic derecho para opciones">+${fmtWorked(r.overtime_minutes)}</span>`
+                  ? `<span style="display:inline-flex;align-items:center;gap:4px;">
+                       <span style="color:#7c3aed;font-weight:600;">+${fmtWorked(r.overtime_minutes)}</span>
+                       <button onclick="checadorBorrarOvertime(${r.id})" title="Borrar tiempo extra"
+                         style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:12px;padding:0 2px;line-height:1;">🗑</button>
+                     </span>`
                   : '<span style="color:var(--muted);font-size:12px;">—</span>'}</td>
                 <td>${statusChipCh(r.status)}</td>
                 <td>
@@ -6930,6 +6935,54 @@ function renderChecadorInasistencias() {
       }
     </div>
   `;
+}
+
+// ── Tab 6: Limpieza de datos ──────────────────────────────────────────────────
+const CLEANUP_COLLECTIONS = [
+  { key: 'rhh_incidences',          label: 'Incidencias',              desc: 'Retardos, faltas, permisos, incapacidades, etc.' },
+  { key: 'rhh_weekly_rol',          label: 'ROL semanal (plantillas)',  desc: 'Cabeceras de semana del módulo ROL' },
+  { key: 'rhh_rol_slots',           label: 'ROL — slots',              desc: 'Slots de turno asignados' },
+  { key: 'rhh_rol_assignments',     label: 'ROL — asignaciones',       desc: 'Asignaciones de empleado a slot' },
+  { key: 'rhh_checador_records',    label: 'Registros del checador',   desc: 'Sesiones importadas del reloj' },
+  { key: 'rhh_overtime',            label: 'Tiempo extra',             desc: 'Registros de horas extra aprobadas' },
+  { key: 'rhh_attendance',          label: 'Asistencia',               desc: 'Registros de asistencia manual' },
+  { key: 'rhh_attendance_log',      label: 'Log de asistencia',        desc: 'Historial de cambios de asistencia' },
+  { key: 'rhh_vacation_requests',   label: 'Solicitudes de vacaciones', desc: 'Requests de vacaciones pendientes y aprobados' },
+  { key: 'rhh_te_applications',     label: 'Solicitudes de T.E.',      desc: 'Solicitudes de tiempo extra' },
+  { key: 'rhh_te_authorizations',   label: 'Autorizaciones de T.E.',   desc: 'Autorizaciones de tiempo extra' },
+  { key: 'rhh_notifications',       label: 'Notificaciones',           desc: 'Notificaciones del sistema RHH' },
+  { key: 'rhh_payroll_clarifications', label: 'Aclaraciones de nómina', desc: 'Tickets de aclaración de nómina' },
+];
+
+function renderChecadorLimpieza() {
+  const sel = checadorState._cleanupSel || {};
+  return `
+    <div class="card section" style="border:2px solid #fecaca;">
+      <h3 style="color:#dc2626;margin-bottom:4px;">🗑 Limpieza de registros</h3>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
+        Borra colecciones de registros de la plataforma. <strong>Los datos de empleados, usuarios y contraseñas NO se ven afectados.</strong><br>
+        Esta acción es <strong>irreversible</strong>. Selecciona solo lo que quieras eliminar.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-bottom:20px;">
+        ${CLEANUP_COLLECTIONS.map(c => `
+          <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid ${sel[c.key]?'#dc2626':'var(--line)'};border-radius:8px;cursor:pointer;background:${sel[c.key]?'#fef2f2':'#fff'};">
+            <input type="checkbox" ${sel[c.key]?'checked':''} style="margin-top:2px;accent-color:#dc2626;"
+              onchange="checadorCleanupToggle('${c.key}',this.checked)" />
+            <div>
+              <div style="font-weight:600;font-size:13px;">${c.label}</div>
+              <div style="font-size:11px;color:var(--muted);">${c.desc}</div>
+            </div>
+          </label>`).join('')}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <button class="btn" style="background:#dc2626;" onclick="checadorEjecutarLimpieza()">
+          🗑 Eliminar seleccionados
+        </button>
+        <button class="btn btn-secondary" onclick="checadorCleanupSelAll(true)">Seleccionar todo</button>
+        <button class="btn btn-secondary" onclick="checadorCleanupSelAll(false)">Ninguno</button>
+        <span style="color:var(--muted);font-size:12px;">${Object.values(sel).filter(Boolean).length} colección(es) seleccionada(s)</span>
+      </div>
+    </div>`;
 }
 
 // ── Tab 5: Calendario semanal del checador ────────────────────────────────────
@@ -7207,6 +7260,39 @@ function checadorOvertimeMenu(event, recId) {
   const y = Math.min(event.clientY, window.innerHeight - 80);
   menu.style.left = x + 'px';
   menu.style.top  = y + 'px';
+}
+
+function checadorCleanupToggle(key, val) {
+  if (!checadorState._cleanupSel) checadorState._cleanupSel = {};
+  checadorState._cleanupSel[key] = val;
+  renderChecador();
+}
+
+function checadorCleanupSelAll(val) {
+  checadorState._cleanupSel = {};
+  if (val) CLEANUP_COLLECTIONS.forEach(c => { checadorState._cleanupSel[c.key] = true; });
+  renderChecador();
+}
+
+async function checadorEjecutarLimpieza() {
+  const sel = checadorState._cleanupSel || {};
+  const cols = Object.entries(sel).filter(([,v])=>v).map(([k])=>k);
+  if (cols.length === 0) { toast('Selecciona al menos una colección', 'warning'); return; }
+  const labels = cols.map(k => CLEANUP_COLLECTIONS.find(c=>c.key===k)?.label || k).join('\n  • ');
+  if (!confirm(`⚠️ ¿Confirmas borrar permanentemente estos registros?\n\n  • ${labels}\n\nEsta acción NO se puede deshacer.`)) return;
+  if (!confirm(`Segunda confirmación: ¿ESTÁS SEGURO? Se borrarán ${cols.length} colección(es).`)) return;
+  try {
+    const res = await api('/api/rhh/checador/admin/cleanup', {
+      method: 'POST',
+      body: JSON.stringify({ collections: cols }),
+    });
+    const detalles = Object.entries(res.cleared).map(([k,n])=>`${k}: ${n} registros`).join('\n');
+    toast(`Limpieza completada. ${cols.length} colecciones borradas.`);
+    alert(`Registros eliminados:\n${detalles}`);
+    checadorState._cleanupSel = {};
+    checadorState.records = [];
+    renderChecador();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 async function checadorBorrarOvertime(recId) {

@@ -130,28 +130,30 @@ function buildSessions(rows, assignedShift = null) {
 
   if (deduped.length === 0) return [];
 
-  // Gap dinámico: si conocemos el turno, usamos 24h - duración_turno - 60 min
-  let SESSION_GAP = 600; // 10 horas por defecto
-  if (assignedShift) {
-    const startMin = timeToMin(assignedShift.start_time);
-    const endMin   = timeToMin(assignedShift.end_time);
-    const shiftDur = endMin > startMin ? endMin - startMin : (1440 - startMin) + endMin;
-    SESSION_GAP = Math.max(600, 1440 - shiftDur - 60);
-  }
+  // Regla 1: misma fecha calendar → siempre misma sesión
+  //   (cubre el caso de llegar antes del turno y salir al final del mismo)
+  // Regla 2: fechas distintas → nueva sesión si la brecha > SESSION_GAP (10h)
+  //   (cubre turnos nocturnos que cruzan medianoche)
+  const SESSION_GAP = 600;
 
   const sessions = [[deduped[0]]];
 
   for (let i = 1; i < deduped.length; i++) {
     const prev = deduped[i - 1];
     const curr = deduped[i];
-    const prevDT = new Date(`${prev.dateIso}T${prev.timeStr}:00`);
-    const currDT = new Date(`${curr.dateIso}T${curr.timeStr}:00`);
-    const gapMin = (currDT - prevDT) / 60000;
 
-    if (gapMin > SESSION_GAP) {
-      sessions.push([curr]);
-    } else {
+    if (prev.dateIso === curr.dateIso) {
+      // Misma fecha → mismo turno sin importar la brecha horaria
       sessions[sessions.length - 1].push(curr);
+    } else {
+      const prevDT = new Date(`${prev.dateIso}T${prev.timeStr}:00`);
+      const currDT = new Date(`${curr.dateIso}T${curr.timeStr}:00`);
+      const gapMin = (currDT - prevDT) / 60000;
+      if (gapMin > SESSION_GAP) {
+        sessions.push([curr]);
+      } else {
+        sessions[sessions.length - 1].push(curr); // turno nocturno cruzando medianoche
+      }
     }
   }
 
@@ -237,6 +239,9 @@ function processRows(rows, shifts, mappings, employees = []) {
           overtimeType = overtimeType ? 'ambos' : 'llegada_anticipada';
         }
       }
+
+      // Tope legal: máximo 12 horas extra por día
+      if (overtimeMin > 720) overtimeMin = 720;
 
       records.push({
         checador_id:      checadorId,
@@ -495,6 +500,32 @@ router.post('/detect-absences', rhhAuthRequired, rhhRequireRole('rh', 'admin'), 
   );
 
   res.json({ count: absences.length, absences, sin_turno: sinTurno });
+});
+
+// ── POST /api/rhh/admin/cleanup  (limpiar colecciones de registros) ──────────
+router.post('/admin/cleanup', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { collections } = req.body || {};
+  const ALLOWED = [
+    'rhh_incidences', 'rhh_weekly_rol', 'rhh_rol_slots', 'rhh_rol_assignments',
+    'rhh_checador_records', 'rhh_overtime', 'rhh_attendance', 'rhh_attendance_log',
+    'rhh_vacation_requests', 'rhh_payroll_clarifications', 'rhh_notifications',
+    'rhh_te_applications', 'rhh_te_authorizations',
+  ];
+  if (!Array.isArray(collections) || collections.length === 0)
+    return res.status(400).json({ error: 'Indica al menos una colección a limpiar' });
+
+  const invalid = collections.filter(c => !ALLOWED.includes(c));
+  if (invalid.length > 0)
+    return res.status(400).json({ error: `Colecciones no permitidas: ${invalid.join(', ')}` });
+
+  const db = read();
+  const cleared = {};
+  for (const col of collections) {
+    cleared[col] = (db[col] || []).length;
+    db[col] = [];
+  }
+  write(db);
+  res.json({ ok: true, cleared });
 });
 
 // ── DELETE /api/rhh/checador/records  (limpiar todos) ────────────────────────
