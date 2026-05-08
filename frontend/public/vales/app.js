@@ -1154,6 +1154,7 @@ async function viewReportes() {
     <button class="tab-btn" id="rpt-main-tab-diario" onclick="switchRptMainTab('diario')">📅 Consumo Diario</button>
     <button class="tab-btn" id="rpt-main-tab-comp" onclick="switchRptMainTab('comp')">🔬 Real vs Teórico</button>
     <button class="tab-btn" id="rpt-main-tab-procesos" onclick="switchRptMainTab('procesos')">🏭 Reporte para Procesos</button>
+    <button class="tab-btn" id="rpt-main-tab-poritem" onclick="switchRptMainTab('poritem')">📦 Reporte por ítem</button>
   </div>
 
   <!-- Panel: Consumo (existing content) -->
@@ -1246,6 +1247,38 @@ async function viewReportes() {
       <button class="btn btn-outline" id="comp-export-btn">📥 CSV</button>
     </div>
     <div id="comp-result"></div>
+  </div>
+
+  <!-- Panel: Reporte por ítem -->
+  <div id="rpt-panel-poritem" style="display:none">
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+      <div><label class="flabel">Año</label><br>
+        <select id="pi-year" style="font-size:13px">${[2024,2025,2026,2027].map(y=>`<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}</select>
+      </div>
+      <button class="btn btn-primary" id="pi-btn">🔍 Generar</button>
+      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+        <button id="pi-periodo-week"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="piSetPeriodo('week')">Semanas</button>
+        <button id="pi-periodo-month" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="piSetPeriodo('month')">Meses</button>
+      </div>
+      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+        <button id="pi-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="piSetModo('kg')">kg</button>
+        <button id="pi-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="piSetModo('mxn')">$</button>
+      </div>
+      <button class="btn btn-outline" id="pi-export-btn">📥 CSV</button>
+    </div>
+    <div id="pi-filtros" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px">
+      <div style="display:flex;gap:24px;flex-wrap:wrap">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#57534e;margin-bottom:6px">Líneas</div>
+          <div id="pi-chk-lineas" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+        </div>
+        <div>
+          <div style="font-size:12px;font-weight:700;color:#57534e;margin-bottom:6px">Tanques</div>
+          <div id="pi-chk-tanques" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+        </div>
+      </div>
+    </div>
+    <div id="pi-result"></div>
   </div>
 
   <!-- Panel: Consumo Diario -->
@@ -1361,7 +1394,7 @@ function bindReportes() {
   };
 
   window.switchRptMainTab = function(tab) {
-    ['consumo','diario','comp','procesos'].forEach(t => {
+    ['consumo','diario','comp','procesos','poritem'].forEach(t => {
       const panel = document.getElementById(`rpt-panel-${t}`);
       const btn   = document.getElementById(`rpt-main-tab-${t}`);
       if (panel) panel.style.display = t === tab ? '' : 'none';
@@ -1570,6 +1603,176 @@ function bindReportes() {
     a.download = `procesos_${data.year}.csv`; a.click();
   });
   // ── fin Tab Procesos ──────────────────────────────────────────────────────────
+
+  // ── Tab: Reporte por ítem ─────────────────────────────────────────────────────
+  let _piData    = null;
+  let _piModo    = 'kg';
+  let _piPeriodo = 'week';
+  let _piLineas  = new Set();
+  let _piTanques = new Set();
+
+  window.piSetModo = function(m) {
+    _piModo = m;
+    document.getElementById('pi-modo-kg') ?.classList.toggle('btn-primary', m === 'kg');
+    document.getElementById('pi-modo-kg') ?.classList.toggle('btn-outline',  m !== 'kg');
+    document.getElementById('pi-modo-mxn')?.classList.toggle('btn-primary', m === 'mxn');
+    document.getElementById('pi-modo-mxn')?.classList.toggle('btn-outline',  m !== 'mxn');
+    if (_piData) renderPorItem();
+  };
+
+  window.piSetPeriodo = function(p) {
+    _piPeriodo = p;
+    document.getElementById('pi-periodo-week') ?.classList.toggle('btn-primary', p === 'week');
+    document.getElementById('pi-periodo-week') ?.classList.toggle('btn-outline',  p !== 'week');
+    document.getElementById('pi-periodo-month')?.classList.toggle('btn-primary', p === 'month');
+    document.getElementById('pi-periodo-month')?.classList.toggle('btn-outline',  p !== 'month');
+    if (_piData) renderPorItem();
+  };
+
+  function piToggleLinea(linea, checked) {
+    if (checked) _piLineas.add(linea); else _piLineas.delete(linea);
+    if (_piData) renderPorItem();
+  }
+  function piToggleTanque(tanque, checked) {
+    if (checked) _piTanques.add(tanque); else _piTanques.delete(tanque);
+    if (_piData) renderPorItem();
+  }
+  window.piToggleLinea  = piToggleLinea;
+  window.piToggleTanque = piToggleTanque;
+
+  function piCellFromBLT(it, periodKey, periodo) {
+    // Sum only the selected linea|tanque combos
+    let kg = 0, mxn = 0;
+    for (const [ltKey, ltd] of Object.entries(it.by_linea_tanque)) {
+      const [linea, tanque] = ltKey.split('|');
+      if (!_piLineas.has(linea) || !_piTanques.has(tanque)) continue;
+      const src = periodo === 'week' ? ltd.weeks : ltd.months;
+      if (src[periodKey]) { kg += src[periodKey].kg; mxn += src[periodKey].mxn; }
+    }
+    return { kg, mxn };
+  }
+
+  const MESES_PI = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+  function fmtPI(cell, modo) {
+    if (!cell || (cell.kg === 0 && cell.mxn === 0)) return '<span style="color:#e7e5e4">—</span>';
+    if (modo === 'mxn') return cell.mxn > 0 ? `$${cell.mxn.toLocaleString('es-MX',{maximumFractionDigits:0})}` : '<span style="color:#e7e5e4">—</span>';
+    return cell.kg > 0 ? cell.kg.toFixed(1) : '<span style="color:#e7e5e4">—</span>';
+  }
+
+  function renderPorItem() {
+    const res = document.getElementById('pi-result');
+    if (!_piData || !_piData.items.length) {
+      res.innerHTML = '<div class="empty-state"><div class="icon">📦</div><p>Sin datos para este año.</p></div>';
+      return;
+    }
+    const C = {
+      thead:     { bg: '#1d4ed8', color: '#fff' },
+      theadM:    { bg: '#1e40af', color: '#bfdbfe' },
+      theadTot:  { bg: '#1e3a8a', color: '#fff' },
+      item:      { bg: '#fff',    color: '#374151' },
+      itemMes:   { bg: '#eff6ff', color: '#374151' },
+      itemTot:   { bg: '#dbeafe', color: '#1e40af' },
+    };
+
+    const periodo  = _piPeriodo;
+    const periods  = periodo === 'week' ? _piData.weeks : _piData.months;
+    const isFiltered = _piLineas.size < _piData.lineas.length || _piTanques.size < _piData.tanques.length;
+
+    const thPeriods = periods.map(p => {
+      const lbl = periodo === 'week' ? `S${p}` : MESES_PI[p-1];
+      const bg  = periodo === 'week' ? C.thead.bg : C.theadM.bg;
+      const clr = periodo === 'week' ? C.thead.color : C.theadM.color;
+      return `<th style="text-align:right;min-width:60px;font-size:11px;white-space:nowrap;background:${bg};color:${clr}">${lbl}</th>`;
+    }).join('');
+    const thTotal = `<th style="text-align:right;min-width:80px;font-size:11px;font-weight:700;background:${C.theadTot.bg};color:${C.theadTot.color}">TOTAL</th>`;
+
+    let rows = '';
+    for (const it of _piData.items) {
+      let totalKg = 0, totalMxn = 0;
+      const pCells = periods.map(p => {
+        const cell = isFiltered ? piCellFromBLT(it, p, periodo) : (periodo === 'week' ? it.weeks[p] : it.months[p]);
+        if (cell) { totalKg += cell.kg || 0; totalMxn += cell.mxn || 0; }
+        const bg = periodo === 'week' ? C.item.bg : C.itemMes.bg;
+        return `<td style="text-align:right;font-size:11px;background:${bg};color:${C.item.color}">${fmtPI(cell, _piModo)}</td>`;
+      }).join('');
+      const totalCell = { kg: totalKg, mxn: totalMxn };
+      if (!totalKg && !totalMxn) continue; // skip items with 0 after filter
+      rows += `<tr>
+        <td style="padding:4px 10px;font-size:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.bg};color:${C.item.color};z-index:2" title="${escHtml(it.item)}">${escHtml(it.item)}</td>
+        ${pCells}
+        <td style="text-align:right;font-size:11px;font-weight:700;background:${C.itemTot.bg};color:${C.theadTot.bg}">${fmtPI(totalCell, _piModo)}</td>
+      </tr>`;
+    }
+
+    if (!rows) {
+      res.innerHTML = '<div class="empty-state"><div class="icon">📦</div><p>Sin datos con los filtros seleccionados.</p></div>';
+      return;
+    }
+
+    res.innerHTML = `
+    <div class="table-card">
+      <div style="overflow-x:auto;max-height:70vh;overflow-y:auto">
+        <table style="border-collapse:collapse;font-size:12px;min-width:100%">
+          <thead style="position:sticky;top:0;z-index:3">
+            <tr>
+              <th style="text-align:left;padding:8px 10px;min-width:220px;position:sticky;left:0;background:${C.thead.bg};color:${C.thead.color};z-index:4">Ítem</th>
+              ${thPeriods}
+              ${thTotal}
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  }
+
+  const runPorItem = async () => {
+    const year = document.getElementById('pi-year').value;
+    const res  = document.getElementById('pi-result');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Generando reporte...</p></div>';
+    try {
+      const data = await GET(`/reportes/por-item?year=${year}`);
+      _piData    = data;
+      _piLineas  = new Set(data.lineas);
+      _piTanques = new Set(data.tanques);
+
+      // Build filter checkboxes
+      const chkLineas  = document.getElementById('pi-chk-lineas');
+      const chkTanques = document.getElementById('pi-chk-tanques');
+      chkLineas.innerHTML  = data.lineas.map(l  => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleLinea('${escHtml(l)}',this.checked)"> ${escHtml(l)}</label>`).join('');
+      chkTanques.innerHTML = data.tanques.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleTanque('${escHtml(t)}',this.checked)"> ${escHtml(t)}</label>`).join('');
+      document.getElementById('pi-filtros').style.display = '';
+
+      renderPorItem();
+    } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  };
+
+  document.getElementById('pi-btn').addEventListener('click', runPorItem);
+
+  document.getElementById('pi-export-btn').addEventListener('click', () => {
+    if (!_piData) { alert('Primero genera el reporte'); return; }
+    const data    = _piData;
+    const periodo = _piPeriodo;
+    const periods = periodo === 'week' ? data.weeks : data.months;
+    const MESES   = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    const pHdr    = periods.map(p => periodo === 'week' ? `S${p} kg` : MESES[p-1] + ' kg');
+    const pHdrMxn = periods.map(p => periodo === 'week' ? `S${p} $`  : MESES[p-1] + ' $');
+    const hdr = ['Ítem', ...pHdr, ...pHdrMxn, 'Total kg', 'Total $'];
+    const isFiltered = _piLineas.size < data.lineas.length || _piTanques.size < data.tanques.length;
+    const csvRows = [hdr.join(',')];
+    for (const it of data.items) {
+      let totalKg = 0, totalMxn = 0;
+      const wKg  = periods.map(p => { const c = isFiltered ? piCellFromBLT(it,p,periodo) : (periodo==='week'?it.weeks[p]:it.months[p]); totalKg += c?.kg||0; return (c?.kg||0).toFixed(3); });
+      const wMxn = periods.map(p => { const c = isFiltered ? piCellFromBLT(it,p,periodo) : (periodo==='week'?it.weeks[p]:it.months[p]); totalMxn += c?.mxn||0; return (c?.mxn||0).toFixed(2); });
+      if (!totalKg && !totalMxn) continue;
+      csvRows.push([`"${it.item}"`, ...wKg, ...wMxn, totalKg.toFixed(3), totalMxn.toFixed(2)].join(','));
+    }
+    const blob = new Blob(['\uFEFF'+csvRows.join('\r\n')], {type:'text/csv;charset=utf-8;'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `por_item_${data.year}.csv`; a.click();
+  });
+  // ── fin Tab Reporte por ítem ───────────────────────────────────────────────────
 
   // ── Tab: Consumo Diario ───────────────────────────────────────────────────────
   const DIA = { gran: 'dia', modo: 'kg', _chart: null, _data: null, _chartData: null, _catItems: [] };

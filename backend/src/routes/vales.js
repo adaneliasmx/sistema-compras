@@ -1302,6 +1302,93 @@ router.get('/reportes/procesos', valesAllowRoles('admin'), (req, res) => {
   res.json({ year, weeks: allWeeks, months: allMonths, lineas });
 });
 
+// ── Reporte por ítem (admin) ──────────────────────────────────────────────────
+router.get('/reportes/por-item', valesAllowRoles('admin'), (req, res) => {
+  const year = req.query.year ? Number(req.query.year) : new Date().getUTCFullYear();
+
+  const db = readVales();
+  const headers  = db.vales_header  || [];
+  const detalles = db.vales_detalle || [];
+  const itemsCat = db.items_vales   || [];
+
+  const hdrMap = {};
+  headers.forEach(h => { hdrMap[h.folio_vale] = h; });
+  const precioMap = {};
+  itemsCat.forEach(i => { precioMap[i.item] = parseFloat(i.precio_kg) || 0; });
+
+  function dateToISOWeek(dateStr) {
+    const d = new Date(dateStr + 'T12:00:00Z');
+    const thursday = new Date(d);
+    thursday.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((thursday - yearStart) / 86400000 + 1) / 7);
+    return { week, month: d.getUTCMonth() + 1 };
+  }
+
+  const yStr = String(year);
+  const itemMap = {};
+  const allLineas  = new Set();
+  const allTanques = new Set();
+
+  detalles.forEach(det => {
+    const h = hdrMap[det.folio_vale] || {};
+    if (!h.fecha || !h.fecha.startsWith(yStr)) return;
+    const kg = parseFloat(det.kg_equivalentes) || 0;
+    if (!kg) return;
+    const precio_kg = precioMap[det.item] || 0;
+    const { week, month } = dateToISOWeek(h.fecha);
+    const linea  = h.linea      || 'Sin línea';
+    const tanque = det.no_tanque || 'Sin tanque';
+    const ltKey  = `${linea}|${tanque}`;
+    const mxn    = kg * precio_kg;
+
+    allLineas.add(linea);
+    allTanques.add(tanque);
+
+    if (!itemMap[det.item]) itemMap[det.item] = { weeks: {}, months: {}, by_linea_tanque: {} };
+    const it = itemMap[det.item];
+
+    if (!it.weeks[week])   it.weeks[week]   = { kg: 0, mxn: 0 };
+    if (!it.months[month]) it.months[month] = { kg: 0, mxn: 0 };
+    it.weeks[week].kg   += kg;  it.weeks[week].mxn   += mxn;
+    it.months[month].kg += kg;  it.months[month].mxn += mxn;
+
+    if (!it.by_linea_tanque[ltKey]) it.by_linea_tanque[ltKey] = { weeks: {}, months: {} };
+    const lt = it.by_linea_tanque[ltKey];
+    if (!lt.weeks[week])   lt.weeks[week]   = { kg: 0, mxn: 0 };
+    if (!lt.months[month]) lt.months[month] = { kg: 0, mxn: 0 };
+    lt.weeks[week].kg   += kg;  lt.weeks[week].mxn   += mxn;
+    lt.months[month].kg += kg;  lt.months[month].mxn += mxn;
+  });
+
+  const allWeeks  = [...new Set(Object.values(itemMap).flatMap(it => Object.keys(it.weeks).map(Number)))].sort((a,b)=>a-b);
+  const allMonths = [...new Set(Object.values(itemMap).flatMap(it => Object.keys(it.months).map(Number)))].sort((a,b)=>a-b);
+
+  const items = Object.entries(itemMap).map(([item, d]) => {
+    const totalKg  = Object.values(d.weeks).reduce((s,c)=>s+c.kg, 0);
+    const totalMxn = Object.values(d.weeks).reduce((s,c)=>s+c.mxn, 0);
+    return { item, weeks: d.weeks, months: d.months, total: { kg: totalKg, mxn: totalMxn }, by_linea_tanque: d.by_linea_tanque };
+  }).sort((a,b) => b.total.kg - a.total.kg);
+
+  const sortLineas = (arr) => [...arr].sort((a,b) => {
+    const isBakerA = /baker/i.test(a), isBakerB = /baker/i.test(b);
+    if (isBakerA && !isBakerB) return 1;
+    if (!isBakerA && isBakerB) return -1;
+    const numA = parseInt(a.match(/\d+/)?.[0] ?? '999');
+    const numB = parseInt(b.match(/\d+/)?.[0] ?? '999');
+    return numA !== numB ? numA - numB : a.localeCompare(b);
+  });
+
+  res.json({
+    year,
+    weeks:   allWeeks,
+    months:  allMonths,
+    lineas:  sortLineas([...allLineas]),
+    tanques: [...allTanques].sort(),
+    items,
+  });
+});
+
 // ── Comparativo real vs teórico (admin) ───────────────────────────────────────
 router.get('/reportes/comparativo', valesAllowRoles('admin'), (req, res) => {
   const dbVales = readVales();
