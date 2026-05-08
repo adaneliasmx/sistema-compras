@@ -1251,33 +1251,66 @@ async function viewReportes() {
 
   <!-- Panel: Reporte por ítem -->
   <div id="rpt-panel-poritem" style="display:none">
-    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
-      <div><label class="flabel">Año</label><br>
-        <select id="pi-year" style="font-size:13px">${[2024,2025,2026,2027].map(y=>`<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}</select>
+    <!-- Barra superior: año + toggles + acción -->
+    <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px;padding:12px 16px;background:#fff;border:1px solid #e7e5e4;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)">
+      <div>
+        <div class="flabel" style="margin-bottom:3px">Año</div>
+        <select id="pi-year" style="font-size:13px;border:1px solid #d6d3d1;border-radius:6px;padding:4px 8px">${[2024,2025,2026,2027].map(y=>`<option value="${y}"${y===new Date().getFullYear()?' selected':''}>${y}</option>`).join('')}</select>
       </div>
-      <button class="btn btn-primary" id="pi-btn">🔍 Generar</button>
-      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
-        <button id="pi-periodo-week"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="piSetPeriodo('week')">Semanas</button>
-        <button id="pi-periodo-month" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="piSetPeriodo('month')">Meses</button>
-      </div>
-      <div style="display:flex;gap:2px;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
-        <button id="pi-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none" onclick="piSetModo('kg')">kg</button>
-        <button id="pi-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1" onclick="piSetModo('mxn')">$</button>
-      </div>
-      <button class="btn btn-outline" id="pi-export-btn">📥 CSV</button>
-    </div>
-    <div id="pi-filtros" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:8px">
-      <div style="display:flex;gap:24px;flex-wrap:wrap">
-        <div>
-          <div style="font-size:12px;font-weight:700;color:#57534e;margin-bottom:6px">Líneas</div>
-          <div id="pi-chk-lineas" style="display:flex;gap:10px;flex-wrap:wrap"></div>
-        </div>
-        <div>
-          <div style="font-size:12px;font-weight:700;color:#57534e;margin-bottom:6px">Tanques</div>
-          <div id="pi-chk-tanques" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+      <div>
+        <div class="flabel" style="margin-bottom:3px">Período</div>
+        <div style="display:flex;gap:0;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+          <button id="pi-periodo-week"  class="btn btn-sm btn-primary" style="border-radius:0;border:none;padding:5px 12px" onclick="piSetPeriodo('week')">Semanas</button>
+          <button id="pi-periodo-month" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1;padding:5px 12px" onclick="piSetPeriodo('month')">Meses</button>
         </div>
       </div>
+      <div>
+        <div class="flabel" style="margin-bottom:3px">Unidad</div>
+        <div style="display:flex;gap:0;border:1px solid #d6d3d1;border-radius:6px;overflow:hidden">
+          <button id="pi-modo-kg"  class="btn btn-sm btn-primary" style="border-radius:0;border:none;padding:5px 14px" onclick="piSetModo('kg')">kg</button>
+          <button id="pi-modo-mxn" class="btn btn-sm btn-outline" style="border-radius:0;border:none;border-left:1px solid #d6d3d1;padding:5px 14px" onclick="piSetModo('mxn')">$</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-left:4px">
+        <button class="btn btn-primary" id="pi-btn" style="padding:6px 18px">🔍 Generar</button>
+        <button class="btn btn-outline" id="pi-export-btn" style="padding:6px 14px">📥 CSV</button>
+      </div>
     </div>
+
+    <!-- Panel de filtros (aparece tras cargar datos) -->
+    <div id="pi-filtros" style="display:none;margin-bottom:14px;padding:14px 16px;background:#fafaf9;border:1px solid #e7e5e4;border-radius:10px">
+      <div style="display:grid;gap:14px">
+
+        <!-- Líneas -->
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:700;color:#78716c;text-transform:uppercase;letter-spacing:.5px">🏭 Líneas</span>
+            <button onclick="piSelAll('lineas',true)"  style="font-size:11px;color:#2563eb;background:none;border:none;cursor:pointer;padding:0">Todas</button>
+            <button onclick="piSelAll('lineas',false)" style="font-size:11px;color:#9ca3af;background:none;border:none;cursor:pointer;padding:0">Ninguna</button>
+          </div>
+          <div id="pi-pills-lineas" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+
+        <!-- Tanques (dependiente de líneas) -->
+        <div>
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="font-size:11px;font-weight:700;color:#78716c;text-transform:uppercase;letter-spacing:.5px">🪣 Tanques</span>
+            <button onclick="piSelAll('tanques',true)"  style="font-size:11px;color:#2563eb;background:none;border:none;cursor:pointer;padding:0">Todos</button>
+            <button onclick="piSelAll('tanques',false)" style="font-size:11px;color:#9ca3af;background:none;border:none;cursor:pointer;padding:0">Ninguno</button>
+          </div>
+          <div id="pi-pills-tanques" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+        </div>
+
+        <!-- Buscar ítem -->
+        <div>
+          <div style="font-size:11px;font-weight:700;color:#78716c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔍 Buscar ítem</div>
+          <input type="text" id="pi-search-item" placeholder="Filtrar por nombre de ítem…"
+            oninput="piSetItemSearch(this.value)"
+            style="width:100%;max-width:340px;font-size:13px;padding:6px 10px;border:1px solid #d6d3d1;border-radius:6px;box-sizing:border-box"/>
+        </div>
+      </div>
+    </div>
+
     <div id="pi-result"></div>
   </div>
 
@@ -1606,11 +1639,83 @@ function bindReportes() {
 
   // ── Tab: Reporte por ítem ─────────────────────────────────────────────────────
   const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let _piData    = null;
-  let _piModo    = 'kg';
-  let _piPeriodo = 'week';
-  let _piLineas  = new Set();
-  let _piTanques = new Set();
+  let _piData       = null;
+  let _piModo       = 'kg';
+  let _piPeriodo    = 'week';
+  let _piLineas     = new Set();   // líneas activas
+  let _piTanques    = new Set();   // tanques activos
+  let _piItemSearch = '';
+  // linea → Set de tanques que tienen datos en esa línea
+  let _piLtMap      = {};
+
+  // Pill helpers
+  const PILL_ON  = 'display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid #2563eb;background:#2563eb;color:#fff;transition:all .15s';
+  const PILL_OFF = 'display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid #d6d3d1;background:#f5f5f4;color:#78716c;transition:all .15s';
+  const PILL_DIS = 'display:inline-flex;align-items:center;gap:4px;padding:4px 11px;border-radius:20px;font-size:12px;cursor:default;border:1.5px solid #e7e5e4;background:#fafaf9;color:#c4b5a5;opacity:.6';
+
+  function piRenderLinePills() {
+    const el = document.getElementById('pi-pills-lineas');
+    if (!el || !_piData) return;
+    el.innerHTML = _piData.lineas.map(l =>
+      `<button style="${_piLineas.has(l) ? PILL_ON : PILL_OFF}" onclick="piToggleLinea('${esc(l)}')">${esc(l)}</button>`
+    ).join('');
+  }
+
+  function piGetAvailableTanques() {
+    // tanques que existen en al menos una línea activa
+    const avail = new Set();
+    for (const linea of _piLineas) {
+      (_piLtMap[linea] || []).forEach(t => avail.add(t));
+    }
+    return avail;
+  }
+
+  function piRenderTanquePills() {
+    const el = document.getElementById('pi-pills-tanques');
+    if (!el || !_piData) return;
+    const avail = piGetAvailableTanques();
+    el.innerHTML = _piData.tanques.map(t => {
+      if (!avail.has(t)) return `<span style="${PILL_DIS}">${esc(t)}</span>`;
+      return `<button style="${_piTanques.has(t) ? PILL_ON : PILL_OFF}" onclick="piToggleTanque('${esc(t)}')">${esc(t)}</button>`;
+    }).join('');
+  }
+
+  window.piToggleLinea = function(linea) {
+    if (_piLineas.has(linea)) _piLineas.delete(linea); else _piLineas.add(linea);
+    // Remove tanques that are no longer available from active set
+    const avail = piGetAvailableTanques();
+    for (const t of [..._piTanques]) { if (!avail.has(t)) _piTanques.delete(t); }
+    // Auto-add tanques of newly activated línea
+    if (_piLineas.has(linea)) (_piLtMap[linea] || []).forEach(t => _piTanques.add(t));
+    piRenderLinePills();
+    piRenderTanquePills();
+    if (_piData) renderPorItem();
+  };
+
+  window.piToggleTanque = function(tanque) {
+    if (_piTanques.has(tanque)) _piTanques.delete(tanque); else _piTanques.add(tanque);
+    piRenderTanquePills();
+    if (_piData) renderPorItem();
+  };
+
+  window.piSelAll = function(group, val) {
+    if (group === 'lineas') {
+      _piData.lineas.forEach(l => val ? _piLineas.add(l) : _piLineas.delete(l));
+      if (val) _piData.tanques.forEach(t => _piTanques.add(t));
+      else     _piTanques.clear();
+    } else {
+      const avail = piGetAvailableTanques();
+      avail.forEach(t => val ? _piTanques.add(t) : _piTanques.delete(t));
+    }
+    piRenderLinePills();
+    piRenderTanquePills();
+    if (_piData) renderPorItem();
+  };
+
+  window.piSetItemSearch = function(v) {
+    _piItemSearch = v;
+    if (_piData) renderPorItem();
+  };
 
   window.piSetModo = function(m) {
     _piModo = m;
@@ -1630,22 +1735,12 @@ function bindReportes() {
     if (_piData) renderPorItem();
   };
 
-  function piToggleLinea(linea, checked) {
-    if (checked) _piLineas.add(linea); else _piLineas.delete(linea);
-    if (_piData) renderPorItem();
-  }
-  function piToggleTanque(tanque, checked) {
-    if (checked) _piTanques.add(tanque); else _piTanques.delete(tanque);
-    if (_piData) renderPorItem();
-  }
-  window.piToggleLinea  = piToggleLinea;
-  window.piToggleTanque = piToggleTanque;
-
   function piCellFromBLT(it, periodKey, periodo) {
-    // Sum only the selected linea|tanque combos
     let kg = 0, mxn = 0;
     for (const [ltKey, ltd] of Object.entries(it.by_linea_tanque)) {
-      const [linea, tanque] = ltKey.split('|');
+      const sep = ltKey.indexOf('|');
+      const linea  = ltKey.slice(0, sep);
+      const tanque = ltKey.slice(sep + 1);
       if (!_piLineas.has(linea) || !_piTanques.has(tanque)) continue;
       const src = periodo === 'week' ? ltd.weeks : ltd.months;
       if (src[periodKey]) { kg += src[periodKey].kg; mxn += src[periodKey].mxn; }
@@ -1668,17 +1763,18 @@ function bindReportes() {
       return;
     }
     const C = {
-      thead:     { bg: '#1d4ed8', color: '#fff' },
-      theadM:    { bg: '#1e40af', color: '#bfdbfe' },
-      theadTot:  { bg: '#1e3a8a', color: '#fff' },
-      item:      { bg: '#fff',    color: '#374151' },
-      itemMes:   { bg: '#eff6ff', color: '#374151' },
-      itemTot:   { bg: '#dbeafe', color: '#1e40af' },
+      thead:    { bg: '#1d4ed8', color: '#fff' },
+      theadM:   { bg: '#1e40af', color: '#bfdbfe' },
+      theadTot: { bg: '#1e3a8a', color: '#fff' },
+      item:     { bg: '#fff',    color: '#374151' },
+      itemMes:  { bg: '#eff6ff', color: '#374151' },
+      itemTot:  { bg: '#dbeafe', color: '#1e40af' },
     };
 
-    const periodo  = _piPeriodo;
-    const periods  = periodo === 'week' ? _piData.weeks : _piData.months;
+    const periodo   = _piPeriodo;
+    const periods   = periodo === 'week' ? _piData.weeks : _piData.months;
     const isFiltered = _piLineas.size < _piData.lineas.length || _piTanques.size < _piData.tanques.length;
+    const search    = _piItemSearch.trim().toLowerCase();
 
     const thPeriods = periods.map(p => {
       const lbl = periodo === 'week' ? `S${p}` : MESES_PI[p-1];
@@ -1690,6 +1786,7 @@ function bindReportes() {
 
     let rows = '';
     for (const it of _piData.items) {
+      if (search && !it.item.toLowerCase().includes(search)) continue;
       let totalKg = 0, totalMxn = 0;
       const pCells = periods.map(p => {
         const cell = isFiltered ? piCellFromBLT(it, p, periodo) : (periodo === 'week' ? it.weeks[p] : it.months[p]);
@@ -1697,12 +1794,11 @@ function bindReportes() {
         const bg = periodo === 'week' ? C.item.bg : C.itemMes.bg;
         return `<td style="text-align:right;font-size:11px;background:${bg};color:${C.item.color}">${fmtPI(cell, _piModo)}</td>`;
       }).join('');
-      const totalCell = { kg: totalKg, mxn: totalMxn };
-      if (!totalKg && !totalMxn) continue; // skip items with 0 after filter
+      if (!totalKg && !totalMxn) continue;
       rows += `<tr>
-        <td style="padding:4px 10px;font-size:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.bg};color:${C.item.color};z-index:2" title="${esc(it.item)}">${esc(it.item)}</td>
+        <td style="padding:5px 10px;font-size:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.bg};color:${C.item.color};z-index:2;border-bottom:1px solid #f3f4f6" title="${esc(it.item)}">${esc(it.item)}</td>
         ${pCells}
-        <td style="text-align:right;font-size:11px;font-weight:700;background:${C.itemTot.bg};color:${C.theadTot.bg}">${fmtPI(totalCell, _piModo)}</td>
+        <td style="text-align:right;font-size:11px;font-weight:700;background:${C.itemTot.bg};color:${C.theadTot.bg}">${fmtPI({kg:totalKg,mxn:totalMxn}, _piModo)}</td>
       </tr>`;
     }
 
@@ -1738,13 +1834,26 @@ function bindReportes() {
       _piLineas  = new Set(data.lineas);
       _piTanques = new Set(data.tanques);
 
-      // Build filter checkboxes
-      const chkLineas  = document.getElementById('pi-chk-lineas');
-      const chkTanques = document.getElementById('pi-chk-tanques');
-      chkLineas.innerHTML  = data.lineas.map(l  => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleLinea('${esc(l)}',this.checked)"> ${esc(l)}</label>`).join('');
-      chkTanques.innerHTML = data.tanques.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleTanque('${esc(t)}',this.checked)"> ${esc(t)}</label>`).join('');
-      document.getElementById('pi-filtros').style.display = '';
+      // Build linea→tanques map from by_linea_tanque keys across all items
+      _piLtMap = {};
+      for (const it of data.items) {
+        for (const ltKey of Object.keys(it.by_linea_tanque)) {
+          const sep    = ltKey.indexOf('|');
+          const linea  = ltKey.slice(0, sep);
+          const tanque = ltKey.slice(sep + 1);
+          if (!_piLtMap[linea]) _piLtMap[linea] = new Set();
+          _piLtMap[linea].add(tanque);
+        }
+      }
 
+      // Reset item search
+      _piItemSearch = '';
+      const si = document.getElementById('pi-search-item');
+      if (si) si.value = '';
+
+      document.getElementById('pi-filtros').style.display = '';
+      piRenderLinePills();
+      piRenderTanquePills();
       renderPorItem();
     } catch(e) { res.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
   };
@@ -1761,8 +1870,10 @@ function bindReportes() {
     const pHdrMxn = periods.map(p => periodo === 'week' ? `S${p} $`  : MESES[p-1] + ' $');
     const hdr = ['Ítem', ...pHdr, ...pHdrMxn, 'Total kg', 'Total $'];
     const isFiltered = _piLineas.size < data.lineas.length || _piTanques.size < data.tanques.length;
+    const search = _piItemSearch.trim().toLowerCase();
     const csvRows = [hdr.join(',')];
     for (const it of data.items) {
+      if (search && !it.item.toLowerCase().includes(search)) continue;
       let totalKg = 0, totalMxn = 0;
       const wKg  = periods.map(p => { const c = isFiltered ? piCellFromBLT(it,p,periodo) : (periodo==='week'?it.weeks[p]:it.months[p]); totalKg += c?.kg||0; return (c?.kg||0).toFixed(3); });
       const wMxn = periods.map(p => { const c = isFiltered ? piCellFromBLT(it,p,periodo) : (periodo==='week'?it.weeks[p]:it.months[p]); totalMxn += c?.mxn||0; return (c?.mxn||0).toFixed(2); });
