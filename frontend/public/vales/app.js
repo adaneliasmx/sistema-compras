@@ -1605,6 +1605,7 @@ function bindReportes() {
   // ── fin Tab Procesos ──────────────────────────────────────────────────────────
 
   // ── Tab: Reporte por ítem ─────────────────────────────────────────────────────
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   let _piData    = null;
   let _piModo    = 'kg';
   let _piPeriodo = 'week';
@@ -1699,7 +1700,7 @@ function bindReportes() {
       const totalCell = { kg: totalKg, mxn: totalMxn };
       if (!totalKg && !totalMxn) continue; // skip items with 0 after filter
       rows += `<tr>
-        <td style="padding:4px 10px;font-size:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.bg};color:${C.item.color};z-index:2" title="${escHtml(it.item)}">${escHtml(it.item)}</td>
+        <td style="padding:4px 10px;font-size:12px;white-space:nowrap;max-width:260px;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:${C.item.bg};color:${C.item.color};z-index:2" title="${esc(it.item)}">${esc(it.item)}</td>
         ${pCells}
         <td style="text-align:right;font-size:11px;font-weight:700;background:${C.itemTot.bg};color:${C.theadTot.bg}">${fmtPI(totalCell, _piModo)}</td>
       </tr>`;
@@ -1740,8 +1741,8 @@ function bindReportes() {
       // Build filter checkboxes
       const chkLineas  = document.getElementById('pi-chk-lineas');
       const chkTanques = document.getElementById('pi-chk-tanques');
-      chkLineas.innerHTML  = data.lineas.map(l  => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleLinea('${escHtml(l)}',this.checked)"> ${escHtml(l)}</label>`).join('');
-      chkTanques.innerHTML = data.tanques.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleTanque('${escHtml(t)}',this.checked)"> ${escHtml(t)}</label>`).join('');
+      chkLineas.innerHTML  = data.lineas.map(l  => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleLinea('${esc(l)}',this.checked)"> ${esc(l)}</label>`).join('');
+      chkTanques.innerHTML = data.tanques.map(t => `<label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer"><input type="checkbox" checked onchange="piToggleTanque('${esc(t)}',this.checked)"> ${esc(t)}</label>`).join('');
       document.getElementById('pi-filtros').style.display = '';
 
       renderPorItem();
