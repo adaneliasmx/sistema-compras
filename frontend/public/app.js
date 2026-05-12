@@ -6624,22 +6624,69 @@ async function adminView() {
       ${rules.map(r => `<div class="list-line">${r.name}: $${r.min_amount} – $${r.max_amount} · ${r.auto_approve ? '✅ Auto' : '👤 '+r.approver_role}</div>`).join('') || '<div class="muted small">Sin reglas configuradas</div>'}
     </div>
     <div class="card section" style="margin-top:16px">
-      <div class="module-title"><h3>Proveedores registrados</h3><div style="display:flex;gap:8px"><button class="btn-secondary" id="expSuppliersBtn" style="font-size:12px">⬇ Exportar CSV</button><label class="btn-secondary" style="font-size:12px;cursor:pointer;padding:6px 12px">⬆ Importar CSV<input type="file" id="impSuppliersFile" accept=".csv,.txt" style="display:none"/></label><span id="impSuppliersMsg" class="small muted"></span></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuarios</th><th>Acción</th></tr></thead>
-      <tbody>${suppliers.map(s => {
+      <div class="module-title" style="margin-bottom:12px">
+        <h3>Proveedores y usuarios</h3>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <input id="supFilter" placeholder="Buscar proveedor..." style="padding:5px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px;width:170px;outline:none"/>
+          <button class="btn-secondary" id="expSuppliersBtn" style="font-size:12px">⬇ CSV</button>
+          <label class="btn-secondary" style="font-size:12px;cursor:pointer;padding:6px 12px">⬆ CSV<input type="file" id="impSuppliersFile" accept=".csv,.txt" style="display:none"/></label>
+          <span id="impSuppliersMsg" class="small muted"></span>
+        </div>
+      </div>
+      <div id="supAccordionList">
+      ${suppliers.map(s => {
         const supUsers = users.filter(u => u.supplier_id === s.id);
-        const usersHtml = supUsers.length
-          ? supUsers.map(u => `<span style="display:block;font-size:11px">✅ ${u.email} <span class="muted">(${u.role_code})</span></span>`).join('')
-          : '<span style="color:#dc2626;font-size:11px">⚠ Sin usuario</span>';
-        return `<tr>
-          <td>${s.provider_code||'-'}</td><td><b>${s.business_name}</b></td>
-          <td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
-          <td>${usersHtml}</td>
-          <td style="white-space:nowrap"><button class="btn-secondary edit-supplier-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">✏ Editar</button> <button class="btn-secondary add-supplier-user-btn" data-id="${s.id}" data-name="${s.business_name}" style="padding:2px 8px;font-size:11px">+ Usuario</button></td>
-        </tr>`;
-      }).join('')}</tbody></table></div>
-      <h4 style="margin-top:16px" id="editSupplierTitle">Editar proveedor</h4>
-      <div id="editSupplierForm" style="display:none">
+        const badge = supUsers.length === 0
+          ? `<span style="font-size:11px;padding:2px 10px;background:#fee2e2;color:#dc2626;border-radius:99px;font-weight:600">Sin usuarios</span>`
+          : `<span style="font-size:11px;padding:2px 10px;background:#dcfce7;color:#16a34a;border-radius:99px;font-weight:600">${supUsers.length} usuario${supUsers.length>1?'s':''}</span>`;
+        const usersTable = supUsers.length ? `
+          <table style="width:100%;font-size:13px;border-collapse:collapse;margin-bottom:10px">
+            <thead><tr>
+              <th style="padding:5px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;border-bottom:2px solid #e2e8f0">Nombre</th>
+              <th style="padding:5px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;border-bottom:2px solid #e2e8f0">Correo</th>
+              <th style="padding:5px 8px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:#64748b;border-bottom:2px solid #e2e8f0">Estado</th>
+              <th style="padding:5px 8px;border-bottom:2px solid #e2e8f0"></th>
+            </tr></thead>
+            <tbody>${supUsers.map(u => `
+              <tr style="border-bottom:1px solid #f1f5f9">
+                <td style="padding:8px 8px"><b>${escapeHtml(u.full_name)}</b></td>
+                <td style="padding:8px 8px;font-size:12px;color:#374151">${u.email}</td>
+                <td style="padding:8px 8px"><span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${u.active!==false?'#dcfce7':'#fee2e2'};color:${u.active!==false?'#15803d':'#dc2626'}">${u.active!==false?'Activo':'Inactivo'}</span></td>
+                <td style="padding:8px 8px;text-align:right;white-space:nowrap">
+                  <button class="btn-secondary edit-user-btn" data-id="${u.id}" style="padding:2px 8px;font-size:11px">✏ Editar</button>
+                  <button class="btn-secondary toggle-user-btn" data-id="${u.id}" data-active="${u.active!==false}" style="padding:2px 8px;font-size:11px">${u.active!==false?'Deshabilitar':'Habilitar'}</button>
+                  <button class="unlink-user-btn" data-id="${u.id}" data-name="${escapeHtml(u.full_name)}" style="padding:2px 8px;font-size:11px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;cursor:pointer">Quitar</button>
+                </td>
+              </tr>`).join('')}
+            </tbody>
+          </table>` : `<p style="font-size:13px;color:#94a3b8;margin-bottom:10px">Sin usuarios asignados a este proveedor.</p>`;
+        return `
+        <div class="sup-item" data-search="${escapeHtml((s.business_name+' '+(s.provider_code||'')+' '+(s.email||'')).toLowerCase())}" style="border:1px solid #e2e8f0;border-radius:8px;margin-bottom:8px;overflow:hidden">
+          <div class="sup-item-header" data-id="${s.id}" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;background:#f8fafc;cursor:pointer;user-select:none;gap:8px">
+            <div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0">
+              <span class="sup-chevron" style="font-size:10px;color:#94a3b8;flex-shrink:0;transition:transform .2s;display:inline-block">▶</span>
+              <div style="min-width:0">
+                <div style="font-weight:700;font-size:14px">${escapeHtml(s.business_name)}</div>
+                <div style="font-size:11px;color:#64748b">${[s.provider_code, s.rfc, s.email].filter(Boolean).join(' · ')||'Sin información adicional'}</div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+              ${badge}
+              <button class="btn-secondary edit-supplier-btn" data-id="${s.id}" style="padding:3px 10px;font-size:11px" onclick="event.stopPropagation()">✏ Proveedor</button>
+            </div>
+          </div>
+          <div class="sup-item-body" style="display:none">
+            <div style="padding:14px 16px">
+              ${usersTable}
+              <button class="btn-secondary add-supplier-user-btn" data-id="${s.id}" data-name="${escapeHtml(s.business_name)}" style="font-size:12px;padding:5px 14px">+ Agregar usuario</button>
+            </div>
+          </div>
+        </div>`;
+      }).join('')}
+      </div>
+      <!-- Editar proveedor (inline) -->
+      <div id="editSupplierForm" style="display:none;margin-top:16px;padding:16px;background:#f8fafc;border-radius:8px;border:1.5px solid #e2e8f0">
+        <h4 style="margin:0 0 12px" id="editSupplierTitle">Editar proveedor</h4>
         <input type="hidden" id="supEditId"/>
         <div class="row-3">
           <div><label>Razón social *</label><input id="supBizName" placeholder="Nombre del proveedor"/></div>
@@ -6843,6 +6890,27 @@ async function adminView() {
 
   expUsersBtn.onclick = () => downloadCsv('users', 'usuarios.csv');
 
+  // ── Acordeón de proveedores ──────────────────────────────────────────────────
+  document.querySelectorAll('.sup-item-header').forEach(header => {
+    header.onclick = () => {
+      const item = header.closest('.sup-item');
+      const body = item.querySelector('.sup-item-body');
+      const chevron = header.querySelector('.sup-chevron');
+      const isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : 'block';
+      chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+    };
+  });
+
+  // ── Filtro de búsqueda ───────────────────────────────────────────────────────
+  document.getElementById('supFilter')?.addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    document.querySelectorAll('#supAccordionList .sup-item').forEach(item => {
+      item.style.display = (!q || item.dataset.search.includes(q)) ? '' : 'none';
+    });
+  });
+
+  // ── Editar proveedor ─────────────────────────────────────────────────────────
   document.querySelectorAll('.edit-supplier-btn').forEach(btn => {
     btn.onclick = () => {
       const s = suppliers.find(x => x.id === Number(btn.dataset.id));
@@ -6857,22 +6925,8 @@ async function adminView() {
       supAddress.value = s.address || '';
       editSupplierForm.style.display = 'block';
       supMsg.textContent = '';
-      editSupplierTitle.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-  });
-
-  document.querySelectorAll('.add-supplier-user-btn').forEach(btn => {
-    btn.onclick = () => {
-      // Clear user form and pre-fill for new proveedor user linked to this supplier
-      usrEditId.value = '';
-      usrEditId.dispatchEvent(new Event('change'));
-      usrRole.value = 'proveedor';
-      usrSupplier.value = btn.dataset.id;
-      usrName.value = '';
-      usrEmail.value = '';
-      usrPass.value = '';
-      usrDept.value = '';
-      document.querySelector('#usrEditId')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      editSupplierTitle.textContent = `Editar: ${s.business_name}`;
+      editSupplierForm.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
   });
 
@@ -6899,6 +6953,33 @@ async function adminView() {
     } catch(e) { supMsg.textContent = e.message; supMsg.style.color = '#dc2626'; }
   });
 
+  // ── Agregar usuario a proveedor ──────────────────────────────────────────────
+  document.querySelectorAll('.add-supplier-user-btn').forEach(btn => {
+    btn.onclick = () => {
+      usrEditId.value = '';
+      usrEditId.dispatchEvent(new Event('change'));
+      usrRole.value = 'proveedor';
+      usrSupplier.value = btn.dataset.id;
+      usrName.value = '';
+      usrEmail.value = '';
+      usrPass.value = '';
+      usrDept.value = '';
+      document.getElementById('usrEditId')?.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+
+  // ── Quitar usuario de proveedor (desvincular, no eliminar) ───────────────────
+  document.querySelectorAll('.unlink-user-btn').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`¿Quitar a "${btn.dataset.name}" de este proveedor?\n\nEl usuario quedará sin proveedor asignado (no se elimina).`)) return;
+      try {
+        await api(`/api/admin/users/${btn.dataset.id}`, { method: 'PATCH', body: JSON.stringify({ supplier_id: null }) });
+        adminView();
+      } catch(e) { alert(e.message); }
+    };
+  });
+
+  // ── Habilitar / deshabilitar usuario ─────────────────────────────────────────
   document.querySelectorAll('.toggle-user-btn').forEach(btn => {
     btn.onclick = async () => {
       const active = btn.dataset.active === 'true';
@@ -6908,10 +6989,13 @@ async function adminView() {
       } catch(e) { alert(e.message); }
     };
   });
+
+  // ── Editar usuario (scroll al formulario) ────────────────────────────────────
   document.querySelectorAll('.edit-user-btn').forEach(btn => {
     btn.onclick = () => {
       usrEditId.value = btn.dataset.id;
       usrEditId.dispatchEvent(new Event('change'));
+      document.getElementById('usrEditId')?.closest('.card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
   });
 
