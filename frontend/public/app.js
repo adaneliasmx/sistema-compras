@@ -1642,7 +1642,7 @@ async function trackingDetailView(id) {
                   <div class="muted">$${Number(q.unit_cost||0).toFixed(2)} ${q.currency||'MXN'}</div>
                   <div class="muted">Entrega: ${q.delivery_days||0} días</div>
                   ${q.quote_number ? `<div class="muted">No. ${q.quote_number}</div>` : ''}
-                  ${q.attachment_path ? `<a href="${q.attachment_path}" target="_blank" style="font-size:11px;display:block;margin-top:4px">📎 Cotización</a>` : ''}
+                  ${q.attachment_path ? `<a href="/api/quotations/${q.id}/file" target="_blank" style="font-size:11px;display:block;margin-top:4px">📎 Cotización</a>` : ''}
                 </div>`).join('');
             })()}
           </div>
@@ -1674,8 +1674,8 @@ async function trackingDetailView(id) {
                 <div class="muted">${String(inv.created_at||'').slice(0,10)}</div>
                 <div style="margin-top:4px">${statusPill(inv.status)}</div>
                 <div class="muted" style="margin-top:4px">$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
-                ${inv.pdf_path ? `<a href="${inv.pdf_path}" target="_blank" style="font-size:11px;display:block">📎 PDF</a>` : ''}
-                ${inv.xml_path ? `<a href="${inv.xml_path}" target="_blank" style="font-size:11px;display:block">📋 XML</a>` : ''}
+                ${inv.pdf_path ? `<a href="/api/invoices/${inv.id}/file/pdf" target="_blank" style="font-size:11px;display:block">📎 PDF</a>` : ''}
+                ${inv.xml_path ? `<a href="/api/invoices/${inv.id}/file/xml" target="_blank" style="font-size:11px;display:block">📋 XML</a>` : ''}
               </div>`).join('')
             : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin factura</div>'}
           </div>
@@ -1690,7 +1690,7 @@ async function trackingDetailView(id) {
                 <div><b>$${Number(pay.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</b></div>
                 <div class="muted">${String(pay.created_at||'').slice(0,10)}</div>
                 <div class="muted">${pay.payment_type||'-'} · ${pay.reference||'-'}</div>
-                ${pay.proof_path ? `<a href="${pay.proof_path}" target="_blank" style="font-size:11px">📎 Comprobante</a>` : ''}
+                ${pay.proof_path ? `<a href="/api/payments/${pay.id}/proof" target="_blank" style="font-size:11px">📎 Comprobante</a>` : ''}
               </div>`).join('')
             : '<div style="background:#f3f4f6;border:1px dashed #d1d5db;border-radius:8px;padding:10px;font-size:12px;color:#9ca3af;text-align:center">Sin pagos</div>'}
           </div>
@@ -1977,7 +1977,7 @@ async function approvalsView() {
                 ${q.is_winner ? '🏆 ' : ''}<b>${escapeHtml(q.supplier_name)}</b>
                 · $${fmtMXN(q.unit_cost)} ${q.currency||'MXN'}
                 · ${q.delivery_days || '?'} días
-                ${q.attachment_path ? `· <a href="${q.attachment_path}" target="_blank" style="color:#2563eb">📄 PDF</a>` : ''}
+                ${q.attachment_path ? `· <a href="/api/quotations/${q.id}/file" target="_blank" style="color:#2563eb">📄 PDF</a>` : ''}
                 ${q.quote_number ? `<span class="muted"> · #${q.quote_number}</span>` : ''}
               </div>`).join('') : '<div class="muted small">Sin cotizaciones registradas</div>'}
           </div>
@@ -3306,7 +3306,7 @@ async function purchasesView() {
                         <span>🚚 ${q.delivery_days||0} días</span>
                         ${q.payment_terms ? `<span>💳 ${escapeHtml(q.payment_terms)}</span>` : ''}
                         ${q.quote_number ? `<span>No. ${escapeHtml(q.quote_number)}</span>` : ''}
-                        ${q.attachment_path ? `<a href="${q.attachment_path}" target="_blank" style="font-size:12px">📎 Ver cotización</a>` : ''}
+                        ${q.attachment_path ? `<a href="/api/quotations/${q.id}/file" target="_blank" style="font-size:12px">📎 Ver cotización</a>` : ''}
                       </div>` : ''}
                     </div>`;
                   }).join('')}
@@ -4602,7 +4602,7 @@ async function proveedorPOView() {
                 <td style="padding:4px 8px;text-align:right;font-weight:600;color:#16a34a">$${Number(p.amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
                 <td style="padding:4px 8px">${p.payment_type||'-'}</td>
                 <td style="padding:4px 8px">${p.reference||'-'}</td>
-                <td style="padding:4px 8px;text-align:center">${p.proof_path ? `<a href="${p.proof_path}" target="_blank" style="font-size:12px">📎 Ver</a>` : '-'}</td>
+                <td style="padding:4px 8px;text-align:center">${p.proof_path ? `<a href="/api/payments/${p.id}/proof" target="_blank" style="font-size:12px">📎 Ver</a>` : '-'}</td>
               </tr>`).join('')}</tbody>
             </table></div>` : ''}
             <div id="urgent-msg-${inv.id}" class="small muted" style="margin-top:4px"></div>
@@ -5220,8 +5220,8 @@ async function invoicingView() {
             <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
             <td>${statusPill(i.status)}</td>
             <td>
-              ${i.pdf_path ? `<a href="${i.pdf_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
-              ${i.xml_path ? `<a href="${i.xml_path}" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
+              ${i.pdf_path ? `<a href="/api/invoices/${i.id}/file/pdf" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
+              ${i.xml_path ? `<a href="/api/invoices/${i.id}/file/xml" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
               ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
             </td>
             <td><button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();showInvoiceDetail(${i.id})">Ver detalle</button></td>
@@ -5620,10 +5620,10 @@ async function showInvoiceDetail(invId) {
       <!-- Archivos -->
       <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
         ${inv.pdf_path
-          ? `<a href="${inv.pdf_path}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dbeafe;color:#1d4ed8;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📄 Ver PDF</a>`
+          ? `<a href="/api/invoices/${inv.id}/file/pdf" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dbeafe;color:#1d4ed8;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📄 Ver PDF</a>`
           : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin PDF adjunto</span>`}
         ${inv.xml_path
-          ? `<a href="${inv.xml_path}" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dcfce7;color:#15803d;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📋 Ver XML (CFDI)</a>`
+          ? `<a href="/api/invoices/${inv.id}/file/xml" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dcfce7;color:#15803d;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📋 Ver XML (CFDI)</a>`
           : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin XML adjunto</span>`}
       </div>
 
@@ -5791,7 +5791,7 @@ async function paymentsView() {
           <td>${p.payment_type||'-'}</td>
           <td>${p.reference||'-'}</td>
           <td>${String(p.created_at||'').slice(0,10)}</td>
-          <td>${p.proof_path ? `<a href="${p.proof_path}" target="_blank" style="font-size:12px">📎 Ver</a>` : '<span class="muted small">—</span>'}</td>
+          <td>${p.proof_path ? `<a href="/api/payments/${p.id}/proof" target="_blank" style="font-size:12px">📎 Ver</a>` : '<span class="muted small">—</span>'}</td>
         </tr>`).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:16px">Sin pagos registrados</td></tr>'}
         </tbody>
       </table></div>
@@ -6625,14 +6625,17 @@ async function adminView() {
     </div>
     <div class="card section" style="margin-top:16px">
       <div class="module-title"><h3>Proveedores registrados</h3><div style="display:flex;gap:8px"><button class="btn-secondary" id="expSuppliersBtn" style="font-size:12px">⬇ Exportar CSV</button><label class="btn-secondary" style="font-size:12px;cursor:pointer;padding:6px 12px">⬆ Importar CSV<input type="file" id="impSuppliersFile" accept=".csv,.txt" style="display:none"/></label><span id="impSuppliersMsg" class="small muted"></span></div></div>
-      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuario asignado</th><th>Acción</th></tr></thead>
+      <div class="table-wrap"><table><thead><tr><th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th>Usuarios</th><th>Acción</th></tr></thead>
       <tbody>${suppliers.map(s => {
-        const supUser = users.find(u => u.supplier_id === s.id && u.role_code === 'proveedor');
+        const supUsers = users.filter(u => u.supplier_id === s.id);
+        const usersHtml = supUsers.length
+          ? supUsers.map(u => `<span style="display:block;font-size:11px">✅ ${u.email} <span class="muted">(${u.role_code})</span></span>`).join('')
+          : '<span style="color:#dc2626;font-size:11px">⚠ Sin usuario</span>';
         return `<tr>
           <td>${s.provider_code||'-'}</td><td><b>${s.business_name}</b></td>
           <td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
-          <td>${supUser ? `✅ ${supUser.email}` : '<span style="color:#dc2626">⚠ Sin usuario</span>'}</td>
-          <td><button class="btn-secondary edit-supplier-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">✏ Editar</button></td>
+          <td>${usersHtml}</td>
+          <td style="white-space:nowrap"><button class="btn-secondary edit-supplier-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">✏ Editar</button> <button class="btn-secondary add-supplier-user-btn" data-id="${s.id}" data-name="${s.business_name}" style="padding:2px 8px;font-size:11px">+ Usuario</button></td>
         </tr>`;
       }).join('')}</tbody></table></div>
       <h4 style="margin-top:16px" id="editSupplierTitle">Editar proveedor</h4>
@@ -6855,6 +6858,21 @@ async function adminView() {
       editSupplierForm.style.display = 'block';
       supMsg.textContent = '';
       editSupplierTitle.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  });
+
+  document.querySelectorAll('.add-supplier-user-btn').forEach(btn => {
+    btn.onclick = () => {
+      // Clear user form and pre-fill for new proveedor user linked to this supplier
+      usrEditId.value = '';
+      usrEditId.dispatchEvent(new Event('change'));
+      usrRole.value = 'proveedor';
+      usrSupplier.value = btn.dataset.id;
+      usrName.value = '';
+      usrEmail.value = '';
+      usrPass.value = '';
+      usrDept.value = '';
+      document.querySelector('#usrEditId')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
   });
 

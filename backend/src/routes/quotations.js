@@ -6,6 +6,17 @@ const { addHistory, deriveItemStatus, recalcRequisition } = require('../utils/wo
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
+
+function encodeAttachmentForDb(filePath) {
+  if (!filePath) return null;
+  try {
+    const buf = fs.readFileSync(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    if (ext === '.xml') return 'gz:' + zlib.gzipSync(buf).toString('base64');
+    return buf.toString('base64');
+  } catch (e) { return null; }
+}
 
 const quotationsUploadDir = path.join(__dirname, '../../../storage/quotations');
 fs.mkdirSync(quotationsUploadDir, { recursive: true });
@@ -112,7 +123,8 @@ router.post('/', allowRoles('proveedor', 'comprador', 'admin'), quotationUpload.
     status: 'Cotizada',
     created_at: new Date().toISOString(),
     created_by_user_id: req.user.id,
-    attachment_path: req.file ? `/storage/quotations/${req.file.filename}` : null
+    attachment_path: req.file ? `/storage/quotations/${req.file.filename}` : null,
+    attachment_data: encodeAttachmentForDb(req.file?.path)
   };
 
   if (!row.requisition_item_id || !row.supplier_id) {
@@ -359,6 +371,32 @@ router.post('/:id/register-catalog-from-winner', allowRoles('comprador', 'admin'
 
   write(db);
   res.status(201).json({ catalog_item: item, requisition_item: reqItem });
+});
+
+// ── Servir adjunto de cotización desde DB ─────────────────────────────────────
+router.get('/:id/file', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+  const db = read();
+  const q = db.quotations.find(x => x.id === Number(req.params.id));
+  if (!q) return res.status(404).json({ error: 'Cotización no encontrada' });
+  if (req.user.supplier_id && q.supplier_id !== req.user.supplier_id)
+    return res.status(403).json({ error: 'Sin permiso' });
+  if (q.attachment_data) {
+    const ext = q.attachment_path ? path.extname(q.attachment_path).toLowerCase() : '.pdf';
+    const mime = ext === '.xml' ? 'application/xml; charset=utf-8'
+      : ext === '.pdf' ? 'application/pdf'
+      : 'application/octet-stream';
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="cotizacion-${q.id}${ext}"`);
+    if (q.attachment_data.startsWith('gz:'))
+      return res.send(zlib.gunzipSync(Buffer.from(q.attachment_data.slice(3), 'base64')));
+    return res.send(Buffer.from(q.attachment_data, 'base64'));
+  }
+  // Fallback a disco (desarrollo local)
+  if (q.attachment_path) {
+    const fp = path.resolve(process.cwd(), q.attachment_path.replace(/^\//, ''));
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'Archivo no disponible' });
 });
 
 // Proveedor declina solicitud de cotización

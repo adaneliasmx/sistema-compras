@@ -1,5 +1,6 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
@@ -154,6 +155,7 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
     delivery_date: req.body.delivery_date || null,
     credit_days: Number(req.body.credit_days || 0),
     proof_path: proofFile ? `/storage/payments/${proofFile.filename}` : null,
+    proof_data: proofFile ? (() => { try { return fs.readFileSync(proofFile.path).toString('base64'); } catch(e) { return null; } })() : null,
     proof_original: proofFile?.originalname || null,
     created_by_user_id: req.user.id,
     created_at: new Date().toISOString()
@@ -236,6 +238,28 @@ router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res
     : null;
 
   res.status(201).json({ ...row, mailto, supplier_email: supplier.email || '', compras_mailto, compras_emails: comprasEmails });
+});
+
+// ── Servir comprobante de pago desde DB ───────────────────────────────────────
+router.get('/:id/proof', allowRoles('pagos', 'comprador', 'proveedor', 'admin'), (req, res) => {
+  const db = read();
+  const pmt = db.payments.find(p => p.id === Number(req.params.id));
+  if (!pmt) return res.status(404).json({ error: 'Pago no encontrado' });
+  if (req.user.supplier_id && pmt.supplier_id !== req.user.supplier_id)
+    return res.status(403).json({ error: 'Sin permiso' });
+  if (pmt.proof_data) {
+    const ext = pmt.proof_path ? path.extname(pmt.proof_path).toLowerCase() : '.pdf';
+    const mime = ext === '.pdf' ? 'application/pdf' : `image/${ext.slice(1) || 'jpeg'}`;
+    res.setHeader('Content-Type', mime);
+    res.setHeader('Content-Disposition', `inline; filename="comprobante-${pmt.id}${ext}"`);
+    return res.send(Buffer.from(pmt.proof_data, 'base64'));
+  }
+  // Fallback a disco (desarrollo local)
+  if (pmt.proof_path) {
+    const fp = path.resolve(process.cwd(), pmt.proof_path.replace(/^\//, ''));
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'Comprobante no disponible' });
 });
 
 module.exports = router;

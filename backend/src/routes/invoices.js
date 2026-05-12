@@ -1,6 +1,8 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const fs = require('fs');
+const zlib = require('zlib');
 const multer = require('multer');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
@@ -8,6 +10,28 @@ const { allowRoles } = require('../middleware/roles');
 const { addHistory, recalcRequisition } = require('../utils/workflow');
 const router = express.Router();
 router.use(authRequired);
+
+// ── Codifica archivo en base64 para persistirlo en DB ─────────────────────────
+// Los XML se comprimen con gzip antes (ahorran ~75%). PDFs se guardan directo.
+function encodeFileForDb(filePath, fileType) {
+  if (!filePath) return null;
+  try {
+    const buf = fs.readFileSync(filePath);
+    if (fileType === 'xml') return 'gz:' + zlib.gzipSync(buf).toString('base64');
+    return buf.toString('base64');
+  } catch (e) {
+    console.warn('[invoices] encodeFileForDb error:', e.message);
+    return null;
+  }
+}
+
+// ── Sirve contenido de archivo almacenado en DB ───────────────────────────────
+function serveFileFromDb(res, data, contentType, filename) {
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+  if (data.startsWith('gz:')) return res.send(zlib.gunzipSync(Buffer.from(data.slice(3), 'base64')));
+  res.send(Buffer.from(data, 'base64'));
+}
 
 // ── Configuración de subida de archivos ───────────────────────────────────────
 const storage = multer.diskStorage({
@@ -93,7 +117,7 @@ router.post('/request/:po_id', allowRoles('comprador', 'admin'), (req, res) => {
     `Total de la orden: $${Number(po.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${po.currency || 'MXN'}`,
     ``,
     `► Para cargar su factura (PDF y XML) ingrese al sistema:`,
-    `${baseUrl}/#/cotizaciones`,
+    `${baseUrl}/#/facturacion`,
     ``,
     `► Ver detalle de esta orden:`,
     `${baseUrl}/api/public/po/${token}`,
@@ -151,6 +175,8 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
     status: 'Pendiente de pago',
     pdf_path: pdfFile ? `/storage/invoices/${pdfFile.filename}` : null,
     xml_path: xmlFile ? `/storage/invoices/${xmlFile.filename}` : null,
+    pdf_data: encodeFileForDb(pdfFile?.path, 'pdf'),
+    xml_data: encodeFileForDb(xmlFile?.path, 'xml'),
     pdf_original: pdfFile?.originalname || null,
     xml_original: xmlFile?.originalname || null,
     registered_by_role: req.user.role_code,
@@ -263,6 +289,8 @@ router.post('/monthly', allowRoles('comprador', 'proveedor', 'admin'), upload.fi
     status: 'Pendiente de pago',
     pdf_path: pdfFile ? `/storage/invoices/${pdfFile.filename}` : null,
     xml_path: xmlFile ? `/storage/invoices/${xmlFile.filename}` : null,
+    pdf_data: encodeFileForDb(pdfFile?.path, 'pdf'),
+    xml_data: encodeFileForDb(xmlFile?.path, 'xml'),
     pdf_original: pdfFile?.originalname || null,
     xml_original: xmlFile?.originalname || null,
     registered_by_role: req.user.role_code,
@@ -400,6 +428,39 @@ router.post('/:id/reminder', allowRoles('proveedor'), (req, res) => {
   const mailto = `mailto:${encodeURIComponent(buyerEmail)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
   res.json({ ok: true, mailto, reminder_count: inv.reminder_count, message: `Recordatorio #${inv.reminder_count} enviado` });
+});
+
+// ── Servir PDF / XML desde DB (persistente en Render) ─────────────────────────
+router.get('/:id/file/pdf', (req, res) => {
+  const db = read();
+  const inv = db.invoices.find(i => i.id === Number(req.params.id));
+  if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+  if (req.user.supplier_id && inv.supplier_id !== req.user.supplier_id)
+    return res.status(403).json({ error: 'Sin permiso' });
+  if (inv.pdf_data)
+    return serveFileFromDb(res, inv.pdf_data, 'application/pdf', `factura-${inv.invoice_number || inv.id}.pdf`);
+  // Fallback: archivo en disco (solo funciona en desarrollo local)
+  if (inv.pdf_path) {
+    const fp = path.resolve(process.cwd(), inv.pdf_path.replace(/^\//, ''));
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'Archivo PDF no disponible. El proveedor debe volver a subir la factura.' });
+});
+
+router.get('/:id/file/xml', (req, res) => {
+  const db = read();
+  const inv = db.invoices.find(i => i.id === Number(req.params.id));
+  if (!inv) return res.status(404).json({ error: 'Factura no encontrada' });
+  if (req.user.supplier_id && inv.supplier_id !== req.user.supplier_id)
+    return res.status(403).json({ error: 'Sin permiso' });
+  if (inv.xml_data)
+    return serveFileFromDb(res, inv.xml_data, 'application/xml; charset=utf-8', `factura-${inv.invoice_number || inv.id}.xml`);
+  // Fallback: archivo en disco (solo funciona en desarrollo local)
+  if (inv.xml_path) {
+    const fp = path.resolve(process.cwd(), inv.xml_path.replace(/^\//, ''));
+    if (fs.existsSync(fp)) return res.sendFile(fp);
+  }
+  res.status(404).json({ error: 'Archivo XML no disponible. El proveedor debe volver a subir la factura.' });
 });
 
 module.exports = router;

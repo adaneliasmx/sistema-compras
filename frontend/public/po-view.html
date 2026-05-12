@@ -64,7 +64,12 @@
     /* Print */
     .btn-print { display: inline-flex; align-items: center; gap: 6px; padding: 9px 18px; background: #f1f5f9; border: 1.5px solid #e2e8f0; border-radius: 8px; font-size: 13px; font-weight: 600; color: #374151; cursor: pointer; }
     .btn-print:hover { background: #e2e8f0; }
-    .actions-row { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+    .actions-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 8px; }
+    .btn-upload-invoice { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; text-decoration: none; }
+    .btn-upload-invoice:hover { background: #1d4ed8; }
+    .invoice-banner { background: #eff6ff; border: 1.5px solid #bfdbfe; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .invoice-banner p { font-size: 13px; color: #1e40af; margin: 0; }
+    .invoice-banner strong { display: block; font-size: 14px; color: #1e3a8a; margin-bottom: 2px; }
 
     /* Loading / error */
     .center { text-align: center; padding: 60px 20px; }
@@ -76,7 +81,7 @@
     /* Print styles */
     @media print {
       body { background: #fff; }
-      .confirm-card, .btn-print, .actions-row { display: none !important; }
+      .confirm-card, .btn-print, .actions-row, .invoice-banner { display: none !important; }
       .card, .po-header { box-shadow: none; border: 1px solid #e2e8f0; }
     }
   </style>
@@ -206,7 +211,16 @@
           </div>
         </div>
 
+        <div class="invoice-banner">
+          <div>
+            <strong>¿Ya tienes tu factura lista?</strong>
+            <p>Ingresa al sistema con tu usuario para subir el PDF y XML de tu factura correspondiente a esta orden.</p>
+          </div>
+          <a href="/compras#/facturacion" class="btn-upload-invoice">📤 Subir factura</a>
+        </div>
+
         <div class="actions-row">
+          <span style="font-size:12px;color:#94a3b8">Orden: ${esc(po.folio)}</span>
           <button class="btn-print" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
         </div>
 
