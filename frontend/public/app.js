@@ -107,7 +107,7 @@ function statusPill(status) {
 
 function shell(content, active = 'dashboard') {
   const allowed = MENU_BY_ROLE[state.user?.role] || [];
-  return `<div class="layout"><div class="sidebar-overlay" id="sidebarOverlay" onclick="document.querySelector('.sidebar').classList.remove('open');this.classList.remove('open')"></div><aside class="sidebar"><div class="brand">🛒 Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="logoutBtn">Cerrar sesión</a></nav><div style="margin-top:auto;padding-top:18px;border-top:1px solid rgba(255,255,255,.1);margin-top:18px"><a href="/" style="display:flex;align-items:center;gap:8px;color:#94a3b8;text-decoration:none;font-size:13px;padding:8px 12px;border-radius:10px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='transparent'">← Portal principal</a></div></aside><main class="main"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');document.getElementById('sidebarOverlay').classList.toggle('open')">☰</button><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div></div><div style="display:flex;align-items:center;gap:12px"><span class="badge">Flujo operativo</span><button id="notifBellBtn" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:20px" title="Notificaciones">🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:0;background:#dc2626;color:white;border-radius:50%;font-size:10px;font-weight:700;width:16px;height:16px;line-height:16px;text-align:center"></span></button></div></div><div id="notifPanel" style="display:none;position:fixed;top:60px;right:16px;width:340px;max-height:500px;overflow-y:auto;background:white;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;padding:0"><div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">Notificaciones<button id="notifCloseBtn" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:18px">×</button></div><div id="notifList" style="padding:8px 0"></div></div>${content}</main></div>`;
+  return `<div class="layout"><div class="sidebar-overlay" id="sidebarOverlay" onclick="document.querySelector('.sidebar').classList.remove('open');this.classList.remove('open')"></div><aside class="sidebar"><div class="brand">🛒 Compras</div><nav class="nav">${navItems.filter(([k]) => allowed.includes(k)).map(([k,l]) => `<a href="#/${k}" class="${active === k ? 'active' : ''}">${l}</a>`).join('')}<a href="#" id="changePwdBtn">🔑 Contraseña</a><a href="#" id="logoutBtn">Cerrar sesión</a></nav><div style="margin-top:auto;padding-top:18px;border-top:1px solid rgba(255,255,255,.1);margin-top:18px"><a href="/" style="display:flex;align-items:center;gap:8px;color:#94a3b8;text-decoration:none;font-size:13px;padding:8px 12px;border-radius:10px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.08)'" onmouseout="this.style.background='transparent'">← Portal principal</a></div></aside><main class="main"><div class="topbar"><div style="display:flex;align-items:center;gap:10px"><button class="mob-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open');document.getElementById('sidebarOverlay').classList.toggle('open')">☰</button><div><h2>${active[0].toUpperCase() + active.slice(1)}</h2><div class="muted small">${state.user?.name || ''} · ${state.user?.role || ''}</div></div></div><div style="display:flex;align-items:center;gap:12px"><span class="badge">Flujo operativo</span><button id="notifBellBtn" style="background:none;border:none;cursor:pointer;position:relative;padding:4px 8px;font-size:20px" title="Notificaciones">🔔<span id="notifBadge" style="display:none;position:absolute;top:0;right:0;background:#dc2626;color:white;border-radius:50%;font-size:10px;font-weight:700;width:16px;height:16px;line-height:16px;text-align:center"></span></button></div></div><div id="notifPanel" style="display:none;position:fixed;top:60px;right:16px;width:340px;max-height:500px;overflow-y:auto;background:white;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:9999;padding:0"><div style="padding:12px 16px;border-bottom:1px solid #f1f5f9;font-weight:700;font-size:14px;display:flex;justify-content:space-between;align-items:center">Notificaciones<button id="notifCloseBtn" style="background:none;border:none;cursor:pointer;color:#6b7280;font-size:18px">×</button></div><div id="notifList" style="padding:8px 0"></div></div>${content}</main></div>`;
 }
 
 // ── Sistema de notificaciones ──────────────────────────────────────────────
@@ -169,9 +169,56 @@ function initNotifications() {
   });
 }
 
+function openChangePwdModal() {
+  const modal = document.createElement('div');
+  modal.id = 'changePwdModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:2000;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px;width:400px;max-width:96vw;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 18px">🔑 Cambiar contraseña</h3>
+      <label class="form-label">Contraseña actual</label>
+      <input type="password" id="cp-cur" class="form-input" placeholder="••••••••" autocomplete="current-password" style="margin-bottom:12px" />
+      <label class="form-label">Nueva contraseña</label>
+      <input type="password" id="cp-new" class="form-input" placeholder="Mínimo 6 caracteres" autocomplete="new-password" style="margin-bottom:12px" />
+      <label class="form-label">Confirmar nueva contraseña</label>
+      <input type="password" id="cp-conf" class="form-input" placeholder="Repite la nueva contraseña" autocomplete="new-password" style="margin-bottom:16px" />
+      <p id="cp-err" style="color:#dc2626;font-size:13px;margin:0 0 12px;display:none"></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-secondary" id="cp-cancel">Cancelar</button>
+        <button class="btn-primary" id="cp-save">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('cp-cancel').onclick = () => modal.remove();
+  document.getElementById('cp-save').onclick = async () => {
+    const cur = document.getElementById('cp-cur').value;
+    const nw  = document.getElementById('cp-new').value;
+    const conf = document.getElementById('cp-conf').value;
+    const errEl = document.getElementById('cp-err');
+    const showErr = msg => { errEl.textContent = msg; errEl.style.display = ''; };
+    errEl.style.display = 'none';
+    if (!cur || !nw || !conf) return showErr('Completa todos los campos');
+    if (nw.length < 6) return showErr('La nueva contraseña debe tener al menos 6 caracteres');
+    if (nw !== conf) return showErr('Las contraseñas nuevas no coinciden');
+    const btn = document.getElementById('cp-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await api('/api/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: nw }) });
+      modal.remove();
+      alert('Contraseña actualizada correctamente');
+    } catch(e) {
+      btn.disabled = false; btn.textContent = 'Guardar';
+      showErr(e.message);
+    }
+  };
+}
+
 function bindCommon() {
   const out = document.getElementById('logoutBtn');
   if (out) out.onclick = (e) => { e.preventDefault(); logout(); };
+  const cpBtn = document.getElementById('changePwdBtn');
+  if (cpBtn) cpBtn.onclick = (e) => { e.preventDefault(); openChangePwdModal(); };
 }
 
 async function downloadCsv(entity, filename, params = {}) {

@@ -382,6 +382,7 @@ function renderLayout() {
           <strong>${state.user.full_name}</strong>
           <span class="badge-role ${roleBadge}">${role}</span>
         </div>
+        <button class="btn-logout" id="btn-change-pwd" style="margin-bottom:6px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;">🔑 Cambiar contraseña</button>
         <button class="btn-logout" id="btn-logout">Cerrar sesión</button>
       </div>
     </nav>
@@ -398,6 +399,40 @@ function bindNav() {
     el.addEventListener('click', () => navigate(el.dataset.nav));
   });
   document.getElementById('btn-logout')?.addEventListener('click', logout);
+  document.getElementById('btn-change-pwd')?.addEventListener('click', openChangePwdModal);
+}
+
+function openChangePwdModal() {
+  showModal(`
+    <h3>🔑 Cambiar contraseña</h3>
+    <div class="form-group" style="margin-bottom:12px"><label>Contraseña actual</label><input class="form-input" type="password" id="cp-cur" autocomplete="current-password"/></div>
+    <div class="form-group" style="margin-bottom:12px"><label>Nueva contraseña</label><input class="form-input" type="password" id="cp-new" placeholder="Mínimo 6 caracteres" autocomplete="new-password"/></div>
+    <div class="form-group" style="margin-bottom:16px"><label>Confirmar nueva contraseña</label><input class="form-input" type="password" id="cp-conf" autocomplete="new-password"/></div>
+    <p id="cp-err" style="color:#dc2626;font-size:13px;margin:0 0 12px;display:none"></p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn-secondary" onclick="closeModal()">Cancelar</button>
+      <button class="btn-primary" id="cp-save">Guardar</button>
+    </div>
+  `);
+  document.getElementById('cp-save').onclick = async () => {
+    const cur  = document.getElementById('cp-cur').value;
+    const nw   = document.getElementById('cp-new').value;
+    const conf = document.getElementById('cp-conf').value;
+    const errEl = document.getElementById('cp-err');
+    const showErr = msg => { errEl.textContent = msg; errEl.style.display = ''; };
+    errEl.style.display = 'none';
+    if (!cur || !nw || !conf) return showErr('Completa todos los campos');
+    if (nw.length < 6) return showErr('La nueva contraseña debe tener al menos 6 caracteres');
+    if (nw !== conf) return showErr('Las contraseñas nuevas no coinciden');
+    const btn = document.getElementById('cp-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await POST('/auth/change-password', { current_password: cur, new_password: nw });
+      closeModal(); alert('Contraseña actualizada correctamente');
+    } catch(e) {
+      btn.disabled = false; btn.textContent = 'Guardar'; showErr(e.message);
+    }
+  };
 }
 
 // ── Render sección actual ─────────────────────────────────────────────────────

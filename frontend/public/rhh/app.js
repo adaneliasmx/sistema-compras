@@ -223,6 +223,56 @@ function shiftName(id) {
   return s ? s.name : '—';
 }
 
+// ── Cambiar contraseña ────────────────────────────────────────────────────────
+function openRhhChangePwdModal() {
+  const existing = document.getElementById('rhhChangePwdModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'rhhChangePwdModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:28px;max-width:420px;width:100%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 18px;color:#064e3b;">🔑 Cambiar contraseña</h3>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Contraseña actual</label>
+      <input type="password" id="rcp-cur" placeholder="••••••••" autocomplete="current-password"
+        style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px"/>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Nueva contraseña</label>
+      <input type="password" id="rcp-new" placeholder="Mínimo 6 caracteres" autocomplete="new-password"
+        style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:12px"/>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px">Confirmar nueva contraseña</label>
+      <input type="password" id="rcp-conf" placeholder="Repite la nueva contraseña" autocomplete="new-password"
+        style="width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box;margin-bottom:16px"/>
+      <p id="rcp-err" style="color:#dc2626;font-size:13px;margin:0 0 12px;display:none"></p>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-ghost" onclick="document.getElementById('rhhChangePwdModal').remove()">Cancelar</button>
+        <button class="btn-primary" id="rcp-save">Guardar contraseña</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.getElementById('rcp-save').onclick = async () => {
+    const cur  = document.getElementById('rcp-cur').value;
+    const nw   = document.getElementById('rcp-new').value;
+    const conf = document.getElementById('rcp-conf').value;
+    const errEl = document.getElementById('rcp-err');
+    const showErr = msg => { errEl.textContent = msg; errEl.style.display = ''; };
+    errEl.style.display = 'none';
+    if (!cur || !nw || !conf) return showErr('Completa todos los campos');
+    if (nw.length < 6) return showErr('La nueva contraseña debe tener al menos 6 caracteres');
+    if (nw !== conf) return showErr('Las contraseñas nuevas no coinciden');
+    const btn = document.getElementById('rcp-save');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await api('/api/rhh/auth/change-password', { method: 'POST', body: JSON.stringify({ current_password: cur, new_password: nw }) });
+      modal.remove();
+      toast('Contraseña actualizada correctamente');
+    } catch(e) {
+      btn.disabled = false; btn.textContent = 'Guardar contraseña';
+      showErr(e.message);
+    }
+  };
+}
+
 // ── Shell (layout con sidebar) ────────────────────────────────────────────────
 function shell(content, activeHash) {
   const role = state.user?.role || 'empleado';
@@ -239,6 +289,7 @@ function shell(content, activeHash) {
         <nav class="nav">${menuHtml}</nav>
         <div class="sidebar-footer">
           <a href="#perfil">⚙️ ${state.user?.full_name || 'Mi perfil'}</a>
+          <a href="#" onclick="openRhhChangePwdModal();return false;">🔑 Cambiar contraseña</a>
           <a href="#" onclick="logout();return false;">🚪 Cerrar sesión</a>
           <a href="/">← Portal principal</a>
         </div>

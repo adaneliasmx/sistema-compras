@@ -143,6 +143,22 @@ router.post('/reset-password', (req, res) => {
   res.json({ ok: true, message: 'Contraseña cambiada exitosamente. Ya puedes iniciar sesión.' });
 });
 
+// Cambiar contraseña del usuario actual
+router.post('/change-password', authRequired, (req, res) => {
+  const { current_password, new_password } = req.body || {};
+  if (!current_password || !new_password) return res.status(400).json({ error: 'Contraseña actual y nueva son requeridas' });
+  if (String(new_password).length < 6) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  const db = read();
+  const user = db.users.find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const ok = bcrypt.compareSync(String(current_password), user.password_hash);
+  if (!ok) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  user.updated_at = new Date().toISOString();
+  write(db);
+  res.json({ ok: true, message: 'Contraseña actualizada exitosamente' });
+});
+
 // Verificar contraseña del usuario actual (para confirmación de acciones sensibles)
 router.post('/verify-password', authRequired, (req, res) => {
   const db = read();
