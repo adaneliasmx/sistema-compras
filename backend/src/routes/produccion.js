@@ -753,9 +753,12 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
 
   if (!linea || linea === 'ambas') {
     const bakerParos = (pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' }));
-    paros = [...(pdb.paros || []), ...bakerParos];
+    const l1Paros    = (pdb.paros_l1    || []).map(p => ({ ...p, linea: 'L1'    }));
+    paros = [...(pdb.paros || []), ...bakerParos, ...l1Paros];
   } else if (linea === 'Baker') {
     paros = (pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' }));
+  } else if (linea === 'L1') {
+    paros = (pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' }));
   } else {
     paros = (pdb.paros || []).filter(p => p.linea === linea);
   }
@@ -833,6 +836,84 @@ router.get('/resumen/defectos', (req, res) => {
   }
   result.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.turno.localeCompare(b.turno));
   res.json({ total: result.length, defectos: result });
+});
+
+// Admin: crear paro manual con fechas/horas personalizadas (cualquier línea)
+router.post('/paros/admin-crear', produccionAllowRoles('admin'), (req, res) => {
+  const body = req.body || {};
+  const { linea, motivo_id, sub_motivo_id, fecha_inicio, hora_inicio, fecha_fin, hora_fin } = body;
+  if (!linea || !motivo_id || !fecha_inicio || !hora_inicio) {
+    return res.status(400).json({ error: 'linea, motivo_id, fecha_inicio y hora_inicio son requeridos' });
+  }
+  const l = lineaKey(linea);
+  const pdb = dbProd.read();
+
+  // Lookup motivo name según línea
+  const motivosKey = `motivos_paro_${linea === 'Baker' ? 'baker' : linea === 'L1' ? 'l1' : l}`;
+  const motivos = pdb[motivosKey] || [];
+  const motivoObj = motivos.find(m => String(m.id) === String(motivo_id));
+  if (!motivoObj) return res.status(400).json({ error: 'Motivo de paro no encontrado' });
+
+  let sub_motivo = null;
+  if (sub_motivo_id) {
+    const subKey = `sub_motivos_paro_${linea === 'Baker' ? 'baker' : linea === 'L1' ? 'l1' : l}`;
+    const found = (pdb[subKey] || []).find(s => String(s.id) === String(sub_motivo_id));
+    if (found) sub_motivo = found;
+  }
+
+  const turno = getTurno(hora_inicio);
+  const duracion_min = (fecha_fin && hora_fin)
+    ? Math.round((new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${fecha_inicio}T${hora_inicio}:00`)) / 60000)
+    : null;
+
+  const dateStr = fecha_inicio.replace(/-/g, '');
+  let parosList, folio, id;
+  if (linea === 'Baker') {
+    if (!pdb.paros_baker) pdb.paros_baker = [];
+    parosList = pdb.paros_baker;
+    const prefix = `BKRP-${dateStr}-`;
+    const existing = parosList.filter(p => p.folio && p.folio.startsWith(prefix));
+    const nextNum = existing.length ? Math.max(...existing.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+    folio = `${prefix}${padNum(nextNum)}`;
+    id = dbProd.nextId(parosList);
+  } else if (linea === 'L1') {
+    if (!pdb.paros_l1) pdb.paros_l1 = [];
+    parosList = pdb.paros_l1;
+    const prefix = `L1P-${dateStr}-`;
+    const existing = parosList.filter(p => p.folio && p.folio.startsWith(prefix));
+    const nextNum = existing.length ? Math.max(...existing.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+    folio = `${prefix}${padNum(nextNum)}`;
+    id = dbProd.nextId(parosList);
+  } else {
+    if (!pdb.paros) pdb.paros = [];
+    parosList = pdb.paros;
+    const prefix = `PR-${linea.toUpperCase()}-${dateStr}-`;
+    const existing = parosList.filter(p => p.folio && p.folio.startsWith(prefix));
+    const nextNum = existing.length ? Math.max(...existing.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+    folio = `${prefix}${padNum(nextNum)}`;
+    id = dbProd.nextId(parosList);
+  }
+
+  const paro = {
+    id, folio, linea,
+    motivo_id: Number(motivo_id),
+    motivo: motivoObj.nombre,
+    sub_motivo_id: sub_motivo ? Number(sub_motivo_id) : null,
+    sub_motivo: sub_motivo ? sub_motivo.nombre : null,
+    fecha_inicio, hora_inicio, turno,
+    fecha_fin: fecha_fin || null,
+    hora_fin:  hora_fin  || null,
+    duracion_min,
+    estado: fecha_fin ? 'cerrado' : 'activo',
+    registrado_por: req.prodUser?.nombre || 'Admin',
+    creado_admin: true,
+    corregido: false,
+    created_at: new Date().toISOString()
+  };
+
+  parosList.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
 });
 
 router.get('/paros/:linea/activo', (req, res) => {
@@ -1138,9 +1219,17 @@ router.delete('/paros/:id', produccionAllowRoles('admin'), (req, res) => {
 
   // Buscar en paros Baker
   idx = (pdb.paros_baker || []).findIndex(p => String(p.id) === String(id));
+  if (idx !== -1) {
+    const [eliminado] = pdb.paros_baker.splice(idx, 1);
+    dbProd.write(pdb);
+    return res.json({ ok: true, eliminado });
+  }
+
+  // Buscar en paros L1
+  idx = (pdb.paros_l1 || []).findIndex(p => String(p.id) === String(id));
   if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
 
-  const [eliminado] = pdb.paros_baker.splice(idx, 1);
+  const [eliminado] = pdb.paros_l1.splice(idx, 1);
   dbProd.write(pdb);
   res.json({ ok: true, eliminado });
 });
@@ -1152,6 +1241,28 @@ const TURNOS_DEF = {
   T2: { start: 14 * 60 + 30, hours: 7 },  // 14:30–21:30
   T3: { start: 21 * 60 + 30, hours: 9 }   // 21:30–06:30+1
 };
+
+// ── Arranque de lunes: herramentales cargados que no descargan en T1 del lunes ─
+// Estos ciclos se descuentan del objetivo para no penalizar la eficiencia del arranque.
+const ARRANQUE_LUNES = { L3: 5, L4: 6, Baker: 7, L1: 7 };
+
+// Retorna true si la fecha YYYY-MM-DD es lunes
+function isLunes(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d).getDay() === 1;
+}
+
+// Calcula el objetivo acumulado hasta tElap horas del turno usando los ciclos_obj
+// ajustados por slot (ya incluyen el descuento de arranque de lunes).
+// Para turnos sin descuento: resultado ≈ ciclos_obj_rate * tElap.
+function computeObjElapsed(slots, tElap) {
+  const fullSlots = Math.floor(tElap);
+  const frac = tElap - fullSlots;
+  let obj = 0;
+  for (let i = 0; i < Math.min(fullSlots, slots.length); i++) obj += slots[i].ciclos_obj;
+  if (frac > 0 && fullSlots < slots.length) obj += slots[fullSlots].ciclos_obj * frac;
+  return obj;
+}
 
 function toMins(timeStr) {
   if (!timeStr) return 0;
@@ -1240,6 +1351,10 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const slots   = [];
   let curMins   = tDef.start;
 
+  // Arranque de lunes: descuento de N primeros ciclos del objetivo en T1
+  const esLunesT1 = t === 'T1' && isLunes(targetDate);
+  let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES[l] || 0) : 0;
+
   // Mapa de componentes para calcular piezas_objetivo por ciclo
   const compMap = {};
   for (const c of (pdb[`componentes_${l.toLowerCase()}`] || [])) {
@@ -1311,10 +1426,18 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObj = slotCiclosObj(ciclos_obj, h);
+    const slotObjBase = slotCiclosObj(ciclos_obj, h);
+    // Arranque lunes T1: reducir objetivo de los primeros slots
+    let slotObj;
+    if (arranqueRestante > 0) {
+      slotObj = Math.max(0, slotObjBase - arranqueRestante);
+      arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
+    } else {
+      slotObj = slotObjBase;
+    }
 
-    // Eficiencia = ciclos_descargados / ciclos_objetivo_por_hora (sin descuento de paros)
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
+    // Eficiencia = ciclos_descargados / objetivo_por_hora; si obj=0 y real=0 → 100%
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
     // Calidad = buenos / no_vacios — excluye herramentales con defecto contemplado
     const calidad       = cargasCalidad.length > 0 ? r3(ciclos_buenos_calidad / cargasCalidad.length) : null;
     // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
@@ -1356,7 +1479,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       ? (config.ciclos_objetivo_l3 ?? 2)
       : (config.ciclos_objetivo_l4 ?? 2);
 
-    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, daySlots = 0, dayElapHours = 0;
+    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, daySlots = 0, dayElapHours = 0, dayObjElap = 0;
 
     for (const t of turnos) {
       const tDef  = TURNOS_DEF[t];
@@ -1370,6 +1493,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       const tParos = slots.reduce((s, x) => s + x.paros_min,        0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate); // horas reales transcurridas
+      // Lunes T1: usa objetivo ajustado por arranque; otros turnos: fórmula original
+      const tObjElap   = (t === 'T1' && isLunes(targetDate)) ? computeObjElapsed(slots, tElap) : ciclos_obj * tElap;
 
       result[l][t] = {
         slots,
@@ -1381,7 +1506,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
           // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
-          eficiencia:    r3(tElap > 0 ? tC / (ciclos_obj * tElap) : 0),
+          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
           disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1395,7 +1520,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       dayPzObj      += tPzObj;
       dayParos      += tParos;
       daySlots      += tDef.hours;   // horas totales planeadas (para disponibilidad)
-      dayElapHours  += tElap;        // horas reales transcurridas (para eficiencia)
+      dayElapHours  += tElap;        // horas reales transcurridas
+      dayObjElap    += tObjElap;     // objetivo acumulado ajustado (incluye descuento arranque lunes)
     }
 
     const totalMins = daySlots * 60;
@@ -1406,7 +1532,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    r3(dayElapHours > 0 ? dayC / (ciclos_obj * dayElapHours) : 0),
+      eficiencia:    r3(dayObjElap > 0 ? dayC / dayObjElap : 0),
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
@@ -1501,7 +1627,7 @@ router.get('/pizarron', (req, res) => {
   function addBakerLike(lineaLabel, buildFn, ciclosObjKey) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const turnData = {};
-    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dSlots = 0, dElapHours = 0;
+    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dSlots = 0, dElapHours = 0, dObjElap = 0;
     for (const t of targetTurnos) {
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
@@ -1514,6 +1640,8 @@ router.get('/pizarron', (req, res) => {
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate);
       const ciclos_obj = config[ciclosObjKey] ?? 2;
+      // Lunes T1: usa objetivo ajustado por arranque; otros turnos: fórmula original
+      const tObjElap   = (t === 'T1' && isLunes(targetDate)) ? computeObjElapsed(slots, tElap) : ciclos_obj * tElap;
       turnData[t] = {
         slots,
         totals: {
@@ -1521,7 +1649,7 @@ router.get('/pizarron', (req, res) => {
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
           // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
-          eficiencia:    tElap > 0 ? r3(tC / (ciclos_obj * tElap)) : 0,
+          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
@@ -1530,13 +1658,14 @@ router.get('/pizarron', (req, res) => {
       dC += tC; dNV += tNV; dB += tB; dPz += tPz; dPzO += tPzO;
       dParos += tParos;
       dSlots     += tDef.hours;  // horas totales planeadas (para disponibilidad)
-      dElapHours += tElap;       // horas reales transcurridas (para eficiencia)
+      dElapHours += tElap;       // horas reales transcurridas
+      dObjElap   += tObjElap;    // objetivo acumulado ajustado (incluye descuento arranque lunes)
     }
     const ciclos_obj = config[ciclosObjKey] ?? 2;
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    dElapHours > 0 ? (v => Math.round(v * 1000) / 1000)(dC / (ciclos_obj * dElapHours)) : 0,
+        eficiencia:    dObjElap > 0 ? (v => Math.round(v * 1000) / 1000)(dC / dObjElap) : 0,
         calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
         capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
         disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null
@@ -1903,7 +2032,9 @@ router.get('/kpis', (req, res) => {
 
         const turnoMins      = tDef.hours * 60;
         const elapHours      = elapsedHoursForTurno(t, date);
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj * elapHours) : null;
+        const esT1Lunes      = t === 'T1' && isLunes(date);
+        const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj * elapHours;
+        const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -1953,7 +2084,9 @@ router.get('/kpis', (req, res) => {
 
         const turnoMins      = tDef.hours * 60;
         const elapHours      = elapsedHoursForTurno(t, date);
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_baker * elapHours) : null;
+        const esT1Lunes      = t === 'T1' && isLunes(date);
+        const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_baker * elapHours;
+        const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -2003,7 +2136,9 @@ router.get('/kpis', (req, res) => {
 
         const turnoMins      = tDef.hours * 60;
         const elapHours      = elapsedHoursForTurno(t, date);
-        const eficiencia     = ciclos_totales > 0 ? ciclos_totales / (ciclos_obj_l1 * elapHours) : null;
+        const esT1Lunes      = t === 'T1' && isLunes(date);
+        const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_l1 * elapHours;
+        const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
@@ -2055,6 +2190,9 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
   const nextDay = addDays(targetDate, 1);
   const slots   = [];
   let curMins   = tDef.start;
+
+  const esLunesT1 = t === 'T1' && isLunes(targetDate);
+  let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES['Baker'] || 0) : 0;
 
   for (let h = 0; h < tDef.hours; h++) {
     const ss    = curMins;
@@ -2123,8 +2261,15 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObj = slotCiclosObj(ciclos_obj, h);
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
+    const slotObjBase = slotCiclosObj(ciclos_obj, h);
+    let slotObj;
+    if (arranqueRestante > 0) {
+      slotObj = Math.max(0, slotObjBase - arranqueRestante);
+      arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
+    } else {
+      slotObj = slotObjBase;
+    }
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
     const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
@@ -2153,6 +2298,9 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
   const nextDay = addDays(targetDate, 1);
   const slots   = [];
   let curMins   = tDef.start;
+
+  const esLunesT1 = t === 'T1' && isLunes(targetDate);
+  let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES['L1'] || 0) : 0;
 
   for (let h = 0; h < tDef.hours; h++) {
     const ss    = curMins;
@@ -2218,8 +2366,15 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObj = slotCiclosObj(ciclos_obj, h);
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : 0;
+    const slotObjBase = slotCiclosObj(ciclos_obj, h);
+    let slotObj;
+    if (arranqueRestante > 0) {
+      slotObj = Math.max(0, slotObjBase - arranqueRestante);
+      arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
+    } else {
+      slotObj = slotObjBase;
+    }
+    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
     const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);

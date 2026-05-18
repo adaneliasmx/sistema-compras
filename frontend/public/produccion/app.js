@@ -4782,6 +4782,7 @@ function openOperadorModal(linea, op, usuariosDisponibles, onDone) {
 async function viewParos(el) {
   const today  = new Date().toLocaleDateString('en-CA');
   const hace30 = new Date(Date.now() - 30*24*3600*1000).toLocaleDateString('en-CA');
+  const isAdmin = state.user?.role === 'admin';
 
   el.innerHTML = `
     <div class="filters-bar">
@@ -4814,12 +4815,11 @@ async function viewParos(el) {
       </div>
       <button class="btn btn-outline btn-sm" id="pr-buscar">🔍 Buscar</button>
       <button class="btn btn-dark btn-sm" id="pr-export">📥 Excel</button>
+      ${isAdmin ? '<button class="btn btn-danger btn-sm" id="pr-nuevo-paro" style="margin-left:8px">⏸ Nuevo Paro</button>' : ''}
     </div>
     <div id="pr-resultado">
       <div class="empty-state"><div class="icon">⏸</div><p>Presiona Buscar para cargar los paros.</p></div>
     </div>`;
-
-  const isAdmin = state.user?.role === 'admin';
   let lastParos = [];
 
   async function buscar() {
@@ -4938,6 +4938,12 @@ async function viewParos(el) {
 
   document.getElementById('pr-buscar').addEventListener('click', buscar);
 
+  if (isAdmin) {
+    document.getElementById('pr-nuevo-paro')?.addEventListener('click', () => {
+      openModalCrearParoAdmin(buscar);
+    });
+  }
+
   document.getElementById('pr-export').addEventListener('click', () => {
     if (!lastParos.length) { alert('Primero ejecuta una búsqueda.'); return; }
     const rows = lastParos.map(p => ({
@@ -5029,6 +5035,142 @@ function openModalEditarParo(paro, onSaved) {
       if (onSaved) onSaved();
     } catch (e) {
       alert('Error al guardar: ' + e.message);
+    }
+  });
+}
+
+// ── Modal: crear paro manual (solo admin) ─────────────────────────────────────
+async function openModalCrearParoAdmin(onDone) {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const nowH  = new Date().toLocaleTimeString('es-MX', { timeZone:'America/Mexico_City', hour12:false, hour:'2-digit', minute:'2-digit' });
+
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay active';
+  ov.innerHTML = `
+    <div class="modal" style="max-width:520px">
+      <div class="modal-header">
+        <h3 class="modal-title">⏸ Nuevo Paro Manual</h3>
+        <button class="modal-close" id="acp-close">✕</button>
+      </div>
+      <div class="modal-body" style="display:grid;gap:12px">
+        <div class="form-group">
+          <label>Línea <span style="color:#dc2626">*</span></label>
+          <select id="acp-linea" class="form-control">
+            <option value="">— Seleccionar —</option>
+            <option value="L3">Línea 3</option>
+            <option value="L4">Línea 4</option>
+            <option value="Baker">Baker</option>
+            <option value="L1">Línea 1</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Motivo <span style="color:#dc2626">*</span></label>
+          <select id="acp-motivo" class="form-control" disabled>
+            <option value="">— Primero selecciona la línea —</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Sub-motivo</label>
+          <select id="acp-submotivo" class="form-control" disabled>
+            <option value="">— Sin sub-motivos —</option>
+          </select>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="form-group">
+            <label>Fecha inicio <span style="color:#dc2626">*</span></label>
+            <input type="date" id="acp-fecha-ini" class="form-control" value="${today}"/>
+          </div>
+          <div class="form-group">
+            <label>Hora inicio <span style="color:#dc2626">*</span></label>
+            <input type="time" id="acp-hora-ini" class="form-control" value="${nowH}"/>
+          </div>
+          <div class="form-group">
+            <label>Fecha fin <span style="color:#64748b;font-size:11px">(vacío = activo)</span></label>
+            <input type="date" id="acp-fecha-fin" class="form-control" value="${today}"/>
+          </div>
+          <div class="form-group">
+            <label>Hora fin</label>
+            <input type="time" id="acp-hora-fin" class="form-control"/>
+          </div>
+        </div>
+      </div>
+      <div id="acp-status" style="padding:0 24px 8px;font-size:12px;color:#e11d48;min-height:18px"></div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" id="acp-cancelar">Cancelar</button>
+        <button class="btn btn-danger"  id="acp-guardar">⏸ Crear Paro</button>
+      </div>
+    </div>`;
+  document.body.appendChild(ov);
+
+  let subMotivosAll = [];
+  const close = () => ov.remove();
+  ov.querySelector('#acp-close').onclick    = close;
+  ov.querySelector('#acp-cancelar').onclick = close;
+  ov.onclick = e => { if (e.target === ov) close(); };
+
+  const motivoSel = ov.querySelector('#acp-motivo');
+  const subSel    = ov.querySelector('#acp-submotivo');
+  const statusEl  = ov.querySelector('#acp-status');
+
+  ov.querySelector('#acp-linea').addEventListener('change', async function () {
+    const linea = this.value;
+    motivoSel.innerHTML = '<option value="">— Cargando… —</option>';
+    motivoSel.disabled = true;
+    subSel.innerHTML = '<option value="">— Sin sub-motivos —</option>';
+    subSel.disabled = true;
+    statusEl.textContent = '';
+    if (!linea) return;
+    try {
+      const cat = await GET(`/catalogos/${linea}`);
+      subMotivosAll = cat.sub_motivos || [];
+      motivoSel.innerHTML = '<option value="">— Seleccionar motivo —</option>' +
+        (cat.motivos_paro || []).map(m => `<option value="${m.id}">${escHtml(m.nombre)}</option>`).join('');
+      motivoSel.disabled = false;
+    } catch (e) {
+      statusEl.textContent = '⚠️ No se pudo cargar el catálogo de motivos.';
+    }
+  });
+
+  motivoSel.addEventListener('change', function () {
+    const mid = this.value;
+    const filtrados = subMotivosAll.filter(s => String(s.motivo_id) === String(mid));
+    if (filtrados.length) {
+      subSel.innerHTML = '<option value="">— Seleccionar —</option>' +
+        filtrados.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
+      subSel.disabled = false;
+    } else {
+      subSel.innerHTML = '<option value="">— Sin sub-motivos —</option>';
+      subSel.disabled = true;
+    }
+  });
+
+  ov.querySelector('#acp-guardar').addEventListener('click', async () => {
+    const linea        = ov.querySelector('#acp-linea').value;
+    const motivo_id    = motivoSel.value;
+    const sub_motivo_id = subSel.disabled ? null : (subSel.value || null);
+    const fecha_inicio = ov.querySelector('#acp-fecha-ini').value;
+    const hora_inicio  = ov.querySelector('#acp-hora-ini').value;
+    const fecha_fin    = ov.querySelector('#acp-fecha-fin').value || null;
+    const hora_fin     = ov.querySelector('#acp-hora-fin').value  || null;
+
+    statusEl.textContent = '';
+    if (!linea)        { statusEl.textContent = '⚠️ Selecciona la línea.'; return; }
+    if (!motivo_id)    { statusEl.textContent = '⚠️ Selecciona el motivo.'; return; }
+    if (!fecha_inicio) { statusEl.textContent = '⚠️ Ingresa la fecha de inicio.'; return; }
+    if (!hora_inicio)  { statusEl.textContent = '⚠️ Ingresa la hora de inicio.'; return; }
+    if (fecha_fin && hora_fin && `${fecha_fin}T${hora_fin}` < `${fecha_inicio}T${hora_inicio}`) {
+      statusEl.textContent = '⚠️ La fecha/hora de fin debe ser posterior al inicio.'; return;
+    }
+
+    const btn = ov.querySelector('#acp-guardar');
+    btn.disabled = true;
+    try {
+      await POST('/paros/admin-crear', { linea, motivo_id, sub_motivo_id, fecha_inicio, hora_inicio, fecha_fin, hora_fin });
+      close();
+      if (onDone) onDone();
+    } catch (e) {
+      statusEl.textContent = `⚠️ Error: ${escHtml(e.message)}`;
+      btn.disabled = false;
     }
   });
 }
