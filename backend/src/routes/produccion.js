@@ -1354,6 +1354,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   // Arranque de lunes: descuento de N primeros ciclos del objetivo en T1
   const esLunesT1 = t === 'T1' && isLunes(targetDate);
   let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES[l] || 0) : 0;
+  // patternIdx reinicia el patrón 4,4,5… desde posición 0 tras consumir el descuento
+  let patternIdx = 0;
 
   // Mapa de componentes para calcular piezas_objetivo por ciclo
   const compMap = {};
@@ -1426,14 +1428,16 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObjBase = slotCiclosObj(ciclos_obj, h);
-    // Arranque lunes T1: reducir objetivo de los primeros slots
+    // Arranque lunes T1: reducir objetivo de los primeros slots;
+    // al terminar el descuento, el patrón 4,4,5… reinicia desde posición 0.
     let slotObj;
     if (arranqueRestante > 0) {
+      const slotObjBase = slotCiclosObj(ciclos_obj, h);
       slotObj = Math.max(0, slotObjBase - arranqueRestante);
       arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
     } else {
-      slotObj = slotObjBase;
+      slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
+      patternIdx++;
     }
 
     // Eficiencia = ciclos_descargados / objetivo_por_hora; si obj=0 y real=0 → 100%
@@ -2193,6 +2197,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
 
   const esLunesT1 = t === 'T1' && isLunes(targetDate);
   let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES['Baker'] || 0) : 0;
+  let patternIdx = 0;
 
   for (let h = 0; h < tDef.hours; h++) {
     const ss    = curMins;
@@ -2261,13 +2266,14 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObjBase = slotCiclosObj(ciclos_obj, h);
     let slotObj;
     if (arranqueRestante > 0) {
+      const slotObjBase = slotCiclosObj(ciclos_obj, h);
       slotObj = Math.max(0, slotObjBase - arranqueRestante);
       arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
     } else {
-      slotObj = slotObjBase;
+      slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
+      patternIdx++;
     }
     const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
     const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
@@ -2301,6 +2307,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
 
   const esLunesT1 = t === 'T1' && isLunes(targetDate);
   let arranqueRestante = esLunesT1 ? (ARRANQUE_LUNES['L1'] || 0) : 0;
+  let patternIdx = 0;
 
   for (let h = 0; h < tDef.hours; h++) {
     const ss    = curMins;
@@ -2366,13 +2373,14 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
-    const slotObjBase = slotCiclosObj(ciclos_obj, h);
     let slotObj;
     if (arranqueRestante > 0) {
+      const slotObjBase = slotCiclosObj(ciclos_obj, h);
       slotObj = Math.max(0, slotObjBase - arranqueRestante);
       arranqueRestante = Math.max(0, arranqueRestante - slotObjBase);
     } else {
-      slotObj = slotObjBase;
+      slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
+      patternIdx++;
     }
     const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
     const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
