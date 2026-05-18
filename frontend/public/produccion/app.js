@@ -2921,6 +2921,7 @@ async function viewMonitorGrafico(el) {
         <input type="checkbox" id="mg-paros" checked> Paros
       </label>
       <button class="btn btn-outline btn-sm" id="mg-refresh">↻ Actualizar</button>
+      <button class="btn btn-dark btn-sm" id="mg-export-ciclos" style="margin-left:4px">📥 Ciclos Excel</button>
       <div style="display:flex;align-items:center;gap:4px;margin-left:8px">
         <span style="font-size:11px;color:#64748b;white-space:nowrap">Zoom:</span>
         <button class="btn btn-outline btn-sm" id="mg-zoom-out" style="padding:2px 8px;font-size:15px;font-weight:700">−</button>
@@ -3437,6 +3438,98 @@ async function viewMonitorGrafico(el) {
   el.querySelector('#mg-zoom-out')?.addEventListener('click', () => {
     zoomLevel = Math.max(zoomLevel / 1.5, 0.1);
     updateZoomLbl(); renderGantt();
+  });
+
+  // ── Exportar ciclos a Excel ────────────────────────────────────────────────
+  el.querySelector('#mg-export-ciclos')?.addEventListener('click', () => {
+    const todayLocal = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const d7 = new Date(); d7.setDate(d7.getDate() - 6);
+    const desde7 = d7.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10002;display:flex;align-items:center;justify-content:center';
+    ov.innerHTML = `
+      <div style="background:#fff;border-radius:12px;box-shadow:0 16px 48px rgba(0,0,0,.3);padding:28px 32px;min-width:340px;max-width:440px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+          <h3 style="margin:0;font-size:16px;color:#0f172a">📥 Descargar Ciclos Excel</h3>
+          <button id="mgex-close" style="background:none;border:none;font-size:22px;cursor:pointer;color:#6b7280">×</button>
+        </div>
+        <p style="margin:0 0 16px;font-size:13px;color:#64748b">Línea: <b>${escHtml(activeTab)}</b> — Selecciona el rango de fechas</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px">
+          <div>
+            <label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">Fecha inicio</label>
+            <input type="date" id="mgex-ini" value="${desde7}" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#64748b;display:block;margin-bottom:4px">Fecha fin</label>
+            <input type="date" id="mgex-fin" value="${todayLocal}" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px;box-sizing:border-box"/>
+          </div>
+        </div>
+        <div id="mgex-status" style="margin-bottom:12px;font-size:12px;color:#64748b;min-height:18px"></div>
+        <div style="display:flex;gap:10px;justify-content:flex-end">
+          <button class="btn btn-outline btn-sm" id="mgex-cancel">Cancelar</button>
+          <button class="btn btn-dark btn-sm" id="mgex-dl">📥 Descargar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+
+    const close = () => ov.remove();
+    ov.querySelector('#mgex-close').onclick  = close;
+    ov.querySelector('#mgex-cancel').onclick = close;
+    ov.onclick = e => { if (e.target === ov) close(); };
+
+    ov.querySelector('#mgex-dl').addEventListener('click', async () => {
+      const ini    = ov.querySelector('#mgex-ini').value;
+      const fin    = ov.querySelector('#mgex-fin').value;
+      const status = ov.querySelector('#mgex-status');
+      if (!ini || !fin) { status.textContent = '⚠️ Selecciona ambas fechas.'; return; }
+      if (ini > fin)    { status.textContent = '⚠️ La fecha inicio debe ser ≤ fecha fin.'; return; }
+      status.textContent = '⏳ Cargando datos…';
+      ov.querySelector('#mgex-dl').disabled = true;
+
+      try {
+        let cargas;
+        if (activeTab === 'Baker') {
+          cargas = await GET(`/baker/cargas?fecha_ini=${ini}&fecha_fin=${fin}`);
+        } else if (activeTab === 'L1') {
+          cargas = await GET(`/l1/cargas?fecha_ini=${ini}&fecha_fin=${fin}`);
+        } else {
+          cargas = await GET(`/cargas/${activeTab}?fecha_ini=${ini}&fecha_fin=${fin}`);
+        }
+
+        if (!Array.isArray(cargas)) throw new Error('Respuesta inesperada del servidor');
+
+        // Solo ciclos completados (con fecha y hora de descarga)
+        const completados = cargas.filter(c => c.fecha_descarga && c.hora_descarga);
+        if (!completados.length) {
+          status.textContent = '⚠️ No hay ciclos completados en ese rango de fechas.';
+          ov.querySelector('#mgex-dl').disabled = false;
+          return;
+        }
+
+        const rows = completados.map(c => {
+          const durMin = calcDurMin(c.fecha_carga, c.hora_carga, c.fecha_descarga, c.hora_descarga);
+          const durHr  = durMin != null ? parseFloat((durMin / 60).toFixed(2)) : '';
+          return {
+            'ID Ciclo':              c.id ?? '',
+            'Fecha y Hora Carga':    c.fecha_carga ? `${c.fecha_carga} ${c.hora_carga || ''}`.trim() : '',
+            'Fecha y Hora Descarga': c.fecha_descarga ? `${c.fecha_descarga} ${c.hora_descarga || ''}`.trim() : '',
+            'Tiempo Ciclo (hr)':     durHr,
+            'Turno':                 c.turno || '',
+          };
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        ws['!cols'] = [{ wch: 14 }, { wch: 22 }, { wch: 22 }, { wch: 18 }, { wch: 8 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, `Ciclos_${activeTab}`);
+        XLSX.writeFile(wb, `ciclos_${activeTab}_${ini}_${fin}.xlsx`);
+        close();
+      } catch (err) {
+        status.textContent = `⚠️ Error: ${escHtml(err.message)}`;
+        ov.querySelector('#mgex-dl').disabled = false;
+      }
+    });
   });
 
   loadData();
