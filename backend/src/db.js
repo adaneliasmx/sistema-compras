@@ -29,6 +29,7 @@ const EMPTY_DB = {
   invoices: [], invoice_items: [], payments: [],
   status_history: [], approval_rules: [], quotation_requests: [],
   password_reset_requests: [], password_reset_tokens: [],
+  supplier_user_requests: [],
   settings: {}
 };
 

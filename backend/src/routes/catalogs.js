@@ -153,7 +153,24 @@ router.get('/suppliers/suggest-code', (req, res) => {
   res.json({ suggested });
 });
 
-router.get('/suppliers', (req, res) => res.json(read().suppliers.sort((a,b)=>String(a.business_name).localeCompare(String(b.business_name)))));
+router.get('/suppliers', (req, res) => {
+  const db = read();
+  const requests = db.supplier_user_requests || [];
+  const enriched = db.suppliers
+    .sort((a, b) => String(a.business_name).localeCompare(String(b.business_name)))
+    .map(s => {
+      const user = db.users.find(u => u.role_code === 'proveedor' && u.supplier_id === s.id && u.active !== false);
+      const pendingReq = requests.find(r => r.supplier_id === s.id && r.status === 'pending');
+      return {
+        ...s,
+        has_user: !!user,
+        user_email: user ? user.email : null,
+        has_pending_request: !!pendingReq,
+        pending_request_id: pendingReq ? pendingReq.id : null
+      };
+    });
+  res.json(enriched);
+});
 
 router.post('/suppliers', (req, res) => {
   if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
@@ -238,6 +255,81 @@ router.delete('/suppliers/:id', (req, res) => {
   db.suppliers.splice(idx, 1);
   write(db);
   res.json({ ok: true });
+});
+
+// ── Solicitar registro de usuario para proveedor (comprador o admin) ──────
+router.post('/suppliers/:id/request-user', (req, res) => {
+  if (!canManageCatalogs(req.user)) return res.status(403).json({ error: 'Sin permiso' });
+  const db = read();
+  const supplier = db.suppliers.find(x => x.id === Number(req.params.id));
+  if (!supplier) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+  const existing = db.users.find(u => u.role_code === 'proveedor' && u.supplier_id === supplier.id && u.active !== false);
+  if (existing) return res.status(400).json({ error: 'Este proveedor ya tiene usuario registrado' });
+
+  if (!db.supplier_user_requests) db.supplier_user_requests = [];
+  const alreadyPending = db.supplier_user_requests.find(r => r.supplier_id === supplier.id && r.status === 'pending');
+  if (alreadyPending) return res.status(400).json({ error: 'Ya existe una solicitud pendiente para este proveedor' });
+
+  const request = {
+    id: Math.max(0, ...(db.supplier_user_requests.map(r => Number(r.id) || 0))) + 1,
+    supplier_id: supplier.id,
+    supplier_name: supplier.business_name,
+    requested_by_id: req.user.id,
+    requested_by_name: req.user.full_name || req.user.email,
+    requested_at: new Date().toISOString(),
+    status: 'pending'
+  };
+  db.supplier_user_requests.push(request);
+  write(db);
+  res.status(201).json({ ok: true, request });
+});
+
+// ── Aprobar solicitud y crear usuario proveedor (solo admin) ──────────────
+router.post('/suppliers/:id/approve-user', (req, res) => {
+  if (req.user.role_code !== 'admin') return res.status(403).json({ error: 'Solo el administrador puede aprobar' });
+  const db = read();
+  const supplier = db.suppliers.find(x => x.id === Number(req.params.id));
+  if (!supplier) return res.status(404).json({ error: 'Proveedor no encontrado' });
+
+  const existing = db.users.find(u => u.role_code === 'proveedor' && u.supplier_id === supplier.id && u.active !== false);
+  if (existing) return res.status(400).json({ error: 'Este proveedor ya tiene usuario registrado' });
+
+  const full_name = req.body.full_name || supplier.contact_name || supplier.business_name;
+  const email = req.body.email || supplier.email;
+  if (!email) return res.status(400).json({ error: 'El proveedor no tiene correo registrado' });
+
+  const password = '1234';
+  const user = {
+    id: nextId(db.users),
+    full_name,
+    email,
+    password_hash: bcrypt.hashSync(password, 10),
+    role_code: 'proveedor',
+    supplier_id: supplier.id,
+    department: 'EXTERNO',
+    active: true,
+    created_at: new Date().toISOString()
+  };
+  db.users.push(user);
+
+  // Marcar solicitud como aprobada si existe
+  if (!db.supplier_user_requests) db.supplier_user_requests = [];
+  const pendingReq = db.supplier_user_requests.find(r => r.supplier_id === supplier.id && r.status === 'pending');
+  if (pendingReq) {
+    pendingReq.status = 'approved';
+    pendingReq.approved_by_id = req.user.id;
+    pendingReq.approved_by_name = req.user.full_name || req.user.email;
+    pendingReq.approved_at = new Date().toISOString();
+  }
+
+  write(db);
+
+  const subject = `Acceso al portal de proveedores — ${supplier.business_name}`;
+  const body = `Hola ${full_name},\n\nTu cuenta ha sido activada en el portal de proveedores.\n\nUsuario: ${email}\nContraseña: ${password}\n\nPor favor cambia tu contraseña al ingresar por primera vez.\n\nSaludos,\nEquipo de Compras`;
+  const mailto = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  res.status(201).json({ ok: true, user: { ...user, password_hash: undefined }, mailto });
 });
 
 // ── Asignaciones de subcentros por usuario ────────────────────────────────

@@ -527,6 +527,102 @@ async function dashboardView() {
   });
 }
 
+function openSupRequestModal(supplier, onDone) {
+  const existing = document.getElementById('supRequestModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'supRequestModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:28px 32px;min-width:340px;max-width:420px;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 16px">📩 Solicitar registro de usuario</h3>
+      <p style="font-size:13px;color:#374151;margin-bottom:16px">Se enviará una solicitud al administrador para crear el acceso al portal de este proveedor.</p>
+      <div style="background:#f3f4f6;border-radius:6px;padding:12px;font-size:13px;margin-bottom:16px">
+        <div><strong>${supplier.business_name}</strong></div>
+        <div style="color:#6b7280">${supplier.contact_name || ''}</div>
+        <div style="color:#6b7280">${supplier.email || '(sin correo registrado)'}</div>
+      </div>
+      ${!supplier.email ? '<p style="color:#dc2626;font-size:12px;margin-bottom:12px">⚠ Este proveedor no tiene correo registrado. El admin necesitará ingresarlo al aprobar.</p>' : ''}
+      <div id="supReqMsg" style="font-size:13px;color:#dc2626;margin-bottom:8px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-secondary" id="supReqCancelBtn">Cancelar</button>
+        <button class="btn-primary" id="supReqConfirmBtn">Enviar solicitud</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#supReqCancelBtn').onclick = () => modal.remove();
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.querySelector('#supReqConfirmBtn').onclick = async () => {
+    const btn = modal.querySelector('#supReqConfirmBtn');
+    const msg = modal.querySelector('#supReqMsg');
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+    try {
+      await api(`/api/catalogs/suppliers/${supplier.id}/request-user`, { method: 'POST' });
+      modal.remove();
+      onDone();
+    } catch(e) {
+      msg.textContent = e.message || 'Error al enviar la solicitud';
+      btn.disabled = false;
+      btn.textContent = 'Enviar solicitud';
+    }
+  };
+}
+
+function openSupApproveModal(supplier, onDone) {
+  const existing = document.getElementById('supApproveModal');
+  if (existing) existing.remove();
+  const modal = document.createElement('div');
+  modal.id = 'supApproveModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:10px;padding:28px 32px;min-width:360px;max-width:440px;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 16px">✅ Aprobar registro de usuario</h3>
+      <p style="font-size:13px;color:#374151;margin-bottom:14px">Se creará el acceso al portal y se generará un correo con las credenciales.</p>
+      <div style="margin-bottom:12px">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Nombre completo *</label>
+        <input id="supApprName" style="width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" value="${supplier.contact_name || supplier.business_name || ''}"/>
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Correo (usuario de acceso) *</label>
+        <input id="supApprEmail" type="email" style="width:100%;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" value="${supplier.email || ''}"/>
+      </div>
+      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;padding:10px 12px;font-size:12px;color:#15803d;margin-bottom:16px">
+        🔑 La contraseña inicial será <strong>1234</strong>. El proveedor podrá cambiarla al ingresar.
+      </div>
+      <div id="supApprMsg" style="font-size:13px;color:#dc2626;margin-bottom:8px"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn-secondary" id="supApprCancelBtn">Cancelar</button>
+        <button class="btn-primary" id="supApprConfirmBtn">Aprobar y notificar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.querySelector('#supApprCancelBtn').onclick = () => modal.remove();
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+  modal.querySelector('#supApprConfirmBtn').onclick = async () => {
+    const btn = modal.querySelector('#supApprConfirmBtn');
+    const msg = modal.querySelector('#supApprMsg');
+    const full_name = modal.querySelector('#supApprName').value.trim();
+    const email = modal.querySelector('#supApprEmail').value.trim();
+    if (!full_name || !email) { msg.textContent = 'Nombre y correo son obligatorios'; return; }
+    btn.disabled = true;
+    btn.textContent = 'Procesando...';
+    try {
+      const result = await api(`/api/catalogs/suppliers/${supplier.id}/approve-user`, {
+        method: 'POST',
+        body: JSON.stringify({ full_name, email })
+      });
+      modal.remove();
+      if (result.mailto) window.open(result.mailto);
+      onDone();
+    } catch(e) {
+      msg.textContent = e.message || 'Error al aprobar';
+      btn.disabled = false;
+      btn.textContent = 'Aprobar y notificar';
+    }
+  };
+}
+
 async function catalogsView() {
   const [summary, items, suppliers, cc, scc, invCats, invItems, rules, units] = await Promise.all([
     api('/api/catalogs/summary'), api('/api/catalogs/items'), api('/api/catalogs/suppliers'),
@@ -797,6 +893,8 @@ async function catalogsView() {
     const shown = suppliersPageSize > 0 ? suppliers.slice(0, suppliersPageSize) : suppliers;
     const hiddenCount = suppliers.length - shown.length;
     const supTableWrap = document.getElementById('supTableWrap');
+    const isAdmin = state.user?.role === 'admin';
+    const isAdminOrBuyer = ['admin', 'comprador'].includes(state.user?.role);
     if (supTableWrap) supTableWrap.innerHTML = `
     <div id="supBulkBar" style="display:none;padding:8px 12px;background:#dbeafe;border-radius:6px;margin-bottom:8px;align-items:center;gap:10px;flex-wrap:wrap">
       <span id="supSelCount" style="font-size:13px;font-weight:600;color:#1d4ed8">0 seleccionados</span>
@@ -804,15 +902,32 @@ async function catalogsView() {
     </div>
     <table><thead><tr>
       <th style="width:32px"><input type="checkbox" id="selectAllSup" title="Seleccionar todos"/></th>
-      <th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th><th></th>
+      <th>Código</th><th>Proveedor</th><th>Contacto</th><th>Correo</th>
+      ${isAdminOrBuyer ? '<th>Usuario portal</th>' : ''}
+      <th></th>
     </tr></thead>
-    <tbody>${shown.map(s => `<tr>
-      <td><input type="checkbox" class="sup-check" value="${s.id}"/></td>
-      <td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
-      <td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td>
-    </tr>`).join('')}
-    ${hiddenCount > 0 ? `<tr><td colspan="6" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más.</td></tr>` : ''}
+    <tbody>${shown.map(s => {
+      let userCell = '';
+      if (isAdminOrBuyer) {
+        if (s.has_user) {
+          userCell = `<td><span style="color:#16a34a;font-size:12px">✅ ${s.user_email}</span></td>`;
+        } else if (s.has_pending_request) {
+          userCell = `<td><span style="color:#d97706;font-size:12px">⏳ Solicitud pendiente</span>${isAdmin ? ` <button class="btn-primary sup-approve-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px;margin-left:4px">✅ Aprobar</button>` : ''}</td>`;
+        } else {
+          userCell = `<td><button class="btn-secondary sup-request-btn" data-id="${s.id}" style="padding:2px 8px;font-size:11px">📩 Solicitar</button></td>`;
+        }
+      }
+      const colspan = isAdminOrBuyer ? 7 : 6;
+      return `<tr>
+        <td><input type="checkbox" class="sup-check" value="${s.id}"/></td>
+        <td>${s.provider_code}</td><td>${s.business_name}</td><td>${s.contact_name||'-'}</td><td>${s.email||'-'}</td>
+        ${userCell}
+        <td><button class="btn-secondary edit-sup-row" data-id="${s.id}" style="padding:2px 7px;font-size:11px">✏</button></td>
+      </tr>`;
+    }).join('')}
+    ${hiddenCount > 0 ? `<tr><td colspan="${isAdminOrBuyer ? 7 : 6}" style="text-align:center;font-size:12px;color:#6b7280;padding:8px">... y ${hiddenCount} más.</td></tr>` : ''}
     </tbody></table>`;
+
     supTableWrap?.querySelectorAll('.edit-sup-row').forEach(btn => {
       btn.onclick = () => {
         const s = suppliers.find(x => x.id === Number(btn.dataset.id));
@@ -823,6 +938,24 @@ async function catalogsView() {
         supContact.value = s.contact_name || '';
         supEmail.value = s.email || '';
         supPhone.value = s.phone || '';
+      };
+    });
+
+    // ── Solicitar registro de usuario ────────────────────────────────────
+    supTableWrap?.querySelectorAll('.sup-request-btn').forEach(btn => {
+      btn.onclick = () => {
+        const s = suppliers.find(x => x.id === Number(btn.dataset.id));
+        if (!s) return;
+        openSupRequestModal(s, () => catalogsView());
+      };
+    });
+
+    // ── Aprobar solicitud (admin) ────────────────────────────────────────
+    supTableWrap?.querySelectorAll('.sup-approve-btn').forEach(btn => {
+      btn.onclick = () => {
+        const s = suppliers.find(x => x.id === Number(btn.dataset.id));
+        if (!s) return;
+        openSupApproveModal(s, () => catalogsView());
       };
     });
 
