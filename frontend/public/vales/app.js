@@ -3110,23 +3110,27 @@ async function viewTitulaciones() {
   const { turno, saludo } = getTurnoActual();
 
   // Construir resumen por línea para el turno actual
+  // Guardar datos para que bindTitulaciones pueda acceder a los detalles
+  window._titResumenData = { lineas, titHoy, turno, fecha: today() };
+
   const resumenLineas = lineas.map(linea => {
     const t1 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 1);
     const t2 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 2);
-    const badge = (h) => {
-      if (!h) return `<span style="background:#fef2f2;color:#dc2626;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">❌ Pendiente</span>`;
-      if (h.estado === 'paro_linea') return `<span style="background:#f3f4f6;color:#6b7280;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">⛔ Paro</span>`;
-      if (h.estado === 'fuera_de_rango') return `<span style="background:#fee2e2;color:#dc2626;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera rango</span>`;
-      if (h.estado === 'completo' || h.estado === 'corregido') return `<span style="background:#dcfce7;color:#16a34a;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">✅ OK</span>`;
-      return `<span style="background:#fef3c7;color:#d97706;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">⏳ Parcial</span>`;
+    const badge = (h, num) => {
+      const base = `class="tit-resumen-badge" data-linea="${linea}" data-turno="${turno}" data-num="${num}" data-tid="${h?.id||''}" data-estado="${h ? h.estado : 'pendiente'}" style="cursor:pointer;border:none;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;`;
+      if (!h)                                          return `<button ${base}background:#fef2f2;color:#dc2626">❌ Pendiente</button>`;
+      if (h.estado === 'paro_linea')                   return `<button ${base}background:#f3f4f6;color:#6b7280">⛔ Paro</button>`;
+      if (h.estado === 'fuera_de_rango')               return `<button ${base}background:#fee2e2;color:#dc2626">🔴 Fuera rango</button>`;
+      if (h.estado === 'completo' || h.estado === 'corregido') return `<button ${base}background:#dcfce7;color:#16a34a">✅ OK</button>`;
+      return `<button ${base}background:#fef3c7;color:#d97706">⏳ Parcial</button>`;
     };
     const pendiente1 = !t1;
     const pendiente2 = !t2;
     const rowBg = (pendiente1 || pendiente2) ? '#fffbeb' : '';
     return `<tr style="background:${rowBg}">
       <td style="padding:6px 12px;font-size:13px;font-weight:600">${linea}</td>
-      <td style="padding:6px 10px">${badge(t1)} <span style="font-size:11px;color:#78716c">${turno}.1</span></td>
-      <td style="padding:6px 10px">${badge(t2)} <span style="font-size:11px;color:#78716c">${turno}.2</span></td>
+      <td style="padding:6px 10px">${badge(t1,1)} <span style="font-size:11px;color:#78716c">${turno}.1</span></td>
+      <td style="padding:6px 10px">${badge(t2,2)} <span style="font-size:11px;color:#78716c">${turno}.2</span></td>
     </tr>`;
   }).join('');
 
@@ -3185,6 +3189,114 @@ async function viewTitulaciones() {
 }
 
 function bindTitulaciones() {
+  // ── Badges del resumen de turno ────────────────────────────────────────────
+  document.querySelectorAll('.tit-resumen-badge').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const { linea, turno, num, tid, estado } = btn.dataset;
+      const { titHoy, fecha } = window._titResumenData || {};
+      const h = tid ? (titHoy||[]).find(x => x.id === Number(tid)) : null;
+
+      // ── Pendiente: no registrada ─────────────────────────────────────────
+      if (estado === 'pendiente') {
+        showModal(`
+          <h3 style="margin:0 0 8px">❌ Titulación pendiente</h3>
+          <p style="font-size:13px;color:#374151;margin-bottom:4px"><strong>${linea}</strong> — Turno ${turno}.${num} · ${fecha}</p>
+          <p style="font-size:13px;color:#78716c;margin-bottom:20px">Esta titulación aún no ha sido registrada.</p>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <button class="btn btn-primary" id="badge-ir-registrar">📝 Registrar ahora</button>
+            <button class="btn btn-outline" id="badge-marcar-paro" style="color:#6b7280;border-color:#d1d5db">⛔ Marcar como turno no trabajado</button>
+            <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+          </div>`);
+        document.getElementById('badge-ir-registrar').onclick = () => {
+          closeModal();
+          document.getElementById('tit-linea').value = linea;
+          document.getElementById('tit-fecha').value = fecha;
+          document.getElementById('tit-turno').value = turno;
+          document.getElementById('tit-num').value = num;
+          document.getElementById('btn-tit-cargar').click();
+          document.getElementById('tit-form-area')?.scrollIntoView({ behavior: 'smooth' });
+        };
+        document.getElementById('badge-marcar-paro').onclick = async () => {
+          if (!confirm(`¿Marcar turno ${turno}.${num} de ${linea} (${fecha}) como turno no trabajado?`)) return;
+          try {
+            await POST('/titulaciones', { linea, fecha, turno: Number(turno), numero_titulacion: Number(num), paro_linea: true });
+            closeModal();
+            navigate('titulaciones');
+          } catch(e) { alert('Error: ' + e.message); }
+        };
+        return;
+      }
+
+      // ── Paro: info ───────────────────────────────────────────────────────
+      if (estado === 'paro_linea') {
+        showModal(`
+          <h3 style="margin:0 0 8px">⛔ Turno no trabajado</h3>
+          <p style="font-size:13px;color:#374151"><strong>${linea}</strong> — Turno ${turno}.${num} · ${fecha}</p>
+          <p style="font-size:13px;color:#78716c;margin-top:8px">Este turno fue marcado como paro de línea y no cuenta en estadísticas.</p>
+          <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>`);
+        return;
+      }
+
+      // ── Fuera de rango: mostrar parámetros problemáticos ─────────────────
+      if (estado === 'fuera_de_rango') {
+        const fuera = (h?.detalle||[]).filter(d => d.estado_param === 'fuera' || d.estado_param === 'limite');
+        const lista = fuera.map(d => {
+          const p = d.param || {};
+          const rango = p.tipo_rango==='entre' ? `${p.valor_min}–${p.valor_max}` : p.tipo_rango==='maximo' ? `≤ ${p.valor_max}` : p.tipo_rango==='minimo' ? `≥ ${p.valor_min}` : '—';
+          const esBajo = (p.tipo_rango==='minimo'||p.tipo_rango==='entre') && d.valor_registrado < p.valor_min;
+          const color = d.estado_param==='fuera' ? '#dc2626' : '#d97706';
+          const flecha = esBajo ? '↓' : '↑';
+          return `<tr style="border-bottom:1px solid #fee2e2">
+            <td style="padding:5px 10px;font-size:13px;font-weight:600">${p.nombre_parametro||'?'}</td>
+            <td style="padding:5px 8px;font-size:12px;color:#78716c;text-align:center">${rango} ${p.unidad||''}</td>
+            <td style="padding:5px 8px;text-align:center;font-weight:700;color:${color}">${flecha} ${d.valor_registrado??'—'}</td>
+            <td style="padding:5px 8px;font-size:11px;color:#b45309">${p.quimico ? '→ '+p.quimico : ''}</td>
+          </tr>`;
+        }).join('');
+        showModal(`
+          <h3 style="margin:0 0 8px;color:#dc2626">🔴 Parámetros fuera de rango</h3>
+          <p style="font-size:13px;color:#78716c;margin-bottom:12px"><strong>${linea}</strong> — Turno ${turno}.${num} · ${fecha}</p>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:13px">
+              <thead><tr style="background:#fef2f2">
+                <th style="padding:5px 10px;text-align:left">Parámetro</th>
+                <th style="padding:5px 8px;text-align:center">Rango</th>
+                <th style="padding:5px 8px;text-align:center">Valor</th>
+                <th style="padding:5px 8px;text-align:left">Quimico</th>
+              </tr></thead>
+              <tbody>${lista}</tbody>
+            </table>
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">Cerrar</button>
+            <button class="btn btn-primary" onclick="closeModal();verTitulacion(${h?.id})">Ver completa</button>
+          </div>`);
+        return;
+      }
+
+      // ── Parcial/pendiente con datos: mostrar parámetros sin dato ────────
+      if (h && (h.estado === 'pendiente' || estado === 'pendiente')) {
+        const sinDato = (h?.detalle||[]).filter(d => d.estado_param === 'sin_dato');
+        const lista = sinDato.map(d => {
+          const p = d.param || {};
+          return `<li style="padding:3px 0;font-size:13px"><strong>${p.no_tanque||''}</strong> — ${p.nombre_parametro||'?'} <span style="color:#78716c">(${p.unidad||''})</span></li>`;
+        }).join('');
+        showModal(`
+          <h3 style="margin:0 0 8px;color:#d97706">⏳ Parámetros sin registrar</h3>
+          <p style="font-size:13px;color:#78716c;margin-bottom:12px"><strong>${linea}</strong> — Turno ${turno}.${num} · ${fecha}</p>
+          <ul style="padding-left:18px;margin:0 0 16px">${lista||'<li style="color:#78716c">Sin detalles disponibles</li>'}</ul>
+          <div class="modal-actions">
+            <button class="btn btn-outline" onclick="closeModal()">Cerrar</button>
+            <button class="btn btn-primary" onclick="closeModal();editTitulacion(${h?.id},'${linea}',${turno},${num},'${fecha}')">✏️ Completar ahora</button>
+          </div>`);
+        return;
+      }
+
+      // ── OK / Corregido: ver detalle ──────────────────────────────────────
+      if (h) { closeModal(); verTitulacion(h.id); }
+    });
+  });
+
   // ── Turno no trabajado ─────────────────────────────────────────────────────
   document.getElementById('btn-tit-paro').addEventListener('click', async () => {
     const linea = document.getElementById('tit-linea').value;
