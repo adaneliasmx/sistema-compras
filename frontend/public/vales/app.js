@@ -3088,17 +3088,77 @@ function spcCpCpk(mean, sigma, lsl, usl) {
   return { cp, cpk };
 }
 function estadoColor(estado) {
-  return estado === 'fuera' ? '#ef4444' : estado === 'limite' ? '#f59e0b' : estado === 'ok' ? '#22c55e' : '#94a3b8';
+  return estado === 'fuera' ? '#ef4444' : estado === 'limite' ? '#f59e0b' : estado === 'ok' ? '#22c55e' : estado === 'paro_linea' ? '#6b7280' : '#94a3b8';
 }
 function estadoBadge(estado) {
-  const map = { ok:'✅ OK', limite:'⚠️ Límite', fuera:'🔴 Fuera', sin_dato:'—' };
+  const map = { ok:'✅ OK', limite:'⚠️ Límite', fuera:'🔴 Fuera', sin_dato:'—', paro_linea:'⛔ Paro' };
   return map[estado] || estado;
+}
+function getTurnoActual() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 14) return { turno: 1, saludo: 'Buenos días' };
+  if (h >= 14 && h < 22) return { turno: 2, saludo: 'Buenas tardes' };
+  return { turno: 3, saludo: 'Buenas noches' };
 }
 
 // ── Registrar Titulación ───────────────────────────────────────────────────────
 async function viewTitulaciones() {
-  const lineas = await GET('/lineas').catch(() => []);
+  const [lineas, titHoy] = await Promise.all([
+    GET('/lineas').catch(() => []),
+    GET(`/titulaciones?fecha_ini=${today()}&fecha_fin=${today()}`).catch(() => [])
+  ]);
+  const { turno, saludo } = getTurnoActual();
+
+  // Construir resumen por línea para el turno actual
+  const resumenLineas = lineas.map(linea => {
+    const t1 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 1);
+    const t2 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 2);
+    const badge = (h) => {
+      if (!h) return `<span style="background:#fef2f2;color:#dc2626;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">❌ Pendiente</span>`;
+      if (h.estado === 'paro_linea') return `<span style="background:#f3f4f6;color:#6b7280;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">⛔ Paro</span>`;
+      if (h.estado === 'fuera_de_rango') return `<span style="background:#fee2e2;color:#dc2626;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera rango</span>`;
+      if (h.estado === 'completo' || h.estado === 'corregido') return `<span style="background:#dcfce7;color:#16a34a;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">✅ OK</span>`;
+      return `<span style="background:#fef3c7;color:#d97706;padding:1px 7px;border-radius:4px;font-size:11px;font-weight:600">⏳ Parcial</span>`;
+    };
+    const pendiente1 = !t1;
+    const pendiente2 = !t2;
+    const rowBg = (pendiente1 || pendiente2) ? '#fffbeb' : '';
+    return `<tr style="background:${rowBg}">
+      <td style="padding:6px 12px;font-size:13px;font-weight:600">${linea}</td>
+      <td style="padding:6px 10px">${badge(t1)} <span style="font-size:11px;color:#78716c">${turno}.1</span></td>
+      <td style="padding:6px 10px">${badge(t2)} <span style="font-size:11px;color:#78716c">${turno}.2</span></td>
+    </tr>`;
+  }).join('');
+
+  const totalPendientes = lineas.reduce((acc, linea) => {
+    const t1 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 1);
+    const t2 = titHoy.find(h => h.linea === linea && h.turno === turno && h.numero_titulacion === 2);
+    return acc + (!t1 ? 1 : 0) + (!t2 ? 1 : 0);
+  }, 0);
+
+  const panelColor = totalPendientes === 0 ? '#f0fdf4' : '#fffbeb';
+  const panelBorder = totalPendientes === 0 ? '#bbf7d0' : '#fde68a';
+
   return `
+  <div style="background:${panelColor};border:1px solid ${panelBorder};border-radius:10px;padding:16px 20px;margin-bottom:20px;max-width:900px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div>
+        <span style="font-size:16px;font-weight:700">${saludo}, ${state.user?.full_name?.split(' ')[0] || state.user?.full_name || ''}!</span>
+        <span style="font-size:13px;color:#78716c;margin-left:10px">Turno ${turno} · ${today()}</span>
+      </div>
+      <span style="font-size:13px;font-weight:600;color:${totalPendientes===0?'#16a34a':'#d97706'}">
+        ${totalPendientes===0 ? '✅ Todas las titulaciones completas' : `⚠️ ${totalPendientes} titulación(es) pendiente(s)`}
+      </span>
+    </div>
+    <table style="border-collapse:collapse;width:100%">
+      <thead><tr>
+        <th style="padding:5px 12px;font-size:12px;text-align:left;color:#78716c;font-weight:600">Línea</th>
+        <th style="padding:5px 10px;font-size:12px;text-align:left;color:#78716c;font-weight:600">Titulación ${turno}.1</th>
+        <th style="padding:5px 10px;font-size:12px;text-align:left;color:#78716c;font-weight:600">Titulación ${turno}.2</th>
+      </tr></thead>
+      <tbody>${resumenLineas}</tbody>
+    </table>
+  </div>
   <div class="form-card" style="max-width:900px">
     <h3>🔬 Nueva Titulación</h3>
     <div class="form-grid" style="grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px">
@@ -3109,14 +3169,15 @@ async function viewTitulaciones() {
       </div>
       <div class="form-group"><label>Fecha</label><input type="date" id="tit-fecha" value="${today()}" /></div>
       <div class="form-group"><label>Turno *</label>
-        <select id="tit-turno"><option value="">--</option><option value="1">1</option><option value="2">2</option><option value="3">3</option></select>
+        <select id="tit-turno"><option value="">--</option><option value="1" ${turno===1?'selected':''}>1</option><option value="2" ${turno===2?'selected':''}>2</option><option value="3" ${turno===3?'selected':''}>3</option></select>
       </div>
       <div class="form-group"><label>Titulación</label>
         <select id="tit-num"><option value="1">1ª del turno (x.1)</option><option value="2">2ª del turno (x.2)</option></select>
       </div>
     </div>
-    <div style="display:flex;gap:8px;margin-bottom:16px">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
       <button class="btn btn-primary" id="btn-tit-cargar">Cargar formulario</button>
+      <button class="btn btn-outline" id="btn-tit-paro" style="color:#6b7280;border-color:#d1d5db">⛔ Turno no trabajado</button>
       <span id="tit-clave-label" style="align-self:center;font-size:13px;color:#78716c"></span>
     </div>
     <div id="tit-form-area"></div>
@@ -3124,6 +3185,25 @@ async function viewTitulaciones() {
 }
 
 function bindTitulaciones() {
+  // ── Turno no trabajado ─────────────────────────────────────────────────────
+  document.getElementById('btn-tit-paro').addEventListener('click', async () => {
+    const linea = document.getElementById('tit-linea').value;
+    const fecha = document.getElementById('tit-fecha').value;
+    const turno = document.getElementById('tit-turno').value;
+    if (!linea || !fecha || !turno) { alert('Selecciona línea, fecha y turno antes de marcar paro'); return; }
+    if (!confirm(`¿Marcar turno ${turno} del ${fecha} en ${linea} como "Turno no trabajado"?\nEsto registrará todas las titulaciones del turno como paro de línea y no contarán en estadísticas.`)) return;
+    try {
+      // Registrar num=1 y num=2 como paro
+      await Promise.all([1, 2].map(num =>
+        POST('/titulaciones', { linea, fecha, turno: Number(turno), numero_titulacion: num, paro_linea: true }).catch(e => {
+          if (!e.message?.includes('409') && !e.message?.includes('Ya existe')) throw e;
+        })
+      ));
+      alert(`⛔ Turno ${turno} de ${linea} marcado como no trabajado.`);
+      navigate('titulaciones');
+    } catch(e) { alert('Error: ' + e.message); }
+  });
+
   document.getElementById('btn-tit-cargar').addEventListener('click', async () => {
     const linea = document.getElementById('tit-linea').value;
     const fecha = document.getElementById('tit-fecha').value;
@@ -3263,20 +3343,40 @@ function bindTitulaciones() {
             });
           }
 
-          // Si hay parámetros fuera de rango → modal de alerta
+          // Si hay parámetros fuera de rango → modal de alerta diferenciada
           const fueraParams = (result.detalle || []).filter(d => d.estado_param === 'fuera');
           if (fueraParams.length > 0) {
-            const listaFuera = fueraParams.map(d => {
+            const bajos = [], altos = [];
+            fueraParams.forEach(d => {
               const p = ctx.paramsLinea.find(x => x.id === d.parametro_id);
-              return `<li><strong>${p?.no_tanque}</strong> — ${p?.nombre_parametro}: <span style="color:#dc2626">${d.valor_registrado} ${p?.unidad||''}</span></li>`;
-            }).join('');
+              if (!p) return;
+              const val = d.valor_registrado;
+              const esBajo = (p.tipo_rango === 'minimo' && val < p.valor_min) ||
+                             (p.tipo_rango === 'entre'  && val < p.valor_min);
+              if (esBajo) bajos.push({ d, p });
+              else        altos.push({ d, p });
+            });
+            const listaHtml = (items, color, icono, etiqueta) => items.length === 0 ? '' : `
+              <p style="font-size:12px;font-weight:700;color:${color};margin:10px 0 4px">${icono} ${etiqueta}</p>
+              <ul style="margin:0 0 8px;padding-left:18px;font-size:13px">
+                ${items.map(({d,p}) => `<li>
+                  <strong>${p.no_tanque}</strong> — ${p.nombre_parametro}:
+                  <span style="color:${color};font-weight:700"> ${d.valor_registrado} ${p.unidad||''}</span>
+                  ${p.tipo_rango==='entre'?`(rango: ${p.valor_min}–${p.valor_max})`:p.tipo_rango==='minimo'?`(mín: ${p.valor_min})`:p.tipo_rango==='maximo'?`(máx: ${p.valor_max})`:''}
+                  ${p.quimico ? `<br><span style="font-size:11px;color:#b45309">→ Requiere ajuste de <strong>${p.quimico}</strong></span>` : ''}
+                </li>`).join('')}
+              </ul>`;
+            const hayBajos = bajos.length > 0;
             showModal(`
-              <h3 style="color:#dc2626">⚠️ Parámetros fuera de rango</h3>
-              <ul style="margin:12px 0;padding-left:20px;font-size:13px">${listaFuera}</ul>
-              <p style="font-size:13px;color:#78716c">¿Qué deseas hacer?</p>
-              <div class="modal-actions">
+              <h3 style="color:#dc2626;margin:0 0 8px">⚠️ Parámetros fuera de especificación</h3>
+              ${listaHtml(bajos, '#dc2626', '↓', 'Bajos — se requiere adición')}
+              ${listaHtml(altos, '#ea580c', '↑', 'Altos — sobre especificación')}
+              <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:12px;color:#92400e;margin-top:8px">
+                ⚠️ Es necesario realizar una corrección y validar el parámetro nuevamente después del ajuste.
+              </div>
+              <div class="modal-actions" style="margin-top:16px">
                 <button class="btn btn-outline" onclick="closeModal();navigate('tit-reporte')">Guardar sin ajuste</button>
-                <button class="btn btn-primary" onclick="closeModal();navigate('crear-vale')" style="background:#dc2626">Generar vale de adición</button>
+                ${hayBajos ? `<button class="btn btn-primary" onclick="closeModal();navigate('crear-vale')" style="background:#dc2626">Generar vale de adición</button>` : ''}
               </div>`);
           } else {
             alert(`✅ Titulación ${ctx.linea} ${ctx.turno}.${ctx.num} guardada correctamente.`);
@@ -3383,7 +3483,8 @@ function renderTitLista(rows) {
     completo:      '<span style="background:#dcfce7;color:#16a34a;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">✅ OK</span>',
     fuera_de_rango:'<span style="background:#fee2e2;color:#dc2626;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">🔴 Fuera</span>',
     corregido:     '<span style="background:#fef3c7;color:#d97706;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">✏️ Corr.</span>',
-    pendiente:     '<span style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⏳</span>'
+    pendiente:     '<span style="background:#f1f5f9;color:#64748b;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⏳</span>',
+    paro_linea:    '<span style="background:#f3f4f6;color:#6b7280;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">⛔ Paro</span>'
   };
   return `<div class="table-card">
     <div class="table-header"><h3>${rows.length} titulación(es)</h3></div>
@@ -3449,31 +3550,37 @@ function renderTitPivot(rows) {
       return `<th colspan="${cnt}" style="background:#1e3a5f;color:#fff;text-align:center;font-size:11px;padding:5px 4px;border:1px solid #334155">${shortTk}</th>`;
     }).join('');
 
-    // Header row 2: param names
+    // Header row 2: param names (click → ver/editar especificaciones)
     const thParams = allParams.map(p =>
-      `<th style="background:#334155;color:#e2e8f0;text-align:center;font-size:10px;padding:4px 3px;border:1px solid #475569;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis" title="${p.nombre_parametro}">${p.nombre_parametro.length>10?p.nombre_parametro.slice(0,9)+'…':p.nombre_parametro}</th>`
+      `<th data-pid="${p.pid}" style="background:#334155;color:#e2e8f0;text-align:center;font-size:10px;padding:4px 3px;border:1px solid #475569;white-space:nowrap;max-width:80px;overflow:hidden;text-overflow:ellipsis;cursor:pointer" title="${p.nombre_parametro} — Click para ver especificaciones">${p.nombre_parametro.length>10?p.nombre_parametro.slice(0,9)+'…':p.nombre_parametro}</th>`
     ).join('');
 
     // Data rows
     const dataRows = lineRows.map(h => {
       const detalleMap = {};
       (h.detalle||[]).forEach(d => { detalleMap[d.parametro_id] = d; });
+      const esParo = h.estado === 'paro_linea';
       const fuera = (h.detalle||[]).filter(d=>d.estado_param==='fuera').length;
-      const rowBg = fuera>0 ? '#fff5f5' : '';
+      const rowBg = esParo ? '#f3f4f6' : fuera>0 ? '#fff5f5' : '';
       const cells = allParams.map(p => {
+        if (esParo) return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;color:#9ca3af;background:#f9fafb">⛔</td>`;
         const d = detalleMap[p.pid];
-        if (!d) return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;color:#ccc">—</td>`;
+        // Sin detalle = parámetro no programado para esta titulación (N/A)
+        if (!d) return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:10px;color:#d1d5db;background:#fafafa">N/A</td>`;
         const val = d.valor_registrado;
+        // Sin valor pero sí programado = sin dato
+        if (val === null || val === undefined) return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;color:#9ca3af">—</td>`;
         const bg = d.estado_param==='fuera' ? '#fee2e2' : d.estado_param==='limite' ? '#fffbeb' : '';
         const fc = d.estado_param==='fuera' ? '#dc2626' : '';
-        return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;padding:3px 4px;background:${bg};color:${fc};font-weight:${fc?'700':'normal'}">${val??'—'}</td>`;
+        const corrMark = d.corregido ? ' <span style="font-size:9px;color:#d97706" title="Corregido">✏</span>' : '';
+        return `<td style="border:1px solid #e7e5e4;text-align:center;font-size:11px;padding:3px 4px;background:${bg};color:${fc};font-weight:${fc?'700':'normal'}">${val}${corrMark}</td>`;
       }).join('');
       return `<tr style="background:${rowBg}">
         <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:12px;white-space:nowrap;font-weight:600">${h.fecha}</td>
         <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:11px;text-align:center">${h.clave_titulacion}</td>
         <td style="border:1px solid #e7e5e4;padding:3px 6px;font-size:11px;color:#78716c">${h.analista||'-'}</td>
         ${cells}
-        <td style="border:1px solid #e7e5e4;padding:3px 4px"><button class="btn btn-outline btn-xs" onclick="verTitulacion(${h.id})">Ver</button></td>
+        <td style="border:1px solid #e7e5e4;padding:3px 4px">${esParo ? '' : `<button class="btn btn-outline btn-xs" onclick="verTitulacion(${h.id})">Ver</button>`}</td>
       </tr>`;
     }).join('');
 
@@ -3545,6 +3652,72 @@ function bindTitReporte() {
 
       if (window._trVista === 'pivot') {
         el.innerHTML = resumen + renderTitPivot(rows);
+        // Click en cabecera de parámetro → ver/editar especificaciones
+        el.querySelectorAll('th[data-pid]').forEach(th => {
+          th.addEventListener('click', async () => {
+            const pid = Number(th.dataset.pid);
+            const params = await GET('/parametros-titulacion').catch(() => []);
+            const p = params.find(x => x.id === pid);
+            if (!p) return;
+            const isAdmin = state.user?.vales_role === 'admin';
+            const rangoLabel = p.tipo_rango === 'entre' ? 'Entre (mín – máx)' : p.tipo_rango === 'maximo' ? 'Máximo' : p.tipo_rango === 'minimo' ? 'Mínimo' : 'Sin rango';
+            showModal(`
+              <h3 style="margin:0 0 4px">📋 ${p.nombre_parametro}</h3>
+              <p style="margin:0 0 16px;font-size:12px;color:#78716c">${p.no_tanque} — ${p.nombre_tanque}${p.quimico ? ' · ' + p.quimico : ''}</p>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Tipo de rango</label>
+                  ${isAdmin ? `<select id="ep-tipo" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                    <option value="ninguno" ${p.tipo_rango==='ninguno'?'selected':''}>Sin rango</option>
+                    <option value="entre" ${p.tipo_rango==='entre'?'selected':''}>Entre (mín – máx)</option>
+                    <option value="maximo" ${p.tipo_rango==='maximo'?'selected':''}>Máximo</option>
+                    <option value="minimo" ${p.tipo_rango==='minimo'?'selected':''}>Mínimo</option>
+                  </select>` : `<span style="font-size:13px">${rangoLabel}</span>`}
+                </div>
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unidad</label>
+                  ${isAdmin ? `<input id="ep-unidad" value="${p.unidad||''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.unidad||'—'}</span>`}
+                </div>
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor mínimo</label>
+                  ${isAdmin ? `<input id="ep-min" type="number" step="any" value="${p.valor_min??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_min??'—'}</span>`}
+                </div>
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor máximo</label>
+                  ${isAdmin ? `<input id="ep-max" type="number" step="any" value="${p.valor_max??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_max??'—'}</span>`}
+                </div>
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Objetivo</label>
+                  ${isAdmin ? `<input id="ep-obj" type="number" step="any" value="${p.objetivo??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.objetivo??'—'}</span>`}
+                </div>
+                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Frecuencia</label>
+                  <span style="font-size:13px">${p.frecuencia===1?'1× por turno':'2× por turno'}</span>
+                </div>
+              </div>
+              <div id="ep-msg" style="font-size:12px;color:#dc2626;margin-bottom:8px"></div>
+              <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal()">Cerrar</button>
+                ${isAdmin ? `<button class="btn btn-primary" id="ep-save-btn">💾 Guardar cambios</button>` : ''}
+              </div>`);
+            if (isAdmin) {
+              document.getElementById('ep-save-btn').addEventListener('click', async () => {
+                const saveBtn = document.getElementById('ep-save-btn');
+                const msgEl = document.getElementById('ep-msg');
+                saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
+                try {
+                  const payload = {
+                    tipo_rango: document.getElementById('ep-tipo').value,
+                    unidad: document.getElementById('ep-unidad').value,
+                    valor_min: document.getElementById('ep-min').value !== '' ? parseFloat(document.getElementById('ep-min').value) : null,
+                    valor_max: document.getElementById('ep-max').value !== '' ? parseFloat(document.getElementById('ep-max').value) : null,
+                    objetivo: document.getElementById('ep-obj').value !== '' ? parseFloat(document.getElementById('ep-obj').value) : null
+                  };
+                  await PATCH('/parametros-titulacion/' + pid, payload);
+                  closeModal();
+                  buscar();
+                } catch(e) {
+                  msgEl.textContent = e.message || 'Error al guardar';
+                  saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar cambios';
+                }
+              });
+            }
+          });
+        });
       } else {
         el.innerHTML = resumen + renderTitLista(rows);
       }
@@ -3624,6 +3797,33 @@ window.verTitulacion = async function(id) {
     </div>`;
   }).join('');
 
+  // Historial de correcciones
+  const corregidos = (t.detalle||[]).filter(d => d.corregido && d.valor_original !== null);
+  const historialHtml = corregidos.length === 0 ? '' : `
+    <div style="margin-top:14px;border:1px solid #fde68a;border-radius:6px;overflow:hidden">
+      <div style="background:#fef3c7;padding:7px 12px;font-size:12px;font-weight:700;color:#92400e">✏️ Historial de correcciones (${corregidos.length})</div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#fffbeb">
+          <th style="padding:5px 10px;text-align:left;border-bottom:1px solid #fde68a">Parámetro</th>
+          <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #fde68a">Valor original</th>
+          <th style="padding:5px 8px;text-align:center;border-bottom:1px solid #fde68a">Corregido a</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #fde68a">Por</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid #fde68a">Fecha/hora</th>
+        </tr></thead>
+        <tbody>${corregidos.map(d => {
+          const p = d.param || {};
+          const corrAt = d.corrected_at ? new Date(d.corrected_at).toLocaleString('es-MX',{dateStyle:'short',timeStyle:'short'}) : '—';
+          return `<tr style="border-bottom:1px solid #fef9c3">
+            <td style="padding:5px 10px;font-weight:600">${p.nombre_parametro||'?'} <span style="color:#78716c;font-size:10px">(${p.unidad||''})</span></td>
+            <td style="padding:5px 8px;text-align:center;color:#dc2626;font-weight:700">${d.valor_original??'—'}</td>
+            <td style="padding:5px 8px;text-align:center;color:#16a34a;font-weight:700">${d.valor_corregido??'—'}</td>
+            <td style="padding:5px 8px;color:#78716c">${d.corrected_by||'—'}</td>
+            <td style="padding:5px 8px;color:#78716c">${corrAt}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+
   showModal(`
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:8px">
       <div>
@@ -3632,7 +3832,7 @@ window.verTitulacion = async function(id) {
       </div>
       <span style="font-size:13px;font-weight:700;color:${estadoColor2}">${estadoTxt}</span>
     </div>
-    <div style="max-height:65vh;overflow-y:auto;padding-right:4px">${html}</div>
+    <div style="max-height:65vh;overflow-y:auto;padding-right:4px">${html}${historialHtml}</div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="editTitulacion(${t.id},'${t.linea}',${t.turno},${t.numero_titulacion},'${t.fecha}')">✏️ Editar</button>
       <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>

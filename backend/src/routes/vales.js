@@ -2100,6 +2100,27 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
     return true;
   });
 
+  // Paro de línea: registrar sin valores, estado especial
+  if (b.paro_linea) {
+    header.estado = 'paro_linea';
+    params.forEach(p => {
+      db.titulaciones_detalle.push({
+        id: nextId(db.titulaciones_detalle),
+        header_id: header.id,
+        parametro_id: p.id,
+        valor_registrado: null,
+        estado_param: 'paro_linea',
+        corregido: false,
+        valor_corregido: null,
+        valor_original: null,
+        observaciones: 'Turno no trabajado'
+      });
+    });
+    writeVales(db);
+    const detallesParo = db.titulaciones_detalle.filter(d => d.header_id === header.id);
+    return res.status(201).json({ ...header, detalle: detallesParo });
+  }
+
   const valores = b.valores || {};
   let hayFuera = false;
   params.forEach(p => {
@@ -2151,6 +2172,8 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
       d.valor_registrado = nuevoValor;
       d.estado_param = nuevoEstado;
       d.corregido = true;
+      d.corrected_at = now.toISOString();
+      d.corrected_by = req.valesUser.full_name;
       if ((b.observaciones || {})[d.parametro_id]) d.observaciones = b.observaciones[d.parametro_id];
     });
     header.estado = hayFuera ? 'fuera_de_rango' : 'corregido';
@@ -2174,6 +2197,7 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
   let headers = db.titulaciones_header || [];
   if (fecha_ini) headers = headers.filter(h => h.fecha >= fecha_ini);
   if (fecha_fin) headers = headers.filter(h => h.fecha <= fecha_fin);
+  headers = headers.filter(h => h.estado !== 'paro_linea');
 
   const headerIds = new Set(headers.map(h => h.id));
   const detalles = (db.titulaciones_detalle || []).filter(d =>
