@@ -4394,11 +4394,13 @@ async function viewTitCatalogo() {
     GET('/parametros-titulacion').catch(()=>[])
   ]);
   const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
+  window._catalogData = { tanques, params };
   return `
-  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+  <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     <button class="btn btn-primary" id="btn-param-nuevo">+ Nuevo Parámetro</button>
-    <button class="btn btn-outline" id="btn-param-seed">🔄 Seed inicial (carga si está vacío)</button>
-    <button class="btn btn-outline" id="btn-import-historial" style="background:#fffbeb;border-color:#f59e0b;color:#92400e">📥 Importar historial Excel 2026</button>
+    <button class="btn btn-outline" id="btn-param-export">⬇️ Exportar catálogo</button>
+    <button class="btn btn-outline" id="btn-param-seed" style="color:#78716c">🔄 Seed inicial</button>
+    <button class="btn btn-outline" id="btn-import-historial" style="background:#fffbeb;border-color:#f59e0b;color:#92400e">📥 Importar historial 2026</button>
     <button class="btn btn-outline" id="btn-excel-upload" style="background:#f0fdf4;border-color:#86efac;color:#15803d">📤 Cargar desde Excel</button>
     <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none" />
     <div style="align-self:center;margin-left:auto">
@@ -4409,7 +4411,7 @@ async function viewTitCatalogo() {
     </div>
   </div>
   <div id="pc-table-area">
-    ${renderParamTable(params, tanques, '')}
+    ${renderParamCatalog(params, tanques, '')}
   </div>`;
 }
 
@@ -4418,45 +4420,94 @@ function getParamLinea(p, tanques) {
   return tanques.find(x => x.id === p.tanque_id)?.linea || '?';
 }
 
-function renderParamTable(params, tanques, filtroLinea) {
+function renderParamCatalog(params, tanques, filtroLinea) {
   const filtered = filtroLinea ? params.filter(p => getParamLinea(p, tanques) === filtroLinea) : params;
-
   if (!filtered.length) return '<div class="empty-state"><div class="icon">⚙️</div><p>Sin parámetros. Usa "Seed inicial" para cargar los predeterminados.</p></div>';
 
   const lineas = [...new Set(filtered.map(p => getParamLinea(p, tanques)))].sort();
 
   return lineas.map(linea => {
+    const lineaTanques = tanques.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
     const pLinea = filtered.filter(p => getParamLinea(p, tanques) === linea);
-    return `
-    <div class="table-card" style="margin-bottom:16px">
-      <div class="table-header"><h3>${linea} — ${pLinea.length} parámetro(s)</h3></div>
-      <div class="table-scroll">
-        <table>
-          <thead><tr><th>Tanque</th><th>Parámetro</th><th>Químico</th><th>Tipo</th><th>Min</th><th>Max</th><th>Objetivo</th><th>Unidad</th><th>Frec.</th><th>Activo</th><th></th></tr></thead>
-          <tbody>${pLinea.sort((a,b)=>a.tanque_id-b.tanque_id||a.orden-b.orden).map(p => {
-            const t = tanques.find(x=>x.id===p.tanque_id);
-            return `<tr style="opacity:${p.activo?1:0.5};cursor:pointer" onclick="openParamChart(${p.id})" title="Ver gráfica semanal">
-              <td style="font-size:12px">${t?.no_tanque||p.no_tanque||'?'}</td>
-              <td><strong>${p.nombre_parametro}</strong></td>
-              <td>${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px">${p.quimico}</span>`:'-'}</td>
-              <td style="font-size:12px">${p.tipo_rango}</td>
-              <td style="font-size:12px">${p.valor_min??'-'}</td>
-              <td style="font-size:12px">${p.valor_max??'-'}</td>
-              <td style="font-size:12px">${p.objetivo??'-'}</td>
-              <td style="font-size:12px">${p.unidad||'-'}</td>
-              <td style="font-size:12px">${p.frecuencia}×</td>
-              <td>${p.activo?'✅':'❌'}</td>
-              <td onclick="event.stopPropagation()" style="white-space:nowrap">
-                <button class="btn btn-outline btn-xs" onclick="openParamChart(${p.id})" title="Gráfica semanal">📈</button>
-                <button class="btn btn-outline btn-xs" onclick="editParam(${p.id})">✏️</button>
+    const totalActivos = pLinea.filter(p => p.activo !== false).length;
+
+    const tanquesHtml = lineaTanques.map(t => {
+      const pTanque = pLinea.filter(p => p.tanque_id === t.id).sort((a,b) => (a.orden||0)-(b.orden||0));
+      const quimicoLabel = t.quimico_activo
+        ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:6px">${t.quimico_activo}</span>` : '';
+
+      const rowsHtml = pTanque.length === 0
+        ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:12px;padding:10px">Sin parámetros — agrega el primero</td></tr>`
+        : pTanque.map(p => {
+            const rangoTxt = p.tipo_rango === 'entre'  ? `${p.valor_min??'—'} – ${p.valor_max??'—'}`
+                           : p.tipo_rango === 'maximo' ? `≤ ${p.valor_max??'—'}`
+                           : p.tipo_rango === 'minimo' ? `≥ ${p.valor_min??'—'}` : '—';
+            const activoBg = p.activo !== false ? '#dcfce7' : '#f3f4f6';
+            const activoColor = p.activo !== false ? '#16a34a' : '#6b7280';
+            return `<tr style="opacity:${p.activo!==false?1:0.55};background:${p.activo!==false?'':'#fafafa'}">
+              <td style="padding:6px 10px;font-size:13px;font-weight:600">${p.nombre_parametro}</td>
+              <td style="padding:6px 8px">${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px">${p.quimico}</span>`:'-'}</td>
+              <td style="padding:6px 8px;font-size:12px;color:#374151">${rangoTxt}</td>
+              <td style="padding:6px 8px;font-size:12px;color:#78716c">${p.objetivo??'—'}</td>
+              <td style="padding:6px 8px;font-size:12px;color:#78716c">${p.unidad||'—'}</td>
+              <td style="padding:6px 8px;font-size:12px;text-align:center">${p.frecuencia}×/turno</td>
+              <td style="padding:4px 8px;text-align:center">
+                <button class="btn-toggle-activo" data-pid="${p.id}" data-activo="${p.activo!==false?'1':'0'}"
+                  style="border:none;cursor:pointer;background:${activoBg};color:${activoColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">
+                  ${p.activo!==false?'✅ Activo':'❌ Inactivo'}
+                </button>
+              </td>
+              <td style="padding:4px 6px;text-align:center;white-space:nowrap">
+                <button class="btn btn-outline btn-xs" onclick="openParamChart(${p.id})" title="Ver gráfica">📈</button>
+                <button class="btn btn-outline btn-xs" onclick="editParam(${p.id})" title="Editar">✏️</button>
               </td>
             </tr>`;
-          }).join('')}
-          </tbody>
-        </table>
+          }).join('');
+
+      return `
+      <div style="border:1px solid #e7e5e4;border-radius:8px;margin-bottom:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e7e5e4">
+          <div>
+            <span style="font-size:13px;font-weight:700;color:#1e293b">${t.no_tanque}</span>
+            <span style="font-size:12px;color:#78716c;margin-left:6px">— ${t.nombre_tanque}</span>
+            ${quimicoLabel}
+            <span style="font-size:11px;color:#9ca3af;margin-left:8px">${pTanque.length} parámetro(s)</span>
+          </div>
+          <button class="btn btn-primary btn-xs btn-add-param-tanque" data-tanque-id="${t.id}"
+            style="padding:3px 10px;font-size:12px">+ Parámetro</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse;font-size:13px">
+            <thead><tr style="background:#f1f5f9;font-size:11px;color:#64748b">
+              <th style="padding:5px 10px;text-align:left;font-weight:600">Parámetro</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:600">Químico</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:600">Rango</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:600">Objetivo</th>
+              <th style="padding:5px 8px;text-align:left;font-weight:600">Unidad</th>
+              <th style="padding:5px 8px;text-align:center;font-weight:600">Frecuencia</th>
+              <th style="padding:5px 8px;text-align:center;font-weight:600">Estado</th>
+              <th style="padding:5px 8px"></th>
+            </tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `
+    <div class="table-card" style="margin-bottom:20px">
+      <div class="table-header" style="background:#1e3a5f;display:flex;align-items:center;justify-content:space-between">
+        <h3 style="color:#fff;margin:0">${linea}</h3>
+        <span style="font-size:12px;color:#93c5fd">${totalActivos} activo(s) / ${pLinea.length} total</span>
       </div>
+      <div style="padding:12px 14px">${tanquesHtml || '<p style="color:#9ca3af;font-size:13px">Sin tanques configurados para esta línea.</p>'}</div>
     </div>`;
   }).join('');
+}
+
+// Alias para compatibilidad con filtro
+function renderParamTable(params, tanques, filtroLinea) {
+  return renderParamCatalog(params, tanques, filtroLinea);
 }
 
 window.openParamChart = async function(paramId) {
@@ -4488,6 +4539,73 @@ window.openParamChart = async function(paramId) {
 };
 
 function bindTitCatalogo() {
+  // ── Exportar catálogo a Excel ──────────────────────────────────────────────
+  document.getElementById('btn-param-export').addEventListener('click', () => {
+    const { tanques, params } = window._catalogData || {};
+    if (!params?.length) { alert('No hay parámetros para exportar'); return; }
+    const rows = params.sort((a,b) => {
+      const la = getParamLinea(a, tanques), lb = getParamLinea(b, tanques);
+      return la.localeCompare(lb) || (a.tanque_id - b.tanque_id) || (a.orden||0) - (b.orden||0);
+    }).map(p => {
+      const t = tanques.find(x => x.id === p.tanque_id);
+      return {
+        Línea:           getParamLinea(p, tanques),
+        'No. Tanque':    t?.no_tanque || p.no_tanque || '',
+        'Nombre Tanque': t?.nombre_tanque || p.nombre_tanque || '',
+        Parámetro:       p.nombre_parametro,
+        Químico:         p.quimico || '',
+        'Tipo Rango':    p.tipo_rango,
+        'Valor Mín':     p.valor_min ?? '',
+        'Valor Máx':     p.valor_max ?? '',
+        Objetivo:        p.objetivo ?? '',
+        Unidad:          p.unidad || '',
+        'Frecuencia/turno': p.frecuencia,
+        Orden:           p.orden || 0,
+        Activo:          p.activo !== false ? 'Sí' : 'No'
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [14,12,20,22,10,10,10,10,10,8,16,6,6].map(w=>({wch:w}));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Parámetros');
+    XLSX.writeFile(wb, `catalogo-parametros-${today()}.xlsx`);
+  });
+
+  // ── Toggle activo (delegado sobre toda el área) ────────────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', async e => {
+    const btn = e.target.closest('.btn-toggle-activo');
+    if (!btn) return;
+    const pid = Number(btn.dataset.pid);
+    const activo = btn.dataset.activo === '1';
+    try {
+      await PATCH('/parametros-titulacion/' + pid, { activo: !activo });
+      // Actualizar UI sin recargar
+      btn.dataset.activo = activo ? '0' : '1';
+      const nuevoActivo = !activo;
+      btn.style.background = nuevoActivo ? '#dcfce7' : '#f3f4f6';
+      btn.style.color = nuevoActivo ? '#16a34a' : '#6b7280';
+      btn.textContent = nuevoActivo ? '✅ Activo' : '❌ Inactivo';
+      const row = btn.closest('tr');
+      if (row) { row.style.opacity = nuevoActivo ? '1' : '0.55'; row.style.background = nuevoActivo ? '' : '#fafafa'; }
+      // Actualizar cache local
+      if (window._catalogData?.params) {
+        const p = window._catalogData.params.find(x => x.id === pid);
+        if (p) p.activo = nuevoActivo;
+      }
+    } catch(e) { alert('Error: ' + e.message); }
+  });
+
+  // ── Botón [+ Parámetro] por tanque ────────────────────────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', async e => {
+    const btn = e.target.closest('.btn-add-param-tanque');
+    if (!btn) return;
+    const tanqueId = Number(btn.dataset.tanqueId);
+    const { tanques } = window._catalogData || {};
+    const tanque = (tanques||[]).find(t => t.id === tanqueId);
+    if (!tanque) return;
+    showModalParam(null, tanques, tanque);
+  });
+
   document.getElementById('btn-param-seed').addEventListener('click', async () => {
     const db = await GET('/parametros-titulacion').catch(()=>[]);
     if (db.length > 0 && !confirm(`Ya existen ${db.length} parámetros. ¿Forzar reset y recargar seed inicial?\nSe perderá el catálogo actual.`)) return;
@@ -4583,20 +4701,24 @@ window.editParam = async function(id) {
   if (param) showModalParam(param, tanques);
 };
 
-function showModalParam(param, tanques) {
+function showModalParam(param, tanques, preselectedTanque) {
   const isEdit = !!param;
+  const isPresel = !isEdit && !!preselectedTanque;
   const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
+  const editLinea = param ? tanques.find(t=>t.id===param.tanque_id)?.linea : null;
   showModal(`
     <h3>${isEdit?'✏️ Editar Parámetro':'+ Nuevo Parámetro'}</h3>
     <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px">
       <div class="form-group"><label>Línea *</label>
-        <select id="pm-linea" ${isEdit?'disabled':''}>
-          ${lineas.map(l=>`<option value="${l}" ${param && tanques.find(t=>t.id===param.tanque_id)?.linea===l?'selected':''}>${l}</option>`).join('')}
+        <select id="pm-linea" ${(isEdit||isPresel)?'disabled':''}>
+          ${lineas.map(l=>`<option value="${l}" ${(editLinea||preselectedTanque?.linea)===l?'selected':''}>${l}</option>`).join('')}
         </select>
       </div>
       <div class="form-group"><label>Tanque *</label>
-        <select id="pm-tanque">
-          ${isEdit ? `<option value="${param.tanque_id}">${param.no_tanque} — ${param.nombre_tanque}</option>` : '<option value="">-- primero elige línea --</option>'}
+        <select id="pm-tanque" ${isPresel?'disabled':''}>
+          ${isEdit ? `<option value="${param.tanque_id}">${param.no_tanque} — ${param.nombre_tanque}</option>`
+            : isPresel ? `<option value="${preselectedTanque.id}">${preselectedTanque.no_tanque} — ${preselectedTanque.nombre_tanque}</option>`
+            : '<option value="">-- primero elige línea --</option>'}
         </select>
       </div>
       <div class="form-group"><label>Nombre parámetro *</label><input type="text" id="pm-nombre" value="${param?.nombre_parametro||''}" /></div>
@@ -4626,8 +4748,8 @@ function showModalParam(param, tanques) {
       <button class="btn btn-primary" id="btn-pm-save">${isEdit?'Guardar cambios':'Crear'}</button>
     </div>`);
 
-  // Línea → Tanques en el modal de creación
-  if (!isEdit) {
+  // Línea → Tanques en el modal de creación (solo sin pre-selección)
+  if (!isEdit && !isPresel) {
     const updateTanques = async () => {
       const linea = document.getElementById('pm-linea').value;
       const sel = document.getElementById('pm-tanque');
