@@ -4603,7 +4603,8 @@ function bindTitCatalogo() {
     const { tanques } = window._catalogData || {};
     const tanque = (tanques||[]).find(t => t.id === tanqueId);
     if (!tanque) return;
-    showModalParam(null, tanques, tanque);
+    const items = await GET('/items?vigente=true').catch(()=>[]);
+    showModalParam(null, tanques, tanque, items);
   });
 
   document.getElementById('btn-param-seed').addEventListener('click', async () => {
@@ -4685,8 +4686,8 @@ function bindTitCatalogo() {
   });
 
   document.getElementById('btn-param-nuevo').addEventListener('click', async () => {
-    const tanques = await GET('/tanques');
-    showModalParam(null, tanques);
+    const [tanques, items] = await Promise.all([GET('/tanques'), GET('/items?vigente=true')]);
+    showModalParam(null, tanques, null, items);
   });
 
   document.getElementById('pc-filtro-linea').addEventListener('change', async function() {
@@ -4696,16 +4697,20 @@ function bindTitCatalogo() {
 }
 
 window.editParam = async function(id) {
-  const [params, tanques] = await Promise.all([GET('/parametros-titulacion'), GET('/tanques')]);
+  const [params, tanques, items] = await Promise.all([GET('/parametros-titulacion'), GET('/tanques'), GET('/items?vigente=true')]);
   const param = params.find(p => p.id === id);
-  if (param) showModalParam(param, tanques);
+  if (param) showModalParam(param, tanques, null, items);
 };
 
-function showModalParam(param, tanques, preselectedTanque) {
+function showModalParam(param, tanques, preselectedTanque, items = []) {
   const isEdit = !!param;
   const isPresel = !isEdit && !!preselectedTanque;
   const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
   const editLinea = param ? tanques.find(t=>t.id===param.tanque_id)?.linea : null;
+  const quimicoOpts = [
+    `<option value="">— Sin químico (aplica siempre) —</option>`,
+    ...items.map(it => `<option value="${it.item}" ${param?.quimico===it.item?'selected':''}>${it.item}${it.presentacion?' — '+it.presentacion:''}</option>`)
+  ].join('');
   showModal(`
     <h3>${isEdit?'✏️ Editar Parámetro':'+ Nuevo Parámetro'}</h3>
     <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:10px">
@@ -4722,7 +4727,9 @@ function showModalParam(param, tanques, preselectedTanque) {
         </select>
       </div>
       <div class="form-group"><label>Nombre parámetro *</label><input type="text" id="pm-nombre" value="${param?.nombre_parametro||''}" /></div>
-      <div class="form-group"><label>Químico (opcional)</label><input type="text" id="pm-quimico" value="${param?.quimico||''}" placeholder="907, 1207, vacío=siempre" /></div>
+      <div class="form-group"><label>Químico (opcional)</label>
+        <select id="pm-quimico">${quimicoOpts}</select>
+      </div>
       <div class="form-group"><label>Tipo rango</label>
         <select id="pm-tipo">
           <option value="ninguno" ${param?.tipo_rango==='ninguno'?'selected':''}>Ninguno (solo registro)</option>
