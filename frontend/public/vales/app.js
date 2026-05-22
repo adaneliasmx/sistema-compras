@@ -4903,44 +4903,46 @@ async function generarReporteTitulacion(headerId) {
   const turnoLabel = { T1:'Turno 1 (6:00–14:00)', T2:'Turno 2 (14:00–22:00)', T3:'Turno 3 (22:00–6:00)' }[header.turno] || header.turno;
   const fecha = header.fecha ? header.fecha.split('T')[0].split('-').reverse().join('/') : '—';
 
-  function colorCell(det, param) {
-    if (!det || det.valor_registrado === null || det.valor_registrado === undefined) return { bg:'#f3f4f6', color:'#6b7280', txt:'sin dato' };
-    const v = parseFloat(det.valor_registrado);
+  function colorCell(det) {
+    if (!det || det.valor_registrado === null || det.valor_registrado === undefined) return { bg:'#f3f4f6', color:'#9ca3af', txt:'—' };
     const st = det.estado_param;
     if (st === 'ok')     return { bg:'#bbf7d0', color:'#15803d', txt: String(det.valor_registrado) };
     if (st === 'limite') return { bg:'#fef08a', color:'#854d0e', txt: String(det.valor_registrado) };
     if (st === 'fuera')  return { bg:'#fecaca', color:'#991b1b', txt: String(det.valor_registrado) };
+    if (st === 'paro_linea') return { bg:'#f3f4f6', color:'#6b7280', txt:'⛔' };
     return { bg:'#f3f4f6', color:'#6b7280', txt: String(det.valor_registrado) };
   }
 
   function rangoTxt(p) {
-    if (p.tipo_rango === 'entre')  return `rango ${p.valor_min??'—'} – ${p.valor_max??'—'}`;
-    if (p.tipo_rango === 'maximo') return `máx ${p.valor_max??'—'}`;
-    if (p.tipo_rango === 'minimo') return `mín ${p.valor_min??'—'}`;
-    return '';
+    if (p.tipo_rango === 'entre')  return `${p.valor_min??'—'} – ${p.valor_max??'—'}`;
+    if (p.tipo_rango === 'maximo') return `≤ ${p.valor_max??'—'}`;
+    if (p.tipo_rango === 'minimo') return `≥ ${p.valor_min??'—'}`;
+    return '—';
   }
 
   function renderParamRow(p) {
     const det = detalleMap[p.id];
-    const c = colorCell(det, p);
-    const obj = p.objetivo != null ? `<span style="color:#6b7280;font-size:10px">${p.objetivo} obj</span>` : '';
+    const c = colorCell(det);
+    const obj = p.objetivo != null ? p.objetivo : '';
     const rango = rangoTxt(p);
+    const unidad = p.unidad ? ` <span style="color:#9ca3af;font-size:10px">(${p.unidad})</span>` : '';
     return `<tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:4px 8px;font-size:12px;color:#374151;white-space:nowrap">${p.nombre_parametro}${p.unidad?` <span style="color:#9ca3af">(${p.unidad})</span>`:''}</td>
-      <td style="padding:4px 6px;text-align:center">
-        <span style="display:inline-block;min-width:44px;padding:2px 8px;border-radius:4px;font-weight:700;font-size:13px;background:${c.bg};color:${c.color}">${c.txt}</span>
+      <td style="padding:3px 8px;font-size:13px;color:#1e293b;white-space:nowrap"><strong>${p.nombre_parametro}</strong>${unidad}</td>
+      <td style="padding:3px 6px;text-align:center;white-space:nowrap">
+        <span style="display:inline-block;min-width:48px;padding:3px 8px;border-radius:4px;font-weight:800;font-size:15px;background:${c.bg};color:${c.color}">${c.txt}</span>
       </td>
-      <td style="padding:4px 6px;font-size:11px;color:#6b7280;white-space:nowrap">${rango}</td>
-      <td style="padding:4px 6px">${obj}</td>
+      <td style="padding:3px 6px;font-size:12px;color:#6b7280;white-space:nowrap">rango ${rango}</td>
+      <td style="padding:3px 6px;font-size:12px;color:#6b7280;white-space:nowrap">${obj ? obj+' obj' : ''}</td>
     </tr>`;
   }
 
   function renderTanqueCard(t) {
     const ps = paramsLinea.filter(p => p.tanque_id === t.id).sort((a,b)=>(a.orden||0)-(b.orden||0));
     if (!ps.length) return '';
-    return `<div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;break-inside:avoid">
-      <div style="background:#1e3a5f;color:#fff;padding:6px 12px;font-weight:700;font-size:13px">
-        ${t.no_tanque} — ${t.nombre_tanque}${t.quimico_activo?` <span style="background:#3b82f6;padding:1px 6px;border-radius:3px;font-size:11px">${t.quimico_activo}</span>`:''}
+    const qLabel = t.quimico_activo ? ` <span style="background:#3b82f6;color:#fff;padding:1px 5px;border-radius:3px;font-size:11px">${t.quimico_activo}</span>` : '';
+    return `<div style="border:1.5px solid #cbd5e1;border-radius:6px;overflow:hidden;break-inside:avoid">
+      <div style="background:#1e3a5f;color:#fff;padding:5px 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+        ${t.no_tanque} — ${t.nombre_tanque}${qLabel}
       </div>
       <table style="width:100%;border-collapse:collapse">
         <tbody>${ps.map(renderParamRow).join('')}</tbody>
@@ -4953,29 +4955,26 @@ async function generarReporteTitulacion(headerId) {
     if (!ps.length) return '';
     const filas = ps.map(p => {
       const det = detalleMap[p.id];
-      const c = colorCell(det, p);
-      return `<tr>
-        <td style="padding:2px 6px;font-size:11px;color:#374151">${p.nombre_parametro}</td>
-        <td style="padding:2px 6px;text-align:center">
-          <span style="display:inline-block;min-width:38px;padding:1px 5px;border-radius:3px;font-weight:700;font-size:11px;background:${c.bg};color:${c.color}">${c.txt}</span>
+      const c = colorCell(det);
+      return `<tr style="border-bottom:1px solid #f0f9ff">
+        <td style="padding:3px 6px;font-size:12px;color:#1e293b">${p.nombre_parametro}${p.unidad?` <span style="color:#9ca3af;font-size:10px">(${p.unidad})</span>`:''}</td>
+        <td style="padding:3px 5px;text-align:center">
+          <span style="display:inline-block;min-width:40px;padding:2px 5px;border-radius:3px;font-weight:800;font-size:13px;background:${c.bg};color:${c.color}">${c.txt}</span>
         </td>
       </tr>`;
     }).join('');
-    return `<div style="margin-bottom:8px">
-      <div style="font-size:11px;font-weight:700;color:#0369a1;border-bottom:1px solid #bae6fd;padding-bottom:2px;margin-bottom:3px">${t.no_tanque} — ${t.nombre_tanque}</div>
+    return `<div style="margin-bottom:7px">
+      <div style="font-size:12px;font-weight:700;color:#0369a1;border-bottom:1px solid #bae6fd;padding-bottom:2px;margin-bottom:2px">${t.no_tanque} — ${t.nombre_tanque}</div>
       <table style="width:100%;border-collapse:collapse">${filas}</table>
     </div>`;
   }
 
-  // Layout 2 columnas para proceso
+  // Grid de proceso: 3 cols si hay muchos tanques, 2 si pocos
   const procesoCards = proceso.map(renderTanqueCard).filter(Boolean);
-  let procesoHtml = '';
-  for (let i = 0; i < procesoCards.length; i += 2) {
-    procesoHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
-      ${procesoCards[i]}
-      ${procesoCards[i+1] || '<div></div>'}
-    </div>`;
-  }
+  const cols = procesoCards.length > 4 ? 3 : 2;
+  let procesoHtml = '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:8px">';
+  procesoCards.forEach(c => { procesoHtml += c; });
+  procesoHtml += '</div>';
 
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -4984,84 +4983,136 @@ async function generarReporteTitulacion(headerId) {
   <title>Reporte Titulación — ${linea} — ${fecha}</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, sans-serif; font-size: 13px; background: #fff; padding: 16px; }
+    body { font-family: Arial, sans-serif; font-size: 13px; background: #f8fafc; padding: 12px; }
+    #reporte-body { background:#fff; width: 1080px; padding: 14px 16px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .btn-action { padding: 7px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
     @media print {
       .no-print { display: none !important; }
-      body { padding: 0; }
-      @page { margin: 10mm; size: A4 landscape; }
+      body { background: #fff; padding: 0; }
+      #reporte-body { box-shadow: none; border-radius: 0; }
+      @page { size: A4 landscape; margin: 5mm; }
     }
-    .btn-action { padding: 7px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
   </style>
 </head>
 <body>
-  <!-- Barra de acciones -->
-  <div class="no-print" style="display:flex;gap:10px;margin-bottom:14px;align-items:center;background:#f1f5f9;padding:10px 14px;border-radius:8px">
-    <button class="btn-action" style="background:#1e3a5f;color:#fff" onclick="window.print()">🖨️ Imprimir</button>
+  <div class="no-print" style="display:flex;gap:10px;margin-bottom:12px;align-items:center;background:#1e3a5f;padding:10px 16px;border-radius:8px;width:1080px">
+    <button class="btn-action" style="background:#fff;color:#1e3a5f" onclick="imprimirReporte()">🖨️ Imprimir</button>
     <button class="btn-action" style="background:#0369a1;color:#fff" onclick="copiarComoImagen()">📋 Copiar imagen</button>
-    <button class="btn-action" style="background:#f1f5f9;color:#374151;border:1px solid #d1d5db" onclick="window.close()">✕ Cerrar</button>
-    <span style="margin-left:auto;color:#64748b;font-size:12px">Reporte generado: ${new Date().toLocaleString('es-MX')}</span>
+    <button class="btn-action" style="background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3)" onclick="window.close()">✕ Cerrar</button>
+    <span style="margin-left:auto;color:#93c5fd;font-size:12px">Generado: ${new Date().toLocaleString('es-MX')}</span>
   </div>
 
-  <!-- Contenido del reporte -->
   <div id="reporte-body">
     <!-- Encabezado -->
-    <div style="display:flex;align-items:flex-start;justify-content:space-between;border-bottom:3px solid #1e3a5f;padding-bottom:10px;margin-bottom:14px">
-      <div style="font-size:22px;font-weight:900;color:#1e3a5f;letter-spacing:-0.5px">CUESTO<br><span style="font-weight:400;font-size:13px;color:#64748b">CORPORATIVO</span></div>
-      <div style="text-align:center;flex:1">
-        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px">Soluciones del proceso</div>
-        <div style="font-size:20px;font-weight:800;color:#1e3a5f">Reporte Titulación — ${linea}</div>
-        <div style="font-size:13px;color:#374151;margin-top:2px">Titulación ${header.numero_titulacion} &nbsp;|&nbsp; ${turnoLabel}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #1e3a5f;padding-bottom:8px;margin-bottom:10px">
+      <div style="line-height:1.1">
+        <div style="font-size:20px;font-weight:900;color:#1e3a5f;letter-spacing:-0.5px">CUESTO</div>
+        <div style="font-size:11px;color:#64748b;letter-spacing:2px;text-transform:uppercase">CORPORATIVO</div>
       </div>
-      <div style="text-align:right;font-size:12px;line-height:1.9;color:#374151">
+      <div style="text-align:center">
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px">Soluciones del proceso</div>
+        <div style="font-size:18px;font-weight:800;color:#1e3a5f">Reporte Titulación — ${linea}</div>
+        <div style="font-size:13px;color:#374151">Tit. ${header.numero_titulacion} &nbsp;·&nbsp; ${turnoLabel}</div>
+      </div>
+      <div style="text-align:right;font-size:13px;line-height:2;color:#374151;background:#f1f5f9;padding:6px 12px;border-radius:6px">
         <div><strong>Fecha:</strong> ${fecha}</div>
         <div><strong>Turno:</strong> ${header.turno} — Tit. ${header.numero_titulacion}</div>
         <div><strong>Analista:</strong> ${header.analista || '—'}</div>
       </div>
     </div>
 
-    <!-- Cuerpo principal -->
-    <div style="display:flex;gap:14px">
-      <!-- Panel enjuagues -->
+    <!-- Cuerpo -->
+    <div style="display:flex;gap:12px;align-items:flex-start">
       ${enjuagues.length ? `
-      <div style="width:195px;flex-shrink:0;border:1.5px solid #bae6fd;border-radius:8px;overflow:hidden">
-        <div style="background:#0369a1;color:#fff;padding:6px 10px;font-weight:700;font-size:12px">🚿 Enjuagues<br><span style="font-weight:400;font-size:10px">Validar 1× por turno</span></div>
-        <div style="padding:8px 10px">${enjuagues.map(renderEnjuagueRow).join('')}</div>
+      <div style="width:185px;flex-shrink:0;border:1.5px solid #bae6fd;border-radius:6px;overflow:hidden">
+        <div style="background:#0369a1;color:#fff;padding:5px 10px;font-weight:700;font-size:13px">🚿 Enjuagues</div>
+        <div style="padding:2px 4px;font-size:11px;color:#0369a1;background:#e0f2fe;padding:4px 8px">Validar 1× por turno</div>
+        <div style="padding:8px 8px">${enjuagues.map(renderEnjuagueRow).join('')}</div>
       </div>` : ''}
-
-      <!-- Proceso -->
-      <div style="flex:1">${procesoHtml}</div>
+      <div style="flex:1;min-width:0">${procesoHtml}</div>
     </div>
 
     <!-- Leyenda -->
-    <div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:10px;display:flex;gap:24px;align-items:center">
-      <div style="font-weight:700;font-size:11px;color:#374151">Color</div>
-      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#bbf7d0;border-radius:3px"></span><span style="font-size:11px"><strong>Verde</strong> — Dentro de especificación → Mantener</span></div>
-      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#fef08a;border-radius:3px"></span><span style="font-size:11px"><strong>Amarillo</strong> — En límite → Dosificar</span></div>
-      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#fecaca;border-radius:3px"></span><span style="font-size:11px"><strong>Rojo</strong> — Fuera de especificación → Ajustar y volver a validar</span></div>
+    <div style="margin-top:10px;border-top:1px solid #e5e7eb;padding-top:8px;display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:12px;font-weight:700;color:#374151">Significado:</span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#bbf7d0;border-radius:3px"></span><span style="font-size:12px"><strong>Verde</strong> — Dentro de especificación → Mantener</span></span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#fef08a;border-radius:3px"></span><span style="font-size:12px"><strong>Amarillo</strong> — En límite → Dosificar</span></span>
+      <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#fecaca;border-radius:3px"></span><span style="font-size:12px"><strong>Rojo</strong> — Fuera de especificación → Ajustar y volver a validar</span></span>
     </div>
   </div>
 
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
+  // ── Escala automática para ajustar a una hoja ─────────────────────────────
+  // A4 landscape a 96dpi con 5mm de margen: ~1083px × 744px usables
+  const PAGE_W = 1083, PAGE_H = 744;
+
+  function calcScale() {
+    const el = document.getElementById('reporte-body');
+    const w = el.scrollWidth, h = el.scrollHeight;
+    return Math.min(PAGE_W / w, PAGE_H / h, 1);
+  }
+
+  function applyScale(scale) {
+    const el = document.getElementById('reporte-body');
+    el.style.transformOrigin = 'top left';
+    el.style.transform = scale < 1 ? 'scale(' + scale + ')' : '';
+    // Colapsar el espacio sobrante para que el navegador no agregue página extra
+    el.style.marginBottom = scale < 1 ? (el.scrollHeight * (scale - 1)) + 'px' : '';
+  }
+
+  window.onbeforeprint = () => { applyScale(calcScale()); };
+  window.onafterprint  = () => { applyScale(1); };
+
+  function imprimirReporte() {
+    applyScale(calcScale());
+    window.print();
+  }
+
   async function copiarComoImagen() {
     const btn = event.target;
     btn.textContent = 'Procesando...'; btn.disabled = true;
     try {
-      const el = document.getElementById('reporte-body');
-      // Usar html2canvas via CDN si está disponible, si no avisar
       if (typeof html2canvas === 'undefined') {
-        alert('Para copiar como imagen instala html2canvas. Por ahora usa Imprimir → Guardar como PDF.');
-        return;
+        alert('Cargando... intenta de nuevo en un momento.'); return;
       }
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#fff' });
-      canvas.toBlob(async blob => {
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-        alert('Imagen copiada al portapapeles');
+      const scale = calcScale();
+      const el = document.getElementById('reporte-body');
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        backgroundColor: '#fff',
+        width:  el.scrollWidth,
+        height: el.scrollHeight,
+        windowWidth:  el.scrollWidth,
+        windowHeight: el.scrollHeight
       });
-    } catch(e) { alert('Error al copiar: ' + e.message); }
+
+      // Si el canvas es más grande que una hoja, escalar el resultado
+      let finalCanvas = canvas;
+      if (scale < 1) {
+        finalCanvas = document.createElement('canvas');
+        finalCanvas.width  = Math.round(canvas.width * scale);
+        finalCanvas.height = Math.round(canvas.height * scale);
+        const ctx = finalCanvas.getContext('2d');
+        ctx.drawImage(canvas, 0, 0, finalCanvas.width, finalCanvas.height);
+      }
+
+      finalCanvas.toBlob(async blob => {
+        try {
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+          alert('✅ Imagen copiada al portapapeles');
+        } catch(e) {
+          // Fallback: descargar como PNG
+          const a = document.createElement('a');
+          a.href = finalCanvas.toDataURL('image/png');
+          a.download = 'reporte-titulacion.png';
+          a.click();
+        }
+      });
+    } catch(e) { alert('Error: ' + e.message); }
     finally { btn.textContent = '📋 Copiar imagen'; btn.disabled = false; }
   }
   </script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </body>
 </html>`;
 
