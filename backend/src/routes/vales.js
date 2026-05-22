@@ -131,6 +131,7 @@ router.post('/tanques', valesAllowRoles('admin'), (req, res) => {
     nombre_tanque: body.nombre_tanque || '',
     tipo: body.tipo || '',
     items_autorizados: body.items_autorizados || [],
+    es_enjuague: body.es_enjuague === true,
     activo: true,
     created_at: new Date().toISOString()
   };
@@ -149,8 +150,21 @@ router.patch('/tanques/:id', valesAllowRoles('admin'), (req, res) => {
   if (b.items_autorizados !== undefined) tanque.items_autorizados = b.items_autorizados;
   if (b.activo !== undefined)            tanque.activo = b.activo;
   if (b.quimico_activo !== undefined)    tanque.quimico_activo = b.quimico_activo || null;
+  if (b.es_enjuague !== undefined)       tanque.es_enjuague = b.es_enjuague === true;
   writeVales(db);
   res.json(tanque);
+});
+
+router.delete('/tanques/:id', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const id = Number(req.params.id);
+  const tanque = (db.tanques_vales || []).find(t => t.id === id);
+  if (!tanque) return res.status(404).json({ error: 'Tanque no encontrado' });
+  const tieneParams = (db.parametros_titulacion || []).some(p => p.tanque_id === id && p.activo !== false);
+  if (tieneParams) return res.status(409).json({ error: 'No se puede eliminar: el tanque tiene parámetros activos. Desactívalos primero.' });
+  db.tanques_vales = db.tanques_vales.filter(t => t.id !== id);
+  writeVales(db);
+  res.json({ ok: true });
 });
 
 // ── REPARACIÓN: normaliza fechas corruptas en vales_header (admin) ────────────

@@ -2753,12 +2753,13 @@ async function viewTanques() {
     <div class="table-header"><h3>${tanques.length} tanque(s)</h3></div>
     <div class="table-scroll">
       <table>
-        <thead><tr><th>Línea</th><th>No. Tanque</th><th>Nombre</th><th>Tipo</th><th>Productos autorizados</th><th>Activo</th><th></th></tr></thead>
-        <tbody>${tanques.length===0?'<tr><td colspan="7" class="text-center" style="padding:24px;color:#78716c">Sin tanques</td></tr>':
+        <thead><tr><th>Línea</th><th>No. Tanque</th><th>Nombre</th><th>Tipo</th><th>Enjuague</th><th>Productos autorizados</th><th>Activo</th><th></th></tr></thead>
+        <tbody>${tanques.length===0?'<tr><td colspan="8" class="text-center" style="padding:24px;color:#78716c">Sin tanques</td></tr>':
           tanques.map(t=>`<tr>
             <td>${t.linea}</td><td><strong>${t.no_tanque}</strong></td>
             <td>${t.nombre_tanque||'-'}</td><td>${t.tipo||'-'}</td>
-            <td style="font-size:11px">${(t.items_autorizados||[]).join(', ')||'<span style="color:#dc2626">Sin productos</span>'}</td>
+            <td>${t.es_enjuague?'🚿':'—'}</td>
+            <td style="font-size:11px">${(t.items_autorizados||[]).join(', ')||'<span style="color:#9ca3af">—</span>'}</td>
             <td>${t.activo?'✅':'❌'}</td>
             <td><button class="btn btn-outline btn-xs" onclick="editTanque(${t.id})">Editar</button></td>
           </tr>`).join('')}
@@ -2776,9 +2777,9 @@ function bindTanques() {
 window.editTanque = async function(id) {
   const [tanques, items] = await Promise.all([GET('/tanques'), GET('/items?vigente=true')]);
   const t = tanques.find(x => x.id === id);
-  if (t) showModalTanque(t, items);
+  if (t) showModalTanque(t, items, 'tanques');
 };
-function showModalTanque(tanque, items) {
+function showModalTanque(tanque, items, returnView) {
   const isEdit = !!tanque;
   const autorizados = tanque?.items_autorizados || [];
   showModal(`
@@ -2789,10 +2790,14 @@ function showModalTanque(tanque, items) {
       <div class="form-group"><label>Nombre del tanque</label><input type="text" id="tk-nombre" value="${tanque?.nombre_tanque||''}" /></div>
       <div class="form-group"><label>Tipo</label><input type="text" id="tk-tipo" value="${tanque?.tipo||''}" /></div>
       <div class="form-group"><label>Químico activo <small style="color:#78716c">(907 / 1207 / vacío)</small></label><input type="text" id="tk-quimico" value="${tanque?.quimico_activo||''}" placeholder="Ej: 907 — vacío si no aplica" /></div>
-      ${isEdit?`<div class="form-group"><label>Activo</label><select id="tk-activo"><option value="true" ${tanque?.activo?'selected':''}>Sí</option><option value="false" ${!tanque?.activo?'selected':''}>No</option></select></div>`:''}
+      <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:22px">
+        <input type="checkbox" id="tk-enjuague" ${tanque?.es_enjuague?'checked':''} style="width:16px;height:16px" />
+        <label for="tk-enjuague" style="margin:0;cursor:pointer">🚿 Es tanque de enjuague</label>
+      </div>
+      ${isEdit?`<div class="form-group"><label>Activo</label><select id="tk-activo"><option value="true" ${tanque?.activo!==false?'selected':''}>Sí</option><option value="false" ${tanque?.activo===false?'selected':''}>No</option></select></div>`:''}
     </div>
     <div class="form-group" style="margin-top:12px">
-      <label>Productos autorizados <small style="color:#dc2626">* Debe seleccionar al menos uno — si no hay selección, el tanque no admite ítems</small></label>
+      <label>Productos autorizados <small style="color:#78716c">Dejar vacío si no aplica adición de químicos</small></label>
       <div style="max-height:160px;overflow-y:auto;border:1.5px solid #e7e5e4;border-radius:8px;padding:8px;margin-top:4px">
         ${items.map(i=>`
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:3px 0;cursor:pointer">
@@ -2813,6 +2818,7 @@ function showModalTanque(tanque, items) {
       nombre_tanque:    document.getElementById('tk-nombre').value.trim(),
       tipo:             document.getElementById('tk-tipo').value.trim(),
       quimico_activo:   document.getElementById('tk-quimico').value.trim() || null,
+      es_enjuague:      document.getElementById('tk-enjuague').checked,
       items_autorizados: checked,
       ...(isEdit ? { activo: document.getElementById('tk-activo').value === 'true' } : {})
     };
@@ -2820,7 +2826,7 @@ function showModalTanque(tanque, items) {
       if (isEdit) await PATCH('/tanques/' + tanque.id, body);
       else await POST('/tanques', body);
       closeModal();
-      navigate('tanques');
+      navigate(returnView || 'tanques');
     } catch(e) { alert('Error: ' + e.message); }
   });
 }
@@ -3488,11 +3494,18 @@ function bindTitulaciones() {
               </div>
               <div class="modal-actions" style="margin-top:16px">
                 <button class="btn btn-outline" onclick="closeModal();navigate('tit-reporte')">Guardar sin ajuste</button>
+                <button class="btn btn-outline" onclick="closeModal();generarReporteTitulacion(${result.id||result.header?.id})">📄 Ver reporte</button>
                 ${hayBajos ? `<button class="btn btn-primary" onclick="closeModal();navigate('crear-vale')" style="background:#dc2626">Generar vale de adición</button>` : ''}
               </div>`);
           } else {
-            alert(`✅ Titulación ${ctx.linea} ${ctx.turno}.${ctx.num} guardada correctamente.`);
-            navigate('tit-reporte');
+            const savedId = result.id || result.header?.id;
+            showModal(`
+              <h3 style="color:#16a34a;margin:0 0 10px">✅ Titulación guardada</h3>
+              <p style="color:#374151;margin-bottom:16px">${ctx.linea} — ${ctx.turno} Tit. ${ctx.num} registrada correctamente.</p>
+              <div class="modal-actions">
+                <button class="btn btn-outline" onclick="closeModal();navigate('titulaciones')">Seguir capturando</button>
+                <button class="btn btn-primary" onclick="closeModal();generarReporteTitulacion(${savedId})">📄 Generar reporte</button>
+              </div>`);
           }
         } catch(e) {
           if (e.message.includes('409') || e.message.includes('Ya existe')) {
@@ -3947,6 +3960,7 @@ window.verTitulacion = async function(id) {
     <div style="max-height:65vh;overflow-y:auto;padding-right:4px">${html}${historialHtml}</div>
     <div class="modal-actions">
       <button class="btn btn-outline" onclick="editTitulacion(${t.id},'${t.linea}',${t.turno},${t.numero_titulacion},'${t.fecha}')">✏️ Editar</button>
+      <button class="btn btn-outline" onclick="generarReporteTitulacion(${t.id})">📄 Reporte</button>
       <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
     </div>`);
 };
@@ -4397,11 +4411,12 @@ async function viewTitCatalogo() {
   window._catalogData = { tanques, params };
   return `
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
-    <button class="btn btn-primary" id="btn-param-nuevo">+ Nuevo Parámetro</button>
-    <button class="btn btn-outline" id="btn-param-export">⬇️ Exportar catálogo</button>
+    <button class="btn btn-primary" id="btn-param-nuevo">+ Parámetro</button>
+    <button class="btn btn-outline" id="btn-tanque-nuevo">🏭 + Tanque</button>
+    <button class="btn btn-outline" id="btn-param-export">⬇️ Exportar</button>
     <button class="btn btn-outline" id="btn-param-seed" style="color:#78716c">🔄 Seed inicial</button>
     <button class="btn btn-outline" id="btn-import-historial" style="background:#fffbeb;border-color:#f59e0b;color:#92400e">📥 Importar historial 2026</button>
-    <button class="btn btn-outline" id="btn-excel-upload" style="background:#f0fdf4;border-color:#86efac;color:#15803d">📤 Cargar desde Excel</button>
+    <button class="btn btn-outline" id="btn-excel-upload" style="background:#f0fdf4;border-color:#86efac;color:#15803d">📤 Cargar Excel</button>
     <input type="file" id="excel-file-input" accept=".xlsx,.xls" style="display:none" />
     <div style="align-self:center;margin-left:auto">
       <label class="flabel">Filtrar línea:</label>
@@ -4464,17 +4479,28 @@ function renderParamCatalog(params, tanques, filtroLinea) {
             </tr>`;
           }).join('');
 
+      const enjuagueLabel = t.es_enjuague
+        ? `<span style="background:#e0f2fe;color:#0369a1;padding:1px 7px;border-radius:10px;font-size:10px;margin-left:6px;font-weight:600">🚿 Enjuague</span>` : '';
       return `
-      <div style="border:1px solid #e7e5e4;border-radius:8px;margin-bottom:10px;overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;background:#f8fafc;padding:8px 14px;border-bottom:1px solid #e7e5e4">
-          <div>
+      <div style="border:1px solid ${t.es_enjuague?'#bae6fd':'#e7e5e4'};border-radius:8px;margin-bottom:10px;overflow:hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;background:${t.es_enjuague?'#f0f9ff':'#f8fafc'};padding:8px 14px;border-bottom:1px solid ${t.es_enjuague?'#bae6fd':'#e7e5e4'}">
+          <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
             <span style="font-size:13px;font-weight:700;color:#1e293b">${t.no_tanque}</span>
             <span style="font-size:12px;color:#78716c;margin-left:6px">— ${t.nombre_tanque}</span>
-            ${quimicoLabel}
+            ${quimicoLabel}${enjuagueLabel}
             <span style="font-size:11px;color:#9ca3af;margin-left:8px">${pTanque.length} parámetro(s)</span>
           </div>
-          <button class="btn btn-primary btn-xs btn-add-param-tanque" data-tanque-id="${t.id}"
-            style="padding:3px 10px;font-size:12px">+ Parámetro</button>
+          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0">
+            <button class="btn btn-outline btn-xs btn-toggle-enjuague" data-tid="${t.id}" data-enjuague="${t.es_enjuague?'1':'0'}"
+              title="${t.es_enjuague?'Marcar como proceso':'Marcar como enjuague'}"
+              style="font-size:11px;padding:2px 8px">${t.es_enjuague?'📊 Proceso':'🚿 Enjuague'}</button>
+            <button class="btn btn-outline btn-xs btn-edit-tanque" data-tid="${t.id}"
+              title="Editar tanque" style="font-size:11px;padding:2px 8px">✏️</button>
+            <button class="btn btn-outline btn-xs btn-del-tanque" data-tid="${t.id}"
+              title="Eliminar tanque" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#fca5a5">🗑️</button>
+            <button class="btn btn-primary btn-xs btn-add-param-tanque" data-tanque-id="${t.id}"
+              style="padding:3px 10px;font-size:12px">+ Parámetro</button>
+          </div>
         </div>
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -4595,16 +4621,78 @@ function bindTitCatalogo() {
     } catch(e) { alert('Error: ' + e.message); }
   });
 
-  // ── Botón [+ Parámetro] por tanque ────────────────────────────────────────
-  document.getElementById('pc-table-area').addEventListener('click', async e => {
-    const btn = e.target.closest('.btn-add-param-tanque');
-    if (!btn) return;
-    const tanqueId = Number(btn.dataset.tanqueId);
-    const { tanques } = window._catalogData || {};
-    const tanque = (tanques||[]).find(t => t.id === tanqueId);
-    if (!tanque) return;
+  // ── Botón + Tanque (barra superior) ────────────────────────────────────────
+  document.getElementById('btn-tanque-nuevo').addEventListener('click', async () => {
     const items = await GET('/items?vigente=true').catch(()=>[]);
-    showModalParam(null, tanques, tanque, items);
+    showModalTanque(null, items, 'tit-catalogo');
+  });
+
+  // ── Acciones sobre tanques (delegado en pc-table-area) ─────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', async e => {
+    // [+ Parámetro] por tanque
+    const btnAddParam = e.target.closest('.btn-add-param-tanque');
+    if (btnAddParam) {
+      const tanqueId = Number(btnAddParam.dataset.tanqueId);
+      const { tanques } = window._catalogData || {};
+      const tanque = (tanques||[]).find(t => t.id === tanqueId);
+      if (!tanque) return;
+      const items = await GET('/items?vigente=true').catch(()=>[]);
+      showModalParam(null, tanques, tanque, items);
+      return;
+    }
+
+    // Toggle enjuague
+    const btnEnj = e.target.closest('.btn-toggle-enjuague');
+    if (btnEnj) {
+      const tid = Number(btnEnj.dataset.tid);
+      const esEnj = btnEnj.dataset.enjuague === '1';
+      try {
+        await PATCH('/tanques/' + tid, { es_enjuague: !esEnj });
+        if (window._catalogData?.tanques) {
+          const t = window._catalogData.tanques.find(x => x.id === tid);
+          if (t) t.es_enjuague = !esEnj;
+        }
+        // Rerender
+        const { tanques, params } = window._catalogData || {};
+        const filtro = document.getElementById('pc-filtro-linea')?.value || '';
+        document.getElementById('pc-table-area').innerHTML = renderParamCatalog(params, tanques, filtro);
+      } catch(err) { alert('Error: ' + err.message); }
+      return;
+    }
+
+    // Editar tanque
+    const btnEditTk = e.target.closest('.btn-edit-tanque');
+    if (btnEditTk) {
+      const tid = Number(btnEditTk.dataset.tid);
+      const { tanques } = window._catalogData || {};
+      const tanque = (tanques||[]).find(t => t.id === tid);
+      if (!tanque) return;
+      const items = await GET('/items?vigente=true').catch(()=>[]);
+      showModalTanque(tanque, items, 'tit-catalogo');
+      return;
+    }
+
+    // Eliminar tanque
+    const btnDelTk = e.target.closest('.btn-del-tanque');
+    if (btnDelTk) {
+      const tid = Number(btnDelTk.dataset.tid);
+      const { tanques } = window._catalogData || {};
+      const tanque = (tanques||[]).find(t => t.id === tid);
+      if (!confirm(`¿Eliminar tanque "${tanque?.no_tanque} — ${tanque?.nombre_tanque}"?\nSolo se puede eliminar si no tiene parámetros activos.`)) return;
+      try {
+        await fetch(`/api/vales/tanques/${tid}`, { method: 'DELETE', credentials: 'include' }).then(async r => {
+          if (!r.ok) { const d = await r.json(); throw new Error(d.error || 'Error'); }
+          return r.json();
+        });
+        if (window._catalogData?.tanques) {
+          window._catalogData.tanques = window._catalogData.tanques.filter(t => t.id !== tid);
+        }
+        const { tanques: tks, params } = window._catalogData || {};
+        const filtro = document.getElementById('pc-filtro-linea')?.value || '';
+        document.getElementById('pc-table-area').innerHTML = renderParamCatalog(params, tks, filtro);
+      } catch(err) { alert('Error: ' + err.message); }
+      return;
+    }
   });
 
   document.getElementById('btn-param-seed').addEventListener('click', async () => {
@@ -4792,6 +4880,197 @@ function showModalParam(param, tanques, preselectedTanque, items = []) {
     } catch(e) { alert('Error: ' + e.message); }
   });
 }
+
+// ── Reporte de Titulación (HTML imprimible) ───────────────────────────────────
+async function generarReporteTitulacion(headerId) {
+  const [header, params_cat, tanques_cat] = await Promise.all([
+    GET('/titulaciones/' + headerId),
+    GET('/parametros-titulacion'),
+    GET('/tanques')
+  ]);
+  if (!header) { alert('No se encontró la titulación'); return; }
+
+  const detalleMap = {};
+  (header.detalles || []).forEach(d => { detalleMap[d.parametro_id] = d; });
+
+  const linea = header.linea;
+  const tanquesLinea = tanques_cat.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
+  const paramsLinea = params_cat.filter(p => tanquesLinea.some(t => t.id === p.tanque_id) && p.activo !== false);
+
+  const enjuagues = tanquesLinea.filter(t => t.es_enjuague);
+  const proceso   = tanquesLinea.filter(t => !t.es_enjuague);
+
+  const turnoLabel = { T1:'Turno 1 (6:00–14:00)', T2:'Turno 2 (14:00–22:00)', T3:'Turno 3 (22:00–6:00)' }[header.turno] || header.turno;
+  const fecha = header.fecha ? header.fecha.split('T')[0].split('-').reverse().join('/') : '—';
+
+  function colorCell(det, param) {
+    if (!det || det.valor_registrado === null || det.valor_registrado === undefined) return { bg:'#f3f4f6', color:'#6b7280', txt:'sin dato' };
+    const v = parseFloat(det.valor_registrado);
+    const st = det.estado_param;
+    if (st === 'ok')     return { bg:'#bbf7d0', color:'#15803d', txt: String(det.valor_registrado) };
+    if (st === 'limite') return { bg:'#fef08a', color:'#854d0e', txt: String(det.valor_registrado) };
+    if (st === 'fuera')  return { bg:'#fecaca', color:'#991b1b', txt: String(det.valor_registrado) };
+    return { bg:'#f3f4f6', color:'#6b7280', txt: String(det.valor_registrado) };
+  }
+
+  function rangoTxt(p) {
+    if (p.tipo_rango === 'entre')  return `rango ${p.valor_min??'—'} – ${p.valor_max??'—'}`;
+    if (p.tipo_rango === 'maximo') return `máx ${p.valor_max??'—'}`;
+    if (p.tipo_rango === 'minimo') return `mín ${p.valor_min??'—'}`;
+    return '';
+  }
+
+  function renderParamRow(p) {
+    const det = detalleMap[p.id];
+    const c = colorCell(det, p);
+    const obj = p.objetivo != null ? `<span style="color:#6b7280;font-size:10px">${p.objetivo} obj</span>` : '';
+    const rango = rangoTxt(p);
+    return `<tr style="border-bottom:1px solid #f0f0f0">
+      <td style="padding:4px 8px;font-size:12px;color:#374151;white-space:nowrap">${p.nombre_parametro}${p.unidad?` <span style="color:#9ca3af">(${p.unidad})</span>`:''}</td>
+      <td style="padding:4px 6px;text-align:center">
+        <span style="display:inline-block;min-width:44px;padding:2px 8px;border-radius:4px;font-weight:700;font-size:13px;background:${c.bg};color:${c.color}">${c.txt}</span>
+      </td>
+      <td style="padding:4px 6px;font-size:11px;color:#6b7280;white-space:nowrap">${rango}</td>
+      <td style="padding:4px 6px">${obj}</td>
+    </tr>`;
+  }
+
+  function renderTanqueCard(t) {
+    const ps = paramsLinea.filter(p => p.tanque_id === t.id).sort((a,b)=>(a.orden||0)-(b.orden||0));
+    if (!ps.length) return '';
+    return `<div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;break-inside:avoid">
+      <div style="background:#1e3a5f;color:#fff;padding:6px 12px;font-weight:700;font-size:13px">
+        ${t.no_tanque} — ${t.nombre_tanque}${t.quimico_activo?` <span style="background:#3b82f6;padding:1px 6px;border-radius:3px;font-size:11px">${t.quimico_activo}</span>`:''}
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        <tbody>${ps.map(renderParamRow).join('')}</tbody>
+      </table>
+    </div>`;
+  }
+
+  function renderEnjuagueRow(t) {
+    const ps = paramsLinea.filter(p => p.tanque_id === t.id).sort((a,b)=>(a.orden||0)-(b.orden||0));
+    if (!ps.length) return '';
+    const filas = ps.map(p => {
+      const det = detalleMap[p.id];
+      const c = colorCell(det, p);
+      return `<tr>
+        <td style="padding:2px 6px;font-size:11px;color:#374151">${p.nombre_parametro}</td>
+        <td style="padding:2px 6px;text-align:center">
+          <span style="display:inline-block;min-width:38px;padding:1px 5px;border-radius:3px;font-weight:700;font-size:11px;background:${c.bg};color:${c.color}">${c.txt}</span>
+        </td>
+      </tr>`;
+    }).join('');
+    return `<div style="margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:#0369a1;border-bottom:1px solid #bae6fd;padding-bottom:2px;margin-bottom:3px">${t.no_tanque} — ${t.nombre_tanque}</div>
+      <table style="width:100%;border-collapse:collapse">${filas}</table>
+    </div>`;
+  }
+
+  // Layout 2 columnas para proceso
+  const procesoCards = proceso.map(renderTanqueCard).filter(Boolean);
+  let procesoHtml = '';
+  for (let i = 0; i < procesoCards.length; i += 2) {
+    procesoHtml += `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+      ${procesoCards[i]}
+      ${procesoCards[i+1] || '<div></div>'}
+    </div>`;
+  }
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Reporte Titulación — ${linea} — ${fecha}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; font-size: 13px; background: #fff; padding: 16px; }
+    @media print {
+      .no-print { display: none !important; }
+      body { padding: 0; }
+      @page { margin: 10mm; size: A4 landscape; }
+    }
+    .btn-action { padding: 7px 18px; border: none; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <!-- Barra de acciones -->
+  <div class="no-print" style="display:flex;gap:10px;margin-bottom:14px;align-items:center;background:#f1f5f9;padding:10px 14px;border-radius:8px">
+    <button class="btn-action" style="background:#1e3a5f;color:#fff" onclick="window.print()">🖨️ Imprimir</button>
+    <button class="btn-action" style="background:#0369a1;color:#fff" onclick="copiarComoImagen()">📋 Copiar imagen</button>
+    <button class="btn-action" style="background:#f1f5f9;color:#374151;border:1px solid #d1d5db" onclick="window.close()">✕ Cerrar</button>
+    <span style="margin-left:auto;color:#64748b;font-size:12px">Reporte generado: ${new Date().toLocaleString('es-MX')}</span>
+  </div>
+
+  <!-- Contenido del reporte -->
+  <div id="reporte-body">
+    <!-- Encabezado -->
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;border-bottom:3px solid #1e3a5f;padding-bottom:10px;margin-bottom:14px">
+      <div style="font-size:22px;font-weight:900;color:#1e3a5f;letter-spacing:-0.5px">CUESTO<br><span style="font-weight:400;font-size:13px;color:#64748b">CORPORATIVO</span></div>
+      <div style="text-align:center;flex:1">
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px">Soluciones del proceso</div>
+        <div style="font-size:20px;font-weight:800;color:#1e3a5f">Reporte Titulación — ${linea}</div>
+        <div style="font-size:13px;color:#374151;margin-top:2px">Titulación ${header.numero_titulacion} &nbsp;|&nbsp; ${turnoLabel}</div>
+      </div>
+      <div style="text-align:right;font-size:12px;line-height:1.9;color:#374151">
+        <div><strong>Fecha:</strong> ${fecha}</div>
+        <div><strong>Turno:</strong> ${header.turno} — Tit. ${header.numero_titulacion}</div>
+        <div><strong>Analista:</strong> ${header.analista || '—'}</div>
+      </div>
+    </div>
+
+    <!-- Cuerpo principal -->
+    <div style="display:flex;gap:14px">
+      <!-- Panel enjuagues -->
+      ${enjuagues.length ? `
+      <div style="width:195px;flex-shrink:0;border:1.5px solid #bae6fd;border-radius:8px;overflow:hidden">
+        <div style="background:#0369a1;color:#fff;padding:6px 10px;font-weight:700;font-size:12px">🚿 Enjuagues<br><span style="font-weight:400;font-size:10px">Validar 1× por turno</span></div>
+        <div style="padding:8px 10px">${enjuagues.map(renderEnjuagueRow).join('')}</div>
+      </div>` : ''}
+
+      <!-- Proceso -->
+      <div style="flex:1">${procesoHtml}</div>
+    </div>
+
+    <!-- Leyenda -->
+    <div style="margin-top:14px;border-top:1px solid #e5e7eb;padding-top:10px;display:flex;gap:24px;align-items:center">
+      <div style="font-weight:700;font-size:11px;color:#374151">Color</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#bbf7d0;border-radius:3px"></span><span style="font-size:11px"><strong>Verde</strong> — Dentro de especificación → Mantener</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#fef08a;border-radius:3px"></span><span style="font-size:11px"><strong>Amarillo</strong> — En límite → Dosificar</span></div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="display:inline-block;width:18px;height:14px;background:#fecaca;border-radius:3px"></span><span style="font-size:11px"><strong>Rojo</strong> — Fuera de especificación → Ajustar y volver a validar</span></div>
+    </div>
+  </div>
+
+  <script>
+  async function copiarComoImagen() {
+    const btn = event.target;
+    btn.textContent = 'Procesando...'; btn.disabled = true;
+    try {
+      const el = document.getElementById('reporte-body');
+      // Usar html2canvas via CDN si está disponible, si no avisar
+      if (typeof html2canvas === 'undefined') {
+        alert('Para copiar como imagen instala html2canvas. Por ahora usa Imprimir → Guardar como PDF.');
+        return;
+      }
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#fff' });
+      canvas.toBlob(async blob => {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        alert('Imagen copiada al portapapeles');
+      });
+    } catch(e) { alert('Error al copiar: ' + e.message); }
+    finally { btn.textContent = '📋 Copiar imagen'; btn.disabled = false; }
+  }
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+window.generarReporteTitulacion = generarReporteTitulacion;
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
 if (tryRestore()) {
