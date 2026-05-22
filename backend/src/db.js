@@ -30,6 +30,7 @@ const EMPTY_DB = {
   status_history: [], approval_rules: [], quotation_requests: [],
   password_reset_requests: [], password_reset_tokens: [],
   supplier_user_requests: [],
+  clarification_requests: [],
   settings: {}
 };
 

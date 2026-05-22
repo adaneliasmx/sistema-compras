@@ -3,7 +3,7 @@ const router = express.Router();
 const { read, write } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
-const { recalcRequisition } = require('../utils/workflow');
+const { addHistory, recalcRequisition } = require('../utils/workflow');
 
 router.use(authRequired);
 
@@ -109,6 +109,27 @@ router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   }
 
   item.updated_at = new Date().toISOString();
+
+  // Propagar unit_cost y quantity a purchase_order_items vinculados
+  const poItemsLinked = (db.purchase_order_items || []).filter(pi => pi.requisition_item_id === item.id);
+  if (poItemsLinked.length) {
+    const costChanged = req.body.unit_cost !== undefined;
+    const qtyChanged  = req.body.quantity  !== undefined;
+    poItemsLinked.forEach(pi => {
+      if (costChanged) pi.unit_cost = item.unit_cost;
+      if (qtyChanged)  pi.quantity  = item.quantity;
+    });
+    // Recalcular total de cada PO afectada
+    const poIds = [...new Set(poItemsLinked.map(pi => pi.purchase_order_id))];
+    poIds.forEach(poId => {
+      const po = (db.purchase_orders || []).find(p => p.id === poId);
+      if (!po) return;
+      const lines = (db.purchase_order_items || []).filter(pi => pi.purchase_order_id === poId);
+      po.total_amount = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_cost || 0), 0);
+    });
+    addHistory(db, { module: 'audit', requisition_id: item.requisition_id, requisition_item_id: item.id, old_status: null, new_status: item.status, changed_by_user_id: req.user.id, comment: `Actualizado desde auditoría: costo/cantidad propagado a ${poItemsLinked.length} ítem(s) de PO` });
+  }
+
   recalcRequisition(db, item.requisition_id);
   write(db);
   res.json({ ok: true });

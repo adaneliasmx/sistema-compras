@@ -1077,4 +1077,178 @@ router.post('/purchase-orders/:id/cancel', allowRoles('comprador', 'admin'), (re
   res.json({ ok: true, po });
 });
 
+// ── Aclaraciones de proveedor ─────────────────────────────────────────────────
+
+// GET /clarifications — lista (proveedor: las suyas; comprador/admin: todas)
+router.get('/clarifications', allowRoles('proveedor', 'comprador', 'admin'), (req, res) => {
+  const db = read();
+  let rows = db.clarification_requests || [];
+  if (req.user.role_code === 'proveedor') {
+    rows = rows.filter(r => r.supplier_id === req.user.supplier_id);
+  }
+  // Enriquecer con datos de PO y proveedor
+  const enriched = rows.map(r => {
+    const po       = (db.purchase_orders      || []).find(p => p.id === r.purchase_order_id) || {};
+    const poItem   = r.po_item_id ? (db.purchase_order_items || []).find(i => i.id === r.po_item_id) : null;
+    const supplier = (db.suppliers            || []).find(s => s.id === r.supplier_id) || {};
+    const catItem  = poItem ? (db.catalog_items || []).find(c => c.id === poItem.catalog_item_id) : null;
+    return {
+      ...r,
+      po_folio:      po.folio || '—',
+      supplier_name: supplier.name || '—',
+      supplier_email: supplier.email || '',
+      item_description: catItem?.name || poItem?.manual_item_name || poItem?.description || '—'
+    };
+  }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  res.json(enriched);
+});
+
+// POST /:po_id/clarifications — proveedor solicita aclaración
+router.post('/:po_id/clarifications', allowRoles('proveedor'), (req, res) => {
+  const db = read();
+  const po = (db.purchase_orders || []).find(p => p.id === Number(req.params.po_id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+  if (po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'No autorizado' });
+
+  const b = req.body;
+  if (!b.po_item_id) return res.status(400).json({ error: 'po_item_id requerido' });
+
+  const poItem = (db.purchase_order_items || []).find(i => i.id === Number(b.po_item_id) && i.purchase_order_id === po.id);
+  if (!poItem) return res.status(404).json({ error: 'Ítem de PO no encontrado' });
+
+  // Solo 1 aclaración pendiente por ítem
+  const existe = (db.clarification_requests || []).find(r => r.po_item_id === poItem.id && r.status === 'pendiente');
+  if (existe) return res.status(409).json({ error: 'Ya existe una aclaración pendiente para este ítem' });
+
+  if (!db.clarification_requests) db.clarification_requests = [];
+
+  const row = {
+    id:                    nextId(db.clarification_requests),
+    purchase_order_id:     po.id,
+    po_item_id:            poItem.id,
+    supplier_id:           req.user.supplier_id,
+    requested_by_user_id:  req.user.id,
+    status:                'pendiente',
+    original_unit_cost:    poItem.unit_cost,
+    requested_unit_cost:   b.requested_unit_cost !== undefined ? Number(b.requested_unit_cost) : null,
+    original_quantity:     poItem.quantity,
+    requested_quantity:    b.requested_quantity  !== undefined ? Number(b.requested_quantity)  : null,
+    message:               b.message || '',
+    admin_comment:         null,
+    created_at:            new Date().toISOString(),
+    resolved_at:           null,
+    resolved_by_user_id:   null
+  };
+  db.clarification_requests.push(row);
+  write(db);
+  res.status(201).json(row);
+});
+
+// POST /clarifications/:id/accept — comprador/admin acepta y aplica cambios
+router.post('/clarifications/:id/accept', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  if (!db.clarification_requests) db.clarification_requests = [];
+  const clarif = db.clarification_requests.find(r => r.id === Number(req.params.id));
+  if (!clarif) return res.status(404).json({ error: 'Aclaración no encontrada' });
+  if (clarif.status !== 'pendiente') return res.status(409).json({ error: 'La aclaración ya fue resuelta' });
+
+  const poItem = (db.purchase_order_items || []).find(i => i.id === clarif.po_item_id);
+  if (!poItem) return res.status(404).json({ error: 'Ítem de PO no encontrado' });
+
+  const po       = (db.purchase_orders || []).find(p => p.id === clarif.purchase_order_id) || {};
+  const supplier = (db.suppliers || []).find(s => s.id === clarif.supplier_id) || {};
+  const catItem  = (db.catalog_items || []).find(c => c.id === poItem.catalog_item_id);
+  const itemDesc = catItem?.name || poItem.manual_item_name || poItem.description || 'ítem';
+
+  // Aplicar cambios al po_item
+  if (clarif.requested_unit_cost !== null) poItem.unit_cost = clarif.requested_unit_cost;
+  if (clarif.requested_quantity  !== null) poItem.quantity  = clarif.requested_quantity;
+
+  // Propagar al requisition_item
+  if (poItem.requisition_item_id) {
+    const ri = (db.requisition_items || []).find(i => i.id === poItem.requisition_item_id);
+    if (ri) {
+      if (clarif.requested_unit_cost !== null) ri.unit_cost = clarif.requested_unit_cost;
+      if (clarif.requested_quantity  !== null) ri.quantity  = clarif.requested_quantity;
+      ri.updated_at = new Date().toISOString();
+      recalcRequisition(db, ri.requisition_id);
+    }
+  }
+
+  // Recalcular total PO
+  const lines = (db.purchase_order_items || []).filter(i => i.purchase_order_id === po.id);
+  po.total_amount = lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_cost || 0), 0);
+
+  // Resolver aclaración
+  clarif.status              = 'aceptada';
+  clarif.resolved_at         = new Date().toISOString();
+  clarif.resolved_by_user_id = req.user.id;
+  clarif.admin_comment       = req.body.admin_comment || '';
+
+  addHistory(db, { module: 'purchases', requisition_id: null, purchase_order_id: po.id, old_status: null, new_status: po.status, changed_by_user_id: req.user.id, comment: `Aclaración aceptada: ${itemDesc} — costo/cantidad actualizado` });
+  write(db);
+
+  // Generar mailto para notificar al proveedor
+  const fmt = n => `$${Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const lineasCambio = [
+    clarif.requested_unit_cost !== null ? `Precio unitario: ${fmt(clarif.original_unit_cost)} → ${fmt(clarif.requested_unit_cost)}` : null,
+    clarif.requested_quantity  !== null ? `Cantidad: ${clarif.original_quantity} → ${clarif.requested_quantity}`                     : null
+  ].filter(Boolean).join(' | ');
+
+  const subject = encodeURIComponent(`Aclaración ACEPTADA — PO ${po.folio}`);
+  const body = encodeURIComponent(
+    `Estimado proveedor,\n\nSu solicitud de aclaración ha sido ACEPTADA.\n\n` +
+    `PO: ${po.folio}\nÍtem: ${itemDesc}\nCambios aplicados: ${lineasCambio}\n` +
+    `${clarif.admin_comment ? 'Comentario: ' + clarif.admin_comment + '\n' : ''}` +
+    `\nSaludos,\nEquipo de Compras`
+  );
+  const mailto = supplier.email ? `mailto:${supplier.email}?subject=${subject}&body=${body}` : null;
+
+  res.json({ ok: true, mailto });
+});
+
+// POST /clarifications/:id/reject — comprador/admin rechaza con motivo
+router.post('/clarifications/:id/reject', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  if (!db.clarification_requests) db.clarification_requests = [];
+  const clarif = db.clarification_requests.find(r => r.id === Number(req.params.id));
+  if (!clarif) return res.status(404).json({ error: 'Aclaración no encontrada' });
+  if (clarif.status !== 'pendiente') return res.status(409).json({ error: 'La aclaración ya fue resuelta' });
+
+  const motivo = req.body.motivo || '';
+  if (!motivo.trim()) return res.status(400).json({ error: 'El motivo de rechazo es requerido' });
+
+  const po       = (db.purchase_orders || []).find(p => p.id === clarif.purchase_order_id) || {};
+  const poItem   = (db.purchase_order_items || []).find(i => i.id === clarif.po_item_id) || {};
+  const supplier = (db.suppliers || []).find(s => s.id === clarif.supplier_id) || {};
+  const catItem  = (db.catalog_items || []).find(c => c.id === poItem.catalog_item_id);
+  const itemDesc = catItem?.name || poItem.manual_item_name || poItem.description || 'ítem';
+
+  clarif.status              = 'rechazada';
+  clarif.admin_comment       = motivo;
+  clarif.resolved_at         = new Date().toISOString();
+  clarif.resolved_by_user_id = req.user.id;
+
+  addHistory(db, { module: 'purchases', requisition_id: null, purchase_order_id: po.id, old_status: null, new_status: po.status, changed_by_user_id: req.user.id, comment: `Aclaración rechazada: ${motivo}` });
+  write(db);
+
+  // Generar mailto para notificar al proveedor
+  const fmt = n => `$${Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const lineasSolicitado = [
+    clarif.requested_unit_cost !== null ? `Precio unitario solicitado: ${fmt(clarif.requested_unit_cost)} (original: ${fmt(clarif.original_unit_cost)})` : null,
+    clarif.requested_quantity  !== null ? `Cantidad solicitada: ${clarif.requested_quantity} (original: ${clarif.original_quantity})`                     : null
+  ].filter(Boolean).join('\n');
+
+  const subject = encodeURIComponent(`Aclaración RECHAZADA — PO ${po.folio}`);
+  const body = encodeURIComponent(
+    `Estimado proveedor,\n\nSu solicitud de aclaración ha sido RECHAZADA.\n\n` +
+    `PO: ${po.folio}\nÍtem: ${itemDesc}\n${lineasSolicitado}\n` +
+    `Motivo del rechazo: ${motivo}\n` +
+    `\nSaludos,\nEquipo de Compras`
+  );
+  const mailto = supplier.email ? `mailto:${supplier.email}?subject=${subject}&body=${body}` : null;
+
+  res.json({ ok: true, mailto });
+});
+
 module.exports = router;

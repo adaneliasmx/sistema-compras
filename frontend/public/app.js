@@ -7817,8 +7817,8 @@ async function render() {
   if (route === 'autorizaciones') return approvalsView();
   if (route === 'compras') return purchasesView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Compras:</b> ${e.message}</div>`, 'compras'); bindCommon(); });
   if (route === 'cotizaciones') return quotationsView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Cotizaciones:</b> ${e.message}</div>`, 'cotizaciones'); bindCommon(); });
-  if (route === 'facturacion') return invoicingView();
-  if (route === 'pagos') return paymentsView();
+  if (route === 'facturacion') return invoicingView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Facturación:</b> ${e.message}</div>`, 'facturacion'); bindCommon(); });
+  if (route === 'pagos') return paymentsView().catch(e => { app.innerHTML = shell(`<div style="color:#dc2626;padding:24px"><b>Error al cargar Pagos:</b> ${e.message}</div>`, 'pagos'); bindCommon(); });
   if (route === 'inventarios') return inventoryView();
   if (route === 'kpis') return kpiView();
   if (route === 'auditoria') return auditView();
