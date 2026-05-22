@@ -4684,9 +4684,9 @@ async function proveedorPOView() {
           ${po.po_items && po.po_items.length ? `
           <div style="overflow-x:auto;margin-bottom:10px">
             <table style="width:100%;font-size:12px;border-collapse:collapse">
-              <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Precio</th><th style="padding:4px 8px;text-align:right">Subtotal</th><th style="padding:4px 8px;text-align:right">IVA 16%</th><th style="padding:4px 8px;text-align:right;font-weight:700">Total</th></tr></thead>
-              <tbody>${po.po_items.map(i => { const sub=Number(i.quantity||0)*Number(i.unit_cost||0); const iva=sub*0.16; return `<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${iva.toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(sub+iva).toFixed(2)}</td></tr>`; }).join('')}</tbody>
-              <tfoot><tr style="background:#f0fdf4;font-weight:700"><td colspan="3" style="padding:4px 8px;text-align:right">Totales:</td><td style="padding:4px 8px;text-align:right">$${po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*0.16).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;color:#1d4ed8">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*1.16).toFixed(2)}</td></tr></tfoot>
+              <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Precio</th><th style="padding:4px 8px;text-align:right">Subtotal</th><th style="padding:4px 8px;text-align:right">IVA 16%</th><th style="padding:4px 8px;text-align:right;font-weight:700">Total</th><th style="padding:4px 8px"></th></tr></thead>
+              <tbody>${po.po_items.map(i => { const sub=Number(i.quantity||0)*Number(i.unit_cost||0); const iva=sub*0.16; return `<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${iva.toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(sub+iva).toFixed(2)}</td><td style="padding:4px 8px;text-align:center"><button class="btn-clarif" data-poid="${po.id}" data-poitemid="${i.id}" data-desc="${(i.description||'').replace(/"/g,'&quot;')}" data-qty="${i.quantity}" data-unit="${i.unit||''}" data-cost="${i.unit_cost||0}" style="font-size:11px;padding:2px 7px;background:none;border:1px solid #6366f1;color:#6366f1;border-radius:4px;cursor:pointer" title="Solicitar aclaración de precio/cantidad">💬</button></td></tr>`; }).join('')}</tbody>
+              <tfoot><tr style="background:#f0fdf4;font-weight:700"><td colspan="3" style="padding:4px 8px;text-align:right">Totales:</td><td style="padding:4px 8px;text-align:right">$${po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*0.16).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;color:#1d4ed8">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*1.16).toFixed(2)}</td><td></td></tr></tfoot>
             </table>
           </div>` : ''}
           ${Number(po.advance_percentage||0) > 0 && po.advance_status !== 'N/A' ? `
@@ -4860,6 +4860,80 @@ async function proveedorPOView() {
         btn.disabled = true;
         setTimeout(render, 1200);
       } catch(e) { if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; } }
+    };
+  });
+
+  // Solicitar aclaración de ítem PO (proveedor)
+  document.querySelectorAll('.btn-clarif').forEach(btn => {
+    btn.onclick = () => {
+      const poId    = btn.dataset.poid;
+      const itemId  = btn.dataset.poitemid;
+      const desc    = btn.dataset.desc || '-';
+      const qty     = btn.dataset.qty;
+      const unit    = btn.dataset.unit;
+      const cost    = Number(btn.dataset.cost||0).toFixed(2);
+      // Remove any existing modal
+      document.getElementById('clarif-modal')?.remove();
+      const overlay = document.createElement('div');
+      overlay.id = 'clarif-modal';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
+      overlay.innerHTML = `
+        <div style="background:#fff;border-radius:10px;padding:24px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+          <h3 style="margin:0 0 4px;font-size:16px">💬 Solicitar aclaración</h3>
+          <p style="margin:0 0 14px;font-size:12px;color:#6b7280">Ítem: <b>${desc}</b></p>
+          <div style="background:#f8fafc;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:14px">
+            <div>Cantidad actual: <b>${qty} ${unit}</b></div>
+            <div>Precio unitario actual: <b>$${cost}</b></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+            <div>
+              <label style="font-size:12px;display:block;margin-bottom:3px">Nueva cantidad (opcional)</label>
+              <input id="clarif-qty" type="number" min="0" step="any" placeholder="${qty}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
+            </div>
+            <div>
+              <label style="font-size:12px;display:block;margin-bottom:3px">Nuevo precio unit. (opcional)</label>
+              <input id="clarif-cost" type="number" min="0" step="any" placeholder="${cost}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
+            </div>
+          </div>
+          <div style="margin-bottom:14px">
+            <label style="font-size:12px;display:block;margin-bottom:3px">Mensaje / motivo *</label>
+            <textarea id="clarif-msg" rows="3" placeholder="Explica el motivo de la aclaración..." style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
+          </div>
+          <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
+            <button id="clarif-cancel" class="btn-secondary" style="font-size:12px;padding:5px 14px">Cancelar</button>
+            <button id="clarif-submit" class="btn-primary" style="font-size:12px;padding:5px 14px">Enviar solicitud</button>
+          </div>
+          <div id="clarif-error" style="font-size:12px;color:#dc2626;margin-top:8px;text-align:right"></div>
+        </div>`;
+      document.body.appendChild(overlay);
+      document.getElementById('clarif-cancel').onclick = () => overlay.remove();
+      overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+      document.getElementById('clarif-submit').onclick = async () => {
+        const newQty  = document.getElementById('clarif-qty').value;
+        const newCost = document.getElementById('clarif-cost').value;
+        const message = document.getElementById('clarif-msg').value.trim();
+        const errEl   = document.getElementById('clarif-error');
+        if (!message) { errEl.textContent = 'El mensaje es obligatorio'; return; }
+        const submitBtn = document.getElementById('clarif-submit');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Enviando...';
+        try {
+          await api(`/api/purchases/${poId}/clarifications`, { method: 'POST', body: JSON.stringify({
+            po_item_id: Number(itemId),
+            requested_quantity: newQty ? Number(newQty) : null,
+            requested_unit_cost: newCost ? Number(newCost) : null,
+            message
+          })});
+          overlay.remove();
+          // Show success feedback inline
+          const td = btn.closest('td');
+          if (td) { td.innerHTML = '<span style="font-size:11px;color:#6366f1;font-weight:600">✅ Enviada</span>'; }
+        } catch(e) {
+          errEl.textContent = e.message;
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Enviar solicitud';
+        }
+      };
     };
   });
 
@@ -5329,7 +5403,7 @@ async function quotationsView() {
   bindCommon();
 }
 async function invoicingView() {
-  const [pos, invs] = await Promise.all([api('/api/purchases/purchase-orders'), api('/api/invoices')]);
+  const [pos, invs, clarifs] = await Promise.all([api('/api/purchases/purchase-orders'), api('/api/invoices'), api('/api/purchases/clarifications').catch(()=>[])]);
   const invoicedPOIds = new Set(invs.map(i => i.purchase_order_id));
   // POs que pueden facturarse: entregadas o en proceso, aún sin factura
   const posPendientes = pos.filter(p => !invoicedPOIds.has(p.id) && ['Enviada','Aceptada','En proceso','Entregado'].includes(p.status));
@@ -5477,6 +5551,45 @@ async function invoicingView() {
         </div>
       </div>
     </div>
+
+    <!-- ── Solicitudes de aclaración ─────────────────────────────────────── -->
+    ${clarifs.length > 0 ? `
+    <div class="card section" style="margin-top:16px">
+      <h3 style="margin:0 0 12px;font-size:15px">💬 Solicitudes de aclaración de proveedores
+        ${clarifs.filter(c=>c.status==='pendiente').length > 0 ? `<span style="background:#f59e0b;color:white;border-radius:10px;padding:2px 8px;font-size:12px;margin-left:6px">${clarifs.filter(c=>c.status==='pendiente').length} pendiente(s)</span>` : ''}
+      </h3>
+      <div class="table-wrap"><table style="font-size:12px">
+        <thead><tr style="background:#f8fafc">
+          <th style="padding:5px 8px">PO</th>
+          <th style="padding:5px 8px">Ítem</th>
+          <th style="padding:5px 8px">Proveedor</th>
+          <th style="padding:5px 8px;text-align:right">Cambios solicitados</th>
+          <th style="padding:5px 8px">Mensaje</th>
+          <th style="padding:5px 8px">Estado</th>
+          <th style="padding:5px 8px"></th>
+        </tr></thead>
+        <tbody>${clarifs.map(c => {
+          const changes = [];
+          if (c.requested_quantity !== null && c.requested_quantity !== undefined) changes.push(`Cant: ${c.original_quantity}→${c.requested_quantity}`);
+          if (c.requested_unit_cost !== null && c.requested_unit_cost !== undefined) changes.push(`Precio: $${Number(c.original_unit_cost||0).toFixed(2)}→$${Number(c.requested_unit_cost||0).toFixed(2)}`);
+          const isPending = c.status === 'pendiente';
+          return `<tr style="border-bottom:1px solid #f3f4f6">
+            <td style="padding:5px 8px;font-weight:600">${c.po_folio||'-'}</td>
+            <td style="padding:5px 8px">${escapeHtml(c.item_description||'-')}</td>
+            <td style="padding:5px 8px">${escapeHtml(c.supplier_name||'-')}</td>
+            <td style="padding:5px 8px;text-align:right">${changes.length ? changes.join('<br>') : '<span class="muted">Sin cambio</span>'}</td>
+            <td style="padding:5px 8px;max-width:200px;word-break:break-word">${escapeHtml(c.message||'')}</td>
+            <td style="padding:5px 8px">${statusPill(c.status)}</td>
+            <td style="padding:5px 8px;white-space:nowrap">
+              ${isPending ? `
+                <button class="btn-clarif-accept btn-primary" data-id="${c.id}" style="font-size:11px;padding:3px 10px;background:#16a34a;border-color:#16a34a;margin-right:4px">✅ Aceptar</button>
+                <button class="btn-clarif-reject btn-secondary" data-id="${c.id}" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#dc2626">❌ Rechazar</button>
+              ` : `<span style="font-size:11px;color:#6b7280">${c.admin_comment ? escapeHtml(c.admin_comment) : '—'}</span>`}
+            </td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
   `, 'facturacion');
 
   // Al seleccionar PO → cargar ítems y pre-llenar montos
@@ -5578,6 +5691,43 @@ async function invoicingView() {
     row.onmouseover = () => row.style.background = '#f0f9ff';
     row.onmouseout = () => row.style.background = '';
     row.onclick = () => showInvoiceDetail(Number(row.dataset.id));
+  });
+
+  // ── Solicitudes de aclaración: Aceptar / Rechazar ────────────────────────────
+  document.querySelectorAll('.btn-clarif-accept').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('¿Aceptar esta solicitud? Se actualizarán el precio/cantidad en la PO y se enviará un correo al proveedor.')) return;
+      btn.disabled = true;
+      btn.textContent = 'Procesando...';
+      try {
+        const data = await api(`/api/purchases/clarifications/${btn.dataset.id}/accept`, { method: 'POST' });
+        if (data.mailto) window.open(data.mailto, '_blank');
+        setTimeout(invoicingView, 800);
+      } catch(e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.textContent = '✅ Aceptar';
+      }
+    };
+  });
+
+  document.querySelectorAll('.btn-clarif-reject').forEach(btn => {
+    btn.onclick = async () => {
+      const motivo = prompt('Motivo del rechazo (obligatorio):');
+      if (motivo === null) return; // cancelled
+      if (!motivo.trim()) { alert('El motivo es obligatorio para rechazar la solicitud.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Procesando...';
+      try {
+        const data = await api(`/api/purchases/clarifications/${btn.dataset.id}/reject`, { method: 'POST', body: JSON.stringify({ motivo }) });
+        if (data.mailto) window.open(data.mailto, '_blank');
+        setTimeout(invoicingView, 800);
+      } catch(e) {
+        alert(e.message);
+        btn.disabled = false;
+        btn.textContent = '❌ Rechazar';
+      }
+    };
   });
 
   // ── Factura mensual ──────────────────────────────────────────────────────────
