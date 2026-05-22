@@ -4891,7 +4891,7 @@ async function generarReporteTitulacion(headerId) {
   if (!header) { alert('No se encontró la titulación'); return; }
 
   const detalleMap = {};
-  (header.detalles || []).forEach(d => { detalleMap[d.parametro_id] = d; });
+  (header.detalle || []).forEach(d => { detalleMap[d.parametro_id] = d; });
 
   const linea = header.linea;
   const tanquesLinea = tanques_cat.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
