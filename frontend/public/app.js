@@ -5465,23 +5465,36 @@ async function invoicingView() {
           <div style="font-size:12px;color:${posPendientes.length>0?'#f59e0b':'#16a34a'}">${posPendientes.length>0?'⚠':'✅'} Sin factura: <b>${posPendientes.length}</b> PO(s)</div>
         </div>
 
-        <div class="table-wrap"><table>
-          <thead><tr><th>Factura</th><th>PO</th><th>Proveedor</th><th>Total</th><th>Estatus</th><th>Archivos</th><th></th></tr></thead>
-          <tbody>${invs.length ? invs.map(i => `<tr style="cursor:pointer" class="inv-row" data-id="${i.id}">
-            <td><b>${i.invoice_number}</b><div class="small muted">${String(i.created_at||'').slice(0,10)}</div></td>
-            <td style="font-size:12px">${i.po_folio||'-'}</td>
-            <td style="font-size:12px">${i.supplier_name||'-'}</td>
-            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
-            <td>${statusPill(i.status)}</td>
-            <td>
-              ${i.pdf_path ? `<a href="/api/invoices/${i.id}/file/pdf" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
-              ${i.xml_path ? `<a href="/api/invoices/${i.id}/file/xml" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
-              ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
-            </td>
-            <td><button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();showInvoiceDetail(${i.id})">Ver detalle</button></td>
-          </tr>`).join('') : '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>'}
-          </tbody>
-        </table></div>
+        <!-- Filtros y ordenamiento -->
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+          <select id="invFilterSupp" style="flex:1;min-width:150px;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">
+            <option value="">— Todos los proveedores —</option>
+            ${[...new Map(invs.map(i=>[i.supplier_id, i.supplier_name])).entries()].sort((a,b)=>(a[1]||'').localeCompare(b[1]||'')).map(([id,name])=>`<option value="${id}">${escapeHtml(name||'-')}</option>`).join('')}
+          </select>
+          <select id="invSortCol" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:12px">
+            <option value="created_at">Fecha</option>
+            <option value="invoice_number">No. factura</option>
+            <option value="po_folio">PO</option>
+            <option value="supplier_name">Proveedor</option>
+            <option value="total">Total</option>
+            <option value="status">Estatus</option>
+          </select>
+          <button id="invSortDirBtn" class="btn-secondary" style="font-size:12px;padding:4px 10px">↓ Desc</button>
+        </div>
+
+        <div class="table-wrap">
+          <table id="invRegistradasTable">
+            <thead><tr>
+              <th data-sort="invoice_number" style="cursor:pointer" title="Ordenar">Factura ↕</th>
+              <th data-sort="po_folio" style="cursor:pointer" title="Ordenar">PO ↕</th>
+              <th data-sort="supplier_name" style="cursor:pointer" title="Ordenar">Proveedor ↕</th>
+              <th data-sort="total" style="cursor:pointer;text-align:right" title="Ordenar">Total ↕</th>
+              <th data-sort="status" style="cursor:pointer" title="Ordenar">Estatus ↕</th>
+              <th>Archivos</th><th></th>
+            </tr></thead>
+            <tbody id="invRegistradasBody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -5686,12 +5699,90 @@ async function invoicingView() {
   };
   expInvBtn.onclick = () => downloadCsv('invoices', 'facturas.csv');
 
-  // Clic en fila de factura → mostrar detalle
-  document.querySelectorAll('.inv-row').forEach(row => {
-    row.onmouseover = () => row.style.background = '#f0f9ff';
-    row.onmouseout = () => row.style.background = '';
-    row.onclick = () => showInvoiceDetail(Number(row.dataset.id));
-  });
+  // ── Tabla dinámica: filtro + orden + agrupación por proveedor ─────────────
+  let _invSort = 'created_at', _invDir = -1, _invSupp = '';
+
+  function renderInvTable() {
+    let list = invs.slice();
+    if (_invSupp) list = list.filter(i => String(i.supplier_id) === _invSupp);
+    list.sort((a, b) => {
+      if (_invSort === 'total') return _invDir * (Number(a.total||0) - Number(b.total||0));
+      return _invDir * String(a[_invSort]||'').localeCompare(String(b[_invSort]||''));
+    });
+    // Agrupar por proveedor
+    const groups = [], seen = {};
+    list.forEach(i => {
+      const key = String(i.supplier_id||'_');
+      if (!seen[key]) { seen[key] = groups.length; groups.push({ name: i.supplier_name||'-', items: [] }); }
+      groups[seen[key]].items.push(i);
+    });
+    let html = '';
+    if (!list.length) {
+      html = '<tr><td colspan="7" class="muted" style="text-align:center;padding:16px">Sin facturas registradas</td></tr>';
+    } else {
+      groups.forEach((g, gi) => {
+        const gTotal = g.items.reduce((s,i)=>s+Number(i.total||0),0);
+        html += `<tr class="inv-ghdr" data-gi="${gi}" style="background:#f1f5f9;cursor:pointer">
+          <td colspan="7" style="padding:6px 10px;font-weight:700;font-size:13px">
+            🏢 ${escapeHtml(g.name)}
+            <span style="color:#6b7280;font-weight:400;font-size:12px"> · ${g.items.length} factura(s) · $${gTotal.toLocaleString('es-MX',{minimumFractionDigits:2})}</span>
+            <span id="inv-gtog-${gi}" style="float:right;color:#6b7280">▼</span>
+          </td>
+        </tr>`;
+        g.items.forEach(i => {
+          html += `<tr class="inv-row inv-gi-${gi}" data-id="${i.id}" style="cursor:pointer">
+            <td><b>${escapeHtml(i.invoice_number)}</b><div class="small muted">${String(i.created_at||'').slice(0,10)}</div></td>
+            <td style="font-size:12px">${i.po_folio||'-'}</td>
+            <td style="font-size:12px">${escapeHtml(i.supplier_name||'-')}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+            <td>${statusPill(i.status)}</td>
+            <td>
+              ${i.pdf_path ? `<a href="/api/invoices/${i.id}/file/pdf" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
+              ${i.xml_path ? `<a href="/api/invoices/${i.id}/file/xml" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
+              ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
+            </td>
+            <td><button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();showInvoiceDetail(${i.id})">Ver detalle</button></td>
+          </tr>`;
+        });
+      });
+    }
+    document.getElementById('invRegistradasBody').innerHTML = html;
+
+    // Bind group toggle
+    document.querySelectorAll('.inv-ghdr').forEach(hdr => {
+      hdr.onclick = () => {
+        const gi = hdr.dataset.gi;
+        const rows = document.querySelectorAll(`.inv-gi-${gi}`);
+        const tog = document.getElementById(`inv-gtog-${gi}`);
+        const opening = tog.textContent === '▶';
+        rows.forEach(r => r.style.display = opening ? '' : 'none');
+        tog.textContent = opening ? '▼' : '▶';
+      };
+    });
+
+    // Bind row hover + click
+    document.querySelectorAll('.inv-row').forEach(row => {
+      row.onmouseover = () => row.style.background = '#f0f9ff';
+      row.onmouseout  = () => row.style.background = '';
+      row.onclick     = () => showInvoiceDetail(Number(row.dataset.id));
+    });
+
+    // Bind header sort click
+    document.querySelectorAll('#invRegistradasTable th[data-sort]').forEach(th => {
+      th.onclick = () => {
+        if (_invSort === th.dataset.sort) _invDir *= -1;
+        else { _invSort = th.dataset.sort; _invDir = -1; }
+        document.getElementById('invSortCol').value = _invSort;
+        document.getElementById('invSortDirBtn').textContent = _invDir > 0 ? '↑ Asc' : '↓ Desc';
+        renderInvTable();
+      };
+    });
+  }
+
+  renderInvTable();
+  document.getElementById('invFilterSupp').onchange = e => { _invSupp = e.target.value; renderInvTable(); };
+  document.getElementById('invSortCol').onchange    = e => { _invSort = e.target.value; renderInvTable(); };
+  document.getElementById('invSortDirBtn').onclick  = () => { _invDir *= -1; document.getElementById('invSortDirBtn').textContent = _invDir > 0 ? '↑ Asc' : '↓ Desc'; renderInvTable(); };
 
   // ── Solicitudes de aclaración: Aceptar / Rechazar ────────────────────────────
   document.querySelectorAll('.btn-clarif-accept').forEach(btn => {
@@ -6043,7 +6134,7 @@ async function paymentsView() {
                 <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
                   <div>
                     <b>${inv.invoice_number}</b>${anticipoTag}${urgentTag}
-                    <div class="small muted">${inv.supplier_name} · PO: ${inv.po_folio||'-'}</div>
+                    <div class="small muted">PO: ${inv.po_folio||'-'}</div>
                     ${advanceInfo}
                   </div>
                   <div style="text-align:right">
@@ -6059,10 +6150,45 @@ async function paymentsView() {
                 </div>
               </div>`;
             };
-            return (anticiposPendientes.length ? `<div style="padding:8px 12px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;border-bottom:1px solid #bfdbfe">💰 Anticipos pendientes (${anticiposPendientes.length})</div>` : '') +
-              anticiposPendientes.map(renderInvRow).join('') +
-              (facturasPendientes.length ? `<div style="padding:8px 12px;background:#f8fafc;color:#374151;font-size:12px;font-weight:700;border-bottom:1px solid #e5e7eb">🧾 Facturas normales pendientes (${facturasPendientes.length})</div>` : '') +
-              facturasPendientes.map(renderInvRow).join('');
+
+            // Agrupar anticipos por proveedor
+            const buildGroups = (list) => {
+              const groups = [], seen = {};
+              list.forEach(inv => {
+                const key = String(inv.supplier_id||'_');
+                if (!seen[key]) { seen[key] = groups.length; groups.push({ name: inv.supplier_name||'-', items: [] }); }
+                groups[seen[key]].items.push(inv);
+              });
+              return groups;
+            };
+
+            const renderGroups = (groups, prefix) => groups.map((g, gi) => {
+              const gid = `${prefix}-${gi}`;
+              const gTotal = g.items.reduce((s,inv)=>s+Number(inv.pending_balance??inv.balance??inv.total??0),0);
+              const hasOverdue = g.items.some(inv=>Number(inv.days_overdue||0)>0);
+              const hasUrgent  = g.items.some(inv=>inv.urgent);
+              return `
+              <div style="border-bottom:2px solid #e5e7eb">
+                <div class="pay-group-hdr" data-gid="${gid}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f8fafc;cursor:pointer;user-select:none" onmouseover="this.style.background='#f1f5f9'" onmouseout="this.style.background='#f8fafc'">
+                  <div>
+                    <b style="font-size:13px">🏢 ${escapeHtml(g.name)}</b>
+                    ${hasUrgent ? '<span style="background:#dc2626;color:white;border-radius:4px;padding:1px 6px;font-size:10px;margin-left:6px">🔴 URGENTE</span>' : ''}
+                    ${hasOverdue ? '<span style="color:#dc2626;font-size:11px;margin-left:6px">⚠ Vencido</span>' : ''}
+                    <div class="small muted" style="margin-top:2px">${g.items.length} factura(s) pendiente(s)</div>
+                  </div>
+                  <div style="text-align:right">
+                    <div style="font-weight:700;font-size:14px;color:#1d4ed8">$${gTotal.toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+                    <div id="pay-gtog-${gid}" class="small muted">▶ Ver facturas</div>
+                  </div>
+                </div>
+                <div id="pay-glist-${gid}" style="display:none">
+                  ${g.items.map(renderInvRow).join('')}
+                </div>
+              </div>`;
+            }).join('');
+
+            return (anticiposPendientes.length ? `<div style="padding:8px 12px;background:#dbeafe;color:#1d4ed8;font-size:12px;font-weight:700;border-bottom:1px solid #bfdbfe">💰 Anticipos pendientes (${anticiposPendientes.length})</div>${renderGroups(buildGroups(anticiposPendientes),'ant')}` : '') +
+              (facturasPendientes.length ? `<div style="padding:8px 12px;background:#f8fafc;color:#374151;font-size:12px;font-weight:700;border-bottom:1px solid #e5e7eb">🧾 Facturas normales pendientes (${facturasPendientes.length})</div>${renderGroups(buildGroups(facturasPendientes),'fac')}` : '');
           })()}
       </div>
 
@@ -6127,6 +6253,19 @@ async function paymentsView() {
       </table></div>
     </div>
   `, 'pagos');
+
+  // Toggle de grupos de proveedor en facturas pendientes
+  document.querySelectorAll('.pay-group-hdr').forEach(hdr => {
+    hdr.onclick = () => {
+      const gid = hdr.dataset.gid;
+      const list = document.getElementById(`pay-glist-${gid}`);
+      const tog  = document.getElementById(`pay-gtog-${gid}`);
+      if (!list) return;
+      const opening = list.style.display === 'none';
+      list.style.display = opening ? '' : 'none';
+      if (tog) tog.textContent = opening ? '▼ Ocultar' : '▶ Ver facturas';
+    };
+  });
 
   // Seleccionar factura → poblar formulario
   let selectedInv = null;
