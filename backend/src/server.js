@@ -65,6 +65,9 @@ const { initDb: initInventariosDb } = require('./db-inventarios');
 
 const app = express();
 
+// ── Confiar en el proxy de Render para X-Forwarded-Proto / IP ─────────────────
+app.set('trust proxy', 1);
+
 // ── Seguridad de headers HTTP (helmet) ────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: false, // La SPA usa inline scripts; CSP requiere configuración específica

@@ -6,6 +6,18 @@ const { addHistory, recalcRequisition, deriveItemStatus } = require('../utils/wo
 const router = express.Router();
 router.use(authRequired);
 
+// URL de la plataforma — se usa en correos para que proveedores accedan al portal
+const PORTAL_LOGIN_URL = 'https://cuestocompras.onrender.com/compras#/login';
+
+// Construye la URL base del servidor de forma robusta (soporta proxies de Render)
+function getBaseUrl(req) {
+  if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
+  // x-forwarded-proto puede llegar como "https, https" en multi-proxy; tomar solo el primero
+  const proto = (req.headers['x-forwarded-proto'] || req.protocol || 'https').split(',')[0].trim();
+  const host  = (req.get('host') || '').split(':')[0]; // quitar puerto si viene incluido
+  return `${proto}://${host}`;
+}
+
 function nextPOFolio(db, providerCode) {
   const now = new Date();
   const y = now.getFullYear();
@@ -490,9 +502,7 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
   const buyers = db.users.filter(u => u.role_code === 'comprador' && u.active !== false);
   const authorizers = db.users.filter(u => u.role_code === 'autorizador' && u.active !== false);
   const ccEmails = [...buyers.map(u => u.email), ...authorizers.map(u => u.email)].filter(Boolean);
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host = req.get('host');
-  const baseUrl = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const baseUrl = getBaseUrl(req);
   const poMailtos = purchaseOrders.map(po => {
     const supplier = db.suppliers.find(s => s.id === po.supplier_id) || {};
     const poLines = db.purchase_order_items.filter(x => x.purchase_order_id === po.id);
@@ -533,7 +543,7 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     const body = [
       `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
       ``,
-      `Le enviamos la Orden de Compra ${po.folio}.`,
+      `Le enviamos la Orden de Compra ${po.folio} para su revisión y confirmación.`,
       ``,
       `Proveedor : ${supplier.business_name || '—'}`,
       `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
@@ -545,11 +555,23 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
       `────────────────────────────────────────────────`,
       `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
       ``,
-      `── Ver y confirmar esta orden ───────────────────`,
-      `Puede ver el PDF de esta orden y confirmar su fecha`,
-      `compromiso de entrega en el siguiente enlace:`,
+      `── Acceder a su orden ───────────────────────────`,
+      ``,
+      `Puede ver el detalle de esta orden y confirmar su fecha`,
+      `compromiso de entrega en el siguiente enlace de acceso único:`,
       ``,
       `${poViewUrl}`,
+      ``,
+      `⚠ Este enlace es de acceso único y está asociado exclusivamente`,
+      `  a la Orden de Compra ${po.folio}.`,
+      ``,
+      `── Acceso permanente al portal ──────────────────`,
+      ``,
+      `También puede ingresar en cualquier momento con su usuario`,
+      `y contraseña en: ${PORTAL_LOGIN_URL}`,
+      ``,
+      `Una vez dentro, diríjase al menú "Cotizaciones" para consultar`,
+      `sus órdenes y subir facturas.`,
       ``,
       `Gracias.`
     ].join('\n');
@@ -741,9 +763,7 @@ router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req
   const requester    = reqRow2 ? db.users.find(u => u.id === reqRow2.requester_user_id) : null;
   const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
 
-  const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const host  = req.get('host');
-  const baseUrl  = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
+  const baseUrl  = getBaseUrl(req);
   const token    = poToken(po);
   const poViewUrl = `${baseUrl}/po-view?token=${token}`;
   const subject  = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
@@ -751,7 +771,7 @@ router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req
   const body = [
     `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
     ``,
-    `Le enviamos la Orden de Compra ${po.folio}.`,
+    `Le enviamos la Orden de Compra ${po.folio} para su revisión y confirmación.`,
     ``,
     `Proveedor : ${supplier.business_name || '—'}`,
     `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
@@ -763,11 +783,23 @@ router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req
     `────────────────────────────────────────────────`,
     `Total: $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
     ``,
-    `── Ver y confirmar esta orden ───────────────────`,
-    `Puede ver el PDF de esta orden y confirmar su fecha`,
-    `compromiso de entrega en el siguiente enlace:`,
+    `── Acceder a su orden ───────────────────────────`,
+    ``,
+    `Puede ver el detalle de esta orden y confirmar su fecha`,
+    `compromiso de entrega en el siguiente enlace de acceso único:`,
     ``,
     `${poViewUrl}`,
+    ``,
+    `⚠ Este enlace es de acceso único y está asociado exclusivamente`,
+    `  a la Orden de Compra ${po.folio}.`,
+    ``,
+    `── Acceso permanente al portal ──────────────────`,
+    ``,
+    `También puede ingresar en cualquier momento con su usuario`,
+    `y contraseña en: ${PORTAL_LOGIN_URL}`,
+    ``,
+    `Una vez dentro, diríjase al menú "Cotizaciones" para consultar`,
+    `sus órdenes y subir facturas.`,
     ``,
     `Gracias.`
   ].join('\n');
@@ -877,9 +909,7 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
   if (newStatus === 'Entregado') {
     try {
       const { poToken } = require('./public-po');
-      const proto = req.headers['x-forwarded-proto'] || req.protocol;
-      const host = req.get('host');
-      const baseUrl = (process.env.FRONTEND_URL || `${proto}://${host}`).replace(/\/$/, '');
+      const baseUrl = getBaseUrl(req);
       const token = poToken(po);
       const poViewUrl = `${baseUrl}/po-view?token=${token}`;
 
@@ -900,15 +930,32 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
         `Le confirmamos la recepción de los materiales/servicios de la Orden de Compra ${po.folio}.`,
         ``,
         `── Ítems entregados ──────────────────────────────`,
+        ``,
         lineDetails,
         ``,
+        `────────────────────────────────────────────────`,
         `Total PO : $${Number(po.total_amount||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${po.currency||'MXN'}`,
         Number(po.advance_paid||0) > 0 ? `Anticipo pagado: $${Number(po.advance_paid).toLocaleString('es-MX',{minimumFractionDigits:2})}  |  Saldo a facturar: $${balancePending.toLocaleString('es-MX',{minimumFractionDigits:2})}` : null,
         ``,
-        `── Registrar factura ────────────────────────────`,
-        `Por favor registre su factura en el portal de proveedores:`,
+        `── Registrar su factura ─────────────────────────`,
         ``,
-        poViewUrl,
+        `Opción 1 — Enlace directo de acceso único (solo para esta ocasión):`,
+        ``,
+        `${poViewUrl}`,
+        ``,
+        `⚠ Este enlace es de acceso único y está asociado exclusivamente`,
+        `  a la Orden de Compra ${po.folio}.`,
+        ``,
+        `Opción 2 — Acceso con usuario y contraseña:`,
+        ``,
+        `  1. Ingrese a: ${PORTAL_LOGIN_URL}`,
+        `  2. Inicie sesión con su usuario y contraseña.`,
+        `  3. En el menú lateral seleccione "Cotizaciones".`,
+        `  4. Localice la Orden de Compra ${po.folio} en la sección`,
+        `     "Paso 2 — Subir factura de POs aceptadas".`,
+        `  5. Adjunte su factura en PDF y XML (CFDI) y presione "Subir factura".`,
+        ``,
+        `Si no recuerda sus credenciales comuníquese con el área de compras.`,
         ``,
         `Gracias.`
       ].filter(l => l !== null).join('\n');
