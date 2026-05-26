@@ -6143,7 +6143,7 @@ async function paymentsView() {
                   </div>
                 </div>
                 <div style="margin-top:4px;display:flex;gap:12px;flex-wrap:wrap">
-                  <span class="small muted">Factura: ${String(inv.created_at||'').slice(0,10)}</span>
+                  <span class="small" style="color:#374151;font-weight:600">Fecha facturacion: ${String(inv.created_at||'').slice(0,10)}</span>
                   ${inv.due_date ? `<span class="small muted">Vence: ${inv.due_date}</span>` : ''}
                   ${overdueTag(inv)}
                   ${inv.urgent_note ? `<span class="small" style="color:#dc2626">Nota urgente: ${inv.urgent_note}</span>` : ''}
@@ -6197,7 +6197,8 @@ async function paymentsView() {
         <h3>Registrar pago</h3>
         <p class="small muted" id="payFormHint">← Selecciona una factura de la lista</p>
         <div id="payFormBody" style="display:none">
-          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px;margin-bottom:12px" id="payInvSummary"></div>
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:10px;margin-bottom:8px" id="payInvSummary"></div>
+          <div id="payItemsDetail" style="display:none;margin-bottom:12px;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;max-height:300px;overflow-y:auto"></div>
           <div class="row-2" style="margin-bottom:8px">
             <div><label>Monto a pagar *</label><input id="payAmount" type="number" placeholder="0.00"/></div>
             <div>
@@ -6292,28 +6293,86 @@ async function paymentsView() {
       payCreditDays.value = selectedInv.creditDays || '';
       payDelivery.value = selectedInv.delivery || '';
       const isAnticipo = selectedInv.invoiceType === 'anticipo';
+      const invId = selectedInv.id;
       payInvSummary.innerHTML = `
-        ${isAnticipo ? `<div style="background:#dbeafe;padding:4px 10px;border-radius:4px;margin-bottom:8px;font-size:12px;color:#1d4ed8;font-weight:600">💰 FACTURA DE ANTICIPO — Pago adelantado antes de la entrega</div>` : ''}
-        <b>Factura:</b> ${selectedInv.number} &nbsp;|&nbsp;
-        <b>${isAnticipo ? 'Monto anticipo' : 'Saldo a pagar'}:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
-        <b>Total factura:</b> $${selectedInv.total.toLocaleString('es-MX',{minimumFractionDigits:2})}
-        ${!isAnticipo && selectedInv.advancePaid > 0 ? `<br><span style="color:#16a34a;font-size:12px">✔ Anticipo ya pagado: $${selectedInv.advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} (descontado del saldo)</span>` : ''}
-        <div id="payTraceInfo"></div>
+        ${isAnticipo ? `<div style="background:#dbeafe;padding:4px 10px;border-radius:4px;margin-bottom:8px;font-size:12px;color:#1d4ed8;font-weight:600">FACTURA DE ANTICIPO — Pago adelantado antes de la entrega</div>` : ''}
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+          <div>
+            <b>Factura:</b> ${selectedInv.number} &nbsp;|&nbsp;
+            <b>${isAnticipo ? 'Monto anticipo' : 'Saldo a pagar'}:</b> $${selectedInv.balance.toLocaleString('es-MX',{minimumFractionDigits:2})} &nbsp;|&nbsp;
+            <b>Total factura:</b> $${selectedInv.total.toLocaleString('es-MX',{minimumFractionDigits:2})}
+            ${!isAnticipo && selectedInv.advancePaid > 0 ? `<br><span style="color:#16a34a;font-size:12px">Anticipo ya pagado: $${selectedInv.advancePaid.toLocaleString('es-MX',{minimumFractionDigits:2})} (descontado del saldo)</span>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap">
+            <a href="/api/invoices/${invId}/file/pdf" target="_blank" id="payPdfBtn" style="display:none;background:#dc2626;color:white;text-decoration:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap">Ver PDF</a>
+            <a href="/api/invoices/${invId}/file/xml" download id="payXmlBtn" style="display:none;background:#059669;color:white;text-decoration:none;padding:5px 12px;border-radius:6px;font-size:12px;font-weight:600;white-space:nowrap">Descargar XML</a>
+          </div>
+        </div>
+        <div id="payTraceInfo" style="font-size:11px;color:#6b7280;margin-top:6px;border-top:1px solid #bae6fd;padding-top:5px"></div>
       `;
-      // Intentar cargar trazabilidad (best-effort)
-      api(`/api/purchases/purchase-orders`).then(pos => {
-        const inv = selectedInv;
-        const poData = pos.find(p => p.folio === inv.poFolio);
-        if (!poData) return;
+
+      // Cargar detalle de ítems y archivos adjuntos
+      const payItemsDetailEl = document.getElementById('payItemsDetail');
+      if (payItemsDetailEl) {
+        payItemsDetailEl.style.display = '';
+        payItemsDetailEl.innerHTML = '<div style="padding:10px;color:#6b7280;font-size:12px">Cargando detalle de ítems...</div>';
+      }
+      api(`/api/invoices/${invId}`).then(detail => {
+        const pdfBtn = document.getElementById('payPdfBtn');
+        const xmlBtn = document.getElementById('payXmlBtn');
+        if (pdfBtn && detail.has_pdf) pdfBtn.style.display = '';
+        if (xmlBtn && detail.has_xml) xmlBtn.style.display = '';
         const traceEl = document.getElementById('payTraceInfo');
-        if (!traceEl) return;
-        traceEl.innerHTML = `
-          <div style="font-size:11px;color:#6b7280;margin-top:6px;border-top:1px solid #e5e7eb;padding-top:6px">
-            <b>Trazabilidad:</b>
-            PO generada por: ${poData.buyer_name || '-'} ·
-            Proveedor: ${poData.supplier_name || '-'}
+        if (traceEl) {
+          traceEl.innerHTML = `<b>Proveedor:</b> ${escapeHtml(detail.supplier_name||'-')} &nbsp;&middot;&nbsp; <b>PO:</b> ${escapeHtml(detail.po_folio||'-')}`
+            + (detail.pdf_original ? ` &nbsp;&middot;&nbsp; PDF: ${escapeHtml(detail.pdf_original)}` : '')
+            + (detail.xml_original ? ` &nbsp;&middot;&nbsp; XML: ${escapeHtml(detail.xml_original)}` : '');
+        }
+        const el = document.getElementById('payItemsDetail');
+        if (!el) return;
+        if (!detail.po_items || !detail.po_items.length) {
+          el.innerHTML = '<div style="padding:10px;color:#6b7280;font-size:12px">Sin ítems registrados para esta factura.</div>';
+          return;
+        }
+        el.innerHTML = `
+          <div style="background:#f8fafc;padding:7px 12px;font-size:12px;font-weight:700;color:#374151;border-bottom:1px solid #e5e7eb">
+            Items de la orden (${detail.po_items.length})
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <thead style="background:#f1f5f9">
+                <tr>
+                  <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">Nombre</th>
+                  <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb">Descripcion</th>
+                  <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">Cant.</th>
+                  <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb">Unidad</th>
+                  <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">P.U.</th>
+                  <th style="text-align:right;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">Subtotal</th>
+                  <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">C. Costo</th>
+                  <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">Solicitado</th>
+                  <th style="text-align:center;padding:5px 8px;border-bottom:1px solid #e5e7eb;white-space:nowrap">Recibido</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${detail.po_items.map((it, i) => `
+                  <tr style="background:${i%2?'#f8fafc':'#fff'}">
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;font-weight:600;white-space:nowrap">${escapeHtml(it.name||'-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;color:#6b7280">${escapeHtml(it.description||'-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right">${it.quantity||0}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9">${escapeHtml(it.unit||'-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right">$${Number(it.unit_cost||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right;font-weight:700">$${Number(it.subtotal||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;white-space:nowrap">${escapeHtml(it.cost_center_name||'-')}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap">${String(it.requested_at||'').slice(0,10)||'-'}</td>
+                    <td style="padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:center;white-space:nowrap">${String(it.received_at||'').slice(0,10)||'-'}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
           </div>`;
-      }).catch(()=>{});
+      }).catch(() => {
+        const el = document.getElementById('payItemsDetail');
+        if (el) el.innerHTML = '<div style="padding:10px;color:#dc2626;font-size:12px">Error al cargar el detalle de items.</div>';
+      });
     };
   });
 

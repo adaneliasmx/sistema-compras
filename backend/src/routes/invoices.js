@@ -362,13 +362,20 @@ router.get('/:id', (req, res) => {
     .filter(i => i.purchase_order_id === inv.purchase_order_id)
     .map(item => {
       const reqItem = db.requisition_items.find(r => r.id === item.requisition_item_id) || {};
+      const catalogItem = db.catalog_items.find(c => c.id === (item.catalog_item_id || reqItem.catalog_item_id)) || {};
+      const requisition = db.requisitions.find(r => r.id === reqItem.requisition_id) || {};
+      const costCenter = db.cost_centers.find(c => c.id === (reqItem.cost_center_id || requisition.cost_center_id)) || {};
       return {
         id: item.id,
+        name: catalogItem.name || item.manual_item_name || reqItem.description || '-',
         description: reqItem.description || item.description || '-',
         quantity: item.quantity,
         unit: item.unit || reqItem.unit || '',
         unit_cost: item.unit_cost,
-        subtotal: Number(item.quantity || 0) * Number(item.unit_cost || 0)
+        subtotal: Number(item.quantity || 0) * Number(item.unit_cost || 0),
+        cost_center_name: costCenter.name || '-',
+        requested_at: reqItem.created_at || requisition.created_at || null,
+        received_at: po.delivery_date || null
       };
     });
 
@@ -388,6 +395,8 @@ router.get('/:id', (req, res) => {
 
   res.json({
     ...inv,
+    has_pdf: !!(inv.pdf_data || inv.pdf_path),
+    has_xml: !!(inv.xml_data || inv.xml_path),
     supplier_name: supplier.business_name || '',
     supplier_email: supplier.email || '',
     po_folio: po.folio || '',
