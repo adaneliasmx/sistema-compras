@@ -4404,12 +4404,13 @@ async function readExcelTitulaciones(file, params) {
 
 // ── Catálogo Parámetros (admin) ───────────────────────────────────────────────
 async function viewTitCatalogo() {
-  const [tanques, params] = await Promise.all([
+  const [tanques, params, items] = await Promise.all([
     GET('/tanques').catch(()=>[]),
-    GET('/parametros-titulacion').catch(()=>[])
+    GET('/parametros-titulacion').catch(()=>[]),
+    GET('/items?vigente=true').catch(()=>[])
   ]);
   const lineas = [...new Set(tanques.map(t=>t.linea))].filter(Boolean).sort();
-  window._catalogData = { tanques, params };
+  window._catalogData = { tanques, params, items };
   return `
   <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
     <button class="btn btn-primary" id="btn-param-nuevo">+ Parámetro</button>
@@ -4826,6 +4827,19 @@ function bindTitCatalogo() {
       input = document.createElement('select');
       input.innerHTML = '<option value="2">2/t</option><option value="1">1/t</option>';
       input.value = origVal;
+    } else if (field === 'quimico') {
+      input = document.createElement('select');
+      const items = window._catalogData?.items || [];
+      input.innerHTML = '<option value="">— Sin químico —</option>'
+        + items.map(it => `<option value="${esc(it.item)}" ${origVal === it.item ? 'selected' : ''}>${esc(it.item)}${it.presentacion ? ' — ' + esc(it.presentacion) : ''}</option>`).join('');
+      if (!items.length) {
+        // fallback: cargar de API si no están en caché
+        GET('/items?vigente=true').then(loaded => {
+          if (window._catalogData) window._catalogData.items = loaded;
+          input.innerHTML = '<option value="">— Sin químico —</option>'
+            + loaded.map(it => `<option value="${esc(it.item)}" ${origVal === it.item ? 'selected' : ''}>${esc(it.item)}${it.presentacion ? ' — ' + esc(it.presentacion) : ''}</option>`).join('');
+        }).catch(()=>{});
+      }
     } else {
       input = document.createElement('input');
       input.type = td.classList.contains('ec-num') ? 'number' : 'text';
