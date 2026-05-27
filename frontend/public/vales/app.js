@@ -2786,8 +2786,8 @@ function showModalTanque(tanque, items, returnView) {
   showModal(`
     <h3>${isEdit ? '✏️ Editar Tanque' : '+ Nuevo Tanque'}</h3>
     <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-group"><label>Línea *</label><input type="text" id="tk-linea" value="${tanque?.linea||''}" ${isEdit?'disabled':''} /></div>
-      <div class="form-group"><label>No. Tanque *</label><input type="text" id="tk-no" value="${tanque?.no_tanque||''}" ${isEdit?'disabled':''} /></div>
+      <div class="form-group"><label>Línea *</label><input type="text" id="tk-linea" value="${tanque?.linea||''}" /></div>
+      <div class="form-group"><label>No. Tanque *</label><input type="text" id="tk-no" value="${tanque?.no_tanque||''}" /></div>
       <div class="form-group"><label>Nombre del tanque</label><input type="text" id="tk-nombre" value="${tanque?.nombre_tanque||''}" /></div>
       <div class="form-group"><label>Tipo</label><input type="text" id="tk-tipo" value="${tanque?.tipo||''}" /></div>
       <div class="form-group"><label>Químico activo <small style="color:#78716c">(907 / 1207 / vacío)</small></label><input type="text" id="tk-quimico" value="${tanque?.quimico_activo||''}" placeholder="Ej: 907 — vacío si no aplica" /></div>

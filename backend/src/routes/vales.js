@@ -145,6 +145,12 @@ router.patch('/tanques/:id', valesAllowRoles('admin'), (req, res) => {
   const tanque = (db.tanques_vales || []).find(t => t.id === Number(req.params.id));
   if (!tanque) return res.status(404).json({ error: 'Tanque no encontrado' });
   const b = req.body;
+  if (b.no_tanque !== undefined) {
+    const dup = (db.tanques_vales || []).find(t => t.id !== tanque.id && t.linea === (b.linea || tanque.linea) && t.no_tanque === b.no_tanque);
+    if (dup) return res.status(409).json({ error: `Ya existe un tanque "${b.no_tanque}" en esa línea` });
+    tanque.no_tanque = b.no_tanque;
+  }
+  if (b.linea !== undefined)             tanque.linea = b.linea;
   if (b.nombre_tanque !== undefined)     tanque.nombre_tanque = b.nombre_tanque;
   if (b.tipo !== undefined)              tanque.tipo = b.tipo;
   if (b.items_autorizados !== undefined) tanque.items_autorizados = b.items_autorizados;
