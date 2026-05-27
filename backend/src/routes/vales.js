@@ -2020,6 +2020,22 @@ router.patch('/parametros-titulacion/:id', valesAllowRoles('admin'), (req, res) 
 });
 
 // Seed manual (admin) — re-genera el catálogo desde cero si está vacío, o fuerza reset
+router.delete('/parametros-titulacion/:id', valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const id = Number(req.params.id);
+  const param = (db.parametros_titulacion || []).find(p => p.id === id);
+  if (!param) return res.status(404).json({ error: 'Parámetro no encontrado' });
+  const hasHistory = (db.titulaciones_detalle || []).some(d => d.parametro_id === id);
+  if (hasHistory) {
+    param.activo = false;
+    writeVales(db);
+    return res.json({ deactivated: true });
+  }
+  db.parametros_titulacion = db.parametros_titulacion.filter(p => p.id !== id);
+  writeVales(db);
+  res.json({ deleted: true });
+});
+
 router.post('/parametros-titulacion/seed', valesAllowRoles('admin'), (req, res) => {
   const db = readVales();
   if (req.body.reset) db.parametros_titulacion = [];

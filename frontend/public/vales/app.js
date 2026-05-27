@@ -269,6 +269,7 @@ const POST = (p, b) => api('POST',   p, b);
 const PUT  = (p, b) => api('PUT',    p, b);
 const PATCH= (p, b) => api('PATCH',  p, b);
 const DEL  = (p)    => api('DELETE', p);
+const esc  = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
 // ── Inactividad (15 min) ──────────────────────────────────────────────────────
 function resetTimer() {
@@ -4440,93 +4441,120 @@ function renderParamCatalog(params, tanques, filtroLinea) {
   if (!filtered.length) return '<div class="empty-state"><div class="icon">⚙️</div><p>Sin parámetros. Usa "Seed inicial" para cargar los predeterminados.</p></div>';
 
   const lineas = [...new Set(filtered.map(p => getParamLinea(p, tanques)))].sort();
+  const CELL = 'padding:3px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0;cursor:pointer;border-bottom:1px solid #f1f5f9';
+  const TH   = 'padding:4px 6px;font-size:11px;font-weight:600;color:#64748b;text-align:left;white-space:nowrap;border-bottom:1px solid #e2e8f0';
+  const INP  = 'width:100%;box-sizing:border-box;font-size:11px;border:1px solid #3b82f6;border-radius:2px;padding:1px 3px;background:#eff6ff;outline:none';
 
   return lineas.map(linea => {
     const lineaTanques = tanques.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
     const pLinea = filtered.filter(p => getParamLinea(p, tanques) === linea);
     const totalActivos = pLinea.filter(p => p.activo !== false).length;
 
-    const tanquesHtml = lineaTanques.map(t => {
+    const tbodyRows = lineaTanques.map(t => {
       const pTanque = pLinea.filter(p => p.tanque_id === t.id).sort((a,b) => (a.orden||0)-(b.orden||0));
-      const quimicoLabel = t.quimico_activo
-        ? `<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px;margin-left:6px">${t.quimico_activo}</span>` : '';
+      const enjLabel = t.es_enjuague ? `<span style="background:#e0f2fe;color:#0369a1;padding:0 5px;border-radius:8px;font-size:10px;margin-left:4px">Enjuague</span>` : '';
+      const quimLabel = t.quimico_activo ? `<span style="background:#dbeafe;color:#1e40af;padding:0 5px;border-radius:8px;font-size:10px;margin-left:4px">${esc(t.quimico_activo)}</span>` : '';
 
-      const rowsHtml = pTanque.length === 0
-        ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:12px;padding:10px">Sin parámetros — agrega el primero</td></tr>`
+      const tankHdr = `<tr style="background:${t.es_enjuague?'#f0f9ff':'#f8fafc'}">
+        <td colspan="9" style="padding:4px 8px;border-top:2px solid ${t.es_enjuague?'#bae6fd':'#d1d5db'};border-bottom:1px solid #e2e8f0">
+          <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
+            <span style="font-size:12px;font-weight:700;color:#1e293b">🪣 ${esc(t.no_tanque)} — ${esc(t.nombre_tanque)}</span>
+            ${quimLabel}${enjLabel}
+            <span style="font-size:10px;color:#9ca3af;margin-left:2px">${pTanque.length} param.</span>
+            <div style="margin-left:auto;display:flex;gap:3px;align-items:center">
+              <button class="btn btn-outline btn-xs btn-toggle-enjuague" data-tid="${t.id}" data-enjuague="${t.es_enjuague?'1':'0'}" style="font-size:10px;padding:1px 5px">${t.es_enjuague?'→Proceso':'→Enjuague'}</button>
+              <button class="btn btn-outline btn-xs btn-edit-tanque" data-tid="${t.id}" style="font-size:10px;padding:1px 5px">✏️</button>
+              <button class="btn btn-outline btn-xs btn-del-tanque" data-tid="${t.id}" style="font-size:10px;padding:1px 5px;color:#dc2626;border-color:#fca5a5">🗑️</button>
+              <button class="btn btn-primary btn-xs btn-add-param-tanque" data-tanque-id="${t.id}" style="font-size:10px;padding:2px 8px">+ Param</button>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+
+      const paramRows = pTanque.length === 0
+        ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:11px;padding:5px;border-bottom:1px solid #f1f5f9">Sin parámetros — usa "+ Param" para agregar</td></tr>`
         : pTanque.map(p => {
-            const rangoTxt = p.tipo_rango === 'entre'  ? `${p.valor_min??'—'} – ${p.valor_max??'—'}`
-                           : p.tipo_rango === 'maximo' ? `≤ ${p.valor_max??'—'}`
-                           : p.tipo_rango === 'minimo' ? `≥ ${p.valor_min??'—'}` : '—';
-            const activoBg = p.activo !== false ? '#dcfce7' : '#f3f4f6';
-            const activoColor = p.activo !== false ? '#16a34a' : '#6b7280';
-            return `<tr style="opacity:${p.activo!==false?1:0.55};background:${p.activo!==false?'':'#fafafa'}">
-              <td style="padding:6px 10px;font-size:13px;font-weight:600">${p.nombre_parametro}</td>
-              <td style="padding:6px 8px">${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px;font-size:11px">${p.quimico}</span>`:'-'}</td>
-              <td style="padding:6px 8px;font-size:12px;color:#374151">${rangoTxt}</td>
-              <td style="padding:6px 8px;font-size:12px;color:#78716c">${p.objetivo??'—'}</td>
-              <td style="padding:6px 8px;font-size:12px;color:#78716c">${p.unidad||'—'}</td>
-              <td style="padding:6px 8px;font-size:12px;text-align:center">${p.frecuencia}×/turno</td>
-              <td style="padding:4px 8px;text-align:center">
+            const actBg  = p.activo!==false ? '#dcfce7' : '#f3f4f6';
+            const actCol = p.activo!==false ? '#16a34a' : '#9ca3af';
+            return `<tr data-pid="${p.id}" style="opacity:${p.activo!==false?1:0.5};font-size:12px">
+              <td class="ec" data-field="nombre_parametro" data-val="${esc(p.nombre_parametro)}" data-pid="${p.id}" style="${CELL};font-weight:600;color:#1e293b" title="${esc(p.nombre_parametro)}">${esc(p.nombre_parametro)}</td>
+              <td class="ec" data-field="quimico" data-val="${esc(p.quimico||'')}" data-pid="${p.id}" style="${CELL}" title="${esc(p.quimico||'')}">
+                ${p.quimico?`<span style="background:#dbeafe;color:#1e40af;padding:0 4px;border-radius:3px;font-size:11px">${esc(p.quimico)}</span>`:'<span style="color:#d1d5db">—</span>'}
+              </td>
+              <td class="ec ec-num" data-field="valor_min" data-val="${p.valor_min??''}" data-pid="${p.id}" style="${CELL};text-align:right;color:#374151">${p.valor_min??'<span style="color:#d1d5db">—</span>'}</td>
+              <td class="ec ec-num" data-field="valor_max" data-val="${p.valor_max??''}" data-pid="${p.id}" style="${CELL};text-align:right;color:#374151">${p.valor_max??'<span style="color:#d1d5db">—</span>'}</td>
+              <td class="ec ec-num" data-field="objetivo" data-val="${p.objetivo??''}" data-pid="${p.id}" style="${CELL};text-align:right;color:#374151">${p.objetivo??'<span style="color:#d1d5db">—</span>'}</td>
+              <td class="ec" data-field="unidad" data-val="${esc(p.unidad||'')}" data-pid="${p.id}" style="${CELL};color:#6b7280" title="${esc(p.unidad||'')}">${esc(p.unidad)||'<span style="color:#d1d5db">—</span>'}</td>
+              <td class="ec ec-frec" data-field="frecuencia" data-val="${p.frecuencia}" data-pid="${p.id}" style="${CELL};text-align:center;color:#374151">${p.frecuencia}/t</td>
+              <td style="padding:2px 4px;text-align:center;border-bottom:1px solid #f1f5f9">
                 <button class="btn-toggle-activo" data-pid="${p.id}" data-activo="${p.activo!==false?'1':'0'}"
-                  style="border:none;cursor:pointer;background:${activoBg};color:${activoColor};padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600">
-                  ${p.activo!==false?'✅ Activo':'❌ Inactivo'}
+                  style="border:none;cursor:pointer;background:${actBg};color:${actCol};padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">
+                  ${p.activo!==false?'✅':'❌'}
                 </button>
               </td>
-              <td style="padding:4px 6px;text-align:center;white-space:nowrap">
-                <button class="btn btn-outline btn-xs" onclick="openParamChart(${p.id})" title="Ver gráfica">📈</button>
-                <button class="btn btn-outline btn-xs" onclick="editParam(${p.id})" title="Editar">✏️</button>
+              <td style="padding:2px 3px;text-align:center;white-space:nowrap;border-bottom:1px solid #f1f5f9">
+                <button class="btn btn-outline btn-xs" onclick="openParamChart(${p.id})" title="Ver gráfica" style="padding:1px 5px;font-size:11px">📈</button>
+                <button class="btn-del-param btn btn-outline btn-xs" data-pid="${p.id}" title="Quitar parámetro" style="padding:1px 6px;font-size:12px;color:#dc2626;border-color:#fca5a5;font-weight:700">×</button>
               </td>
             </tr>`;
           }).join('');
 
-      const enjuagueLabel = t.es_enjuague
-        ? `<span style="background:#e0f2fe;color:#0369a1;padding:1px 7px;border-radius:10px;font-size:10px;margin-left:6px;font-weight:600">🚿 Enjuague</span>` : '';
-      return `
-      <div style="border:1px solid ${t.es_enjuague?'#bae6fd':'#e7e5e4'};border-radius:8px;margin-bottom:10px;overflow:hidden">
-        <div style="display:flex;align-items:center;justify-content:space-between;background:${t.es_enjuague?'#f0f9ff':'#f8fafc'};padding:8px 14px;border-bottom:1px solid ${t.es_enjuague?'#bae6fd':'#e7e5e4'}">
-          <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
-            <span style="font-size:13px;font-weight:700;color:#1e293b">${t.no_tanque}</span>
-            <span style="font-size:12px;color:#78716c;margin-left:6px">— ${t.nombre_tanque}</span>
-            ${quimicoLabel}${enjuagueLabel}
-            <span style="font-size:11px;color:#9ca3af;margin-left:8px">${pTanque.length} parámetro(s)</span>
-          </div>
-          <div style="display:flex;gap:5px;align-items:center;flex-shrink:0">
-            <button class="btn btn-outline btn-xs btn-toggle-enjuague" data-tid="${t.id}" data-enjuague="${t.es_enjuague?'1':'0'}"
-              title="${t.es_enjuague?'Marcar como proceso':'Marcar como enjuague'}"
-              style="font-size:11px;padding:2px 8px">${t.es_enjuague?'📊 Proceso':'🚿 Enjuague'}</button>
-            <button class="btn btn-outline btn-xs btn-edit-tanque" data-tid="${t.id}"
-              title="Editar tanque" style="font-size:11px;padding:2px 8px">✏️</button>
-            <button class="btn btn-outline btn-xs btn-del-tanque" data-tid="${t.id}"
-              title="Eliminar tanque" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#fca5a5">🗑️</button>
-            <button class="btn btn-primary btn-xs btn-add-param-tanque" data-tanque-id="${t.id}"
-              style="padding:3px 10px;font-size:12px">+ Parámetro</button>
-          </div>
-        </div>
-        <div style="overflow-x:auto">
-          <table style="width:100%;border-collapse:collapse;font-size:13px">
-            <thead><tr style="background:#f1f5f9;font-size:11px;color:#64748b">
-              <th style="padding:5px 10px;text-align:left;font-weight:600">Parámetro</th>
-              <th style="padding:5px 8px;text-align:left;font-weight:600">Químico</th>
-              <th style="padding:5px 8px;text-align:left;font-weight:600">Rango</th>
-              <th style="padding:5px 8px;text-align:left;font-weight:600">Objetivo</th>
-              <th style="padding:5px 8px;text-align:left;font-weight:600">Unidad</th>
-              <th style="padding:5px 8px;text-align:center;font-weight:600">Frecuencia</th>
-              <th style="padding:5px 8px;text-align:center;font-weight:600">Estado</th>
-              <th style="padding:5px 8px"></th>
-            </tr></thead>
-            <tbody>${rowsHtml}</tbody>
-          </table>
-        </div>
-      </div>`;
+      const newRow = `<tr class="new-param-row" data-tid="${t.id}" style="display:none;background:#eff6ff">
+        <td style="padding:2px 3px"><input class="np-nombre" placeholder="Nombre *" style="${INP}" /></td>
+        <td style="padding:2px 3px"><input class="np-quimico" placeholder="Químico" style="${INP}" /></td>
+        <td style="padding:2px 3px"><input class="np-min" type="number" step="any" placeholder="Mín" style="${INP};text-align:right" /></td>
+        <td style="padding:2px 3px"><input class="np-max" type="number" step="any" placeholder="Máx" style="${INP};text-align:right" /></td>
+        <td style="padding:2px 3px"><input class="np-obj" type="number" step="any" placeholder="Obj" style="${INP};text-align:right" /></td>
+        <td style="padding:2px 3px"><input class="np-unidad" placeholder="Unidad" style="${INP}" /></td>
+        <td style="padding:2px 3px">
+          <select class="np-frec" style="${INP};padding:1px 2px">
+            <option value="2">2/t</option><option value="1">1/t</option>
+          </select>
+        </td>
+        <td style="padding:2px 3px;text-align:center">
+          <button class="np-save btn btn-primary btn-xs" data-tid="${t.id}" style="font-size:10px;padding:1px 8px" title="Guardar">✓</button>
+        </td>
+        <td style="padding:2px 3px;text-align:center">
+          <button class="np-cancel btn btn-outline btn-xs" style="font-size:10px;padding:1px 8px" title="Cancelar (Esc)">✕</button>
+        </td>
+      </tr>`;
+
+      return tankHdr + paramRows + newRow;
     }).join('');
 
     return `
-    <div class="table-card" style="margin-bottom:20px">
-      <div class="table-header" style="background:#1e3a5f;display:flex;align-items:center;justify-content:space-between">
-        <h3 style="color:#fff;margin:0">${linea}</h3>
+    <div class="table-card" style="margin-bottom:12px">
+      <div class="table-header" style="background:#1e3a5f;display:flex;align-items:center;justify-content:space-between;padding:8px 14px">
+        <h3 style="color:#fff;margin:0;font-size:14px">${esc(linea)}</h3>
         <span style="font-size:12px;color:#93c5fd">${totalActivos} activo(s) / ${pLinea.length} total</span>
       </div>
-      <div style="padding:12px 14px">${tanquesHtml || '<p style="color:#9ca3af;font-size:13px">Sin tanques configurados para esta línea.</p>'}</div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;table-layout:fixed">
+          <colgroup>
+            <col style="width:150px">
+            <col style="width:88px">
+            <col style="width:50px">
+            <col style="width:50px">
+            <col style="width:50px">
+            <col style="width:63px">
+            <col style="width:44px">
+            <col style="width:52px">
+            <col style="width:60px">
+          </colgroup>
+          <thead><tr style="background:#f1f5f9">
+            <th style="${TH}">Parámetro</th>
+            <th style="${TH}">Químico</th>
+            <th style="${TH};text-align:right">Mín</th>
+            <th style="${TH};text-align:right">Máx</th>
+            <th style="${TH};text-align:right">Obj</th>
+            <th style="${TH}">Unidad</th>
+            <th style="${TH};text-align:center">Freq</th>
+            <th style="${TH};text-align:center">Estado</th>
+            <th style="${TH}"></th>
+          </tr></thead>
+          <tbody>${tbodyRows || '<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:12px;padding:10px">Sin tanques configurados para esta línea.</td></tr>'}</tbody>
+        </table>
+      </div>
     </div>`;
   }).join('');
 }
@@ -4629,15 +4657,15 @@ function bindTitCatalogo() {
 
   // ── Acciones sobre tanques (delegado en pc-table-area) ─────────────────────
   document.getElementById('pc-table-area').addEventListener('click', async e => {
-    // [+ Parámetro] por tanque
+    // [+ Param] por tanque → fila inline
     const btnAddParam = e.target.closest('.btn-add-param-tanque');
     if (btnAddParam) {
-      const tanqueId = Number(btnAddParam.dataset.tanqueId);
-      const { tanques } = window._catalogData || {};
-      const tanque = (tanques||[]).find(t => t.id === tanqueId);
-      if (!tanque) return;
-      const items = await GET('/items?vigente=true').catch(()=>[]);
-      showModalParam(null, tanques, tanque, items);
+      const tid = btnAddParam.dataset.tanqueId;
+      const row = document.querySelector(`.new-param-row[data-tid="${tid}"]`);
+      if (!row) return;
+      row.style.display = '';
+      const inp = row.querySelector('.np-nombre');
+      if (inp) inp.focus();
       return;
     }
 
@@ -4782,6 +4810,144 @@ function bindTitCatalogo() {
     const [tanques, params] = await Promise.all([GET('/tanques'), GET('/parametros-titulacion')]);
     document.getElementById('pc-table-area').innerHTML = renderParamTable(params, tanques, this.value);
   });
+
+  // ── Edición inline al hacer clic en celda ──────────────────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', e => {
+    const td = e.target.closest('td.ec');
+    if (!td) return;
+    if (td.querySelector('input,select')) return; // ya en edición
+    const pid   = Number(td.dataset.pid);
+    const field = td.dataset.field;
+    const origVal = td.dataset.val;
+
+    td.innerHTML = '';
+    let input;
+    if (field === 'frecuencia') {
+      input = document.createElement('select');
+      input.innerHTML = '<option value="2">2/t</option><option value="1">1/t</option>';
+      input.value = origVal;
+    } else {
+      input = document.createElement('input');
+      input.type = td.classList.contains('ec-num') ? 'number' : 'text';
+      input.step = 'any';
+      input.value = origVal;
+      if (td.classList.contains('ec-num')) input.style.textAlign = 'right';
+    }
+    input.style.cssText = 'width:100%;box-sizing:border-box;font-size:11px;border:1px solid #3b82f6;border-radius:2px;padding:1px 3px;background:#eff6ff;outline:none';
+    td.appendChild(input);
+    input.focus();
+    if (input.select) input.select();
+
+    let done = false;
+    const restore = () => { restoreParamCell(td, field, origVal); };
+    const save = async () => {
+      if (done) return; done = true;
+      const newVal = input.value.trim();
+      if (newVal === origVal) { restore(); return; }
+      const body = {};
+      if (['valor_min','valor_max','objetivo'].includes(field)) {
+        body[field] = newVal === '' ? null : Number(newVal);
+        // recalcular tipo_rango
+        const row = td.closest('tr[data-pid]');
+        if (row) {
+          const getV = f => { const c = row.querySelector(`td[data-field="${f}"]`); return c ? c.dataset.val : ''; };
+          const mn = field === 'valor_min' ? newVal : getV('valor_min');
+          const mx = field === 'valor_max' ? newVal : getV('valor_max');
+          body.tipo_rango = (mn !== '' && mx !== '') ? 'entre' : mn !== '' ? 'minimo' : mx !== '' ? 'maximo' : 'ninguno';
+        }
+      } else if (field === 'frecuencia') {
+        body[field] = Number(newVal);
+      } else {
+        body[field] = newVal || null;
+      }
+      try {
+        await PATCH('/parametros-titulacion/' + pid, body);
+        const p = (window._catalogData?.params||[]).find(x => x.id === pid);
+        if (p) { p[field] = body[field]; if (body.tipo_rango) p.tipo_rango = body.tipo_rango; }
+        td.dataset.val = newVal;
+        restoreParamCell(td, field, newVal);
+      } catch(err) { restore(); alert('Error: ' + err.message); }
+    };
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter')  { ev.preventDefault(); input.blur(); }
+      if (ev.key === 'Escape') { ev.preventDefault(); done = true; input.removeEventListener('blur', save); restore(); }
+    });
+  });
+
+  // ── Nueva fila inline: guardar / cancelar ─────────────────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', async e => {
+    const btnSave = e.target.closest('.np-save');
+    if (btnSave) {
+      const row = btnSave.closest('tr.new-param-row');
+      if (!row) return;
+      const tid    = Number(row.dataset.tid);
+      const nombre = row.querySelector('.np-nombre').value.trim();
+      if (!nombre) { row.querySelector('.np-nombre').focus(); return; }
+      const mn = row.querySelector('.np-min').value;
+      const mx = row.querySelector('.np-max').value;
+      const ob = row.querySelector('.np-obj').value;
+      const body = {
+        tanque_id:        tid,
+        nombre_parametro: nombre,
+        quimico:          row.querySelector('.np-quimico').value.trim() || null,
+        tipo_rango:       (mn !== '' && mx !== '') ? 'entre' : mn !== '' ? 'minimo' : mx !== '' ? 'maximo' : 'ninguno',
+        valor_min:        mn !== '' ? Number(mn) : null,
+        valor_max:        mx !== '' ? Number(mx) : null,
+        objetivo:         ob !== '' ? Number(ob) : null,
+        unidad:           row.querySelector('.np-unidad').value.trim() || '',
+        frecuencia:       Number(row.querySelector('.np-frec').value) || 2,
+        orden:            0
+      };
+      try {
+        const created = await POST('/parametros-titulacion', body);
+        if (window._catalogData?.params) window._catalogData.params.push(created);
+        const { tanques, params } = window._catalogData || {};
+        const filtro = document.getElementById('pc-filtro-linea')?.value || '';
+        document.getElementById('pc-table-area').innerHTML = renderParamCatalog(params, tanques, filtro);
+      } catch(err) { alert('Error: ' + err.message); }
+      return;
+    }
+    const btnCancel = e.target.closest('.np-cancel');
+    if (btnCancel) {
+      const row = btnCancel.closest('tr.new-param-row');
+      if (row) { row.style.display = 'none'; row.querySelectorAll('input,select').forEach(i => i.value = i.tagName === 'SELECT' ? i.options[0]?.value : ''); }
+      return;
+    }
+  });
+
+  // ── Eliminar parámetro (× botón) ─────────────────────────────────────────
+  document.getElementById('pc-table-area').addEventListener('click', async e => {
+    const btn = e.target.closest('.btn-del-param');
+    if (!btn) return;
+    const pid = Number(btn.dataset.pid);
+    const p = (window._catalogData?.params||[]).find(x => x.id === pid);
+    if (!confirm(`¿Quitar parámetro "${p?.nombre_parametro}"?\n(Si tiene historial quedará inactivo, si no tiene historial se eliminará)`)) return;
+    try {
+      const result = await DEL('/parametros-titulacion/' + pid);
+      if (result.deactivated) {
+        if (window._catalogData?.params) { const x = window._catalogData.params.find(x => x.id === pid); if (x) x.activo = false; }
+      } else {
+        if (window._catalogData?.params) window._catalogData.params = window._catalogData.params.filter(x => x.id !== pid);
+      }
+      const { tanques, params } = window._catalogData || {};
+      const filtro = document.getElementById('pc-filtro-linea')?.value || '';
+      document.getElementById('pc-table-area').innerHTML = renderParamCatalog(params, tanques, filtro);
+    } catch(err) { alert('Error: ' + err.message); }
+  });
+}
+
+function restoreParamCell(td, field, val) {
+  const v = val ?? '';
+  if (field === 'quimico') {
+    td.innerHTML = v ? `<span style="background:#dbeafe;color:#1e40af;padding:0 4px;border-radius:3px;font-size:11px">${esc(v)}</span>` : '<span style="color:#d1d5db">—</span>';
+  } else if (field === 'frecuencia') {
+    td.textContent = (v || 2) + '/t';
+  } else if (['valor_min','valor_max','objetivo'].includes(field)) {
+    td.innerHTML = (v !== '' && v !== null) ? esc(String(v)) : '<span style="color:#d1d5db">—</span>';
+  } else {
+    td.innerHTML = v ? esc(v) : '<span style="color:#d1d5db">—</span>';
+  }
 }
 
 window.editParam = async function(id) {
