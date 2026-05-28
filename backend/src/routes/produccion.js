@@ -1441,9 +1441,11 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     for (const m of motivosParoLinea) motivosParoMap[String(m.id)] = m;
 
     // Separar paros según su impacto en eficiencia, disponibilidad y rendimiento
-    let paros_min_ef   = 0; // paros que SÍ afectan eficiencia
-    let paros_min_noef = 0; // paros que NO afectan eficiencia (programados)
-    let paros_min_disp = 0; // paros que SÍ afectan disponibilidad
+    // afecta_eficiencia=Sí → paro PROGRAMADO → reduce el objetivo (ciclos_obj_adj)
+    // afecta_eficiencia=No → paro NO programado → objetivo completo, eficiencia penalizada
+    let paros_min      = 0; // total de todos los paros
+    let paros_min_prog = 0; // paros programados (afecta_eficiencia=Sí) → reducen objetivo
+    let paros_min_disp = 0; // paros que afectan disponibilidad
     let paros_min_rend = 0; // paros que afectan rendimiento pero NO disponibilidad
     for (const p of (pdb.paros || []).filter(p => p.linea === l)) {
       const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
@@ -1453,13 +1455,11 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      if (afecEf)   paros_min_ef   += overlap;
-      else          paros_min_noef += overlap;
+      paros_min += overlap;
+      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlap;
-      // Rendimiento solo acumula paros dentro del tiempo disponible (no los ya contados en disp)
       if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
-    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     // Arranque lunes T1: reducir objetivo de los primeros slots;
@@ -1474,9 +1474,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       patternIdx++;
     }
 
-    // Ajustar objetivo por paros que no afectan eficiencia
-    // (el tiempo de paro programado no se penaliza en el objetivo)
-    const efectivoMin  = Math.max(0, 60 - paros_min_noef);
+    // Ajustar objetivo por paros programados (afecta_eficiencia=Sí)
+    const efectivoMin  = Math.max(0, 60 - paros_min_prog);
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
 
     // Eficiencia = ciclos / objetivo ajustado; si obj=0 y real=0 → 100%
@@ -1508,8 +1507,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       ciclos_buenos_calidad,
       piezas_total,
       piezas_obj_total,
-      paros_min:        Math.round(paros_min * 10) / 10,
-      paros_min_no_ef:  Math.round(paros_min_noef * 10) / 10,
+      paros_min:        Math.round(paros_min      * 10) / 10,
+      paros_min_prog:   Math.round(paros_min_prog * 10) / 10,
       paros_min_disp:   Math.round(paros_min_disp * 10) / 10,
       paros_min_rend:   Math.round(paros_min_rend * 10) / 10,
       eficiencia,
@@ -2366,7 +2365,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const motivosBakerMap  = {};
     for (const m of motivosParoBaker) motivosBakerMap[String(m.id)] = m;
 
-    let paros_min_ef = 0, paros_min_noef = 0, paros_min_disp = 0, paros_min_rend = 0;
+    let paros_min = 0, paros_min_prog = 0, paros_min_disp = 0, paros_min_rend = 0;
     for (const p of (pdb.paros_baker || [])) {
       const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
                                   p.fecha_inicio, p.fecha_fin, slotDate);
@@ -2375,12 +2374,11 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      if (afecEf)   paros_min_ef   += overlap;
-      else          paros_min_noef += overlap;
+      paros_min += overlap;
+      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlap;
       if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
-    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
@@ -2392,7 +2390,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
       patternIdx++;
     }
-    const efectivoMin    = Math.max(0, 60 - paros_min_noef);
+    const efectivoMin    = Math.max(0, 60 - paros_min_prog);
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
     const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : null);
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
@@ -2408,10 +2406,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       ciclos_totales, ciclos_obj: slotObj, ciclos_obj_adj, ciclos_no_vacios, ciclos_buenos,
       ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
-      paros_min: Math.round(paros_min * 10) / 10,
-      paros_min_no_ef: Math.round(paros_min_noef * 10) / 10,
-      paros_min_disp:  Math.round(paros_min_disp * 10) / 10,
-      paros_min_rend:  Math.round(paros_min_rend * 10) / 10,
+      paros_min:      Math.round(paros_min      * 10) / 10,
+      paros_min_prog: Math.round(paros_min_prog * 10) / 10,
+      paros_min_disp: Math.round(paros_min_disp * 10) / 10,
+      paros_min_rend: Math.round(paros_min_rend * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad, rendimiento
     });
     curMins += 60;
@@ -2496,7 +2494,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const motivosL1Map   = {};
     for (const m of motivosParo_l1) motivosL1Map[String(m.id)] = m;
 
-    let paros_min_ef = 0, paros_min_noef = 0, paros_min_disp = 0, paros_min_rend = 0;
+    let paros_min = 0, paros_min_prog = 0, paros_min_disp = 0, paros_min_rend = 0;
     for (const p of (pdb.paros_l1 || [])) {
       const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
                                   p.fecha_inicio, p.fecha_fin, slotDate);
@@ -2505,12 +2503,11 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      if (afecEf)   paros_min_ef   += overlap;
-      else          paros_min_noef += overlap;
+      paros_min += overlap;
+      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlap;
       if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
-    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
@@ -2522,7 +2519,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
       patternIdx++;
     }
-    const efectivoMin    = Math.max(0, 60 - paros_min_noef);
+    const efectivoMin    = Math.max(0, 60 - paros_min_prog);
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
     const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : null);
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
@@ -2538,10 +2535,10 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       ciclos_totales, ciclos_obj: slotObj, ciclos_obj_adj, ciclos_no_vacios, ciclos_buenos,
       ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
-      paros_min: Math.round(paros_min * 10) / 10,
-      paros_min_no_ef: Math.round(paros_min_noef * 10) / 10,
-      paros_min_disp:  Math.round(paros_min_disp * 10) / 10,
-      paros_min_rend:  Math.round(paros_min_rend * 10) / 10,
+      paros_min:      Math.round(paros_min      * 10) / 10,
+      paros_min_prog: Math.round(paros_min_prog * 10) / 10,
+      paros_min_disp: Math.round(paros_min_disp * 10) / 10,
+      paros_min_rend: Math.round(paros_min_rend * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad, rendimiento
     });
     curMins += 60;

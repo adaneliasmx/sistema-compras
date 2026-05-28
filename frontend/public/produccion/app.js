@@ -6703,6 +6703,7 @@ function renderResumenTurnoTable(snaps, linea) {
       <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
       <td class="${kpiColor(s.capacidad != null ? s.capacidad * 100 : null)} capacidad-click" data-sid="${s.id}" title="Clic para ver piezas por hora">${fmtPct(s.capacidad)}${s.capacidad != null ? ' 🔍' : ''}</td>
       <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)} disponibilidad-click" data-sid="${s.id}" title="Clic para ver paros">${fmtPct(s.disponibilidad)}${s.disponibilidad != null && s.disponibilidad < 1 ? ' 🔍' : ''}</td>
+      <td class="${kpiColor(s.rendimiento != null ? s.rendimiento * 100 : null)}">${fmtPct(s.rendimiento)}</td>
       <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
       <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
     </tr>`).join('');
@@ -6713,15 +6714,17 @@ function renderResumenTurnoTable(snaps, linea) {
     const ciclosNoV    = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
     const paroMin      = ws.reduce((s,x)=>s+x.paros_min_total,0);
     const TURNO_H = {T1:8,T2:7,T3:9};
-    let efNum=0,efDen=0,capNum=0,capDen=0;
+    let efNum=0,efDen=0,capNum=0,capDen=0,rendNum=0,rendDen=0;
     ws.forEach(x=>{
       const h=TURNO_H[x.turno]||8;
-      if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;}
-      if(x.capacidad!=null){capNum+=x.capacidad*h;capDen+=h;}
+      if(x.eficiencia  !=null){efNum  +=x.eficiencia  *h;efDen  +=h;}
+      if(x.capacidad   !=null){capNum +=x.capacidad   *h;capDen +=h;}
+      if(x.rendimiento !=null){rendNum+=x.rendimiento *h;rendDen+=h;}
     });
     const ef   = efDen>0?efNum/efDen:null;
     const cal  = ciclosNoV>0?ciclosBuenos/ciclosNoV:null;
     const cap  = capDen>0?capNum/capDen:null;
+    const rend = rendDen>0?rendNum/rendDen:null;
     const totalMin = ws.reduce((s,x)=>s+(TURNO_H[x.turno]||8)*60,0);
     const disp = totalMin>0?(totalMin-paroMin)/totalMin:null;
     const wkFechas = ws.map(x=>x.fecha).sort();
@@ -6739,6 +6742,7 @@ function renderResumenTurnoTable(snaps, linea) {
       <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
       <td class="${kpiColor(cap!=null?cap*100:null)}">${fmtPct(cap)}</td>
       <td class="${kpiColor(disp!=null?disp*100:null)}">${fmtPct(disp)}</td>
+      <td class="${kpiColor(rend!=null?rend*100:null)}">${fmtPct(rend)}</td>
       <td style="text-align:center">${ws.reduce((s,x)=>s+x.piezas_total,0)}</td>
       <td style="text-align:center">${paroMin.toFixed(0)} min</td>
     </tr>`;
@@ -6755,7 +6759,7 @@ function renderResumenTurnoTable(snaps, linea) {
           <thead><tr>
             <th>Sem</th><th>Fecha</th><th>Turno</th><th>Línea</th>
             <th>Ciclos Tot.</th>${isBakerLike ? '<th>Cav. Tot.</th>' : ''}<th>${isBakerLike ? 'Cav. Buenas' : 'Ciclos Buenos'}</th>
-            <th>Eficiencia 🔍</th><th>Calidad 🔍</th><th>Capacidad 🔍</th><th>Disponibilidad 🔍</th>
+            <th>Eficiencia 🔍</th><th>Calidad 🔍</th><th>Capacidad 🔍</th><th>Disponibilidad 🔍</th><th>Rendimiento</th>
             <th>Piezas</th><th>T. Paro</th>
           </tr></thead>
           <tbody>${rows}${weekRows}</tbody>
