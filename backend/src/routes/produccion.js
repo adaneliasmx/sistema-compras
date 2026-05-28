@@ -1480,7 +1480,7 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
 
     // Eficiencia = ciclos / objetivo ajustado; si obj=0 y real=0 → 100%
-    const eficiencia    = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
+    const eficiencia    = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : null);
     // Calidad = buenos / no_vacios — excluye herramentales con defecto contemplado
     const calidad       = cargasCalidad.length > 0 ? r3(ciclos_buenos_calidad / cargasCalidad.length) : null;
     // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
@@ -1533,7 +1533,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       ? (config.ciclos_objetivo_l3 ?? 2)
       : (config.ciclos_objetivo_l4 ?? 2);
 
-    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosRend = 0, daySlots = 0, dayElapHours = 0, dayObjElap = 0;
+    let dayC = 0, dayNV = 0, dayB = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosDisp = 0, dayParosRend = 0, daySlots = 0, dayElapHours = 0, dayObjElap = 0;
 
     for (const t of turnos) {
       const tDef  = TURNOS_DEF[t];
@@ -1546,11 +1546,13 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       const tPzObj    = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
       const tParos    = slots.reduce((s, x) => s + x.paros_min,        0);
       const tParosDisp= slots.reduce((s, x) => s + (x.paros_min_disp ?? x.paros_min), 0);
-      const tParosRend= slots.reduce((s, x) => s + (x.paros_min_rend ?? x.paros_min), 0);
+      const tParosRend= slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate); // horas reales transcurridas
       // Usa objetivo ajustado por arranque de lunes Y por paros no-eficiencia
       const tObjElap   = computeObjElapsedAdj(slots, tElap);
+      // Rendimiento: base = tiempo disponible (excluye paros de disponibilidad)
+      const tDispMins  = Math.max(0, turnoMins - tParosDisp);
 
       result[l][t] = {
         slots,
@@ -1562,11 +1564,13 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
           // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
-          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
+          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : null)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
           disponibilidad: r3((turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins),
-          rendimiento:    r3((turnoMins - Math.min(tParosRend, turnoMins)) / turnoMins)
+          rendimiento:    tDispMins > 0
+            ? r3((tDispMins - Math.min(tParosRend, tDispMins)) / tDispMins)
+            : 1
         }
       };
 
@@ -1576,6 +1580,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       dayPz         += tPz;
       dayPzObj      += tPzObj;
       dayParos      += tParos;
+      dayParosDisp  += tParosDisp;
       dayParosRend  += tParosRend;
       daySlots      += tDef.hours;   // horas totales planeadas (para disponibilidad)
       dayElapHours  += tElap;        // horas reales transcurridas
@@ -1590,13 +1595,17 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    r3(dayObjElap > 0 ? dayC / dayObjElap : 0),
+      eficiencia:    r3(dayObjElap > 0 ? dayC / dayObjElap : (dayC === 0 ? 1 : null)),
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
         ? r3((totalMins - Math.min(dayParos, totalMins)) / totalMins) : 1,
-      rendimiento:   totalMins > 0
-        ? r3((totalMins - Math.min(dayParosRend, totalMins)) / totalMins) : 1
+      rendimiento: (() => {
+        const dayDispMins = Math.max(0, totalMins - dayParosDisp);
+        return dayDispMins > 0
+          ? r3((dayDispMins - Math.min(dayParosRend, dayDispMins)) / dayDispMins)
+          : 1;
+      })()
     };
   }
   return result;
@@ -1687,7 +1696,7 @@ router.get('/pizarron', (req, res) => {
   function addBakerLike(lineaLabel, buildFn, ciclosObjKey) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const turnData = {};
-    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dParosRend = 0, dSlots = 0, dElapHours = 0, dObjElap = 0;
+    let dC = 0, dNV = 0, dB = 0, dPz = 0, dPzO = 0, dParos = 0, dParosDisp = 0, dParosRend = 0, dSlots = 0, dElapHours = 0, dObjElap = 0;
     for (const t of targetTurnos) {
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
@@ -1696,13 +1705,14 @@ router.get('/pizarron', (req, res) => {
       const tB   = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
       const tPz  = slots.reduce((s, x) => s + x.piezas_total,     0);
       const tPzO = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
-      const tParos     = slots.reduce((s, x) => s + x.paros_min,       0);
-      const tParosDisp = slots.reduce((s, x) => s + (x.paros_min_disp ?? x.paros_min), 0);
-      const tParosRend = slots.reduce((s, x) => s + (x.paros_min_rend ?? x.paros_min), 0);
+      const tParos     = slots.reduce((s, x) => s + x.paros_min,            0);
+      const tParosDisp = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      const tParosRend = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate);
       // Usa objetivo ajustado por arranque de lunes Y paros no-eficiencia
       const tObjElap   = computeObjElapsedAdj(slots, tElap);
+      const tDispMins  = Math.max(0, turnoMins - tParosDisp);
       turnData[t] = {
         slots,
         totals: {
@@ -1710,29 +1720,38 @@ router.get('/pizarron', (req, res) => {
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
           // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
-          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
+          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : null)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins),
-          rendimiento:    r3(Math.max(0, turnoMins - Math.min(tParosRend, turnoMins)) / turnoMins)
+          rendimiento:    tDispMins > 0
+            ? r3((tDispMins - Math.min(tParosRend, tDispMins)) / tDispMins)
+            : 1
         }
       };
       dC += tC; dNV += tNV; dB += tB; dPz += tPz; dPzO += tPzO;
-      dParos     += tParosDisp;
+      dParos     += tParos;
+      dParosDisp += tParosDisp;
       dParosRend += tParosRend;
       dSlots     += tDef.hours;  // horas totales planeadas (para disponibilidad)
       dElapHours += tElap;       // horas reales transcurridas
       dObjElap   += tObjElap;    // objetivo acumulado ajustado (incluye descuento arranque lunes)
     }
     const ciclos_obj = config[ciclosObjKey] ?? 2;
+    const dTotalMins = dSlots * 60;
+    const dDispMins  = Math.max(0, dTotalMins - dParosDisp);
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    dObjElap > 0 ? (v => Math.round(v * 1000) / 1000)(dC / dObjElap) : 0,
-        calidad:       dNV > 0 ? (v => Math.round(v * 1000) / 1000)(dB / dNV) : null,
-        capacidad:     dPzO > 0 ? (v => Math.round(v * 1000) / 1000)(dPz / dPzO) : null,
-        disponibilidad: dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParos, dSlots * 60)) / (dSlots * 60)) : null,
-        rendimiento:    dSlots > 0 ? (v => Math.round(v * 1000) / 1000)(Math.max(0, dSlots * 60 - Math.min(dParosRend, dSlots * 60)) / (dSlots * 60)) : null
+        eficiencia:    r3(dObjElap > 0 ? dC / dObjElap : (dC === 0 ? 1 : null)),
+        calidad:       dNV > 0 ? r3(dB / dNV) : null,
+        capacidad:     dPzO > 0 ? r3(dPz / dPzO) : null,
+        disponibilidad: dTotalMins > 0
+          ? r3((dTotalMins - Math.min(dParos, dTotalMins)) / dTotalMins)
+          : 1,
+        rendimiento: dDispMins > 0
+          ? r3((dDispMins - Math.min(dParosRend, dDispMins)) / dDispMins)
+          : 1
       }
     };
   }
@@ -2375,7 +2394,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     }
     const efectivoMin    = Math.max(0, 60 - paros_min_noef);
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
-    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
+    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : null);
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
@@ -2505,7 +2524,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     }
     const efectivoMin    = Math.max(0, 60 - paros_min_noef);
     const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
-    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
+    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : null);
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
