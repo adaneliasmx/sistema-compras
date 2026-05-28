@@ -4309,6 +4309,20 @@ async function viewCatalogos(el, linea) {
         } catch (e) { alert('Error: ' + e.message); }
       });
     });
+
+    el.querySelectorAll('[data-toggle-impact]').forEach(td => {
+      td.addEventListener('click', async () => {
+        const id    = td.dataset.toggleImpact;
+        const campo = td.dataset.campo;
+        const item  = items.find(i => String(i.id) === String(id));
+        if (!item) return;
+        const newVal = item[campo] === false; // false→true, true/undefined→false
+        try {
+          await PATCH(`/catalogos/${linea}/${apiTipo(activeTab)}/${id}`, { [campo]: newVal });
+          loadAndRender();
+        } catch(e) { alert('Error: ' + e.message); }
+      });
+    });
   }
 
   await loadAndRender();
@@ -4401,7 +4415,13 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
       ${displayItems.map(item => `
         <tr>
           <td class="mono">${item.id}</td>
-          ${cols.map(c => `<td>${colRenderers[c] ? colRenderers[c](item[c]) : escHtml(item[c] ?? '')}</td>`).join('')}
+          ${cols.map(c => {
+            const rendered = colRenderers[c] ? colRenderers[c](item[c]) : escHtml(item[c] ?? '');
+            if (tipo === 'motivos_paro' && ['afecta_eficiencia','afecta_disponibilidad','afecta_rendimiento'].includes(c)) {
+              return `<td style="cursor:pointer;user-select:none" title="Clic para cambiar" data-toggle-impact="${item.id}" data-campo="${c}">${rendered}</td>`;
+            }
+            return `<td>${rendered}</td>`;
+          }).join('')}
           <td style="white-space:nowrap">
             <button class="btn btn-outline btn-xs" data-edit-cat="${item.id}">✏️ Editar</button>
             ${tipo === 'herramentales' ? `<button class="btn btn-xs" data-toggle-excluir="${item.id}" style="margin-left:4px;${item.excluir_calidad ? 'background:#fef3c7;color:#92400e;border:1px solid #f59e0b' : 'background:#f0fdf4;color:#166534;border:1px solid #86efac'}">${item.excluir_calidad ? '⚠ Excluido KPI' : '✓ KPI Calidad'}</button>` : ''}

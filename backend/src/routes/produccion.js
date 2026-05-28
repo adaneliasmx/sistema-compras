@@ -289,7 +289,7 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
 
   const body = req.body || {};
-  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales', 'excluir_calidad'];
+  const allowed = ['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales', 'excluir_calidad', 'afecta_eficiencia', 'afecta_disponibilidad', 'afecta_rendimiento'];
   for (const field of allowed) {
     if (body[field] !== undefined) list[idx][field] = body[field];
   }
