@@ -1444,7 +1444,7 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     let paros_min_ef   = 0; // paros que SÍ afectan eficiencia
     let paros_min_noef = 0; // paros que NO afectan eficiencia (programados)
     let paros_min_disp = 0; // paros que SÍ afectan disponibilidad
-    let paros_min_rend = 0; // paros que SÍ afectan rendimiento
+    let paros_min_rend = 0; // paros que afectan rendimiento pero NO disponibilidad
     for (const p of (pdb.paros || []).filter(p => p.linea === l)) {
       const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
                                   p.fecha_inicio, p.fecha_fin, slotDate);
@@ -1456,7 +1456,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       if (afecEf)   paros_min_ef   += overlap;
       else          paros_min_noef += overlap;
       if (afecDisp) paros_min_disp += overlap;
-      if (afecRend) paros_min_rend += overlap;
+      // Rendimiento solo acumula paros dentro del tiempo disponible (no los ya contados en disp)
+      if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
     const paros_min = paros_min_ef + paros_min_noef;
 
@@ -1486,8 +1487,12 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     // Disponibilidad = (60 - paros_disp) / 60
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
-    // Rendimiento    = (60 - paros_rend) / 60
-    const rendimiento    = r3(Math.max(0, 60 - Math.min(paros_min_rend, 60)) / 60);
+    // Rendimiento = (tiempo_disponible - paros_rend_dentro_disponible) / tiempo_disponible
+    // El tiempo disponible ya excluye paros de disponibilidad; rendimiento mide el uso de ese tiempo
+    const tDisp_slot  = Math.max(0, 60 - paros_min_disp);
+    const rendimiento = tDisp_slot > 0
+      ? r3(Math.max(0, tDisp_slot - Math.min(paros_min_rend, tDisp_slot)) / tDisp_slot)
+      : 1;
 
     slots.push({
       slot: h + 1,
@@ -2096,12 +2101,16 @@ router.get('/kpis', (req, res) => {
         const elapHours      = elapsedHoursForTurno(t, date);
         const esT1Lunes      = t === 'T1' && isLunes(date);
         const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj * elapHours;
-        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? x.paros_min), 0);
+        const paros_min_disp_t = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
         const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
-        const rendimiento    = (turnoMins - Math.min(paros_min_rend_t, turnoMins)) / turnoMins;
+        const tDisp_turno    = Math.max(0, turnoMins - paros_min_disp_t);
+        const rendimiento    = tDisp_turno > 0
+          ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
+          : 1;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
 
         snapshots.push({
@@ -2150,13 +2159,17 @@ router.get('/kpis', (req, res) => {
         const turnoMins      = tDef.hours * 60;
         const elapHours      = elapsedHoursForTurno(t, date);
         const esT1Lunes      = t === 'T1' && isLunes(date);
-        const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_baker * elapHours;
-        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? x.paros_min), 0);
+        const objElap          = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_baker * elapHours;
+        const paros_min_disp_t = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
         const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
-        const rendimiento    = (turnoMins - Math.min(paros_min_rend_t, turnoMins)) / turnoMins;
+        const tDisp_turno    = Math.max(0, turnoMins - paros_min_disp_t);
+        const rendimiento    = tDisp_turno > 0
+          ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
+          : 1;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
 
         snapshots.push({
@@ -2205,13 +2218,17 @@ router.get('/kpis', (req, res) => {
         const turnoMins      = tDef.hours * 60;
         const elapHours      = elapsedHoursForTurno(t, date);
         const esT1Lunes      = t === 'T1' && isLunes(date);
-        const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_l1 * elapHours;
-        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? x.paros_min), 0);
+        const objElap          = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_l1 * elapHours;
+        const paros_min_disp_t = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+        const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
         const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
         const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
         const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
         const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
-        const rendimiento    = (turnoMins - Math.min(paros_min_rend_t, turnoMins)) / turnoMins;
+        const tDisp_turno    = Math.max(0, turnoMins - paros_min_disp_t);
+        const rendimiento    = tDisp_turno > 0
+          ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
+          : 1;
         const semana         = getISOWeek(new Date(date + 'T12:00:00'));
 
         snapshots.push({
@@ -2342,7 +2359,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       if (afecEf)   paros_min_ef   += overlap;
       else          paros_min_noef += overlap;
       if (afecDisp) paros_min_disp += overlap;
-      if (afecRend) paros_min_rend += overlap;
+      if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
     const paros_min = paros_min_ef + paros_min_noef;
 
@@ -2362,7 +2379,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
-    const rendimiento    = r3(Math.max(0, 60 - Math.min(paros_min_rend, 60)) / 60);
+    const tDisp_slot     = Math.max(0, 60 - paros_min_disp);
+    const rendimiento    = tDisp_slot > 0
+      ? r3(Math.max(0, tDisp_slot - Math.min(paros_min_rend, tDisp_slot)) / tDisp_slot)
+      : 1;
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
@@ -2469,7 +2489,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       if (afecEf)   paros_min_ef   += overlap;
       else          paros_min_noef += overlap;
       if (afecDisp) paros_min_disp += overlap;
-      if (afecRend) paros_min_rend += overlap;
+      if (afecRend && !afecDisp) paros_min_rend += overlap;
     }
     const paros_min = paros_min_ef + paros_min_noef;
 
@@ -2489,7 +2509,10 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
     const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
     const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
     const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
-    const rendimiento    = r3(Math.max(0, 60 - Math.min(paros_min_rend, 60)) / 60);
+    const tDisp_slot_l1  = Math.max(0, 60 - paros_min_disp);
+    const rendimiento    = tDisp_slot_l1 > 0
+      ? r3(Math.max(0, tDisp_slot_l1 - Math.min(paros_min_rend, tDisp_slot_l1)) / tDisp_slot_l1)
+      : 1;
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
