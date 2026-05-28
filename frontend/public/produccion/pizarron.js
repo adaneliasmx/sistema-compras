@@ -138,7 +138,8 @@
             eficiencia:     pct(s.eficiencia),
             capacidad:      pct(s.capacidad),
             calidad:        pct(s.calidad),
-            disponibilidad: pct(s.disponibilidad)
+            disponibilidad: pct(s.disponibilidad),
+            rendimiento:    pct(s.rendimiento)
           }));
           const tot = td.totals || {};
           totales[t] = {
@@ -146,7 +147,8 @@
             eficiencia:     pct(tot.eficiencia),
             capacidad:      pct(tot.capacidad),
             calidad:        pct(tot.calidad),
-            disponibilidad: pct(tot.disponibilidad)
+            disponibilidad: pct(tot.disponibilidad),
+            rendimiento:    pct(tot.rendimiento)
           };
         }
         const tdia = ld.totales_dia || {};
@@ -154,7 +156,8 @@
           eficiencia:     pct(tdia.eficiencia),
           capacidad:      pct(tdia.capacidad),
           calidad:        pct(tdia.calidad),
-          disponibilidad: pct(tdia.disponibilidad)
+          disponibilidad: pct(tdia.disponibilidad),
+          rendimiento:    pct(tdia.rendimiento)
         };
         transformed[l] = {
           horas,
@@ -368,6 +371,7 @@
         <td class="mono">${escHtml(h.hora)}</td>
         <td style="text-align:center;font-weight:700">${h.ciclos ?? '—'}</td>
         <td class="${ip ? '' : kpiColor(h.eficiencia)}">${ip ? EP : fmtPct(h.eficiencia)}</td>
+        <td class="${ip ? '' : kpiColor(h.rendimiento)}">${ip ? EP : fmtPct(h.rendimiento)}</td>
         <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}</td>
         <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}</td>
         <td class="${ip ? '' : kpiColor(h.disponibilidad)}">${ip ? EP : fmtPct(h.disponibilidad)}</td>
@@ -382,6 +386,7 @@
             <div class="pzs-kpi-label">Eficiencia</div>
             <div class="pzs-kpi-value">${efDisplay}</div>
           </div>
+          ${kpiCard('Rendimiento',    tot.rendimiento,    true)}
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
           ${kpiCard('Calidad',        tot.calidad,        true)}
           ${kpiCard('Disponibilidad', tot.disponibilidad, true)}
@@ -393,7 +398,7 @@
         <div class="pzs-hr-table-wrap">
           <table class="pzs-hr-table">
             <thead>
-              <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
+              <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
             </thead>
             <tbody>${hrRows}</tbody>
           </table>
@@ -429,6 +434,7 @@
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
           <div class="pzs-kpi-grid pzs-kpi-grid-compact">
             ${efCard}
+            ${kpiCard('Rendimiento',    tot.rendimiento)}
             ${kpiCard('Capacidad',      tot.capacidad)}
             ${kpiCard('Calidad',        tot.calidad)}
             ${kpiCard('Disponibilidad', tot.disponibilidad)}
@@ -476,6 +482,7 @@
         <div class="pzs-dia-row">
           <span class="pzs-dia-turno-lbl">${t}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.rendimiento)}">${fmtPct(tot.rendimiento)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.calidad)}">${fmtPct(tot.calidad)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.disponibilidad)}">${fmtPct(tot.disponibilidad)}</span>
@@ -489,7 +496,7 @@
         <div class="pzs-dia-turnos">
           <div class="pzs-dia-row pzs-dia-header">
             <span class="pzs-dia-turno-lbl">Turno</span>
-            <span>Eficiencia</span><span>Capacidad</span><span>Calidad</span><span>Disponibilidad</span>
+            <span>Eficiencia</span><span>Rendimiento</span><span>Capacidad</span><span>Calidad</span><span>Disponibilidad</span>
             <span>Ciclos</span>
           </div>
           ${turnoRows}
@@ -499,6 +506,7 @@
         <div class="pzs-dia-total-label">Total del Día</div>
         <div class="pzs-kpi-grid">
           ${kpiCard('Eficiencia',     dia.eficiencia,     true)}
+          ${kpiCard('Rendimiento',    dia.rendimiento,    true)}
           ${kpiCard('Capacidad',      dia.capacidad,      true)}
           ${kpiCard('Calidad',        dia.calidad,        true)}
           ${kpiCard('Disponibilidad', dia.disponibilidad, true)}
@@ -551,6 +559,7 @@
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
           <div class="pzs-kpi-grid pzs-kpi-grid-compact">
             ${kpiCard('Eficiencia',     dia.eficiencia)}
+            ${kpiCard('Rendimiento',    dia.rendimiento)}
             ${kpiCard('Capacidad',      dia.capacidad)}
             ${kpiCard('Calidad',        dia.calidad)}
             ${kpiCard('Disponibilidad', dia.disponibilidad)}

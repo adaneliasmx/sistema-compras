@@ -279,6 +279,7 @@
           ${kpiCard('Capacidad',      tot.capacidad)}
           ${kpiCard('Calidad',        tot.calidad)}
           ${kpiCard('Disponibilidad', tot.disponibilidad)}
+          ${kpiCard('Rendimiento',    tot.rendimiento)}
         </div>
         ${slots.length ? `
         <div style="flex:1;overflow:auto">
@@ -325,6 +326,7 @@
             ${miniKpiCard('Capacidad',      tot.capacidad)}
             ${miniKpiCard('Calidad',        tot.calidad)}
             ${miniKpiCard('Disponibilidad', tot.disponibilidad)}
+            ${miniKpiCard('Rendimiento',    tot.rendimiento)}
           </div>
           <div class="ss-pareto-col" style="margin-top:8px">
             <div class="ss-pareto-title">&#9201; Paros</div>
@@ -385,6 +387,7 @@
           <span class="kpi-cell ${kpiClass(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
           <span class="kpi-cell ${kpiClass(tot.calidad)}">${fmtPct(tot.calidad)}</span>
           <span class="kpi-cell ${kpiClass(tot.disponibilidad)}">${fmtPct(tot.disponibilidad)}</span>
+          <span class="kpi-cell ${kpiClass(tot.rendimiento)}">${fmtPct(tot.rendimiento)}</span>
           <span class="ss-dia-ciclos">${ciclos} ciclos</span>
         </div>`;
     }).join('');
@@ -398,6 +401,7 @@
           <div class="ss-dia-row ss-dia-header">
             <span class="ss-dia-t-lbl">Turno</span>
             <span>Eficiencia</span><span>Capacidad</span><span>Calidad</span><span>Disponibilidad</span>
+            <span>Rendimiento</span>
             <span>Ciclos</span>
           </div>
           ${turnoRows}
@@ -412,6 +416,7 @@
               ${kpiCard('Capacidad',      diaT.capacidad)}
               ${kpiCard('Calidad',        diaT.calidad)}
               ${kpiCard('Disponibilidad', diaT.disponibilidad)}
+              ${kpiCard('Rendimiento',    diaT.rendimiento)}
             </div>
           </div>
           <div class="ss-dia-pareto-col">
@@ -464,6 +469,7 @@
             ${miniKpiCard('Capacidad',      diaT.capacidad)}
             ${miniKpiCard('Calidad',        diaT.calidad)}
             ${miniKpiCard('Disponibilidad', diaT.disponibilidad)}
+            ${miniKpiCard('Rendimiento',    diaT.rendimiento)}
           </div>
           <div style="text-align:center;font-size:.8em;color:#94a3b8;margin-top:4px">Ciclos día: <strong>${ciclosDia}</strong></div>
         </div>`;
@@ -563,12 +569,13 @@
       const byDate = {};
       snaps.forEach(s => {
         allDates.add(s.fecha);
-        if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0 };
+        if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0,rendN:0,rendD:0 };
         const d  = byDate[s.fecha];
         const h  = TURNO_H[s.turno] || 8;
         const he = s.horas_eficiencia || h; // horas reales del turno (parciales si está en curso)
         if (s.eficiencia  != null) { d.efN  += s.eficiencia  * he; d.efD  += he; }
         if (s.capacidad   != null) { d.capN += s.capacidad   * h;  d.capD += h; }
+        if (s.rendimiento != null) { d.rendN += s.rendimiento * h; d.rendD += h; }
         d.calB     += (s.ciclos_buenos_calidad   ?? s.ciclos_buenos   ?? 0);
         d.calN     += (s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
         d.paroMin  += s.paros_min_total || 0;
@@ -600,10 +607,11 @@
       }));
     }
 
-    const efSeries   = getSeries(d => d.efD  > 0 ? +(d.efN /d.efD *100).toFixed(1) : null);
-    const calSeries  = getSeries(d => d.calN > 0 ? +(d.calB/d.calN*100).toFixed(1) : null);
-    const capSeries  = getSeries(d => d.capD > 0 ? +(d.capN/d.capD*100).toFixed(1) : null);
-    const dispSeries = getSeries(d => d.tMin > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
+    const efSeries   = getSeries(d => d.efD   > 0 ? +(d.efN  /d.efD  *100).toFixed(1) : null);
+    const calSeries  = getSeries(d => d.calN  > 0 ? +(d.calB /d.calN *100).toFixed(1) : null);
+    const capSeries  = getSeries(d => d.capD  > 0 ? +(d.capN /d.capD *100).toFixed(1) : null);
+    const dispSeries = getSeries(d => d.tMin  > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
+    const rendSeries = getSeries(d => d.rendD > 0 ? +(d.rendN/d.rendD *100).toFixed(1) : null);
 
     return `
       <div class="ss-slide">
@@ -624,6 +632,10 @@
           <div class="ss-trend-card">
             <div class="ss-trend-card-title">🔧 Capacidad (obj. 85%)</div>
             ${buildSVGTrend(capSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:85  })}
+          </div>
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">⚙️ Rendimiento (obj. 90%)</div>
+            ${buildSVGTrend(rendSeries, DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
           </div>
         </div>
       </div>`;

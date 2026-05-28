@@ -2585,6 +2585,7 @@ async function viewPizarron(el) {
               capacidad:      pct(slot.capacidad),
               calidad:        pct(slot.calidad),
               disponibilidad: pct(slot.disponibilidad),
+              rendimiento:    pct(slot.rendimiento),
               ciclos:         slot.ciclos_totales,
               ciclos_buenos:  slot.ciclos_buenos
             });
@@ -2597,7 +2598,8 @@ async function viewPizarron(el) {
               eficiencia:     pct(tot.eficiencia),
               capacidad:      pct(tot.capacidad),
               calidad:        pct(tot.calidad),
-              disponibilidad: pct(tot.disponibilidad)
+              disponibilidad: pct(tot.disponibilidad),
+              rendimiento:    pct(tot.rendimiento)
             };
           }
         }
@@ -2609,7 +2611,8 @@ async function viewPizarron(el) {
             eficiencia:     pct(td.eficiencia),
             capacidad:      pct(td.capacidad),
             calidad:        pct(td.calidad),
-            disponibilidad: pct(td.disponibilidad)
+            disponibilidad: pct(td.disponibilidad),
+            rendimiento:    pct(td.rendimiento)
           };
         }
       }
@@ -2716,6 +2719,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
           <td>${escHtml(r.hora || '—')}</td>
           <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
           <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
+          <td class="${kpiColor(r.rendimiento)}">${fmtPct(r.rendimiento)}</td>
           <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
           <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
           <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
@@ -2727,6 +2731,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
           <td>Total ${tLabel}</td>
           <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
           <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
+          <td class="${kpiColor(tt.rendimiento)}">${fmtPct(tt.rendimiento)}</td>
           <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
           <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
           <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
@@ -2739,6 +2744,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
         <td>TOTAL DÍA</td>
         <td style="text-align:center;font-weight:700">${dt.ciclos ?? '—'}</td>
         <td class="${kpiColor(dt.eficiencia)}">${fmtPct(dt.eficiencia)}</td>
+        <td class="${kpiColor(dt.rendimiento)}">${fmtPct(dt.rendimiento)}</td>
         <td class="${kpiColor(dt.capacidad)}">${fmtPct(dt.capacidad)}</td>
         <td class="${kpiColor(dt.calidad)}">${fmtPct(dt.calidad)}</td>
         <td class="${kpiColor(dt.disponibilidad)}">${fmtPct(dt.disponibilidad)}</td>
@@ -2753,7 +2759,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
         <div class="pizarron-scroll">
           <table class="pizarron-table">
             <thead><tr>
-              <th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
+              <th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
             </tr></thead>
             <tbody>${bodyHtml}</tbody>
           </table>
@@ -5742,7 +5748,7 @@ function renderKpiHistTable(snaps) {
               <tr>
                 <th>Slot</th><th>Hora</th>
                 <th>Ciclos</th>${bkLike ? '<th>Cav. Tot.</th>' : ''}<th>${bkLike ? 'Cav. Buenas' : 'Buenos'}</th>
-                <th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>T.Paro(min)</th>
+                <th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>T.Paro(min)</th>
               </tr>
             </thead>
             <tbody>
@@ -5753,6 +5759,7 @@ function renderKpiHistTable(snaps) {
                 ${bkLike ? `<td style="text-align:center">${s.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${s.ciclos_buenos}</td>
                 <td class="${kpiColor(s.eficiencia*100)}">${fmtPctR(s.eficiencia)}</td>
+                <td class="${kpiColor(s.rendimiento*100)}">${fmtPctR(s.rendimiento)}</td>
                 <td class="${kpiColor(s.capacidad*100)}">${fmtPctR(s.capacidad)}</td>
                 <td class="${kpiColor(s.calidad*100)}">${fmtPctR(s.calidad)}</td>
                 <td class="${kpiColor(s.disponibilidad*100)}">${fmtPctR(s.disponibilidad)}</td>
@@ -5764,6 +5771,7 @@ function renderKpiHistTable(snaps) {
                 ${bkLike ? `<td style="text-align:center">${snap.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${snap.ciclos_buenos}</td>
                 <td class="${kpiColor(snap.eficiencia*100)}">${fmtPctR(snap.eficiencia)}</td>
+                <td class="${kpiColor(snap.rendimiento*100)}">${fmtPctR(snap.rendimiento)}</td>
                 <td class="${kpiColor(snap.capacidad*100)}">${fmtPctR(snap.capacidad)}</td>
                 <td class="${kpiColor(snap.calidad*100)}">${fmtPctR(snap.calidad)}</td>
                 <td class="${kpiColor(snap.disponibilidad*100)}">${fmtPctR(snap.disponibilidad)}</td>
@@ -6408,10 +6416,11 @@ async function viewResumenTurno(el) {
       const TURNO_H = {T1:8,T2:7,T3:9};
       const dailyAgg = {};
       lastSnaps.forEach(s => {
-        if (!dailyAgg[s.fecha]) dailyAgg[s.fecha] = {efNum:0,efDen:0,calB:0,calN:0,capNum:0,capDen:0,paroMin:0,tMin:0};
+        if (!dailyAgg[s.fecha]) dailyAgg[s.fecha] = {efNum:0,efDen:0,calB:0,calN:0,capNum:0,capDen:0,rendNum:0,rendDen:0,paroMin:0,tMin:0};
         const d = dailyAgg[s.fecha];
         const h = TURNO_H[s.turno] || 8;
-        if (s.eficiencia != null) { d.efNum += s.eficiencia * h; d.efDen += h; }
+        if (s.eficiencia  != null) { d.efNum   += s.eficiencia  * h; d.efDen   += h; }
+        if (s.rendimiento != null) { d.rendNum  += s.rendimiento * h; d.rendDen += h; }
         d.calB += s.ciclos_buenos_calidad ?? s.ciclos_buenos;
         d.calN += s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios;
         if (s.capacidad != null) { d.capNum += s.capacidad * h; d.capDen += h; }
@@ -6428,7 +6437,7 @@ async function viewResumenTurno(el) {
         return day === 0 ? 6 : day - 1; // 0=Lun … 6=Dom
       }
       // Crear arreglos de 7 elementos (uno por día de semana), null si sin dato
-      const kpiByDay = { ef: Array(7).fill(null), cal: Array(7).fill(null), cap: Array(7).fill(null), disp: Array(7).fill(null) };
+      const kpiByDay = { ef: Array(7).fill(null), cal: Array(7).fill(null), cap: Array(7).fill(null), disp: Array(7).fill(null), rend: Array(7).fill(null) };
       trendDias.forEach(f => {
         const idx = fechaToDiaSemana(f);
         const d   = dailyAgg[f];
@@ -6436,6 +6445,7 @@ async function viewResumenTurno(el) {
         kpiByDay.cal[idx]  = d.calN   > 0 ? +(d.calB   / d.calN   * 100).toFixed(1) : null;
         kpiByDay.cap[idx]  = d.capDen > 0 ? +(d.capNum / d.capDen * 100).toFixed(1) : null;
         kpiByDay.disp[idx] = d.tMin   > 0 ? +((d.tMin  - d.paroMin) / d.tMin * 100).toFixed(1) : null;
+        kpiByDay.rend[idx] = d.rendDen > 0 ? +(d.rendNum / d.rendDen * 100).toFixed(1) : null;
       });
 
       const barOpts = (target) => ({ pct: true, minVal: 0, maxVal: 100, height: 150, target, targetColor: '#ef4444' });
@@ -6477,6 +6487,10 @@ async function viewResumenTurno(el) {
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Disponibilidad semanal — ${escHtml(activeTab)}</h4>
             ${renderSVGBarChart(mkSeries('Disponibilidad', '#f59e0b', kpiByDay.disp), DIAS_SEMANA, barOpts(90))}
+          </div>
+          <div style="${cardStyle}">
+            <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Rendimiento semanal — ${escHtml(activeTab)}</h4>
+            ${renderSVGBarChart(mkSeries('Rendimiento', '#6366f1', kpiByDay.rend), DIAS_SEMANA, barOpts(90))}
           </div>
         </div>`;
     } catch (e) {
