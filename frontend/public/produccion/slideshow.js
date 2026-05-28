@@ -487,24 +487,23 @@
       </div>`;
   }
 
-  /* ── SVG mini line chart para diapositiva de tendencia ───────────────── */
+  /* ── SVG bar chart para diapositiva de tendencia ─────────────────────── */
   function buildSVGTrend(series, xLabels, opts = {}) {
     const W = 420, H = 120;
     const PAD = { top: 12, right: 12, bottom: 28, left: 32 };
     const cW = W - PAD.left - PAD.right;
     const cH = H - PAD.top - PAD.bottom;
 
-    const allVals = series.flatMap(s => s.data.filter(v => v != null));
-    if (!allVals.length) return '<div class="ss-no-data">Sin datos</div>';
+    const n = xLabels.length;
+    if (n === 0) return '<div class="ss-no-data">Sin datos</div>';
 
-    const minV = opts.minVal != null ? opts.minVal : Math.max(0, Math.min(...allVals) - 5);
-    const maxV = opts.maxVal != null ? opts.maxVal : Math.min(100, Math.max(...allVals) + 5);
+    const minV = opts.minVal != null ? opts.minVal : 0;
+    const maxV = opts.maxVal != null ? opts.maxVal : 100;
     const range = maxV - minV || 1;
 
-    const n = xLabels.length;
-    const xPos = i => PAD.left + (n <= 1 ? cW / 2 : i / (n - 1) * cW);
-    const yPos = v => PAD.top + cH - (v - minV) / range * cH;
+    const yPos = v => PAD.top + cH - Math.max(0, (v - minV) / range) * cH;
 
+    // Grid
     const gridVals = [0, 0.5, 1].map(t => minV + t * range);
     const grid = gridVals.map(v => {
       const y = yPos(v).toFixed(1);
@@ -512,39 +511,42 @@
              `<text x="${PAD.left - 3}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#64748b">${Math.round(v)}%</text>`;
     }).join('');
 
-    const xAxis = xLabels.map((l, i) =>
-      `<text x="${xPos(i).toFixed(1)}" y="${(PAD.top + cH + 12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b">${escHtml(String(l))}</text>`
-    ).join('');
+    // X labels
+    const barGroupW = cW / n;
+    const xAxis = xLabels.map((l, i) => {
+      const cx = PAD.left + (i + 0.5) * barGroupW;
+      return `<text x="${cx.toFixed(1)}" y="${(PAD.top + cH + 12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b">${escHtml(String(l))}</text>`;
+    }).join('');
 
+    // Target dotted line
     let targetLine = '';
     if (opts.target != null) {
       const ty = yPos(Math.max(minV, Math.min(maxV, opts.target))).toFixed(1);
       targetLine = `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>`;
     }
 
-    const lines = series.map(s => {
-      const pts = s.data.map((v, i) => v != null ? [xPos(i), yPos(v)] : null);
-      let path = '';
-      pts.forEach((pt, i) => {
-        if (!pt) return;
-        path += (i === 0 || !pts[i - 1]) ? `M${pt[0].toFixed(1)},${pt[1].toFixed(1)}` : `L${pt[0].toFixed(1)},${pt[1].toFixed(1)}`;
-      });
-      const dots = pts.filter(Boolean).map(pt =>
-        `<circle cx="${pt[0].toFixed(1)}" cy="${pt[1].toFixed(1)}" r="2.5" fill="${s.color}" stroke="#0f172a" stroke-width="1"/>`
-      ).join('');
-      return `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>${dots}`;
-    }).join('');
+    // Bars
+    const nseries = series.length;
+    const barW = Math.max(2, barGroupW / nseries - 2);
+    const bars = series.map((s, si) => s.data.map((v, i) => {
+      if (v == null) return '';
+      const cx = PAD.left + (i + 0.5) * barGroupW + (si - (nseries - 1) / 2) * (barW + 1);
+      const y  = yPos(v);
+      const bH = Math.max(1, PAD.top + cH - y);
+      return `<rect x="${(cx - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" rx="1" fill="${s.color}" opacity="0.85"/>`;
+    }).join('')).join('');
 
+    // Legend
     const legW = series.length * 68;
     const legX = (W - legW) / 2;
     const legY = H - 4;
     const legend = series.map((s, i) => {
       const x = legX + i * 68;
-      return `<rect x="${x.toFixed(0)}" y="${legY - 5}" width="10" height="3" rx="1" fill="${s.color}"/>` +
+      return `<rect x="${x.toFixed(0)}" y="${legY - 5}" width="10" height="8" rx="1" fill="${s.color}" opacity="0.85"/>` +
              `<text x="${(x + 13).toFixed(0)}" y="${legY}" font-size="8" fill="#94a3b8">${escHtml(s.label)}</text>`;
     }).join('');
 
-    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${lines}${legend}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${bars}${legend}</svg>`;
   }
 
   /* ── Diapositiva: tendencia semanal de KPIs por línea ────────────────── */
@@ -575,14 +577,26 @@
       dailyByLinea[l] = byDate;
     });
 
-    const dias   = [...allDates].sort();
-    const labels = dias.map(f => f.slice(5));
+    const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    function fechaToDia(f) {
+      const d = new Date(f + 'T12:00:00');
+      const day = d.getDay();
+      return day === 0 ? 6 : day - 1; // 0=Lun … 6=Dom
+    }
+    // Mapear fechas a índice de día de semana para eje X fijo
+    const fechaByDia = {};
+    for (const f of allDates) fechaByDia[fechaToDia(f)] = f;
 
     function getSeries(kpiFn) {
       return LINEAS.map(l => ({
         label: l,
         color: COLORS[l],
-        data:  dias.map(f => { const d = dailyByLinea[l][f]; return d ? kpiFn(d) : null; })
+        data: DIAS_SEMANA.map((_, idx) => {
+          const f = fechaByDia[idx];
+          if (!f) return null;
+          const d = dailyByLinea[l][f];
+          return d ? kpiFn(d) : null;
+        })
       }));
     }
 
@@ -591,27 +605,25 @@
     const capSeries  = getSeries(d => d.capD > 0 ? +(d.capN/d.capD*100).toFixed(1) : null);
     const dispSeries = getSeries(d => d.tMin > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
 
-    const noData = '<div class="ss-no-data">Sin datos esta semana</div>';
-
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">Tendencia Semanal de KPIs · ${escHtml(desde)} – ${escHtml(hasta)}</div>
         <div class="ss-trend-grid">
           <div class="ss-trend-card">
             <div class="ss-trend-card-title">📈 Eficiencia (obj. 90%)</div>
-            ${dias.length ? buildSVGTrend(efSeries,   labels, { minVal:0, maxVal:100, target:90  }) : noData}
+            ${buildSVGTrend(efSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
           </div>
           <div class="ss-trend-card">
             <div class="ss-trend-card-title">✅ Calidad (obj. 99%)</div>
-            ${dias.length ? buildSVGTrend(calSeries,  labels, { minVal:0, maxVal:100, target:99  }) : noData}
+            ${buildSVGTrend(calSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:99  })}
           </div>
           <div class="ss-trend-card">
             <div class="ss-trend-card-title">⏱ Disponibilidad (obj. 90%)</div>
-            ${dias.length ? buildSVGTrend(dispSeries, labels, { minVal:0, maxVal:100, target:90  }) : noData}
+            ${buildSVGTrend(dispSeries, DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
           </div>
           <div class="ss-trend-card">
             <div class="ss-trend-card-title">🔧 Capacidad (obj. 85%)</div>
-            ${dias.length ? buildSVGTrend(capSeries,  labels, { minVal:0, maxVal:100, target:85  }) : noData}
+            ${buildSVGTrend(capSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:85  })}
           </div>
         </div>
       </div>`;

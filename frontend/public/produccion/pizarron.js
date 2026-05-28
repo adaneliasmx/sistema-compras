@@ -347,15 +347,32 @@
       efColorClass = kpiColor(tot.eficiencia);
     }
 
-    const hrRows = horas.map(h => `
-      <tr>
+    // Detectar índice del slot en curso para mostrarlo como "en proceso"
+    let currentSlotIdx = -1;
+    if (currentTurno() === turno) {
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const TURNO_START = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
+      const start = TURNO_START[turno];
+      const elap = turno === 'T3'
+        ? (nowMins >= start ? nowMins - start : 1440 - start + nowMins)
+        : nowMins - start;
+      if (elap >= 0) currentSlotIdx = Math.floor(elap / 60);
+    }
+
+    const EP = '<span style="font-size:10px;color:#94a3b8;font-style:italic">⏳ en proceso</span>';
+    const hrRows = horas.map((h, idx) => {
+      const ip = idx === currentSlotIdx;
+      return `
+      <tr${ip ? ' style="background:rgba(59,130,246,.08)"' : ''}>
         <td class="mono">${escHtml(h.hora)}</td>
         <td style="text-align:center;font-weight:700">${h.ciclos ?? '—'}</td>
-        <td class="${kpiColor(h.eficiencia)}">${fmtPct(h.eficiencia)}</td>
-        <td class="${kpiColor(h.capacidad)}">${fmtPct(h.capacidad)}</td>
-        <td class="${kpiColor(h.calidad)}">${fmtPct(h.calidad)}</td>
-        <td class="${kpiColor(h.disponibilidad)}">${fmtPct(h.disponibilidad)}</td>
-      </tr>`).join('') || '<tr><td colspan="6" class="pzs-no-data">Sin registros en este turno</td></tr>';
+        <td class="${ip ? '' : kpiColor(h.eficiencia)}">${ip ? EP : fmtPct(h.eficiencia)}</td>
+        <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}</td>
+        <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}</td>
+        <td class="${ip ? '' : kpiColor(h.disponibilidad)}">${ip ? EP : fmtPct(h.disponibilidad)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="pzs-no-data">Sin registros en este turno</td></tr>';
 
     return `
       <div class="pzs-turno-slide">
