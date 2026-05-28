@@ -57,7 +57,9 @@ const MENU = {
     ['catalogos-baker','📦', 'Catálogos Baker'],
     ['catalogos-l1',   '📦', 'Catálogos L1'],
     ['operadores',     '👤', 'Operadores'],
-    ['configuracion',  '⚙️', 'Configuración']
+    ['configuracion',  '⚙️', 'Configuración'],
+    ['---', '', 'SCRAP'],
+    ['scrap',          '🗑️', 'SCRAP']
   ],
   produccion: [
     ['dashboard',      '📊', 'Dashboard'],
@@ -94,7 +96,8 @@ const SECTION_TITLES = {
   'catalogos-baker': 'Catálogos Baker',
   'catalogos-l1':    'Catálogos Línea 1',
   'operadores':      'Gestión de Operadores',
-  'configuracion':   'Configuración'
+  'configuracion':   'Configuración',
+  'scrap':           'Registros de SCRAP'
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -596,6 +599,7 @@ async function renderMain() {
       case 'catalogos-l1':   await viewCatalogos(el, 'l1');   break;
       case 'operadores':     await viewOperadores(el);        break;
       case 'configuracion':  await viewConfiguracion(el);     break;
+      case 'scrap':          await viewScrap(el);             break;
       default:
         el.innerHTML = '<p class="empty-state">Sección no encontrada.</p>';
     }
@@ -892,6 +896,7 @@ async function viewLinea(el, linea) {
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-nueva-paro">⏸ Registrar Paro</button>' : ''}
             <button class="btn btn-outline btn-sm" id="btn-carga-vacia">📭 Carga Vacía</button>
+            <button class="btn btn-outline btn-sm" id="btn-scrap" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">🗑 SCRAP</button>
             <button class="btn btn-primary" id="btn-nueva-carga">+ Registrar Carga</button>
           </div>
         </div>
@@ -921,6 +926,9 @@ async function viewLinea(el, linea) {
         return;
       }
       openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea));
+    });
+    el.querySelector('#btn-scrap')?.addEventListener('click', () => {
+      openModalScrap(linea, catalogo);
     });
     el.querySelector('#btn-nueva-paro')?.addEventListener('click', () => {
       openModalParo(linea, catalogo, () => viewLinea(el, linea));
@@ -1038,6 +1046,7 @@ async function viewBaker(el) {
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-baker-paro">⏸ Registrar Paro</button>' : ''}
             ${planesUrl ? `<a href="${escHtml(planesUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">📋 Consulta Planes de Control</a>` : ''}
+            <button class="btn btn-outline btn-sm" id="btn-baker-scrap" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">🗑 SCRAP</button>
             <button class="btn btn-primary" id="btn-baker-carga"${cargas.length >= 7 ? ' disabled title="Máx. 7 herramentales activos"' : ''}>+ Registrar Herramental</button>
           </div>
         </div>
@@ -1053,6 +1062,9 @@ async function viewBaker(el) {
     el.querySelector('#btn-baker-carga')?.addEventListener('click', () => {
       if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
       openModalCargaBaker(catalogo, () => viewBaker(el));
+    });
+    el.querySelector('#btn-baker-scrap')?.addEventListener('click', () => {
+      openModalScrap('Baker', catalogo);
     });
     el.querySelector('#btn-baker-paro')?.addEventListener('click', () => {
       openModalParoBaker(catalogo, () => viewBaker(el));
@@ -1206,6 +1218,7 @@ async function viewL1(el) {
           ${paroMiniCard}
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-l1-paro">⏸ Registrar Paro</button>' : ''}
+            <button class="btn btn-outline btn-sm" id="btn-l1-scrap" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">🗑 SCRAP</button>
             <button class="btn btn-primary" id="btn-l1-carga"${cargas.length >= MAX_L1 ? ` disabled title="Máx. ${MAX_L1} herramentales activos"` : ''}>+ Registrar Herramental</button>
           </div>
         </div>
@@ -1218,6 +1231,9 @@ async function viewL1(el) {
       openModalCiclosHora('Línea 1', turnoActual, slots, totals);
     });
 
+    el.querySelector('#btn-l1-scrap')?.addEventListener('click', () => {
+      openModalScrap('L1', catalogo);
+    });
     el.querySelector('#btn-l1-carga')?.addEventListener('click', () => {
       if (paroActivo) { alert('Cierra el paro activo antes de registrar un herramental.'); return; }
       openModalCargaL1(catalogo, () => viewL1(el));
@@ -4309,7 +4325,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     acabados:      ['nombre', 'descripcion'],
     herramentales: ['numero', 'nombre', 'descripcion', 'excluir_calidad'],
     defectos:      ['nombre', 'descripcion'],
-    motivos_paro:  ['nombre', 'descripcion'],
+    motivos_paro:  ['nombre', 'descripcion', 'afecta_eficiencia', 'afecta_disponibilidad', 'afecta_rendimiento'],
     sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion'],
     // Baker-specific
     clientes:              ['nombre'],
@@ -4346,22 +4362,30 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
   }
 
   const colHeaders = {
-    motivo_nombre:        'Motivo padre',
-    proceso_nombre:       'Proceso padre',
-    carga_optima_varillas:'Varillas/ciclo',
-    piezas_objetivo:      'Pzas/varilla',
-    no_skf:               'No. SKF',
-    tipo:                 'Tipo',
-    cavidades:            'Cavidades',
-    varillas_totales:     'Varillas totales',
-    excluir_calidad:      'KPI Calidad'
+    motivo_nombre:         'Motivo padre',
+    proceso_nombre:        'Proceso padre',
+    carga_optima_varillas: 'Varillas/ciclo',
+    piezas_objetivo:       'Pzas/varilla',
+    no_skf:                'No. SKF',
+    tipo:                  'Tipo',
+    cavidades:             'Cavidades',
+    varillas_totales:      'Varillas totales',
+    excluir_calidad:       'KPI Calidad',
+    afecta_eficiencia:     'Eficiencia',
+    afecta_disponibilidad: 'Disponibilidad',
+    afecta_rendimiento:    'Rendimiento'
   };
 
-  // Render especial para excluir_calidad: mostrar badge
+  // Render especial para excluir_calidad y campos de impacto de paros
+  const badgeSi  = '<span style="background:#dcfce7;color:#16a34a;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">Sí</span>';
+  const badgeNo  = '<span style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">No</span>';
   const colRenderers = {
-    excluir_calidad: (val) => val
+    excluir_calidad:       (val) => val
       ? '<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">⚠ Excluido</span>'
-      : '<span style="color:var(--p-muted);font-size:11px">—</span>'
+      : '<span style="color:var(--p-muted);font-size:11px">—</span>',
+    afecta_eficiencia:     (val) => val === false ? badgeNo : badgeSi,
+    afecta_disponibilidad: (val) => val === false ? badgeNo : badgeSi,
+    afecta_rendimiento:    (val) => val === false ? badgeNo : badgeSi
   };
 
   return `
@@ -4506,11 +4530,34 @@ function buildCatalogoFields(tipo, item, catalogo) {
     case 'procesos':
     case 'acabados':
     case 'defectos':
-    case 'motivos_paro':
     case 'clientes':
     case 'motivos_cavidad_vacia':
       return inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción');
+    case 'motivos_paro': {
+      const afEf   = item?.afecta_eficiencia    !== false;
+      const afDisp = item?.afecta_disponibilidad !== false;
+      const afRend = item?.afecta_rendimiento    !== false;
+      return inp('nombre', 'Nombre') +
+             inp('descripcion', 'Descripción') +
+             `<div class="form-group">
+               <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">Impacto en métricas de KPI</div>
+               <div style="display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb">
+                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                   <input type="checkbox" id="cf-afecta_eficiencia" ${afEf ? 'checked' : ''} style="width:15px;height:15px"/>
+                   Afecta Eficiencia
+                 </label>
+                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                   <input type="checkbox" id="cf-afecta_disponibilidad" ${afDisp ? 'checked' : ''} style="width:15px;height:15px"/>
+                   Afecta Disponibilidad
+                 </label>
+                 <label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer">
+                   <input type="checkbox" id="cf-afecta_rendimiento" ${afRend ? 'checked' : ''} style="width:15px;height:15px"/>
+                   Afecta Rendimiento <span style="font-size:11px;color:#6b7280">(hrs trabajadas / hrs disponibles)</span>
+                 </label>
+               </div>
+             </div>`;
+    }
     case 'sub_motivos': {
       const motivosParo = (catalogo?.motivos_paro || []).filter(m => m.activo !== false);
       const currentMotivoId = String(item?.motivo_id ?? '');
@@ -4570,6 +4617,14 @@ function collectCatalogoFields(tipo) {
       const excluirCalidad = document.getElementById('cf-excluir_calidad')?.checked === true;
       return { numero: g('numero'), nombre: g('nombre'), descripcion: g('descripcion'), tipo: g('tipo') || undefined, cavidades: g('cavidades') || null, varillas_totales: g('varillas_totales') || null, excluir_calidad: excluirCalidad };
     }
+    case 'motivos_paro':
+      return {
+        nombre:                g('nombre'),
+        descripcion:           g('descripcion'),
+        afecta_eficiencia:    !!(document.getElementById('cf-afecta_eficiencia')?.checked),
+        afecta_disponibilidad:!!(document.getElementById('cf-afecta_disponibilidad')?.checked),
+        afecta_rendimiento:   !!(document.getElementById('cf-afecta_rendimiento')?.checked)
+      };
     case 'sub_motivos':
       return { nombre: g('nombre'), motivo_id: g('motivo_id') || null, descripcion: g('descripcion') };
     case 'sub_procesos':
@@ -5805,6 +5860,72 @@ function renderSVGLineChart(series, xLabels, opts = {}) {
   return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxisHtml}${lines}${legend}</svg>`;
 }
 
+// Gráfico de barras verticales SVG con línea punteada de objetivo
+function renderSVGBarChart(series, xLabels, opts = {}) {
+  const W = 480, H = opts.height || 175;
+  const PAD = { top: 18, right: 16, bottom: 38, left: 40 };
+  const cW  = W - PAD.left - PAD.right;
+  const cH  = H - PAD.top  - PAD.bottom;
+  const n   = xLabels.length;
+  if (n === 0) return '<div style="color:#6b7280;font-size:12px;padding:8px">Sin datos</div>';
+
+  const allVals = series.flatMap(s => s.data.filter(v => v != null));
+  const minV = opts.minVal != null ? opts.minVal : 0;
+  const maxV = opts.maxVal != null ? opts.maxVal : (allVals.length ? Math.max(...allVals) + 5 : 100);
+  const range = maxV - minV || 1;
+
+  const yPos = v => PAD.top + cH - Math.max(0, (v - minV) / range) * cH;
+
+  // Grid lines
+  const gridVals = [0, 0.25, 0.5, 0.75, 1].map(t => minV + t * range);
+  const grid = gridVals.map(v => {
+    const y   = yPos(v).toFixed(1);
+    const lbl = opts.pct ? Math.round(v) + '%' : v.toFixed(1);
+    return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + cW}" y2="${y}" stroke="#e5e7eb" stroke-width="1"/>` +
+           `<text x="${PAD.left - 4}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="9" fill="#9ca3af">${lbl}</text>`;
+  }).join('');
+
+  // X-axis labels
+  const barGroupW = cW / n;
+  const xAxisHtml = xLabels.map((l, i) => {
+    const cx = PAD.left + (i + 0.5) * barGroupW;
+    return `<text x="${cx.toFixed(1)}" y="${(PAD.top + cH + 14).toFixed(1)}" text-anchor="middle" font-size="9" fill="#6b7280">${escHtml(String(l))}</text>`;
+  }).join('');
+
+  // Bars
+  const nseries = series.length;
+  const barW    = Math.max(2, barGroupW / nseries - 3);
+  const bars = series.map((s, si) => s.data.map((v, i) => {
+    if (v == null) return '';
+    const cx  = PAD.left + (i + 0.5) * barGroupW + (si - (nseries - 1) / 2) * (barW + 2);
+    const y   = yPos(v);
+    const bH  = Math.max(1, PAD.top + cH - y);
+    return `<rect x="${(cx - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" rx="2" fill="${s.color}" opacity="0.85"/>`;
+  }).join('')).join('');
+
+  // Target dotted line
+  let targetLine = '';
+  if (opts.target != null) {
+    const ty = yPos(Math.max(minV, Math.min(maxV, opts.target))).toFixed(1);
+    const tc = opts.targetColor || '#ef4444';
+    const tl = opts.pct ? Math.round(opts.target) + '%' : opts.target.toFixed(1);
+    targetLine = `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="${tc}" stroke-width="1.5" stroke-dasharray="5,3"/>` +
+                 `<text x="${(PAD.left + cW + 3).toFixed(0)}" y="${(+ty + 3).toFixed(1)}" font-size="8" fill="${tc}">${tl}</text>`;
+  }
+
+  // Legend
+  const totalLegW = Math.min(series.length * 75, W - 20);
+  const legStartX = (W - totalLegW) / 2;
+  const legendY   = H - 8;
+  const legend    = series.map((s, i) => {
+    const x = legStartX + i * (totalLegW / series.length);
+    return `<rect x="${x.toFixed(0)}" y="${legendY - 6}" width="12" height="8" rx="1" fill="${s.color}" opacity="0.85"/>` +
+           `<text x="${(x + 15).toFixed(0)}" y="${legendY}" font-size="9" fill="#374151">${escHtml(s.label)}</text>`;
+  }).join('');
+
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxisHtml}${bars}${legend}</svg>`;
+}
+
 async function showDefectosDrilldown(linea, desde, hasta, turno) {
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
@@ -6277,15 +6398,27 @@ async function viewResumenTurno(el) {
         d.paroMin += s.paros_min_total || 0;
         d.tMin += h * 60;
       });
-      const trendDias   = Object.keys(dailyAgg).sort();
-      const trendLabels = trendDias.map(f => f.slice(5));
-      const kpiTrend = {
-        ef:   trendDias.map(f => { const d=dailyAgg[f]; return d.efDen>0  ? +(d.efNum/d.efDen*100).toFixed(1) : null; }),
-        cal:  trendDias.map(f => { const d=dailyAgg[f]; return d.calN>0   ? +(d.calB/d.calN*100).toFixed(1) : null; }),
-        cap:  trendDias.map(f => { const d=dailyAgg[f]; return d.capDen>0 ? +(d.capNum/d.capDen*100).toFixed(1) : null; }),
-        disp: trendDias.map(f => { const d=dailyAgg[f]; return d.tMin>0  ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null; })
-      };
-      const trendOpts = (target, color) => ({ pct: true, minVal: 0, maxVal: 100, height: 150, target, targetColor: '#ef4444' });
+      const trendDias = Object.keys(dailyAgg).sort();
+
+      // Mapear cada fecha a índice de día de semana (0=Lun … 6=Dom) para eje X fijo
+      const DIAS_SEMANA = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+      function fechaToDiaSemana(f) {
+        const d = new Date(f + 'T12:00:00');
+        const day = d.getDay(); // 0=Dom
+        return day === 0 ? 6 : day - 1; // 0=Lun … 6=Dom
+      }
+      // Crear arreglos de 7 elementos (uno por día de semana), null si sin dato
+      const kpiByDay = { ef: Array(7).fill(null), cal: Array(7).fill(null), cap: Array(7).fill(null), disp: Array(7).fill(null) };
+      trendDias.forEach(f => {
+        const idx = fechaToDiaSemana(f);
+        const d   = dailyAgg[f];
+        kpiByDay.ef[idx]   = d.efDen  > 0 ? +(d.efNum  / d.efDen  * 100).toFixed(1) : null;
+        kpiByDay.cal[idx]  = d.calN   > 0 ? +(d.calB   / d.calN   * 100).toFixed(1) : null;
+        kpiByDay.cap[idx]  = d.capDen > 0 ? +(d.capNum / d.capDen * 100).toFixed(1) : null;
+        kpiByDay.disp[idx] = d.tMin   > 0 ? +((d.tMin  - d.paroMin) / d.tMin * 100).toFixed(1) : null;
+      });
+
+      const barOpts = (target) => ({ pct: true, minVal: 0, maxVal: 100, height: 150, target, targetColor: '#ef4444' });
       const mkSeries = (label, color, data) => [{ label, color, data }];
 
       const cardStyle = 'background:#fff;border-radius:12px;padding:16px;border:1px solid #e5e7eb;box-shadow:0 1px 3px rgba(0,0,0,.05)';
@@ -6310,20 +6443,20 @@ async function viewResumenTurno(el) {
             ${diasEf.length ? renderHBarChart(diasEf, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444') : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
           </div>
           <div style="${cardStyle}">
-            <h4 style="margin:0 0 10px;font-size:14px">📈 Tendencia Eficiencia — ${escHtml(activeTab)}</h4>
-            ${renderSVGLineChart(mkSeries('Eficiencia', '#3b82f6', kpiTrend.ef), trendLabels, trendOpts(90, '#ef4444'))}
+            <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Eficiencia semanal — ${escHtml(activeTab)}</h4>
+            ${renderSVGBarChart(mkSeries('Eficiencia', '#3b82f6', kpiByDay.ef), DIAS_SEMANA, barOpts(90))}
           </div>
           <div style="${cardStyle}">
-            <h4 style="margin:0 0 10px;font-size:14px">✅ Tendencia Calidad — ${escHtml(activeTab)}</h4>
-            ${renderSVGLineChart(mkSeries('Calidad', '#10b981', kpiTrend.cal), trendLabels, trendOpts(99, '#ef4444'))}
+            <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Calidad semanal — ${escHtml(activeTab)}</h4>
+            ${renderSVGBarChart(mkSeries('Calidad', '#10b981', kpiByDay.cal), DIAS_SEMANA, barOpts(99))}
           </div>
           <div style="${cardStyle}">
-            <h4 style="margin:0 0 10px;font-size:14px">🔧 Tendencia Capacidad — ${escHtml(activeTab)}</h4>
-            ${renderSVGLineChart(mkSeries('Capacidad', '#8b5cf6', kpiTrend.cap), trendLabels, trendOpts(85, '#ef4444'))}
+            <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Capacidad semanal — ${escHtml(activeTab)}</h4>
+            ${renderSVGBarChart(mkSeries('Capacidad', '#8b5cf6', kpiByDay.cap), DIAS_SEMANA, barOpts(85))}
           </div>
           <div style="${cardStyle}">
-            <h4 style="margin:0 0 10px;font-size:14px">⏱ Tendencia Disponibilidad — ${escHtml(activeTab)}</h4>
-            ${renderSVGLineChart(mkSeries('Disponibilidad', '#f59e0b', kpiTrend.disp), trendLabels, trendOpts(90, '#ef4444'))}
+            <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Disponibilidad semanal — ${escHtml(activeTab)}</h4>
+            ${renderSVGBarChart(mkSeries('Disponibilidad', '#f59e0b', kpiByDay.disp), DIAS_SEMANA, barOpts(90))}
           </div>
         </div>`;
     } catch (e) {
@@ -6595,6 +6728,268 @@ function renderResumenTurnoTable(snaps, linea) {
         </table>
       </div>
     </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCRAP — Modal de registro y vista de listado
+// ══════════════════════════════════════════════════════════════════════════════
+
+function openModalScrap(linea, catalogo) {
+  const isBakerLike = linea === 'Baker' || linea === 'L1';
+  const suffix      = linea === 'Baker' ? 'baker' : linea === 'L1' ? 'l1' : linea.toLowerCase();
+  const componentes = (catalogo?.componentes || []).filter(c => c.activo !== false);
+  const herramentales = (catalogo?.herramentales || []).filter(h => h.activo !== false);
+  const procesos    = (catalogo?.procesos || []).filter(p => p.activo !== false);
+
+  const compOpts = componentes.map(c =>
+    `<option value="${escHtml(c.nombre)}" data-no-skf="${escHtml(c.no_skf || '')}">${escHtml(c.nombre)}${c.no_skf ? ' (' + c.no_skf + ')' : ''}</option>`
+  ).join('');
+
+  const herrOpts = herramentales.map(h =>
+    `<option value="${escHtml(h.numero || h.nombre || '')}">${escHtml(h.numero ? 'No.' + h.numero : h.nombre || '')}</option>`
+  ).join('');
+
+  const procOpts = procesos.map(p =>
+    `<option value="${escHtml(p.nombre)}">${escHtml(p.nombre)}</option>`
+  ).join('');
+
+  const qrSection = isBakerLike ? `
+    <div class="form-group">
+      <label>Componente (Escanear QR o seleccionar)</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="text" id="scrap-no-skf" placeholder="No. SKF / QR" style="flex:1" />
+        <button type="button" class="btn btn-outline btn-sm" id="btn-scrap-qr-lookup">🔍 Buscar</button>
+      </div>
+      <select id="scrap-componente" style="margin-top:6px;width:100%">
+        <option value="">— Seleccionar componente —</option>
+        ${compOpts}
+      </select>
+    </div>` : `
+    <div class="form-group">
+      <label>Componente</label>
+      <select id="scrap-componente" style="width:100%">
+        <option value="">— Seleccionar componente —</option>
+        ${compOpts}
+      </select>
+    </div>`;
+
+  showModal(`
+    <h3>🗑 Registro de SCRAP — ${escHtml(linea)}</h3>
+    <div class="form-grid">
+      ${qrSection}
+      <div class="form-group">
+        <label>Herramental</label>
+        <select id="scrap-herramental" style="width:100%">
+          <option value="">— Seleccionar herramental —</option>
+          ${herrOpts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Proceso</label>
+        <select id="scrap-proceso" style="width:100%">
+          <option value="">— Seleccionar proceso —</option>
+          ${procOpts}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Piezas de SCRAP</label>
+        <input type="number" id="scrap-piezas" min="1" placeholder="Cantidad de piezas" />
+      </div>
+      <div class="form-group">
+        <label>Observaciones</label>
+        <input type="text" id="scrap-obs" placeholder="Opcional" />
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" id="btn-scrap-guardar">💾 Guardar SCRAP</button>
+    </div>`);
+
+  // QR lookup for Baker/L1
+  document.getElementById('btn-scrap-qr-lookup')?.addEventListener('click', () => {
+    const noSkf = document.getElementById('scrap-no-skf')?.value?.trim();
+    if (!noSkf) return;
+    const match = componentes.find(c => c.no_skf && c.no_skf.toLowerCase() === noSkf.toLowerCase());
+    if (match) {
+      const sel = document.getElementById('scrap-componente');
+      if (sel) sel.value = match.nombre;
+    } else {
+      alert('No se encontró componente con No. SKF: ' + noSkf);
+    }
+  });
+
+  document.getElementById('btn-scrap-guardar')?.addEventListener('click', async () => {
+    const componente  = document.getElementById('scrap-componente')?.value?.trim() || '';
+    const herramental = document.getElementById('scrap-herramental')?.value?.trim() || '';
+    const proceso     = document.getElementById('scrap-proceso')?.value?.trim() || '';
+    const piezas      = parseInt(document.getElementById('scrap-piezas')?.value || '0', 10);
+    const obs         = document.getElementById('scrap-obs')?.value?.trim() || '';
+    const noSkf       = document.getElementById('scrap-no-skf')?.value?.trim() || '';
+
+    if (!componente) { alert('Selecciona un componente.'); return; }
+    if (!piezas || piezas < 1) { alert('Ingresa la cantidad de piezas de SCRAP.'); return; }
+
+    const now  = new Date();
+    const btn  = document.getElementById('btn-scrap-guardar');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    try {
+      await POST('/scrap', {
+        linea,
+        fecha:      now.toLocaleDateString('en-CA'),
+        hora:       now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5),
+        turno:      getCurrentTurno(),
+        operador:   state.user?.nombre || '',
+        componente,
+        no_skf:     noSkf || null,
+        herramental,
+        proceso,
+        piezas_scrap: piezas,
+        observaciones: obs || null
+      });
+      closeModal();
+      alert(`✅ SCRAP registrado: ${piezas} piezas de "${componente}"`);
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '💾 Guardar SCRAP';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
+async function viewScrap(el) {
+  const today = new Date().toLocaleDateString('en-CA');
+  const lunes = (() => {
+    const d = new Date(); const day = d.getDay() || 7;
+    d.setDate(d.getDate() - day + 1);
+    return d.toLocaleDateString('en-CA');
+  })();
+
+  el.innerHTML = `
+    <div class="filters-bar">
+      <div>
+        <span class="flabel">Línea</span>
+        <select id="scrap-f-linea">
+          <option value="">Todas</option>
+          <option value="L3">Línea 3</option>
+          <option value="L4">Línea 4</option>
+          <option value="Baker">Baker</option>
+          <option value="L1">Línea 1</option>
+        </select>
+      </div>
+      <div><span class="flabel">Desde</span><input type="date" id="scrap-f-desde" value="${lunes}" /></div>
+      <div><span class="flabel">Hasta</span><input type="date" id="scrap-f-hasta" value="${today}" /></div>
+      <button class="btn btn-outline btn-sm" id="scrap-buscar">🔍 Buscar</button>
+      <button class="btn btn-dark btn-sm" id="scrap-export">📥 Excel</button>
+    </div>
+    <div id="scrap-resultado">
+      <div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>
+    </div>`;
+
+  let lastRecords = [];
+
+  async function buscar() {
+    const linea  = document.getElementById('scrap-f-linea').value;
+    const desde  = document.getElementById('scrap-f-desde').value;
+    const hasta  = document.getElementById('scrap-f-hasta').value;
+    const res    = document.getElementById('scrap-resultado');
+    res.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+    try {
+      const params = new URLSearchParams();
+      if (linea) params.set('linea', linea);
+      if (desde) params.set('fecha_ini', desde);
+      if (hasta) params.set('fecha_fin', hasta);
+      const [dataRecs, dataRes] = await Promise.all([
+        GET('/scrap?' + params),
+        GET('/scrap/resumen?' + params)
+      ]);
+      lastRecords = dataRecs?.records || [];
+      const resumen = dataRes?.resumen || [];
+
+      if (!lastRecords.length && !resumen.length) {
+        res.innerHTML = '<div class="empty-state"><div class="icon">🗑️</div><p>Sin registros de SCRAP para el período seleccionado.</p></div>';
+        return;
+      }
+
+      // Tabla resumen por día
+      const resumenHtml = resumen.length ? `
+        <div class="table-card" style="margin-bottom:18px">
+          <div class="table-header"><h3>📊 Resumen % SCRAP por Día</h3></div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr><th>Línea</th><th>Fecha</th><th>Piezas SCRAP</th><th>Piezas Totales</th><th>% SCRAP</th></tr></thead>
+              <tbody>
+                ${resumen.map(r => `<tr>
+                  <td>${escHtml(r.linea)}</td>
+                  <td class="mono">${escHtml(r.fecha)}</td>
+                  <td style="text-align:center;color:#dc2626;font-weight:700">${r.piezas_scrap}</td>
+                  <td style="text-align:center">${r.piezas_total}</td>
+                  <td class="${r.pct_scrap != null ? (r.pct_scrap > 5 ? 'kpi-red' : r.pct_scrap > 2 ? 'kpi-amber' : 'kpi-green') : ''}">
+                    ${r.pct_scrap != null ? r.pct_scrap.toFixed(2) + '%' : '—'}
+                  </td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : '';
+
+      // Tabla detalle de registros
+      const detalleHtml = lastRecords.length ? `
+        <div class="table-card">
+          <div class="table-header"><h3>📋 Registros de SCRAP (${lastRecords.length})</h3></div>
+          <div class="table-scroll">
+            <table>
+              <thead><tr>
+                <th>Fecha</th><th>Hora</th><th>Turno</th><th>Línea</th>
+                <th>Componente</th><th>Herramental</th><th>Proceso</th>
+                <th>Piezas SCRAP</th><th>Operador</th><th>Observaciones</th>
+              </tr></thead>
+              <tbody>
+                ${lastRecords.map(r => `<tr>
+                  <td class="mono">${escHtml(r.fecha)}</td>
+                  <td class="mono">${escHtml(r.hora || '—')}</td>
+                  <td><span class="badge ${getTurnoColor(r.turno)}">${escHtml(r.turno || '—')}</span></td>
+                  <td>${escHtml(r.linea)}</td>
+                  <td>${escHtml(r.componente || '—')}</td>
+                  <td>${escHtml(r.herramental || '—')}</td>
+                  <td>${escHtml(r.proceso || '—')}</td>
+                  <td style="text-align:center;color:#dc2626;font-weight:700">${r.piezas_scrap}</td>
+                  <td>${escHtml(r.operador || '—')}</td>
+                  <td style="font-size:11px;color:var(--p-muted)">${escHtml(r.observaciones || '—')}</td>
+                </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>` : '';
+
+      res.innerHTML = resumenHtml + detalleHtml;
+    } catch (e) {
+      res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  document.getElementById('scrap-buscar').addEventListener('click', buscar);
+
+  document.getElementById('scrap-export').addEventListener('click', () => {
+    if (!lastRecords.length) { alert('Primero ejecuta una búsqueda.'); return; }
+    const rows = lastRecords.map(r => ({
+      Fecha:         r.fecha,
+      Hora:          r.hora,
+      Turno:         r.turno,
+      Línea:         r.linea,
+      Componente:    r.componente,
+      No_SKF:        r.no_skf || '',
+      Herramental:   r.herramental || '',
+      Proceso:       r.proceso || '',
+      Piezas_SCRAP:  r.piezas_scrap,
+      Operador:      r.operador,
+      Observaciones: r.observaciones || ''
+    }));
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'SCRAP');
+    XLSX.writeFile(wb, `scrap_${today}.xlsx`);
+  });
+
+  buscar();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -1264,6 +1264,21 @@ function computeObjElapsed(slots, tElap) {
   return obj;
 }
 
+// Como computeObjElapsed pero usa ciclos_obj_adj (ajustado por paros no-eficiencia).
+function computeObjElapsedAdj(slots, tElap) {
+  const fullSlots = Math.floor(tElap);
+  const frac = tElap - fullSlots;
+  let obj = 0;
+  for (let i = 0; i < Math.min(fullSlots, slots.length); i++) {
+    obj += (slots[i].ciclos_obj_adj != null ? slots[i].ciclos_obj_adj : slots[i].ciclos_obj);
+  }
+  if (frac > 0 && fullSlots < slots.length) {
+    const adjObj = slots[fullSlots].ciclos_obj_adj != null ? slots[fullSlots].ciclos_obj_adj : slots[fullSlots].ciclos_obj;
+    obj += adjObj * frac;
+  }
+  return obj;
+}
+
 function toMins(timeStr) {
   if (!timeStr) return 0;
   const [h, m] = timeStr.split(':').map(Number);
@@ -1420,12 +1435,27 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       piezas_obj_total += Number(c.varillas) * Number(c.piezas_por_varilla);
     }
 
-    // Disponibilidad: tiempo disponible descontando paros
-    let paros_min = 0;
+    // Motivos de paro de esta línea para consultar flags de impacto
+    const motivosParoLinea = pdb[`motivos_paro_${l.toLowerCase()}`] || [];
+    const motivosParoMap   = {};
+    for (const m of motivosParoLinea) motivosParoMap[String(m.id)] = m;
+
+    // Separar paros según su impacto en eficiencia y disponibilidad
+    let paros_min_ef   = 0; // paros que SÍ afectan eficiencia
+    let paros_min_noef = 0; // paros que NO afectan eficiencia (programados)
+    let paros_min_disp = 0; // paros que SÍ afectan disponibilidad
     for (const p of (pdb.paros || []).filter(p => p.linea === l)) {
-      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
-                               p.fecha_inicio, p.fecha_fin, slotDate);
+      const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                                  p.fecha_inicio, p.fecha_fin, slotDate);
+      if (overlap <= 0) continue;
+      const motivo   = motivosParoMap[String(p.motivo_id)];
+      const afecEf   = motivo?.afecta_eficiencia    !== false;
+      const afecDisp = motivo?.afecta_disponibilidad !== false;
+      if (afecEf)   paros_min_ef   += overlap;
+      else          paros_min_noef += overlap;
+      if (afecDisp) paros_min_disp += overlap;
     }
+    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     // Arranque lunes T1: reducir objetivo de los primeros slots;
@@ -1440,14 +1470,19 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       patternIdx++;
     }
 
-    // Eficiencia = ciclos_descargados / objetivo_por_hora; si obj=0 y real=0 → 100%
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
+    // Ajustar objetivo por paros que no afectan eficiencia
+    // (el tiempo de paro programado no se penaliza en el objetivo)
+    const efectivoMin  = Math.max(0, 60 - paros_min_noef);
+    const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
+
+    // Eficiencia = ciclos / objetivo ajustado; si obj=0 y real=0 → 100%
+    const eficiencia    = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
     // Calidad = buenos / no_vacios — excluye herramentales con defecto contemplado
     const calidad       = cargasCalidad.length > 0 ? r3(ciclos_buenos_calidad / cargasCalidad.length) : null;
     // Capacidad = piezas reales / piezas objetivo (null si sin objetivo en catálogo)
     const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
-    // Disponibilidad = (60 - paros) / 60
-    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
+    // Disponibilidad = (60 - paros_disp) / 60
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
 
     slots.push({
       slot: h + 1,
@@ -1455,6 +1490,7 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       hora_fin:         seStr,
       ciclos_totales,
       ciclos_obj:       slotObj,
+      ciclos_obj_adj,
       ciclos_no_vacios,
       ciclos_buenos,
       // Conteos filtrados para calidad (excluye herramentales con defecto contemplado)
@@ -1463,6 +1499,8 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       piezas_total,
       piezas_obj_total,
       paros_min:        Math.round(paros_min * 10) / 10,
+      paros_min_no_ef:  Math.round(paros_min_noef * 10) / 10,
+      paros_min_disp:   Math.round(paros_min_disp * 10) / 10,
       eficiencia,
       calidad,
       capacidad,
@@ -1489,16 +1527,17 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       const tDef  = TURNOS_DEF[t];
       const slots = buildSlotsForLinTur(pdb, config, l, t, targetDate);
 
-      const tC     = slots.reduce((s, x) => s + x.ciclos_totales,   0);
-      const tNV    = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
-      const tB     = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
-      const tPz    = slots.reduce((s, x) => s + x.piezas_total,     0);
-      const tPzObj = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
-      const tParos = slots.reduce((s, x) => s + x.paros_min,        0);
+      const tC        = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+      const tNV       = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const tB        = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+      const tPz       = slots.reduce((s, x) => s + x.piezas_total,     0);
+      const tPzObj    = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const tParos    = slots.reduce((s, x) => s + x.paros_min,        0);
+      const tParosDisp= slots.reduce((s, x) => s + (x.paros_min_disp ?? x.paros_min), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate); // horas reales transcurridas
-      // Lunes T1: usa objetivo ajustado por arranque; otros turnos: fórmula original
-      const tObjElap   = (t === 'T1' && isLunes(targetDate)) ? computeObjElapsed(slots, tElap) : ciclos_obj * tElap;
+      // Usa objetivo ajustado por arranque de lunes Y por paros no-eficiencia
+      const tObjElap   = computeObjElapsedAdj(slots, tElap);
 
       result[l][t] = {
         slots,
@@ -1509,11 +1548,11 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_total:     tPz,
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
-          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
           eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
-          disponibilidad: r3((turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
+          disponibilidad: r3((turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins)
         }
       };
 
@@ -1640,27 +1679,27 @@ router.get('/pizarron', (req, res) => {
       const tB   = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
       const tPz  = slots.reduce((s, x) => s + x.piezas_total,     0);
       const tPzO = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
-      const tParos = slots.reduce((s, x) => s + x.paros_min,      0);
+      const tParos     = slots.reduce((s, x) => s + x.paros_min,       0);
+      const tParosDisp = slots.reduce((s, x) => s + (x.paros_min_disp ?? x.paros_min), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate);
-      const ciclos_obj = config[ciclosObjKey] ?? 2;
-      // Lunes T1: usa objetivo ajustado por arranque; otros turnos: fórmula original
-      const tObjElap   = (t === 'T1' && isLunes(targetDate)) ? computeObjElapsed(slots, tElap) : ciclos_obj * tElap;
+      // Usa objetivo ajustado por arranque de lunes Y paros no-eficiencia
+      const tObjElap   = computeObjElapsedAdj(slots, tElap);
       turnData[t] = {
         slots,
         totals: {
           ciclos_totales:   tC,
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
-          // Eficiencia dinámica: usa horas transcurridas (no horas totales del turno)
+          // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
           eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : 0)),
           calidad:       tNV > 0 ? r3(tB / tNV) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
-          disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParos, turnoMins)) / turnoMins)
+          disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins)
         }
       };
       dC += tC; dNV += tNV; dB += tB; dPz += tPz; dPzO += tPzO;
-      dParos += tParos;
+      dParos += tParosDisp; // acumular solo paros que afectan disponibilidad
       dSlots     += tDef.hours;  // horas totales planeadas (para disponibilidad)
       dElapHours += tElap;       // horas reales transcurridas
       dObjElap   += tObjElap;    // objetivo acumulado ajustado (incluye descuento arranque lunes)
@@ -2259,11 +2298,23 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       }
     }
 
-    let paros_min = 0;
+    const motivosParoBaker = pdb.motivos_paro_baker || [];
+    const motivosBakerMap  = {};
+    for (const m of motivosParoBaker) motivosBakerMap[String(m.id)] = m;
+
+    let paros_min_ef = 0, paros_min_noef = 0, paros_min_disp = 0;
     for (const p of (pdb.paros_baker || [])) {
-      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
-                               p.fecha_inicio, p.fecha_fin, slotDate);
+      const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                                  p.fecha_inicio, p.fecha_fin, slotDate);
+      if (overlap <= 0) continue;
+      const motivo   = motivosBakerMap[String(p.motivo_id)];
+      const afecEf   = motivo?.afecta_eficiencia    !== false;
+      const afecDisp = motivo?.afecta_disponibilidad !== false;
+      if (afecEf)   paros_min_ef   += overlap;
+      else          paros_min_noef += overlap;
+      if (afecDisp) paros_min_disp += overlap;
     }
+    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
@@ -2275,17 +2326,21 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
       patternIdx++;
     }
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
-    const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
-    const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
-    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
+    const efectivoMin    = Math.max(0, 60 - paros_min_noef);
+    const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
+    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
+    const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
+    const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
-      ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
+      ciclos_totales, ciclos_obj: slotObj, ciclos_obj_adj, ciclos_no_vacios, ciclos_buenos,
       ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
+      paros_min_no_ef: Math.round(paros_min_noef * 10) / 10,
+      paros_min_disp:  Math.round(paros_min_disp * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
     });
     curMins += 60;
@@ -2366,11 +2421,23 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       }
     }
 
-    let paros_min = 0;
+    const motivosParo_l1 = pdb.motivos_paro_l1 || [];
+    const motivosL1Map   = {};
+    for (const m of motivosParo_l1) motivosL1Map[String(m.id)] = m;
+
+    let paros_min_ef = 0, paros_min_noef = 0, paros_min_disp = 0;
     for (const p of (pdb.paros_l1 || [])) {
-      paros_min += slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
-                               p.fecha_inicio, p.fecha_fin, slotDate);
+      const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                                  p.fecha_inicio, p.fecha_fin, slotDate);
+      if (overlap <= 0) continue;
+      const motivo   = motivosL1Map[String(p.motivo_id)];
+      const afecEf   = motivo?.afecta_eficiencia    !== false;
+      const afecDisp = motivo?.afecta_disponibilidad !== false;
+      if (afecEf)   paros_min_ef   += overlap;
+      else          paros_min_noef += overlap;
+      if (afecDisp) paros_min_disp += overlap;
     }
+    const paros_min = paros_min_ef + paros_min_noef;
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
@@ -2382,17 +2449,21 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       slotObj = slotCiclosObj(ciclos_obj, esLunesT1 ? patternIdx : h);
       patternIdx++;
     }
-    const eficiencia    = slotObj > 0 ? r3(ciclos_totales / slotObj) : (ciclos_totales === 0 ? 1 : 0);
-    const calidad       = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
-    const capacidad     = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
-    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min, 60)) / 60);
+    const efectivoMin    = Math.max(0, 60 - paros_min_noef);
+    const ciclos_obj_adj = r3(slotObj * (efectivoMin / 60));
+    const eficiencia     = ciclos_obj_adj > 0 ? r3(ciclos_totales / ciclos_obj_adj) : (ciclos_totales === 0 ? 1 : 0);
+    const calidad        = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
+    const capacidad      = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+    const disponibilidad = r3(Math.max(0, 60 - Math.min(paros_min_disp, 60)) / 60);
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr,
-      ciclos_totales, ciclos_obj: slotObj, ciclos_no_vacios, ciclos_buenos,
+      ciclos_totales, ciclos_obj: slotObj, ciclos_obj_adj, ciclos_no_vacios, ciclos_buenos,
       ciclos_no_vacios_calidad, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
       paros_min: Math.round(paros_min * 10) / 10,
+      paros_min_no_ef: Math.round(paros_min_noef * 10) / 10,
+      paros_min_disp:  Math.round(paros_min_disp * 10) / 10,
       eficiencia, calidad, capacidad, disponibilidad
     });
     curMins += 60;
@@ -3474,6 +3545,92 @@ router.post('/admin/migrate-t3-dates', produccionAllowRoles('admin'), (req, res)
   if (!dryRun && changes.length > 0) dbProd.write(pdb);
 
   res.json({ dryRun, total_cambios: changes.length, changes });
+});
+
+// ─── SCRAP ────────────────────────────────────────────────────────────────────
+
+// GET /scrap — lista registros (filtros: linea, fecha_ini, fecha_fin)
+router.get('/scrap', produccionAllowRoles('admin', 'produccion', 'pizarron'), (req, res) => {
+  const { linea, fecha_ini, fecha_fin } = req.query;
+  const pdb = dbProd.read();
+  let records = pdb.registros_scrap || [];
+  if (linea)     records = records.filter(r => r.linea === linea);
+  if (fecha_ini) records = records.filter(r => r.fecha >= fecha_ini);
+  if (fecha_fin) records = records.filter(r => r.fecha <= fecha_fin);
+  res.json({ records: records.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)) });
+});
+
+// POST /scrap — crear registro
+router.post('/scrap', produccionAllowRoles('admin', 'produccion'), (req, res) => {
+  const pdb = dbProd.read();
+  if (!pdb.registros_scrap) pdb.registros_scrap = [];
+  const folio = `SCRAP-${(req.body.linea || 'X').replace(/\s/g,'')}-${nowDateStr().replace(/-/g,'')}-${dbProd.nextId(pdb.registros_scrap)}`;
+  const rec = {
+    id:         dbProd.nextId(pdb.registros_scrap),
+    folio,
+    linea:      req.body.linea      || '',
+    fecha:      req.body.fecha      || nowDateStr(),
+    hora:       req.body.hora       || nowTimeStr(),
+    turno:      req.body.turno      || getTurno(req.body.hora || nowTimeStr()),
+    operador:   req.body.operador   || '',
+    componente: req.body.componente || '',
+    no_skf:     req.body.no_skf     || null,
+    herramental:req.body.herramental|| '',
+    proceso:    req.body.proceso    || '',
+    piezas_scrap: Number(req.body.piezas_scrap) || 0,
+    observaciones: req.body.observaciones || null,
+    created_at: new Date().toISOString()
+  };
+  pdb.registros_scrap.push(rec);
+  dbProd.write(pdb);
+  res.json(rec);
+});
+
+// GET /scrap/resumen — % SCRAP por línea y día
+router.get('/scrap/resumen', produccionAllowRoles('admin', 'produccion', 'pizarron'), (req, res) => {
+  const { linea, fecha_ini, fecha_fin } = req.query;
+  const pdb = dbProd.read();
+
+  let scrapRecs = pdb.registros_scrap || [];
+  if (linea)     scrapRecs = scrapRecs.filter(r => r.linea === linea);
+  if (fecha_ini) scrapRecs = scrapRecs.filter(r => r.fecha >= fecha_ini);
+  if (fecha_fin) scrapRecs = scrapRecs.filter(r => r.fecha <= fecha_fin);
+
+  // Agrupar scrap por linea+fecha
+  const scrapByDay = {};
+  for (const r of scrapRecs) {
+    const key = `${r.linea}|${r.fecha}`;
+    scrapByDay[key] = (scrapByDay[key] || 0) + (Number(r.piezas_scrap) || 0);
+  }
+
+  const resumen = Object.entries(scrapByDay).map(([key, scrap]) => {
+    const [l, fecha] = key.split('|');
+    // Calcular piezas totales producidas en ese día desde cargas descargadas
+    let cargas = [];
+    if (l === 'Baker') {
+      cargas = (pdb.cargas_baker || []).filter(c => c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+    } else if (l === 'L1') {
+      cargas = (pdb.cargas_l1 || []).filter(c => c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+    } else {
+      cargas = (pdb.cargas || []).filter(c => c.linea === l && c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+    }
+    let piezas_total = 0;
+    for (const c of cargas) {
+      if (l === 'Baker' || l === 'L1') {
+        if (c.herramental_tipo === 'barril') {
+          piezas_total += Number(c.cavidades_buenas || 0);
+        } else {
+          piezas_total += Number(c.cantidad || 0);
+        }
+      } else {
+        piezas_total += Number(c.cantidad || (Number(c.varillas || 0) * Number(c.piezas_por_varilla || 0)));
+      }
+    }
+    const pct_scrap = piezas_total > 0 ? Math.round((scrap / piezas_total) * 10000) / 100 : null;
+    return { linea: l, fecha, piezas_scrap: scrap, piezas_total, pct_scrap };
+  }).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
+
+  res.json({ resumen });
 });
 
 module.exports = router;

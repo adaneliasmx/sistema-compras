@@ -88,7 +88,9 @@ const EMPTY_DB = {
     }
   },
   // KPI histórico (snapshots guardados por turno)
-  kpi_snapshots: []
+  kpi_snapshots: [],
+  // Registros de SCRAP por línea
+  registros_scrap: []  // {id, folio, linea, fecha, hora, turno, operador, componente, no_skf, herramental, proceso, piezas_scrap, observaciones, created_at}
 };
 
 async function initDb() {

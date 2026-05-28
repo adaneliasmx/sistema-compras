@@ -64,6 +64,41 @@
     return 'kpi-red';
   }
 
+  // Calcula eficiencia usando solo horas completadas del turno activo.
+  // Retorna: { value: number|null, na: boolean }
+  // na=true  → primera hora en curso → mostrar "N/A"
+  // value=null → turno no activo o histórico → usar valor del backend
+  function calcEficienciaCompletada(linea, turno) {
+    const turnoActual = currentTurno();
+    if (turnoActual !== turno) return { value: null, na: false };
+
+    const now      = new Date();
+    const nowMins  = now.getHours() * 60 + now.getMinutes();
+    const TURNO_START = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
+    const start = TURNO_START[turno];
+
+    let elapsedMins;
+    if (turno === 'T3') {
+      elapsedMins = nowMins >= start ? nowMins - start : 1440 - start + nowMins;
+    } else {
+      elapsedMins = nowMins - start;
+      if (elapsedMins < 0) return { value: null, na: false };
+    }
+
+    const currentSlotIdx = Math.floor(elapsedMins / 60);
+    if (currentSlotIdx <= 0) return { value: null, na: true }; // primera hora en curso
+
+    const horas = state.data?.[linea]?.horas?.[turno] || [];
+    const completed = horas.slice(0, currentSlotIdx);
+    if (completed.length === 0) return { value: null, na: true };
+
+    const sumCiclos = completed.reduce((s, h) => s + (h.ciclos     || 0), 0);
+    const sumObj    = completed.reduce((s, h) => s + (h.ciclos_obj || 0), 0);
+
+    if (sumObj === 0) return { value: sumCiclos === 0 ? 100 : null, na: false };
+    return { value: (sumCiclos / sumObj) * 100, na: false };
+  }
+
   function fmtPct(val) {
     if (val === null || val === undefined) return '—';
     const n = Number(val);
@@ -96,7 +131,10 @@
           const slots = td.slots || [];
           horas[t] = slots.map(s => ({
             hora:           `${s.hora_inicio}–${s.hora_fin}`,
+            hora_inicio:    s.hora_inicio,
+            hora_fin:       s.hora_fin,
             ciclos:         s.ciclos_totales ?? 0,
+            ciclos_obj:     s.ciclos_obj ?? 0,
             eficiencia:     pct(s.eficiencia),
             capacidad:      pct(s.capacidad),
             calidad:        pct(s.calidad),
@@ -295,6 +333,20 @@
     const tot   = state.data?.[linea]?.totales?.[turno] || {};
     const horas = state.data?.[linea]?.horas?.[turno]   || [];
 
+    // Eficiencia global: solo horas completadas (excluye hora en curso)
+    const efComp = calcEficienciaCompletada(linea, turno);
+    let efDisplay, efColorClass;
+    if (efComp.na) {
+      efDisplay   = 'N/A';
+      efColorClass = '';
+    } else if (efComp.value !== null) {
+      efDisplay    = fmtPct(efComp.value);
+      efColorClass = kpiColor(efComp.value);
+    } else {
+      efDisplay    = fmtPct(tot.eficiencia);
+      efColorClass = kpiColor(tot.eficiencia);
+    }
+
     const hrRows = horas.map(h => `
       <tr>
         <td class="mono">${escHtml(h.hora)}</td>
@@ -309,7 +361,10 @@
       <div class="pzs-turno-slide">
         <!-- KPI cards grandes -->
         <div class="pzs-kpi-grid">
-          ${kpiCard('Eficiencia',     tot.eficiencia,     true)}
+          <div class="pzs-kpi-card pzs-kpi-big ${efColorClass}">
+            <div class="pzs-kpi-label">Eficiencia</div>
+            <div class="pzs-kpi-value">${efDisplay}</div>
+          </div>
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
           ${kpiCard('Calidad',        tot.calidad,        true)}
           ${kpiCard('Disponibilidad', tot.disponibilidad, true)}
@@ -334,14 +389,29 @@
     const lineas = ['L3', 'L4', 'Baker'];
 
     const blocks = lineas.map(l => {
-      const tot   = state.data?.[l]?.totales?.[turno] || {};
-      const horas = state.data?.[l]?.horas?.[turno]   || [];
+      const tot    = state.data?.[l]?.totales?.[turno] || {};
+      const horas  = state.data?.[l]?.horas?.[turno]   || [];
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
+
+      const efComp = calcEficienciaCompletada(l, turno);
+      let efVal, efColor;
+      if (efComp.na) {
+        efVal = null; efColor = '';
+      } else if (efComp.value !== null) {
+        efVal = efComp.value; efColor = kpiColor(efVal);
+      } else {
+        efVal = tot.eficiencia; efColor = kpiColor(efVal);
+      }
+      const efCard = `<div class="pzs-kpi-card ${efColor}">
+        <div class="pzs-kpi-label">Eficiencia</div>
+        <div class="pzs-kpi-value">${efComp.na ? 'N/A' : fmtPct(efVal)}</div>
+      </div>`;
+
       return `
         <div class="pzs-all-linea-block">
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
           <div class="pzs-kpi-grid pzs-kpi-grid-compact">
-            ${kpiCard('Eficiencia',     tot.eficiencia)}
+            ${efCard}
             ${kpiCard('Capacidad',      tot.capacidad)}
             ${kpiCard('Calidad',        tot.calidad)}
             ${kpiCard('Disponibilidad', tot.disponibilidad)}
