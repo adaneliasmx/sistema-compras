@@ -3346,7 +3346,7 @@ function bindTitulaciones() {
       // Filtrar parámetros de esta línea
       const paramsLinea = params.filter(p => {
         const t = tanques.find(x => x.id === p.tanque_id);
-        if (!t || !t.activo) return false;
+        if (!t) return false;
         if (p.quimico && t.quimico_activo && t.quimico_activo !== p.quimico) return false;
         if (p.frecuencia === 1 && Number(num) !== 1) return false;
         return true;
@@ -4445,6 +4445,8 @@ function renderParamCatalog(params, tanques, filtroLinea) {
   const CELL = 'padding:3px 6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:0;cursor:pointer;border-bottom:1px solid #f1f5f9';
   const TH   = 'padding:4px 6px;font-size:11px;font-weight:600;color:#64748b;text-align:left;white-space:nowrap;border-bottom:1px solid #e2e8f0';
   const INP  = 'width:100%;box-sizing:border-box;font-size:11px;border:1px solid #3b82f6;border-radius:2px;padding:1px 3px;background:#eff6ff;outline:none';
+  const _nrItems = window._catalogData?.items || [];
+  const quimicoNRopts = '<option value="">— Sin químico —</option>' + _nrItems.map(it => `<option value="${esc(it.item)}">${esc(it.item)}${it.presentacion?' — '+esc(it.presentacion):''}</option>`).join('');
 
   return lineas.map(linea => {
     const lineaTanques = tanques.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
@@ -4457,7 +4459,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
       const quimLabel = t.quimico_activo ? `<span style="background:#dbeafe;color:#1e40af;padding:0 5px;border-radius:8px;font-size:10px;margin-left:4px">${esc(t.quimico_activo)}</span>` : '';
 
       const tankHdr = `<tr style="background:${t.es_enjuague?'#f0f9ff':'#f8fafc'}">
-        <td colspan="9" style="padding:4px 8px;border-top:2px solid ${t.es_enjuague?'#bae6fd':'#d1d5db'};border-bottom:1px solid #e2e8f0">
+        <td colspan="10" style="padding:4px 8px;border-top:2px solid ${t.es_enjuague?'#bae6fd':'#d1d5db'};border-bottom:1px solid #e2e8f0">
           <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap">
             <span style="font-size:12px;font-weight:700;color:#1e293b">🪣 ${esc(t.no_tanque)} — ${esc(t.nombre_tanque)}</span>
             ${quimLabel}${enjLabel}
@@ -4473,7 +4475,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
       </tr>`;
 
       const paramRows = pTanque.length === 0
-        ? `<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:11px;padding:5px;border-bottom:1px solid #f1f5f9">Sin parámetros — usa "+ Param" para agregar</td></tr>`
+        ? `<tr><td colspan="10" style="text-align:center;color:#9ca3af;font-size:11px;padding:5px;border-bottom:1px solid #f1f5f9">Sin parámetros — usa "+ Param" para agregar</td></tr>`
         : pTanque.map(p => {
             const actBg  = p.activo!==false ? '#dcfce7' : '#f3f4f6';
             const actCol = p.activo!==false ? '#16a34a' : '#9ca3af';
@@ -4487,6 +4489,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
               <td class="ec ec-num" data-field="objetivo" data-val="${p.objetivo??''}" data-pid="${p.id}" style="${CELL};text-align:right;color:#374151">${p.objetivo??'<span style="color:#d1d5db">—</span>'}</td>
               <td class="ec" data-field="unidad" data-val="${esc(p.unidad||'')}" data-pid="${p.id}" style="${CELL};color:#6b7280" title="${esc(p.unidad||'')}">${esc(p.unidad)||'<span style="color:#d1d5db">—</span>'}</td>
               <td class="ec ec-frec" data-field="frecuencia" data-val="${p.frecuencia}" data-pid="${p.id}" style="${CELL};text-align:center;color:#374151">${p.frecuencia}/t</td>
+              <td class="ec ec-num" data-field="orden" data-val="${p.orden||0}" data-pid="${p.id}" style="${CELL};text-align:center;color:#374151">${p.orden||0}</td>
               <td style="padding:2px 4px;text-align:center;border-bottom:1px solid #f1f5f9">
                 <button class="btn-toggle-activo" data-pid="${p.id}" data-activo="${p.activo!==false?'1':'0'}"
                   style="border:none;cursor:pointer;background:${actBg};color:${actCol};padding:1px 7px;border-radius:10px;font-size:10px;font-weight:600;white-space:nowrap">
@@ -4502,7 +4505,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
 
       const newRow = `<tr class="new-param-row" data-tid="${t.id}" style="display:none;background:#eff6ff">
         <td style="padding:2px 3px"><input class="np-nombre" placeholder="Nombre *" style="${INP}" /></td>
-        <td style="padding:2px 3px"><input class="np-quimico" placeholder="Químico" style="${INP}" /></td>
+        <td style="padding:2px 3px"><select class="np-quimico" style="${INP};padding:1px 2px">${quimicoNRopts}</select></td>
         <td style="padding:2px 3px"><input class="np-min" type="number" step="any" placeholder="Mín" style="${INP};text-align:right" /></td>
         <td style="padding:2px 3px"><input class="np-max" type="number" step="any" placeholder="Máx" style="${INP};text-align:right" /></td>
         <td style="padding:2px 3px"><input class="np-obj" type="number" step="any" placeholder="Obj" style="${INP};text-align:right" /></td>
@@ -4512,6 +4515,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
             <option value="2">2/t</option><option value="1">1/t</option>
           </select>
         </td>
+        <td style="padding:2px 3px"><input class="np-orden" type="number" min="0" placeholder="0" value="0" style="${INP};text-align:right" /></td>
         <td style="padding:2px 3px;text-align:center">
           <button class="np-save btn btn-primary btn-xs" data-tid="${t.id}" style="font-size:10px;padding:1px 8px" title="Guardar">✓</button>
         </td>
@@ -4539,6 +4543,7 @@ function renderParamCatalog(params, tanques, filtroLinea) {
             <col style="width:50px">
             <col style="width:63px">
             <col style="width:44px">
+            <col style="width:38px">
             <col style="width:52px">
             <col style="width:60px">
           </colgroup>
@@ -4550,10 +4555,11 @@ function renderParamCatalog(params, tanques, filtroLinea) {
             <th style="${TH};text-align:right">Obj</th>
             <th style="${TH}">Unidad</th>
             <th style="${TH};text-align:center">Freq</th>
+            <th style="${TH};text-align:center">Orden</th>
             <th style="${TH};text-align:center">Estado</th>
             <th style="${TH}"></th>
           </tr></thead>
-          <tbody>${tbodyRows || '<tr><td colspan="9" style="text-align:center;color:#9ca3af;font-size:12px;padding:10px">Sin tanques configurados para esta línea.</td></tr>'}</tbody>
+          <tbody>${tbodyRows || '<tr><td colspan="10" style="text-align:center;color:#9ca3af;font-size:12px;padding:10px">Sin tanques configurados para esta línea.</td></tr>'}</tbody>
         </table>
       </div>
     </div>`;
@@ -4911,7 +4917,7 @@ function bindTitCatalogo() {
         objetivo:         ob !== '' ? Number(ob) : null,
         unidad:           row.querySelector('.np-unidad').value.trim() || '',
         frecuencia:       Number(row.querySelector('.np-frec').value) || 2,
-        orden:            0
+        orden:            Number(row.querySelector('.np-orden')?.value) || 0
       };
       try {
         const created = await POST('/parametros-titulacion', body);
