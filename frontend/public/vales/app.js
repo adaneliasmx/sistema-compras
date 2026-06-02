@@ -3347,7 +3347,6 @@ function bindTitulaciones() {
       const paramsLinea = params.filter(p => {
         const t = tanques.find(x => x.id === p.tanque_id);
         if (!t) return false;
-        if (p.quimico && t.quimico_activo && t.quimico_activo !== p.quimico) return false;
         if (p.frecuencia === 1 && Number(num) !== 1) return false;
         return true;
       });
@@ -3372,7 +3371,7 @@ function bindTitulaciones() {
         yaExiste.detalle?.forEach(d => { valoresPrevios[d.parametro_id] = d.valor_registrado; });
       }
 
-      const gruposHtml = Object.values(grupos).map(g => {
+      const gruposHtml = Object.values(grupos).sort((a, b) => String(a.tanque?.no_tanque||'').localeCompare(String(b.tanque?.no_tanque||''), undefined, {numeric:true})).map(g => {
         const t = g.t || g.tanque;
         const quimicoLabel = t?.quimico_activo ? ` <small style="background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:3px">${t.quimico_activo}</small>` : '';
         const rowsHtml = g.params.sort((a,b)=>a.orden-b.orden).map(p => {
