@@ -819,10 +819,12 @@ router.get('/resumen/defectos', (req, res) => {
               detalle: `Cavidad ${cav.num}`, folio: carga.folio, afecta_calidad: !excluido });
           }
         } else if (carga.estado === 'defecto' || carga.defecto_id) {
+          // rack vacío (es_vacia=true) no se cuenta en ciclos_no_vacios → no afecta KPI calidad
           result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
             operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
-            detalle: `Ciclo ${carga.folio}`, folio: carga.folio, afecta_calidad: !excluido });
+            detalle: carga.es_vacia ? `Ciclo vacío ${carga.folio}` : `Ciclo ${carga.folio}`,
+            folio: carga.folio, afecta_calidad: !excluido && !carga.es_vacia });
         }
       }
     } else {
@@ -836,7 +838,8 @@ router.get('/resumen/defectos', (req, res) => {
         const excluido = excluirIds.has(String(c.herramental_id));
         result.push({ linea: l, fecha: ftD(c), turno: turnoD(c),
           herramental: c.herramental_no || '', operador: c.operador || '',
-          defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio, afecta_calidad: !excluido });
+          defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio,
+          afecta_calidad: !excluido && !c.es_vacia });
       }
     }
   }

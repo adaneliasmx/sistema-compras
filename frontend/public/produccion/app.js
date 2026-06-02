@@ -5986,7 +5986,7 @@ async function showDefectosDrilldown(linea, desde, hasta, turno) {
         ${renderHBarChart(defPareto, () => '#ef4444')}
       </div>
       <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Ciclos / Cavidades con defecto</h4>
-      ${defs.some(d => d.afecta_calidad === false) ? `<p style="font-size:11px;color:#d97706;margin:0 0 8px;background:#fffbeb;padding:6px 10px;border-radius:6px;border:1px solid #fde68a">⚠️ Registros marcados con <b>No afecta KPI</b> pertenecen a herramentales excluidos del cálculo de calidad (excluir_calidad=true).</p>` : ''}
+      ${defs.some(d => d.afecta_calidad === false) ? `<p style="font-size:11px;color:#d97706;margin:0 0 8px;background:#fffbeb;padding:6px 10px;border-radius:6px;border:1px solid #fde68a">⚠️ Registros marcados con <b>No afecta KPI</b> son ciclos vacíos (es_vacia=true) o de herramentales excluidos del cálculo de calidad — no se contabilizan en el métrico.</p>` : ''}
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#f8fafc">
           <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Fecha</th>
