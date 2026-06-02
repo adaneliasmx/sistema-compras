@@ -1598,7 +1598,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       calidad:       dayNV > 0 ? r3(dayB / dayNV) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
-        ? r3((totalMins - Math.min(dayParos, totalMins)) / totalMins) : 1,
+        ? r3((totalMins - Math.min(dayParosDisp, totalMins)) / totalMins) : 1,
       rendimiento: (() => {
         const dayDispMins = Math.max(0, totalMins - dayParosDisp);
         return dayDispMins > 0
@@ -1965,11 +1965,24 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 
   for (const l of lineasL3L4) {
     for (const t of turnos) {
-      const slots          = buildSlotsForLinTur(pdb, config, l, t, targetDate);
-      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
-      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
-      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
-      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+      const slots            = buildSlotsForLinTur(pdb, config, l, t, targetDate);
+      const r3               = v => v != null ? Math.round(v * 1000) / 1000 : null;
+      const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const piezas_total     = slots.reduce((s, x) => s + x.piezas_total, 0);
+      const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const paros_min_total  = slots.reduce((s, x) => s + x.paros_min, 0);
+      const paros_min_disp   = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      const paros_min_rend   = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+      const tObjElap         = computeObjElapsedAdj(slots, TURNOS_DEF[t].hours);
+      const turnoMins        = TURNOS_DEF[t].hours * 60;
+      const tDispMins        = Math.max(0, turnoMins - paros_min_disp);
+      const eficiencia       = r3(tObjElap > 0 ? ciclos_totales / tObjElap : (ciclos_totales === 0 ? 1 : null));
+      const calidad          = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+      const capacidad        = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+      const disponibilidad   = r3((turnoMins - Math.min(paros_min_disp, turnoMins)) / turnoMins);
+      const rendimiento      = tDispMins > 0 ? r3((tDispMins - Math.min(paros_min_rend, tDispMins)) / tDispMins) : 1;
 
       const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === l && k.turno === t);
       const snap = {
@@ -1980,13 +1993,16 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
         linea:          l,
         guardado_at:    new Date().toISOString(),
         ciclos_totales,
+        ciclos_no_vacios,
         ciclos_buenos,
+        piezas_total,
         paros_min_total,
-        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
-        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
-        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
-        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
-        rendimiento:    Math.round(avg('rendimiento')    * 1000) / 1000,
+        paros_min_disp,
+        eficiencia,
+        capacidad,
+        calidad,
+        disponibilidad,
+        rendimiento,
         slots
       };
       if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
@@ -1997,11 +2013,24 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 
   if (includeBakerG) {
     for (const t of turnos) {
-      const slots          = buildSlotsForBaker(pdb, config, t, targetDate);
-      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
-      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
-      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
-      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+      const slots            = buildSlotsForBaker(pdb, config, t, targetDate);
+      const r3               = v => v != null ? Math.round(v * 1000) / 1000 : null;
+      const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const piezas_total     = slots.reduce((s, x) => s + x.piezas_total, 0);
+      const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const paros_min_total  = slots.reduce((s, x) => s + x.paros_min, 0);
+      const paros_min_disp   = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      const paros_min_rend   = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+      const tObjElap         = computeObjElapsedAdj(slots, TURNOS_DEF[t].hours);
+      const turnoMins        = TURNOS_DEF[t].hours * 60;
+      const tDispMins        = Math.max(0, turnoMins - paros_min_disp);
+      const eficiencia       = r3(tObjElap > 0 ? ciclos_totales / tObjElap : (ciclos_totales === 0 ? 1 : null));
+      const calidad          = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+      const capacidad        = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+      const disponibilidad   = r3((turnoMins - Math.min(paros_min_disp, turnoMins)) / turnoMins);
+      const rendimiento      = tDispMins > 0 ? r3((tDispMins - Math.min(paros_min_rend, tDispMins)) / tDispMins) : 1;
 
       const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'Baker' && k.turno === t);
       const snap = {
@@ -2012,13 +2041,16 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
         linea:          'Baker',
         guardado_at:    new Date().toISOString(),
         ciclos_totales,
+        ciclos_no_vacios,
         ciclos_buenos,
+        piezas_total,
         paros_min_total,
-        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
-        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
-        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
-        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
-        rendimiento:    Math.round(avg('rendimiento')    * 1000) / 1000,
+        paros_min_disp,
+        eficiencia,
+        capacidad,
+        calidad,
+        disponibilidad,
+        rendimiento,
         slots
       };
       if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
@@ -2029,11 +2061,24 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 
   if (includeL1G) {
     for (const t of turnos) {
-      const slots          = buildSlotsForL1(pdb, config, t, targetDate);
-      const ciclos_totales = slots.reduce((s, x) => s + x.ciclos_totales, 0);
-      const ciclos_buenos  = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
-      const paros_min_total= slots.reduce((s, x) => s + x.paros_min, 0);
-      const avg = k => slots.length ? slots.reduce((s, x) => s + x[k], 0) / slots.length : 0;
+      const slots            = buildSlotsForL1(pdb, config, t, targetDate);
+      const r3               = v => v != null ? Math.round(v * 1000) / 1000 : null;
+      const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+      const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+      const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+      const piezas_total     = slots.reduce((s, x) => s + x.piezas_total, 0);
+      const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const paros_min_total  = slots.reduce((s, x) => s + x.paros_min, 0);
+      const paros_min_disp   = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      const paros_min_rend   = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+      const tObjElap         = computeObjElapsedAdj(slots, TURNOS_DEF[t].hours);
+      const turnoMins        = TURNOS_DEF[t].hours * 60;
+      const tDispMins        = Math.max(0, turnoMins - paros_min_disp);
+      const eficiencia       = r3(tObjElap > 0 ? ciclos_totales / tObjElap : (ciclos_totales === 0 ? 1 : null));
+      const calidad          = ciclos_no_vacios > 0 ? r3(ciclos_buenos / ciclos_no_vacios) : null;
+      const capacidad        = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+      const disponibilidad   = r3((turnoMins - Math.min(paros_min_disp, turnoMins)) / turnoMins);
+      const rendimiento      = tDispMins > 0 ? r3((tDispMins - Math.min(paros_min_rend, tDispMins)) / tDispMins) : 1;
 
       const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'L1' && k.turno === t);
       const snap = {
@@ -2044,13 +2089,16 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
         linea:          'L1',
         guardado_at:    new Date().toISOString(),
         ciclos_totales,
+        ciclos_no_vacios,
         ciclos_buenos,
+        piezas_total,
         paros_min_total,
-        eficiencia:     Math.round(avg('eficiencia')     * 1000) / 1000,
-        capacidad:      Math.round(avg('capacidad')      * 1000) / 1000,
-        calidad:        Math.round(avg('calidad')        * 1000) / 1000,
-        disponibilidad: Math.round(avg('disponibilidad') * 1000) / 1000,
-        rendimiento:    Math.round(avg('rendimiento')    * 1000) / 1000,
+        paros_min_disp,
+        eficiencia,
+        capacidad,
+        calidad,
+        disponibilidad,
+        rendimiento,
         slots
       };
       if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;

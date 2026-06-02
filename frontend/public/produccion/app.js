@@ -6726,7 +6726,8 @@ function renderResumenTurnoTable(snaps, linea) {
     const cap  = capDen>0?capNum/capDen:null;
     const rend = rendDen>0?rendNum/rendDen:null;
     const totalMin = ws.reduce((s,x)=>s+(TURNO_H[x.turno]||8)*60,0);
-    const disp = totalMin>0?(totalMin-paroMin)/totalMin:null;
+    const paroDispMin = ws.reduce((s,x)=>s+(x.paros_min_disp ?? x.paros_min_total),0);
+    const disp = totalMin>0?(totalMin-paroDispMin)/totalMin:null;
     const wkFechas = ws.map(x=>x.fecha).sort();
     const wkDesde = wkFechas[0];
     const wkHasta = wkFechas[wkFechas.length-1];
