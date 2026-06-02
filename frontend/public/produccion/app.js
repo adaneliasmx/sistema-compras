@@ -5986,6 +5986,7 @@ async function showDefectosDrilldown(linea, desde, hasta, turno) {
         ${renderHBarChart(defPareto, () => '#ef4444')}
       </div>
       <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Ciclos / Cavidades con defecto</h4>
+      ${defs.some(d => d.afecta_calidad === false) ? `<p style="font-size:11px;color:#d97706;margin:0 0 8px;background:#fffbeb;padding:6px 10px;border-radius:6px;border:1px solid #fde68a">⚠️ Registros marcados con <b>No afecta KPI</b> pertenecen a herramentales excluidos del cálculo de calidad (excluir_calidad=true).</p>` : ''}
       <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="background:#f8fafc">
           <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Fecha</th>
@@ -5994,14 +5995,16 @@ async function showDefectosDrilldown(linea, desde, hasta, turno) {
           <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Operador</th>
           <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Motivo de rechazo</th>
           <th style="padding:6px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Detalle</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:1px solid #e5e7eb">Afecta KPI</th>
         </tr></thead>
-        <tbody>${defs.map(d => `<tr style="border-bottom:1px solid #f3f4f6">
+        <tbody>${defs.map(d => `<tr style="border-bottom:1px solid #f3f4f6${d.afecta_calidad === false ? ';opacity:.65' : ''}">
           <td style="padding:5px 8px">${escHtml(d.fecha)}</td>
           <td style="padding:5px 8px;text-align:center;font-weight:600">${escHtml(d.turno)}</td>
           <td style="padding:5px 8px">${escHtml(d.herramental)}</td>
           <td style="padding:5px 8px">${escHtml(d.operador)}</td>
           <td style="padding:5px 8px;color:#dc2626;font-weight:600">${escHtml(d.defecto)}</td>
           <td style="padding:5px 8px;color:#6b7280;font-size:11px">${escHtml(d.detalle || '')}</td>
+          <td style="padding:5px 8px;text-align:center">${d.afecta_calidad === false ? '<span style="color:#d97706;font-size:11px">No afecta</span>' : '<span style="color:#16a34a;font-size:11px">✓ Sí</span>'}</td>
         </tr>`).join('')}</tbody>
       </table></div>`;
   } catch (e) {

@@ -802,35 +802,41 @@ router.get('/resumen/defectos', (req, res) => {
   for (const l of lineasReq) {
     if (l === 'Baker' || l === 'L1') {
       const src = l === 'Baker' ? 'cargas_baker' : 'cargas_l1';
+      const herrKey = l === 'Baker' ? 'herramentales_baker' : 'herramentales_l1';
+      const excluirIds = new Set((pdb[herrKey] || []).filter(h => h.excluir_calidad).map(h => String(h.id)));
       let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga);
       if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
       if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
       if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
       for (const carga of cargas) {
+        const excluido = excluirIds.has(String(carga.herramental_id));
         if (carga.herramental_tipo === 'barril') {
           const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
           for (const cav of cavsMalas) {
             result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
               herramental: carga.herramental_no || String(carga.herramental_id || ''),
               operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
-              detalle: `Cavidad ${cav.num}`, folio: carga.folio });
+              detalle: `Cavidad ${cav.num}`, folio: carga.folio, afecta_calidad: !excluido });
           }
         } else if (carga.estado === 'defecto' || carga.defecto_id) {
           result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
             operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
-            detalle: `Ciclo ${carga.folio}`, folio: carga.folio });
+            detalle: `Ciclo ${carga.folio}`, folio: carga.folio, afecta_calidad: !excluido });
         }
       }
     } else {
+      const herrKey = `herramentales_${l.toLowerCase()}`;
+      const excluirIds = new Set((pdb[herrKey] || []).filter(h => h.excluir_calidad).map(h => String(h.id)));
       let cargas = (pdb.cargas || []).filter(c => c.linea === l && !!c.fecha_descarga);
       if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
       if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
       if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
       for (const c of cargas.filter(x => x.estado === 'defecto' || x.defecto_id)) {
+        const excluido = excluirIds.has(String(c.herramental_id));
         result.push({ linea: l, fecha: ftD(c), turno: turnoD(c),
           herramental: c.herramental_no || '', operador: c.operador || '',
-          defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio });
+          defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio, afecta_calidad: !excluido });
       }
     }
   }
@@ -1679,7 +1685,8 @@ router.get('/pizarron', (req, res) => {
   const targetDate = fecha || nowDateStr();
   const pdb        = dbProd.read();
   const config     = pdb.config || {};
-  const lineas     = linea === 'ambas' ? ['L3', 'L4'] : [linea];
+  // Solo pasar L3/L4 a buildPizarronResult; Baker y L1 usan su propia lógica (addBakerLike)
+  const lineas     = linea === 'ambas' ? ['L3', 'L4'] : [linea].filter(l => l === 'L3' || l === 'L4');
 
   let targetTurnos = turno === 'all' ? ['T1', 'T2', 'T3'] : [turno];
 
@@ -1761,8 +1768,8 @@ router.get('/pizarron', (req, res) => {
     };
   }
 
-  if (linea === 'ambas' || linea === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
-  if (linea === 'ambas' || linea === 'L1')    addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
+  if (linea === 'ambas' || linea.toLowerCase() === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
+  if (linea === 'ambas' || linea === 'L1')                  addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
 
   // Añadir datos pareto del día y por turno a cada línea
   for (const l of Object.keys(data)) {
