@@ -1378,6 +1378,9 @@ function openModalCargaBaker(catalogo, onDone, linea = 'baker') {
             <input type="checkbox" id="bk-vacio" style="width:18px;height:18px;accent-color:#dc2626;cursor:pointer" />
             Herramental vacío — sin material (omite datos de componente)
           </label>
+          <div id="bk-vacio-warn" style="display:none;margin-top:6px;padding:10px 14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;font-size:13px;color:#92400e">
+            ⚠️ <b>Ciclo vacío.</b> Se registrará sin material. Los ciclos vacíos <b>no afectan el KPI de Calidad</b> ni el conteo de piezas. Asegúrate de que el herramental genuinamente no lleva material.
+          </div>
         </div>
         <div id="bk-rack-datos" style="display:contents">
           <div class="form-group">
@@ -1472,9 +1475,10 @@ function openModalCargaBaker(catalogo, onDone, linea = 'baker') {
       btn.textContent   = '✏️ Escribir';
     }
   }
-  // Vacío: mostrar/ocultar campos de datos del rack
+  // Vacío: mostrar/ocultar campos de datos del rack + advertencia
   document.getElementById('bk-vacio').addEventListener('change', e => {
     document.getElementById('bk-rack-datos').style.display = e.target.checked ? 'none' : 'contents';
+    document.getElementById('bk-vacio-warn').style.display = e.target.checked ? '' : 'none';
   });
 
   document.getElementById('bk-comp-toggle').addEventListener('click', () => {
@@ -1640,6 +1644,17 @@ function openModalCargaBaker(catalogo, onDone, linea = 'baker') {
     }
     if (erroresBk.length) { alert('Campos requeridos:\n• ' + erroresBk.join('\n• ')); return; }
 
+    // Confirmación para ciclos vacíos
+    if (tipo === 'rack' && esVacio) {
+      if (!confirm('⚠️ ¿Confirmar ciclo vacío?\n\nEste herramental se registrará SIN material. Los ciclos vacíos no afectan el KPI de Calidad.\n\n¿Continuar?')) return;
+    }
+    if (tipo === 'barril' && Array.isArray(payload.cavidades)) {
+      const todasVacias = payload.cavidades.every(cv => cv.es_vacia);
+      if (todasVacias) {
+        if (!confirm('⚠️ ¿Confirmar barril completamente vacío?\n\nTodas las cavidades están marcadas como vacías. El barril se registrará SIN material en ninguna cavidad.\n\n¿Continuar?')) return;
+      }
+    }
+
     const btn = document.getElementById('bk-save');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
@@ -1661,7 +1676,7 @@ function buildCavidadesForm(n, componentes, clientes) {
   </datalist>`;
   const htmlCli = clientes.map(c => `<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('');
 
-  let html = datalistHtml;
+  let html = datalistHtml + `<div id="bk-all-vacias-warn" style="display:none;margin-bottom:8px;padding:10px 14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;font-size:13px;color:#92400e">⚠️ <b>Todas las cavidades marcadas como vacías.</b> El barril completo se registrará sin material. Confirma que esto es correcto antes de guardar.</div>`;
   for (let i = 1; i <= n; i++) {
     html += `<div class="bk-cav-row" data-cav-idx="${i}" style="border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:8px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -1726,6 +1741,26 @@ function buildCavidadesForm(n, componentes, clientes) {
     sel.addEventListener('change', () => {
       const txt = sel.nextElementSibling;
       txt.style.display = sel.value === '__libre__' ? '' : 'none';
+    });
+  });
+
+  // Bind: "Vacía" por cavidad — oculta campos de datos y detecta si todas están vacías
+  function updateAllVaciasWarn() {
+    const allChks = [...container.querySelectorAll('.bk-cav-vacia')];
+    const allVacias = allChks.length > 0 && allChks.every(c => c.checked);
+    const warn = document.getElementById('bk-all-vacias-warn');
+    if (warn) warn.style.display = allVacias ? '' : 'none';
+  }
+  container.querySelectorAll('.bk-cav-vacia').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const row = chk.closest('.bk-cav-row');
+      const campos = row.querySelector('[style*="grid-template-columns"]');
+      const aplicarBtn = row.querySelector('.bk-cav-aplicar-resto');
+      const vacia = chk.checked;
+      if (campos) campos.style.opacity = vacia ? '0.35' : '1';
+      if (campos) campos.style.pointerEvents = vacia ? 'none' : '';
+      if (aplicarBtn) aplicarBtn.style.display = vacia ? 'none' : '';
+      updateAllVaciasWarn();
     });
   });
 
