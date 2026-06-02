@@ -654,7 +654,12 @@ router.patch('/cargas/:id/admin-editar', produccionAllowRoles('admin'), (req, re
   const carga  = found.arr[found.idx];
   const campos = [
     'turno', 'fecha_carga', 'hora_carga', 'fecha_descarga', 'hora_descarga',
-    'herramental_no', 'componente', 'proceso', 'sub_proceso', 'operador',
+    'herramental_id', 'herramental_no',
+    'componente_id', 'componente', 'cliente',
+    'proceso_id', 'proceso', 'sub_proceso_id', 'sub_proceso',
+    'acabado_id', 'acabado',
+    'operador_id', 'operador',
+    'no_skf', 'no_orden', 'lote',
     'cantidad', 'varillas', 'piezas_por_varilla',
     'estado', 'resultado', 'defecto', 'defecto_id'
   ];
@@ -710,7 +715,9 @@ router.patch('/cavidades/:id/admin-editar', produccionAllowRoles('admin'), (req,
   if (!found) return res.status(404).json({ error: 'Cavidad no encontrada' });
 
   const cav    = found.arr[found.idx];
-  const campos = ['estado', 'resultado', 'defecto', 'defecto_id', 'cantidad', 'operador', 'proceso', 'sub_proceso'];
+  const campos = ['estado', 'resultado', 'defecto', 'defecto_id', 'cantidad', 'operador', 'operador_id',
+                   'proceso', 'proceso_id', 'sub_proceso', 'sub_proceso_id',
+                   'cliente', 'componente', 'componente_id', 'no_skf', 'no_orden', 'lote'];
   for (const f of campos) {
     if (body[f] !== undefined) cav[f] = body[f] !== '' ? body[f] : null;
   }

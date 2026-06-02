@@ -3973,21 +3973,33 @@ async function viewReportes(el) {
 
     if (!isAdmin) return;
 
-    // ── Dblclick en fila de carga → abrir modal de edición ────────────────
+    // ── Dblclick en fila de carga → cargar catálogo + abrir modal ─────────
     res.querySelectorAll('tr[data-carga-id]').forEach(tr => {
-      tr.addEventListener('dblclick', () => {
-        const id = tr.dataset.cargaId;
-        const carga = [...allCargas].find(c => String(c.id) === String(id));
-        if (carga) openRptCargaModal(carga, ejecutarConsulta);
+      tr.addEventListener('dblclick', async () => {
+        const id    = tr.dataset.cargaId;
+        const carga = allCargas.find(c => String(c.id) === String(id));
+        if (!carga) return;
+        tr.style.opacity = '0.5';
+        try {
+          const cat = await GET(`/catalogos/${activeRptTab.toLowerCase()}`);
+          openRptCargaModal(carga, cat, activeRptTab, ejecutarConsulta);
+        } catch (e) { alert('Error cargando catálogo: ' + e.message); }
+        finally { tr.style.opacity = ''; }
       });
     });
 
-    // ── Dblclick en fila de cavidad → abrir modal de edición ─────────────
+    // ── Dblclick en fila de cavidad → cargar catálogo + abrir modal ───────
     res.querySelectorAll('tr[data-cav-id]').forEach(tr => {
-      tr.addEventListener('dblclick', () => {
-        const id = tr.dataset.cavId;
-        const cav = [...allCavidades].find(c => String(c.id) === String(id));
-        if (cav) openRptCavidadModal(cav, ejecutarConsulta);
+      tr.addEventListener('dblclick', async () => {
+        const id  = tr.dataset.cavId;
+        const cav = allCavidades.find(c => String(c.id) === String(id));
+        if (!cav) return;
+        tr.style.opacity = '0.5';
+        try {
+          const cat = await GET(`/catalogos/${activeRptTab.toLowerCase()}`);
+          openRptCavidadModal(cav, cat, ejecutarConsulta);
+        } catch (e) { alert('Error cargando catálogo: ' + e.message); }
+        finally { tr.style.opacity = ''; }
       });
     });
 
@@ -4018,150 +4030,401 @@ async function viewReportes(el) {
     });
   }
 
-  // ── Modal edición carga (admin) ───────────────────────────────────────────
-  function openRptCargaModal(carga, onSaved) {
-    const estados = ['activo','buena','defecto','reproceso','vacia','cancelado'];
+  // ── Modal edición carga (admin) — con catálogo completo ──────────────────
+  function openRptCargaModal(carga, cat, linea, onSaved) {
+    const isBL  = linea === 'Baker' || linea === 'L1';
+    const cur   = carga.estado || carga.resultado || '';
+
+    const herramentales = (cat.herramentales || []).filter(h => h.activo !== false);
+    const componentes   = (cat.componentes   || []).filter(c => c.activo !== false);
+    const procesos      = (cat.procesos      || []).filter(p => p.activo !== false);
+    const subProcesos   = (cat.sub_procesos  || []).filter(s => s.activo !== false);
+    const acabados      = (cat.acabados      || []).filter(a => a.activo !== false);
+    const operadores    = (cat.operadores    || []).filter(o => o.activo !== false);
+    const defectos      = (cat.defectos      || []).filter(d => d.activo !== false);
+    const clientes      = (cat.clientes      || []).filter(c => c.activo !== false);
+
+    const selOpts = (arr, idField, nameField, curId, curName) =>
+      '<option value="">— Seleccionar —</option>' +
+      arr.map(x => `<option value="${x[idField]}" data-name="${escHtml(x[nameField]||'')}"${
+        (curId && String(x[idField])===String(curId)) || (!curId && x[nameField]===curName) ? ' selected' : ''
+      }>${escHtml(x[nameField]||'')}</option>`).join('');
+
+    const defOpts = defectos.map(d => `<option value="${d.id}" data-name="${escHtml(d.nombre)}"${
+      (carga.defecto_id && String(d.id)===String(carga.defecto_id)) || (!carga.defecto_id && d.nombre===carga.defecto) ? ' selected' : ''
+    }>${escHtml(d.nombre)}</option>`).join('');
+
+    const subOptsFor = (procId) => subProcesos.filter(s => !procId || String(s.proceso_id)===String(procId))
+      .map(s => `<option value="${s.id}" data-name="${escHtml(s.nombre)}"${
+        (carga.sub_proceso_id && String(s.id)===String(carga.sub_proceso_id)) || (!carga.sub_proceso_id && s.nombre===carga.sub_proceso) ? ' selected' : ''
+      }>${escHtml(s.nombre)}</option>`).join('');
+
+    const trazHtml = carga.editado_por
+      ? `<div style="font-size:11px;color:#6b7280;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px;margin-bottom:12px">
+           📝 Última edición: <strong>${escHtml(carga.editado_por)}</strong> — ${carga.editado_at ? new Date(carga.editado_at).toLocaleString('es-MX') : ''}
+         </div>` : '';
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:540px">
+      <div class="modal" style="max-width:660px">
         <div class="modal-header">
-          <h3 class="modal-title">✏️ Editar Carga — ${escHtml(carga.folio || carga.id)}</h3>
-          <button class="modal-close" id="rpt-modal-close">✕</button>
+          <h3 class="modal-title">✏️ Editar Carga — ${escHtml(carga.folio || String(carga.id))}</h3>
+          <button class="modal-close" id="re-close">✕</button>
         </div>
-        <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="form-group"><label>Turno</label>
-            <select id="rm-turno" class="form-control">
-              <option value="">—</option>
-              ${['T1','T2','T3'].map(t=>`<option value="${t}" ${carga.turno===t?'selected':''}>${t}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label>Estado / Resultado</label>
-            <select id="rm-estado" class="form-control">
-              ${estados.map(s=>`<option value="${s}" ${(carga.estado||carga.resultado)===s?'selected':''}>${s}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label>Fecha Carga</label>
-            <input type="date" id="rm-fecha-carga" class="form-control" value="${carga.fecha_carga||''}"/>
-          </div>
-          <div class="form-group"><label>Hora Carga</label>
-            <input type="time" id="rm-hora-carga" class="form-control" value="${carga.hora_carga||''}"/>
-          </div>
-          <div class="form-group"><label>Fecha Descarga</label>
-            <input type="date" id="rm-fecha-descarga" class="form-control" value="${carga.fecha_descarga||''}"/>
-          </div>
-          <div class="form-group"><label>Hora Descarga</label>
-            <input type="time" id="rm-hora-descarga" class="form-control" value="${carga.hora_descarga||''}"/>
-          </div>
-          <div class="form-group"><label>Herramental No.</label>
-            <input type="text" id="rm-herramental" class="form-control" value="${escHtml(carga.herramental_no||carga.herramental||'')}"/>
-          </div>
-          <div class="form-group"><label>Componente</label>
-            <input type="text" id="rm-componente" class="form-control" value="${escHtml(carga.componente||'')}"/>
-          </div>
-          <div class="form-group"><label>Proceso</label>
-            <input type="text" id="rm-proceso" class="form-control" value="${escHtml(carga.proceso||'')}"/>
-          </div>
-          <div class="form-group"><label>Operador</label>
-            <input type="text" id="rm-operador" class="form-control" value="${escHtml(carga.operador||'')}"/>
-          </div>
-          <div class="form-group"><label>Cantidad</label>
-            <input type="number" id="rm-cantidad" class="form-control" value="${carga.cantidad??''}"/>
-          </div>
-          <div class="form-group"><label>Defecto</label>
-            <input type="text" id="rm-defecto" class="form-control" value="${escHtml(carga.defecto||'')}"/>
+        <div class="modal-body">
+          ${trazHtml}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+
+            <!-- Resultado / Estado -->
+            <div class="form-group"><label>Resultado</label>
+              <select id="re-estado" class="form-control">
+                ${['buena','defecto','reproceso','vacia','cancelado','activo'].map(s=>`<option value="${s}"${cur===s?' selected':''}>${s}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Defecto (visible solo si resultado = defecto) -->
+            <div class="form-group" id="re-defecto-wrap" style="${cur==='defecto'?'':'display:none'}">
+              <label>Defecto <span style="color:#dc2626;font-size:11px">★ afecta KPI calidad</span></label>
+              <select id="re-defecto" class="form-control">
+                <option value="">— Sin especificar —</option>${defOpts}
+              </select>
+            </div>
+
+            <!-- Herramental -->
+            <div class="form-group"><label>Herramental</label>
+              <select id="re-herramental" class="form-control">
+                ${selOpts(herramentales,'id','numero',carga.herramental_id,carga.herramental_no||carga.herramental)}
+              </select>
+            </div>
+
+            <!-- Componente -->
+            <div class="form-group"><label>Componente</label>
+              <select id="re-componente" class="form-control">
+                ${selOpts(componentes,'id','nombre',carga.componente_id,carga.componente)}
+              </select>
+            </div>
+
+            ${isBL ? `
+            <!-- Cliente (Baker/L1) -->
+            <div class="form-group"><label>Cliente</label>
+              <select id="re-cliente" class="form-control">
+                ${selOpts(clientes,'nombre','nombre',null,carga.cliente)}
+              </select>
+            </div>
+            <!-- No. SKF -->
+            <div class="form-group"><label>No. SKF</label>
+              <input type="text" id="re-no-skf" class="form-control" value="${escHtml(carga.no_skf||'')}"/>
+            </div>
+            <!-- No. Orden -->
+            <div class="form-group"><label>No. Orden</label>
+              <input type="text" id="re-no-orden" class="form-control" value="${escHtml(carga.no_orden||'')}"/>
+            </div>
+            <!-- Lote -->
+            <div class="form-group"><label>Lote</label>
+              <input type="text" id="re-lote" class="form-control" value="${escHtml(carga.lote||'')}"/>
+            </div>
+            ` : ''}
+
+            <!-- Proceso -->
+            <div class="form-group"><label>Proceso</label>
+              <select id="re-proceso" class="form-control">
+                ${selOpts(procesos,'id','nombre',carga.proceso_id,carga.proceso)}
+              </select>
+            </div>
+
+            <!-- Sub-proceso (Baker/L1) o Acabado (L3/L4) -->
+            ${isBL ? `
+            <div class="form-group"><label>Sub-proceso</label>
+              <select id="re-subproceso" class="form-control">
+                <option value="">— Ninguno —</option>${subOptsFor(carga.proceso_id)}
+              </select>
+            </div>` : `
+            <div class="form-group"><label>Acabado</label>
+              <select id="re-acabado" class="form-control">
+                ${selOpts(acabados,'id','nombre',carga.acabado_id,carga.acabado)}
+              </select>
+            </div>`}
+
+            <!-- Operador -->
+            <div class="form-group"><label>Operador</label>
+              <select id="re-operador" class="form-control">
+                ${selOpts(operadores,'id','nombre',carga.operador_id,carga.operador)}
+              </select>
+            </div>
+
+            <!-- Cantidad -->
+            <div class="form-group"><label>Cantidad (piezas)</label>
+              <input type="number" id="re-cantidad" class="form-control" value="${carga.cantidad??''}"/>
+            </div>
+
+            ${isBL ? `
+            <!-- Varillas (Baker/L1 rack) -->
+            <div class="form-group"><label>Varillas</label>
+              <input type="number" id="re-varillas" class="form-control" value="${carga.varillas??''}"/>
+            </div>` : `
+            <!-- Varillas (L3/L4) -->
+            <div class="form-group"><label>Varillas</label>
+              <input type="number" id="re-varillas" class="form-control" value="${carga.varillas??''}"/>
+            </div>`}
+
+            <!-- Turno -->
+            <div class="form-group"><label>Turno</label>
+              <select id="re-turno" class="form-control">
+                <option value="">—</option>
+                ${['T1','T2','T3'].map(t=>`<option value="${t}"${carga.turno===t?' selected':''}>${t}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Fechas / Horas -->
+            <div class="form-group"><label>Fecha Carga</label>
+              <input type="date" id="re-fecha-carga" class="form-control" value="${carga.fecha_carga||''}"/>
+            </div>
+            <div class="form-group"><label>Hora Carga</label>
+              <input type="time" id="re-hora-carga" class="form-control" value="${carga.hora_carga||''}"/>
+            </div>
+            <div class="form-group"><label>Fecha Descarga</label>
+              <input type="date" id="re-fecha-descarga" class="form-control" value="${carga.fecha_descarga||''}"/>
+            </div>
+            <div class="form-group"><label>Hora Descarga</label>
+              <input type="time" id="re-hora-descarga" class="form-control" value="${carga.hora_descarga||''}"/>
+            </div>
+
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-outline" id="rpt-modal-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="rpt-modal-save">💾 Guardar cambios</button>
+          <button class="btn btn-outline" id="re-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="re-save">💾 Guardar cambios</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
 
     const close = () => overlay.remove();
-    overlay.querySelector('#rpt-modal-close').addEventListener('click', close);
-    overlay.querySelector('#rpt-modal-cancel').addEventListener('click', close);
+    overlay.querySelector('#re-close').addEventListener('click', close);
+    overlay.querySelector('#re-cancel').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
-    overlay.querySelector('#rpt-modal-save').addEventListener('click', async () => {
-      const estadoVal = overlay.querySelector('#rm-estado').value;
+    // Mostrar/ocultar defecto según resultado
+    overlay.querySelector('#re-estado').addEventListener('change', e => {
+      overlay.querySelector('#re-defecto-wrap').style.display = e.target.value === 'defecto' ? '' : 'none';
+      if (e.target.value !== 'defecto') overlay.querySelector('#re-defecto').value = '';
+    });
+
+    // Cascada sub-proceso al cambiar proceso (Baker/L1)
+    if (isBL) {
+      overlay.querySelector('#re-proceso')?.addEventListener('change', e => {
+        const sp = overlay.querySelector('#re-subproceso');
+        if (!sp) return;
+        sp.innerHTML = '<option value="">— Ninguno —</option>' + subOptsFor(e.target.value);
+      });
+    }
+
+    // Guardar
+    overlay.querySelector('#re-save').addEventListener('click', async () => {
+      const getEl  = id => overlay.querySelector(id);
+      const selVal = (sel) => { const o = sel?.selectedOptions?.[0]; return { id: o?.value||null, name: o?.dataset?.name||o?.value||null }; };
+
+      const estadoVal  = getEl('#re-estado').value;
+      const defSel     = selVal(getEl('#re-defecto'));
+      const herrSel    = selVal(getEl('#re-herramental'));
+      const compSel    = selVal(getEl('#re-componente'));
+      const procSel    = selVal(getEl('#re-proceso'));
+      const operSel    = selVal(getEl('#re-operador'));
+
       const body = {
-        turno:          overlay.querySelector('#rm-turno').value,
+        turno:          getEl('#re-turno').value || null,
         estado:         estadoVal,
         resultado:      estadoVal,
-        fecha_carga:    overlay.querySelector('#rm-fecha-carga').value,
-        hora_carga:     overlay.querySelector('#rm-hora-carga').value,
-        fecha_descarga: overlay.querySelector('#rm-fecha-descarga').value || null,
-        hora_descarga:  overlay.querySelector('#rm-hora-descarga').value || null,
-        herramental_no: overlay.querySelector('#rm-herramental').value,
-        componente:     overlay.querySelector('#rm-componente').value || null,
-        proceso:        overlay.querySelector('#rm-proceso').value || null,
-        operador:       overlay.querySelector('#rm-operador').value || null,
-        cantidad:       overlay.querySelector('#rm-cantidad').value !== '' ? Number(overlay.querySelector('#rm-cantidad').value) : null,
-        defecto:        overlay.querySelector('#rm-defecto').value || null,
+        fecha_carga:    getEl('#re-fecha-carga').value || null,
+        hora_carga:     getEl('#re-hora-carga').value || null,
+        fecha_descarga: getEl('#re-fecha-descarga').value || null,
+        hora_descarga:  getEl('#re-hora-descarga').value || null,
+        herramental_id: herrSel.id   || null,
+        herramental_no: herrSel.name || null,
+        componente_id:  compSel.id   || null,
+        componente:     compSel.name || null,
+        proceso_id:     procSel.id   || null,
+        proceso:        procSel.name || null,
+        operador_id:    operSel.id   || null,
+        operador:       operSel.name || null,
+        defecto_id:     estadoVal === 'defecto' ? (defSel.id || null) : null,
+        defecto:        estadoVal === 'defecto' ? (defSel.name || null) : null,
+        cantidad:       getEl('#re-cantidad').value !== '' ? Number(getEl('#re-cantidad').value) : null,
+        varillas:       getEl('#re-varillas')?.value !== '' ? (Number(getEl('#re-varillas').value)||null) : null,
       };
+      if (isBL) {
+        const spSel = selVal(getEl('#re-subproceso'));
+        body.sub_proceso_id = spSel.id   || null;
+        body.sub_proceso    = spSel.name || null;
+        body.cliente  = getEl('#re-cliente')?.value  || null;
+        body.no_skf   = getEl('#re-no-skf')?.value   || null;
+        body.no_orden = getEl('#re-no-orden')?.value || null;
+        body.lote     = getEl('#re-lote')?.value     || null;
+      } else {
+        const acabSel = selVal(getEl('#re-acabado'));
+        body.acabado_id = acabSel.id   || null;
+        body.acabado    = acabSel.name || null;
+      }
+
+      const btn = getEl('#re-save');
+      btn.disabled = true; btn.textContent = 'Guardando...';
       try {
         await PATCH(`/cargas/${carga.id}/admin-editar`, body);
         close();
         await onSaved();
-      } catch (err) { alert('Error al guardar: ' + err.message); }
+      } catch (err) {
+        btn.disabled = false; btn.textContent = '💾 Guardar cambios';
+        alert('Error al guardar: ' + err.message);
+      }
     });
   }
 
-  // ── Modal edición cavidad Baker/L1 (admin) ────────────────────────────────
-  function openRptCavidadModal(cav, onSaved) {
-    const estados = ['buena','defecto','vacia'];
+  // ── Modal edición cavidad Baker/L1 (admin) — con catálogo completo ─────────
+  function openRptCavidadModal(cav, cat, onSaved) {
+    const defectos  = (cat.defectos  || []).filter(d => d.activo !== false);
+    const clientes  = (cat.clientes  || []).filter(c => c.activo !== false);
+    const operadores= (cat.operadores|| []).filter(o => o.activo !== false);
+    const componentes=(cat.componentes||[]).filter(c => c.activo !== false);
+
+    const curEstado = cav.estado || cav.resultado || 'buena';
+
+    const defOpts = defectos.map(d => `<option value="${d.id}" data-name="${escHtml(d.nombre)}"${
+      (cav.defecto_id && String(d.id)===String(cav.defecto_id)) || (!cav.defecto_id && d.nombre===cav.defecto) ? ' selected' : ''
+    }>${escHtml(d.nombre)}</option>`).join('');
+
+    const cliOpts = clientes.map(c => `<option value="${escHtml(c.nombre)}"${c.nombre===cav.cliente?' selected':''}>${escHtml(c.nombre)}</option>`).join('');
+    const opOpts  = operadores.map(o => `<option value="${o.id}" data-name="${escHtml(o.nombre)}"${
+      (cav.operador_id && String(o.id)===String(cav.operador_id)) || (!cav.operador_id && o.nombre===cav.operador) ? ' selected' : ''
+    }>${escHtml(o.nombre)}</option>`).join('');
+
+    const trazHtml = cav.editado_por
+      ? `<div style="font-size:11px;color:#6b7280;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 10px;margin-bottom:12px">
+           📝 Última edición: <strong>${escHtml(cav.editado_por)}</strong> — ${cav.editado_at ? new Date(cav.editado_at).toLocaleString('es-MX') : ''}
+         </div>` : '';
+
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay active';
     overlay.innerHTML = `
-      <div class="modal" style="max-width:420px">
+      <div class="modal" style="max-width:520px">
         <div class="modal-header">
           <h3 class="modal-title">✏️ Editar Cavidad — ${escHtml(cav.folio_barril||'')} Cav.${cav.cavidad_num??''}</h3>
-          <button class="modal-close" id="rpt-cav-close">✕</button>
+          <button class="modal-close" id="rc-close">✕</button>
         </div>
-        <div class="modal-body" style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-          <div class="form-group"><label>Estado / Resultado</label>
-            <select id="rc-estado" class="form-control">
-              ${estados.map(s=>`<option value="${s}" ${(cav.estado||cav.resultado)===s?'selected':''}>${s}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group"><label>Cantidad</label>
-            <input type="number" id="rc-cantidad" class="form-control" value="${cav.cantidad??''}"/>
-          </div>
-          <div class="form-group"><label>Operador</label>
-            <input type="text" id="rc-operador" class="form-control" value="${escHtml(cav.operador||'')}"/>
-          </div>
-          <div class="form-group"><label>Defecto</label>
-            <input type="text" id="rc-defecto" class="form-control" value="${escHtml(cav.defecto||'')}"/>
+        <div class="modal-body">
+          ${trazHtml}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+
+            <!-- Estado -->
+            <div class="form-group"><label>Estado / Resultado</label>
+              <select id="rc-estado" class="form-control">
+                ${['buena','defecto','vacia'].map(s=>`<option value="${s}"${curEstado===s?' selected':''}>${s}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- Defecto (visible solo si estado = defecto) -->
+            <div class="form-group" id="rc-defecto-wrap" style="${curEstado==='defecto'?'':'display:none'}">
+              <label>Defecto <span style="color:#dc2626;font-size:11px">★ afecta KPI calidad</span></label>
+              <select id="rc-defecto" class="form-control">
+                <option value="">— Sin especificar —</option>${defOpts}
+              </select>
+            </div>
+
+            <!-- Cliente -->
+            <div class="form-group"><label>Cliente</label>
+              <select id="rc-cliente" class="form-control">
+                <option value="">— Seleccionar —</option>${cliOpts}
+              </select>
+            </div>
+
+            <!-- Componente (datalist) -->
+            <div class="form-group"><label>Componente</label>
+              <datalist id="rc-comp-list">
+                ${componentes.map(c=>`<option value="${escHtml(c.nombre)}">`).join('')}
+              </datalist>
+              <input type="text" id="rc-componente" class="form-control" list="rc-comp-list" value="${escHtml(cav.componente||'')}"/>
+            </div>
+
+            <!-- No. SKF -->
+            <div class="form-group"><label>No. SKF</label>
+              <input type="text" id="rc-no-skf" class="form-control" value="${escHtml(cav.no_skf||'')}"/>
+            </div>
+
+            <!-- No. Orden -->
+            <div class="form-group"><label>No. Orden</label>
+              <input type="text" id="rc-no-orden" class="form-control" value="${escHtml(cav.no_orden||'')}"/>
+            </div>
+
+            <!-- Lote -->
+            <div class="form-group"><label>Lote</label>
+              <input type="text" id="rc-lote" class="form-control" value="${escHtml(cav.lote||'')}"/>
+            </div>
+
+            <!-- Cantidad -->
+            <div class="form-group"><label>Cantidad (piezas)</label>
+              <input type="number" id="rc-cantidad" class="form-control" value="${cav.cantidad??''}"/>
+            </div>
+
+            <!-- Operador -->
+            <div class="form-group"><label>Operador</label>
+              <select id="rc-operador" class="form-control">
+                <option value="">— Seleccionar —</option>${opOpts}
+              </select>
+            </div>
+
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-outline" id="rpt-cav-cancel">Cancelar</button>
-          <button class="btn btn-primary" id="rpt-cav-save">💾 Guardar cambios</button>
+          <button class="btn btn-outline" id="rc-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="rc-save">💾 Guardar cambios</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
 
     const close = () => overlay.remove();
-    overlay.querySelector('#rpt-cav-close').addEventListener('click', close);
-    overlay.querySelector('#rpt-cav-cancel').addEventListener('click', close);
+    overlay.querySelector('#rc-close').addEventListener('click', close);
+    overlay.querySelector('#rc-cancel').addEventListener('click', close);
     overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
 
-    overlay.querySelector('#rpt-cav-save').addEventListener('click', async () => {
-      const estadoVal = overlay.querySelector('#rc-estado').value;
+    // Mostrar/ocultar defecto
+    overlay.querySelector('#rc-estado').addEventListener('change', e => {
+      overlay.querySelector('#rc-defecto-wrap').style.display = e.target.value === 'defecto' ? '' : 'none';
+      if (e.target.value !== 'defecto') overlay.querySelector('#rc-defecto').value = '';
+    });
+
+    // Guardar
+    overlay.querySelector('#rc-save').addEventListener('click', async () => {
+      const getEl  = id => overlay.querySelector(id);
+      const selVal = (sel) => { const o = sel?.selectedOptions?.[0]; return { id: o?.value||null, name: o?.dataset?.name||o?.value||null }; };
+
+      const estadoVal = getEl('#rc-estado').value;
+      const defSel    = selVal(getEl('#rc-defecto'));
+      const opSel     = selVal(getEl('#rc-operador'));
+
       const body = {
-        estado:    estadoVal,
-        resultado: estadoVal,
-        defecto:   overlay.querySelector('#rc-defecto').value || null,
-        cantidad:  overlay.querySelector('#rc-cantidad').value !== '' ? Number(overlay.querySelector('#rc-cantidad').value) : null,
-        operador:  overlay.querySelector('#rc-operador').value || null,
+        estado:       estadoVal,
+        resultado:    estadoVal,
+        defecto_id:   estadoVal === 'defecto' ? (defSel.id || null) : null,
+        defecto:      estadoVal === 'defecto' ? (defSel.name || null) : null,
+        cliente:      getEl('#rc-cliente').value  || null,
+        componente:   getEl('#rc-componente').value.trim() || null,
+        no_skf:       getEl('#rc-no-skf').value   || null,
+        no_orden:     getEl('#rc-no-orden').value  || null,
+        lote:         getEl('#rc-lote').value      || null,
+        cantidad:     getEl('#rc-cantidad').value !== '' ? Number(getEl('#rc-cantidad').value) : null,
+        operador_id:  opSel.id   || null,
+        operador:     opSel.name || null,
       };
+
+      const btn = getEl('#rc-save');
+      btn.disabled = true; btn.textContent = 'Guardando...';
       try {
         await PATCH(`/cavidades/${cav.id}/admin-editar`, body);
         close();
         await onSaved();
-      } catch (err) { alert('Error al guardar: ' + err.message); }
+      } catch (err) {
+        btn.disabled = false; btn.textContent = '💾 Guardar cambios';
+        alert('Error al guardar: ' + err.message);
+      }
     });
   }
 
