@@ -1005,6 +1005,34 @@ body.pizarron-dark .pzs-pareto-val { color: #94a3b8; }
 .pzs-pareto-empty { font-size: .8em; color: #94a3b8; padding: 6px 0; }
 .pzs-all-dia-slide { display: flex; flex-direction: column; gap: 12px; }
 
+/* ── Paro programado banners ───────────────────────────────────── */
+.pzs-paro-prog-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: #fffbeb;
+  border: 2px solid #fcd34d;
+  border-radius: 16px;
+  padding: 40px 60px;
+  color: #b45309;
+  text-align: center;
+}
+body.pizarron-dark .pzs-paro-prog-banner {
+  background: #292524;
+  border-color: #78350f;
+  color: #fcd34d;
+}
+.pzs-paro-prog-sm {
+  font-size: .85em;
+  font-weight: 800;
+  color: #b45309;
+  letter-spacing: .04em;
+  padding: 8px 0;
+  text-align: center;
+}
+body.pizarron-dark .pzs-paro-prog-sm { color: #fcd34d; }
+
 /* ── Paros panel en turno slide ────────────────────────────────── */
 .pzs-paros-panel {
   min-width: 180px;

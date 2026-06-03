@@ -1641,13 +1641,30 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
   } else {
     paros = (pdb.paros || []).filter(p => p.linea === lineaLabel);
   }
-  paros = paros.filter(p => p.fecha_inicio === fecha && Number(p.duracion_min || 0) > 0);
-  if (turno) paros = paros.filter(p => p.turno === turno);
+
+  // Calcular la intersección de cada paro con el turno (o día completo) usando
+  // los mismos límites de minutos que slotOverlap, para manejar correctamente
+  // paros que cruzan límites de turno o de día.
+  const targetTurnos = turno ? [turno] : ['T1', 'T2', 'T3'];
+
   const agg = {};
   for (const p of paros) {
+    const paroFechaFin = p.fecha_fin   || nowDateStr();
+    const paroHoraFin  = p.hora_fin    || nowTimeStr();
+
+    let totalOverlap = 0;
+    for (const t of targetTurnos) {
+      const tDef = TURNOS_DEF[t];
+      const ss = tDef.start;
+      const se = ss + tDef.hours * 60;
+      totalOverlap += slotOverlap(ss, se, p.hora_inicio, paroHoraFin, p.fecha_inicio, paroFechaFin, fecha);
+    }
+
+    if (totalOverlap <= 0) continue;
     const key = p.motivo || 'Sin motivo';
-    agg[key] = (agg[key] || 0) + Number(p.duracion_min || 0);
+    agg[key] = (agg[key] || 0) + totalOverlap;
   }
+
   return Object.entries(agg)
     .map(([motivo, duracion_min]) => ({ motivo, duracion_min: Math.round(duracion_min) }))
     .sort((a, b) => b.duracion_min - a.duracion_min);
@@ -1787,8 +1804,11 @@ router.get('/pizarron', (req, res) => {
     data[l].pareto_defectos = buildParetoDefectos(pdb, l, targetDate);
     for (const t of ['T1', 'T2', 'T3']) {
       if (data[l][t]) {
-        data[l][t].pareto_paros    = buildParetoParos(pdb, l, targetDate, t);
+        const pp = buildParetoParos(pdb, l, targetDate, t);
+        data[l][t].pareto_paros    = pp;
         data[l][t].pareto_defectos = buildParetoDefectos(pdb, l, targetDate, t);
+        // Marcar si el turno completo fue "no trabajado" (paro programado)
+        data[l][t].turno_no_trabajado = pp.some(p => /turno\s*no\s*trabajado/i.test(p.motivo));
       }
     }
   }
@@ -3738,8 +3758,8 @@ router.post('/scrap', produccionAllowRoles('admin', 'produccion'), (req, res) =>
   res.json(rec);
 });
 
-// GET /scrap/resumen — % SCRAP por línea y día
-router.get('/scrap/resumen', produccionAllowRoles('admin', 'produccion', 'pizarron'), (req, res) => {
+// GET /scrap/resumen — % SCRAP por línea y día (público — usado por pizarrón sin auth)
+router.get('/scrap/resumen', (req, res) => {
   const { linea, fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
 

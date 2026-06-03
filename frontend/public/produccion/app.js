@@ -2599,8 +2599,9 @@ async function viewPizarron(el) {
       const backendData = data?.data || {};
       const rows        = [];
       // turnoTotals keyed by 'L3-T1', dayTotals keyed by 'L3'
-      const turnoTotals = {};
-      const dayTotals   = {};
+      const turnoTotals    = {};
+      const dayTotals      = {};
+      const turnoNoTrabajado = {}; // keyed by 'L3-T1'
 
       const pct = v => v != null ? v * 100 : null;
 
@@ -2609,26 +2610,31 @@ async function viewPizarron(el) {
         for (const t of turnos) {
           const turnoData = lineaData[t];
           if (!turnoData) continue;
-          for (const slot of turnoData.slots || []) {
-            // Solo incluir slots con al menos 1 ciclo o con paros
-            if (slot.ciclos_totales === 0 && slot.paros_min === 0) continue;
-            rows.push({
-              turno: t,
-              hora:  slot.hora_inicio,
-              linea: l,
-              eficiencia:     pct(slot.eficiencia),
-              capacidad:      pct(slot.capacidad),
-              calidad:        pct(slot.calidad),
-              disponibilidad: pct(slot.disponibilidad),
-              rendimiento:    pct(slot.rendimiento),
-              ciclos:         slot.ciclos_totales,
-              ciclos_buenos:  slot.ciclos_buenos
-            });
+          const key = `${l}-${t}`;
+          if (turnoData.turno_no_trabajado) {
+            turnoNoTrabajado[key] = true;
+          } else {
+            for (const slot of turnoData.slots || []) {
+              // Solo incluir slots con al menos 1 ciclo o con paros
+              if (slot.ciclos_totales === 0 && slot.paros_min === 0) continue;
+              rows.push({
+                turno: t,
+                hora:  slot.hora_inicio,
+                linea: l,
+                eficiencia:     pct(slot.eficiencia),
+                capacidad:      pct(slot.capacidad),
+                calidad:        pct(slot.calidad),
+                disponibilidad: pct(slot.disponibilidad),
+                rendimiento:    pct(slot.rendimiento),
+                ciclos:         slot.ciclos_totales,
+                ciclos_buenos:  slot.ciclos_buenos
+              });
+            }
           }
           // Guardar totales de turno del backend
           if (turnoData.totals) {
             const tot = turnoData.totals;
-            turnoTotals[`${l}-${t}`] = {
+            turnoTotals[key] = {
               ciclos:         tot.ciclos_totales,
               eficiencia:     pct(tot.eficiencia),
               capacidad:      pct(tot.capacidad),
@@ -2656,7 +2662,7 @@ async function viewPizarron(el) {
         res.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Sin registros para los filtros seleccionados.</p></div>';
         return;
       }
-      res.innerHTML = renderPizarronTable(rows, turnoTotals, dayTotals);
+      res.innerHTML = renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado);
     } catch (e) {
       res.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
@@ -2721,9 +2727,10 @@ async function viewPizarron(el) {
   cargarPizarron();
 }
 
-function renderPizarronTable(rows, turnoTotals, dayTotals) {
-  turnoTotals = turnoTotals || {};
-  dayTotals   = dayTotals   || {};
+function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
+  turnoTotals      = turnoTotals      || {};
+  dayTotals        = dayTotals        || {};
+  turnoNoTrabajado = turnoNoTrabajado || {};
   const ORDER = ['T1', 'T2', 'T3'];
 
   // Determinar líneas presentes
@@ -2748,29 +2755,37 @@ function renderPizarronTable(rows, turnoTotals, dayTotals) {
     for (const turno of turnosConDatos) {
       const grupo  = byTurno[turno] || [];
       const tLabel = `Turno ${turno}`;
-      bodyHtml += `<tr class="turno-row"><td colspan="6">${tLabel}</td></tr>`;
-      for (const r of grupo) {
+      bodyHtml += `<tr class="turno-row"><td colspan="7">${tLabel}</td></tr>`;
+      if (turnoNoTrabajado[`${linea}-${turno}`]) {
         bodyHtml += `<tr>
-          <td>${escHtml(r.hora || '—')}</td>
-          <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
-          <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
-          <td class="${kpiColor(r.rendimiento)}">${fmtPct(r.rendimiento)}</td>
-          <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
-          <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
-          <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+          <td colspan="7" style="text-align:center;color:#b45309;font-weight:700;padding:10px;background:#fffbeb">
+            ⛔ PARO PROGRAMADO — Turno no trabajado
+          </td>
         </tr>`;
-      }
-      const tt = turnoTotals[`${linea}-${turno}`];
-      if (tt) {
-        bodyHtml += `<tr class="totals-row">
-          <td>Total ${tLabel}</td>
-          <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
-          <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
-          <td class="${kpiColor(tt.rendimiento)}">${fmtPct(tt.rendimiento)}</td>
-          <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
-          <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
-          <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
-        </tr>`;
+      } else {
+        for (const r of grupo) {
+          bodyHtml += `<tr>
+            <td>${escHtml(r.hora || '—')}</td>
+            <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
+            <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
+            <td class="${kpiColor(r.rendimiento)}">${fmtPct(r.rendimiento)}</td>
+            <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
+            <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
+            <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+          </tr>`;
+        }
+        const tt = turnoTotals[`${linea}-${turno}`];
+        if (tt) {
+          bodyHtml += `<tr class="totals-row">
+            <td>Total ${tLabel}</td>
+            <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
+            <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
+            <td class="${kpiColor(tt.rendimiento)}">${fmtPct(tt.rendimiento)}</td>
+            <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
+            <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
+            <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
+          </tr>`;
+        }
       }
     }
     const dt = dayTotals[linea];

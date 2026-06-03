@@ -147,7 +147,7 @@
 
       const transformed = {};
       for (const [l, ld] of Object.entries(raw?.data || {})) {
-        const horas = {}, totales = {}, paros_turno = {};
+        const horas = {}, totales = {}, paros_turno = {}, no_trabajado = {};
         for (const t of ['T1', 'T2', 'T3']) {
           const td    = ld[t] || {};
           const slots = td.slots || [];
@@ -172,7 +172,8 @@
             disponibilidad: pct(tot.disponibilidad),
             rendimiento:    pct(tot.rendimiento)
           };
-          paros_turno[t] = td.pareto_paros || [];
+          paros_turno[t]  = td.pareto_paros || [];
+          no_trabajado[t] = td.turno_no_trabajado || false;
         }
         const tdia = ld.totales_dia || {};
         totales.dia = {
@@ -186,6 +187,7 @@
           horas,
           totales,
           paros_turno,
+          no_trabajado,
           pareto_paros:    raw?.data?.[l]?.pareto_paros    || [],
           pareto_defectos: raw?.data?.[l]?.pareto_defectos || []
         };
@@ -358,6 +360,20 @@
 
   /* ── Diapositiva turno de una línea ───────────────────────────────────── */
   function buildTurnoSlide(linea, turno) {
+    // Si el turno completo fue "no trabajado", mostrar banner especial
+    if (state.data?.[linea]?.no_trabajado?.[turno]) {
+      return `
+        <div class="pzs-turno-slide">
+          <div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:200px">
+            <div class="pzs-paro-prog-banner">
+              <div style="font-size:2.5em">⛔</div>
+              <div style="font-size:1.8em;font-weight:900;letter-spacing:.05em">PARO PROGRAMADO</div>
+              <div style="font-size:.9em;opacity:.8">Turno no trabajado — sin producción registrada</div>
+            </div>
+          </div>
+        </div>`;
+    }
+
     const tot   = state.data?.[linea]?.totales?.[turno] || {};
     const horas = state.data?.[linea]?.horas?.[turno]   || [];
 
@@ -475,25 +491,29 @@
         <div class="pzs-kpi-value">${efComp.na ? 'N/A' : fmtPct(efVal)}</div>
       </div>`;
 
-      const scrapPct = state.scrapData?.[l] ?? null;
+      const scrapPct  = state.scrapData?.[l] ?? null;
       const parosList = state.data?.[l]?.paros_turno?.[turno] || [];
       const parosTot  = parosList.reduce((s, p) => s + (p.duracion_min || 0), 0);
+      const noTrabajado = state.data?.[l]?.no_trabajado?.[turno] || false;
 
       return `
         <div class="pzs-all-linea-block">
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
-          <div class="pzs-kpi-grid pzs-kpi-grid-compact">
-            ${efCard}
-            ${kpiCard('Rendimiento',    tot.rendimiento)}
-            ${kpiCard('Capacidad',      tot.capacidad)}
-            ${kpiCard('Calidad',        tot.calidad)}
-            ${kpiCard('Disponibilidad', tot.disponibilidad)}
-            <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
-              <div class="pzs-kpi-label">% Scrap</div>
-              <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
-            </div>
-          </div>
-          <div class="pzs-ciclos-badge-sm">Ciclos: <strong>${ciclos}</strong> · Paros: <strong>${parosTot} min</strong></div>
+          ${noTrabajado
+            ? `<div class="pzs-paro-prog-sm">⛔ PARO PROGRAMADO</div>`
+            : `<div class="pzs-kpi-grid pzs-kpi-grid-compact">
+                ${efCard}
+                ${kpiCard('Rendimiento',    tot.rendimiento)}
+                ${kpiCard('Capacidad',      tot.capacidad)}
+                ${kpiCard('Calidad',        tot.calidad)}
+                ${kpiCard('Disponibilidad', tot.disponibilidad)}
+                <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
+                  <div class="pzs-kpi-label">% Scrap</div>
+                  <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
+                </div>
+              </div>
+              <div class="pzs-ciclos-badge-sm">Ciclos: <strong>${ciclos}</strong> · Paros: <strong>${parosTot} min</strong></div>`
+          }
         </div>`;
     }).join('');
 
@@ -533,6 +553,13 @@
       const tot    = ld?.totales?.[t] || {};
       const horas  = ld?.horas?.[t]   || [];
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
+      if (ld?.no_trabajado?.[t]) {
+        return `
+          <div class="pzs-dia-row">
+            <span class="pzs-dia-turno-lbl">${t}</span>
+            <span style="grid-column:2/8;color:#b45309;font-weight:700;font-size:.82em;letter-spacing:.04em">⛔ PARO PROGRAMADO</span>
+          </div>`;
+      }
       return `
         <div class="pzs-dia-row">
           <span class="pzs-dia-turno-lbl">${t}</span>
