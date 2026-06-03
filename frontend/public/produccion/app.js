@@ -4301,6 +4301,8 @@ async function viewReportes(el) {
         body.acabado    = acabSel.name || null;
       }
 
+      body._linea_hint = linea; // evita colisión de IDs entre cargas/cargas_baker/cargas_l1
+
       const btn = getEl('#re-save');
       btn.disabled = true; btn.textContent = 'Guardando...';
       try {

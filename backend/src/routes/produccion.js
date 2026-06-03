@@ -638,11 +638,29 @@ router.patch('/cargas/:id/admin-editar', produccionAllowRoles('admin'), (req, re
   const pdb  = dbProd.read();
   const body = req.body || {};
 
-  const collections = [
-    { key: 'cargas',       arr: pdb.cargas       || [] },
-    { key: 'cargas_baker', arr: pdb.cargas_baker  || [] },
-    { key: 'cargas_l1',   arr: pdb.cargas_l1     || [] },
-  ];
+  // _linea_hint permite identificar la colección correcta cuando el id puede coincidir
+  // entre cargas (L3/L4) y cargas_baker / cargas_l1 (IDs secuenciales independientes)
+  const hint = (body._linea_hint || '').toString().toLowerCase();
+  let collections;
+  if (hint === 'baker') {
+    collections = [
+      { key: 'cargas_baker', arr: pdb.cargas_baker || [] },
+      { key: 'cargas',       arr: pdb.cargas       || [] },
+      { key: 'cargas_l1',   arr: pdb.cargas_l1    || [] },
+    ];
+  } else if (hint === 'l1') {
+    collections = [
+      { key: 'cargas_l1',   arr: pdb.cargas_l1    || [] },
+      { key: 'cargas',      arr: pdb.cargas        || [] },
+      { key: 'cargas_baker',arr: pdb.cargas_baker  || [] },
+    ];
+  } else {
+    collections = [
+      { key: 'cargas',       arr: pdb.cargas       || [] },
+      { key: 'cargas_baker', arr: pdb.cargas_baker  || [] },
+      { key: 'cargas_l1',   arr: pdb.cargas_l1     || [] },
+    ];
+  }
 
   let found = null;
   for (const col of collections) {
