@@ -39,7 +39,16 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function todayStr() {
-    return new Date().toISOString().slice(0, 10);
+    // Usa zona horaria Mexico City (no UTC) y aplica shift date:
+    // T3 nocturno (00:00-06:29 local) pertenece al día anterior
+    const now   = new Date();
+    const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const mins  = mxNow.getHours() * 60 + mxNow.getMinutes();
+    if (mins < 6 * 60 + 30) {
+      const d = new Date(now.getTime() - 86400000);
+      return d.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    }
+    return now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   }
 
   function nowStr() {

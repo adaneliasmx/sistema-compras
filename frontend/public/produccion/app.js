@@ -2464,7 +2464,12 @@ function openModalParo(linea, catalogo, onDone) {
     const btn = document.getElementById('mp-submit');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
-      await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo });
+      // Enviar fecha/hora real Mexico City (no UTC del servidor Render)
+      const _now   = new Date();
+      const _mxNow = new Date(_now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+      const _mxFecha = _now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      const _mxHora  = _mxNow.getHours().toString().padStart(2,'0') + ':' + _mxNow.getMinutes().toString().padStart(2,'0');
+      await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: _mxFecha, hora_inicio: _mxHora });
       closeModal();
       onDone();
     } catch (e) {
@@ -7206,13 +7211,19 @@ function openModalScrap(linea, catalogo) {
     if (!componente) { alert('Selecciona un componente.'); return; }
     if (!piezas || piezas < 1) { alert('Ingresa la cantidad de piezas de SCRAP.'); return; }
 
-    const now  = new Date();
+    const now   = new Date();
+    const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const mxMins = mxNow.getHours() * 60 + mxNow.getMinutes();
+    // Shift date: T3 nocturno (00:00-06:29) pertenece al día anterior del turno
+    const shiftFecha = mxMins < 6 * 60 + 30
+      ? new Date(now.getTime() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' })
+      : now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
     const btn  = document.getElementById('btn-scrap-guardar');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
       await POST('/scrap', {
         linea,
-        fecha:      now.toLocaleDateString('en-CA'),
+        fecha:      shiftFecha,
         hora:       now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5),
         turno:      getCurrentTurno(),
         operador:   state.user?.nombre || '',

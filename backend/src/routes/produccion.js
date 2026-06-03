@@ -1174,8 +1174,8 @@ router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (re
   const paro = pdb.paros[idx];
   if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya fue cerrado' });
 
-  const fecha_fin = nowDateStr();
-  const hora_fin  = nowTimeStr();
+  const fecha_fin = req.body?.fecha_fin || nowDateStr();
+  const hora_fin  = req.body?.hora_fin  || nowTimeStr();
   paro.fecha_fin  = fecha_fin;
   paro.hora_fin   = hora_fin;
   paro.estado     = 'cerrado';
@@ -1197,8 +1197,8 @@ router.patch('/paros/:id/admin-cerrar', produccionAllowRoles('admin'), (req, res
   const paro = pdb.paros[idx];
   if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya fue cerrado' });
 
-  const fecha_fin = nowDateStr();
-  const hora_fin  = nowTimeStr();
+  const fecha_fin = req.body?.fecha_fin || nowDateStr();
+  const hora_fin  = req.body?.hora_fin  || nowTimeStr();
   paro.fecha_fin  = fecha_fin;
   paro.hora_fin   = hora_fin;
   paro.estado     = 'cerrado';
@@ -1727,7 +1727,8 @@ function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
 
 router.get('/pizarron', (req, res) => {
   const { linea = 'L3', fecha, turno = 'all' } = req.query;
-  const targetDate = fecha || nowDateStr();
+  // Si no viene fecha, usar shift date (T3 nocturno 00:00-06:29 pertenece al día anterior)
+  const targetDate = fecha || getShiftDate(nowDateStr(), nowTimeStr());
   const pdb        = dbProd.read();
   const config     = pdb.config || {};
   // Solo pasar L3/L4 a buildPizarronResult; Baker y L1 usan su propia lógica (addBakerLike)
@@ -3795,14 +3796,22 @@ router.get('/scrap/resumen', (req, res) => {
 
   const resumen = Object.entries(scrapByDay).map(([key, scrap]) => {
     const [l, fecha] = key.split('|');
+    const nextDay = addDays(fecha, 1);
+    // Incluye cargas del día + cargas T3 nocturno (descargadas entre 00:00-06:29 del día siguiente)
+    const isShiftCarga = c => {
+      if (!c.fecha_descarga || c.estado === 'cancelado') return false;
+      if (c.fecha_descarga === fecha) return true;
+      if (c.fecha_descarga === nextDay && c.hora_descarga && toMins(c.hora_descarga) < 6 * 60 + 30) return true;
+      return false;
+    };
     // Calcular piezas totales producidas en ese día desde cargas descargadas
     let cargas = [];
     if (l === 'Baker') {
-      cargas = (pdb.cargas_baker || []).filter(c => c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+      cargas = (pdb.cargas_baker || []).filter(isShiftCarga);
     } else if (l === 'L1') {
-      cargas = (pdb.cargas_l1 || []).filter(c => c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+      cargas = (pdb.cargas_l1 || []).filter(isShiftCarga);
     } else {
-      cargas = (pdb.cargas || []).filter(c => c.linea === l && c.fecha_descarga === fecha && c.estado !== 'cancelado' && c.fecha_descarga);
+      cargas = (pdb.cargas || []).filter(c => c.linea === l && isShiftCarga(c));
     }
     let piezas_total = 0;
     for (const c of cargas) {
