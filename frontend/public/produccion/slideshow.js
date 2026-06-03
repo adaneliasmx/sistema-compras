@@ -29,6 +29,8 @@
   let progressInt = null;
   let kpiData     = {};
   let weeklyData  = {};
+  let scrapData   = {};   // { L3: pct, L4: pct, Baker: pct }  — today
+  let weeklyScrap = {};   // { L3: [{fecha, pct}], L4: [...], Baker: [...] }
   let ssConfig    = { default_duracion_seg: 120, slides: [] };
   let slideDurSec = 120;
   let isPaused    = false;
@@ -87,6 +89,17 @@
     document.querySelectorAll('.ss-font-btn').forEach(b => {
       b.classList.toggle('ss-btn-active', b.dataset.font === fontSize);
     });
+  }
+
+  // ── Scrap helpers ─────────────────────────────────────────────────────────
+  function scrapCardClass(pct) {
+    if (pct == null) return '';
+    if (pct < 1)    return 'kpi-green';
+    if (pct <= 3)   return 'kpi-amber';
+    return 'kpi-red';
+  }
+  function fmtScrap(pct) {
+    return pct != null ? pct.toFixed(2) + '%' : '—';
   }
 
   // ── API ───────────────────────────────────────────────────────────────────
@@ -182,6 +195,36 @@
     return { desde, hasta };
   }
 
+  async function fetchScrap() {
+    try {
+      const fecha = shiftDate();
+      const res   = await fetch(`${API}/scrap/resumen?fecha_ini=${fecha}&fecha_fin=${fecha}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const map  = {};
+      for (const r of (data.resumen || [])) map[r.linea] = r.pct_scrap;
+      scrapData = map;
+    } catch {}
+  }
+
+  async function fetchWeeklyScrap() {
+    try {
+      const { desde, hasta } = getWeekRange();
+      const res = await fetch(`${API}/scrap/resumen?fecha_ini=${desde}&fecha_fin=${hasta}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const byLinea = { L3: {}, L4: {}, Baker: {} };
+      for (const r of (data.resumen || [])) {
+        if (byLinea[r.linea]) byLinea[r.linea][r.fecha] = r.pct_scrap;
+      }
+      weeklyScrap = byLinea;
+    } catch {}
+  }
+
   async function fetchWeeklyKpi() {
     try {
       const { desde, hasta } = getWeekRange();
@@ -258,13 +301,14 @@
 
   /* ── Diapositiva: turno de una línea ──────────────────────────────────── */
   function renderTurnoSlide(slide) {
-    const turno = currentTurno();
-    const l     = slide.linea;
-    const ld    = kpiData[l] || {};
-    const tot   = ld[turno]?.totals || {};
-    const slots = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0);
-    const label = LINEA_LABELS[l] || l;
+    const turno    = currentTurno();
+    const l        = slide.linea;
+    const ld       = kpiData[l] || {};
+    const tot      = ld[turno]?.totals || {};
+    const slots    = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0);
+    const label    = LINEA_LABELS[l] || l;
     const ciclosTotales = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
+    const scrapPct = scrapData[l] != null ? scrapData[l] : null;
 
     return `
       <div class="ss-slide">
@@ -280,6 +324,10 @@
           ${kpiCard('Calidad',        tot.calidad)}
           ${kpiCard('Disponibilidad', tot.disponibilidad)}
           ${kpiCard('Rendimiento',    tot.rendimiento)}
+          <div class="ss-kpi-card ${scrapCardClass(scrapPct)}">
+            <div class="ss-kpi-label">% Scrap (día)</div>
+            <div class="ss-kpi-value ${scrapCardClass(scrapPct)}">${fmtScrap(scrapPct)}</div>
+          </div>
         </div>
         ${slots.length ? `
         <div style="flex:1;overflow:auto">
@@ -314,6 +362,7 @@
       const ciclos  = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
       const paretoP = (ld[turno]?.pareto_paros    || []).slice(0, 3);
       const paretoD = (ld[turno]?.pareto_defectos || []).slice(0, 3);
+      const sp      = scrapData[l] != null ? scrapData[l] : null;
       return `
         <div class="ss-linea-panel">
           <h3>${LINEA_LABELS[l] || l}</h3>
@@ -327,6 +376,7 @@
             ${miniKpiCard('Calidad',        tot.calidad)}
             ${miniKpiCard('Disponibilidad', tot.disponibilidad)}
             ${miniKpiCard('Rendimiento',    tot.rendimiento)}
+            <div class="ss-mini-kpi"><div class="lbl">% Scrap</div><div class="val ${scrapCardClass(sp)}">${fmtScrap(sp)}</div></div>
           </div>
           <div class="ss-pareto-col" style="margin-top:8px">
             <div class="ss-pareto-title">&#9201; Paros</div>
@@ -371,11 +421,12 @@
 
   /* ── Diapositiva: acumulado del día de una línea ─────────────────────── */
   function renderDiaSlide(slide) {
-    const l     = slide.linea;
-    const ld    = kpiData[l] || {};
-    const diaT  = ld.totales_dia || {};
-    const label = LINEA_LABELS[l] || l;
-    const fecha = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
+    const l        = slide.linea;
+    const ld       = kpiData[l] || {};
+    const diaT     = ld.totales_dia || {};
+    const label    = LINEA_LABELS[l] || l;
+    const fecha    = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
+    const scrapPct = scrapData[l] != null ? scrapData[l] : null;
 
     const turnoRows = ['T1', 'T2', 'T3'].map(t => {
       const tot    = ld[t]?.totals || {};
@@ -417,6 +468,10 @@
               ${kpiCard('Calidad',        diaT.calidad)}
               ${kpiCard('Disponibilidad', diaT.disponibilidad)}
               ${kpiCard('Rendimiento',    diaT.rendimiento)}
+              <div class="ss-kpi-card ${scrapCardClass(scrapPct)}">
+                <div class="ss-kpi-label">% Scrap (día)</div>
+                <div class="ss-kpi-value ${scrapCardClass(scrapPct)}">${fmtScrap(scrapPct)}</div>
+              </div>
             </div>
           </div>
           <div class="ss-dia-pareto-col">
@@ -458,6 +513,7 @@
     const panels = lineas.map(l => {
       const ld      = kpiData[l] || {};
       const diaT    = ld.totales_dia || {};
+      const sp      = scrapData[l] != null ? scrapData[l] : null;
       const ciclosDia = lineas.length > 0
         ? ['T1','T2','T3'].reduce((s, t) => s + ((ld[t]?.slots || []).reduce((a, x) => a + (x.ciclos_totales || 0), 0)), 0)
         : 0;
@@ -470,6 +526,7 @@
             ${miniKpiCard('Calidad',        diaT.calidad)}
             ${miniKpiCard('Disponibilidad', diaT.disponibilidad)}
             ${miniKpiCard('Rendimiento',    diaT.rendimiento)}
+            <div class="ss-mini-kpi"><div class="lbl">% Scrap</div><div class="val ${scrapCardClass(sp)}">${fmtScrap(sp)}</div></div>
           </div>
           <div style="text-align:center;font-size:.8em;color:#94a3b8;margin-top:4px">Ciclos día: <strong>${ciclosDia}</strong></div>
         </div>`;
@@ -613,29 +670,45 @@
     const dispSeries = getSeries(d => d.tMin  > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
     const rendSeries = getSeries(d => d.rendD > 0 ? +(d.rendN/d.rendD *100).toFixed(1) : null);
 
+    // Scrap series from weeklyScrap (inverted axis: lower is better)
+    const scrapSeries = LINEAS.map(l => ({
+      label: l,
+      color: COLORS[l],
+      data: DIAS_SEMANA.map((_, idx) => {
+        const f = fechaByDia[idx];
+        if (!f) return null;
+        const pct = weeklyScrap[l]?.[f];
+        return pct != null ? +Number(pct).toFixed(2) : null;
+      })
+    }));
+
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">Tendencia Semanal de KPIs · ${escHtml(desde)} – ${escHtml(hasta)}</div>
         <div class="ss-trend-grid">
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">📈 Eficiencia (obj. 90%)</div>
-            ${buildSVGTrend(efSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
+            <div class="ss-trend-card-title">Eficiencia (obj. 90%)</div>
+            ${buildSVGTrend(efSeries,    DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">✅ Calidad (obj. 99%)</div>
-            ${buildSVGTrend(calSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:99  })}
+            <div class="ss-trend-card-title">Calidad (obj. 99%)</div>
+            ${buildSVGTrend(calSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:99 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">⏱ Disponibilidad (obj. 90%)</div>
-            ${buildSVGTrend(dispSeries, DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
+            <div class="ss-trend-card-title">Disponibilidad (obj. 90%)</div>
+            ${buildSVGTrend(dispSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">🔧 Capacidad (obj. 85%)</div>
-            ${buildSVGTrend(capSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:85  })}
+            <div class="ss-trend-card-title">Capacidad (obj. 85%)</div>
+            ${buildSVGTrend(capSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:85 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">⚙️ Rendimiento (obj. 90%)</div>
-            ${buildSVGTrend(rendSeries, DIAS_SEMANA, { minVal:0, maxVal:100, target:90  })}
+            <div class="ss-trend-card-title">Rendimiento (obj. 90%)</div>
+            ${buildSVGTrend(rendSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
+          </div>
+          <div class="ss-trend-card">
+            <div class="ss-trend-card-title">% Scrap (obj. &lt;1%)</div>
+            ${buildSVGTrend(scrapSeries, DIAS_SEMANA, { minVal:0, maxVal:5,   target:1  })}
           </div>
         </div>
       </div>`;
@@ -765,6 +838,8 @@
     setInterval(async () => {
       await fetchKpi();
       await fetchWeeklyKpi();
+      await fetchScrap();
+      await fetchWeeklyScrap();
       await fetchConfig();
       buildSlides();
       renderCurrentSlide();
@@ -775,7 +850,7 @@
   async function boot() {
     document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">⏳ Cargando datos...</div>';
     await fetchConfig();
-    await Promise.all([fetchKpi(), fetchWeeklyKpi()]);
+    await Promise.all([fetchKpi(), fetchWeeklyKpi(), fetchScrap(), fetchWeeklyScrap()]);
     buildSlides();
     if (!slides.length) {
       document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">Sin diapositivas activas.</div>';

@@ -732,7 +732,7 @@ body.ss-light .ss-pause-btn { color: #2563eb !important; border-color: #2563eb !
 .ss-trend-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
+  grid-template-rows: repeat(3, 1fr);
   gap: 10px;
   flex: 1;
   min-height: 0;
