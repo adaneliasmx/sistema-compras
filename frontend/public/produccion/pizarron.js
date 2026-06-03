@@ -20,6 +20,7 @@
   // ── State ─────────────────────────────────────────────────────────────────
   let state = {
     data:         null,
+    scrapData:    {},
     error:        null,
     fecha:        todayStr(),
     slideIdx:     0,
@@ -61,6 +62,15 @@
     if (isNaN(n)) return '';
     if (n >= 90) return 'kpi-green';
     if (n >= 70) return 'kpi-amber';
+    return 'kpi-red';
+  }
+
+  function scrapColor(pct) {
+    if (pct === null || pct === undefined) return '';
+    const n = Number(pct);
+    if (isNaN(n)) return '';
+    if (n < 1)  return 'kpi-green';
+    if (n <= 3) return 'kpi-amber';
     return 'kpi-red';
   }
 
@@ -116,16 +126,28 @@
   async function fetchData() {
     try {
       const token = localStorage.getItem('prod_token') || '';
-      const res = await fetch(`/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
-      });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+      const [res, scrapRes] = await Promise.all([
+        fetch(`/api/produccion/pizarron?linea=ambas&fecha=${state.fecha}&turno=all`, { headers }),
+        fetch(`/api/produccion/scrap/resumen?fecha_ini=${state.fecha}&fecha_fin=${state.fecha}`, { headers })
+      ]);
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const raw = await res.json();
       const pct = v => (v != null ? v * 100 : null);
 
+      // Scrap por linea
+      const scrapMap = {};
+      if (scrapRes.ok) {
+        const scrapJson = await scrapRes.json();
+        for (const r of (scrapJson.resumen || [])) {
+          scrapMap[r.linea] = r.pct_scrap;
+        }
+      }
+
       const transformed = {};
       for (const [l, ld] of Object.entries(raw?.data || {})) {
-        const horas = {}, totales = {};
+        const horas = {}, totales = {}, paros_turno = {};
         for (const t of ['T1', 'T2', 'T3']) {
           const td    = ld[t] || {};
           const slots = td.slots || [];
@@ -150,6 +172,7 @@
             disponibilidad: pct(tot.disponibilidad),
             rendimiento:    pct(tot.rendimiento)
           };
+          paros_turno[t] = td.pareto_paros || [];
         }
         const tdia = ld.totales_dia || {};
         totales.dia = {
@@ -162,12 +185,14 @@
         transformed[l] = {
           horas,
           totales,
+          paros_turno,
           pareto_paros:    raw?.data?.[l]?.pareto_paros    || [],
           pareto_defectos: raw?.data?.[l]?.pareto_defectos || []
         };
       }
 
       state.data        = transformed;
+      state.scrapData   = scrapMap;
       state.error       = null;
       state.lastRefresh = new Date();
     } catch (e) {
@@ -378,6 +403,16 @@
       </tr>`;
     }).join('') || '<tr><td colspan="6" class="pzs-no-data">Sin registros en este turno</td></tr>';
 
+    const scrapPct  = state.scrapData?.[linea] ?? null;
+    const parosList = state.data?.[linea]?.paros_turno?.[turno] || [];
+    const parosTotalMin = parosList.reduce((s, p) => s + (p.duracion_min || 0), 0);
+
+    const parosHtml = parosList.length > 0
+      ? parosList.slice(0, 5).map(p =>
+          `<div class="pzs-paro-row"><span class="pzs-paro-lbl">${escHtml(p.motivo)}</span><span class="pzs-paro-min">${p.duracion_min} min</span></div>`
+        ).join('')
+      : '<div style="font-size:11px;color:#94a3b8;font-style:italic">Sin paros registrados</div>';
+
     return `
       <div class="pzs-turno-slide">
         <!-- KPI cards grandes -->
@@ -390,18 +425,29 @@
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
           ${kpiCard('Calidad',        tot.calidad,        true)}
           ${kpiCard('Disponibilidad', tot.disponibilidad, true)}
+          <div class="pzs-kpi-card pzs-kpi-big ${scrapColor(scrapPct)}">
+            <div class="pzs-kpi-label">% Scrap (día)</div>
+            <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
+          </div>
         </div>
         <div class="pzs-ciclos-badge">
           Ciclos completados: <strong>${tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0)}</strong>
+          &nbsp;·&nbsp; Paros acumulados turno: <strong>${parosTotalMin} min</strong>
         </div>
-        <!-- Tabla hora×hora -->
-        <div class="pzs-hr-table-wrap">
-          <table class="pzs-hr-table">
-            <thead>
-              <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
-            </thead>
-            <tbody>${hrRows}</tbody>
-          </table>
+        <!-- Tabla hora×hora + paros lado a lado -->
+        <div style="display:flex;gap:12px;align-items:flex-start">
+          <div class="pzs-hr-table-wrap" style="flex:1">
+            <table class="pzs-hr-table">
+              <thead>
+                <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
+              </thead>
+              <tbody>${hrRows}</tbody>
+            </table>
+          </div>
+          <div class="pzs-paros-panel">
+            <div class="pzs-pareto-title">&#9201; Paros del turno</div>
+            ${parosHtml}
+          </div>
         </div>
       </div>`;
   }
@@ -429,6 +475,10 @@
         <div class="pzs-kpi-value">${efComp.na ? 'N/A' : fmtPct(efVal)}</div>
       </div>`;
 
+      const scrapPct = state.scrapData?.[l] ?? null;
+      const parosList = state.data?.[l]?.paros_turno?.[turno] || [];
+      const parosTot  = parosList.reduce((s, p) => s + (p.duracion_min || 0), 0);
+
       return `
         <div class="pzs-all-linea-block">
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
@@ -438,8 +488,12 @@
             ${kpiCard('Capacidad',      tot.capacidad)}
             ${kpiCard('Calidad',        tot.calidad)}
             ${kpiCard('Disponibilidad', tot.disponibilidad)}
+            <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
+              <div class="pzs-kpi-label">% Scrap</div>
+              <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
+            </div>
           </div>
-          <div class="pzs-ciclos-badge-sm">Ciclos: <strong>${ciclos}</strong></div>
+          <div class="pzs-ciclos-badge-sm">Ciclos: <strong>${ciclos}</strong> · Paros: <strong>${parosTot} min</strong></div>
         </div>`;
     }).join('');
 
@@ -471,8 +525,9 @@
 
   /* ── Diapositiva acumulado del día ────────────────────────────────────── */
   function buildDiaSlide(linea) {
-    const ld  = state.data?.[linea];
-    const dia = ld?.totales?.dia || {};
+    const ld       = state.data?.[linea];
+    const dia      = ld?.totales?.dia || {};
+    const scrapPct = state.scrapData?.[linea] ?? null;
 
     const turnoRows = ['T1', 'T2', 'T3'].map(t => {
       const tot    = ld?.totales?.[t] || {};
@@ -510,6 +565,10 @@
           ${kpiCard('Capacidad',      dia.capacidad,      true)}
           ${kpiCard('Calidad',        dia.calidad,        true)}
           ${kpiCard('Disponibilidad', dia.disponibilidad, true)}
+          <div class="pzs-kpi-card pzs-kpi-big ${scrapColor(scrapPct)}">
+            <div class="pzs-kpi-label">% Scrap</div>
+            <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
+          </div>
         </div>
 
         <!-- Pareto acumulado del día -->
@@ -550,10 +609,12 @@
     const blocks = lineas.map(l => {
       const ld        = state.data?.[l];
       const dia       = ld?.totales?.dia || {};
+      const scrapPct  = state.scrapData?.[l] ?? null;
       const ciclosDia = ['T1', 'T2', 'T3'].reduce((s, t) => {
         const tot = ld?.totales?.[t] || {};
         return s + (tot.ciclos ?? (ld?.horas?.[t] || []).reduce((a, h) => a + (h.ciclos || 0), 0));
       }, 0);
+      const parosDia  = (ld?.pareto_paros || []).reduce((s, p) => s + (p.duracion_min || 0), 0);
       return `
         <div class="pzs-all-linea-block">
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
@@ -563,8 +624,12 @@
             ${kpiCard('Capacidad',      dia.capacidad)}
             ${kpiCard('Calidad',        dia.calidad)}
             ${kpiCard('Disponibilidad', dia.disponibilidad)}
+            <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
+              <div class="pzs-kpi-label">% Scrap</div>
+              <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
+            </div>
           </div>
-          <div class="pzs-ciclos-badge-sm">Ciclos día: <strong>${ciclosDia}</strong></div>
+          <div class="pzs-ciclos-badge-sm">Ciclos día: <strong>${ciclosDia}</strong> · Paros: <strong>${parosDia} min</strong></div>
         </div>`;
     }).join('');
 

@@ -4099,10 +4099,11 @@ async function viewReportes(el) {
             </div>
 
             <!-- Componente -->
-            <div class="form-group"><label>Componente</label>
-              <select id="re-componente" class="form-control">
-                ${selOpts(componentes,'id','nombre',carga.componente_id,carga.componente)}
-              </select>
+            <div class="form-group" id="re-comp-wrap"><label>Componente</label>
+              ${(isBL && (carga.cliente || '').toUpperCase().includes('SKF'))
+                ? `<input type="text" id="re-componente-txt" class="form-control" value="${escHtml(carga.componente||'')}"/>`
+                : `<select id="re-componente" class="form-control">${selOpts(componentes,'id','nombre',carga.componente_id,carga.componente)}</select>`
+              }
             </div>
 
             ${isBL ? `
@@ -4210,6 +4211,22 @@ async function viewReportes(el) {
       if (e.target.value !== 'defecto') overlay.querySelector('#re-defecto').value = '';
     });
 
+    // Componente: toggle texto libre (SKF) vs select (AMSTED/otros) — solo Baker/L1
+    if (isBL) {
+      overlay.querySelector('#re-cliente')?.addEventListener('change', e => {
+        const esSkf = e.target.value.toUpperCase().includes('SKF');
+        const wrap  = overlay.querySelector('#re-comp-wrap');
+        if (esSkf) {
+          const cur = overlay.querySelector('#re-componente')?.selectedOptions?.[0]?.dataset?.name
+                   || overlay.querySelector('#re-componente-txt')?.value || '';
+          wrap.innerHTML = `<label>Componente</label><input type="text" id="re-componente-txt" class="form-control" value="${escHtml(cur)}"/>`;
+        } else {
+          const cur = overlay.querySelector('#re-componente-txt')?.value || '';
+          wrap.innerHTML = `<label>Componente</label><select id="re-componente" class="form-control">${selOpts(componentes,'id','nombre',null,cur)}</select>`;
+        }
+      });
+    }
+
     // Cascada sub-proceso al cambiar proceso (Baker/L1)
     if (isBL) {
       overlay.querySelector('#re-proceso')?.addEventListener('change', e => {
@@ -4227,7 +4244,10 @@ async function viewReportes(el) {
       const estadoVal  = getEl('#re-estado').value;
       const defSel     = selVal(getEl('#re-defecto'));
       const herrSel    = selVal(getEl('#re-herramental'));
-      const compSel    = selVal(getEl('#re-componente'));
+      const compTxtEl  = getEl('#re-componente-txt');
+      const compSel    = compTxtEl
+        ? { id: null, name: compTxtEl.value || null }
+        : selVal(getEl('#re-componente'));
       const procSel    = selVal(getEl('#re-proceso'));
       const operSel    = selVal(getEl('#re-operador'));
 

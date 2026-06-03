@@ -784,7 +784,7 @@ body.pizarron-dark .pzs-dot-active { background: #60a5fa; }
 /* ── KPI Cards ── */
 .pzs-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 14px;
   margin-bottom: 12px;
 }
@@ -1004,6 +1004,43 @@ body.pizarron-dark .pzs-pareto-bar-bg { background: #334155; }
 body.pizarron-dark .pzs-pareto-val { color: #94a3b8; }
 .pzs-pareto-empty { font-size: .8em; color: #94a3b8; padding: 6px 0; }
 .pzs-all-dia-slide { display: flex; flex-direction: column; gap: 12px; }
+
+/* ── Paros panel en turno slide ────────────────────────────────── */
+.pzs-paros-panel {
+  min-width: 180px;
+  max-width: 220px;
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+body.pizarron-dark .pzs-paros-panel {
+  background: #292524;
+  border-color: #78350f;
+}
+.pzs-paro-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .78em;
+  gap: 8px;
+}
+.pzs-paro-lbl {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.pzs-paro-min {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: #b45309;
+}
+body.pizarron-dark .pzs-paro-min { color: #fcd34d; }
 
 /* Responsive */
 @media (max-width: 1024px) {
