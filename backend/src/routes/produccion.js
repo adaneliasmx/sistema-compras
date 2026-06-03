@@ -788,7 +788,8 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
     paros = (pdb.paros || []).filter(p => p.linea === linea);
   }
 
-  if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
+  // Incluir paros cross-day: activos durante el rango (no solo los que iniciaron en él)
+  if (desde) paros = paros.filter(p => !p.fecha_fin || p.fecha_fin >= desde);
   if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
   if (turno) paros = paros.filter(p => p.turno === turno);
   paros = paros.sort((a, b) =>
@@ -808,7 +809,8 @@ router.get('/resumen/paros', (req, res) => {
     else if (l === 'L1') paros.push(...(pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' })));
     else paros.push(...(pdb.paros || []).filter(p => p.linea === l));
   }
-  if (desde) paros = paros.filter(p => p.fecha_inicio >= desde);
+  // Incluir paros cross-day: activos durante el rango
+  if (desde) paros = paros.filter(p => !p.fecha_fin || p.fecha_fin >= desde);
   if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
   if (turno) paros = paros.filter(p => p.turno === turno);
   paros = paros.filter(p => Number(p.duracion_min || 0) > 0);
@@ -977,6 +979,14 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
 
   const pdb = dbProd.read();
   const l = lineaKey(linea);
+
+  // Candado: no permitir dos paros activos simultáneos para la misma línea
+  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado === 'activo');
+  if (openParo) {
+    return res.status(409).json({
+      error: `Ya hay un paro activo en ${linea}: "${openParo.motivo}" (desde ${openParo.hora_inicio}). Ciérralo antes de registrar uno nuevo.`
+    });
+  }
 
   const motivos = pdb[`motivos_paro_${l}`] || [];
   const motivo = motivos.find(m => String(m.id) === String(motivo_id));

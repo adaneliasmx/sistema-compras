@@ -113,7 +113,7 @@ async function api(method, path, body) {
   const res  = await fetch('/api/produccion' + path, opts);
   const data = await res.json().catch(() => ({}));
   if (res.status === 401) { logout(); return; }
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) { const err = new Error(data.error || `Error ${res.status}`); err.status = res.status; throw err; }
   return data;
 }
 const GET   = (p)     => api('GET',   p);
@@ -2036,7 +2036,11 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
       if (onDone) onDone();
     } catch (e) {
       btn.disabled = false; btn.textContent = '⏸ Iniciar Paro';
-      alert('Error: ' + e.message);
+      if (e.status === 409) {
+        alert('No se puede registrar: ' + e.message);
+      } else {
+        alert('Error: ' + e.message);
+      }
     }
   });
 }
@@ -2474,7 +2478,11 @@ function openModalParo(linea, catalogo, onDone) {
       onDone();
     } catch (e) {
       btn.disabled = false; btn.textContent = '⏸ Registrar Paro';
-      alert('Error: ' + e.message);
+      if (e.status === 409) {
+        alert('No se puede registrar: ' + e.message);
+      } else {
+        alert('Error: ' + e.message);
+      }
     }
   });
 }
@@ -5293,6 +5301,8 @@ async function viewParos(el) {
                   ? '<span class="badge badge-activo">Activo</span>'
                   : '<span class="badge badge-procesado">Cerrado</span>';
                 if (p.corregido) estadoBadge += ` <span class="badge" style="background:#f59e0b;color:#fff" title="Editado por ${escHtml(p.corregido_por||'')}">✏️ Corregido</span>`;
+                const crossDay = p.fecha_fin && p.fecha_inicio !== p.fecha_fin;
+                if (crossDay) estadoBadge += ` <span class="badge" style="background:#6366f1;color:#fff" title="Paro iniciado el ${escHtml(p.fecha_inicio)} y cerrado el ${escHtml(p.fecha_fin)}">↕ Cruce día</span>`;
                 const dur = p.duracion_min != null ? p.duracion_min + ' min' : (abierto ? '<em>en curso</em>' : '—');
                 const accionesTd = isAdmin ? `<td style="white-space:nowrap">
                   ${abierto ? `<button class="btn btn-outline btn-sm" data-pa-cerrar="${idx}">✅ Cerrar</button> ` : ''}
@@ -5328,7 +5338,11 @@ async function viewParos(el) {
           if (!p) return;
           if (!confirm(`¿Cerrar el paro de ${p.linea} (${p.motivo})?`)) return;
           try {
-            await PATCH(`/paros/${p.id}/admin-cerrar`, {});
+            const _cn = new Date();
+            const _cmx = new Date(_cn.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+            const _cFecha = _cn.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+            const _cHora  = _cmx.getHours().toString().padStart(2,'0') + ':' + _cmx.getMinutes().toString().padStart(2,'0');
+            await PATCH(`/paros/${p.id}/admin-cerrar`, { fecha_fin: _cFecha, hora_fin: _cHora });
             await buscar();
           } catch (e) { alert('Error: ' + e.message); }
         });
