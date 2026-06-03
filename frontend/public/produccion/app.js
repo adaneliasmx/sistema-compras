@@ -345,6 +345,94 @@ function getTurnoDeHora(hora) {
 
 // Rango de fechas correcto para el turno actual.
 // T3 (21:30–06:30+1): antes de las 06:30 el turno inició ayer → fecha_ini = ayer
+function getWeekRange() {
+  const now   = new Date();
+  const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const dow   = mxNow.getDay(); // 0=Dom, 1=Lun...
+  const diffLunes = dow === 0 ? 6 : dow - 1;
+  const lunes = new Date(mxNow);
+  lunes.setDate(mxNow.getDate() - diffLunes);
+  lunes.setHours(0, 0, 0, 0);
+  const domingo = new Date(lunes);
+  domingo.setDate(lunes.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('en-CA');
+  return { lunes: fmt(lunes), domingo: fmt(domingo) };
+}
+
+function renderOpStatsSidebar(statsData, userName) {
+  const { lunes, domingo } = getWeekRange();
+  const today = getShiftDates().fecha_ini;
+
+  // Agregar stats por fecha (suma de todas las líneas trabajadas ese día)
+  const byFecha = {};
+  for (const s of (statsData || [])) {
+    if (!byFecha[s.fecha]) byFecha[s.fecha] = { ciclos: 0, objetivo: 0, paros_min_rend: 0 };
+    byFecha[s.fecha].ciclos        += s.ciclos;
+    byFecha[s.fecha].objetivo      += s.objetivo;
+    byFecha[s.fecha].paros_min_rend += s.paros_min_rend;
+  }
+  for (const d of Object.values(byFecha)) {
+    d.eficiencia = d.objetivo > 0 ? d.ciclos / d.objetivo : null;
+  }
+
+  // Días de la semana Lun→Dom
+  const LABELS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  const weekDays = LABELS.map((label, i) => {
+    const d = new Date(lunes + 'T00:00:00');
+    d.setDate(d.getDate() + i);
+    return { label, fecha: d.toLocaleDateString('en-CA') };
+  });
+
+  const rowsHtml = weekDays.map(({ label, fecha }) => {
+    const s = byFecha[fecha];
+    const isFuture = fecha > today;
+    const isToday  = fecha === today;
+    if (isFuture || !s) {
+      return `<tr${isToday ? ' class="op-today"' : ''}>
+        <td>${label}</td><td class="op-val-muted">—</td><td class="op-val-muted">—</td>
+      </tr>`;
+    }
+    const efPct = s.eficiencia != null ? Math.round(s.eficiencia * 100) : null;
+    const efClass = efPct == null ? 'op-val-muted' : efPct >= 90 ? 'op-val-green' : efPct >= 80 ? 'op-val-amber' : 'op-val-red';
+    const pClass  = s.paros_min_rend <= 30 ? 'op-val-green' : s.paros_min_rend <= 60 ? 'op-val-amber' : 'op-val-red';
+    return `<tr${isToday ? ' class="op-today"' : ''}>
+      <td>${label}</td>
+      <td class="${efClass}">${efPct != null ? efPct + '%' : '—'}</td>
+      <td class="${pClass}">${s.paros_min_rend}m</td>
+    </tr>`;
+  }).join('');
+
+  // Recomendación
+  let recHtml = '';
+  const pastDays = Object.entries(byFecha).filter(([f]) => f <= today);
+  if (pastDays.length > 0) {
+    const totalParos = pastDays.reduce((s, [, d]) => s + d.paros_min_rend, 0);
+    const avgEfic    = pastDays.reduce((s, [, d]) => s + (d.eficiencia ?? 0), 0) / pastDays.length;
+    if (totalParos > 90) {
+      recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Llevas bastantes minutos de paro esta semana. Registrar y atender causas raíz ayuda a mejorar el rendimiento.</div>`;
+    } else if (avgEfic < 0.85) {
+      recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Tu eficiencia ha estado por debajo del objetivo esta semana. Revisa tiempos de ciclo y herramentales.</div>`;
+    } else {
+      recHtml = `<div class="op-recommendation op-rec-good"><span class="op-rec-icon">✅</span>¡Buen trabajo esta semana! Mantén el ritmo.</div>`;
+    }
+  }
+
+  const firstName = escHtml((userName || '').split(' ')[0] || userName || '');
+  return `
+    <div class="op-stats-sidebar">
+      <div class="op-stats-head">
+        <div class="op-greeting">Bienvenido</div>
+        <div class="op-name">¡Buen día, ${firstName}!</div>
+      </div>
+      <div class="op-stats-section">Esta semana</div>
+      <table class="op-week-table">
+        <thead><tr><th>Día</th><th>Efic.</th><th>Paros</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      ${recHtml}
+    </div>`;
+}
+
 function getShiftDates() {
   const now   = new Date();
   const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
@@ -796,6 +884,8 @@ async function viewLinea(el, linea) {
     // cargas cargadas en T3 (ayer) pueden descargarse en T1 (hoy).
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
+    const { lunes: semLunes, domingo: semDomingo } = getWeekRange();
+
     const [cargasData, catalogData, parosData, todasHoyData, cfgData, pizarronData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
       GET(`/catalogos/${linea}`),
@@ -814,6 +904,18 @@ async function viewLinea(el, linea) {
     const cargas    = Array.isArray(cargasData) ? cargasData : (cargasData?.cargas || []);
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
+
+    // Panel operador: detectar operador vinculado al usuario
+    const operadores = (catalogo.operadores || []).filter(o => o.activo !== false);
+    const myOp = state.user?.role === 'produccion'
+      ? operadores.find(o =>
+          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+          (o.compras_user_id && o.compras_user_id === state.user?.id))
+      : null;
+    const statsData = myOp
+      ? await GET(`/stats/operador-semana?operador_id=${myOp.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+      : null;
+    const opSidebarHtml = myOp ? renderOpStatsSidebar(statsData, state.user?.nombre || myOp.nombre) : '';
 
     // Auto-cerrar paro de cambio de turno al entrar a la línea (nuevo usuario)
     if (paroActivo && paroActivo.tipo === 'cambio_turno') {
@@ -901,7 +1003,10 @@ async function viewLinea(el, linea) {
           </div>
         </div>
       </div>
-      ${tarjetasHtml}`;
+      <div class="tarjetero-con-panel">
+        <div class="tarjetero-main">${tarjetasHtml}</div>
+        ${opSidebarHtml}
+      </div>`;
 
     // Bind events
     el.querySelector('#btn-ciclos-turno')?.addEventListener('click', () => {
@@ -985,6 +1090,7 @@ async function viewBaker(el) {
   try {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
+    const { lunes: semLunes, domingo: semDomingo } = getWeekRange();
 
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
@@ -999,6 +1105,18 @@ async function viewBaker(el) {
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
+
+    // Panel operador Baker
+    const operadoresBk = (catalogo.operadores || []).filter(o => o.activo !== false);
+    const myOpBk = state.user?.role === 'produccion'
+      ? operadoresBk.find(o =>
+          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+          (o.compras_user_id && o.compras_user_id === state.user?.id))
+      : null;
+    const statsBk = myOpBk
+      ? await GET(`/stats/operador-semana?operador_id=${myOpBk.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+      : null;
+    const opSidebarBkHtml = myOpBk ? renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk.nombre) : '';
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -1030,7 +1148,7 @@ async function viewBaker(el) {
          </div>`
       : '';
 
-    const tarjetasHtml = cargas.length === 0
+    const tarjetasHtmlBk = cargas.length === 0
       ? '<div class="empty-state"><div class="icon">📭</div><p>No hay herramentales activos en Baker.</p></div>'
       : `<div class="tarjetero-grid">${cargas.map(c => renderTarjetaBaker(c)).join('')}</div>`;
 
@@ -1051,7 +1169,10 @@ async function viewBaker(el) {
           </div>
         </div>
       </div>
-      ${tarjetasHtml}`;
+      <div class="tarjetero-con-panel">
+        <div class="tarjetero-main">${tarjetasHtmlBk}</div>
+        ${opSidebarBkHtml}
+      </div>`;
 
     el.querySelector('#btn-ciclos-turno-baker')?.addEventListener('click', () => {
       const slots  = pizarronData?.data?.['Baker']?.[turnoActual]?.slots  || [];
@@ -1158,6 +1279,7 @@ async function viewL1(el) {
   try {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
     const turnoActual = getCurrentTurno();
+    const { lunes: semLunes, domingo: semDomingo } = getWeekRange();
 
     const ayer = new Date(Date.now() - 86400000).toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
@@ -1172,6 +1294,18 @@ async function viewL1(el) {
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
+
+    // Panel operador L1
+    const operadoresL1 = (catalogo.operadores || []).filter(o => o.activo !== false);
+    const myOpL1 = state.user?.role === 'produccion'
+      ? operadoresL1.find(o =>
+          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
+          (o.compras_user_id && o.compras_user_id === state.user?.id))
+      : null;
+    const statsL1 = myOpL1
+      ? await GET(`/stats/operador-semana?operador_id=${myOpL1.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+      : null;
+    const opSidebarL1Html = myOpL1 ? renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1.nombre) : '';
     const cfg = (cfgData?.config || cfgData) ?? {};
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -1203,7 +1337,7 @@ async function viewL1(el) {
          </div>`
       : '';
 
-    const tarjetasHtml = cargas.length === 0
+    const tarjetasHtmlL1 = cargas.length === 0
       ? '<div class="empty-state"><div class="icon">📭</div><p>No hay herramentales activos en Línea 1.</p></div>'
       : `<div class="tarjetero-grid">${cargas.map(c => renderTarjetaL1(c)).join('')}</div>`;
 
@@ -1223,7 +1357,10 @@ async function viewL1(el) {
           </div>
         </div>
       </div>
-      ${tarjetasHtml}`;
+      <div class="tarjetero-con-panel">
+        <div class="tarjetero-main">${tarjetasHtmlL1}</div>
+        ${opSidebarL1Html}
+      </div>`;
 
     el.querySelector('#btn-ciclos-turno-l1')?.addEventListener('click', () => {
       const slots  = pizarronData?.data?.['L1']?.[turnoActual]?.slots  || [];

@@ -817,6 +817,86 @@ router.get('/resumen/paros', (req, res) => {
   res.json({ total: paros.length, paros });
 });
 
+// GET /stats/operador-semana?operador_id=X&fecha_ini=Y&fecha_fin=Z
+// Retorna per-dia los ciclos, eficiencia y minutos de paro (rend) del operador en todas las líneas
+router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin'), (req, res) => {
+  const { operador_id, fecha_ini, fecha_fin } = req.query;
+  if (!operador_id || !fecha_ini) {
+    return res.status(400).json({ error: 'operador_id y fecha_ini son requeridos' });
+  }
+  const pdb = dbProd.read();
+  const cfg = pdb.config || {};
+
+  // Horas por turno
+  const horasTurno = { T1: 8, T2: 7, T3: 9 };
+
+  // Todas las cargas procesadas del operador en el rango
+  const allCargas = [
+    ...(pdb.cargas_l3    || []).map(c => ({ ...c, _linea: 'L3' })),
+    ...(pdb.cargas_l4    || []).map(c => ({ ...c, _linea: 'L4' })),
+    ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
+    ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' })),
+  ];
+
+  const opCargas = allCargas.filter(c => {
+    if (c.estado !== 'procesado') return false;
+    if (String(c.operador_id) !== String(operador_id)) return false;
+    const f = c.fecha_descarga;
+    if (!f) return false;
+    if (f < fecha_ini) return false;
+    if (fecha_fin && f > fecha_fin) return false;
+    return true;
+  });
+
+  // Agrupar por (fecha_descarga, linea, turno)
+  const groups = {};
+  for (const c of opCargas) {
+    const key = `${c.fecha_descarga}|${c._linea}|${c.turno}`;
+    if (!groups[key]) {
+      groups[key] = { fecha: c.fecha_descarga, linea: c._linea, turno: c.turno || 'T1', ciclos: 0 };
+    }
+    groups[key].ciclos++;
+  }
+
+  // Todos los motivos para filtrar afecta_rendimiento
+  const allMotivos = [
+    ...(pdb.motivos_paro_l3    || []),
+    ...(pdb.motivos_paro_l4    || []),
+    ...(pdb.motivos_paro_baker || []),
+    ...(pdb.motivos_paro_l1    || []),
+  ];
+
+  // Todos los paros
+  const allParos = [
+    ...(pdb.paros         || []),                                         // L3 y L4 ya tienen linea
+    ...(pdb.paros_baker   || []).map(p => ({ ...p, linea: 'Baker' })),
+    ...(pdb.paros_l1      || []).map(p => ({ ...p, linea: 'L1' })),
+  ];
+
+  const result = [];
+  for (const g of Object.values(groups)) {
+    const { fecha, linea, turno } = g;
+    const lineaKey = linea.toLowerCase();
+    const ciclosObjHora = cfg[`ciclos_objetivo_${lineaKey}`] || 2;
+    const horas = horasTurno[turno] || 8;
+    const objetivo = ciclosObjHora * horas;
+    const eficiencia = objetivo > 0 ? g.ciclos / objetivo : null;
+
+    // Paros que afectan rendimiento en este (linea, turno, fecha)
+    const parosFiltrados = allParos.filter(p => {
+      if (p.linea !== linea || p.turno !== turno || p.fecha_inicio !== fecha) return false;
+      const motivo = allMotivos.find(m => String(m.id) === String(p.motivo_id));
+      return motivo?.afecta_rendimiento !== false;
+    });
+    const paros_min_rend = parosFiltrados.reduce((s, p) => s + (p.duracion_min || 0), 0);
+
+    result.push({ fecha, linea, turno, ciclos: g.ciclos, objetivo, eficiencia, paros_min_rend });
+  }
+
+  result.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
+  res.json(result);
+});
+
 // GET /resumen/defectos?desde=&hasta=&linea=&turno= — ciclos/cavidades con defecto (todos los roles)
 router.get('/resumen/defectos', (req, res) => {
   const { desde, hasta, linea, turno } = req.query;
