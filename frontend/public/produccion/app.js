@@ -5417,7 +5417,8 @@ async function viewOperadores(el) {
       btn.addEventListener('click', () => {
         const id    = btn.dataset.editOp;
         const linea = btn.dataset.linea;
-        const lista = linea === 'L3' ? operadoresL3 : linea === 'baker' ? operadoresBaker : operadoresL4;
+        const opsByLinea = { L3: operadoresL3, L4: operadoresL4, baker: operadoresBaker, l1: operadoresL1 };
+        const lista = opsByLinea[linea] || operadoresL3;
         const op    = lista.find(o => String(o.id) === String(id));
         openOperadorModal(linea, op, usuariosSistema, loadAndRender);
       });
@@ -5440,9 +5441,12 @@ async function viewOperadores(el) {
     el.querySelectorAll('[data-nuevo-op]').forEach(btn => {
       btn.addEventListener('click', () => {
         const linea = btn.dataset.nuevoOp;
-        const yaAsignados = linea === 'L3'
-          ? operadoresL3.map(o => o.rhh_employee_id).filter(Boolean)
-          : operadoresL4.map(o => o.rhh_employee_id).filter(Boolean);
+        const opsByLinea = { L3: operadoresL3, L4: operadoresL4, baker: operadoresBaker, l1: operadoresL1 };
+        // Solo excluir los que están activos en esa línea (inactivos/eliminados pueden volver a asignarse)
+        const yaAsignados = (opsByLinea[linea] || [])
+          .filter(o => o.activo !== false)
+          .map(o => o.rhh_employee_id)
+          .filter(Boolean);
         const disponibles = usuariosSistema.filter(u => !yaAsignados.includes(u.id));
         openOperadorModal(linea, null, disponibles, loadAndRender);
       });
