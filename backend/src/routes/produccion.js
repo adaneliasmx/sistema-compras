@@ -1126,32 +1126,42 @@ router.post('/paros/recalcular-deduccion', produccionAllowRoles('admin'), (req, 
   const pdb = dbProd.read();
   const FIJOS = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
   const normText = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // Construir set de motivo_id marcados como es_tiempo_maquina en el catálogo
+  const tmIds = new Set();
+  for (const col of ['l3','l4','baker','l1']) {
+    for (const m of (pdb[`motivos_paro_${col}`] || [])) {
+      if (m.es_tiempo_maquina) tmIds.add(String(m.id));
+    }
+  }
+  const esTM = p => tmIds.has(String(p.motivo_id)) || normText(p.motivo).includes('maquina');
+
   let count = 0;
 
   // paros L3/L4
   for (let i = 0; i < (pdb.paros || []).length; i++) {
     const p = pdb.paros[i];
     if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
-    if (!normText(p.motivo).includes('maquina')) continue;
+    if (!esTM(p)) continue;
     const fijo = FIJOS[p.linea] ?? 0;
     const deduccion = Math.max(0, p.duracion_min - fijo);
-    if (deduccion > 0) { pdb.paros[i] = { ...p, deduccion_min: deduccion }; count++; }
+    if (deduccion > 0) { pdb.paros[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
   // paros Baker
   for (let i = 0; i < (pdb.paros_baker || []).length; i++) {
     const p = pdb.paros_baker[i];
     if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
-    if (!normText(p.motivo).includes('maquina')) continue;
+    if (!esTM(p)) continue;
     const deduccion = Math.max(0, p.duracion_min - 13.5);
-    if (deduccion > 0) { pdb.paros_baker[i] = { ...p, deduccion_min: deduccion }; count++; }
+    if (deduccion > 0) { pdb.paros_baker[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
   // paros L1
   for (let i = 0; i < (pdb.paros_l1 || []).length; i++) {
     const p = pdb.paros_l1[i];
     if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
-    if (!normText(p.motivo).includes('maquina')) continue;
+    if (!esTM(p)) continue;
     const deduccion = Math.max(0, p.duracion_min - 13.5);
-    if (deduccion > 0) { pdb.paros_l1[i] = { ...p, deduccion_min: deduccion }; count++; }
+    if (deduccion > 0) { pdb.paros_l1[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
 
   if (count > 0) dbProd.write(pdb);
@@ -1774,10 +1784,13 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      paros_min += overlap;
-      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
-      if (afecDisp) paros_min_disp += overlap;
-      if (afecRend && !afecDisp) paros_min_rend += overlap;
+      const efectividad = (p.duracion_min > 0 && p.deduccion_min > 0)
+        ? Math.max(0, p.duracion_min - p.deduccion_min) / p.duracion_min : 1;
+      const overlapEf = Math.round(overlap * efectividad * 10) / 10;
+      paros_min += overlapEf;
+      if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
+      if (afecDisp) paros_min_disp += overlapEf;
+      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
@@ -2775,10 +2788,13 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      paros_min += overlap;
-      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
-      if (afecDisp) paros_min_disp += overlap;
-      if (afecRend && !afecDisp) paros_min_rend += overlap;
+      const efectividad = (p.duracion_min > 0 && p.deduccion_min > 0)
+        ? Math.max(0, p.duracion_min - p.deduccion_min) / p.duracion_min : 1;
+      const overlapEf = Math.round(overlap * efectividad * 10) / 10;
+      paros_min += overlapEf;
+      if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
+      if (afecDisp) paros_min_disp += overlapEf;
+      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
@@ -2904,10 +2920,13 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       const afecEf   = motivo?.afecta_eficiencia    !== false;
       const afecDisp = motivo?.afecta_disponibilidad !== false;
       const afecRend = motivo?.afecta_rendimiento    !== false;
-      paros_min += overlap;
-      if (afecEf)   paros_min_prog += overlap; // programado → reduce objetivo
-      if (afecDisp) paros_min_disp += overlap;
-      if (afecRend && !afecDisp) paros_min_rend += overlap;
+      const efectividad = (p.duracion_min > 0 && p.deduccion_min > 0)
+        ? Math.max(0, p.duracion_min - p.deduccion_min) / p.duracion_min : 1;
+      const overlapEf = Math.round(overlap * efectividad * 10) / 10;
+      paros_min += overlapEf;
+      if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
+      if (afecDisp) paros_min_disp += overlapEf;
+      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
