@@ -447,6 +447,75 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
     </div>`;
 }
 
+function renderAdminStatsSidebar(operadorActual, statsLinea, lineaNombre) {
+  const { lunes } = getWeekRange();
+  const today = getShiftDates().fecha_ini;
+
+  const LABELS_DIA = { 0: 'Lun', 1: 'Mar', 2: 'Mié', 3: 'Jue', 4: 'Vie', 5: 'Sáb', 6: 'Dom' };
+  const weekDays = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(lunes + 'T00:00:00');
+    d.setDate(d.getDate() + i);
+    return { label: LABELS_DIA[i], fecha: d.toLocaleDateString('en-CA') };
+  });
+
+  // Agrupar stats por fecha
+  const byFecha = {};
+  for (const s of (statsLinea || [])) {
+    if (!byFecha[s.fecha]) byFecha[s.fecha] = [];
+    byFecha[s.fecha].push(s);
+  }
+
+  // Construir filas: una por turno registrado, agrupadas por día
+  let rowsHtml = '';
+  let haData = false;
+  for (const { label, fecha } of weekDays) {
+    const turnos = byFecha[fecha];
+    if (!turnos || turnos.length === 0) continue;
+    haData = true;
+    const isToday = fecha === today;
+    // Ordenar T1 → T2 → T3
+    turnos.sort((a, b) => a.turno.localeCompare(b.turno));
+    for (const s of turnos) {
+      const efPct = s.eficiencia != null ? Math.round(s.eficiencia * 100) : null;
+      const efClass = efPct == null ? 'op-val-muted' : efPct >= 90 ? 'op-val-green' : efPct >= 80 ? 'op-val-amber' : 'op-val-red';
+      const pClass  = s.paros_min_rend <= 30 ? 'op-val-green' : s.paros_min_rend <= 60 ? 'op-val-amber' : 'op-val-red';
+      const opShort = (s.operador || '—').split(' ')[0];
+      rowsHtml += `<tr${isToday ? ' class="op-today"' : ''}>
+        <td>${label}</td>
+        <td style="font-size:10px;color:#64748b">${s.turno}</td>
+        <td style="font-size:11px;max-width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(s.operador)}">${escHtml(opShort)}</td>
+        <td class="${efClass}">${efPct != null ? efPct + '%' : '—'}</td>
+        <td class="${pClass}">${s.paros_min_rend}m</td>
+      </tr>`;
+    }
+  }
+
+  if (!haData) {
+    rowsHtml = `<tr><td colspan="5" style="color:#cbd5e1;text-align:center;padding:10px">Sin turnos registrados</td></tr>`;
+  }
+
+  const opActualHtml = operadorActual
+    ? `<div style="padding:10px 16px 8px;border-top:1px solid #f1f5f9">
+        <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#64748b">Operador activo ahora</div>
+        <div style="font-size:14px;font-weight:700;color:#1e293b;margin-top:3px">${escHtml(operadorActual)}</div>
+      </div>`
+    : `<div style="padding:10px 16px 8px;border-top:1px solid #f1f5f9;font-size:12px;color:#94a3b8">Sin cargas activas</div>`;
+
+  return `
+    <div class="op-stats-sidebar">
+      <div class="op-stats-head">
+        <div class="op-greeting">Supervisión</div>
+        <div class="op-name">${escHtml(lineaNombre)}</div>
+      </div>
+      ${opActualHtml}
+      <div class="op-stats-section">Turnos de la semana</div>
+      <table class="op-week-table">
+        <thead><tr><th>Día</th><th>T</th><th>Operador</th><th>Efic.</th><th>Paros</th></tr></thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+    </div>`;
+}
+
 function getShiftDates() {
   const now   = new Date();
   const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
@@ -919,16 +988,26 @@ async function viewLinea(el, linea) {
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
 
-    // Panel operador: detectar operador vinculado al usuario (cualquier rol)
-    const operadores = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOp = operadores.find(o =>
-      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
-      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
-    );
-    const statsData = myOp
-      ? await GET(`/stats/operador-semana?operador_id=${myOp.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
-      : null;
-    const opSidebarHtml = renderOpStatsSidebar(statsData, state.user?.nombre || myOp?.nombre || '', !!myOp);
+    // Panel lateral: admin/supervisor ven resumen de la línea; produccion/otros ven sus propias stats
+    const isAdminSup = ['admin', 'supervisor'].includes(state.user?.role);
+    let opSidebarHtml = '';
+    if (isAdminSup) {
+      const statsLinea = await GET(`/stats/semana-linea?linea=${linea}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null);
+      const opActual = cargas.length > 0
+        ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
+        : null;
+      opSidebarHtml = renderAdminStatsSidebar(opActual, statsLinea, `Línea ${linea.replace('L', '')}`);
+    } else {
+      const operadores = (catalogo.operadores || []).filter(o => o.activo !== false);
+      const myOp = operadores.find(o =>
+        (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+        (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+      );
+      const statsData = myOp
+        ? await GET(`/stats/operador-semana?operador_id=${myOp.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+        : null;
+      opSidebarHtml = renderOpStatsSidebar(statsData, state.user?.nombre || myOp?.nombre || '', !!myOp);
+    }
 
     // Auto-cerrar paro de cambio de turno al entrar a la línea (nuevo usuario)
     if (paroActivo && paroActivo.tipo === 'cambio_turno') {
@@ -1119,16 +1198,26 @@ async function viewBaker(el) {
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
 
-    // Panel operador Baker
-    const operadoresBk = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOpBk = operadoresBk.find(o =>
-      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
-      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
-    );
-    const statsBk = myOpBk
-      ? await GET(`/stats/operador-semana?operador_id=${myOpBk.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
-      : null;
-    const opSidebarBkHtml = renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk?.nombre || '', !!myOpBk);
+    // Panel lateral Baker
+    const isAdminSupBk = ['admin', 'supervisor'].includes(state.user?.role);
+    let opSidebarBkHtml = '';
+    if (isAdminSupBk) {
+      const statsLineaBk = await GET(`/stats/semana-linea?linea=Baker&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null);
+      const opActualBk = cargas.length > 0
+        ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
+        : null;
+      opSidebarBkHtml = renderAdminStatsSidebar(opActualBk, statsLineaBk, 'Baker');
+    } else {
+      const operadoresBk = (catalogo.operadores || []).filter(o => o.activo !== false);
+      const myOpBk = operadoresBk.find(o =>
+        (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+        (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+      );
+      const statsBk = myOpBk
+        ? await GET(`/stats/operador-semana?operador_id=${myOpBk.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+        : null;
+      opSidebarBkHtml = renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk?.nombre || '', !!myOpBk);
+    }
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -1307,16 +1396,26 @@ async function viewL1(el) {
     const catalogo = catalogData || {};
     let paroActivo = paroData?.paro || null;
 
-    // Panel operador L1
-    const operadoresL1 = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOpL1 = operadoresL1.find(o =>
-      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
-      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
-    );
-    const statsL1 = myOpL1
-      ? await GET(`/stats/operador-semana?operador_id=${myOpL1.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
-      : null;
-    const opSidebarL1Html = renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1?.nombre || '', !!myOpL1);
+    // Panel lateral L1
+    const isAdminSupL1 = ['admin', 'supervisor'].includes(state.user?.role);
+    let opSidebarL1Html = '';
+    if (isAdminSupL1) {
+      const statsLineaL1 = await GET(`/stats/semana-linea?linea=L1&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null);
+      const opActualL1 = cargas.length > 0
+        ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
+        : null;
+      opSidebarL1Html = renderAdminStatsSidebar(opActualL1, statsLineaL1, 'Línea 1');
+    } else {
+      const operadoresL1 = (catalogo.operadores || []).filter(o => o.activo !== false);
+      const myOpL1 = operadoresL1.find(o =>
+        (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+        (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+      );
+      const statsL1 = myOpL1
+        ? await GET(`/stats/operador-semana?operador_id=${myOpL1.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
+        : null;
+      opSidebarL1Html = renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1?.nombre || '', !!myOpL1);
+    }
     const cfg = (cfgData?.config || cfgData) ?? {};
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).

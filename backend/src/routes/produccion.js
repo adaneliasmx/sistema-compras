@@ -897,6 +897,70 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
   res.json(result);
 });
 
+// GET /stats/semana-linea?linea=L3&fecha_ini=Y&fecha_fin=Z
+// Para admin/supervisor: resumen semanal por (fecha, turno) con operador principal de cada turno
+router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (req, res) => {
+  const { linea, fecha_ini, fecha_fin } = req.query;
+  if (!linea || !fecha_ini) return res.status(400).json({ error: 'linea y fecha_ini son requeridos' });
+
+  const pdb = dbProd.read();
+  const cfg = pdb.config || {};
+  const horasTurno = { T1: 8, T2: 7, T3: 9 };
+
+  const cargaKey = { L3: 'cargas_l3', L4: 'cargas_l4', Baker: 'cargas_baker', L1: 'cargas_l1' }[linea];
+  if (!cargaKey) return res.status(400).json({ error: 'Línea no válida' });
+
+  const motivosKey = { L3: 'motivos_paro_l3', L4: 'motivos_paro_l4', Baker: 'motivos_paro_baker', L1: 'motivos_paro_l1' }[linea];
+  const motivos = pdb[motivosKey] || [];
+
+  const parosSrc = linea === 'Baker'
+    ? (pdb.paros_baker || []).map(p => ({ ...p, linea: 'Baker' }))
+    : linea === 'L1'
+      ? (pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' }))
+      : (pdb.paros || []).filter(p => p.linea === linea);
+
+  const cargas = (pdb[cargaKey] || []).filter(c => {
+    if (c.estado !== 'procesado') return false;
+    const f = c.fecha_descarga;
+    if (!f) return false;
+    if (f < fecha_ini) return false;
+    if (fecha_fin && f > fecha_fin) return false;
+    return true;
+  });
+
+  // Agrupar por (fecha_descarga, turno)
+  const groups = {};
+  for (const c of cargas) {
+    const key = `${c.fecha_descarga}|${c.turno}`;
+    if (!groups[key]) groups[key] = { fecha: c.fecha_descarga, turno: c.turno || 'T1', ops: {} };
+    const opNom = c.operador || '—';
+    groups[key].ops[opNom] = (groups[key].ops[opNom] || 0) + 1;
+  }
+
+  const lineaKey = linea.toLowerCase();
+  const ciclosObjHora = cfg[`ciclos_objetivo_${lineaKey}`] || 2;
+
+  const result = Object.values(groups).map(g => {
+    const { fecha, turno } = g;
+    const ciclos  = Object.values(g.ops).reduce((s, n) => s + n, 0);
+    const operador = Object.entries(g.ops).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+    const objetivo = ciclosObjHora * (horasTurno[turno] || 8);
+    const eficiencia = objetivo > 0 ? ciclos / objetivo : null;
+
+    const parosFiltrados = parosSrc.filter(p => {
+      if (p.turno !== turno || p.fecha_inicio !== fecha) return false;
+      const mot = motivos.find(m => String(m.id) === String(p.motivo_id));
+      return mot?.afecta_rendimiento !== false;
+    });
+    const paros_min_rend = parosFiltrados.reduce((s, p) => s + (p.duracion_min || 0), 0);
+
+    return { fecha, turno, operador, ciclos, objetivo, eficiencia, paros_min_rend };
+  });
+
+  result.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.turno.localeCompare(b.turno));
+  res.json(result);
+});
+
 // GET /resumen/defectos?desde=&hasta=&linea=&turno= — ciclos/cavidades con defecto (todos los roles)
 router.get('/resumen/defectos', (req, res) => {
   const { desde, hasta, linea, turno } = req.query;
