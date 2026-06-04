@@ -359,9 +359,23 @@ function getWeekRange() {
   return { lunes: fmt(lunes), domingo: fmt(domingo) };
 }
 
-function renderOpStatsSidebar(statsData, userName) {
+function renderOpStatsSidebar(statsData, userName, linked = true) {
   const { lunes, domingo } = getWeekRange();
   const today = getShiftDates().fecha_ini;
+
+  if (!linked) {
+    return `
+      <div class="op-stats-sidebar">
+        <div class="op-stats-head">
+          <div class="op-greeting">Bienvenido</div>
+          <div class="op-name">${escHtml((userName || '').split(' ')[0] || userName || 'Usuario')}</div>
+        </div>
+        <div style="padding:16px;font-size:12px;color:#64748b;text-align:center;line-height:1.6">
+          Tu usuario no está vinculado como operador en esta línea.<br>
+          <span style="color:#94a3b8">Contacta al administrador.</span>
+        </div>
+      </div>`;
+  }
 
   // Agregar stats por fecha (suma de todas las líneas trabajadas ese día)
   const byFecha = {};
@@ -905,17 +919,16 @@ async function viewLinea(el, linea) {
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
 
-    // Panel operador: detectar operador vinculado al usuario
+    // Panel operador: detectar operador vinculado al usuario (cualquier rol)
     const operadores = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOp = state.user?.role === 'produccion'
-      ? operadores.find(o =>
-          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
-          (o.compras_user_id && o.compras_user_id === state.user?.id))
-      : null;
+    const myOp = operadores.find(o =>
+      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+    );
     const statsData = myOp
       ? await GET(`/stats/operador-semana?operador_id=${myOp.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
       : null;
-    const opSidebarHtml = myOp ? renderOpStatsSidebar(statsData, state.user?.nombre || myOp.nombre) : '';
+    const opSidebarHtml = renderOpStatsSidebar(statsData, state.user?.nombre || myOp?.nombre || '', !!myOp);
 
     // Auto-cerrar paro de cambio de turno al entrar a la línea (nuevo usuario)
     if (paroActivo && paroActivo.tipo === 'cambio_turno') {
@@ -1108,15 +1121,14 @@ async function viewBaker(el) {
 
     // Panel operador Baker
     const operadoresBk = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOpBk = state.user?.role === 'produccion'
-      ? operadoresBk.find(o =>
-          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
-          (o.compras_user_id && o.compras_user_id === state.user?.id))
-      : null;
+    const myOpBk = operadoresBk.find(o =>
+      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+    );
     const statsBk = myOpBk
       ? await GET(`/stats/operador-semana?operador_id=${myOpBk.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
       : null;
-    const opSidebarBkHtml = myOpBk ? renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk.nombre) : '';
+    const opSidebarBkHtml = renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk?.nombre || '', !!myOpBk);
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -1297,15 +1309,14 @@ async function viewL1(el) {
 
     // Panel operador L1
     const operadoresL1 = (catalogo.operadores || []).filter(o => o.activo !== false);
-    const myOpL1 = state.user?.role === 'produccion'
-      ? operadoresL1.find(o =>
-          (o.rhh_employee_id && o.rhh_employee_id === state.user?.rhh_employee_id) ||
-          (o.compras_user_id && o.compras_user_id === state.user?.id))
-      : null;
+    const myOpL1 = operadoresL1.find(o =>
+      (o.rhh_employee_id != null && String(o.rhh_employee_id) === String(state.user?.rhh_employee_id)) ||
+      (o.compras_user_id != null && String(o.compras_user_id) === String(state.user?.id))
+    );
     const statsL1 = myOpL1
       ? await GET(`/stats/operador-semana?operador_id=${myOpL1.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
       : null;
-    const opSidebarL1Html = myOpL1 ? renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1.nombre) : '';
+    const opSidebarL1Html = renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1?.nombre || '', !!myOpL1);
     const cfg = (cfgData?.config || cfgData) ?? {};
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
