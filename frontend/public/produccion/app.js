@@ -30,10 +30,7 @@ const state = {
   // Watcher de fin de turno
   _shiftTimer: null,
   _shiftWarnShown: false,
-  // Guard para no mostrar el form de paro automático dos veces seguidas
-  _autoParoShown:  { L3: false, L4: false },
-  _autoParoLastTs: {},  // { [linea]: lastTs } — timestamp que disparó el último auto-paro
-  _autoParoInfo:   {}   // { [linea]: { horaInicio, fechaInicio } } — para "Paro antes de tiempo"
+  _autoParoLastTs: {}   // { [linea]: lastTs } — timestamp que disparó el último pendiente_motivo creado
 };
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
@@ -231,26 +228,20 @@ function logout() {
 
 async function logoutShiftEnd() {
   if (state.lineaActiva && state.token && ['produccion', 'admin'].includes(state.user?.role)) {
-    // Si el modal de paro automático estaba abierto sin justificar → "Paro antes de tiempo"
-    const autoInfo = state._autoParoInfo?.[state.lineaActiva];
-    if (autoInfo) {
+    // Si hay paro pendiente_motivo activo → cerrarlo al fin de turno (sin motivo definido)
+    const paroPendiente = state.paroActivo?.[state.lineaActiva];
+    if (paroPendiente?.tipo === 'pendiente_motivo') {
       try {
-        // Hora de fin = el cambio de turno que acaba de ocurrir
         const now = new Date();
         const curMins = now.getHours() * 60 + now.getMinutes();
-        // Buscar el fin de turno más cercano (dentro de ±2 min)
         const shiftEnd = SHIFT_ENDS_MINS.find(e => Math.abs(e - curMins) <= 2) ?? curMins;
         const hora_fin = `${String(Math.floor(shiftEnd/60)).padStart(2,'0')}:${String(shiftEnd%60).padStart(2,'0')}`;
-        const isBakerLike = state.lineaActiva === 'Baker' || state.lineaActiva === 'L1';
-        const bakerLikePath = state.lineaActiva === 'Baker' ? '/baker/paros/antes-de-tiempo' : '/l1/paros/antes-de-tiempo';
-        const path     = isBakerLike ? bakerLikePath : `/paros/${state.lineaActiva}/antes-de-tiempo`;
-        await fetch('/api/produccion' + path, {
-          method: 'POST',
+        await fetch(`/api/produccion/paros/${state.lineaActiva}/${paroPendiente.id}/cerrar`, {
+          method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.token}` },
-          body: JSON.stringify({ hora_inicio: autoInfo.horaInicio, fecha_inicio: autoInfo.fechaInicio, hora_fin })
+          body: JSON.stringify({ hora_fin })
         });
       } catch (_) {}
-      delete state._autoParoInfo[state.lineaActiva];
     }
     // Registrar paro de cambio de turno
     try {
@@ -1025,7 +1016,7 @@ async function viewLinea(el, linea) {
       await POST(`/paros/${linea}/auto-sin-actividad`, { fecha: prev.fecha, turno: prev.turno });
     } catch (_) { /* silencioso — no bloquear la vista */ }
 
-    // ── Check B: 15 min sin actividad en turno actual → abrir form de paro ───
+    // ── Check B: 15 min sin actividad → crear paro pendiente_motivo silenciosamente ───
     if (!paroActivo) {
       const cargasTurno = todasHoy.filter(c => c.turno === turnoActual);
       if (cargasTurno.length > 0) {
@@ -1034,26 +1025,21 @@ async function viewLinea(el, linea) {
           return ts > max ? ts : max;
         }, '');
         if (lastTs) {
-          // Si hay nueva actividad posterior al último auto-paro, resetear el flag
+          // Si hubo nueva actividad después del último paro creado, resetear guard
           if (state._autoParoLastTs[linea] && lastTs > state._autoParoLastTs[linea]) {
-            state._autoParoShown[linea] = false;
             delete state._autoParoLastTs[linea];
           }
           const minsInactive = (Date.now() - new Date(lastTs).getTime()) / 60000;
-          if (minsInactive > 15 && !state._autoParoShown[linea]) {
-            state._autoParoShown[linea] = true;
-            state._autoParoLastTs[linea] = lastTs; // recordar qué timestamp disparó el paro
+          if (minsInactive > 15 && !state._autoParoLastTs[linea]) {
+            state._autoParoLastTs[linea] = lastTs;
             const lastDate = new Date(lastTs);
-            const horaIni = lastDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+            const horaIni  = lastDate.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
             const fechaIni = lastDate.toLocaleDateString('en-CA');
-            setTimeout(() => openModalParoAuto(linea, catalogo, horaIni, fechaIni, () => {
-              // NO resetear _autoParoShown aquí — se resetea solo cuando haya nueva carga
-              delete state._autoParoInfo[linea];
-              const elActual = document.getElementById('p-content');
-              if (elActual) viewLinea(elActual, linea);
-            }), 500);
-    // Guardar hora de inicio para "Paro antes de tiempo" si no se justifica antes del cambio de turno
-    state._autoParoInfo[linea] = { horaInicio: horaIni, fechaInicio: fechaIni };
+            try {
+              const nuevoParo = await POST(`/paros/${linea}/pendiente-motivo`, { hora_inicio: horaIni, fecha_inicio: fechaIni });
+              paroActivo = nuevoParo;
+              state.paroActivo[linea] = nuevoParo;
+            } catch (_) { /* 409 = ya existe paro activo, ignorar */ }
           }
         }
       }
@@ -1066,6 +1052,11 @@ async function viewLinea(el, linea) {
              <span style="color:#7c3aed;font-weight:700">🔄 CAMBIO DE TURNO</span>
              <span style="font-size:12px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio)}</span>
              <button class="btn btn-sm" style="background:#7c3aed;color:#fff;border:none" id="btn-cerrar-paro" data-id="${paroActivo.id}">✅ Iniciar turno</button>
+           </div>`
+        : paroActivo.tipo === 'pendiente_motivo'
+        ? `<div style="display:flex;align-items:center;gap:8px;background:#fef3c7;border:1.5px solid #d97706;border-radius:8px;padding:6px 12px;flex-wrap:wrap">
+             <span style="color:#d97706;font-weight:700;font-size:13px">⚠️ PARO SIN MOTIVO</span>
+             <span style="font-size:12px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio)} — define el motivo al registrar o descargar</span>
            </div>`
         : `<div style="display:flex;align-items:center;gap:8px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;padding:6px 12px;flex-wrap:wrap">
              <span style="color:#dc2626;font-weight:700;font-size:13px">🔴 PARO ACTIVO</span>
@@ -1109,6 +1100,10 @@ async function viewLinea(el, linea) {
 
     el.querySelector('#btn-nueva-carga')?.addEventListener('click', () => {
       const pa = state.paroActivo[linea];
+      if (pa && pa.tipo === 'pendiente_motivo') {
+        showDefinirMotivoModal(linea, pa, catalogo, el, () => openModalCarga(linea, catalogo));
+        return;
+      }
       if (pa && pa.tipo !== 'cambio_turno') {
         showCierreParoModal(linea, pa, el, () => openModalCarga(linea, catalogo));
         return;
@@ -1118,6 +1113,10 @@ async function viewLinea(el, linea) {
 
     el.querySelector('#btn-carga-vacia')?.addEventListener('click', () => {
       const pa = state.paroActivo[linea];
+      if (pa && pa.tipo === 'pendiente_motivo') {
+        showDefinirMotivoModal(linea, pa, catalogo, el, () => openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea)));
+        return;
+      }
       if (pa && pa.tipo !== 'cambio_turno') {
         showCierreParoModal(linea, pa, el, () => openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea)));
         return;
@@ -1145,6 +1144,13 @@ async function viewLinea(el, linea) {
     el.querySelectorAll('[data-descargar]').forEach(btn => {
       btn.addEventListener('click', () => {
         const pa = state.paroActivo[linea];
+        if (pa && pa.tipo === 'pendiente_motivo') {
+          showDefinirMotivoModal(linea, pa, catalogo, el, () => {
+            const carga = cargas.find(c => String(c.id) === String(btn.dataset.descargar));
+            openModalDescargar(linea, carga, catalogo, () => viewLinea(el, linea));
+          });
+          return;
+        }
         if (pa && pa.tipo !== 'cambio_turno') {
           showCierreParoModal(linea, pa, el, () => {
             const carga = cargas.find(c => String(c.id) === String(btn.dataset.descargar));
@@ -2331,6 +2337,105 @@ function showCierreParoModal(linea, paro, elContainer, onClosed) {
   });
 }
 
+// ── Modal: definir motivo de paro pendiente_motivo (cierra el paro y continúa) ─
+function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
+  const motivosParo = (catalogo.motivos_paro || []).filter(m => m.activo !== false);
+  const subMotivos  = (catalogo.sub_motivos  || []).filter(s => s.activo !== false);
+  const htmlMotivos = motivosParo.map(m =>
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
+  ).join('');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay active';
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <h3 class="modal-title">⚠️ Definir motivo de paro</h3>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warn" style="margin-bottom:16px">
+          Se detectó inactividad desde las <strong>${escHtml(paro.hora_inicio)}</strong>.<br>
+          Define el motivo del paro para continuar.
+        </div>
+        <div class="form-grid">
+          <div class="form-group full">
+            <label>Motivo de paro <span style="color:#dc2626">*</span></label>
+            <select id="dpm-motivo">
+              <option value="">— Seleccionar motivo —</option>
+              ${htmlMotivos}
+            </select>
+          </div>
+          <div class="form-group full" id="dpm-submotivo-wrap" style="display:none">
+            <label>Sub-motivo <span style="color:#9ca3af;font-size:11px">(opcional)</span></label>
+            <select id="dpm-submotivo">
+              <option value="">— Seleccionar —</option>
+            </select>
+          </div>
+          <div class="form-group full" id="dpm-deduccion-info" style="display:none">
+            <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:10px;font-size:12px;color:#065f46">
+              ℹ️ Este motivo aplica reducción de tiempo de máquina. La duración efectiva del paro se calculará automáticamente.
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" id="dpm-submit">✅ Registrar motivo y continuar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const DEDUCCION_FIJO = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+
+  overlay.querySelector('#dpm-motivo').addEventListener('change', function() {
+    const subWrap = overlay.querySelector('#dpm-submotivo-wrap');
+    const subSel  = overlay.querySelector('#dpm-submotivo');
+    const dedInfo = overlay.querySelector('#dpm-deduccion-info');
+    const nombre  = (this.options[this.selectedIndex]?.dataset?.nombre || '').toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const esMaquina = nombre.includes('maquina');
+
+    dedInfo.style.display = esMaquina ? '' : 'none';
+
+    const filtrados = subMotivos.filter(s => String(s.motivo_id) === String(this.value));
+    if (filtrados.length > 0) {
+      subSel.innerHTML = '<option value="">— Seleccionar —</option>' +
+        filtrados.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
+      subWrap.style.display = '';
+    } else {
+      subWrap.style.display = 'none';
+      subSel.innerHTML = '';
+    }
+  });
+
+  overlay.querySelector('#dpm-submit').addEventListener('click', async () => {
+    const motivoSel = overlay.querySelector('#dpm-motivo');
+    const subSel    = overlay.querySelector('#dpm-submotivo');
+    const motivo_id = motivoSel.value;
+    if (!motivo_id) { alert('Selecciona el motivo de paro'); return; }
+
+    const btn = overlay.querySelector('#dpm-submit');
+    btn.disabled = true; btn.textContent = 'Registrando...';
+    try {
+      const now = new Date();
+      const fecha_fin = now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      const _mx = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+      const hora_fin = _mx.getHours().toString().padStart(2,'0') + ':' + _mx.getMinutes().toString().padStart(2,'0');
+
+      await PATCH(`/paros/${linea}/${paro.id}/definir-motivo`, {
+        motivo_id,
+        sub_motivo_id: subSel.value || null,
+        fecha_fin, hora_fin
+      });
+      state.paroActivo[linea] = null;
+      overlay.remove();
+      if (onClosed) onClosed();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = '✅ Registrar motivo y continuar';
+      alert('Error: ' + e.message);
+    }
+  });
+}
+
 function renderTarjeta(c) {
   const estado = c.estado || 'activo';
   const badgeClass = {
@@ -2734,69 +2839,6 @@ function openModalParo(linea, catalogo, onDone) {
   });
 }
 
-// ── Modal: Paro detectado automáticamente (15 min sin actividad) ───────────────
-function openModalParoAuto(linea, catalogo, horaInicio, fechaInicio, onDone) {
-  const motivosParo = catalogo.motivos_paro || [];
-  const subMotivos  = catalogo.sub_motivos  || [];
-  const htmlMotivos = motivosParo.map(m =>
-    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
-  ).join('');
-
-  showModal(`
-    <h3>⚠️ Paro detectado — Línea ${linea.replace('L', '')}</h3>
-    <div class="alert alert-warn" style="margin-bottom:16px">
-      Se detectó inactividad desde las <b>${escHtml(horaInicio)}</b>.<br>
-      <strong>Debes registrar el motivo del paro para continuar.</strong>
-    </div>
-    <div class="form-grid">
-      <div class="form-group full">
-        <label>Motivo de paro <span style="color:#dc2626">*</span></label>
-        <select id="mpa-motivo">
-          <option value="">— Seleccionar motivo —</option>
-          ${htmlMotivos}
-        </select>
-      </div>
-      <div class="form-group full">
-        <label>Sub-motivo <span style="color:#9ca3af;font-size:11px">(opcional)</span></label>
-        <select id="mpa-submotivo" disabled>
-          <option value="">— Primero selecciona motivo —</option>
-        </select>
-      </div>
-    </div>
-    <div class="modal-actions">
-      <button class="btn btn-danger" id="mpa-submit">⏸ Registrar Paro</button>
-    </div>`, { size: 'sm', noClose: true });
-
-  document.getElementById('mpa-motivo').addEventListener('change', function() {
-    const subSel = document.getElementById('mpa-submotivo');
-    const filtrados = subMotivos.filter(s => String(s.motivo_id) === String(this.value));
-    subSel.innerHTML = filtrados.length > 0
-      ? '<option value="">— Seleccionar —</option>' + filtrados.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('')
-      : '<option value="">— Sin sub-motivos —</option>';
-    subSel.disabled = filtrados.length === 0;
-  });
-
-  document.getElementById('mpa-submit').addEventListener('click', async () => {
-    const motivoSel = document.getElementById('mpa-motivo');
-    const subSel    = document.getElementById('mpa-submotivo');
-    const motivo_id = motivoSel.value;
-    const motivo    = motivoSel.options[motivoSel.selectedIndex]?.dataset?.nombre || '';
-    const sub_motivo_id = subSel.value || null;
-    const sub_motivo    = sub_motivo_id ? (subSel.options[subSel.selectedIndex]?.text || '') : '';
-    if (!motivo_id) { alert('Selecciona el motivo de paro'); return; }
-    const btn = document.getElementById('mpa-submit');
-    btn.disabled = true; btn.textContent = 'Registrando...';
-    try {
-      const nuevo = await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: fechaInicio, hora_inicio: horaInicio });
-      await PATCH(`/paros/${linea}/${nuevo.id}/cerrar`, {});
-      closeModal();
-      onDone();
-    } catch (e) {
-      btn.disabled = false; btn.textContent = '⏸ Registrar Paro';
-      alert('Error: ' + e.message);
-    }
-  });
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VISTA: PIZARRÓN KPI
@@ -5948,6 +5990,16 @@ async function viewConfiguracion(el) {
       <p style="font-size:13px;color:var(--p-muted);margin:0 0 16px">Descarga una copia completa de todos los registros de producción (cargas, paros, catálogos, configuración).</p>
       <button class="btn btn-outline" id="cfg-backup-btn">📥 Descargar Backup de BD</button>
       <span id="cfg-backup-msg" style="margin-left:12px;font-size:13px"></span>
+    </div>
+
+    <div class="form-card config-section" style="margin-top:24px">
+      <h3>Mantenimiento de Paros</h3>
+      <p style="font-size:13px;color:var(--p-muted);margin:0 0 16px">
+        Aplica la deducción de <em>tiempo de máquina</em> a paros históricos que tengan ese motivo y aún no tengan deducción registrada.<br>
+        <strong>L3:</strong> −10 min &nbsp; <strong>L4:</strong> −5 min &nbsp; <strong>Baker/L1:</strong> −13.5 min
+      </p>
+      <button class="btn btn-outline" id="cfg-recalcular-btn">🔧 Recalcular deducción paros históricos</button>
+      <span id="cfg-recalcular-msg" style="margin-left:12px;font-size:13px"></span>
     </div>`;
 
   document.getElementById('cfg-save').addEventListener('click', async () => {
@@ -6016,6 +6068,24 @@ async function viewConfiguracion(el) {
       msg.textContent = '⚠️ Error: ' + e.message;
     } finally {
       btn.disabled = false; btn.textContent = '📥 Descargar Backup de BD';
+    }
+  });
+
+  document.getElementById('cfg-recalcular-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('cfg-recalcular-btn');
+    const msg = document.getElementById('cfg-recalcular-msg');
+    if (!confirm('¿Aplicar deducción de tiempo de máquina a paros históricos sin deducción previa? Esta acción no se puede deshacer.')) return;
+    btn.disabled = true; btn.textContent = 'Procesando...';
+    try {
+      const r = await POST('/paros/recalcular-deduccion', {});
+      msg.style.color = 'var(--p-success)';
+      msg.textContent = `✅ ${r.updated} paro(s) actualizados`;
+      setTimeout(() => { msg.textContent = ''; }, 5000);
+    } catch (e) {
+      msg.style.color = 'var(--p-danger)';
+      msg.textContent = '⚠️ Error: ' + e.message;
+    } finally {
+      btn.disabled = false; btn.textContent = '🔧 Recalcular deducción paros históricos';
     }
   });
 

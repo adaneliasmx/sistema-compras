@@ -889,7 +889,7 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
       const motivo = allMotivos.find(m => String(m.id) === String(p.motivo_id));
       return motivo?.afecta_rendimiento !== false;
     });
-    const paros_min_rend = parosFiltrados.reduce((s, p) => s + (p.duracion_min || 0), 0);
+    const paros_min_rend = parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
 
     result.push({ fecha, linea, turno, ciclos: g.ciclos, objetivo, eficiencia, paros_min_rend });
   }
@@ -957,7 +957,7 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
       const mot = motivos.find(m => String(m.id) === String(p.motivo_id));
       return mot?.afecta_rendimiento !== false;
     });
-    const paros_min_rend = parosFiltrados.reduce((s, p) => s + (p.duracion_min || 0), 0);
+    const paros_min_rend = parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
 
     return { fecha, turno, operador, ciclos, objetivo, eficiencia, paros_min_rend };
   });
@@ -1121,6 +1121,43 @@ router.get('/paros/:linea', (req, res) => {
   res.json(paros);
 });
 
+// POST /paros/recalcular-deduccion — admin: aplica deduccion_min a paros "tiempo de máquina" sin deducción previa
+router.post('/paros/recalcular-deduccion', produccionAllowRoles('admin'), (req, res) => {
+  const pdb = dbProd.read();
+  const FIJOS = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+  const normText = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let count = 0;
+
+  // paros L3/L4
+  for (let i = 0; i < (pdb.paros || []).length; i++) {
+    const p = pdb.paros[i];
+    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!normText(p.motivo).includes('maquina')) continue;
+    const fijo = FIJOS[p.linea] ?? 0;
+    const deduccion = Math.max(0, p.duracion_min - fijo);
+    if (deduccion > 0) { pdb.paros[i] = { ...p, deduccion_min: deduccion }; count++; }
+  }
+  // paros Baker
+  for (let i = 0; i < (pdb.paros_baker || []).length; i++) {
+    const p = pdb.paros_baker[i];
+    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!normText(p.motivo).includes('maquina')) continue;
+    const deduccion = Math.max(0, p.duracion_min - 13.5);
+    if (deduccion > 0) { pdb.paros_baker[i] = { ...p, deduccion_min: deduccion }; count++; }
+  }
+  // paros L1
+  for (let i = 0; i < (pdb.paros_l1 || []).length; i++) {
+    const p = pdb.paros_l1[i];
+    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!normText(p.motivo).includes('maquina')) continue;
+    const deduccion = Math.max(0, p.duracion_min - 13.5);
+    if (deduccion > 0) { pdb.paros_l1[i] = { ...p, deduccion_min: deduccion }; count++; }
+  }
+
+  if (count > 0) dbProd.write(pdb);
+  res.json({ updated: count });
+});
+
 router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const { linea } = req.params;
   const { motivo_id, sub_motivo_id } = req.body || {};
@@ -1181,6 +1218,94 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   pdb.paros.push(paro);
   dbProd.write(pdb);
   res.status(201).json(paro);
+});
+
+// POST /paros/:linea/pendiente-motivo — crea paro automático sin motivo (15 min inactividad)
+router.post('/paros/:linea/pendiente-motivo', produccionAuthRequired, (req, res) => {
+  const { linea } = req.params;
+  const { hora_inicio, fecha_inicio } = req.body || {};
+  const pdb = dbProd.read();
+
+  // Candado: si ya hay paro activo, devolver 409 con el paro existente
+  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado === 'activo');
+  if (openParo) return res.status(409).json({ error: 'Ya hay un paro activo', paro: openParo });
+
+  const _fecha = fecha_inicio || nowDateStr();
+  const _hora  = hora_inicio  || nowTimeStr();
+  const turno  = getTurno(_hora);
+
+  if (!pdb.paros) pdb.paros = [];
+  const id = dbProd.nextId(pdb.paros);
+  const dateStr = _fecha.replace(/-/g, '');
+  const prefix = `PR-${linea.toUpperCase()}-${dateStr}-`;
+  const existing = pdb.paros.filter(p => p.folio && p.folio.startsWith(prefix));
+  const nextNum = existing.length > 0 ? Math.max(...existing.map(p => parseInt(p.folio.slice(prefix.length), 10) || 0)) + 1 : 1;
+
+  const paro = {
+    id, folio: `${prefix}${padNum(nextNum)}`, linea,
+    motivo_id: null, motivo: 'Paro automático abierto',
+    sub_motivo_id: null, sub_motivo: null,
+    fecha_inicio: _fecha, hora_inicio: _hora,
+    fecha_fin: null, hora_fin: null, duracion_min: null, deduccion_min: null,
+    tipo: 'pendiente_motivo', estado: 'activo', turno,
+    registrado_por: req.prodUser?.nombre || 'Sistema',
+    created_at: new Date().toISOString()
+  };
+  pdb.paros.push(paro);
+  dbProd.write(pdb);
+  res.status(201).json(paro);
+});
+
+// PATCH /paros/:linea/:id/definir-motivo — define motivo en paro pendiente_motivo y lo cierra
+router.patch('/paros/:linea/:id/definir-motivo', produccionAuthRequired, (req, res) => {
+  const { linea, id } = req.params;
+  const pdb = dbProd.read();
+  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id) && p.linea === linea);
+  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+
+  const paro = pdb.paros[idx];
+  if (paro.tipo !== 'pendiente_motivo') return res.status(400).json({ error: 'Solo aplica a paros pendiente_motivo' });
+  if (paro.fecha_fin) return res.status(409).json({ error: 'El paro ya está cerrado' });
+
+  const { motivo_id, sub_motivo_id } = req.body || {};
+  if (!motivo_id) return res.status(400).json({ error: 'motivo_id es requerido' });
+
+  const l = lineaKey(linea);
+  const motivos = pdb[`motivos_paro_${l}`] || [];
+  const motivo = motivos.find(m => String(m.id) === String(motivo_id));
+  if (!motivo) return res.status(400).json({ error: 'Motivo no encontrado' });
+
+  let sub_motivo = null;
+  if (sub_motivo_id) {
+    const subs = pdb[`sub_motivos_paro_${l}`] || [];
+    sub_motivo = subs.find(s => String(s.id) === String(sub_motivo_id) && String(s.motivo_id) === String(motivo_id));
+  }
+
+  const fecha_fin = req.body.fecha_fin || nowDateStr();
+  const hora_fin  = req.body.hora_fin  || nowTimeStr();
+  const duracion_min = Math.round(
+    (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
+  );
+
+  // Calcular deduccion_min si motivo = "tiempo de máquina"
+  const normNombre = motivo.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let deduccion_min = null;
+  if (normNombre.includes('maquina')) {
+    const fijo = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 }[linea] ?? 0;
+    const val = Math.max(0, duracion_min - fijo);
+    if (val > 0) deduccion_min = val;
+  }
+
+  pdb.paros[idx] = {
+    ...paro,
+    motivo_id: Number(motivo_id), motivo: motivo.nombre,
+    sub_motivo_id: sub_motivo ? Number(sub_motivo_id) : null,
+    sub_motivo: sub_motivo ? sub_motivo.nombre : null,
+    fecha_fin, hora_fin, duracion_min, deduccion_min,
+    estado: 'cerrado'
+  };
+  dbProd.write(pdb);
+  res.json(pdb.paros[idx]);
 });
 
 // ─── Paro automático por cambio de turno ─────────────────────────────────────
