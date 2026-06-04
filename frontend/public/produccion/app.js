@@ -1056,7 +1056,8 @@ async function viewLinea(el, linea) {
         : paroActivo.tipo === 'pendiente_motivo'
         ? `<div style="display:flex;align-items:center;gap:8px;background:#fef3c7;border:1.5px solid #d97706;border-radius:8px;padding:6px 12px;flex-wrap:wrap">
              <span style="color:#d97706;font-weight:700;font-size:13px">⚠️ PARO SIN MOTIVO</span>
-             <span style="font-size:12px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio)} — define el motivo al registrar o descargar</span>
+             <span style="font-size:12px;color:#6b7280">desde ${escHtml(paroActivo.hora_inicio)}</span>
+             <button class="btn btn-sm" style="background:#d97706;color:#fff;border:none;white-space:nowrap" id="btn-definir-motivo" data-id="${paroActivo.id}">📝 Definir motivo</button>
            </div>`
         : `<div style="display:flex;align-items:center;gap:8px;background:#fef2f2;border:1.5px solid #dc2626;border-radius:8px;padding:6px 12px;flex-wrap:wrap">
              <span style="color:#dc2626;font-weight:700;font-size:13px">🔴 PARO ACTIVO</span>
@@ -1138,6 +1139,10 @@ async function viewLinea(el, linea) {
       } catch (e) {
         alert('Error al cerrar paro: ' + e.message);
       }
+    });
+    el.querySelector('#btn-definir-motivo')?.addEventListener('click', () => {
+      const pa = state.paroActivo[linea];
+      if (pa) showDefinirMotivoModal(linea, pa, catalogo, el, () => viewLinea(el, linea));
     });
 
     // Bind tarjeta buttons
