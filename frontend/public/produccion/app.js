@@ -3719,7 +3719,7 @@ async function viewMonitorGrafico(el) {
         ${p.sub_motivo ? `<div>Sub-motivo: ${escHtml(p.sub_motivo)}</div>` : ''}
         <div>Inicio: ${escHtml(p.fecha_inicio)} ${escHtml(p.hora_inicio)}</div>
         <div>Fin: ${escHtml(p.fecha_fin||'—')} ${escHtml(p.hora_fin||'')}</div>
-        <div>Duración: <b>${p.duracion_min||'?'} min</b></div>
+        <div>Duración: <b>${p.deduccion_min > 0 ? Math.max(0,(p.duracion_min||0)-p.deduccion_min) : (p.duracion_min||'?')} min</b>${p.deduccion_min > 0 ? ` <span style="color:#059669;font-size:10px">⏱ −${p.deduccion_min} maq.</span>` : ''}</div>
         <div>Turno: ${escHtml(p.turno||'-')}</div>
         ${!p.fecha_fin ? '<div style="color:#fca5a5">⚠ Paro abierto</div>' : ''}
         <div style="color:#64748b;font-size:10px;margin-top:3px">Clic = detalle</div>`;
@@ -3757,7 +3757,10 @@ async function viewMonitorGrafico(el) {
           ${p.sub_motivo?`<div style="grid-column:1/-1"><span style="color:#6b7280;font-size:11px">Sub-motivo</span><br><b>${escHtml(p.sub_motivo)}</b></div>`:''}
           <div><span style="color:#6b7280;font-size:11px">Inicio</span><br><b>${escHtml(p.fecha_inicio||'')} ${escHtml(p.hora_inicio||'')}</b></div>
           <div><span style="color:#6b7280;font-size:11px">Fin</span><br><b>${escHtml(p.fecha_fin||'—')} ${escHtml(p.hora_fin||'')}</b></div>
-          <div><span style="color:#6b7280;font-size:11px">Duración</span><br><b>${p.duracion_min||'?'} min</b></div>
+          <div><span style="color:#6b7280;font-size:11px">Duración${p.deduccion_min > 0 ? ' (ajustada)' : ''}</span><br>
+            <b>${p.deduccion_min > 0 ? Math.max(0,(p.duracion_min||0)-p.deduccion_min) : (p.duracion_min||'?')} min</b>
+            ${p.deduccion_min > 0 ? `<br><span style="color:#059669;font-size:10px">⏱ Bruto: ${p.duracion_min} min — Desc. máq.: −${p.deduccion_min} min</span>` : ''}
+          </div>
           <div><span style="color:#6b7280;font-size:11px">Estado</span><br><b style="color:${!p.fecha_fin?'#dc2626':'#16a34a'}">${!p.fecha_fin?'Abierto':'Cerrado'}</b></div>
         </div>
       </div>`;
@@ -5623,7 +5626,7 @@ async function viewParos(el) {
                 <th>Folio</th><th>Línea</th><th>Turno</th>
                 <th>Fecha inicio</th><th>Hr inicio</th>
                 <th>Fecha fin</th><th>Hr fin</th>
-                <th>Duración (min)</th><th>Motivo</th><th>Sub-motivo</th><th>Registrado por</th><th>Estado</th>
+                <th>Duración (min) ⏱</th><th>Motivo</th><th>Sub-motivo</th><th>Registrado por</th><th>Estado</th>
                 ${isAdmin ? '<th>Acciones</th>' : ''}
               </tr>
             </thead>
@@ -5636,7 +5639,14 @@ async function viewParos(el) {
                 if (p.corregido) estadoBadge += ` <span class="badge" style="background:#f59e0b;color:#fff" title="Editado por ${escHtml(p.corregido_por||'')}">✏️ Corregido</span>`;
                 const crossDay = p.fecha_fin && p.fecha_inicio !== p.fecha_fin;
                 if (crossDay) estadoBadge += ` <span class="badge" style="background:#6366f1;color:#fff" title="Paro iniciado el ${escHtml(p.fecha_inicio)} y cerrado el ${escHtml(p.fecha_fin)}">↕ Cruce día</span>`;
-                const dur = p.duracion_min != null ? p.duracion_min + ' min' : (abierto ? '<em>en curso</em>' : '—');
+                const durBruta = p.duracion_min;
+                const durEf = (durBruta != null && p.deduccion_min > 0)
+                  ? Math.max(0, durBruta - p.deduccion_min) : durBruta;
+                const dur = durBruta != null
+                  ? (p.deduccion_min > 0
+                    ? `${durEf} min <span title="Bruto: ${durBruta} min — Desc. tolerancia máq.: −${p.deduccion_min} min" style="color:#059669;font-size:10px;cursor:help">⏱ −${p.deduccion_min}</span>`
+                    : `${durBruta} min`)
+                  : (abierto ? '<em>en curso</em>' : '—');
                 const accionesTd = isAdmin ? `<td style="white-space:nowrap">
                   ${abierto ? `<button class="btn btn-outline btn-sm" data-pa-cerrar="${idx}">✅ Cerrar</button> ` : ''}
                   <button class="btn btn-outline btn-sm" data-pa-editar="${idx}">✏️ Editar</button>
@@ -5723,6 +5733,8 @@ async function viewParos(el) {
       Fecha_Fin:       p.fecha_fin || '',
       Hora_Fin:        p.hora_fin || '',
       Duración_min:    p.duracion_min ?? '',
+      Deduccion_maq_min: p.deduccion_min ?? 0,
+      Duración_efectiva_min: p.deduccion_min > 0 ? Math.max(0,(p.duracion_min||0)-p.deduccion_min) : (p.duracion_min ?? ''),
       Motivo:          p.motivo || '',
       Sub_Motivo:      p.sub_motivo || '',
       Registrado_por:  p.registrado_por || '',
@@ -6750,15 +6762,16 @@ async function showParetoParo(linea, desde, hasta, tituloExtra, turno = '') {
       overlay.querySelector('#paroModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#16a34a;font-weight:600">Sin paros en este período ✅</div>';
       return;
     }
+    const durEfectiva = p => Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0));
     const motivoTiempo = {};
-    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + durEfectiva(p); });
     const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
     const paroPorDia = {};
-    paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + Number(p.duracion_min || 0); });
+    paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + durEfectiva(p); });
     const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
-    const totalMin = paros.reduce((s, p) => s + Number(p.duracion_min || 0), 0);
+    const totalMin = paros.reduce((s, p) => s + durEfectiva(p), 0);
     overlay.querySelector('#paroModalBody').innerHTML = `
-      <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${paros.length} paros · <b>${(totalMin / 60).toFixed(1)} horas</b> acumuladas</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:12px">${paros.length} paros · <b>${(totalMin / 60).toFixed(1)} horas</b> (tiempo efectivo)</div>
       <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Pareto por motivo</h4>
       ${renderHBarChart(paretoParos, () => '#f59e0b')}
       <h4 style="font-size:13px;margin:16px 0 8px;color:#374151">Tiempo de paro por día</h4>
@@ -6789,13 +6802,14 @@ async function showSemanaPareto(linea, desde, hasta, titulo) {
     ]);
     const paros = parosData.paros || [];
     const defs  = defData.defectos || [];
+    const durEf2 = p => Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0));
     const motivoTiempo = {};
-    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+    paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + durEf2(p); });
     const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
     const defTipo = {};
     defs.forEach(d => { defTipo[d.defecto] = (defTipo[d.defecto] || 0) + 1; });
     const paretoDefectos = Object.entries(defTipo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
-    const totalParoMin = paros.reduce((s, p) => s + Number(p.duracion_min || 0), 0);
+    const totalParoMin = paros.reduce((s, p) => s + durEf2(p), 0);
     overlay.querySelector('#spModalBody').innerHTML = `
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div>
