@@ -2345,6 +2345,9 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
     `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
   ).join('');
 
+  const DEDUCCION_FIJO = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+  const minFijo = DEDUCCION_FIJO[linea] ?? 0;
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
   overlay.innerHTML = `
@@ -2371,9 +2374,12 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
               <option value="">— Seleccionar —</option>
             </select>
           </div>
-          <div class="form-group full" id="dpm-deduccion-info" style="display:none">
-            <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:10px;font-size:12px;color:#065f46">
-              ℹ️ Este motivo aplica reducción de tiempo de máquina. La duración efectiva del paro se calculará automáticamente.
+          <div class="form-group full">
+            <button type="button" id="dpm-tolerancia-btn" style="width:100%;padding:10px 14px;border:2px dashed #d1d5db;border-radius:8px;background:#f9fafb;color:#6b7280;font-size:13px;cursor:pointer;text-align:left;transition:all .2s">
+              ⏱ Aplicar tolerancia tiempo de máquina &nbsp;<span style="font-size:11px">(${minFijo} min fijos — click para activar)</span>
+            </button>
+            <div id="dpm-deduccion-info" style="display:none;margin-top:6px;background:#ecfdf5;border:1px solid #6ee7b7;border-radius:8px;padding:10px;font-size:12px;color:#065f46">
+              Se descontarán <strong>${minFijo} min</strong> del tiempo total del paro. Duración efectiva = tiempo total − ${minFijo} min.
             </div>
           </div>
         </div>
@@ -2384,18 +2390,28 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
     </div>`;
   document.body.appendChild(overlay);
 
-  const DEDUCCION_FIJO = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+  let aplicarTolerancia = false;
+  overlay.querySelector('#dpm-tolerancia-btn').addEventListener('click', function() {
+    aplicarTolerancia = !aplicarTolerancia;
+    const info = overlay.querySelector('#dpm-deduccion-info');
+    if (aplicarTolerancia) {
+      this.style.background = '#ecfdf5';
+      this.style.border = '2px solid #059669';
+      this.style.color = '#065f46';
+      this.innerHTML = `✅ Tolerancia tiempo de máquina activada &nbsp;<span style="font-size:11px">(${minFijo} min — click para desactivar)</span>`;
+      info.style.display = '';
+    } else {
+      this.style.background = '#f9fafb';
+      this.style.border = '2px dashed #d1d5db';
+      this.style.color = '#6b7280';
+      this.innerHTML = `⏱ Aplicar tolerancia tiempo de máquina &nbsp;<span style="font-size:11px">(${minFijo} min fijos — click para activar)</span>`;
+      info.style.display = 'none';
+    }
+  });
 
   overlay.querySelector('#dpm-motivo').addEventListener('change', function() {
     const subWrap = overlay.querySelector('#dpm-submotivo-wrap');
     const subSel  = overlay.querySelector('#dpm-submotivo');
-    const dedInfo = overlay.querySelector('#dpm-deduccion-info');
-    const nombre  = (this.options[this.selectedIndex]?.dataset?.nombre || '').toLowerCase()
-      .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    const esMaquina = nombre.includes('maquina');
-
-    dedInfo.style.display = esMaquina ? '' : 'none';
-
     const filtrados = subMotivos.filter(s => String(s.motivo_id) === String(this.value));
     if (filtrados.length > 0) {
       subSel.innerHTML = '<option value="">— Seleccionar —</option>' +
@@ -2424,6 +2440,7 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
       await PATCH(`/paros/${linea}/${paro.id}/definir-motivo`, {
         motivo_id,
         sub_motivo_id: subSel.value || null,
+        aplicar_tolerancia: aplicarTolerancia,
         fecha_fin, hora_fin
       });
       state.paroActivo[linea] = null;

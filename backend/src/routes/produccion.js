@@ -1287,13 +1287,13 @@ router.patch('/paros/:linea/:id/definir-motivo', produccionAuthRequired, (req, r
     (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
   );
 
-  // Calcular deduccion_min si motivo = "tiempo de máquina"
-  const normNombre = motivo.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  // Calcular deduccion_min si el usuario activó la tolerancia de tiempo de máquina
   let deduccion_min = null;
-  if (normNombre.includes('maquina')) {
+  let tolerancia_tiempo_maquina = false;
+  if (req.body.aplicar_tolerancia === true) {
     const fijo = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 }[linea] ?? 0;
     const val = Math.max(0, duracion_min - fijo);
-    if (val > 0) deduccion_min = val;
+    if (val > 0) { deduccion_min = val; tolerancia_tiempo_maquina = true; }
   }
 
   pdb.paros[idx] = {
@@ -1302,6 +1302,7 @@ router.patch('/paros/:linea/:id/definir-motivo', produccionAuthRequired, (req, r
     sub_motivo_id: sub_motivo ? Number(sub_motivo_id) : null,
     sub_motivo: sub_motivo ? sub_motivo.nombre : null,
     fecha_fin, hora_fin, duracion_min, deduccion_min,
+    tolerancia_tiempo_maquina,
     estado: 'cerrado'
   };
   dbProd.write(pdb);
