@@ -831,29 +831,30 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
   const horasTurno = { T1: 8, T2: 7, T3: 9 };
 
   // Todas las cargas procesadas del operador en el rango
+  // L3/L4 en pdb.cargas (con campo linea), Baker/L1 en colecciones separadas
   const allCargas = [
-    ...(pdb.cargas_l3    || []).map(c => ({ ...c, _linea: 'L3' })),
-    ...(pdb.cargas_l4    || []).map(c => ({ ...c, _linea: 'L4' })),
+    ...(pdb.cargas || []).filter(c => c.linea === 'L3' || c.linea === 'L4').map(c => ({ ...c, _linea: c.linea })),
     ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
     ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' })),
   ];
 
   const opCargas = allCargas.filter(c => {
-    if (c.estado !== 'procesado') return false;
+    if (!c.fecha_descarga) return false;                          // no descargada
+    if (c.estado === 'activo' || c.estado === 'cancelado') return false;
     if (String(c.operador_id) !== String(operador_id)) return false;
     const f = c.fecha_descarga;
-    if (!f) return false;
     if (f < fecha_ini) return false;
     if (fecha_fin && f > fecha_fin) return false;
     return true;
   });
 
-  // Agrupar por (fecha_descarga, linea, turno)
+  // Agrupar por (fecha_descarga, linea, turno_descarga)
   const groups = {};
   for (const c of opCargas) {
-    const key = `${c.fecha_descarga}|${c._linea}|${c.turno}`;
+    const turnoDesc = getTurno(c.hora_descarga || c.hora_carga || '06:30');
+    const key = `${c.fecha_descarga}|${c._linea}|${turnoDesc}`;
     if (!groups[key]) {
-      groups[key] = { fecha: c.fecha_descarga, linea: c._linea, turno: c.turno || 'T1', ciclos: 0 };
+      groups[key] = { fecha: c.fecha_descarga, linea: c._linea, turno: turnoDesc, ciclos: 0 };
     }
     groups[key].ciclos++;
   }
@@ -907,8 +908,7 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
   const cfg = pdb.config || {};
   const horasTurno = { T1: 8, T2: 7, T3: 9 };
 
-  const cargaKey = { L3: 'cargas_l3', L4: 'cargas_l4', Baker: 'cargas_baker', L1: 'cargas_l1' }[linea];
-  if (!cargaKey) return res.status(400).json({ error: 'Línea no válida' });
+  if (!['L3', 'L4', 'Baker', 'L1'].includes(linea)) return res.status(400).json({ error: 'Línea no válida' });
 
   const motivosKey = { L3: 'motivos_paro_l3', L4: 'motivos_paro_l4', Baker: 'motivos_paro_baker', L1: 'motivos_paro_l1' }[linea];
   const motivos = pdb[motivosKey] || [];
@@ -919,20 +919,25 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
       ? (pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' }))
       : (pdb.paros || []).filter(p => p.linea === linea);
 
-  const cargas = (pdb[cargaKey] || []).filter(c => {
-    if (c.estado !== 'procesado') return false;
-    const f = c.fecha_descarga;
-    if (!f) return false;
-    if (f < fecha_ini) return false;
-    if (fecha_fin && f > fecha_fin) return false;
+  // L3/L4 en pdb.cargas, Baker/L1 en sus propias colecciones
+  const cargasSrc = (linea === 'Baker' || linea === 'L1')
+    ? (pdb[`cargas_${linea.toLowerCase()}`] || [])
+    : (pdb.cargas || []).filter(c => c.linea === linea);
+
+  const cargas = cargasSrc.filter(c => {
+    if (!c.fecha_descarga) return false;
+    if (c.estado === 'activo' || c.estado === 'cancelado') return false;
+    if (c.fecha_descarga < fecha_ini) return false;
+    if (fecha_fin && c.fecha_descarga > fecha_fin) return false;
     return true;
   });
 
-  // Agrupar por (fecha_descarga, turno)
+  // Agrupar por (fecha_descarga, turno_descarga)
   const groups = {};
   for (const c of cargas) {
-    const key = `${c.fecha_descarga}|${c.turno}`;
-    if (!groups[key]) groups[key] = { fecha: c.fecha_descarga, turno: c.turno || 'T1', ops: {} };
+    const turnoDesc = getTurno(c.hora_descarga || c.hora_carga || '06:30');
+    const key = `${c.fecha_descarga}|${turnoDesc}`;
+    if (!groups[key]) groups[key] = { fecha: c.fecha_descarga, turno: turnoDesc, ops: {} };
     const opNom = c.operador || '—';
     groups[key].ops[opNom] = (groups[key].ops[opNom] || 0) + 1;
   }
