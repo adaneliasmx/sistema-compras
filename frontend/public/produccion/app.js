@@ -2347,7 +2347,7 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
   const motivosParo = (catalogo.motivos_paro || []).filter(m => m.activo !== false);
   const subMotivos  = (catalogo.sub_motivos  || []).filter(s => s.activo !== false);
   const htmlMotivos = motivosParo.map(m =>
-    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-tm="${m.es_tiempo_maquina ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
   const DEDUCCION_FIJO = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
@@ -2426,6 +2426,11 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
       subWrap.style.display = 'none';
       subSel.innerHTML = '';
     }
+    // Auto-activar tolerancia si el motivo es de "tiempo de máquina"
+    const esTM = this.options[this.selectedIndex]?.dataset?.tm === '1';
+    const tolBtn = overlay.querySelector('#dpm-tolerancia-btn');
+    if (esTM && !aplicarTolerancia) tolBtn?.click();
+    else if (!esTM && aplicarTolerancia) tolBtn?.click();
   });
 
   overlay.querySelector('#dpm-submit').addEventListener('click', async () => {
@@ -5004,7 +5009,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     acabados:      ['nombre', 'descripcion'],
     herramentales: ['numero', 'nombre', 'descripcion', 'excluir_calidad'],
     defectos:      ['nombre', 'descripcion'],
-    motivos_paro:  ['nombre', 'descripcion', 'afecta_eficiencia', 'afecta_disponibilidad', 'afecta_rendimiento'],
+    motivos_paro:  ['nombre', 'descripcion', 'es_tiempo_maquina', 'afecta_eficiencia', 'afecta_disponibilidad', 'afecta_rendimiento'],
     sub_motivos:   ['nombre', 'motivo_nombre', 'descripcion'],
     // Baker-specific
     clientes:              ['nombre'],
@@ -5050,6 +5055,7 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     cavidades:             'Cavidades',
     varillas_totales:      'Varillas totales',
     excluir_calidad:       'KPI Calidad',
+    es_tiempo_maquina:     'T. Máquina',
     afecta_eficiencia:     'Eficiencia',
     afecta_disponibilidad: 'Disponibilidad',
     afecta_rendimiento:    'Rendimiento'
@@ -5061,6 +5067,9 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
   const colRenderers = {
     excluir_calidad:       (val) => val
       ? '<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">⚠ Excluido</span>'
+      : '<span style="color:var(--p-muted);font-size:11px">—</span>',
+    es_tiempo_maquina:     (val) => val
+      ? '<span style="background:#ecfdf5;color:#059669;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:600">⏱ Sí</span>'
       : '<span style="color:var(--p-muted);font-size:11px">—</span>',
     afecta_eficiencia:     (val) => val === false ? badgeNo : badgeSi,
     afecta_disponibilidad: (val) => val === false ? badgeNo : badgeSi,
@@ -5223,8 +5232,16 @@ function buildCatalogoFields(tipo, item, catalogo) {
       const afEf   = item?.afecta_eficiencia    !== false;
       const afDisp = item?.afecta_disponibilidad !== false;
       const afRend = item?.afecta_rendimiento    !== false;
+      const esTM   = !!item?.es_tiempo_maquina;
       return inp('nombre', 'Nombre') +
              inp('descripcion', 'Descripción') +
+             `<div class="form-group full" style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:#ecfdf5;border-radius:8px;border:1px solid #6ee7b7">
+               <input type="checkbox" id="cf-es_tiempo_maquina" ${esTM ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;accent-color:#059669;flex-shrink:0"/>
+               <label for="cf-es_tiempo_maquina" style="margin:0;cursor:pointer;font-size:13px;font-weight:600;color:#065f46">
+                 ⏱ Es paro de tiempo de máquina
+                 <span style="font-weight:400;color:#059669;font-size:12px"> — al seleccionarlo, el modal de paro activará automáticamente la tolerancia de descuento</span>
+               </label>
+             </div>` +
              `<div class="form-group">
                <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">Impacto en métricas de KPI</div>
                <div style="display:flex;flex-direction:column;gap:8px;padding:10px 14px;background:#f8fafc;border-radius:8px;border:1px solid #e5e7eb">
@@ -5306,6 +5323,7 @@ function collectCatalogoFields(tipo) {
       return {
         nombre:                g('nombre'),
         descripcion:           g('descripcion'),
+        es_tiempo_maquina:    !!(document.getElementById('cf-es_tiempo_maquina')?.checked),
         afecta_eficiencia:    !!(document.getElementById('cf-afecta_eficiencia')?.checked),
         afecta_disponibilidad:!!(document.getElementById('cf-afecta_disponibilidad')?.checked),
         afecta_rendimiento:   !!(document.getElementById('cf-afecta_rendimiento')?.checked)
