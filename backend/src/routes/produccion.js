@@ -1124,7 +1124,7 @@ router.get('/paros/:linea', (req, res) => {
 // POST /paros/recalcular-deduccion — admin: aplica deduccion_min a paros "tiempo de máquina" sin deducción previa
 router.post('/paros/recalcular-deduccion', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
-  const FIJOS = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+  const FIJOS = { L3: 15, L4: 5, L1: 13.5, Baker: 13.5 };
   const normText = s => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
   // Construir set de motivo_id marcados como es_tiempo_maquina en el catálogo
@@ -1138,29 +1138,29 @@ router.post('/paros/recalcular-deduccion', produccionAllowRoles('admin'), (req, 
 
   let count = 0;
 
-  // paros L3/L4
+  // paros L3/L4 — siempre sobreescribe deduccion_min para corregir datos con fórmula anterior
   for (let i = 0; i < (pdb.paros || []).length; i++) {
     const p = pdb.paros[i];
-    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!p.fecha_fin || !p.duracion_min) continue;
     if (!esTM(p)) continue;
     const fijo = FIJOS[p.linea] ?? 0;
-    const deduccion = Math.max(0, p.duracion_min - fijo);
+    const deduccion = Math.min(fijo, p.duracion_min);
     if (deduccion > 0) { pdb.paros[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
   // paros Baker
   for (let i = 0; i < (pdb.paros_baker || []).length; i++) {
     const p = pdb.paros_baker[i];
-    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!p.fecha_fin || !p.duracion_min) continue;
     if (!esTM(p)) continue;
-    const deduccion = Math.max(0, p.duracion_min - 13.5);
+    const deduccion = Math.min(13.5, p.duracion_min);
     if (deduccion > 0) { pdb.paros_baker[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
   // paros L1
   for (let i = 0; i < (pdb.paros_l1 || []).length; i++) {
     const p = pdb.paros_l1[i];
-    if (!p.fecha_fin || !p.duracion_min || p.deduccion_min != null) continue;
+    if (!p.fecha_fin || !p.duracion_min) continue;
     if (!esTM(p)) continue;
-    const deduccion = Math.max(0, p.duracion_min - 13.5);
+    const deduccion = Math.min(13.5, p.duracion_min);
     if (deduccion > 0) { pdb.paros_l1[i] = { ...p, deduccion_min: deduccion, tolerancia_tiempo_maquina: true }; count++; }
   }
 
@@ -1301,8 +1301,8 @@ router.patch('/paros/:linea/:id/definir-motivo', produccionAuthRequired, (req, r
   let deduccion_min = null;
   let tolerancia_tiempo_maquina = false;
   if (req.body.aplicar_tolerancia === true) {
-    const fijo = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 }[linea] ?? 0;
-    const val = Math.max(0, duracion_min - fijo);
+    const fijo = { L3: 15, L4: 5, L1: 13.5, Baker: 13.5 }[linea] ?? 0;
+    const val = Math.min(fijo, duracion_min);
     if (val > 0) { deduccion_min = val; tolerancia_tiempo_maquina = true; }
   }
 

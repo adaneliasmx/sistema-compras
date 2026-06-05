@@ -2350,7 +2350,7 @@ function showDefinirMotivoModal(linea, paro, catalogo, elContainer, onClosed) {
     `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-tm="${m.es_tiempo_maquina ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
-  const DEDUCCION_FIJO = { L3: 10, L4: 5, L1: 13.5, Baker: 13.5 };
+  const DEDUCCION_FIJO = { L3: 15, L4: 5, L1: 13.5, Baker: 13.5 };
   const minFijo = DEDUCCION_FIJO[linea] ?? 0;
 
   const overlay = document.createElement('div');
