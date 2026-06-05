@@ -568,54 +568,65 @@
 
   /* ── SVG bar chart para diapositiva de tendencia ─────────────────────── */
   function buildSVGTrend(series, xLabels, opts = {}) {
-    const W = 420, H = 120;
-    const PAD = { top: 12, right: 12, bottom: 28, left: 32 };
+    const W = 420, H = 155;
+    const PAD = { top: 24, right: 40, bottom: 28, left: 36 };
     const cW = W - PAD.left - PAD.right;
     const cH = H - PAD.top - PAD.bottom;
-
     const n = xLabels.length;
     if (n === 0) return '<div class="ss-no-data">Sin datos</div>';
-
-    const minV = opts.minVal != null ? opts.minVal : 0;
-    const maxV = opts.maxVal != null ? opts.maxVal : 100;
+    const allVals = series.flatMap(s => s.data.filter(v => v != null));
+    if (allVals.length === 0) return '<div class="ss-no-data">Sin datos esta semana</div>';
+    const dataMin = Math.min(...allVals);
+    const dataMax = Math.max(...allVals);
+    const spread  = dataMax - dataMin || 5;
+    const padY    = spread * 0.2;
+    let minV = opts.floorZero ? 0 : Math.max(0, Math.floor(dataMin - padY));
+    let maxV = Math.min(Math.ceil(dataMax + padY * 2.2), opts.hardMax || 100);
+    if (opts.target != null) {
+      if (opts.target < minV) minV = Math.max(0, Math.floor(opts.target - padY));
+      if (opts.target > maxV) maxV = Math.min(Math.ceil(opts.target + padY), opts.hardMax || 100);
+    }
     const range = maxV - minV || 1;
-
     const yPos = v => PAD.top + cH - Math.max(0, (v - minV) / range) * cH;
-
-    // Grid
-    const gridVals = [0, 0.5, 1].map(t => minV + t * range);
+    // Grid 4 lineas dinamicas
+    const gridVals = [0, 1/3, 2/3, 1].map(t => +(minV + t * range).toFixed(1));
     const grid = gridVals.map(v => {
       const y = yPos(v).toFixed(1);
       return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + cW}" y2="${y}" stroke="#334155" stroke-width="1"/>` +
-             `<text x="${PAD.left - 3}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="8" fill="#64748b">${Math.round(v)}%</text>`;
+             `<text x="${PAD.left - 3}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b">${Math.round(v)}%</text>`;
     }).join('');
-
-    // X labels
+    // Eje X
     const barGroupW = cW / n;
     const xAxis = xLabels.map((l, i) => {
       const cx = PAD.left + (i + 0.5) * barGroupW;
       return `<text x="${cx.toFixed(1)}" y="${(PAD.top + cH + 12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b">${escHtml(String(l))}</text>`;
     }).join('');
-
-    // Target dotted line
+    // Linea objetivo verde punteada
     let targetLine = '';
     if (opts.target != null) {
-      const ty = yPos(Math.max(minV, Math.min(maxV, opts.target))).toFixed(1);
-      targetLine = `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="5,3"/>`;
+      const clampedT = Math.max(minV, Math.min(maxV, opts.target));
+      const ty = yPos(clampedT).toFixed(1);
+      targetLine =
+        `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3"/>` +
+        `<text x="${PAD.left + cW + 3}" y="${(+ty + 3).toFixed(1)}" font-size="6.5" fill="#22c55e" font-weight="700">${opts.target}%</text>`;
     }
-
-    // Bars
+    // Barras + etiquetas de valor
     const nseries = series.length;
     const barW = Math.max(2, barGroupW / nseries - 2);
-    const bars = series.map((s, si) => s.data.map((v, i) => {
-      if (v == null) return '';
-      const cx = PAD.left + (i + 0.5) * barGroupW + (si - (nseries - 1) / 2) * (barW + 1);
-      const y  = yPos(v);
-      const bH = Math.max(1, PAD.top + cH - y);
-      return `<rect x="${(cx - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" rx="1" fill="${s.color}" opacity="0.85"/>`;
-    }).join('')).join('');
-
-    // Legend
+    let bars = '', valLabels = '';
+    series.forEach((s, si) => {
+      s.data.forEach((v, i) => {
+        if (v == null) return;
+        const cx = PAD.left + (i + 0.5) * barGroupW + (si - (nseries - 1) / 2) * (barW + 1);
+        const y  = yPos(v);
+        const bH = Math.max(1, PAD.top + cH - y);
+        bars += `<rect x="${(cx - barW/2).toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bH.toFixed(1)}" rx="1" fill="${s.color}" opacity="0.85"/>`;
+        if (bH >= 8) {
+          valLabels += `<text x="${cx.toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="middle" font-size="5.5" fill="${s.color}" font-weight="700">${Math.round(v)}</text>`;
+        }
+      });
+    });
+    // Leyenda
     const legW = series.length * 68;
     const legX = (W - legW) / 2;
     const legY = H - 4;
@@ -624,8 +635,7 @@
       return `<rect x="${x.toFixed(0)}" y="${legY - 5}" width="10" height="8" rx="1" fill="${s.color}" opacity="0.85"/>` +
              `<text x="${(x + 13).toFixed(0)}" y="${legY}" font-size="8" fill="#94a3b8">${escHtml(s.label)}</text>`;
     }).join('');
-
-    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${bars}${legend}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${bars}${valLabels}${legend}</svg>`;
   }
 
   /* ── Diapositiva: tendencia semanal de KPIs por línea ────────────────── */
@@ -698,33 +708,51 @@
       })
     }));
 
+    // Helper emojis por linea
+    function lineEmojis(ser, tgt, invertido) {
+      return ser.map(s => {
+        const vals = s.data.filter(v => v != null);
+        if (!vals.length) return '';
+        const last = vals[vals.length - 1];
+        let src;
+        if (invertido) {
+          src = last < 1 ? '/emojis/bien.png' : last < 3 ? '/emojis/regular.png' : '/emojis/mal.png';
+        } else {
+          src = last >= tgt ? '/emojis/bien.png' : last >= tgt - 10 ? '/emojis/regular.png' : '/emojis/mal.png';
+        }
+        return `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;color:${s.color}">${s.label}<img src="${src}" style="width:14px;height:14px;vertical-align:middle"></span>`;
+      }).join('&nbsp;&nbsp;');
+    }
+    function trendTitle(txt, ser, tgt, inv) {
+      return `<div class="ss-trend-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>${txt}</span><span style="display:flex;gap:4px">${lineEmojis(ser, tgt, inv)}</span></div>`;
+    }
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">Tendencia Semanal de KPIs · ${escHtml(desde)} – ${escHtml(hasta)}</div>
         <div class="ss-trend-grid">
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">Eficiencia (obj. 90%)</div>
-            ${buildSVGTrend(efSeries,    DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
+            ${trendTitle('Eficiencia (obj. 90%)', efSeries, 90, false)}
+            ${buildSVGTrend(efSeries,    DIAS_SEMANA, { target:90 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">Calidad (obj. 99%)</div>
-            ${buildSVGTrend(calSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:99 })}
+            ${trendTitle('Calidad (obj. 99%)', calSeries, 99, false)}
+            ${buildSVGTrend(calSeries,   DIAS_SEMANA, { target:99 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">Disponibilidad (obj. 90%)</div>
-            ${buildSVGTrend(dispSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
+            ${trendTitle('Disponibilidad (obj. 90%)', dispSeries, 90, false)}
+            ${buildSVGTrend(dispSeries,  DIAS_SEMANA, { target:90 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">Capacidad (obj. 85%)</div>
-            ${buildSVGTrend(capSeries,   DIAS_SEMANA, { minVal:0, maxVal:100, target:85 })}
+            ${trendTitle('Capacidad (obj. 85%)', capSeries, 85, false)}
+            ${buildSVGTrend(capSeries,   DIAS_SEMANA, { target:85 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">Rendimiento (obj. 90%)</div>
-            ${buildSVGTrend(rendSeries,  DIAS_SEMANA, { minVal:0, maxVal:100, target:90 })}
+            ${trendTitle('Rendimiento (obj. 90%)', rendSeries, 90, false)}
+            ${buildSVGTrend(rendSeries,  DIAS_SEMANA, { target:90 })}
           </div>
           <div class="ss-trend-card">
-            <div class="ss-trend-card-title">% Scrap (obj. &lt;1%)</div>
-            ${buildSVGTrend(scrapSeries, DIAS_SEMANA, { minVal:0, maxVal:5,   target:1  })}
+            ${trendTitle('% Scrap (obj. &lt;1%)', scrapSeries, 1, true)}
+            ${buildSVGTrend(scrapSeries, DIAS_SEMANA, { target:1, floorZero:true, hardMax:8 })}
           </div>
         </div>
       </div>`;
