@@ -373,7 +373,7 @@
     return `
       <div class="${cls} ${kpiColor(val)}">
         <div class="pzs-kpi-label">${label}</div>
-        <div class="pzs-kpi-value">${fmtPct(val)}<span style="font-size:.6em;margin-left:5px">${kpiEmoji(val)}</span></div>
+        <div class="pzs-kpi-value">${fmtPct(val)} <span style="font-size:.85em">${kpiEmoji(val)}</span></div>
       </div>`;
   }
 
@@ -426,7 +426,7 @@
     const EP = '<span style="font-size:10px;color:#94a3b8;font-style:italic">⏳ en proceso</span>';
     const hrRows = horas.map((h, idx) => {
       const ip = idx === currentSlotIdx;
-      const em = v => ip ? '' : `<span style="font-size:.75em;margin-left:3px">${kpiEmoji(v)}</span>`;
+      const em = v => ip ? '' : `<span style="font-size:.9em">${kpiEmoji(v)}</span>`;
       return `
       <tr${ip ? ' style="background:rgba(59,130,246,.08)"' : ''}>
         <td class="mono">${escHtml(h.hora)}</td>
@@ -456,7 +456,7 @@
         <div class="pzs-kpi-grid">
           <div class="pzs-kpi-card pzs-kpi-big ${efColorClass}">
             <div class="pzs-kpi-label">Eficiencia</div>
-            <div class="pzs-kpi-value">${efDisplay}<span style="font-size:.6em;margin-left:5px">${efComp.na ? '' : kpiEmoji(efComp.value !== null ? efComp.value : tot.eficiencia)}</span></div>
+            <div class="pzs-kpi-value">${efDisplay} <span style="font-size:.85em">${efComp.na ? '' : kpiEmoji(efComp.value !== null ? efComp.value : tot.eficiencia)}</span></div>
           </div>
           ${kpiCard('Rendimiento',    tot.rendimiento,    true)}
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
