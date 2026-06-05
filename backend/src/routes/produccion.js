@@ -4160,4 +4160,31 @@ router.get('/scrap/resumen', (req, res) => {
   res.json({ resumen });
 });
 
+
+// ─── Reconocimiento de Operadores ────────────────────────────────────────────
+router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) => {
+  const pdb = dbProd.read();
+  const fecha = req.query.fecha || new Date().toLocaleDateString('en-CA');
+  const cargas = (pdb.cargas || []).filter(c => {
+    const f = c.fecha_turno || c.fecha_descarga || c.fecha_carga || '';
+    return f && f.slice(0, 10) === fecha && c.estado === 'cerrado';
+  });
+  const byOp = {};
+  for (const c of cargas) {
+    const oid = String(c.operador_id);
+    if (!byOp[oid]) byOp[oid] = { nombre: c.operador, linea: c.linea, turno: c.turno, buenos: 0, total: 0 };
+    if (!c.es_vacia) {
+      byOp[oid].total++;
+      if (!c.defecto_id) byOp[oid].buenos++;
+    }
+  }
+  const MIN_MUESTRAS = 5;
+  const resultado = Object.values(byOp)
+    .filter(op => op.total >= MIN_MUESTRAS)
+    .map(op => ({ ...op, calidad: +(op.buenos / op.total * 100).toFixed(1) }))
+    .filter(op => op.calidad >= 99)
+    .sort((a, b) => b.calidad - a.calidad || b.total - a.total);
+  res.json({ fecha, reconocimientos: resultado });
+});
+
 module.exports = router;

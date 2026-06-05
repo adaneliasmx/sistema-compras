@@ -765,3 +765,76 @@ body.ss-light .ss-trend-card-title { color: #475569; }
   flex: 1;
   min-height: 0;
 }
+
+/* Leyenda pie de tarjeta de tendencia */
+.ss-trend-legend {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-shrink: 0;
+  padding-top: 4px;
+  flex-wrap: wrap;
+}
+.ss-trend-leg-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .72em;
+  color: #94a3b8;
+}
+.ss-trend-leg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+body.ss-light .ss-trend-leg-item { color: #64748b; }
+
+/* Diapositiva: Reconocimiento de Operadores */
+.ss-recono-grid {
+  display: grid;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+  align-content: center;
+  padding: 10px 0;
+}
+.ss-recono-card {
+  background: #1e293b;
+  border-radius: 12px;
+  padding: 16px 12px 12px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+body.ss-light .ss-recono-card { background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ss-recono-nombre {
+  font-size: 1em;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+body.ss-light .ss-recono-nombre { color: #0f172a; }
+.ss-recono-detalle {
+  font-size: .78em;
+  color: #64748b;
+}
+.ss-recono-kpi {
+  font-size: .85em;
+  font-weight: 700;
+  color: #22c55e;
+}
+.ss-recono-frase {
+  font-size: .75em;
+  color: #94a3b8;
+  font-style: italic;
+}
+.ss-recono-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}

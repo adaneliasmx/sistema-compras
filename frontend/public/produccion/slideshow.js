@@ -16,6 +16,7 @@
     { id:'k7', cfgId:8, scope:'dia',   linea:'Baker' },
     { id:'k8', cfgId:6, scope:'dia',   linea:'all'   },  // Todas las líneas día
     { id:'k9', cfgId:9, scope:'trend_semana', linea:'all' }, // Tendencia semanal
+    { id:'k10', cfgId:10, scope:'reconocimientos', linea:'all' }, // Reconocimiento
   ];
 
   const LINEA_LABELS = { L3:'Línea 3', L4:'Línea 4', Baker:'Baker' };
@@ -31,6 +32,7 @@
   let weeklyData  = {};
   let scrapData   = {};   // { L3: pct, L4: pct, Baker: pct }  — today
   let weeklyScrap = {};   // { L3: [{fecha, pct}], L4: [...], Baker: [...] }
+  let reconocimientosData = [];
   let ssConfig    = { default_duracion_seg: 120, slides: [] };
   let slideDurSec = 120;
   let isPaused    = false;
@@ -301,6 +303,8 @@
     const stage = document.getElementById('ss-stage');
     if (slide.type === 'imagen') {
       stage.innerHTML = renderImageSlide(slide);
+    } else if (slide.scope === 'reconocimientos') {
+      stage.innerHTML = renderReconocimientosSlide();
     } else if (slide.scope === 'trend_semana') {
       stage.innerHTML = renderTrendSemanaSlide();
     } else if (slide.scope === 'dia' && slide.linea === 'all') {
@@ -568,8 +572,8 @@
 
   /* ── SVG bar chart para diapositiva de tendencia ─────────────────────── */
   function buildSVGTrend(series, xLabels, opts = {}) {
-    const W = 420, H = 155;
-    const PAD = { top: 24, right: 40, bottom: 28, left: 36 };
+    const W = 420, H = 140;
+    const PAD = { top: 24, right: 40, bottom: 20, left: 36 };
     const cW = W - PAD.left - PAD.right;
     const cH = H - PAD.top - PAD.bottom;
     const n = xLabels.length;
@@ -588,20 +592,17 @@
     }
     const range = maxV - minV || 1;
     const yPos = v => PAD.top + cH - Math.max(0, (v - minV) / range) * cH;
-    // Grid 4 lineas dinamicas
     const gridVals = [0, 1/3, 2/3, 1].map(t => +(minV + t * range).toFixed(1));
     const grid = gridVals.map(v => {
       const y = yPos(v).toFixed(1);
       return `<line x1="${PAD.left}" y1="${y}" x2="${PAD.left + cW}" y2="${y}" stroke="#334155" stroke-width="1"/>` +
              `<text x="${PAD.left - 3}" y="${(+y + 3).toFixed(1)}" text-anchor="end" font-size="7" fill="#64748b">${Math.round(v)}%</text>`;
     }).join('');
-    // Eje X
     const barGroupW = cW / n;
     const xAxis = xLabels.map((l, i) => {
       const cx = PAD.left + (i + 0.5) * barGroupW;
       return `<text x="${cx.toFixed(1)}" y="${(PAD.top + cH + 12).toFixed(1)}" text-anchor="middle" font-size="8" fill="#64748b">${escHtml(String(l))}</text>`;
     }).join('');
-    // Linea objetivo verde punteada
     let targetLine = '';
     if (opts.target != null) {
       const clampedT = Math.max(minV, Math.min(maxV, opts.target));
@@ -610,7 +611,6 @@
         `<line x1="${PAD.left}" y1="${ty}" x2="${PAD.left + cW}" y2="${ty}" stroke="#22c55e" stroke-width="1.5" stroke-dasharray="5,3"/>` +
         `<text x="${PAD.left + cW + 3}" y="${(+ty + 3).toFixed(1)}" font-size="6.5" fill="#22c55e" font-weight="700">${opts.target}%</text>`;
     }
-    // Barras + etiquetas de valor
     const nseries = series.length;
     const barW = Math.max(2, barGroupW / nseries - 2);
     let bars = '', valLabels = '';
@@ -626,16 +626,7 @@
         }
       });
     });
-    // Leyenda
-    const legW = series.length * 68;
-    const legX = (W - legW) / 2;
-    const legY = H - 4;
-    const legend = series.map((s, i) => {
-      const x = legX + i * 68;
-      return `<rect x="${x.toFixed(0)}" y="${legY - 5}" width="10" height="8" rx="1" fill="${s.color}" opacity="0.85"/>` +
-             `<text x="${(x + 13).toFixed(0)}" y="${legY}" font-size="8" fill="#94a3b8">${escHtml(s.label)}</text>`;
-    }).join('');
-    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">${grid}${targetLine}${xAxis}${bars}${valLabels}${legend}</svg>`;
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="flex:1;display:block;min-height:0">${grid}${targetLine}${xAxis}${bars}${valLabels}</svg>`;
   }
 
   /* ── Diapositiva: tendencia semanal de KPIs por línea ────────────────── */
@@ -708,54 +699,112 @@
       })
     }));
 
-    // Helper emojis por linea
-    function lineEmojis(ser, tgt, invertido) {
-      return ser.map(s => {
+    // Leyenda con emojis por linea al pie de cada tarjeta
+    function trendLegend(ser, tgt, invertido) {
+      const items = ser.map(s => {
         const vals = s.data.filter(v => v != null);
-        if (!vals.length) return '';
-        const last = vals[vals.length - 1];
-        let src;
-        if (invertido) {
-          src = last < 1 ? '/emojis/bien.png' : last < 3 ? '/emojis/regular.png' : '/emojis/mal.png';
-        } else {
-          src = last >= tgt ? '/emojis/bien.png' : last >= tgt - 10 ? '/emojis/regular.png' : '/emojis/mal.png';
+        const last = vals.length ? vals[vals.length - 1] : null;
+        let img = '';
+        if (last != null) {
+          let src;
+          if (invertido) {
+            src = last < 1 ? '/emojis/bien.png' : last < 3 ? '/emojis/regular.png' : '/emojis/mal.png';
+          } else {
+            src = last >= tgt ? '/emojis/bien.png' : last >= tgt - 10 ? '/emojis/regular.png' : '/emojis/mal.png';
+          }
+          img = `<img src="${src}" style="width:22px;height:22px;vertical-align:middle">`;
         }
-        return `<span style="display:inline-flex;align-items:center;gap:2px;font-size:9px;color:${s.color}">${s.label}<img src="${src}" style="width:14px;height:14px;vertical-align:middle"></span>`;
-      }).join('&nbsp;&nbsp;');
+        return `<span class="ss-trend-leg-item"><span class="ss-trend-leg-dot" style="background:${s.color}"></span>${escHtml(s.label)}${img}</span>`;
+      });
+      return `<div class="ss-trend-legend">${items.join('')}</div>`;
     }
-    function trendTitle(txt, ser, tgt, inv) {
-      return `<div class="ss-trend-card-title" style="display:flex;justify-content:space-between;align-items:center"><span>${txt}</span><span style="display:flex;gap:4px">${lineEmojis(ser, tgt, inv)}</span></div>`;
+    function trendTitle(txt) {
+      return `<div class="ss-trend-card-title">${txt}</div>`;
     }
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">Tendencia Semanal de KPIs · ${escHtml(desde)} – ${escHtml(hasta)}</div>
         <div class="ss-trend-grid">
           <div class="ss-trend-card">
-            ${trendTitle('Eficiencia (obj. 90%)', efSeries, 90, false)}
+            ${trendTitle('Eficiencia (obj. 90%)')}
             ${buildSVGTrend(efSeries,    DIAS_SEMANA, { target:90 })}
+            ${trendLegend(efSeries,   90, false)}
           </div>
           <div class="ss-trend-card">
-            ${trendTitle('Calidad (obj. 99%)', calSeries, 99, false)}
+            ${trendTitle('Calidad (obj. 99%)')}
             ${buildSVGTrend(calSeries,   DIAS_SEMANA, { target:99 })}
+            ${trendLegend(calSeries,  99, false)}
           </div>
           <div class="ss-trend-card">
-            ${trendTitle('Disponibilidad (obj. 90%)', dispSeries, 90, false)}
+            ${trendTitle('Disponibilidad (obj. 90%)')}
             ${buildSVGTrend(dispSeries,  DIAS_SEMANA, { target:90 })}
+            ${trendLegend(dispSeries, 90, false)}
           </div>
           <div class="ss-trend-card">
-            ${trendTitle('Capacidad (obj. 85%)', capSeries, 85, false)}
+            ${trendTitle('Capacidad (obj. 85%)')}
             ${buildSVGTrend(capSeries,   DIAS_SEMANA, { target:85 })}
+            ${trendLegend(capSeries,  85, false)}
           </div>
           <div class="ss-trend-card">
-            ${trendTitle('Rendimiento (obj. 90%)', rendSeries, 90, false)}
+            ${trendTitle('Rendimiento (obj. 90%)')}
             ${buildSVGTrend(rendSeries,  DIAS_SEMANA, { target:90 })}
+            ${trendLegend(rendSeries, 90, false)}
           </div>
           <div class="ss-trend-card">
-            ${trendTitle('% Scrap (obj. &lt;1%)', scrapSeries, 1, true)}
+            ${trendTitle('% Scrap (obj. &lt;1%)')}
             ${buildSVGTrend(scrapSeries, DIAS_SEMANA, { target:1, floorZero:true, hardMax:8 })}
+            ${trendLegend(scrapSeries, 1, true)}
           </div>
         </div>
       </div>`;
+  }
+
+  /* ── Fetch reconocimientos ─────────────────────────────────────────── */
+  async function fetchReconocimientos() {
+    const fecha = shiftDate();
+    try {
+      const res = await apiFetch(`${API}/reconocimientos?fecha=${fecha}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      reconocimientosData = data.reconocimientos || [];
+    } catch {}
+  }
+
+  /* ── Diapositiva: Reconocimiento de Operadores ────────────────────── */
+  function renderReconocimientosSlide() {
+    const FRASES = [
+      '¡Excelente trabajo hoy!',
+      '¡Cero defectos, máximo orgullo!',
+      '¡Tu precisión hace la diferencia!',
+      '¡Calidad de campeón!',
+      '¡Eres parte del equipo ganador!'
+    ];
+    const ops = reconocimientosData || [];
+    if (!ops.length) {
+      return `<div class="ss-slide">
+        <div class="ss-slide-title">&#127942; Reconocimiento de Operadores</div>
+        <div class="ss-recono-empty">
+          <img src="/emojis/bien.png" style="width:80px;height:80px;display:block;margin:0 auto 12px">
+          <div style="font-size:1.1em;color:#64748b">¡Sigan adelante! Cada turno es una nueva oportunidad.</div>
+        </div>
+      </div>`;
+    }
+    const cols = ops.length === 1 ? 1 : ops.length === 2 ? 2 : ops.length <= 6 ? 3 : 4;
+    const cards = ops.map((op, i) => {
+      const frase = FRASES[i % FRASES.length];
+      const lineaLabel = op.linea === 'L3' ? 'Línea 3' : op.linea === 'L4' ? 'Línea 4' : escHtml(op.linea || '');
+      return `<div class="ss-recono-card">
+        <img src="/emojis/bien.png" style="width:64px;height:64px;display:block;margin:0 auto 8px">
+        <div class="ss-recono-nombre">${escHtml(op.nombre || '')}</div>
+        <div class="ss-recono-detalle">${lineaLabel} &middot; ${escHtml(op.turno || '')}</div>
+        <div class="ss-recono-kpi">Calidad: ${op.calidad.toFixed(1)}%</div>
+        <div class="ss-recono-frase">${escHtml(frase)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="ss-slide">
+      <div class="ss-slide-title">&#127942; Reconocimiento de Operadores</div>
+      <div class="ss-recono-grid" style="grid-template-columns:repeat(${cols},1fr)">${cards}</div>
+    </div>`;
   }
 
   /* ── Slide de imagen ──────────────────────────────────────────────────── */
@@ -885,6 +934,7 @@
       await fetchWeeklyKpi();
       await fetchScrap();
       await fetchWeeklyScrap();
+      await fetchReconocimientos();
       await fetchConfig();
       buildSlides();
       renderCurrentSlide();
@@ -895,7 +945,7 @@
   async function boot() {
     document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">⏳ Cargando datos...</div>';
     await fetchConfig();
-    await Promise.all([fetchKpi(), fetchWeeklyKpi(), fetchScrap(), fetchWeeklyScrap()]);
+    await Promise.all([fetchKpi(), fetchWeeklyKpi(), fetchScrap(), fetchWeeklyScrap(), fetchReconocimientos()]);
     buildSlides();
     if (!slides.length) {
       document.getElementById('ss-stage').innerHTML = '<div class="ss-loading-msg">Sin diapositivas activas.</div>';
