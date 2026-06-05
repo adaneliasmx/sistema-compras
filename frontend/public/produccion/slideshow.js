@@ -763,10 +763,8 @@
   async function fetchReconocimientos() {
     const fecha = shiftDate();
     try {
-      const res = await apiFetch(`${API}/reconocimientos?fecha=${fecha}`);
-      if (!res || !res.ok) return;
-      const data = await res.json();
-      reconocimientosData = data.operadores || {};
+      const d = await apiFetch(`/reconocimientos?fecha=${fecha}`);
+      if (d) reconocimientosData = d.operadores || {};
     } catch {}
   }
 
