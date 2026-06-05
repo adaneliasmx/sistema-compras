@@ -825,9 +825,10 @@ body.pizarron-dark .pzs-ciclos-badge { color: #94a3b8; }
 .pzs-turno-slide { display: flex; flex-direction: column; height: 100%; }
 
 /* ── Hr×hr table ── */
-.pzs-hr-table-wrap { overflow-x: auto; flex: 1; }
+.pzs-hr-table-wrap { overflow-x: auto; flex: 1; min-width: 0; }
 .pzs-hr-table {
   width: 100%;
+  min-width: 580px;
   border-collapse: collapse;
   font-size: var(--pz-font, 14px);
 }

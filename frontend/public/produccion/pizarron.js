@@ -87,9 +87,9 @@
     if (val === null || val === undefined) return '';
     const n = Number(val);
     if (isNaN(n)) return '';
-    if (n >= 90) return '😊';
-    if (n >= 70) return '😐';
-    return '😢';
+    if (n >= 90) return '&#x1F60A;'; // 😊
+    if (n >= 70) return '&#x1F610;'; // 😐
+    return '&#x1F622;'; // 😢
   }
 
   // Calcula eficiencia usando solo horas completadas del turno activo.
