@@ -5578,6 +5578,12 @@ async function viewParos(el) {
         <span class="flabel">Hasta</span>
         <input type="date" id="pr-hasta" value="${today}"/>
       </div>
+      <div>
+        <span class="flabel">Motivo</span>
+        <select id="pr-motivo-filter" style="min-width:170px" disabled>
+          <option value="">Todos los motivos</option>
+        </select>
+      </div>
       <button class="btn btn-outline btn-sm" id="pr-buscar">🔍 Buscar</button>
       <button class="btn btn-dark btn-sm" id="pr-export">📥 Excel</button>
       ${isAdmin ? '<button class="btn btn-danger btn-sm" id="pr-nuevo-paro" style="margin-left:8px">⏸ Nuevo Paro</button>' : ''}
@@ -5602,6 +5608,12 @@ async function viewParos(el) {
     try {
       const data = await GET(`/paros/reporte?${params}`);
       lastParos = data?.paros || [];
+      // Filtrar por motivo si hay selección
+      const mFiltroId  = document.getElementById('pr-motivo-filter')?.value;
+      const mFiltroNom = document.getElementById('pr-motivo-filter')?.selectedOptions[0]?.dataset?.nom || '';
+      if (mFiltroId) lastParos = lastParos.filter(p =>
+        String(p.motivo_id) === mFiltroId || (p.motivo || '') === mFiltroNom
+      );
       if (!lastParos.length) {
         res.innerHTML = '<div class="empty-state"><div class="icon">⏸</div><p>Sin paros para estos filtros.</p></div>';
         return;
@@ -5716,6 +5728,24 @@ async function viewParos(el) {
 
   document.getElementById('pr-buscar').addEventListener('click', buscar);
 
+  document.getElementById('pr-linea').addEventListener('change', async function () {
+    const linea   = this.value;
+    const motSel  = document.getElementById('pr-motivo-filter');
+    motSel.innerHTML = '<option value="">Todos los motivos</option>';
+    motSel.disabled = !linea;
+    if (!linea) return;
+    try {
+      const cat = await GET(`/catalogos/${linea}`);
+      (cat.motivos_paro || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = String(m.id);
+        opt.dataset.nom = m.nombre;
+        opt.textContent = m.nombre;
+        motSel.appendChild(opt);
+      });
+    } catch (_) {}
+  });
+
   if (isAdmin) {
     document.getElementById('pr-nuevo-paro')?.addEventListener('click', () => {
       openModalCrearParoAdmin(buscar);
@@ -5753,23 +5783,41 @@ async function viewParos(el) {
 }
 
 // ── Modal: editar paro (admin) ─────────────────────────────────────────────────
-function openModalEditarParo(paro, onSaved) {
+async function openModalEditarParo(paro, onSaved) {
+  // Cargar catálogo de motivos para la línea del paro
+  let motivosCat = [], subMotivosCat = [];
+  try {
+    const cat = await GET(`/catalogos/${paro.linea}`);
+    motivosCat    = cat.motivos_paro  || [];
+    subMotivosCat = cat.sub_motivos   || [];
+  } catch (_) {}
+
+  const buildMotivoOpts = (selId) => motivosCat.map(m =>
+    `<option value="${m.id}" ${String(m.id) === String(selId) ? 'selected' : ''}>${escHtml(m.nombre)}</option>`
+  ).join('');
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
   overlay.innerHTML = `
     <div class="modal" style="max-width:500px">
       <div class="modal-header">
-        <h3 class="modal-title">✏️ Editar Paro</h3>
+        <h3 class="modal-title">✏️ Editar Paro — ${escHtml(paro.linea || '')}</h3>
         <button class="modal-close" id="epm-close">✕</button>
       </div>
       <div class="modal-body" style="display:grid;gap:12px">
         <div class="form-group">
-          <label>Motivo</label>
-          <input type="text" id="epm-motivo" class="form-control" value="${escHtml(paro.motivo||'')}"/>
+          <label>Motivo <span style="color:#dc2626">*</span></label>
+          <select id="epm-motivo" class="form-control">
+            <option value="">— Seleccionar —</option>
+            ${buildMotivoOpts(paro.motivo_id)}
+          </select>
+          ${!motivosCat.length ? `<div style="font-size:11px;color:#6b7280;margin-top:4px">No se cargó catálogo — motivo actual: <b>${escHtml(paro.motivo||'')}</b></div>` : ''}
         </div>
         <div class="form-group">
           <label>Sub-motivo</label>
-          <input type="text" id="epm-submotivo" class="form-control" value="${escHtml(paro.sub_motivo||'')}"/>
+          <select id="epm-submotivo" class="form-control" disabled>
+            <option value="">— Sin sub-motivos —</option>
+          </select>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="form-group">
@@ -5797,18 +5845,46 @@ function openModalEditarParo(paro, onSaved) {
     </div>`;
   document.body.appendChild(overlay);
 
+  // Poblar sub-motivos según motivo actual
+  const motivoSel = overlay.querySelector('#epm-motivo');
+  const subSel    = overlay.querySelector('#epm-submotivo');
+
+  function actualizarSubMotivos(motivoId, preselSubId) {
+    const filtrados = subMotivosCat.filter(s => String(s.motivo_id) === String(motivoId));
+    if (filtrados.length) {
+      subSel.innerHTML = '<option value="">— Ninguno —</option>' +
+        filtrados.map(s => `<option value="${s.id}" ${String(s.id) === String(preselSubId) ? 'selected' : ''}>${escHtml(s.nombre)}</option>`).join('');
+      subSel.disabled = false;
+    } else {
+      subSel.innerHTML = '<option value="">— Sin sub-motivos —</option>';
+      subSel.disabled = true;
+    }
+  }
+
+  // Pre-seleccionar sub-motivo actual
+  if (motivoSel.value) actualizarSubMotivos(motivoSel.value, paro.sub_motivo_id);
+
+  motivoSel.addEventListener('change', () => actualizarSubMotivos(motivoSel.value, null));
+
   overlay.querySelector('#epm-close').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#epm-cancelar').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#epm-guardar').addEventListener('click', async () => {
+    const motivo_id     = motivoSel.value;
+    const motivoNombre  = motivoSel.selectedOptions[0]?.textContent?.trim() || '';
+    const sub_motivo_id = subSel.disabled ? null : (subSel.value || null);
+    const subNombre     = (!subSel.disabled && subSel.value) ? (subSel.selectedOptions[0]?.textContent?.trim() || '') : '';
     const body = {
-      motivo:       document.getElementById('epm-motivo').value.trim(),
-      sub_motivo:   document.getElementById('epm-submotivo').value.trim(),
-      fecha_inicio: document.getElementById('epm-fecha-ini').value,
-      hora_inicio:  document.getElementById('epm-hora-ini').value,
-      fecha_fin:    document.getElementById('epm-fecha-fin').value || null,
-      hora_fin:     document.getElementById('epm-hora-fin').value || null
+      motivo_id,
+      motivo:       motivoNombre,
+      sub_motivo_id,
+      sub_motivo:   subNombre,
+      fecha_inicio: overlay.querySelector('#epm-fecha-ini').value,
+      hora_inicio:  overlay.querySelector('#epm-hora-ini').value,
+      fecha_fin:    overlay.querySelector('#epm-fecha-fin').value || null,
+      hora_fin:     overlay.querySelector('#epm-hora-fin').value || null,
+      _linea:       paro.linea
     };
-    if (!body.motivo) { alert('El motivo es requerido.'); return; }
+    if (!motivo_id && !motivoNombre) { alert('El motivo es requerido.'); return; }
     try {
       await PATCH(`/paros/${paro.id}/admin-editar`, body);
       overlay.remove();

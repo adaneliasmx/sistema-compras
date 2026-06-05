@@ -1506,16 +1506,27 @@ router.patch('/paros/:id/admin-cerrar', produccionAllowRoles('admin'), (req, res
   res.json(pdb.paros[idx]);
 });
 
-// Admin: editar paro (marca como corregido)
+// Admin: editar paro (marca como corregido) — busca en L3/L4, Baker y L1
 router.patch('/paros/:id/admin-editar', produccionAllowRoles('admin'), (req, res) => {
   const { id } = req.params;
-  const pdb = dbProd.read();
-  const idx = (pdb.paros || []).findIndex(p => String(p.id) === String(id));
-  if (idx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+  const pdb  = dbProd.read();
+  const body = req.body || {};
 
-  const paro  = pdb.paros[idx];
-  const body  = req.body || {};
-  const campos = ['motivo', 'sub_motivo', 'fecha_inicio', 'hora_inicio', 'fecha_fin', 'hora_fin', 'turno'];
+  // Localizar el paro en cualquiera de las 3 colecciones
+  let collection = null, idx = -1;
+  const hint = (body._linea || '').toLowerCase();
+  const searchOrder = hint === 'baker' ? ['paros_baker', 'paros', 'paros_l1']
+    : hint === 'l1'   ? ['paros_l1',    'paros', 'paros_baker']
+    : ['paros', 'paros_baker', 'paros_l1'];
+
+  for (const col of searchOrder) {
+    const i = (pdb[col] || []).findIndex(p => String(p.id) === String(id));
+    if (i !== -1) { collection = col; idx = i; break; }
+  }
+  if (!collection) return res.status(404).json({ error: 'Paro no encontrado' });
+
+  const paro   = pdb[collection][idx];
+  const campos = ['motivo', 'sub_motivo', 'motivo_id', 'sub_motivo_id', 'fecha_inicio', 'hora_inicio', 'fecha_fin', 'hora_fin', 'turno'];
   for (const f of campos) {
     if (body[f] !== undefined) paro[f] = body[f] || null;
   }
@@ -1530,7 +1541,7 @@ router.patch('/paros/:id/admin-editar', produccionAllowRoles('admin'), (req, res
   paro.corregido_at   = new Date().toISOString();
 
   dbProd.write(pdb);
-  res.json(pdb.paros[idx]);
+  res.json(pdb[collection][idx]);
 });
 
 // Admin: eliminar paro (L3/L4 en pdb.paros, Baker en pdb.paros_baker)
@@ -1792,6 +1803,11 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       if (afecDisp) paros_min_disp += overlapEf;
       if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
+    // Cap: paros no pueden exceder la duración del slot (60 min) — evita inflación por registros solapados
+    paros_min      = Math.min(paros_min,      60);
+    paros_min_prog = Math.min(paros_min_prog, 60);
+    paros_min_disp = Math.min(paros_min_disp, 60);
+    paros_min_rend = Math.min(paros_min_rend, 60);
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     // Arranque lunes T1: reducir objetivo de los primeros slots;
@@ -2796,6 +2812,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       if (afecDisp) paros_min_disp += overlapEf;
       if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
+    paros_min      = Math.min(paros_min,      60);
+    paros_min_prog = Math.min(paros_min_prog, 60);
+    paros_min_disp = Math.min(paros_min_disp, 60);
+    paros_min_rend = Math.min(paros_min_rend, 60);
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
@@ -2928,6 +2948,10 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       if (afecDisp) paros_min_disp += overlapEf;
       if (afecRend && !afecDisp) paros_min_rend += overlapEf;
     }
+    paros_min      = Math.min(paros_min,      60);
+    paros_min_prog = Math.min(paros_min_prog, 60);
+    paros_min_disp = Math.min(paros_min_disp, 60);
+    paros_min_rend = Math.min(paros_min_rend, 60);
 
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     let slotObj;
