@@ -821,9 +821,13 @@ body.ss-light .ss-recono-nombre { color: #0f172a; }
   color: #64748b;
 }
 .ss-recono-kpi {
-  font-size: .85em;
+  font-size: .82em;
   font-weight: 700;
   color: #22c55e;
+}
+.ss-recono-kpi2 {
+  font-size: .76em;
+  color: #94a3b8;
 }
 .ss-recono-frase {
   font-size: .75em;

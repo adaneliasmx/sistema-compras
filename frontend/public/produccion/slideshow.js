@@ -761,48 +761,62 @@
 
   /* ── Fetch reconocimientos ─────────────────────────────────────────── */
   async function fetchReconocimientos() {
-    const fecha = shiftDate();
-    try {
-      const res = await apiFetch(`${API}/reconocimientos?fecha=${fecha}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      reconocimientosData = data.reconocimientos || [];
-    } catch {}
+    // No backend call needed — data comes from kpiData already fetched
   }
 
-  /* ── Diapositiva: Reconocimiento de Operadores ────────────────────── */
+  /* ── Diapositiva: Reconocimiento de Operaciones (Eficiencia + Rendimiento) */
   function renderReconocimientosSlide() {
     const FRASES = [
-      '¡Excelente trabajo hoy!',
-      '¡Cero defectos, máximo orgullo!',
-      '¡Tu precisión hace la diferencia!',
-      '¡Calidad de campeón!',
-      '¡Eres parte del equipo ganador!'
+      '\u00a1Excelente operaci\u00f3n hoy!',
+      '\u00a1Turno de alto rendimiento!',
+      '\u00a1As\u00ed se hace, equipo!',
+      '\u00a1KPIs de campe\u00f3n!',
+      '\u00a1Eficiencia y calidad, el mejor equipo!'
     ];
-    const ops = reconocimientosData || [];
-    if (!ops.length) {
+    const LINEAS = ['L3', 'L4', 'Baker'];
+    const TURNOS = ['T1', 'T2', 'T3'];
+    const TURNO_LABEL = { T1:'Turno 1', T2:'Turno 2', T3:'Turno 3' };
+    const EF_TGT = 0.90, REND_TGT = 0.90;
+
+    const ganadores = [];
+    for (const l of LINEAS) {
+      const ld = kpiData[l] || {};
+      for (const t of TURNOS) {
+        const tot = ld[t]?.totals;
+        if (!tot) continue;
+        const ef   = tot.eficiencia;
+        const rend = tot.rendimiento;
+        if (ef != null && rend != null && ef >= EF_TGT && rend >= REND_TGT) {
+          ganadores.push({ linea: l, turno: t, eficiencia: ef, rendimiento: rend, calidad: tot.calidad });
+        }
+      }
+    }
+
+    if (!ganadores.length) {
       return `<div class="ss-slide">
-        <div class="ss-slide-title">&#127942; Reconocimiento de Operadores</div>
+        <div class="ss-slide-title">&#127942; Reconocimiento de Operaciones</div>
         <div class="ss-recono-empty">
-          <img src="/emojis/bien.png" style="width:80px;height:80px;display:block;margin:0 auto 12px">
-          <div style="font-size:1.1em;color:#64748b">¡Sigan adelante! Cada turno es una nueva oportunidad.</div>
+          <img src="/emojis/regular.png" style="width:80px;height:80px;display:block;margin:0 auto 12px">
+          <div style="font-size:1.1em;color:#64748b">\u00a1Sigan adelante! Cada turno es una nueva oportunidad.</div>
         </div>
       </div>`;
     }
-    const cols = ops.length === 1 ? 1 : ops.length === 2 ? 2 : ops.length <= 6 ? 3 : 4;
-    const cards = ops.map((op, i) => {
+    const cols = ganadores.length === 1 ? 1 : ganadores.length === 2 ? 2 : 3;
+    const cards = ganadores.map((g, i) => {
       const frase = FRASES[i % FRASES.length];
-      const lineaLabel = op.linea === 'L3' ? 'Línea 3' : op.linea === 'L4' ? 'Línea 4' : escHtml(op.linea || '');
+      const lineaLabel = LINEA_LABELS[g.linea] || escHtml(g.linea);
+      const calStr = g.calidad != null ? `<div class="ss-recono-kpi2">Calidad: ${fmtPct(g.calidad)}</div>` : '';
       return `<div class="ss-recono-card">
         <img src="/emojis/bien.png" style="width:64px;height:64px;display:block;margin:0 auto 8px">
-        <div class="ss-recono-nombre">${escHtml(op.nombre || '')}</div>
-        <div class="ss-recono-detalle">${lineaLabel} &middot; ${escHtml(op.turno || '')}</div>
-        <div class="ss-recono-kpi">Calidad: ${op.calidad.toFixed(1)}%</div>
+        <div class="ss-recono-nombre">${escHtml(lineaLabel)}</div>
+        <div class="ss-recono-detalle">${escHtml(TURNO_LABEL[g.turno] || g.turno)}</div>
+        <div class="ss-recono-kpi">Eficiencia: ${fmtPct(g.eficiencia)} &nbsp; Rendimiento: ${fmtPct(g.rendimiento)}</div>
+        ${calStr}
         <div class="ss-recono-frase">${escHtml(frase)}</div>
       </div>`;
     }).join('');
     return `<div class="ss-slide">
-      <div class="ss-slide-title">&#127942; Reconocimiento de Operadores</div>
+      <div class="ss-slide-title">&#127942; Reconocimiento de Operaciones</div>
       <div class="ss-recono-grid" style="grid-template-columns:repeat(${cols},1fr)">${cards}</div>
     </div>`;
   }
