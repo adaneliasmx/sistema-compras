@@ -85,12 +85,13 @@
     if (p >= 70) return '&#x1F610;'; // 😐
     return '&#x1F622;'; // 😢
   }
-  function kpiImg(v, size) {
+  function kpiImg(v, size, inline) {
     if (v == null || isNaN(Number(v))) return '';
     const p = Number(v) * 100;
     const src = p >= 90 ? '/emojis/bien.png' : p >= 70 ? '/emojis/regular.png' : '/emojis/mal.png';
     const s = size || 30;
-    return `<img src="${src}" style="width:${s}px;height:${s}px;display:block;margin:4px auto 0" alt="">`;
+    const st = inline ? `width:${s}px;height:${s}px;vertical-align:middle;margin-left:4px` : `width:${s}px;height:${s}px;display:block;margin:6px auto 0`;
+    return `<img src="${src}" style="${st}" alt="">`;
   }
   function escHtml(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -354,10 +355,10 @@
                 <td>${escHtml(s.hora_inicio)}\u2013${escHtml(s.hora_fin)}</td>
                 <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
                 <td style="text-align:center;color:#64748b">${s.ciclos_obj ?? '\u2014'}</td>
-                <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)} <span style="font-size:.85em">${kpiEmoji(s.eficiencia)}</span></td>
-                <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)} <span style="font-size:.85em">${kpiEmoji(s.capacidad)}</span></td>
-                <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)} <span style="font-size:.85em">${kpiEmoji(s.calidad)}</span></td>
-                <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)} <span style="font-size:.85em">${kpiEmoji(s.disponibilidad)}</span></td>
+                <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)} ${kpiImg(s.eficiencia, 16, true)}</td>
+                <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)} ${kpiImg(s.capacidad, 16, true)}</td>
+                <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)} ${kpiImg(s.calidad, 16, true)}</td>
+                <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)} ${kpiImg(s.disponibilidad, 16, true)}</td>
                 <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${s.paros_min > 0 ? Math.round(s.paros_min) + ' min' : '\u2014'}</td>
               </tr>`).join('')}
             </tbody>
@@ -744,7 +745,7 @@
     return `<div class="ss-kpi-card ${cls !== 'kpi-na' ? cls : ''}">
       <div class="ss-kpi-label">${label}</div>
       <div class="ss-kpi-value ${cls}">${fmtPct(val)}</div>
-      ${kpiImg(val, 30)}
+      ${kpiImg(val, 60)}
     </div>`;
   }
 
@@ -753,7 +754,7 @@
     return `<div class="ss-mini-kpi">
       <div class="lbl">${label}</div>
       <div class="val ${cls}">${fmtPct(val)}</div>
-      ${kpiImg(val, 18)}
+      ${kpiImg(val, 34)}
     </div>`;
   }
 
