@@ -744,8 +744,7 @@
     const cls = kpiClass(val);
     return `<div class="ss-kpi-card ${cls !== 'kpi-na' ? cls : ''}">
       <div class="ss-kpi-label">${label}</div>
-      <div class="ss-kpi-value ${cls}">${fmtPct(val)}</div>
-      ${kpiImg(val, 60)}
+      <div class="ss-kpi-value ${cls}" style="display:flex;align-items:center;justify-content:center;gap:10px">${fmtPct(val)}${kpiImg(val, 80, true)}</div>
     </div>`;
   }
 
