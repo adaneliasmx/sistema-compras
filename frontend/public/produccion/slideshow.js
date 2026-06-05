@@ -78,6 +78,13 @@
     if (p >= 70) return 'kpi-amber';
     return 'kpi-red';
   }
+  function kpiEmoji(v) {
+    if (v == null || isNaN(Number(v))) return '';
+    const p = Number(v) * 100;
+    if (p >= 90) return '&#x1F60A;'; // 😊
+    if (p >= 70) return '&#x1F610;'; // 😐
+    return '&#x1F622;'; // 😢
+  }
   function escHtml(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
@@ -330,20 +337,21 @@
           </div>
         </div>
         ${slots.length ? `
-        <div style="flex:1;overflow:auto">
+        <div style="flex:1;overflow:auto;min-height:0">
           <table class="ss-slots-table">
             <thead><tr>
-              <th>Hora</th><th>Ciclos</th><th>Obj.</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th>
+              <th>Hora</th><th>Ciclos</th><th>Obj.</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>Paros</th>
             </tr></thead>
             <tbody>
               ${slots.map(s => `<tr>
-                <td>${escHtml(s.hora_inicio)}–${escHtml(s.hora_fin)}</td>
+                <td>${escHtml(s.hora_inicio)}\u2013${escHtml(s.hora_fin)}</td>
                 <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
-                <td style="text-align:center;color:#64748b">${s.ciclos_obj ?? '—'}</td>
-                <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)}</td>
-                <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)}</td>
-                <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)}</td>
-                <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)}</td>
+                <td style="text-align:center;color:#64748b">${s.ciclos_obj ?? '\u2014'}</td>
+                <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)} <span style="font-size:.85em">${kpiEmoji(s.eficiencia)}</span></td>
+                <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)} <span style="font-size:.85em">${kpiEmoji(s.capacidad)}</span></td>
+                <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)} <span style="font-size:.85em">${kpiEmoji(s.calidad)}</span></td>
+                <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)} <span style="font-size:.85em">${kpiEmoji(s.disponibilidad)}</span></td>
+                <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${s.paros_min > 0 ? Math.round(s.paros_min) + ' min' : '\u2014'}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -728,7 +736,7 @@
     const cls = kpiClass(val);
     return `<div class="ss-kpi-card ${cls !== 'kpi-na' ? cls : ''}">
       <div class="ss-kpi-label">${label}</div>
-      <div class="ss-kpi-value ${cls}">${fmtPct(val)}</div>
+      <div class="ss-kpi-value ${cls}">${fmtPct(val)} <span style="font-size:.75em">${kpiEmoji(val)}</span></div>
     </div>`;
   }
 
@@ -736,7 +744,7 @@
     const cls = kpiClass(val);
     return `<div class="ss-mini-kpi">
       <div class="lbl">${label}</div>
-      <div class="val ${cls}">${fmtPct(val)}</div>
+      <div class="val ${cls}">${fmtPct(val)} <span style="font-size:.8em">${kpiEmoji(val)}</span></div>
     </div>`;
   }
 
