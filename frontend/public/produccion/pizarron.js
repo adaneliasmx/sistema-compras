@@ -83,6 +83,15 @@
     return 'kpi-red';
   }
 
+  function kpiEmoji(val) {
+    if (val === null || val === undefined) return '';
+    const n = Number(val);
+    if (isNaN(n)) return '';
+    if (n >= 90) return '😊';
+    if (n >= 70) return '😐';
+    return '😢';
+  }
+
   // Calcula eficiencia usando solo horas completadas del turno activo.
   // Retorna: { value: number|null, na: boolean }
   // na=true  → primera hora en curso → mostrar "N/A"
@@ -170,7 +179,8 @@
             capacidad:      pct(s.capacidad),
             calidad:        pct(s.calidad),
             disponibilidad: pct(s.disponibilidad),
-            rendimiento:    pct(s.rendimiento)
+            rendimiento:    pct(s.rendimiento),
+            paros_min:      s.paros_min ?? 0
           }));
           const tot = td.totals || {};
           totales[t] = {
@@ -363,7 +373,7 @@
     return `
       <div class="${cls} ${kpiColor(val)}">
         <div class="pzs-kpi-label">${label}</div>
-        <div class="pzs-kpi-value">${fmtPct(val)}</div>
+        <div class="pzs-kpi-value">${fmtPct(val)}<span style="font-size:.6em;margin-left:5px">${kpiEmoji(val)}</span></div>
       </div>`;
   }
 
@@ -416,17 +426,19 @@
     const EP = '<span style="font-size:10px;color:#94a3b8;font-style:italic">⏳ en proceso</span>';
     const hrRows = horas.map((h, idx) => {
       const ip = idx === currentSlotIdx;
+      const em = v => ip ? '' : `<span style="font-size:.75em;margin-left:3px">${kpiEmoji(v)}</span>`;
       return `
       <tr${ip ? ' style="background:rgba(59,130,246,.08)"' : ''}>
         <td class="mono">${escHtml(h.hora)}</td>
         <td style="text-align:center;font-weight:700">${h.ciclos ?? '—'}</td>
-        <td class="${ip ? '' : kpiColor(h.eficiencia)}">${ip ? EP : fmtPct(h.eficiencia)}</td>
-        <td class="${ip ? '' : kpiColor(h.rendimiento)}">${ip ? EP : fmtPct(h.rendimiento)}</td>
-        <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}</td>
-        <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}</td>
-        <td class="${ip ? '' : kpiColor(h.disponibilidad)}">${ip ? EP : fmtPct(h.disponibilidad)}</td>
+        <td class="${ip ? '' : kpiColor(h.eficiencia)}">${ip ? EP : fmtPct(h.eficiencia)}${em(h.eficiencia)}</td>
+        <td class="${ip ? '' : kpiColor(h.rendimiento)}">${ip ? EP : fmtPct(h.rendimiento)}${em(h.rendimiento)}</td>
+        <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}${em(h.capacidad)}</td>
+        <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}${em(h.calidad)}</td>
+        <td class="${ip ? '' : kpiColor(h.disponibilidad)}">${ip ? EP : fmtPct(h.disponibilidad)}${em(h.disponibilidad)}</td>
+        <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${ip ? EP : (h.paros_min > 0 ? h.paros_min + ' min' : '—')}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="6" class="pzs-no-data">Sin registros en este turno</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="pzs-no-data">Sin registros en este turno</td></tr>';
 
     const scrapPct  = state.scrapData?.[linea] ?? null;
     const parosList = state.data?.[linea]?.paros_turno?.[turno] || [];
@@ -444,7 +456,7 @@
         <div class="pzs-kpi-grid">
           <div class="pzs-kpi-card pzs-kpi-big ${efColorClass}">
             <div class="pzs-kpi-label">Eficiencia</div>
-            <div class="pzs-kpi-value">${efDisplay}</div>
+            <div class="pzs-kpi-value">${efDisplay}<span style="font-size:.6em;margin-left:5px">${efComp.na ? '' : kpiEmoji(efComp.value !== null ? efComp.value : tot.eficiencia)}</span></div>
           </div>
           ${kpiCard('Rendimiento',    tot.rendimiento,    true)}
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
@@ -464,7 +476,7 @@
           <div class="pzs-hr-table-wrap" style="flex:1">
             <table class="pzs-hr-table">
               <thead>
-                <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th></tr>
+                <tr><th>Hora</th><th>Ciclos</th><th>Eficiencia</th><th>Rendimiento</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>Paros (min)</th></tr>
               </thead>
               <tbody>${hrRows}</tbody>
             </table>
