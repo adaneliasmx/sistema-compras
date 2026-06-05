@@ -7199,12 +7199,13 @@ async function viewResumenTurno(el) {
       const paros = parosData.paros || [];
       const defs  = defData.defectos || [];
 
+      const durEfAnal = p => Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0));
       const motivoTiempo = {};
-      paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + Number(p.duracion_min || 0); });
+      paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + durEfAnal(p); });
       const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
 
       const paroPorDia = {};
-      paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + Number(p.duracion_min || 0); });
+      paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + durEfAnal(p); });
       const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
 
       const defTipo = {};
@@ -7264,7 +7265,7 @@ async function viewResumenTurno(el) {
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">⏸ Pareto Motivos de Paro — ${escHtml(activeTab)}</h4>
-            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${paros.length} paros · ${(paros.reduce((s,p)=>s+Number(p.duracion_min||0),0)/60).toFixed(1)}h totales</div>
+            <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${paros.length} paros · ${(paros.reduce((s,p)=>s+durEfAnal(p),0)/60).toFixed(1)}h totales</div>
             ${paretoParos.length ? renderHBarChart(paretoParos, () => '#f59e0b') : '<div style="color:#16a34a;font-size:12px">Sin paros ✅</div>'}
           </div>
           <div style="${cardStyle}">
@@ -7341,7 +7342,7 @@ async function viewResumenTurno(el) {
       }
       function paroHrs(l, filterFn) {
         const arr = filterFn ? parosSrc[l].filter(filterFn) : parosSrc[l];
-        return arr.reduce((s,p)=>s+Number(p.duracion_min||0),0)/60;
+        return arr.reduce((s,p)=>s+Math.max(0,(p.duracion_min||0)-(p.deduccion_min||0)),0)/60;
       }
       const fmtP = v => v!=null ? (v*100).toFixed(1)+'%' : '—';
       const fmtH = v => v>0 ? v.toFixed(1)+'h' : '—';
