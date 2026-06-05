@@ -85,6 +85,13 @@
     if (p >= 70) return '&#x1F610;'; // 😐
     return '&#x1F622;'; // 😢
   }
+  function kpiImg(v, size) {
+    if (v == null || isNaN(Number(v))) return '';
+    const p = Number(v) * 100;
+    const src = p >= 90 ? '/emojis/bien.png' : p >= 70 ? '/emojis/regular.png' : '/emojis/mal.png';
+    const s = size || 30;
+    return `<img src="${src}" style="width:${s}px;height:${s}px;display:block;margin:4px auto 0" alt="">`;
+  }
   function escHtml(s) {
     return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
@@ -736,7 +743,8 @@
     const cls = kpiClass(val);
     return `<div class="ss-kpi-card ${cls !== 'kpi-na' ? cls : ''}">
       <div class="ss-kpi-label">${label}</div>
-      <div class="ss-kpi-value ${cls}">${fmtPct(val)} <span style="font-size:.75em">${kpiEmoji(val)}</span></div>
+      <div class="ss-kpi-value ${cls}">${fmtPct(val)}</div>
+      ${kpiImg(val, 30)}
     </div>`;
   }
 
@@ -744,7 +752,8 @@
     const cls = kpiClass(val);
     return `<div class="ss-mini-kpi">
       <div class="lbl">${label}</div>
-      <div class="val ${cls}">${fmtPct(val)} <span style="font-size:.8em">${kpiEmoji(val)}</span></div>
+      <div class="val ${cls}">${fmtPct(val)}</div>
+      ${kpiImg(val, 18)}
     </div>`;
   }
 
