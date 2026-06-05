@@ -4161,30 +4161,32 @@ router.get('/scrap/resumen', (req, res) => {
 });
 
 
-// ─── Reconocimiento de Operadores ────────────────────────────────────────────
+// ─── Operadores activos por línea/turno hoy (para reconocimientos) ───────────
 router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) => {
   const pdb = dbProd.read();
   const fecha = req.query.fecha || new Date().toLocaleDateString('en-CA');
+  // Incluir cualquier carga del día (activo o descargado, excluir solo cancelado)
   const cargas = (pdb.cargas || []).filter(c => {
-    const f = c.fecha_turno || c.fecha_descarga || c.fecha_carga || '';
-    return f && f.slice(0, 10) === fecha && c.estado === 'cerrado';
+    const f = c.fecha_turno || c.fecha_carga || '';
+    return f && f.slice(0, 10) === fecha && c.estado !== 'cancelado';
   });
-  const byOp = {};
+  // Agrupar operadores únicos por linea → turno
+  const operadores = {};
   for (const c of cargas) {
-    const oid = String(c.operador_id);
-    if (!byOp[oid]) byOp[oid] = { nombre: c.operador, linea: c.linea, turno: c.turno, buenos: 0, total: 0 };
-    if (!c.es_vacia) {
-      byOp[oid].total++;
-      if (!c.defecto_id) byOp[oid].buenos++;
+    if (!c.operador || !c.linea || !c.turno) continue;
+    if (!operadores[c.linea]) operadores[c.linea] = {};
+    if (!operadores[c.linea][c.turno]) operadores[c.linea][c.turno] = new Set();
+    operadores[c.linea][c.turno].add(c.operador);
+  }
+  // Convertir Sets a arrays
+  const result = {};
+  for (const [linea, turnos] of Object.entries(operadores)) {
+    result[linea] = {};
+    for (const [turno, names] of Object.entries(turnos)) {
+      result[linea][turno] = [...names];
     }
   }
-  const MIN_MUESTRAS = 5;
-  const resultado = Object.values(byOp)
-    .filter(op => op.total >= MIN_MUESTRAS)
-    .map(op => ({ ...op, calidad: +(op.buenos / op.total * 100).toFixed(1) }))
-    .filter(op => op.calidad >= 99)
-    .sort((a, b) => b.calidad - a.calidad || b.total - a.total);
-  res.json({ fecha, reconocimientos: resultado });
+  res.json({ fecha, operadores: result });
 });
 
 module.exports = router;

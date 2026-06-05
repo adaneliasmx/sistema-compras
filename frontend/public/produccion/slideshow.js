@@ -761,17 +761,23 @@
 
   /* ── Fetch reconocimientos ─────────────────────────────────────────── */
   async function fetchReconocimientos() {
-    // No backend call needed — data comes from kpiData already fetched
+    const fecha = shiftDate();
+    try {
+      const res = await apiFetch(`${API}/reconocimientos?fecha=${fecha}`);
+      if (!res || !res.ok) return;
+      const data = await res.json();
+      reconocimientosData = data.operadores || {};
+    } catch {}
   }
 
   /* ── Diapositiva: Reconocimiento de Operaciones (Eficiencia + Rendimiento) */
   function renderReconocimientosSlide() {
     const FRASES = [
-      '\u00a1Excelente operaci\u00f3n hoy!',
-      '\u00a1Turno de alto rendimiento!',
-      '\u00a1As\u00ed se hace, equipo!',
-      '\u00a1KPIs de campe\u00f3n!',
-      '\u00a1Eficiencia y calidad, el mejor equipo!'
+      '\u00a1Turno de alto rendimiento, as\u00ed se hace!',
+      '\u00a1Eficiencia y pasi\u00f3n, el equipo ganador!',
+      '\u00a1Superaron el objetivo, orgullo del equipo!',
+      '\u00a1KPIs en verde, gracias a ustedes!',
+      '\u00a1Cada pieza cuenta, y la hicieron perfecta!'
     ];
     const LINEAS = ['L3', 'L4', 'Baker'];
     const TURNOS = ['T1', 'T2', 'T3'];
@@ -787,36 +793,49 @@
         const ef   = tot.eficiencia;
         const rend = tot.rendimiento;
         if (ef != null && rend != null && ef >= EF_TGT && rend >= REND_TGT) {
-          ganadores.push({ linea: l, turno: t, eficiencia: ef, rendimiento: rend, calidad: tot.calidad });
+          const ops = (reconocimientosData[l] || {})[t] || [];
+          ganadores.push({ linea: l, turno: t, eficiencia: ef, rendimiento: rend, calidad: tot.calidad, operadores: ops });
         }
       }
     }
 
     if (!ganadores.length) {
       return `<div class="ss-slide">
-        <div class="ss-slide-title">&#127942; Reconocimiento de Operaciones</div>
+        <div class="ss-slide-title">&#127942; Reconocimiento del D\u00eda</div>
         <div class="ss-recono-empty">
-          <img src="/emojis/regular.png" style="width:80px;height:80px;display:block;margin:0 auto 12px">
-          <div style="font-size:1.1em;color:#64748b">\u00a1Sigan adelante! Cada turno es una nueva oportunidad.</div>
+          <img src="/emojis/regular.png" style="width:90px;height:90px;display:block;margin:0 auto 16px">
+          <div class="ss-recono-empty-msg">\u00a1Sigan adelante! Cada turno es una nueva oportunidad.</div>
         </div>
       </div>`;
     }
+
     const cols = ganadores.length === 1 ? 1 : ganadores.length === 2 ? 2 : 3;
     const cards = ganadores.map((g, i) => {
       const frase = FRASES[i % FRASES.length];
       const lineaLabel = LINEA_LABELS[g.linea] || escHtml(g.linea);
-      const calStr = g.calidad != null ? `<div class="ss-recono-kpi2">Calidad: ${fmtPct(g.calidad)}</div>` : '';
+      const opsHtml = g.operadores.length
+        ? `<div class="ss-recono-ops">${g.operadores.map(n => `<span class="ss-recono-op-chip">${escHtml(n)}</span>`).join('')}</div>`
+        : '';
+      const calChip = g.calidad != null
+        ? `<div class="ss-recono-chip ss-chip-cal">Cal. ${fmtPct(g.calidad)}</div>`
+        : '';
       return `<div class="ss-recono-card">
-        <img src="/emojis/bien.png" style="width:64px;height:64px;display:block;margin:0 auto 8px">
-        <div class="ss-recono-nombre">${escHtml(lineaLabel)}</div>
-        <div class="ss-recono-detalle">${escHtml(TURNO_LABEL[g.turno] || g.turno)}</div>
-        <div class="ss-recono-kpi">Eficiencia: ${fmtPct(g.eficiencia)} &nbsp; Rendimiento: ${fmtPct(g.rendimiento)}</div>
-        ${calStr}
-        <div class="ss-recono-frase">${escHtml(frase)}</div>
+        <div class="ss-recono-stars">&#10022; &#10022; &#10022;</div>
+        <img src="/emojis/bien.png" class="ss-recono-emoji">
+        <div class="ss-recono-felicita">&#161;FELICITACIONES!</div>
+        ${opsHtml}
+        <div class="ss-recono-badge">${escHtml(lineaLabel)} &nbsp;&middot;&nbsp; ${escHtml(TURNO_LABEL[g.turno] || g.turno)}</div>
+        <div class="ss-recono-chips">
+          <div class="ss-recono-chip ss-chip-ef">Efic. ${fmtPct(g.eficiencia)}</div>
+          <div class="ss-recono-chip ss-chip-rend">Rend. ${fmtPct(g.rendimiento)}</div>
+          ${calChip}
+        </div>
+        <div class="ss-recono-frase">&ldquo;${escHtml(frase)}&rdquo;</div>
       </div>`;
     }).join('');
+
     return `<div class="ss-slide">
-      <div class="ss-slide-title">&#127942; Reconocimiento de Operaciones</div>
+      <div class="ss-slide-title">&#127942; Reconocimiento del D\u00eda</div>
       <div class="ss-recono-grid" style="grid-template-columns:repeat(${cols},1fr)">${cards}</div>
     </div>`;
   }

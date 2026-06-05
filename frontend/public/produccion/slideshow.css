@@ -790,55 +790,120 @@ body.ss-light .ss-trend-card-title { color: #475569; }
 }
 body.ss-light .ss-trend-leg-item { color: #64748b; }
 
-/* Diapositiva: Reconocimiento de Operadores */
+/* ── Animación glow para tarjetas de reconocimiento ── */
+@keyframes recono-glow {
+  0%, 100% { box-shadow: 0 0 12px 2px rgba(251,191,36,.35), 0 0 28px 4px rgba(34,197,94,.15); }
+  50%       { box-shadow: 0 0 22px 6px rgba(251,191,36,.60), 0 0 44px 10px rgba(34,197,94,.30); }
+}
+
+/* Diapositiva: Reconocimiento del Día */
 .ss-recono-grid {
   display: grid;
-  gap: 14px;
+  gap: 16px;
   flex: 1;
   min-height: 0;
   align-content: center;
-  padding: 10px 0;
+  padding: 8px 0;
 }
 .ss-recono-card {
-  background: #1e293b;
-  border-radius: 12px;
-  padding: 16px 12px 12px;
+  background: linear-gradient(160deg, #0f172a 0%, #1e3a5f 60%, #0f172a 100%);
+  border: 2px solid rgba(251,191,36,.55);
+  border-radius: 16px;
+  padding: 14px 14px 12px;
   text-align: center;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  animation: recono-glow 2.8s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
 }
-body.ss-light .ss-recono-card { background: #f1f5f9; border: 1px solid #e2e8f0; }
-.ss-recono-nombre {
+body.ss-light .ss-recono-card {
+  background: linear-gradient(160deg, #eff6ff 0%, #dbeafe 60%, #eff6ff 100%);
+  border-color: rgba(251,191,36,.7);
+}
+.ss-recono-stars {
+  font-size: .9em;
+  color: #fbbf24;
+  letter-spacing: 6px;
+  opacity: .85;
+}
+.ss-recono-emoji {
+  width: 90px;
+  height: 90px;
+  display: block;
+  filter: drop-shadow(0 0 10px rgba(251,191,36,.7));
+  margin: 2px auto 4px;
+}
+.ss-recono-felicita {
   font-size: 1em;
+  font-weight: 900;
+  letter-spacing: .08em;
+  color: #fbbf24;
+  text-shadow: 0 0 12px rgba(251,191,36,.5);
+}
+.ss-recono-ops {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin: 2px 0;
+}
+.ss-recono-op-chip {
+  background: rgba(255,255,255,.1);
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 20px;
+  padding: 2px 10px;
+  font-size: .8em;
   font-weight: 700;
   color: #f1f5f9;
 }
-body.ss-light .ss-recono-nombre { color: #0f172a; }
-.ss-recono-detalle {
-  font-size: .78em;
-  color: #64748b;
-}
-.ss-recono-kpi {
-  font-size: .82em;
-  font-weight: 700;
-  color: #22c55e;
-}
-.ss-recono-kpi2 {
-  font-size: .76em;
-  color: #94a3b8;
-}
-.ss-recono-frase {
+body.ss-light .ss-recono-op-chip { background: rgba(30,58,95,.08); border-color: #93c5fd; color: #1e3a5f; }
+.ss-recono-badge {
+  background: #1d4ed8;
+  color: #fff;
+  border-radius: 20px;
+  padding: 3px 14px;
   font-size: .75em;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
+.ss-recono-chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.ss-recono-chip {
+  border-radius: 8px;
+  padding: 3px 10px;
+  font-size: .75em;
+  font-weight: 800;
+}
+.ss-chip-ef   { background: #14532d; color: #4ade80; }
+.ss-chip-rend { background: #1e3a8a; color: #93c5fd; }
+.ss-chip-cal  { background: #3b0764; color: #d8b4fe; }
+.ss-recono-kpi  { display: none; } /* legacy, usar chips */
+.ss-recono-kpi2 { display: none; }
+.ss-recono-frase {
+  font-size: .73em;
   color: #94a3b8;
   font-style: italic;
+  margin-top: 2px;
+  line-height: 1.4;
 }
+body.ss-light .ss-recono-frase { color: #475569; }
 .ss-recono-empty {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 12px;
+}
+.ss-recono-empty-msg {
+  font-size: 1.05em;
+  color: #64748b;
+  text-align: center;
 }
