@@ -2762,6 +2762,11 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
     const excluirCalidadIdsBaker = new Set(
       herramentalesBaker.filter(h => h.excluir_calidad).map(h => String(h.id))
     );
+    const herrBakerMap = {};
+    for (const h of herramentalesBaker) herrBakerMap[String(h.id)] = h;
+    const compBakerMap = {};
+    for (const c of (pdb.componentes_baker || [])) compBakerMap[String(c.id)] = c;
+
     let ciclos_buenos = 0, ciclos_no_vacios = 0;
     let ciclos_buenos_calidad = 0, ciclos_no_vacios_calidad = 0;
     let piezas_total = 0, piezas_obj_total = 0;
@@ -2774,7 +2779,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
         ciclos_buenos    += buen;
         if (!excluir) { ciclos_no_vacios_calidad += carg; ciclos_buenos_calidad += buen; }
         piezas_total     += buen; // piezas = cavidades buenas (1 pieza por cavidad)
-        piezas_obj_total += Number(c.herramental_cavidades || 0);
+        piezas_obj_total += Number(c.herramental_cavidades || 0); // sin cambio para barriles
       } else {
         // rack
         if (!c.es_vacia) {
@@ -2784,9 +2789,22 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
             ciclos_no_vacios_calidad++;
             if (!c.defecto_id) ciclos_buenos_calidad++;
           }
-          piezas_total     += Number(c.cantidad || 0);
-          // For capacity: if herramental has piezas config, use it (stored on carga)
-          piezas_obj_total += Number(c.piezas_objetivo_carga || 0);
+          piezas_total += Number(c.cantidad || 0);
+          // Capacidad rack:
+          // - Con componente_id: objetivo = carga_optima_varillas × piezas_objetivo (como L3/L4)
+          // - Sin componente_id: objetivo = varillas_totales del herramental × ppv (siempre 24 varillas)
+          if (c.componente_id) {
+            const comp = compBakerMap[String(c.componente_id)];
+            piezas_obj_total += comp
+              ? Number(comp.carga_optima_varillas || 0) * Number(comp.piezas_objetivo || 0)
+              : Number(c.piezas_objetivo_carga || 0);
+          } else {
+            const herr = herrBakerMap[String(c.herramental_id)];
+            const ppv  = Number(c.piezas_por_varilla || 0);
+            piezas_obj_total += herr && ppv
+              ? Number(herr.varillas_totales || 0) * ppv
+              : Number(c.piezas_objetivo_carga || 0);
+          }
         }
       }
     }
@@ -3662,9 +3680,13 @@ router.post('/baker/cargas', (req, res) => {
       ? carga.varillas * carga.piezas_por_varilla
       : (body.cantidad ? Number(body.cantidad) : null);
 
-    // Para KPI capacidad: objetivo = varillas_totales * piezas_por_varilla del componente
-    const ppvObj = ppvComp || 0;
-    carga.piezas_objetivo_carga = herr.varillas_totales && ppvObj ? Number(herr.varillas_totales) * ppvObj : 0;
+    // Para KPI capacidad:
+    // - Con componente: objetivo = carga_optima_varillas × piezas_objetivo (como L3/L4)
+    // - Sin componente: objetivo = varillas_totales (24) × ppv capturado por el operador
+    const ppvForObj = ppvComp || Number(body.piezas_por_varilla || 0);
+    carga.piezas_objetivo_carga = comp
+      ? Number(comp.carga_optima_varillas || 0) * Number(comp.piezas_objetivo || 0)
+      : (herr.varillas_totales && ppvForObj ? Number(herr.varillas_totales) * ppvForObj : 0);
     carga.es_vacia = body.es_vacia || false;
   }
 
