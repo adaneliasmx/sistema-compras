@@ -2071,6 +2071,61 @@ router.get('/titulaciones', (req, res) => {
   res.json(result);
 });
 
+// ── GET /titulaciones/cert-stats ──────────────────────────────────────────────
+router.get('/titulaciones/cert-stats', valesAuthRequired, (req, res) => {
+  const { semana, anio } = req.query;
+  if (!semana || !anio) return res.status(400).json({ error: 'semana y anio requeridos' });
+  const semN = Number(semana), anioN = Number(anio);
+  if (isNaN(semN) || isNaN(anioN) || semN < 1 || semN > 53) {
+    return res.status(400).json({ error: 'semana o anio inválidos' });
+  }
+
+  // ISO week date range: Monday – Sunday
+  function isoWeekRange(week, year) {
+    const jan4 = new Date(year, 0, 4);
+    const dow  = jan4.getDay() || 7;
+    const mon  = new Date(jan4);
+    mon.setDate(jan4.getDate() - dow + 1 + (week - 1) * 7);
+    const sun  = new Date(mon);
+    sun.setDate(mon.getDate() + 6);
+    const fmt = d => d.toISOString().slice(0, 10);
+    return { start: fmt(mon), end: fmt(sun) };
+  }
+
+  const { start, end } = isoWeekRange(semN, anioN);
+  const db = readVales();
+
+  const headers = (db.titulaciones_header || []).filter(h =>
+    h.linea === 'BAKER' && h.fecha >= start && h.fecha <= end && h.estado !== 'paro_linea'
+  );
+  const headerIds = new Set(headers.map(h => h.id));
+  const detalles  = (db.titulaciones_detalle || []).filter(d => headerIds.has(d.header_id));
+  const params    = db.parametros_titulacion || [];
+
+  function getStats(noTanque, nombreParam) {
+    const param = params.find(p => p.linea === 'BAKER' && p.no_tanque === noTanque && p.nombre_parametro === nombreParam);
+    if (!param) return null;
+    const values = detalles
+      .filter(d => d.parametro_id === param.id && d.valor_registrado != null)
+      .map(d => Number(d.valor_registrado))
+      .filter(v => !isNaN(v));
+    if (values.length === 0) return { param_id: param.id, avg: null, std: null, count: 0 };
+    const avg = values.reduce((a, b) => a + b, 0) / values.length;
+    const variance = values.reduce((a, b) => a + (b - avg) ** 2, 0) / values.length;
+    const std = Math.sqrt(variance);
+    return { param_id: param.id, avg: Math.round(avg * 100) / 100, std: Math.round(std * 100) / 100, count: values.length };
+  }
+
+  res.json({
+    semana: semN, anio: anioN,
+    fecha_inicio: start, fecha_fin: end,
+    titulaciones_count: headers.length,
+    micro_fosfato: getStats('T18: MICRO',    'Peso Fosfato'),
+    macro_fosfato: getStats('T16: MACRO',    'Peso Fosfato'),
+    adh_solidos:   getStats('T02: ADH 1753', '% Sólidos'),
+  });
+});
+
 router.get('/titulaciones/:id', (req, res) => {
   const db = readVales();
   const header = (db.titulaciones_header || []).find(h => h.id === Number(req.params.id));

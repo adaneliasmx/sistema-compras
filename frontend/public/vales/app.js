@@ -223,6 +223,8 @@ const MENU = {
     ['tit-reporte',        '📊', 'Reporte'],
     ['tit-estadisticas',   '📈', 'Estadísticas'],
     ['tit-catalogo',       '⚙️', 'Catálogo Parámetros'],
+    ['---', '', 'Certificados'],
+    ['cert-calidad',       '📄', 'Certificados SKF'],
     ['---', '', 'Catálogos'],
     ['items',    '🧪', 'Productos'],
     ['tanques',  '🏭', 'Tanques'],
@@ -248,7 +250,8 @@ const SECTION_TITLES = {
   'titulaciones':      'Registrar Titulación',
   'tit-reporte':       'Reporte de Titulaciones',
   'tit-estadisticas':  'Estadísticas SPC',
-  'tit-catalogo':      'Catálogo de Parámetros'
+  'tit-catalogo':      'Catálogo de Parámetros',
+  'cert-calidad':      'Certificados de Calidad SKF'
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -464,6 +467,7 @@ async function renderMain() {
       case 'tit-reporte':       el.innerHTML = await viewTitReporte(); bindTitReporte(); return;
       case 'tit-estadisticas':  el.innerHTML = await viewTitEstadisticas(); bindTitEstadisticas(); return;
       case 'tit-catalogo':      el.innerHTML = await viewTitCatalogo(); bindTitCatalogo(); return;
+      case 'cert-calidad':      el.innerHTML = await viewCertCalidad(); bindCertCalidad(); return;
       default: el.innerHTML = '<p>Sección no encontrada</p>';
     }
   } catch(e) {
@@ -5307,6 +5311,436 @@ async function generarReporteTitulacion(headerId) {
 }
 
 window.generarReporteTitulacion = generarReporteTitulacion;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CERTIFICADOS DE CALIDAD SKF
+// ══════════════════════════════════════════════════════════════════════════════
+
+const CERT_TIPOS = {
+  micro: {
+    prefix: 'MICS', label: 'Fosfato Micro',
+    partNumber: 'Calcium Modified Zinc Phosphate Coating (Micro)',
+    typeOfCoating: 'Micro Phosphate',
+    rows: [
+      { request: 'Phosphate Weight', method: '2-PR-11',
+        range: 'MS312015 Rev. A (200 - 800 mg/ft\u00b2)',
+        sourceKey: 'micro_fosfato', min: 200, max: 800, unit: 'mg/ft\u00b2' }
+    ]
+  },
+  macro: {
+    prefix: 'MACS', label: 'Fosfato Macro',
+    partNumber: 'Zinc Phosphate Coating (Macro)',
+    typeOfCoating: 'Macro Phosphate',
+    rows: [
+      { request: 'Phosphate Weight', method: '2-PR-11',
+        range: 'MS312016 Rev. A (800 - 2500 mg/ft\u00b2)',
+        sourceKey: 'macro_fosfato', min: 800, max: 2500, unit: 'mg/ft\u00b2' }
+    ]
+  },
+  'micro-adhesivo': {
+    prefix: 'MICA', label: 'Fosfato Micro con Adhesivo 1753',
+    partNumber: 'Calcium Modified Zinc Phosphate Coating With Adhesive 1753 (Micro/1753)',
+    typeOfCoating: 'Micro Phosphate 1753',
+    rows: [
+      { request: 'Phosphate Weight', method: '2-PR-11',
+        range: 'MS312019 Rev B (200 - 800 mg/ft\u00b2)',
+        sourceKey: 'micro_fosfato', min: 200, max: 800, unit: 'mg/ft\u00b2' },
+      { request: 'Solids Percent', method: '2-PR-11',
+        range: 'MS312019 Rev B (5.0% - 7.0%)',
+        sourceKey: 'adh_solidos', min: 5.0, max: 7.0, unit: '%' }
+    ]
+  },
+  'macro-adhesivo': {
+    prefix: 'MACA', label: 'Fosfato Macro con Adhesivo 1753',
+    partNumber: 'Zinc Phosphate Coating With Adhesive 1753 (Macro/1753)',
+    typeOfCoating: 'Macro Phosphate 1753',
+    rows: [
+      { request: 'Phosphate Weight', method: '2-PR-11',
+        range: 'MS312018 Rev B (800 - 2500 mg/ft\u00b2)',
+        sourceKey: 'macro_fosfato', min: 800, max: 2500, unit: 'mg/ft\u00b2' },
+      { request: 'Solids Percent', method: '2-PR-11',
+        range: 'MS312018 Rev B (5.0% - 7.0%)',
+        sourceKey: 'adh_solidos', min: 5.0, max: 7.0, unit: '%' }
+    ]
+  }
+};
+
+function _certNumero(prefix, anio, semana) {
+  return `${prefix}${anio}SEM${String(semana).padStart(2, '0')}`;
+}
+
+function _certWeekRange(semana, anio) {
+  const jan4 = new Date(anio, 0, 4);
+  const dow  = jan4.getDay() || 7;
+  const mon  = new Date(jan4);
+  mon.setDate(jan4.getDate() - dow + 1 + (semana - 1) * 7);
+  const sun  = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return `${fmt(mon)} - ${fmt(sun)}`;
+}
+
+function _isoWeekNow() {
+  const now = new Date();
+  const d   = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return { week: Math.ceil(((d - yearStart) / 86400000 + 1) / 7), year: d.getUTCFullYear() };
+}
+
+async function viewCertCalidad() {
+  const { week, year } = _isoWeekNow();
+  return `
+<div class="table-header"><h2 style="color:#fff;margin:0">📄 Certificados de Calidad SKF</h2></div>
+<div style="max-width:740px;margin:24px auto;padding:0 16px">
+
+  <div class="card" style="padding:28px;border-radius:14px;background:#fff;box-shadow:0 2px 16px rgba(0,0,0,.09)">
+    <h3 style="margin:0 0 22px;font-size:15px;color:#1e3a5f;border-bottom:2px solid #e2e8f0;padding-bottom:12px">
+      Generar certificado semanal
+    </h3>
+
+    <div style="display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;margin-bottom:20px;align-items:end">
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:6px;letter-spacing:.5px">
+          TIPO DE CERTIFICADO
+        </label>
+        <select id="cert-tipo" style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b">
+          <option value="micro">Fosfato Micro</option>
+          <option value="macro">Fosfato Macro</option>
+          <option value="micro-adhesivo">Fosfato Micro con Adhesivo 1753</option>
+          <option value="macro-adhesivo">Fosfato Macro con Adhesivo 1753</option>
+        </select>
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:6px;letter-spacing:.5px">SEMANA</label>
+        <input type="number" id="cert-semana" value="${week}" min="1" max="53"
+          style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b" />
+      </div>
+      <div>
+        <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:6px;letter-spacing:.5px">AÑO</label>
+        <input type="number" id="cert-anio" value="${year}" min="2024" max="2035"
+          style="width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:8px;font-size:14px;color:#1e293b" />
+      </div>
+    </div>
+
+    <button id="btn-cert-calcular" class="btn btn-primary" style="width:100%;padding:11px;font-size:14px;margin-bottom:22px">
+      🔍 Calcular estadísticas de la semana
+    </button>
+
+    <div id="cert-resultado"></div>
+  </div>
+
+  <p style="font-size:11px;color:#94a3b8;text-align:center;margin-top:10px">
+    Solo usuarios admin pueden emitir certificados en PDF · Línea Baker
+  </p>
+</div>`;
+}
+
+function bindCertCalidad() {
+  document.getElementById('btn-cert-calcular')?.addEventListener('click', async () => {
+    const tipo   = document.getElementById('cert-tipo').value;
+    const semana = Number(document.getElementById('cert-semana').value);
+    const anio   = Number(document.getElementById('cert-anio').value);
+    const resEl  = document.getElementById('cert-resultado');
+
+    if (!semana || semana < 1 || semana > 53) {
+      resEl.innerHTML = '<div class="alert alert-warn">⚠️ Semana inválida (1–53).</div>';
+      return;
+    }
+    if (!anio || anio < 2020) {
+      resEl.innerHTML = '<div class="alert alert-warn">⚠️ Año inválido.</div>';
+      return;
+    }
+
+    resEl.innerHTML = '<div style="text-align:center;padding:24px;color:#64748b;font-size:14px">⏳ Calculando estadísticas...</div>';
+
+    const stats = await GET(`/titulaciones/cert-stats?semana=${semana}&anio=${anio}`).catch(() => null);
+    if (!stats) {
+      resEl.innerHTML = '<div class="alert alert-warn">⚠️ Error al obtener estadísticas del servidor.</div>';
+      return;
+    }
+
+    if (stats.titulaciones_count === 0) {
+      resEl.innerHTML = `
+<div class="alert alert-warn" style="text-align:center">
+  ⚠️ No hay titulaciones Baker registradas para la semana <b>${semana}</b> de <b>${anio}</b>.<br>
+  <span style="font-size:12px;color:#78716c">Período: ${stats.fecha_inicio} — ${stats.fecha_fin}</span>
+</div>`;
+      return;
+    }
+
+    const tipoCfg  = CERT_TIPOS[tipo];
+    const certNum  = _certNumero(tipoCfg.prefix, anio, semana);
+    const weekRange = _certWeekRange(semana, anio);
+
+    const rowResults = tipoCfg.rows.map(row => {
+      const s = stats[row.sourceKey];
+      if (!s || s.avg == null) return { ...row, avg: null, std: null, count: 0, ok: false, missing: true };
+      const ok = s.avg >= row.min && s.avg <= row.max;
+      return { ...row, avg: s.avg, std: s.std, count: s.count, ok, missing: false };
+    });
+
+    const canEmit = state.user?.role === 'admin' && rowResults.every(r => !r.missing && r.ok);
+    const hasErrors = rowResults.some(r => !r.ok || r.missing);
+
+    const rowsHtml = rowResults.map(r => {
+      if (r.missing) {
+        return `<tr>
+          <td style="padding:10px 8px;border:1px solid #e2e8f0">${r.request}</td>
+          <td style="padding:10px 8px;border:1px solid #e2e8f0">${r.method}</td>
+          <td style="padding:10px 8px;border:1px solid #e2e8f0;font-size:12px">${r.range}</td>
+          <td style="padding:10px 8px;border:1px solid #e2e8f0;background:#fef3c7;color:#b45309;font-weight:700">Sin datos registrados</td>
+        </tr>`;
+      }
+      const result = `${r.avg.toFixed(2)} ± ${r.std.toFixed(2)} ${r.unit}`;
+      return `<tr>
+        <td style="padding:10px 8px;border:1px solid #e2e8f0">${r.request}</td>
+        <td style="padding:10px 8px;border:1px solid #e2e8f0">${r.method}</td>
+        <td style="padding:10px 8px;border:1px solid #e2e8f0;font-size:12px">${r.range}</td>
+        <td style="padding:10px 8px;border:1px solid #e2e8f0;background:${r.ok ? '#f0fdf4' : '#fef2f2'};
+            color:${r.ok ? '#15803d' : '#dc2626'};font-weight:700">
+          ${result} ${r.ok ? '✅' : '⛔ FUERA DE RANGO'}
+        </td>
+      </tr>`;
+    }).join('');
+
+    const borderColor = hasErrors ? '#fca5a5' : '#86efac';
+    const bgColor     = hasErrors ? '#fff7f7' : '#f0fdf4';
+    const notAdminMsg = (state.user?.role !== 'admin' && !hasErrors)
+      ? '<div style="margin-top:10px;padding:8px 12px;background:#fef9c3;border-radius:6px;font-size:12px;color:#854d0e">ℹ️ Solo un administrador puede descargar el PDF de este certificado.</div>'
+      : '';
+    const errorMsg = hasErrors
+      ? '<div style="margin-top:10px;padding:10px 14px;background:#fee2e2;border-radius:8px;color:#991b1b;font-weight:700;font-size:13px">⛔ No se puede emitir: uno o más resultados están fuera del rango permitido o faltan datos.</div>'
+      : '';
+
+    resEl.innerHTML = `
+<div style="border:2px solid ${borderColor};border-radius:12px;padding:18px;background:${bgColor}">
+
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:12px">
+    <div>
+      <div style="font-size:10px;font-weight:700;color:#64748b;letter-spacing:1px;text-transform:uppercase">Número de certificado</div>
+      <div style="font-size:20px;font-weight:800;color:#1e3a5f;letter-spacing:.5px">${certNum}</div>
+      <div style="font-size:12px;color:#475569;margin-top:2px">${tipoCfg.typeOfCoating} · ${weekRange}</div>
+    </div>
+    <div style="text-align:right;font-size:12px;color:#64748b;line-height:1.7">
+      <div><b>${stats.titulaciones_count}</b> titulaciones Baker</div>
+      <div>${stats.fecha_inicio} — ${stats.fecha_fin}</div>
+    </div>
+  </div>
+
+  <table style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border-radius:8px;overflow:hidden">
+    <thead>
+      <tr style="background:#1e3a5f;color:#fff">
+        <th style="padding:9px 8px;text-align:left;font-size:12px">Request</th>
+        <th style="padding:9px 8px;text-align:left;font-size:12px">Testing Method</th>
+        <th style="padding:9px 8px;text-align:left;font-size:12px">Allowable Range</th>
+        <th style="padding:9px 8px;text-align:left;font-size:12px">Test Result</th>
+      </tr>
+    </thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+
+  ${errorMsg}${notAdminMsg}
+</div>
+
+${canEmit ? `
+<button id="btn-cert-pdf" class="btn btn-primary"
+  style="width:100%;margin-top:16px;padding:13px;font-size:15px;font-weight:700;border-radius:10px">
+  📄 Descargar Certificado PDF — ${certNum}
+</button>` : ''}`;
+
+    if (canEmit) {
+      document.getElementById('btn-cert-pdf')?.addEventListener('click', () => {
+        generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults });
+      });
+    }
+  });
+}
+
+function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults }) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+
+  const pgW = 215.9, pgH = 279.4;
+  const mL = 14, mR = 14;
+  const usW = pgW - mL - mR;
+  let y = 10;
+
+  // ── ENCABEZADO ────────────────────────────────────────────────────────────
+  const hdrH = 28;
+  doc.setDrawColor(0); doc.setLineWidth(0.5);
+  doc.rect(mL, y, usW, hdrH);
+
+  // Área izquierda (logo/empresa)
+  const logoW = 54;
+  doc.setFillColor(15, 23, 42);
+  doc.rect(mL, y, logoW, hdrH, 'F');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
+  doc.text('SISTEMAS INTEGRADOS', mL + logoW / 2, y + 10, { align: 'center' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
+  doc.text('Registros de Calidad', mL + logoW / 2, y + 16, { align: 'center' });
+
+  // Título central
+  doc.setTextColor(0, 0, 0);
+  const codeBoxW = 52;
+  const centerX = mL + logoW + (usW - logoW - codeBoxW) / 2;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+  doc.text('Quality certificate', centerX, y + 12, { align: 'center' });
+
+  // Caja código (derecha)
+  const codeX = pgW - mR - codeBoxW;
+  doc.setLineWidth(0.3);
+  doc.rect(codeX, y, codeBoxW, hdrH);
+  [7, 14, 21].forEach(dy => doc.line(codeX, y + dy, codeX + codeBoxW, y + dy));
+  doc.line(codeX + 26, y, codeX + 26, y + hdrH);
+
+  const codeLabels = ['Código:', 'Nivel de Rev.:', 'Fecha Rev.:', 'Hoja:'];
+  const codeVals   = ['4-CA-86', '0', '2-Feb-21', '1 de 1'];
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(30, 30, 30);
+  codeLabels.forEach((lbl, i) => {
+    doc.text(lbl, codeX + 2, y + 5 + i * 7);
+    doc.setFont('helvetica', 'normal');
+    doc.text(codeVals[i], codeX + 28, y + 5 + i * 7);
+    doc.setFont('helvetica', 'bold');
+  });
+
+  y += hdrH;
+
+  // ── NÚMERO DE CERTIFICADO ─────────────────────────────────────────────────
+  const certBoxH = 20;
+  doc.setLineWidth(0.4); doc.setTextColor(0, 0, 0);
+  doc.rect(mL, y, usW, certBoxH);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('certificate number', mL + 3, y + 5);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(0, 0, 0);
+  doc.text(certNum, mL + 4, y + 16);
+
+  // Delivery date (derecha)
+  const ddX = mL + usW * 0.55;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('delivery date:', ddX, y + 5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+  doc.text(weekRange, ddX, y + 14);
+
+  y += certBoxH;
+
+  // ── CLIENT ────────────────────────────────────────────────────────────────
+  const clientH = 11;
+  doc.rect(mL, y, usW, clientH);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('client:', mL + 3, y + 4);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+  doc.text('SKF Sealing Solution SA de CV', mL + 18, y + 8);
+
+  y += clientH;
+
+  // ── INVOICE + PART NUMBER ─────────────────────────────────────────────────
+  const ipH = 16;
+  const colInv = usW * 0.36, colPart = usW * 0.64;
+  doc.rect(mL, y, colInv, ipH);
+  doc.rect(mL + colInv, y, colPart, ipH);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('invoice number:', mL + 3, y + 4.5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+  doc.text(`Semana ${semana} / Week ${semana}`, mL + 3, y + 12);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('part number:', mL + colInv + 3, y + 4.5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); doc.setTextColor(0, 0, 0);
+  const partLines = doc.splitTextToSize(tipoCfg.partNumber, colPart - 6);
+  doc.text(partLines, mL + colInv + 3, y + 10);
+
+  y += ipH;
+
+  // ── WORK ORDER / QTY / TYPE ───────────────────────────────────────────────
+  const wqH = 14;
+  const cWO = usW * 0.28, cQty = usW * 0.22, cType = usW * 0.50;
+  doc.rect(mL,              y, cWO,   wqH);
+  doc.rect(mL + cWO,        y, cQty,  wqH);
+  doc.rect(mL + cWO + cQty, y, cType, wqH);
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('work order',              mL + 3,              y + 4.5);
+  doc.text('Qty',                     mL + cWO + 3,        y + 4.5);
+  doc.text('type of finish/coating:', mL + cWO + cQty + 3, y + 4.5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9.5); doc.setTextColor(0, 0, 0);
+  doc.text('All Applicable', mL + 3,              y + 11);
+  doc.text('All Applicable', mL + cWO + 3,        y + 11);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(10);
+  doc.text(tipoCfg.typeOfCoating, mL + cWO + cQty + 3, y + 11);
+
+  y += wqH + 4;
+
+  // ── TABLA REQUEST / METHOD / RANGE / RESULT ───────────────────────────────
+  const tblBody = rowResults.map(r => [
+    r.request,
+    r.method,
+    r.range,
+    r.avg != null ? `${r.avg.toFixed(2)} \u00b1 ${r.std.toFixed(2)} ${r.unit}` : 'Sin datos'
+  ]);
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: mL, right: mR },
+    head: [['Request', 'Testing Method', 'Allowable Range', 'Test Result']],
+    body: tblBody,
+    columnStyles: {
+      0: { cellWidth: 42 },
+      1: { cellWidth: 26 },
+      2: { cellWidth: 68 },
+      3: { cellWidth: 'auto' }
+    },
+    headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold', fontSize: 9, cellPadding: { top: 5, bottom: 5, left: 4, right: 4 } },
+    bodyStyles: { fontSize: 9.5, cellPadding: { top: 7, bottom: 7, left: 4, right: 4 }, font: 'helvetica', minCellHeight: 18 },
+    styles: { lineColor: [0, 0, 0], lineWidth: 0.35 },
+  });
+
+  y = doc.lastAutoTable.finalY + 5;
+
+  // ── OBSERVATIONS ──────────────────────────────────────────────────────────
+  const obsH = 24;
+  doc.setLineWidth(0.4);
+  doc.rect(mL, y, usW, obsH);
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+  doc.text('Observations:', mL + 3, y + 5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
+  doc.text(certNum, mL + 5, y + 16);
+
+  y += obsH + 5;
+
+  // ── FIRMAS ────────────────────────────────────────────────────────────────
+  const sigH = 44;
+  const sigW = usW / 2;
+  doc.setLineWidth(0.4);
+  doc.rect(mL, y, sigW, sigH);
+  doc.rect(mL + sigW, y, sigW, sigH);
+
+  function drawSig(x, title1, title2, name) {
+    const cx = x + sigW / 2;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(0, 0, 0);
+    doc.text(title1, cx, y + 8,  { align: 'center' });
+    doc.text(title2, cx, y + 14, { align: 'center' });
+    doc.setDrawColor(0); doc.setLineWidth(0.3);
+    doc.line(x + 8, y + 30, x + sigW - 8, y + 30);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
+    doc.text(name, cx, y + 36, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
+    doc.text('Name and signature', cx, y + 42, { align: 'center' });
+  }
+
+  drawSig(mL,        'Elaboration and compilation of data', 'Quality inspector', 'LUIS RAMIREZ');
+  drawSig(mL + sigW, 'Review and approval',                 'Eng. Processes',   'ADAN ELIAS RAMIREZ');
+
+  // ── PIE DE PÁGINA ─────────────────────────────────────────────────────────
+  doc.setDrawColor(0); doc.setLineWidth(0.4);
+  doc.line(mL, pgH - 16, pgW - mR, pgH - 16);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
+  doc.text('ISO 9001:2015  Certificado GSC9KMX475', pgW / 2, pgH - 9, { align: 'center' });
+
+  doc.save(`${certNum}.pdf`);
+}
 
 // ── Arranque ──────────────────────────────────────────────────────────────────
 if (tryRestore()) {
