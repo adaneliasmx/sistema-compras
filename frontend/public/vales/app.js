@@ -5700,15 +5700,35 @@ function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowR
   y = doc.lastAutoTable.finalY + 5;
 
   // ── OBSERVATIONS ──────────────────────────────────────────────────────────
-  const obsH = 24;
+  const obsText = [
+    `${certNum}`,
+    `The data presented in this certificate is automatically generated from process titration records and may require`,
+    `additional validation by the quality department. We reserve the right to verify process information if deemed necessary.`,
+    `This certificate covers all materials processed through ${tipoCfg.typeOfCoating} during the period ${weekRange}.`,
+    `However, material conditions may be affected by the client's environment or storage conditions; therefore, any anomaly`,
+    `or claim must be reviewed individually using the official QR code on the packaging label FAL 01 02 Rev. 0.`
+  ];
+
+  const obsLineH = 3.6;
+  const obsPad   = 4;
+  const obsH     = obsPad + 5 + obsText.length * obsLineH + obsPad;
+
   doc.setLineWidth(0.4);
   doc.rect(mL, y, usW, obsH);
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
-  doc.text('Observations:', mL + 3, y + 5);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(0, 0, 0);
-  doc.text(certNum, mL + 5, y + 16);
+  doc.text('Observations:', mL + 3, y + obsPad);
 
-  y += obsH + 5;
+  // Número de certificado en negrita
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(0, 0, 0);
+  doc.text(obsText[0], mL + 3, y + obsPad + 4.5);
+
+  // Texto legal en fuente muy pequeña
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(60, 60, 60);
+  obsText.slice(1).forEach((line, i) => {
+    doc.text(line, mL + 3, y + obsPad + 4.5 + (i + 1) * obsLineH);
+  });
+
+  y += obsH + 4;
 
   // ── FIRMAS ────────────────────────────────────────────────────────────────
   const sigH = 44;
