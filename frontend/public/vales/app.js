@@ -5700,58 +5700,89 @@ function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowR
   y = doc.lastAutoTable.finalY + 5;
 
   // ── OBSERVATIONS ──────────────────────────────────────────────────────────
-  const obsText = [
-    `${certNum}`,
-    `The data presented in this certificate is automatically generated from process titration records and may require`,
-    `additional validation by the quality department. We reserve the right to verify process information if deemed necessary.`,
-    `This certificate covers all materials processed through ${tipoCfg.typeOfCoating} during the period ${weekRange}.`,
-    `However, material conditions may be affected by the client's environment or storage conditions; therefore, any anomaly`,
-    `or claim must be reviewed individually using the official QR code on the packaging label FAL 01 02 Rev. 0.`
-  ];
+  // Helper: texto justificado (distribuye espacios entre palabras por línea)
+  function printJustified(lines, tx, ty, maxW, lineH) {
+    lines.forEach((line, idx) => {
+      const isLast = idx === lines.length - 1;
+      const words  = line.split(' ').filter(w => w.length > 0);
+      if (isLast || words.length <= 1) { doc.text(line, tx, ty + idx * lineH); return; }
+      const totalWordW = words.reduce((s, w) => s + doc.getTextWidth(w), 0);
+      const gap = (maxW - totalWordW) / (words.length - 1);
+      let cx = tx;
+      words.forEach(w => { doc.text(w, cx, ty + idx * lineH); cx += doc.getTextWidth(w) + gap; });
+    });
+  }
 
-  const obsLineH = 3.6;
-  const obsPad   = 4;
-  const obsH     = obsPad + 5 + obsText.length * obsLineH + obsPad;
+  const obsPadX = 3, obsPadY = 4;
+  const obsInnerW = usW - obsPadX * 2;
+  const obsFullText = `The data presented in this certificate is automatically generated from process titration records and may require additional validation by the quality department. We reserve the right to verify process information if deemed necessary. This certificate covers all materials processed through ${tipoCfg.typeOfCoating} during the period ${weekRange}. However, material conditions may be affected by the client's environment or storage conditions; therefore, any anomaly or claim must be reviewed individually using the official QR code on the packaging label FAL 01 02 Rev. 0.`;
+
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
+  const obsWrapped = doc.splitTextToSize(obsFullText, obsInnerW);
+  const obsLineH   = 3.5;
+  const obsH       = obsPadY + 5 + obsLineH + obsWrapped.length * obsLineH + obsPadY;
 
   doc.setLineWidth(0.4);
   doc.rect(mL, y, usW, obsH);
+
   doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
-  doc.text('Observations:', mL + 3, y + obsPad);
+  doc.text('Observations:', mL + obsPadX, y + obsPadY);
 
   // Número de certificado en negrita
   doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(0, 0, 0);
-  doc.text(obsText[0], mL + 3, y + obsPad + 4.5);
+  doc.text(certNum, mL + obsPadX, y + obsPadY + 4.5);
 
-  // Texto legal en fuente muy pequeña
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(60, 60, 60);
-  obsText.slice(1).forEach((line, i) => {
-    doc.text(line, mL + 3, y + obsPad + 4.5 + (i + 1) * obsLineH);
-  });
+  // Texto legal justificado, fuente 6 pt
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(55, 55, 55);
+  printJustified(obsWrapped, mL + obsPadX, y + obsPadY + 4.5 + obsLineH, obsInnerW, obsLineH);
 
   y += obsH + 4;
 
   // ── FIRMAS ────────────────────────────────────────────────────────────────
-  const sigH = 44;
+  // Genera código de firma electrónica con trazabilidad
+  function genESign(certN, initials) {
+    const now = new Date();
+    const ts  = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}` +
+                `T${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
+    const seed = certN + ts + initials;
+    let h1 = 0x9A3D, h2 = 0xF27B;
+    for (let i = 0; i < seed.length; i++) {
+      const c = seed.charCodeAt(i);
+      h1 = ((h1 << 5) ^ h2 ^ c) >>> 0;
+      h2 = ((h2 << 3) ^ h1 ^ (c * 31)) >>> 0;
+    }
+    const hex1 = h1.toString(16).toUpperCase().padStart(8, '0');
+    const hex2 = h2.toString(16).toUpperCase().padStart(8, '0');
+    return `ESGN-${ts}-${certN}-${initials}-${hex1}${hex2}`;
+  }
+
+  const esignLR  = genESign(certNum, 'LR');
+  const esignAER = genESign(certNum, 'AER');
+
+  const sigH = 48;
   const sigW = usW / 2;
   doc.setLineWidth(0.4);
   doc.rect(mL, y, sigW, sigH);
   doc.rect(mL + sigW, y, sigW, sigH);
 
-  function drawSig(x, title1, title2, name) {
+  function drawSig(x, title1, title2, name, esign) {
     const cx = x + sigW / 2;
     doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(0, 0, 0);
     doc.text(title1, cx, y + 8,  { align: 'center' });
     doc.text(title2, cx, y + 14, { align: 'center' });
     doc.setDrawColor(0); doc.setLineWidth(0.3);
-    doc.line(x + 8, y + 30, x + sigW - 8, y + 30);
+    doc.line(x + 6, y + 28, x + sigW - 6, y + 28);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(0, 0, 0);
-    doc.text(name, cx, y + 36, { align: 'center' });
-    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(90, 90, 90);
-    doc.text('Name and signature', cx, y + 42, { align: 'center' });
+    doc.text(name, cx, y + 34, { align: 'center' });
+    // Código de firma electrónica
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5.5); doc.setTextColor(80, 80, 80);
+    doc.text(esign, cx, y + 40, { align: 'center' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(110, 110, 110);
+    doc.text('Electronic signature record / Registro de firma electrónica', cx, y + 46, { align: 'center' });
   }
 
-  drawSig(mL,        'Elaboration and compilation of data', 'Quality inspector', 'LUIS RAMIREZ');
-  drawSig(mL + sigW, 'Review and approval',                 'Eng. Processes',   'ADAN ELIAS RAMIREZ');
+  drawSig(mL,        'Elaboration and compilation of data', 'Eng. Quality', 'LUIS RAMIREZ',       esignLR);
+  drawSig(mL + sigW, 'Review and approval',                 'Eng. Processes', 'ADAN ELIAS RAMIREZ', esignAER);
 
   // ── PIE DE PÁGINA ─────────────────────────────────────────────────────────
   doc.setDrawColor(0); doc.setLineWidth(0.4);
