@@ -5480,7 +5480,7 @@ function bindCertCalidad() {
       return { ...row, avg: s.avg, std: s.std, count: s.count, ok, missing: false };
     });
 
-    const canEmit = state.user?.role === 'admin' && rowResults.every(r => !r.missing && r.ok);
+    const canEmit = state.user?.vales_role === 'admin' && rowResults.every(r => !r.missing && r.ok);
     const hasErrors = rowResults.some(r => !r.ok || r.missing);
 
     const rowsHtml = rowResults.map(r => {
@@ -5506,7 +5506,7 @@ function bindCertCalidad() {
 
     const borderColor = hasErrors ? '#fca5a5' : '#86efac';
     const bgColor     = hasErrors ? '#fff7f7' : '#f0fdf4';
-    const notAdminMsg = (state.user?.role !== 'admin' && !hasErrors)
+    const notAdminMsg = (state.user?.vales_role !== 'admin' && !hasErrors)
       ? '<div style="margin-top:10px;padding:8px 12px;background:#fef9c3;border-radius:6px;font-size:12px;color:#854d0e">ℹ️ Solo un administrador puede descargar el PDF de este certificado.</div>'
       : '';
     const errorMsg = hasErrors
