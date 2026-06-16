@@ -92,8 +92,34 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
 app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), { index: false }));
 
-// ── API Health ────────────────────────────────────────────────────────────────
-app.get('/api/health', (req, res) => res.json({ ok: true, now: new Date().toISOString() }));
+// ── API Health + memoria ──────────────────────────────────────────────────────
+app.get('/api/health', (req, res) => {
+  const m = process.memoryUsage();
+  const mb = v => Math.round(v / 1024 / 1024);
+  const heapUsedMB = mb(m.heapUsed);
+  const rssMB = mb(m.rss);
+  const status = heapUsedMB > 350 ? 'critical' : heapUsedMB > 220 ? 'warning' : 'ok';
+  res.json({
+    ok: true,
+    status,
+    now: new Date().toISOString(),
+    memory: {
+      heap_used_mb: heapUsedMB,
+      heap_total_mb: mb(m.heapTotal),
+      rss_mb: rssMB,
+      external_mb: mb(m.external),
+    }
+  });
+});
+
+// ── Middleware: loguear picos de memoria ──────────────────────────────────────
+app.use((req, res, next) => {
+  const heapMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+  if (heapMB > 220) {
+    console.warn(`[MEM] ${heapMB}MB heap | ${req.method} ${req.path}`);
+  }
+  next();
+});
 
 // ── API Compras ───────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);

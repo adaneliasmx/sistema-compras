@@ -5,7 +5,7 @@
   "description": "Sistema de compras funcional base con catálogos, requisiciones, compras, cotizaciones, facturación, pagos y admin sobre JSON local",
   "main": "backend/src/server.js",
   "scripts": {
-    "start": "node backend/src/server.js",
+    "start": "node --max-old-space-size=400 backend/src/server.js",
     "dev": "node backend/src/server.js",
     "init-db": "node scripts/init-db.js"
   },
