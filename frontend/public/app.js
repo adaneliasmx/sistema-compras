@@ -2848,6 +2848,7 @@ async function purchasesView() {
       <td>${statusPill(i.status)}</td>
       <td style="font-size:11px">${i.po_folio||'-'}</td>
       <td style="white-space:nowrap">
+        <button class="btn-secondary item-trace-btn" data-id="${i.id}" style="padding:2px 7px;font-size:11px;background:#eff6ff;border-color:#bfdbfe" title="Ver historial / trazabilidad">🔍</button>
         <button class="btn-secondary open-edit-modal" data-id="${i.id}" style="padding:2px 7px;font-size:11px" title="Editar ítem">✏️</button>
         ${!isDisabled ? `<button class="btn-secondary save-edit" data-id="${i.id}" style="padding:2px 7px;font-size:11px">💾</button>` : ''}
         ${!i.catalog_item_id && !isDisabled ? `<button class="btn-secondary register-item" data-id="${i.id}" style="padding:2px 7px;font-size:11px">📋</button>` : ''}
@@ -2908,6 +2909,10 @@ async function purchasesView() {
         await api(`/api/purchases/items/${btn.dataset.id}/restore`, { method: 'POST' });
         btn.textContent = '✅'; setTimeout(render, 800);
       } catch(e) { alert(e.message); }
+    });
+    // Botón lupa → modal de trazabilidad
+    tableEl.querySelectorAll('.item-trace-btn').forEach(btn => {
+      btn.onclick = e => { e.stopPropagation(); openItemTraceModal(Number(btn.dataset.id)); };
     });
     // Botón lápiz → modal de edición completa
     tableEl.querySelectorAll('.open-edit-modal').forEach(btn => {
@@ -8140,6 +8145,112 @@ async function auditView() {
   }
 
   await render();
+}
+
+// ── Modal global de trazabilidad de ítem (accesible desde comprasView y auditView) ──
+async function openItemTraceModal(id) {
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:3000;display:flex;align-items:flex-start;justify-content:center;padding:24px 12px;overflow-y:auto';
+  modal.innerHTML = `<div style="background:#fff;border-radius:12px;width:100%;max-width:760px;box-shadow:0 8px 40px rgba(0,0,0,.2);padding:24px;position:relative">
+    <div style="text-align:center;padding:20px;color:#6b7280;font-size:13px">⏳ Cargando historial...</div>
+  </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  let d;
+  try {
+    d = await api(`/api/audit/items/${id}`);
+  } catch(e) {
+    modal.querySelector('div > div').innerHTML = `<p style="color:#dc2626">Error: ${e.message}</p><div style="text-align:right;margin-top:12px"><button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cerrar</button></div>`;
+    return;
+  }
+
+  const { item, requisition, po, invoices, payments, history } = d;
+  const fmtMXN = v => Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
+  const fmtDate = s => s ? String(s).slice(0, 10) : '—';
+  const pill = s => {
+    const c = { 'En autorización':'#f59e0b','Autorizado':'#10b981','En cotización':'#3b82f6','En proceso':'#6366f1','Entregado':'#059669','Cancelado':'#ef4444','Rechazado':'#dc2626','Facturado':'#7c3aed' }[s] || '#6b7280';
+    return `<span style="background:${c}20;color:${c};border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600">${s||'—'}</span>`;
+  };
+  const modColor = { requisitions:'#3b82f6',quotations:'#f59e0b',purchases:'#10b981',approvals:'#8b5cf6',invoices:'#f97316',payments:'#ef4444',audit:'#6b7280',catalogs:'#06b6d4' };
+
+  const chainStep = (icon, titulo, lines, color, faded) => `
+    <div style="flex:1;min-width:110px;max-width:170px">
+      <div style="background:${faded?'#f3f4f6':'white'};border:1px solid ${faded?'#e5e7eb':color+'44'};border-radius:8px;padding:10px;font-size:11px;height:100%;box-sizing:border-box">
+        <div style="color:${faded?'#9ca3af':color};font-weight:700;margin-bottom:4px">${icon} ${titulo}</div>
+        ${faded ? '<div style="color:#9ca3af;text-align:center;margin-top:8px">—</div>' : lines.map(l => `<div style="color:#374151;margin-top:2px">${l}</div>`).join('')}
+      </div>
+    </div>`;
+  const arrow = `<div style="display:flex;align-items:center;padding:0 4px;color:#d1d5db;font-size:16px;flex-shrink:0">›</div>`;
+
+  const chainHTML = `
+    <div style="display:flex;gap:0;align-items:stretch;overflow-x:auto;padding:4px 0">
+      ${chainStep('📋','REQ', [`<b>${requisition.folio}</b>`, fmtDate(requisition.request_date), requisition.requester_name], '#3b82f6', false)}
+      ${arrow}
+      ${chainStep('🧾','PO', po ? [`<b>${po.folio}</b>`, po.supplier_name, fmtDate(po.created_at), pill(po.status), po.entregado_at ? `<span style="color:#059669">✓ Entregado: ${po.entregado_at}</span>` : ''] : [], '#10b981', !po)}
+      ${arrow}
+      ${chainStep('📄','Factura', invoices.length ? invoices.map(inv => `<b>${inv.invoice_number}</b><br>${fmtDate(inv.created_at)}<br>${pill(inv.status)}<br>$${fmtMXN(inv.total)}${inv.has_pdf ? `<br><a href="/api/invoices/${inv.id}/file/pdf" target="_blank" style="color:#6366f1;font-size:10px">📎 PDF</a>` : ''}${inv.has_xml ? ` <a href="/api/invoices/${inv.id}/file/xml" target="_blank" style="color:#6366f1;font-size:10px">📋 XML</a>` : ''}`) : [], '#f59e0b', !invoices.length)}
+      ${arrow}
+      ${chainStep('💳','Pago', payments.length ? payments.map(pay => `<b>$${fmtMXN(pay.amount)}</b><br>${fmtDate(pay.created_at)}<br>${pay.payment_type}<br>${pay.reference}`) : [], '#059669', !payments.length)}
+    </div>`;
+
+  const timelineHTML = history.length ? history.map(h => {
+    const col = modColor[h.module] || '#6b7280';
+    const desde = h.old_status ? `<span style="color:#9ca3af">${h.old_status} →</span> ` : '';
+    return `<div style="position:relative;margin-bottom:10px;padding-left:20px">
+      <div style="position:absolute;left:0;top:4px;width:10px;height:10px;border-radius:50%;background:${col}"></div>
+      <div style="font-size:12px;line-height:1.4">
+        <span style="color:${col};font-weight:600;text-transform:capitalize">${h.module}</span>
+        <span style="color:#9ca3af;margin:0 6px">${fmtDate(h.changed_at)} ${(h.changed_at||'').slice(11,16)}</span>
+        ${desde}<b style="color:#1e293b">${h.new_status||''}</b>
+        ${h.changed_by_name && h.changed_by_name !== '-' ? `<span style="color:#6b7280;font-size:11px"> · ${h.changed_by_name}</span>` : ''}
+      </div>
+      ${h.comment ? `<div style="font-size:11px;color:#78716c;margin-top:2px">${escapeHtml(h.comment)}</div>` : ''}
+    </div>`;
+  }).join('') : '<div style="color:#9ca3af;font-size:13px">Sin historial registrado.</div>';
+
+  modal.querySelector('div > div').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px">
+      <div>
+        <h3 style="margin:0 0 4px;font-size:16px;color:#1e293b">📦 ${escapeHtml(item.item_name)}</h3>
+        <div style="font-size:12px;color:#6b7280">${requisition.cost_center_name}${requisition.sub_cost_center_name?' · '+requisition.sub_cost_center_name:''}</div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-shrink:0">
+        ${pill(item.status)}
+        <button onclick="this.closest('[style*=fixed]').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#9ca3af;line-height:1;padding:0 2px">×</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;margin-bottom:16px;background:#f8fafc;border-radius:8px;padding:12px">
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">Solicitado por</div><div style="font-size:13px;font-weight:600">${escapeHtml(requisition.requester_name)}</div></div>
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">Fecha solicitud</div><div style="font-size:13px">${fmtDate(requisition.request_date)}</div></div>
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">No. Requisición</div><div style="font-size:13px;font-family:monospace;color:#2563eb">${escapeHtml(requisition.folio)}</div></div>
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">Cantidad</div><div style="font-size:13px">${item.quantity} ${escapeHtml(item.unit)}</div></div>
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">Precio unitario</div><div style="font-size:13px">$${fmtMXN(item.unit_cost)} ${item.currency}</div></div>
+      <div><div style="font-size:10px;color:#9ca3af;font-weight:600;text-transform:uppercase">Total</div><div style="font-size:13px;font-weight:700">$${fmtMXN(item.total)} ${item.currency}</div></div>
+      ${item.reject_reason ? `<div style="grid-column:1/-1"><div style="font-size:10px;color:#dc2626;font-weight:600;text-transform:uppercase">Motivo de rechazo</div><div style="font-size:12px;color:#dc2626">${escapeHtml(item.reject_reason)}</div></div>` : ''}
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">🔗 Trazabilidad</div>
+      ${chainHTML}
+    </div>
+    ${po ? `<div style="background:#f0fff4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;margin-bottom:16px;font-size:12px">
+      <div style="font-weight:700;color:#15803d;margin-bottom:6px">🧾 Orden de Compra · ${escapeHtml(po.folio)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px">
+        <div><span style="color:#6b7280">Proveedor</span><br><b>${escapeHtml(po.supplier_name)}</b></div>
+        <div><span style="color:#6b7280">Enviada</span><br><b>${fmtDate(po.created_at)}</b></div>
+        <div><span style="color:#6b7280">Estatus PO</span><br>${pill(po.status)}</div>
+        <div><span style="color:#6b7280">Entregada</span><br><b style="color:${po.entregado_at?'#059669':'#9ca3af'}">${po.entregado_at || 'Pendiente'}</b></div>
+        <div><span style="color:#6b7280">Total PO</span><br><b>$${fmtMXN(po.total_amount)} ${po.currency}</b></div>
+        ${invoices.length ? `<div><span style="color:#6b7280">No. Factura</span><br><b>${invoices.map(i=>i.invoice_number).join(', ')}</b></div>` : ''}
+      </div>
+    </div>` : ''}
+    <div>
+      <div style="font-size:11px;font-weight:700;color:#374151;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">📜 Historial de cambios</div>
+      <div style="border-left:2px solid #e5e7eb;padding-left:16px">${timelineHTML}</div>
+    </div>
+    <div style="text-align:right;margin-top:20px">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary" style="font-size:13px">Cerrar</button>
+    </div>`;
 }
 
 async function render() {
