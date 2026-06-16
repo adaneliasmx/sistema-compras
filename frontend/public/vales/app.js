@@ -3112,6 +3112,239 @@ function getTurnoActual() {
   return { turno: 3, saludo: 'Buenas noches' };
 }
 
+// ── CPK Semanal Dashboard ─────────────────────────────────────────────────────
+
+// Parámetros monitoreados: BAKER (70, 85, 92) y LINEA 3 (46, 52)
+const CPK_MONITORED = [
+  { id: 70, grupo: 'baker' },
+  { id: 85, grupo: 'baker' },
+  { id: 92, grupo: 'baker' },
+  { id: 46, grupo: 'l3'    },
+  { id: 52, grupo: 'l3'    },
+];
+
+function semanaActual() {
+  const now = new Date();
+  const day = now.getDay();
+  const diffMon = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmt = d => d.toISOString().slice(0, 10);
+  const lb  = d => d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short' });
+  return { ini: fmt(mon), fin: fmt(sun), label: `${lb(mon)} – ${lb(sun)} ${now.getFullYear()}` };
+}
+
+function cpkColorInfo(cpk) {
+  if (cpk === null || !isFinite(cpk))
+    return { bg: '#f1f5f9', border: '#cbd5e1', text: '#64748b', label: 'Sin datos', emoji: '—' };
+  if (cpk < 1)
+    return { bg: '#fee2e2', border: '#fca5a5', text: '#dc2626', label: 'No capaz',  emoji: '🔴' };
+  if (cpk < 1.33)
+    return { bg: '#fef3c7', border: '#fde68a', text: '#d97706', label: 'Marginal',  emoji: '🟡' };
+  if (cpk < 1.67)
+    return { bg: '#dcfce7', border: '#86efac', text: '#16a34a', label: 'Capaz',     emoji: '🟢' };
+  return   { bg: '#bbf7d0', border: '#4ade80', text: '#14532d', label: 'Alt. capaz','emoji': '💚' };
+}
+
+async function loadCpkSemanal(el) {
+  if (!el) return;
+  const semana = semanaActual();
+  el.innerHTML = `<span style="color:#94a3b8;font-size:13px">⏳ Calculando CPK semanal...</span>`;
+
+  const results = await Promise.all(
+    CPK_MONITORED.map(cfg =>
+      GET(`/titulaciones/estadisticas/valores?parametro_id=${cfg.id}&fecha_ini=${semana.ini}&fecha_fin=${semana.fin}`)
+        .then(d => ({ ...d, _grupo: cfg.grupo }))
+        .catch(() => null)
+    )
+  );
+
+  const renderCard = (data) => {
+    if (!data) return '';
+    const { param, valores } = data;
+    const vals = (valores || []).map(v => v.valor).filter(v => v != null);
+    const lsl = param.valor_min, usl = param.valor_max;
+    let cpkVal = null;
+    if (vals.length >= 2 && (lsl != null || usl != null)) {
+      const st = spcStats(vals);
+      const { cpk } = spcCpCpk(st.mean, st.sigma, lsl, usl);
+      cpkVal = cpk != null && isFinite(cpk) ? cpk : null;
+    }
+    const c = cpkColorInfo(cpkVal);
+    return `
+      <button class="cpk-card-btn" data-param-id="${param.id}"
+        style="background:${c.bg};border:1.5px solid ${c.border};border-radius:10px;padding:12px 14px;
+               min-width:150px;max-width:175px;cursor:pointer;text-align:left;display:block;
+               font-family:inherit;transition:transform .12s,box-shadow .12s"
+        onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 14px #0001'"
+        onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="font-size:10px;font-weight:700;color:#6b7280;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${param.no_tanque}</div>
+        <div style="font-size:11px;color:#374151;margin-bottom:8px;font-weight:500">${param.nombre_parametro}</div>
+        <div style="font-size:30px;font-weight:800;color:${c.text};line-height:1.1">${cpkVal !== null ? cpkVal.toFixed(2) : '—'}</div>
+        <div style="font-size:11px;font-weight:600;color:${c.text};margin:3px 0 6px">${c.emoji} ${c.label}</div>
+        <div style="font-size:10px;color:#9ca3af">n = ${vals.length} medición${vals.length !== 1 ? 'es' : ''}</div>
+      </button>`;
+  };
+
+  const renderGrupo = (titulo, items) => `
+    <div style="min-width:180px">
+      <div style="font-size:10px;font-weight:700;letter-spacing:.6px;color:#6b7280;text-transform:uppercase;margin-bottom:8px">${titulo}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">${items.map(renderCard).join('')}</div>
+    </div>`;
+
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <span style="font-size:14px;font-weight:700;color:#1e293b">📊 CPK Semanal</span>
+      <span style="font-size:11px;color:#78716c;background:#f1f5f9;padding:2px 10px;border-radius:20px">${semana.label}</span>
+      <button onclick="loadCpkSemanal(document.getElementById('cpk-semanal-grid'))"
+        style="font-size:11px;padding:3px 10px;border:1px solid #d1d5db;border-radius:6px;background:#fff;cursor:pointer;color:#374151">↻ Actualizar</button>
+    </div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap">
+      ${renderGrupo('🏭 Baker', results.filter(r => r?._grupo === 'baker'))}
+      ${renderGrupo('🏭 Línea 3', results.filter(r => r?._grupo === 'l3'))}
+    </div>`;
+
+  // Guardar results para el click
+  window._cpkResults = results;
+  window._cpkSemana  = semana;
+
+  el.querySelectorAll('.cpk-card-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pid  = Number(btn.dataset.paramId);
+      const data = (window._cpkResults || []).find(r => r?.param?.id === pid);
+      if (data) openCpkDetalle(data, window._cpkSemana);
+    });
+  });
+}
+
+function openCpkDetalle(data, semana) {
+  const { param, valores } = data;
+  const vals = (valores || []).map(v => v.valor).filter(v => v != null);
+  const lsl = param.valor_min, usl = param.valor_max;
+
+  if (vals.length < 2) {
+    showModal(`
+      <h3>📊 ${param.no_tanque} — ${param.nombre_parametro}</h3>
+      <p style="color:#78716c;font-size:13px">Insuficientes datos esta semana (n = ${vals.length}).</p>
+      <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>`);
+    return;
+  }
+
+  const stats = spcStats(vals);
+  const { cp, cpk } = spcCpCpk(stats.mean, stats.sigma, lsl, usl);
+  const c = cpkColorInfo(cpk);
+
+  // Puntos fuera de especificación (re-evaluado con lsl/usl actuales)
+  const fueraPoints = (valores || []).filter(v => {
+    const val = v.valor;
+    if (val == null) return false;
+    if (lsl != null && val < lsl) return true;
+    if (usl != null && val > usl) return true;
+    return false;
+  });
+
+  const tablaFuera = fueraPoints.length === 0
+    ? `<p style="color:#16a34a;font-size:13px;padding:6px 0;margin:0">✅ Sin puntos fuera de especificación esta semana.</p>`
+    : `<div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead><tr style="background:#fef2f2;text-align:left">
+            <th style="padding:5px 10px">Fecha</th>
+            <th style="padding:5px 8px;text-align:center">Turno</th>
+            <th style="padding:5px 8px;text-align:center">Tit.</th>
+            <th style="padding:5px 8px;text-align:center">Valor (${param.unidad||''})</th>
+            <th style="padding:5px 10px">Analista</th>
+          </tr></thead>
+          <tbody>${fueraPoints.map(v => {
+            const tit = (v.clave || '').split('.')[1] || '?';
+            const bajo = lsl != null && v.valor < lsl;
+            const alto = usl != null && v.valor > usl;
+            return `<tr style="border-bottom:1px solid #fee2e2">
+              <td style="padding:5px 10px">${v.fecha || '—'}</td>
+              <td style="padding:5px 8px;text-align:center">T${v.turno || '?'}</td>
+              <td style="padding:5px 8px;text-align:center">${tit}</td>
+              <td style="padding:5px 8px;text-align:center;font-weight:700;color:#dc2626">
+                ${bajo ? '↓' : alto ? '↑' : ''} ${v.valor}
+              </td>
+              <td style="padding:5px 10px;font-size:12px">${v.analista || '—'}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>`;
+
+  const canvasId = `cpk-chart-${param.id}`;
+  const statsCards = [
+    ['μ',   stats.mean.toFixed(3),  '#dbeafe'],
+    ['σ',   stats.sigma.toFixed(3), '#f3e8ff'],
+    ['n',   stats.n,                '#f1f5f9'],
+    ...(cp  != null ? [['Cp',  cp.toFixed(2),  cp>=1.33?'#dcfce7':cp>=1?'#fef3c7':'#fee2e2']]  : []),
+    ...(cpk != null ? [['Cpk', cpk.toFixed(2), cpk>=1.33?'#dcfce7':cpk>=1?'#fef3c7':'#fee2e2']] : []),
+  ];
+
+  showModal(`
+    <h3 style="margin:0 0 3px;font-size:15px">${param.no_tanque} — ${param.nombre_parametro}</h3>
+    <p style="margin:0 0 12px;font-size:11px;color:#78716c">${semana.label}${lsl!=null&&usl!=null?' · Spec: '+lsl+'–'+usl+' '+(param.unidad||''):''}</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      ${statsCards.map(([lab, val, bg]) => `
+        <div style="background:${bg};border-radius:8px;padding:7px 14px;text-align:center;min-width:60px">
+          <div style="font-size:11px;font-weight:700;color:#374151">${lab}</div>
+          <div style="font-size:20px;font-weight:800;color:#1e293b">${val}</div>
+        </div>`).join('')}
+    </div>
+    ${cpk != null ? `
+    <div style="background:${c.bg};border:1px solid ${c.border};border-radius:6px;padding:6px 12px;font-size:12px;color:${c.text};font-weight:600;margin-bottom:12px">
+      ${c.emoji} ${c.label} — Cpk = ${cpk.toFixed(2)}
+      ${cpk < 1 ? ' — ⚠️ Proceso no capaz, requiere acción inmediata'
+        : cpk < 1.33 ? ' — Proceso marginalmente capaz'
+        : cpk < 1.67 ? ' — Proceso capaz'
+        : ' — Proceso altamente capaz'}
+    </div>` : ''}
+    <div style="height:230px;position:relative;margin-bottom:16px"><canvas id="${canvasId}"></canvas></div>
+    <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:6px">
+      ⚠️ Registros fuera de especificación — ${fueraPoints.length} punto${fueraPoints.length !== 1 ? 's' : ''}
+    </div>
+    ${tablaFuera}
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn btn-primary" onclick="closeModal()">Cerrar</button>
+    </div>`);
+
+  // Gráfica de control
+  setTimeout(() => {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const allVals = (valores || []).map(v => v.valor);
+    const labels  = (valores || []).map(v => `${v.fecha||''} T${v.turno||''}.${ (v.clave||'').split('.')[1]||'' }`);
+    const ucl = stats.mean + 3 * stats.sigma;
+    const lcl = Math.max(0, stats.mean - 3 * stats.sigma);
+    const ptColors = allVals.map(v => {
+      if (lsl != null && v < lsl) return '#ef4444';
+      if (usl != null && v > usl) return '#ef4444';
+      return '#3b82f6';
+    });
+    new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: param.nombre_parametro, data: allVals, borderColor: '#3b82f6', backgroundColor: ptColors.map(c => c + '33'), pointBackgroundColor: ptColors, pointRadius: 4, tension: 0.3, fill: false },
+          ...(usl != null ? [{ label: `USL (${usl})`, data: Array(labels.length).fill(usl), borderColor: '#ef4444', borderDash: [5,5], pointRadius: 0, tension: 0 }] : []),
+          ...(lsl != null ? [{ label: `LSL (${lsl})`, data: Array(labels.length).fill(lsl), borderColor: '#ef4444', borderDash: [5,5], pointRadius: 0, tension: 0 }] : []),
+          { label: `UCL (${ucl.toFixed(2)})`, data: Array(labels.length).fill(ucl), borderColor: '#f59e0b', borderDash: [3,3], pointRadius: 0, tension: 0 },
+          { label: `X̄ (${stats.mean.toFixed(3)})`,  data: Array(labels.length).fill(stats.mean), borderColor: '#22c55e', borderDash: [4,2], pointRadius: 0, tension: 0 },
+          ...(lcl > 0 ? [{ label: `LCL (${lcl.toFixed(2)})`, data: Array(labels.length).fill(lcl), borderColor: '#f59e0b', borderDash: [3,3], pointRadius: 0, tension: 0 }] : []),
+        ]
+      },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'top', labels: { font: { size: 10 }, boxWidth: 18 } } },
+        scales: {
+          y: { title: { display: true, text: `${param.nombre_parametro} (${param.unidad||''})`, font: { size: 10 } } },
+          x: { ticks: { font: { size: 9 }, maxRotation: 45 } }
+        }
+      }
+    });
+  }, 60);
+}
+
 // ── Registrar Titulación ───────────────────────────────────────────────────────
 async function viewTitulaciones() {
   const [lineas, titHoy] = await Promise.all([
@@ -3155,6 +3388,9 @@ async function viewTitulaciones() {
   const panelBorder = totalPendientes === 0 ? '#bbf7d0' : '#fde68a';
 
   return `
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px 20px;margin-bottom:20px;max-width:900px">
+    <div id="cpk-semanal-grid"><span style="color:#94a3b8;font-size:13px">⏳ Calculando CPK semanal...</span></div>
+  </div>
   <div style="background:${panelColor};border:1px solid ${panelBorder};border-radius:10px;padding:16px 20px;margin-bottom:20px;max-width:900px">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
       <div>
@@ -3200,6 +3436,9 @@ async function viewTitulaciones() {
 }
 
 function bindTitulaciones() {
+  // ── CPK Semanal ────────────────────────────────────────────────────────────
+  loadCpkSemanal(document.getElementById('cpk-semanal-grid'));
+
   // ── Badges del resumen de turno ────────────────────────────────────────────
   document.querySelectorAll('.tit-resumen-badge').forEach(btn => {
     btn.addEventListener('click', () => {

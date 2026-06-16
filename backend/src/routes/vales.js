@@ -2296,7 +2296,7 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
   );
   const result = detalles.map(d => {
     const h = headers.find(x => x.id === d.header_id);
-    return { fecha: h?.fecha, clave: h?.clave_titulacion, turno: h?.turno, valor: d.valor_registrado, estado: d.estado_param };
+    return { fecha: h?.fecha, clave: h?.clave_titulacion, turno: h?.turno, valor: d.valor_registrado, estado: d.estado_param, analista: h?.analista };
   }).sort((a, b) => a.fecha?.localeCompare(b.fecha) || 0);
 
   res.json({ param, valores: result });
