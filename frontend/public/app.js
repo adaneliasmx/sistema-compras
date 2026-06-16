@@ -7808,8 +7808,7 @@ async function auditView() {
                 const sccFiltered = subCostCenters.filter(s => s.cost_center_id === r.cost_center_id);
                 const statusColor = statusColors[r.status] || '#6b7280';
                 return `
-                  <tr class="audit-row" data-id="${r.id}" style="cursor:pointer;background:${isEditing?'#eff6ff':'white'};border-top:1px solid #f1f5f9"
-                    title="Clic para ver historial">
+                  <tr class="audit-row" data-id="${r.id}" style="background:${isEditing?'#eff6ff':'white'};border-top:1px solid #f1f5f9">
                     <td style="padding:6px 10px;font-family:monospace;font-size:11px;color:#2563eb">${escapeHtml(r.req_folio)}</td>
                     <td style="padding:6px 10px;white-space:nowrap">${r.req_date || '-'}</td>
                     <td style="padding:6px 10px">${escapeHtml(r.requester_name)}</td>
@@ -7825,7 +7824,9 @@ async function auditView() {
                       <span style="background:${statusColor}20;color:${statusColor};border-radius:4px;padding:2px 7px;font-size:11px;white-space:nowrap">${escapeHtml(r.status)}</span>
                     </td>
                     <td style="padding:6px 10px;font-family:monospace;font-size:11px">${r.po_folio ? `<span style="color:#059669">${escapeHtml(r.po_folio)}</span>` : '<span style="color:#d1d5db">—</span>'}</td>
-                    <td style="padding:4px 8px;text-align:center">
+                    <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+                      <button class="audit-detail-btn" data-id="${r.id}" title="Ver historial / trazabilidad"
+                        style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px;margin-right:4px">🔍</button>
                       <button class="audit-edit-btn" data-id="${r.id}" title="Editar ítem"
                         style="background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:2px 8px;cursor:pointer;font-size:12px">✏️</button>
                     </td>
@@ -7923,10 +7924,11 @@ async function auditView() {
       render();
     });
 
-    // ── Click en fila → abrir modal de historial ─────────────────────────────
-    document.querySelectorAll('.audit-row').forEach(row => {
-      row.addEventListener('click', () => {
-        openAuditItemDetail(Number(row.dataset.id));
+    // ── Botón 🔍 → abrir modal de historial ──────────────────────────────────
+    document.querySelectorAll('.audit-detail-btn').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        openAuditItemDetail(Number(btn.dataset.id));
       });
     });
 
