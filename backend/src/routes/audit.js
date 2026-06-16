@@ -84,6 +84,92 @@ router.get('/items', allowRoles('comprador', 'admin'), (req, res) => {
   res.json(items);
 });
 
+// GET /api/audit/items/:id — detalle completo con trazabilidad
+router.get('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
+  const db = read();
+  const itemId = Number(req.params.id);
+  const i = (db.requisition_items || []).find(x => x.id === itemId);
+  if (!i) return res.status(404).json({ error: 'Ítem no encontrado' });
+
+  const reqRow  = (db.requisitions     || []).find(r => r.id === i.requisition_id)   || {};
+  const user    = (db.users            || []).find(u => u.id === reqRow.requester_user_id) || {};
+  const supp    = (db.suppliers        || []).find(s => s.id === i.supplier_id)       || {};
+  const cc      = (db.cost_centers     || []).find(c => c.id === i.cost_center_id)    || {};
+  const scc     = (db.sub_cost_centers || []).find(c => c.id === i.sub_cost_center_id)|| {};
+  const cat     = (db.catalog_items    || []).find(c => c.id === i.catalog_item_id)   || {};
+  const po      = i.purchase_order_id ? (db.purchase_orders || []).find(p => p.id === i.purchase_order_id) || null : null;
+  const poSupp  = po ? (db.suppliers   || []).find(s => s.id === po.supplier_id) || {} : {};
+
+  const invoices = po ? (db.invoices || []).filter(inv => inv.purchase_order_id === po.id) : [];
+  const invIds   = new Set(invoices.map(inv => inv.id));
+  const payments = (db.payments || []).filter(pay => invIds.has(pay.invoice_id));
+
+  // Historial del ítem ordenado cronológicamente
+  const history = (db.status_history || [])
+    .filter(h => h.requisition_item_id === itemId)
+    .sort((a, b) => (a.changed_at || '').localeCompare(b.changed_at || ''))
+    .map(h => {
+      const who = (db.users || []).find(u => u.id === h.changed_by_user_id) || {};
+      return { ...h, changed_by_name: who.full_name || '-' };
+    });
+
+  // Fecha de entrega: buscar en el historial cuándo la PO pasó a Entregado
+  const entregadoH = [...history].reverse().find(h => h.new_status === 'Entregado' || h.comment?.includes('Entregado'));
+
+  res.json({
+    item: {
+      id: i.id,
+      item_name: i.manual_item_name || cat.name || '-',
+      quantity: i.quantity,
+      unit: i.unit || '',
+      unit_cost: i.unit_cost,
+      currency: i.currency || 'MXN',
+      total: Number(i.quantity || 0) * Number(i.unit_cost || 0),
+      status: i.status,
+      comments: i.comments || '',
+      reject_reason: i.reject_reason || null,
+      created_at: i.created_at || '',
+    },
+    requisition: {
+      id: reqRow.id,
+      folio: reqRow.folio || '-',
+      request_date: (reqRow.request_date || reqRow.created_at || '').slice(0, 10),
+      urgency: reqRow.urgency || '-',
+      requester_name: user.full_name || '-',
+      cost_center_name: cc.name || '-',
+      sub_cost_center_name: scc.name || '',
+    },
+    supplier: { name: supp.business_name || '-' },
+    po: po ? {
+      id: po.id,
+      folio: po.folio || '-',
+      status: po.status || '-',
+      supplier_name: poSupp.business_name || '-',
+      created_at: (po.created_at || '').slice(0, 10),
+      total_amount: po.total_amount,
+      currency: po.currency || 'MXN',
+      entregado_at: entregadoH ? (entregadoH.changed_at || '').slice(0, 10) : null,
+    } : null,
+    invoices: invoices.map(inv => ({
+      id: inv.id,
+      invoice_number: inv.invoice_number || '-',
+      created_at: (inv.created_at || '').slice(0, 10),
+      status: inv.status || '-',
+      total: inv.total || 0,
+      has_pdf: !!inv.pdf_data,
+      has_xml: !!inv.xml_data,
+    })),
+    payments: payments.map(pay => ({
+      id: pay.id,
+      amount: pay.amount || 0,
+      payment_type: pay.payment_type || '-',
+      reference: pay.reference || '-',
+      created_at: (pay.created_at || '').slice(0, 10),
+    })),
+    history,
+  });
+});
+
 // PATCH /api/audit/items/:id — edición de auditoría (sin restricción de estado PO)
 router.patch('/items/:id', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();
