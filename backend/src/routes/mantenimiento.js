@@ -23,7 +23,7 @@ function nowMxStr() {
 // ── MIGRACIÓN ÚNICA: seed equipos/partes desde Excel (llamar una vez) ─────────
 router.post('/admin/seed-equipos', (req, res) => {
   const db = readMant();
-  if ((db.partes_equipo || []).length > 0) {
+  if ((db.partes_equipo || []).length > 0 && !req.body.force) {
     return res.json({ ok: false, msg: 'Ya existen partes, migración omitida', partes: db.partes_equipo.length });
   }
 
