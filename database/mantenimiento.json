@@ -1,0 +1,17 @@
+{
+  "equipos_mant": [
+    { "id": 1, "nombre": "Línea Baker", "codigo": "BAKER", "tipo": "linea", "linea_produccion": "Baker", "activo": true },
+    { "id": 2, "nombre": "Línea 1", "codigo": "L1", "tipo": "linea", "linea_produccion": "L1", "activo": true },
+    { "id": 3, "nombre": "Línea 3", "codigo": "L3", "tipo": "linea", "linea_produccion": "L3", "activo": true },
+    { "id": 4, "nombre": "Línea 4", "codigo": "L4", "tipo": "linea", "linea_produccion": "L4", "activo": true }
+  ],
+  "partes_equipo": [],
+  "ordenes_mantenimiento": [],
+  "mantenimientos_programados": [],
+  "mant_ejecuciones": [],
+  "settings": {
+    "integracion_produccion_activa": false,
+    "alerta_pizarron_activa": false,
+    "folio_counter": 0
+  }
+}
