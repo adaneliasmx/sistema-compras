@@ -41,7 +41,7 @@ router.post('/verify-tecnico', (req, res) => {
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Credenciales incorrectas' });
   }
-  if (!user.mant_role || !['tecnico_mant', 'admin'].includes(user.mant_role)) {
+  if (!user.mant_role || !['tecnico_mant', 'admin', 'superadmin_mant'].includes(user.mant_role)) {
     return res.status(403).json({ error: 'El usuario no tiene rol de técnico de mantenimiento' });
   }
   res.json({ ok: true, user_id: user.id, full_name: user.full_name, mant_role: user.mant_role });

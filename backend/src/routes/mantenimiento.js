@@ -52,9 +52,9 @@ router.get('/ordenes', (req, res) => {
 
   let ordenes = db.ordenes_mantenimiento || [];
 
-  // Técnico solo ve sus órdenes asignadas
+  // Técnico ve sus órdenes + órdenes sin asignar
   if (req.mantUser.mant_role === 'tecnico_mant') {
-    ordenes = ordenes.filter(o => o.tecnico_asignado_id === req.mantUser.id);
+    ordenes = ordenes.filter(o => o.tecnico_asignado_id === req.mantUser.id || !o.tecnico_asignado_id);
   }
   // Supervisor solo ve sus propias solicitudes
   if (req.mantUser.mant_role === 'supervisor_mant') {
@@ -115,8 +115,8 @@ router.get('/ordenes/:id', (req, res) => {
   const dbMain = readMain();
   const o = (db.ordenes_mantenimiento || []).find(x => x.id === Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Orden no encontrada' });
-  // Técnico solo ve sus órdenes
-  if (req.mantUser.mant_role === 'tecnico_mant' && o.tecnico_asignado_id !== req.mantUser.id) {
+  // Técnico solo ve sus órdenes o las sin asignar
+  if (req.mantUser.mant_role === 'tecnico_mant' && o.tecnico_asignado_id && o.tecnico_asignado_id !== req.mantUser.id) {
     return res.status(403).json({ error: 'Sin acceso a esta orden' });
   }
   res.json(enrichOrden(o, db, dbMain));
@@ -171,14 +171,21 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
 });
 
 // PATCH /api/mant/ordenes/:id — editar / asignar técnico
-router.patch('/ordenes/:id', mantAllowRoles('admin'), (req, res) => {
+router.patch('/ordenes/:id', mantAllowRoles('admin', 'supervisor_mant'), (req, res) => {
   const db = readMant();
+  const dbMainLocal = readMain();
   const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (orden.status === 'cerrada') return res.status(400).json({ error: 'La orden ya está cerrada' });
 
   const { tecnico_asignado_id, nivel_urgencia, status, fecha_programada, descripcion_falla } = req.body;
   if (tecnico_asignado_id !== undefined) {
+    if (tecnico_asignado_id) {
+      const targetUser = (dbMainLocal.users || []).find(u => u.id === Number(tecnico_asignado_id));
+      if (!targetUser || targetUser.mant_role !== 'tecnico_mant') {
+        return res.status(400).json({ error: 'Solo se puede asignar a usuarios con rol técnico' });
+      }
+    }
     orden.tecnico_asignado_id = tecnico_asignado_id ? Number(tecnico_asignado_id) : null;
     if (orden.status === 'abierta' && tecnico_asignado_id) orden.status = 'asignada';
     if (!tecnico_asignado_id && orden.status === 'asignada') orden.status = 'abierta';
@@ -190,6 +197,16 @@ router.patch('/ordenes/:id', mantAllowRoles('admin'), (req, res) => {
   orden.updated_at = new Date().toISOString();
   writeMant(db);
   res.json(orden);
+});
+
+// DELETE /api/mant/ordenes/:id — borrar orden (solo superadmin_mant)
+router.delete('/ordenes/:id', mantAllowRoles('superadmin_mant'), (req, res) => {
+  const db = readMant();
+  const idx = (db.ordenes_mantenimiento || []).findIndex(o => o.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Orden no encontrada' });
+  db.ordenes_mantenimiento.splice(idx, 1);
+  writeMant(db);
+  res.json({ ok: true });
 });
 
 // PATCH /api/mant/ordenes/:id/aplazar
@@ -571,9 +588,9 @@ router.get('/departamentos', (req, res) => {
 });
 
 // ── Técnicos disponibles (para asignar) ──────────────────────────────────────
-router.get('/tecnicos', mantAllowRoles('admin'), (req, res) => {
+router.get('/tecnicos', mantAllowRoles('admin', 'supervisor_mant'), (req, res) => {
   const db = readMain();
-  const tecnicos = (db.users || []).filter(u => u.active && ['tecnico_mant','admin'].includes(u.mant_role));
+  const tecnicos = (db.users || []).filter(u => u.active && u.mant_role === 'tecnico_mant');
   res.json(tecnicos.map(u => ({ id: u.id, full_name: u.full_name, email: u.email, mant_role: u.mant_role })));
 });
 

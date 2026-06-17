@@ -27,7 +27,7 @@ function mantAuthRequired(req, res, next) {
 function mantAllowRoles(...roles) {
   return (req, res, next) => {
     if (!req.mantUser) return res.status(401).json({ error: 'No autenticado' });
-    if (req.mantUser.mant_role === 'admin') return next();
+    if (req.mantUser.mant_role === 'admin' || req.mantUser.mant_role === 'superadmin_mant') return next();
     if (roles.includes(req.mantUser.mant_role)) return next();
     return res.status(403).json({ error: 'Permisos insuficientes' });
   };

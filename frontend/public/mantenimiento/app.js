@@ -126,22 +126,23 @@ function renderApp() {
   });
 
   // Polling de urgencias (técnico y admin)
-  if (['tecnico_mant','admin'].includes(role)) startUrgenciasPolling();
+  if (['tecnico_mant','admin','superadmin_mant'].includes(role)) startUrgenciasPolling();
 
   loadView(state.view);
 }
 
 function buildNavItems(role) {
+  const isAdmin = role === 'admin' || role === 'superadmin_mant';
   const items = [];
-  if (role === 'admin' || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
+  if (isAdmin || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
   if (role === 'supervisor_mant') items.push({ id: 'nueva', label: '➕ Nueva solicitud' });
   if (role === 'supervisor_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis solicitudes' });
   if (role === 'tecnico_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis órdenes' });
-  if (role === 'admin' || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
-  if (role === 'admin') items.push({ id: 'semana', label: '📅 Plan semanal' });
-  if (role === 'admin') items.push({ id: 'programados', label: '🗓 Programados' });
-  if (role === 'admin') items.push({ id: 'kpis', label: '📊 KPIs' });
-  if (role === 'admin') items.push({ id: 'catalogos', label: '⚙️ Catálogos' });
+  if (isAdmin || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
+  if (isAdmin || role === 'supervisor_mant') items.push({ id: 'semana', label: '📅 Plan semanal' });
+  if (isAdmin) items.push({ id: 'programados', label: '🗓 Programados' });
+  if (isAdmin) items.push({ id: 'kpis', label: '📊 KPIs' });
+  if (isAdmin) items.push({ id: 'catalogos', label: '⚙️ Catálogos' });
   return items;
 }
 
@@ -451,7 +452,7 @@ async function viewSemana(el) {
       <div style="font-weight:700;color:#92400e;margin-bottom:8px">⏳ Sin asignar (${sinAsignar.length})</div>
       <div style="display:flex;flex-wrap:wrap;gap:8px">
         ${sinAsignar.map(o => `
-          <div style="background:white;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:12px;min-width:200px">
+          <div style="background:white;border:1px solid #fde68a;border-radius:6px;padding:8px 12px;font-size:12px;min-width:200px;cursor:pointer" class="btn-orden-sin-asignar" data-id="${o.id}">
             <b>${escHtml(o.folio)}</b> · ${escHtml(o.equipo_nombre)}<br>
             ${urgenciaBadge(o.nivel_urgencia)}&nbsp;
             <button class="btn-secondary btn-asignar" data-id="${o.id}" style="font-size:11px;padding:2px 8px;margin-top:4px">👤 Asignar</button>
@@ -482,8 +483,14 @@ async function viewSemana(el) {
       }).join('')}
     </div>`;
 
+  document.querySelectorAll('.btn-orden-sin-asignar').forEach(card => {
+    card.onclick = (e) => {
+      if (e.target.classList.contains('btn-asignar')) return; // deja que el botón maneje
+      modalDetalleOrden(Number(card.dataset.id));
+    };
+  });
   document.querySelectorAll('.btn-asignar').forEach(btn => {
-    btn.onclick = () => modalAsignar(Number(btn.dataset.id));
+    btn.onclick = (e) => { e.stopPropagation(); modalAsignar(Number(btn.dataset.id)); };
   });
 }
 
@@ -1053,9 +1060,19 @@ async function modalDetalleOrden(ordenId) {
         ${o.refaccion_utilizada?`<div><b>Refacción:</b> ${escHtml(o.refaccion_utilizada)}</div>`:''}
         ${o.parte_danada?`<div><b>Parte dañada:</b> ${escHtml(o.parte_danada)}</div>`:''}
       </div>` : ''}
-    <div style="text-align:right;margin-top:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      ${state.user?.mant_role === 'superadmin_mant' && o.status !== 'cerrada' ? `<button id="btn-borrar-orden" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🗑 Borrar orden</button>` : '<span></span>'}
       <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cerrar</button>
     </div>`);
+  const btnBorrar = document.getElementById('btn-borrar-orden');
+  if (btnBorrar) {
+    btnBorrar.onclick = async () => {
+      if (!confirm(`¿Borrar orden ${o.folio}? Esta acción no se puede deshacer.`)) return;
+      await apiFetch(`/ordenes/${o.id}`, { method: 'DELETE' });
+      document.querySelector('[style*=fixed]')?.remove();
+      loadView(state.view);
+    };
+  }
 }
 
 async function modalNuevoEquipo() {
