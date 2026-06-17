@@ -336,6 +336,9 @@ function viewNuevaOrden(el) {
       <h2 style="margin:0 0 20px;font-size:18px">➕ Nueva solicitud de mantenimiento</h2>
       <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:24px">
         <div id="nueva-msg" style="display:none;padding:10px;border-radius:6px;margin-bottom:12px;font-size:13px"></div>
+        <div class="mant-form-group"><label>Departamento solicitante *</label>
+          <select id="n-dpto"><option value="">Cargando...</option></select>
+        </div>
         <div class="mant-form-group"><label>Equipo *</label>
           <select id="n-equipo"><option value="">Cargando...</option></select>
         </div>
@@ -370,6 +373,12 @@ function viewNuevaOrden(el) {
       </div>
     </div>`;
 
+  apiFetch('/departamentos').then(dptos => {
+    document.getElementById('n-dpto').innerHTML =
+      '<option value="">— Selecciona departamento —</option>' +
+      dptos.map(d => `<option value="${d.id}">${escHtml(d.nombre)}</option>`).join('');
+  });
+
   apiFetch('/equipos').then(equipos => {
     const sel = document.getElementById('n-equipo');
     sel.innerHTML = '<option value="">— Selecciona equipo —</option>' +
@@ -389,6 +398,7 @@ function viewNuevaOrden(el) {
   document.getElementById('n-submit').onclick = async () => {
     const msg = document.getElementById('nueva-msg');
     const body = {
+      departamento_id:  document.getElementById('n-dpto').value || null,
       equipo_id:        document.getElementById('n-equipo').value,
       parte_equipo_id:  document.getElementById('n-parte').value || null,
       fecha_solicitud:  document.getElementById('n-fecha').value,
@@ -397,9 +407,9 @@ function viewNuevaOrden(el) {
       descripcion_falla: document.getElementById('n-falla').value.trim(),
       nivel_urgencia:   document.getElementById('n-urgencia').value,
     };
-    if (!body.equipo_id || !body.descripcion_falla) {
+    if (!body.departamento_id || !body.equipo_id || !body.descripcion_falla) {
       msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
-      msg.textContent = 'Equipo y descripción son requeridos'; return;
+      msg.textContent = 'Departamento, equipo y descripción son requeridos'; return;
     }
     try {
       await apiFetch('/ordenes', { method: 'POST', body: JSON.stringify(body) });
@@ -827,9 +837,10 @@ async function modalDetalleOrden(ordenId) {
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f8fafc;border-radius:8px;padding:12px;font-size:12px;margin-bottom:14px">
+      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Departamento</div><b>${escHtml(o.departamento_nombre||'—')}</b></div>
+      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Solicitante</div>${escHtml(o.solicitante_nombre)}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Equipo</div><b>${escHtml(o.equipo_nombre)}</b></div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Parte</div>${escHtml(o.parte_nombre||'—')}</div>
-      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Solicitante</div>${escHtml(o.solicitante_nombre)}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Fecha solicitud</div>${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Técnico asignado</div>${escHtml(o.tecnico_nombre||'Sin asignar')}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Máquina parada</div>${o.maquina_parada?'⛔ Sí':'✅ No'}</div>
@@ -1002,70 +1013,136 @@ async function modalNuevoProgramado() {
   };
 }
 
-// ── PDF de orden ──────────────────────────────────────────────────────────────
+// ── PDF de orden — 2 copias (original + copia) en hoja carta ─────────────────
 async function generarPDFOrden(ordenId) {
   const o = await apiFetch(`/ordenes/${ordenId}`);
   const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ unit: 'mm', format: 'letter' });
-  const m = 15, w = 216 - m*2;
-  let y = m;
 
-  // Encabezado
-  doc.setFillColor(15, 23, 42);
-  doc.rect(m, y, w, 14, 'F');
-  doc.setTextColor(249, 115, 22); doc.setFontSize(13); doc.setFont('helvetica','bold');
-  doc.text('ORDEN DE MANTENIMIENTO', m + 4, y + 9);
-  doc.setTextColor(200, 200, 200); doc.setFontSize(10); doc.setFont('helvetica','normal');
-  doc.text(o.folio, m + w - 4, y + 9, { align: 'right' });
-  y += 18;
+  // Hoja carta (216 × 279 mm). Cada copia ocupa la mitad vertical (~135 mm de contenido)
+  const doc = new jsPDF({ unit: 'mm', format: 'letter', orientation: 'portrait' });
+  const PW = 216, PH = 279;
+  const COPY_H = PH / 2;       // 139.5 mm por copia
+  const M = 10;                 // margen lateral
+  const W = PW - M * 2;        // ancho útil
+  const FOOTER_CODE = '4-MA-42  Rev. 1  04MY15';
 
-  // Datos principales
-  doc.setTextColor(55,65,81); doc.setFontSize(9);
-  const datos = [
-    ['Tipo', o.tipo === 'correctivo_urgente' ? 'Urgente (Producción)' : o.tipo === 'programado' ? 'Programado' : 'Solicitud'],
-    ['Equipo', o.equipo_nombre], ['Parte', o.parte_nombre || '—'],
-    ['Solicitante', o.solicitante_nombre], ['Fecha solicitud', `${o.fecha_solicitud} ${o.hora_solicitud||''}`],
-    ['Urgencia', o.nivel_urgencia?.toUpperCase()], ['Máquina parada', o.maquina_parada ? 'SÍ' : 'NO'],
-    ['Técnico asignado', o.tecnico_nombre || 'Sin asignar'],
-  ];
-  datos.forEach(([lbl, val]) => {
-    doc.setFont('helvetica','bold'); doc.text(lbl + ':', m, y);
-    doc.setFont('helvetica','normal'); doc.text(String(val || '—'), m + 42, y);
-    y += 6;
-  });
-  y += 4;
+  const drawCopy = (yBase, etiqueta) => {
+    let y = yBase + M;
 
-  // Descripción
-  doc.setFont('helvetica','bold'); doc.text('DESCRIPCIÓN DE LA FALLA:', m, y); y += 5;
-  doc.setFont('helvetica','normal');
-  doc.setFillColor(248,250,252); doc.rect(m, y, w, 24, 'F');
-  const lineas = doc.splitTextToSize(o.descripcion_falla || '', w - 4);
-  doc.text(lineas, m + 2, y + 5);
-  y += 28;
+    // ── Encabezado ──────────────────────────────────────────────────────────
+    // Barra naranja superior
+    doc.setFillColor(249, 115, 22);
+    doc.rect(M, y, W, 1.5, 'F');
+    y += 3;
 
-  // Cierre
-  if (o.status === 'cerrada') {
-    doc.setFillColor(240,253,244);
-    doc.rect(m, y, w, 4, 'F');
-    doc.setFont('helvetica','bold'); doc.setTextColor(21,128,61);
-    doc.text(`CIERRE — ${o.fecha_cierre} ${o.hora_cierre||''} · ${o.cerrada_por_nombre||''}`, m + 2, y + 3); y += 7;
-    doc.setTextColor(55,65,81); doc.setFont('helvetica','bold'); doc.text('Trabajo realizado:', m, y); y += 5;
-    doc.setFont('helvetica','normal');
-    const linTrabajo = doc.splitTextToSize(o.descripcion_trabajo || '', w - 4);
-    doc.setFillColor(248,250,252); doc.rect(m, y, w, 20, 'F');
-    doc.text(linTrabajo, m + 2, y + 5); y += 24;
-    if (o.refaccion_utilizada) { doc.setFont('helvetica','bold'); doc.text('Refacción: ', m, y); doc.setFont('helvetica','normal'); doc.text(o.refaccion_utilizada, m + 28, y); y += 6; }
-    if (o.parte_danada) { doc.setFont('helvetica','bold'); doc.text('Parte dañada: ', m, y); doc.setFont('helvetica','normal'); doc.text(o.parte_danada, m + 34, y); y += 6; }
-  } else {
-    // Espacio de firma técnico
-    y += 10;
-    doc.setDrawColor(200,200,200);
-    doc.line(m, y + 14, m + 70, y + 14);
-    doc.line(m + 80, y + 14, m + 150, y + 14);
-    doc.setFontSize(8); doc.setTextColor(100,100,100);
-    doc.text('Firma Técnico', m + 20, y + 18);
-    doc.text('Firma Supervisor', m + 100, y + 18);
+    // Título + folio en la misma línea
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(15, 23, 42);
+    doc.text('SOLICITUD DE ORDEN DE MANTENIMIENTO', M, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(100, 100, 100);
+    doc.text(o.folio, PW - M, y, { align: 'right' });
+    y += 4;
+
+    // Etiqueta ORIGINAL / COPIA
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7);
+    doc.setTextColor(etiqueta === 'ORIGINAL' ? 21 : 37, etiqueta === 'ORIGINAL' ? 128 : 99, etiqueta === 'ORIGINAL' ? 61 : 235);
+    doc.text(`[ ${etiqueta} ]`, PW - M, y, { align: 'right' });
+    doc.setTextColor(55, 65, 81);
+
+    // Línea divisoria bajo encabezado
+    doc.setDrawColor(249, 115, 22); doc.setLineWidth(0.3);
+    doc.line(M, y + 1, PW - M, y + 1);
+    y += 4;
+
+    // ── Grid de datos (2 columnas) ──────────────────────────────────────────
+    doc.setLineWidth(0.1); doc.setDrawColor(220, 220, 220);
+    const col1 = M, col2 = M + W / 2 + 2;
+    const cellH = 7;
+    const campos = [
+      ['Departamento solicitante', o.departamento_nombre || '—'],
+      ['Solicitante',              o.solicitante_nombre || '—'],
+      ['Fecha / Hora',             `${o.fecha_solicitud || '—'}  ${o.hora_solicitud || ''}`],
+      ['Equipo',                   o.equipo_nombre || '—'],
+      ['Parte del equipo',         (o.parte_nombre && o.parte_nombre !== '-') ? o.parte_nombre : '—'],
+      ['Urgencia',                 (o.nivel_urgencia || '').toUpperCase()],
+      ['Máquina parada',           o.maquina_parada ? 'SÍ' : 'NO'],
+      ['Técnico asignado',         o.tecnico_nombre || 'Por asignar'],
+    ];
+
+    // Distribuir en 2 columnas (4 filas × 2 columnas)
+    const colW = W / 2 - 2;
+    for (let i = 0; i < campos.length; i++) {
+      const cx = i % 2 === 0 ? col1 : col2;
+      const cy = y + Math.floor(i / 2) * cellH;
+      doc.setFillColor(248, 250, 252);
+      doc.rect(cx, cy, colW, cellH, 'F');
+      doc.rect(cx, cy, colW, cellH);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(120, 120, 120);
+      doc.text(campos[i][0].toUpperCase(), cx + 2, cy + 3);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      doc.text(String(campos[i][1] || '—'), cx + 2, cy + 6.2);
+    }
+    y += Math.ceil(campos.length / 2) * cellH + 3;
+
+    // ── Descripción de la falla ─────────────────────────────────────────────
+    doc.setFillColor(255, 247, 237); doc.setDrawColor(249, 115, 22); doc.setLineWidth(0.2);
+    doc.rect(M, y, W, 18, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(154, 52, 18);
+    doc.text('DESCRIPCIÓN DE LA FALLA / TRABAJO SOLICITADO', M + 2, y + 3.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+    const linFalla = doc.splitTextToSize(o.descripcion_falla || '', W - 4);
+    doc.text(linFalla.slice(0, 3), M + 2, y + 7.5);
+    y += 21;
+
+    // ── Sección cierre (si aplica) o firmas ────────────────────────────────
+    if (o.status === 'cerrada') {
+      doc.setFillColor(240, 253, 244); doc.setDrawColor(134, 239, 172); doc.setLineWidth(0.2);
+      doc.rect(M, y, W, 18, 'FD');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(6.5); doc.setTextColor(21, 128, 61);
+      doc.text(`CIERRE  ${o.fecha_cierre || ''} ${o.hora_cierre || ''}  ·  ${o.cerrada_por_nombre || ''}`, M + 2, y + 3.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      const linWork = doc.splitTextToSize(o.descripcion_trabajo || '', W - 4);
+      doc.text(linWork.slice(0, 2), M + 2, y + 7.5);
+      if (o.refaccion_utilizada) {
+        doc.setFont('helvetica', 'bold'); doc.text('Refacción: ', M + 2, y + 14);
+        doc.setFont('helvetica', 'normal'); doc.text(o.refaccion_utilizada, M + 22, y + 14);
+      }
+      y += 21;
+    } else {
+      // Líneas de firma
+      doc.setDrawColor(150, 150, 150); doc.setLineWidth(0.3);
+      const fY = y + 10;
+      doc.line(M,         fY, M + 55,     fY);
+      doc.line(M + 65,    fY, M + 120,    fY);
+      doc.line(M + 130,   fY, M + W,      fY);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(100, 100, 100);
+      doc.text('Solicitante',    M + 20,       fY + 3.5, { align: 'center' });
+      doc.text('Técnico',        M + 92,       fY + 3.5, { align: 'center' });
+      doc.text('Vo.Bo. Supervisor', M + W - 15, fY + 3.5, { align: 'center' });
+      y += 16;
+    }
+
+    // ── Pie de página con código ────────────────────────────────────────────
+    const footerY = yBase + COPY_H - 4;
+    doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.2);
+    doc.line(M, footerY - 1, PW - M, footerY - 1);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(5); doc.setTextColor(150, 150, 150);
+    doc.text(FOOTER_CODE, PW - M, footerY + 1, { align: 'right' });
+    doc.text(`Folio: ${o.folio}`, M, footerY + 1);
+  };
+
+  // Línea divisoria entre las dos copias
+  doc.setDrawColor(180, 180, 180); doc.setLineWidth(0.5);
+  // Dibujar línea punteada al centro
+  for (let x = M; x < PW - M; x += 5) {
+    doc.line(x, COPY_H, x + 3, COPY_H);
   }
+  // Tijeras en el centro
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(150, 150, 150);
+  doc.text('✂', PW / 2, COPY_H + 0.5, { align: 'center' });
+
+  // Dibujar original (mitad superior) y copia (mitad inferior)
+  drawCopy(0, 'ORIGINAL');
+  drawCopy(COPY_H, 'COPIA');
 
   const url = doc.output('bloburl');
   window.open(url, '_blank');

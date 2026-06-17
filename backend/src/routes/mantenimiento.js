@@ -93,6 +93,12 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
   const db = readMant();
   const now = new Date().toISOString();
   const folio = nextFolio(db);
+  // Resolver nombre del departamento
+  const dbMainLocal = readMain();
+  const dpto = req.body.departamento_id
+    ? (dbMainLocal.cost_centers || []).find(c => c.id === Number(req.body.departamento_id))
+    : null;
+
   const orden = {
     id: nextId(db.ordenes_mantenimiento),
     folio,
@@ -103,6 +109,8 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
     parte_equipo_id: req.body.parte_equipo_id ? Number(req.body.parte_equipo_id) : null,
     solicitante_nombre: req.mantUser.full_name,
     solicitante_user_id: req.mantUser.id,
+    departamento_id: dpto ? dpto.id : null,
+    departamento_nombre: dpto ? dpto.name : null,
     fecha_solicitud: req.body.fecha_solicitud || now.slice(0, 10),
     hora_solicitud: req.body.hora_solicitud || now.slice(11, 16),
     maquina_parada: !!req.body.maquina_parada,
@@ -404,6 +412,12 @@ router.get('/kpis', mantAllowRoles('admin'), (req, res) => {
     por_equipo: Object.entries(porEquipo).sort((a,b)=>b[1]-a[1]).map(([nombre,total])=>({nombre,total})),
     por_tecnico: Object.entries(porTecnico).map(([nombre,v])=>({ nombre, ...v, pct: v.asignadas ? Math.round(v.cerradas/v.asignadas*100) : 0 })),
   });
+});
+
+// ── Departamentos (centros de costo del sistema principal) ────────────────────
+router.get('/departamentos', (req, res) => {
+  const db = readMain();
+  res.json((db.cost_centers || []).filter(c => c.active !== false).map(c => ({ id: c.id, nombre: c.name, codigo: c.code })));
 });
 
 // ── Técnicos disponibles (para asignar) ──────────────────────────────────────
