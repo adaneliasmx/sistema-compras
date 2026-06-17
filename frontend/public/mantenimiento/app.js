@@ -1558,4 +1558,15 @@ function mostrarAlertaUrgencia(o) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-if (loadSession()) render(); else renderLogin();
+if (loadSession()) {
+  // Refrescar rol desde servidor (por si cambió desde el panel de admin)
+  apiFetch('/auth/me').then(me => {
+    if (me && me.mant_role) {
+      state.user = { ...state.user, ...me };
+      sessionStorage.setItem('mant_user', JSON.stringify(state.user));
+    }
+    render();
+  }).catch(() => render());
+} else {
+  renderLogin();
+}
