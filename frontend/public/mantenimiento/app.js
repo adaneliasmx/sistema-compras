@@ -283,6 +283,7 @@ async function viewOrdenes(el, soloMias) {
 function renderOrdenesTable(ordenes, tecnicos) {
   if (!ordenes.length) return '<div style="text-align:center;padding:32px;color:#9ca3af">Sin órdenes</div>';
   const isAdmin = state.user.mant_role === 'admin';
+  const isSupervisor = state.user.mant_role === 'supervisor_mant';
   return `
     <table class="mant-table">
       <thead><tr>
@@ -305,7 +306,7 @@ function renderOrdenesTable(ordenes, tecnicos) {
             <td style="white-space:nowrap">
               <button class="btn-secondary btn-ver-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Ver detalle">🔍</button>
               ${isAdmin && o.status!=='cerrada' ? `<button class="btn-secondary btn-asignar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Asignar técnico">👤</button>` : ''}
-              ${o.status!=='cerrada' && o.status!=='cancelada' ? `<button class="btn-primary btn-cerrar-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#16a34a;border-color:#16a34a">✅</button>` : ''}
+              ${!isSupervisor && o.status!=='cerrada' && o.status!=='cancelada' ? `<button class="btn-primary btn-cerrar-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#16a34a;border-color:#16a34a">✅</button>` : ''}
               <button class="btn-secondary btn-pdf-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Imprimir PDF">🖨</button>
             </td>
           </tr>`).join('')}
@@ -1066,7 +1067,8 @@ async function generarPDFOrden(ordenId) {
     doc.text('Firma Supervisor', m + 100, y + 18);
   }
 
-  doc.save(`${o.folio}.pdf`);
+  const url = doc.output('bloburl');
+  window.open(url, '_blank');
 }
 
 // ── POLLING URGENCIAS ─────────────────────────────────────────────────────────
