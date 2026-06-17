@@ -32,7 +32,7 @@ function enrichOrden(o, db, dbMain) {
 router.get('/ordenes', (req, res) => {
   const db = readMant();
   const dbMain = readMain();
-  const { status, tipo, equipo_id, fecha_ini, fecha_fin, tecnico_id } = req.query;
+  const { status, tipo, equipo_id, fecha_ini, fecha_fin, tecnico_id, solicitante_id } = req.query;
 
   let ordenes = db.ordenes_mantenimiento || [];
 
@@ -40,13 +40,18 @@ router.get('/ordenes', (req, res) => {
   if (req.mantUser.mant_role === 'tecnico_mant') {
     ordenes = ordenes.filter(o => o.tecnico_asignado_id === req.mantUser.id);
   }
+  // Supervisor solo ve sus propias solicitudes
+  if (req.mantUser.mant_role === 'supervisor_mant') {
+    ordenes = ordenes.filter(o => o.solicitante_user_id === req.mantUser.id);
+  }
 
-  if (status)    ordenes = ordenes.filter(o => o.status === status);
-  if (tipo)      ordenes = ordenes.filter(o => o.tipo === tipo);
-  if (equipo_id) ordenes = ordenes.filter(o => o.equipo_id === Number(equipo_id));
-  if (tecnico_id) ordenes = ordenes.filter(o => o.tecnico_asignado_id === Number(tecnico_id));
-  if (fecha_ini) ordenes = ordenes.filter(o => o.fecha_solicitud >= fecha_ini);
-  if (fecha_fin) ordenes = ordenes.filter(o => o.fecha_solicitud <= fecha_fin);
+  if (status)        ordenes = ordenes.filter(o => o.status === status);
+  if (tipo)          ordenes = ordenes.filter(o => o.tipo === tipo);
+  if (equipo_id)     ordenes = ordenes.filter(o => o.equipo_id === Number(equipo_id));
+  if (tecnico_id)    ordenes = ordenes.filter(o => o.tecnico_asignado_id === Number(tecnico_id));
+  if (solicitante_id) ordenes = ordenes.filter(o => o.solicitante_user_id === Number(solicitante_id));
+  if (fecha_ini)     ordenes = ordenes.filter(o => o.fecha_solicitud >= fecha_ini);
+  if (fecha_fin)     ordenes = ordenes.filter(o => o.fecha_solicitud <= fecha_fin);
 
   ordenes = ordenes
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))

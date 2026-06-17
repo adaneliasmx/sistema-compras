@@ -229,8 +229,10 @@ function ordenCard(o) {
 
 // ── VISTA: TODAS LAS ÓRDENES ──────────────────────────────────────────────────
 async function viewOrdenes(el, soloMias) {
-  const params = soloMias ? '' : '';
-  const ordenes = await apiFetch('/ordenes' + (soloMias ? `?tecnico_id=${state.user.id}` : ''));
+  // supervisor filtra por solicitante; técnico filtra por asignado (el backend ya lo restringe)
+  const paramExtra = soloMias && state.user.mant_role === 'supervisor_mant'
+    ? `?solicitante_id=${state.user.id}` : '';
+  const ordenes = await apiFetch('/ordenes' + paramExtra);
   const tecnicos = state.user.mant_role === 'admin' ? await apiFetch('/tecnicos') : [];
 
   el.innerHTML = `
@@ -400,11 +402,9 @@ function viewNuevaOrden(el) {
     }
     try {
       await apiFetch('/ordenes', { method: 'POST', body: JSON.stringify(body) });
-      msg.style.cssText = 'display:block;background:#f0fdf4;color:#15803d;border:1px solid #86efac';
-      msg.textContent = '✅ Solicitud enviada correctamente';
-      document.getElementById('n-falla').value = '';
-      document.getElementById('n-equipo').value = '';
-      document.getElementById('n-parte').innerHTML = '<option value="">— Selecciona primero el equipo —</option>';
+      // Navegar a "Mis solicitudes" para que vea la orden recién creada
+      state.view = 'mis-ordenes';
+      renderApp();
     } catch (e) {
       msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
       msg.textContent = e.message;
