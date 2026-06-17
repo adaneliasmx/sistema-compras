@@ -6,6 +6,7 @@ const router = express.Router();
 const db = require('../db');
 const dbProd = require('../db-produccion');
 const dbRhh = require('../db-rhh');
+const { read: readMant, write: writeMant, nextId: nextMantId, nextFolio: nextMantFolio } = require('../db-mantenimiento');
 const { produccionAuthRequired, produccionAllowRoles } = require('../middleware/produccion-auth');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -185,6 +186,13 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   const { linea } = req.params;
   const pdb = dbProd.read();
 
+  // Integración con mantenimiento
+  const mdb = readMant();
+  const integracion_mant_activa = !!(mdb.settings?.integracion_produccion_activa);
+  const equipos_mant = integracion_mant_activa
+    ? (mdb.equipos_mant || []).filter(e => e.activo !== false)
+    : [];
+
   // Baker / L1 tienen su propio conjunto de catálogos (misma estructura)
   if (linea === 'baker' || linea === 'l1') {
     const s = linea === 'baker' ? 'baker' : 'l1';
@@ -201,7 +209,9 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
       motivos_cavidad_vacia:(pdb[`motivos_cavidad_vacia_${s}`]|| []).filter(x => x.activo !== false),
       motivos_paro:         (pdb[`motivos_paro_${s}`]         || []).filter(x => x.activo !== false),
       sub_motivos:          (pdb[`sub_motivos_paro_${s}`]     || []).filter(x => x.activo !== false),
-      operadores
+      operadores,
+      integracion_mant_activa,
+      equipos_mant
     });
   }
 
@@ -220,7 +230,9 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
     defectos:     pdb[`defectos_${l}`]         || [],
     motivos_paro: pdb[`motivos_paro_${l}`]     || [],
     sub_motivos:  pdb[`sub_motivos_paro_${l}`] || [],
-    operadores
+    operadores,
+    integracion_mant_activa,
+    equipos_mant
   });
 });
 
@@ -1166,6 +1178,60 @@ router.post('/paros/recalcular-deduccion', produccionAllowRoles('admin'), (req, 
 
   if (count > 0) dbProd.write(pdb);
   res.json({ updated: count });
+});
+
+// POST /vincular-ot — vincula un paro existente con una OT de mantenimiento nueva
+router.post('/vincular-ot', produccionAllowRoles('produccion'), (req, res) => {
+  const { linea, paro_id, equipo_id, descripcion_falla, prioridad = 'alta' } = req.body || {};
+  if (!linea || !paro_id) return res.status(400).json({ error: 'linea y paro_id requeridos' });
+
+  const mdb = readMant();
+  if (!mdb.settings?.integracion_produccion_activa) {
+    return res.status(400).json({ error: 'Integración producción-mantenimiento no activa' });
+  }
+
+  // Localizar paro
+  const pdb = dbProd.read();
+  const parosKey = linea === 'baker' ? 'paros_baker' : linea === 'l1' ? 'paros_l1' : 'paros';
+  const arr = pdb[parosKey] || [];
+  const paroIdx = arr.findIndex(p => String(p.id) === String(paro_id));
+  if (paroIdx === -1) return res.status(404).json({ error: 'Paro no encontrado' });
+  const paro = arr[paroIdx];
+
+  // Crear OT en mantenimiento
+  const now = new Date().toISOString();
+  const folio = nextMantFolio(mdb);
+  const ot = {
+    id: nextMantId(mdb.ordenes_mantenimiento || []),
+    folio,
+    tipo: 'correctivo_urgente',
+    status: 'abierta',
+    prioridad: prioridad || 'alta',
+    equipo_id: equipo_id ? Number(equipo_id) : null,
+    parte_equipo_id: null,
+    descripcion: descripcion_falla || `Paro en ${linea.toUpperCase()}: ${paro.motivo}`,
+    departamento_nombre: linea.toUpperCase(),
+    departamento_id: null,
+    solicitante_user_id: null,
+    tecnico_asignado_id: null,
+    fecha_solicitud: now.slice(0, 10),
+    fecha_requerida: null,
+    programado_id: null,
+    origen_produccion: { linea, paro_id: Number(paro_id), folio_paro: paro.folio || null },
+    created_at: now,
+    updated_at: now,
+  };
+  if (!mdb.ordenes_mantenimiento) mdb.ordenes_mantenimiento = [];
+  mdb.ordenes_mantenimiento.push(ot);
+  writeMant(mdb);
+
+  // Marcar paro como vinculado a OT
+  paro.ot_mantenimiento_id = ot.id;
+  paro.ot_folio = ot.folio;
+  pdb[parosKey][paroIdx] = paro;
+  dbProd.write(pdb);
+
+  res.status(201).json({ ot, paro });
 });
 
 router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {

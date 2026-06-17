@@ -2,7 +2,23 @@ const express = require('express');
 const router = express.Router();
 const { read: readMant, write: writeMant, nextId, nextFolio } = require('../db-mantenimiento');
 const { read: readMain } = require('../db');
+const dbProd = require('../db-produccion');
 const { mantAuthRequired, mantAllowRoles } = require('../middleware/mant-auth');
+
+function toMinsMant(hhmm) {
+  const [h, m] = (hhmm || '00:00').split(':').map(Number);
+  return h * 60 + m;
+}
+function nowMxStr() {
+  const now = new Date();
+  return {
+    fecha: now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }),
+    hora: (() => {
+      const mx = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+      return mx.getHours().toString().padStart(2,'0') + ':' + mx.getMinutes().toString().padStart(2,'0');
+    })()
+  };
+}
 
 router.use(mantAuthRequired);
 
@@ -201,9 +217,33 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
 
   writeMant(db);
 
-  // Si viene de producción y la integración está activa → señal para cerrar paro
-  // (ver campo paro_id en la respuesta; el frontend de producción lo maneja)
-  res.json({ ok: true, orden, paro_id: orden.paro_id || null });
+  // Si viene de producción y la integración está activa → cerrar paro automáticamente
+  let paro_cerrado = null;
+  if (orden.origen_produccion) {
+    try {
+      const { linea, paro_id } = orden.origen_produccion;
+      const parosKey = linea === 'baker' ? 'paros_baker' : linea === 'l1' ? 'paros_l1' : 'paros';
+      const pdb = dbProd.read();
+      const arr = pdb[parosKey] || [];
+      const idx = arr.findIndex(p => String(p.id) === String(paro_id));
+      if (idx !== -1 && !arr[idx].fecha_fin) {
+        const { fecha, hora } = nowMxStr();
+        const ini = toMinsMant(arr[idx].hora_inicio);
+        const fin = toMinsMant(hora);
+        arr[idx].fecha_fin = fecha;
+        arr[idx].hora_fin = hora;
+        arr[idx].duracion_min = fin >= ini ? fin - ini : 1440 - ini + fin;
+        arr[idx].cerrado_por_ot = orden.folio;
+        pdb[parosKey] = arr;
+        dbProd.write(pdb);
+        paro_cerrado = { linea, paro_id };
+      }
+    } catch (e) {
+      console.error('[MANT] Error auto-cerrando paro producción:', e.message);
+    }
+  }
+
+  res.json({ ok: true, orden, paro_cerrado });
 });
 
 // ── CATÁLOGO EQUIPOS ──────────────────────────────────────────────────────────

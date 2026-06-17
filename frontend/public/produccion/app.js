@@ -2252,10 +2252,28 @@ function openModalDescargaBaker(carga, catalogo, onDone, linea = 'baker') {
 function openModalParoBaker(catalogo, onDone, linea = 'baker') {
   const motivos    = (catalogo.motivos_paro || []).filter(m => m.activo !== false);
   const subMotivos = (catalogo.sub_motivos  || []).filter(s => s.activo !== false);
-  const htmlMotivos = motivos.map(m => `<option value="${m.id}">${escHtml(m.nombre)}</option>`).join('');
+  const integMant  = !!catalogo.integracion_mant_activa;
+  const equiposMant = catalogo.equipos_mant || [];
+
+  const htmlMotivos = motivos.map(m =>
+    `<option value="${m.id}" data-afecta="${m.afecta_eficiencia !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+  ).join('');
+
+  const htmlEquipos = equiposMant.map(e =>
+    `<option value="${e.id}">${escHtml(e.nombre)}${e.codigo ? ' · ' + escHtml(e.codigo) : ''}</option>`
+  ).join('');
 
   showModal(`
     <h3>⏸ Registrar Paro — ${linea === 'l1' ? 'Línea 1' : 'Baker'}</h3>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1e40af">
+      <div style="font-weight:700;margin-bottom:6px">📋 Instrucciones de llenado</div>
+      <ol style="margin:0;padding-left:18px;line-height:1.7">
+        <li>Selecciona el <strong>motivo</strong> principal del paro en la lista desplegable.</li>
+        <li>Si aparece lista de <strong>sub-motivo</strong>, selecciona la categoría específica.</li>
+        <li>La <strong>hora de inicio</strong> se registra automáticamente al confirmar.</li>
+        <li>Presiona <strong>"Iniciar Paro"</strong> para guardar e iniciar el conteo.</li>
+      </ol>
+    </div>
     <div class="form-grid">
       <div class="form-group full">
         <label>Motivo de paro</label>
@@ -2264,6 +2282,29 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
       <div class="form-group full">
         <label>Sub-motivo</label>
         <select id="bkp-submotivo"><option value="">— Ninguno —</option></select>
+      </div>
+    </div>
+    <div id="bkp-ot-section" style="display:none;margin-top:12px;padding:14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px">
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px">⚙️ Solicitud de Mantenimiento requerida</div>
+      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta eficiencia. Completa los datos para generar la OT automáticamente.</p>
+      <div class="form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Equipo afectado</label>
+        <select id="bkp-ot-equipo">
+          <option value="">— Seleccionar equipo —</option>
+          ${htmlEquipos}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Descripción de la falla <span style="color:#dc2626">*</span></label>
+        <textarea id="bkp-ot-descripcion" rows="2" placeholder="Describe brevemente la falla o situación..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+      </div>
+      <div class="form-group">
+        <label style="font-size:12px;font-weight:600">Prioridad</label>
+        <select id="bkp-ot-prioridad">
+          <option value="alta" selected>Alta</option>
+          <option value="critica">Crítica</option>
+          <option value="normal">Normal</option>
+        </select>
       </div>
     </div>
     <div class="modal-actions">
@@ -2276,20 +2317,46 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
     const subs = subMotivos.filter(s => String(s.motivo_id) === String(id));
     const subSel = document.getElementById('bkp-submotivo');
     subSel.innerHTML = '<option value="">— Ninguno —</option>' + subs.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
+
+    // Mostrar sección OT si integración activa y motivo afecta eficiencia
+    const afectaEf = e.target.options[e.target.selectedIndex]?.dataset?.afecta === '1';
+    document.getElementById('bkp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
 
   document.getElementById('bkp-save').addEventListener('click', async () => {
     const motivoSel = document.getElementById('bkp-motivo');
     const motivoId  = motivoSel.value;
     const motivoNom = motivoSel.selectedOptions[0]?.text || '';
+    const afectaEf  = motivoSel.options[motivoSel.selectedIndex]?.dataset?.afecta === '1';
     if (!motivoId) { alert('Selecciona un motivo'); return; }
+
+    // Validar OT si aplica
+    if (integMant && afectaEf) {
+      const otDesc = document.getElementById('bkp-ot-descripcion')?.value?.trim();
+      if (!otDesc) { alert('Describe la falla para generar la orden de mantenimiento'); return; }
+    }
+
     const subSel    = document.getElementById('bkp-submotivo');
     const subId     = subSel.value || null;
     const subNom    = subId ? (subSel.selectedOptions[0]?.text || null) : null;
     const btn = document.getElementById('bkp-save');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
-      await POST(`/${linea}/paros`, { motivo_id: motivoId, motivo: motivoNom, sub_motivo_id: subId, sub_motivo: subNom });
+      const paro = await POST(`/${linea}/paros`, { motivo_id: motivoId, motivo: motivoNom, sub_motivo_id: subId, sub_motivo: subNom });
+
+      // Vincular OT si aplica
+      if (integMant && afectaEf && paro?.id) {
+        btn.textContent = 'Generando OT...';
+        const otEquipo    = document.getElementById('bkp-ot-equipo')?.value;
+        const otDesc      = document.getElementById('bkp-ot-descripcion')?.value?.trim();
+        const otPrioridad = document.getElementById('bkp-ot-prioridad')?.value;
+        try {
+          await POST('/vincular-ot', { linea, paro_id: paro.id, equipo_id: otEquipo ? Number(otEquipo) : null, descripcion_falla: otDesc, prioridad: otPrioridad });
+        } catch (otErr) {
+          console.warn('[PARO] OT no pudo vincularse:', otErr.message);
+        }
+      }
+
       closeModal();
       if (onDone) onDone();
     } catch (e) {
@@ -2799,13 +2866,28 @@ function openModalDescargar(linea, carga, catalogo, onDone) {
 function openModalParo(linea, catalogo, onDone) {
   const motivosParo  = catalogo.motivos_paro  || [];
   const subMotivos   = catalogo.sub_motivos   || [];
+  const integMant    = !!catalogo.integracion_mant_activa;
+  const equiposMant  = catalogo.equipos_mant  || [];
 
   const htmlMotivos = motivosParo.map(m =>
-    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-afecta="${m.afecta_eficiencia !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+  ).join('');
+
+  const htmlEquipos = equiposMant.map(e =>
+    `<option value="${e.id}">${escHtml(e.nombre)}${e.codigo ? ' · ' + escHtml(e.codigo) : ''}</option>`
   ).join('');
 
   showModal(`
     <h3>Registrar Paro — Línea ${linea.replace('L','')}</h3>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 14px;margin-bottom:14px;font-size:12px;color:#1e40af">
+      <div style="font-weight:700;margin-bottom:6px">📋 Instrucciones de llenado</div>
+      <ol style="margin:0;padding-left:18px;line-height:1.7">
+        <li>Selecciona el <strong>motivo</strong> principal del paro en la lista desplegable.</li>
+        <li>Si aparece lista de <strong>sub-motivo</strong>, selecciona la categoría específica.</li>
+        <li>La <strong>hora de inicio</strong> se registra automáticamente al confirmar.</li>
+        <li>Presiona <strong>"Registrar Paro"</strong> para guardar e iniciar el conteo.</li>
+      </ol>
+    </div>
     <div class="form-grid">
       <div class="form-group full">
         <label>Motivo de paro</label>
@@ -2818,6 +2900,29 @@ function openModalParo(linea, catalogo, onDone) {
         <label>Sub-motivo</label>
         <select id="mp-submotivo" disabled>
           <option value="">— Primero selecciona motivo —</option>
+        </select>
+      </div>
+    </div>
+    <div id="mp-ot-section" style="display:none;margin-top:12px;padding:14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px">
+      <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px">⚙️ Solicitud de Mantenimiento requerida</div>
+      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta eficiencia. Completa los datos para generar la OT automáticamente.</p>
+      <div class="form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Equipo afectado</label>
+        <select id="mp-ot-equipo">
+          <option value="">— Seleccionar equipo —</option>
+          ${htmlEquipos}
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600">Descripción de la falla <span style="color:#dc2626">*</span></label>
+        <textarea id="mp-ot-descripcion" rows="2" placeholder="Describe brevemente la falla o situación..." style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical"></textarea>
+      </div>
+      <div class="form-group">
+        <label style="font-size:12px;font-weight:600">Prioridad</label>
+        <select id="mp-ot-prioridad">
+          <option value="alta" selected>Alta</option>
+          <option value="critica">Crítica</option>
+          <option value="normal">Normal</option>
         </select>
       </div>
     </div>
@@ -2834,6 +2939,10 @@ function openModalParo(linea, catalogo, onDone) {
       ? '<option value="">— Seleccionar —</option>' + filtrados.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('')
       : '<option value="">— Sin sub-motivos —</option>';
     subSel.disabled = filtrados.length === 0;
+
+    // Mostrar sección OT si integración activa y motivo afecta eficiencia
+    const afectaEf = this.options[this.selectedIndex]?.dataset?.afecta === '1';
+    document.getElementById('mp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
 
   document.getElementById('mp-submit').addEventListener('click', async () => {
@@ -2843,7 +2952,15 @@ function openModalParo(linea, catalogo, onDone) {
     const motivo      = motivoSel.options[motivoSel.selectedIndex]?.dataset?.nombre || '';
     const sub_motivo_id = subSel.value || null;
     const sub_motivo  = subSel.options[subSel.selectedIndex]?.text || '';
+    const afectaEf    = motivoSel.options[motivoSel.selectedIndex]?.dataset?.afecta === '1';
     if (!motivo_id) { alert('Selecciona el motivo de paro'); return; }
+
+    // Validar OT si aplica
+    if (integMant && afectaEf) {
+      const otDesc = document.getElementById('mp-ot-descripcion')?.value?.trim();
+      if (!otDesc) { alert('Describe la falla para generar la orden de mantenimiento'); return; }
+    }
+
     const btn = document.getElementById('mp-submit');
     btn.disabled = true; btn.textContent = 'Registrando...';
     try {
@@ -2852,7 +2969,21 @@ function openModalParo(linea, catalogo, onDone) {
       const _mxNow = new Date(_now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
       const _mxFecha = _now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
       const _mxHora  = _mxNow.getHours().toString().padStart(2,'0') + ':' + _mxNow.getMinutes().toString().padStart(2,'0');
-      await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: _mxFecha, hora_inicio: _mxHora });
+      const paro = await POST(`/paros/${linea}`, { motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio: _mxFecha, hora_inicio: _mxHora });
+
+      // Vincular OT si aplica
+      if (integMant && afectaEf && paro?.id) {
+        btn.textContent = 'Generando OT...';
+        const otEquipo   = document.getElementById('mp-ot-equipo')?.value;
+        const otDesc     = document.getElementById('mp-ot-descripcion')?.value?.trim();
+        const otPrioridad = document.getElementById('mp-ot-prioridad')?.value;
+        try {
+          await POST('/vincular-ot', { linea, paro_id: paro.id, equipo_id: otEquipo ? Number(otEquipo) : null, descripcion_falla: otDesc, prioridad: otPrioridad });
+        } catch (otErr) {
+          console.warn('[PARO] OT no pudo vincularse:', otErr.message);
+        }
+      }
+
       closeModal();
       onDone();
     } catch (e) {

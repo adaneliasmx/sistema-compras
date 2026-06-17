@@ -692,9 +692,31 @@ function kpiCard(label, value, color) {
 
 // ── VISTA: CATÁLOGOS ──────────────────────────────────────────────────────────
 async function viewCatalogos(el) {
-  const equipos = await apiFetch('/equipos?all=1');
+  const [equipos, settings] = await Promise.all([
+    apiFetch('/equipos?all=1'),
+    apiFetch('/settings'),
+  ]);
+  const cfg = settings || {};
   el.innerHTML = `
-    <h2 style="margin:0 0 16px;font-size:18px">⚙️ Catálogos</h2>
+    <h2 style="margin:0 0 16px;font-size:18px">⚙️ Catálogos y Configuración</h2>
+
+    <!-- Configuración de integración -->
+    <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:16px;margin-bottom:16px">
+      <b style="font-size:14px;display:block;margin-bottom:12px">🔗 Integración con Producción</b>
+      <div style="display:flex;flex-direction:column;gap:12px">
+        <label style="display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cfg-integ-prod" ${cfg.integracion_produccion_activa ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+          <span><strong>Integración producción activa</strong><br><span style="color:#6b7280;font-size:11px">Cuando un paro tenga motivo "afecta eficiencia", se generará automáticamente una OT de mantenimiento desde el formulario de producción.</span></span>
+        </label>
+        <label style="display:flex;align-items:center;gap:12px;cursor:pointer;font-size:13px">
+          <input type="checkbox" id="cfg-alerta-piz" ${cfg.alerta_pizarron_activa ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer">
+          <span><strong>Alerta en pizarrón</strong><br><span style="color:#6b7280;font-size:11px">Muestra alerta con sonido en /pizarron/vista cuando hay una línea parada por mantenimiento.</span></span>
+        </label>
+        <button id="btn-guardar-cfg" class="btn-primary" style="align-self:flex-start;font-size:13px;padding:7px 16px">Guardar configuración</button>
+        <span id="cfg-msg" style="font-size:12px;color:#059669;display:none">✅ Configuración guardada</span>
+      </div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <!-- Equipos -->
       <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:16px">
@@ -723,6 +745,20 @@ async function viewCatalogos(el) {
         <div id="partes-list"><p style="color:#9ca3af;font-size:13px;text-align:center">Selecciona un equipo</p></div>
       </div>
     </div>`;
+
+  // Guardar configuración
+  document.getElementById('btn-guardar-cfg').onclick = async () => {
+    const integProd = document.getElementById('cfg-integ-prod').checked;
+    const alertaPiz = document.getElementById('cfg-alerta-piz').checked;
+    try {
+      await apiFetch('/settings', { method: 'PATCH', body: JSON.stringify({ integracion_produccion_activa: integProd, alerta_pizarron_activa: alertaPiz }) });
+      const msg = document.getElementById('cfg-msg');
+      msg.style.display = '';
+      setTimeout(() => msg.style.display = 'none', 3000);
+    } catch (e) {
+      alert('Error guardando configuración: ' + e.message);
+    }
+  };
 
   document.getElementById('btn-nuevo-equipo').onclick = () => modalNuevoEquipo();
   document.querySelectorAll('.btn-partes-equipo').forEach(btn => {
@@ -812,8 +848,12 @@ async function modalCerrarOrden(ordenId) {
       parte_danada:        overlay.querySelector('#m-parte-danada').value.trim() || null,
     };
     try {
-      await apiFetch(`/ordenes/${ordenId}/cerrar`, { method: 'POST', body: JSON.stringify(body) });
+      const result = await apiFetch(`/ordenes/${ordenId}/cerrar`, { method: 'POST', body: JSON.stringify(body) });
       overlay.remove();
+      if (result.paro_cerrado) {
+        const { linea, paro_id } = result.paro_cerrado;
+        alert(`✅ Orden cerrada. El paro de producción en ${linea.toUpperCase()} (ID ${paro_id}) fue cerrado automáticamente.`);
+      }
       loadView(state.view);
     } catch(e) {
       overlay.querySelector('#m-err').textContent = e.message;
@@ -849,6 +889,11 @@ async function modalDetalleOrden(ordenId) {
       <div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase;margin-bottom:4px">Descripción de la falla</div>
       <div style="background:#f8fafc;border-radius:6px;padding:10px">${escHtml(o.descripcion_falla)}</div>
     </div>
+    ${o.origen_produccion ? `
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px;font-size:12px;margin-bottom:12px">
+        <div style="font-weight:700;color:#713f12;margin-bottom:4px">🏭 Generada desde Producción</div>
+        <div>Línea: <b>${escHtml(String(o.origen_produccion.linea||'').toUpperCase())}</b> · Paro: <b>${escHtml(String(o.origen_produccion.folio_paro||o.origen_produccion.paro_id||''))}</b></div>
+      </div>` : ''}
     ${o.status === 'cerrada' ? `
       <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:12px">
         <div style="font-weight:700;color:#15803d;margin-bottom:8px">✅ Cierre — ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''} · ${escHtml(o.cerrada_por_nombre||'')}</div>
