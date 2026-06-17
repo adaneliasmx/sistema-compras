@@ -1,11 +1,814 @@
 {
   "equipos_mant": [
-    { "id": 1, "nombre": "Línea Baker", "codigo": "BAKER", "tipo": "linea", "linea_produccion": "Baker", "activo": true },
-    { "id": 2, "nombre": "Línea 1", "codigo": "L1", "tipo": "linea", "linea_produccion": "L1", "activo": true },
-    { "id": 3, "nombre": "Línea 3", "codigo": "L3", "tipo": "linea", "linea_produccion": "L3", "activo": true },
-    { "id": 4, "nombre": "Línea 4", "codigo": "L4", "tipo": "linea", "linea_produccion": "L4", "activo": true }
+    {
+      "id": 1,
+      "nombre": "Línea Baker",
+      "codigo": "BAKER",
+      "tipo": "linea",
+      "linea_produccion": "Baker",
+      "activo": true,
+      "codigo_cc": "CC-02"
+    },
+    {
+      "id": 2,
+      "nombre": "Línea 1",
+      "codigo": "L1",
+      "tipo": "linea",
+      "linea_produccion": "L1",
+      "activo": true,
+      "codigo_cc": "CC-03"
+    },
+    {
+      "id": 3,
+      "nombre": "Línea 3",
+      "codigo": "L3",
+      "tipo": "linea",
+      "linea_produccion": "L3",
+      "activo": true,
+      "codigo_cc": "CC-07"
+    },
+    {
+      "id": 4,
+      "nombre": "Línea 4",
+      "codigo": "L4",
+      "tipo": "linea",
+      "linea_produccion": "L4",
+      "activo": true
+    },
+    {
+      "id": 5,
+      "nombre": "SUBESTACIÓN ELECTRICA",
+      "codigo": "CC-01",
+      "codigo_cc": "CC-01",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 6,
+      "nombre": "PTAR",
+      "codigo": "CC-04",
+      "codigo_cc": "CC-04",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 7,
+      "nombre": "SANDBLASTEADORA",
+      "codigo": "CC-05",
+      "codigo_cc": "CC-05",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 8,
+      "nombre": "COMPRESOR",
+      "codigo": "CC-06",
+      "codigo_cc": "CC-06",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 9,
+      "nombre": "EQUIPOS PERIFERICOS",
+      "codigo": "CC-08",
+      "codigo_cc": "CC-08",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 10,
+      "nombre": "EQUIPOS SOFWARE Y HARWARE",
+      "codigo": "CC-09",
+      "codigo_cc": "CC-09",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 11,
+      "nombre": "DIFICIO CORPORATIVO CUESTO",
+      "codigo": "CC-10",
+      "codigo_cc": "CC-10",
+      "tipo": "equipo",
+      "activo": true
+    },
+    {
+      "id": 12,
+      "nombre": "INFRAESTRUCTURA",
+      "codigo": "CC-11",
+      "codigo_cc": "CC-11",
+      "tipo": "equipo",
+      "activo": true
+    }
   ],
-  "partes_equipo": [],
+  "partes_equipo": [
+    {
+      "id": 1,
+      "equipo_id": 5,
+      "codigo": "AL",
+      "nombre": "ALUMBRADO",
+      "activo": true
+    },
+    {
+      "id": 2,
+      "equipo_id": 5,
+      "codigo": "LG",
+      "nombre": "LIMPIEZA GENERAL",
+      "activo": true
+    },
+    {
+      "id": 3,
+      "equipo_id": 5,
+      "codigo": "IT",
+      "nombre": "INDICADORES TRANSFORMADOR",
+      "activo": true
+    },
+    {
+      "id": 4,
+      "equipo_id": 5,
+      "codigo": "TR",
+      "nombre": "TRANSFORMADOR",
+      "activo": true
+    },
+    {
+      "id": 5,
+      "equipo_id": 5,
+      "codigo": "CA",
+      "nombre": "CUCHILLAS DE ALIMENTACIÓN",
+      "activo": true
+    },
+    {
+      "id": 6,
+      "equipo_id": 5,
+      "codigo": "PG",
+      "nombre": "PINTURA GENERAL",
+      "activo": true
+    },
+    {
+      "id": 7,
+      "equipo_id": 5,
+      "codigo": "TG",
+      "nombre": "TABLERO GENERAL (MASTER PACK)",
+      "activo": true
+    },
+    {
+      "id": 8,
+      "equipo_id": 1,
+      "codigo": "AT",
+      "nombre": "ALARMA DE TEMPERATURA",
+      "activo": true
+    },
+    {
+      "id": 9,
+      "equipo_id": 1,
+      "codigo": "C1-C7A",
+      "nombre": "CANASTILLA 1 HASTA CANASTILLA 7A",
+      "activo": true
+    },
+    {
+      "id": 10,
+      "equipo_id": 1,
+      "codigo": "BD1-BD2-EBD1-EBD2",
+      "nombre": "BOMBA DOSIFICADORA 1-2/ETIQUETA BOMBA DOSIFICADORA",
+      "activo": true
+    },
+    {
+      "id": 11,
+      "equipo_id": 1,
+      "codigo": "BD",
+      "nombre": "BOMBAS DOSIFICADORAS",
+      "activo": true
+    },
+    {
+      "id": 12,
+      "equipo_id": 1,
+      "codigo": "CCD",
+      "nombre": "CARRO DE CARGA Y DESCARGA",
+      "activo": true
+    },
+    {
+      "id": 13,
+      "equipo_id": 1,
+      "codigo": "CLLNT",
+      "nombre": "CONTROL LLENADO AUT. NIVEL TINAS",
+      "activo": true
+    },
+    {
+      "id": 14,
+      "equipo_id": 1,
+      "codigo": "CT",
+      "nombre": "CONTROL TEMPERATURA",
+      "activo": true
+    },
+    {
+      "id": 15,
+      "equipo_id": 1,
+      "codigo": "CTC",
+      "nombre": "CONTROL TEMPERATURA CONTACTORES",
+      "activo": true
+    },
+    {
+      "id": 16,
+      "equipo_id": 1,
+      "codigo": "EC",
+      "nombre": "ELEVADOR DE CUÑETES",
+      "activo": true
+    },
+    {
+      "id": 17,
+      "equipo_id": 1,
+      "codigo": "EX",
+      "nombre": "EXTRACTOR",
+      "activo": true
+    },
+    {
+      "id": 18,
+      "equipo_id": 1,
+      "codigo": "GR",
+      "nombre": "GRUA",
+      "activo": true
+    },
+    {
+      "id": 19,
+      "equipo_id": 1,
+      "codigo": "LTE",
+      "nombre": "LASER Y TABLERO DE ENFRIAMIENTO",
+      "activo": true
+    },
+    {
+      "id": 20,
+      "equipo_id": 1,
+      "codigo": "MT1--MT18",
+      "nombre": "MEZCLADOR  TANQUE 1, 2, 16, 18",
+      "activo": true
+    },
+    {
+      "id": 21,
+      "equipo_id": 1,
+      "codigo": "PO",
+      "nombre": "POLIPASTO",
+      "activo": true
+    },
+    {
+      "id": 22,
+      "equipo_id": 1,
+      "codigo": "RVAET",
+      "nombre": "REGULADOR DE VOLTAJE Y ALIMENTACION ELECTRICA A TINAS",
+      "activo": true
+    },
+    {
+      "id": 23,
+      "equipo_id": 1,
+      "codigo": "SB",
+      "nombre": "SISTEMA DE BOMBEO",
+      "activo": true
+    },
+    {
+      "id": 24,
+      "equipo_id": 1,
+      "codigo": "TCPOPLC",
+      "nombre": "TABLERO DE CONTROL (PANEL DE OPERACIÓN Y PLC)",
+      "activo": true
+    },
+    {
+      "id": 25,
+      "equipo_id": 1,
+      "codigo": "TS",
+      "nombre": "TANQUE DE SECADO",
+      "activo": true
+    },
+    {
+      "id": 26,
+      "equipo_id": 1,
+      "codigo": "RES",
+      "nombre": "RESISTENCIAS",
+      "activo": true
+    },
+    {
+      "id": 27,
+      "equipo_id": 1,
+      "codigo": "TIA",
+      "nombre": "TURBINA INYECCION DE AIRE",
+      "activo": true
+    },
+    {
+      "id": 28,
+      "equipo_id": 1,
+      "codigo": "VT",
+      "nombre": "VACIADOR DE TAMBOS",
+      "activo": true
+    },
+    {
+      "id": 29,
+      "equipo_id": 2,
+      "codigo": "BAGG",
+      "nombre": "BARRAS DE ALIMENTACION GENERAL GRUAS",
+      "activo": true
+    },
+    {
+      "id": 30,
+      "equipo_id": 2,
+      "codigo": "CI-C7-C1A",
+      "nombre": "CANASTILLA 1,2,3,4,5,6,7,1A",
+      "activo": true
+    },
+    {
+      "id": 31,
+      "equipo_id": 2,
+      "codigo": "CCD",
+      "nombre": "CARRO DE CARGA Y DESCARGA",
+      "activo": true
+    },
+    {
+      "id": 32,
+      "equipo_id": 2,
+      "codigo": "CLLNT",
+      "nombre": "CONTROL LLENADO AUT. NIVEL DE TINAS",
+      "activo": true
+    },
+    {
+      "id": 33,
+      "equipo_id": 2,
+      "codigo": "CT",
+      "nombre": "CONTROL DE TEMPERATURA",
+      "activo": true
+    },
+    {
+      "id": 34,
+      "equipo_id": 2,
+      "codigo": "EX1",
+      "nombre": "EXTRACTOR 1",
+      "activo": true
+    },
+    {
+      "id": 35,
+      "equipo_id": 2,
+      "codigo": "EX2",
+      "nombre": "EXTRACTOR 2",
+      "activo": true
+    },
+    {
+      "id": 36,
+      "equipo_id": 2,
+      "codigo": "GR1",
+      "nombre": "GRUA 1",
+      "activo": true
+    },
+    {
+      "id": 37,
+      "equipo_id": 2,
+      "codigo": "GR2",
+      "nombre": "GRUA 2",
+      "activo": true
+    },
+    {
+      "id": 38,
+      "equipo_id": 2,
+      "codigo": "MT16-MT18",
+      "nombre": "MEZCLADOR TANQUE 1 , TANQUE 2",
+      "activo": true
+    },
+    {
+      "id": 39,
+      "equipo_id": 2,
+      "codigo": "MT1-MT2",
+      "nombre": "MEZCLADOR TANQUE 1 , TANQUE 2",
+      "activo": true
+    },
+    {
+      "id": 40,
+      "equipo_id": 2,
+      "codigo": "EMRT",
+      "nombre": "MOTOREDUCTOR DE TINAS ( ETIQUETA )",
+      "activo": true
+    },
+    {
+      "id": 41,
+      "equipo_id": 2,
+      "codigo": "MTR1-MTR18",
+      "nombre": "MOTOREDUCTOR TINA 1-18 (POSICION)",
+      "activo": true
+    },
+    {
+      "id": 42,
+      "equipo_id": 2,
+      "codigo": "EMRT",
+      "nombre": "ETIQUETA  DE MANTENIMIENTO MOTOREDUCTOR DE TINA",
+      "activo": true
+    },
+    {
+      "id": 43,
+      "equipo_id": 2,
+      "codigo": "TC",
+      "nombre": "TABLERO DE CONTROL (PANEL DE OPERACIÓN)",
+      "activo": true
+    },
+    {
+      "id": 44,
+      "equipo_id": 2,
+      "codigo": "TS1-TS2",
+      "nombre": "TANQUE DE SECADO 1,2",
+      "activo": true
+    },
+    {
+      "id": 45,
+      "equipo_id": 2,
+      "codigo": "TIA",
+      "nombre": "TURBINA INYECCIÓN DE AIRE",
+      "activo": true
+    },
+    {
+      "id": 46,
+      "equipo_id": 2,
+      "codigo": "VAE",
+      "nombre": "VACIADOR AREA EMPAQUE",
+      "activo": true
+    },
+    {
+      "id": 47,
+      "equipo_id": 2,
+      "codigo": "VL1",
+      "nombre": "VACIADOR LINEA 1",
+      "activo": true
+    },
+    {
+      "id": 48,
+      "equipo_id": 6,
+      "codigo": "ACL",
+      "nombre": "AGITADOR COAGULANTE LAMELLA",
+      "activo": true
+    },
+    {
+      "id": 49,
+      "equipo_id": 6,
+      "codigo": "AC",
+      "nombre": "AGITADOR COAGULANTE",
+      "activo": true
+    },
+    {
+      "id": 50,
+      "equipo_id": 6,
+      "codigo": "AFL",
+      "nombre": "AGITADOR FLOCULANTE LAMELLA",
+      "activo": true
+    },
+    {
+      "id": 51,
+      "equipo_id": 6,
+      "codigo": "AF",
+      "nombre": "AGITADOR FLOCULANTE",
+      "activo": true
+    },
+    {
+      "id": 52,
+      "equipo_id": 6,
+      "codigo": "BNALFP",
+      "nombre": "BOMBA NEUMATICA ALIM. LODOS A FILTRO PRENSA",
+      "activo": true
+    },
+    {
+      "id": 53,
+      "equipo_id": 6,
+      "codigo": "B1SC",
+      "nombre": "BOMBA 1 SUMERGIBLE CARCAMO",
+      "activo": true
+    },
+    {
+      "id": 54,
+      "equipo_id": 6,
+      "codigo": "B2S",
+      "nombre": "BOMBA 2 SUMERGIBLE CARCAMO",
+      "activo": true
+    },
+    {
+      "id": 55,
+      "equipo_id": 6,
+      "codigo": "BATI",
+      "nombre": "BOMBA AGITACION TANQUE IGUALACION",
+      "activo": true
+    },
+    {
+      "id": 56,
+      "equipo_id": 6,
+      "codigo": "BATIL",
+      "nombre": "BOMBA  ALIM. TANQUE IGUALACION A LAMELLA",
+      "activo": true
+    },
+    {
+      "id": 57,
+      "equipo_id": 6,
+      "codigo": "EL",
+      "nombre": "ELECTROVALVULA DE LODOS",
+      "activo": true
+    },
+    {
+      "id": 58,
+      "equipo_id": 6,
+      "codigo": "FP",
+      "nombre": "FILTRO PRENSA",
+      "activo": true
+    },
+    {
+      "id": 59,
+      "equipo_id": 6,
+      "codigo": "MBEL",
+      "nombre": "MOTOBOMBA EXTRACTOR DE LODOS",
+      "activo": true
+    },
+    {
+      "id": 60,
+      "equipo_id": 6,
+      "codigo": "MBH",
+      "nombre": "MOTOBOMBA HIDRONEUMATICO",
+      "activo": true
+    },
+    {
+      "id": 61,
+      "equipo_id": 6,
+      "codigo": "MBDC",
+      "nombre": "MOTOBOMBA DOSIFICADORA COAGULANTE",
+      "activo": true
+    },
+    {
+      "id": 62,
+      "equipo_id": 6,
+      "codigo": "MBDF",
+      "nombre": "MOTOBOMBA DOSIFICADORA FLOCULANTE",
+      "activo": true
+    },
+    {
+      "id": 63,
+      "equipo_id": 6,
+      "codigo": "TG",
+      "nombre": "TABLERO GENERAL",
+      "activo": true
+    },
+    {
+      "id": 64,
+      "equipo_id": 7,
+      "codigo": "CHU",
+      "nombre": "CHUMACERAS",
+      "activo": true
+    },
+    {
+      "id": 65,
+      "equipo_id": 7,
+      "codigo": "EDM",
+      "nombre": "ETIQUETA DE MANTENIMIENTO",
+      "activo": true
+    },
+    {
+      "id": 66,
+      "equipo_id": 7,
+      "codigo": "EX",
+      "nombre": "EXTRACTOR",
+      "activo": true
+    },
+    {
+      "id": 67,
+      "equipo_id": 7,
+      "codigo": "MDP",
+      "nombre": "MECANISMO DE PUERTAS",
+      "activo": true
+    },
+    {
+      "id": 68,
+      "equipo_id": 7,
+      "codigo": "MICR",
+      "nombre": "MICROS DE LA PUERTAS",
+      "activo": true
+    },
+    {
+      "id": 69,
+      "equipo_id": 7,
+      "codigo": "MTR",
+      "nombre": "MOTOREDUCTOR",
+      "activo": true
+    },
+    {
+      "id": 70,
+      "equipo_id": 7,
+      "codigo": "TC",
+      "nombre": "TABLERO DE CONTROL",
+      "activo": true
+    },
+    {
+      "id": 71,
+      "equipo_id": 7,
+      "codigo": "SISGRA",
+      "nombre": "SISTEMA DE GRANALLA",
+      "activo": true
+    },
+    {
+      "id": 72,
+      "equipo_id": 7,
+      "codigo": "SISNEU",
+      "nombre": "SISTEMA NEUMATICO",
+      "activo": true
+    },
+    {
+      "id": 73,
+      "equipo_id": 8,
+      "codigo": "MDC",
+      "nombre": "MOTOR DE COMPRESOR",
+      "activo": true
+    },
+    {
+      "id": 74,
+      "equipo_id": 8,
+      "codigo": "CO",
+      "nombre": "COMPRESOR PARTES EN GENERAL",
+      "activo": true
+    },
+    {
+      "id": 75,
+      "equipo_id": 3,
+      "codigo": "CC1",
+      "nombre": "CANASTA CUADRADA 1",
+      "activo": true
+    },
+    {
+      "id": 76,
+      "equipo_id": 3,
+      "codigo": "CC2",
+      "nombre": "CANASTA CUADRADA 2",
+      "activo": true
+    },
+    {
+      "id": 77,
+      "equipo_id": 3,
+      "codigo": "CH1      (ECH1)",
+      "nombre": "CANASTA HEXAGONAL 1   ( ETIQUETA CANASTA HEXGONAL 1  (ECH1)",
+      "activo": true
+    },
+    {
+      "id": 78,
+      "equipo_id": 3,
+      "codigo": "CT",
+      "nombre": "CONTROL DE TEMPERATURA",
+      "activo": true
+    },
+    {
+      "id": 79,
+      "equipo_id": 3,
+      "codigo": "EMMT",
+      "nombre": "ETIQUETA DE MANTENIMIENTO MOTOREDUCTORES DE TRASMISION",
+      "activo": true
+    },
+    {
+      "id": 80,
+      "equipo_id": 3,
+      "codigo": "EX",
+      "nombre": "EXTRACTOR VAPORES",
+      "activo": true
+    },
+    {
+      "id": 81,
+      "equipo_id": 3,
+      "codigo": "GR",
+      "nombre": "GRUA",
+      "activo": true
+    },
+    {
+      "id": 82,
+      "equipo_id": 3,
+      "codigo": "MTR1-MTR6",
+      "nombre": "MOTOREDUCTOR TINA 1-6 (POSICION)",
+      "activo": true
+    },
+    {
+      "id": 83,
+      "equipo_id": 3,
+      "codigo": "TCG",
+      "nombre": "TABLERO DE CONTROL (GIROS)",
+      "activo": true
+    },
+    {
+      "id": 84,
+      "equipo_id": 3,
+      "codigo": "TCGR",
+      "nombre": "TABLERO DE CONTROL (GRUA)",
+      "activo": true
+    },
+    {
+      "id": 85,
+      "equipo_id": 3,
+      "codigo": "TCGRAL",
+      "nombre": "TABLERO DE CONTROL (GENERAL)",
+      "activo": true
+    },
+    {
+      "id": 86,
+      "equipo_id": 3,
+      "codigo": "TIA",
+      "nombre": "TURBINA INYECCIÓN DE AIRE",
+      "activo": true
+    },
+    {
+      "id": 87,
+      "equipo_id": 3,
+      "codigo": "TS",
+      "nombre": "TANQUE DE SECADO",
+      "activo": true
+    },
+    {
+      "id": 88,
+      "equipo_id": 3,
+      "codigo": "CLLNT",
+      "nombre": "CONTROL LLENADO AUT. NIVEL DE TINAS",
+      "activo": true
+    },
+    {
+      "id": 89,
+      "equipo_id": 3,
+      "codigo": "CCD",
+      "nombre": "CARRO DE CARGA Y DESCARGA",
+      "activo": true
+    },
+    {
+      "id": 90,
+      "equipo_id": 3,
+      "codigo": "CT",
+      "nombre": "CONTROL DE TEMPERATURA",
+      "activo": true
+    },
+    {
+      "id": 91,
+      "equipo_id": 9,
+      "codigo": "MCE",
+      "nombre": "MONTACARGAS ELECTRICO.",
+      "activo": true
+    },
+    {
+      "id": 92,
+      "equipo_id": 9,
+      "codigo": "TRAS 1 / 5.",
+      "nombre": "TRAPALETA.",
+      "activo": true
+    },
+    {
+      "id": 93,
+      "equipo_id": 9,
+      "codigo": "DIAC 1 / 4.",
+      "nombre": "DIABLITOS DE CARGA.",
+      "activo": true
+    },
+    {
+      "id": 94,
+      "equipo_id": 10,
+      "codigo": "ESAL - 001",
+      "nombre": "ESCRITORIO ALMACEN GENERAL",
+      "activo": true
+    },
+    {
+      "id": 95,
+      "equipo_id": 10,
+      "codigo": "ESEM - 002",
+      "nombre": "ESCRITORIO EMPAQUE",
+      "activo": true
+    },
+    {
+      "id": 96,
+      "equipo_id": 10,
+      "codigo": "ESL1CAP - 003",
+      "nombre": "ESCRITORIO LINEA 1 CAPTURA",
+      "activo": true
+    },
+    {
+      "id": 97,
+      "equipo_id": 10,
+      "codigo": "LTBKCAP - 004",
+      "nombre": "LAP TOP LINEA BAKER CAPTURA",
+      "activo": true
+    },
+    {
+      "id": 98,
+      "equipo_id": 10,
+      "codigo": "SBKPRO - 005",
+      "nombre": "ESCRITORIO MAQUINA BAKER PROGRAMA",
+      "activo": true
+    },
+    {
+      "id": 99,
+      "equipo_id": 10,
+      "codigo": "LTCALBD - 006",
+      "nombre": "LAP TOP BASE DE DATOS CALIDAD",
+      "activo": true
+    },
+    {
+      "id": 100,
+      "equipo_id": 10,
+      "codigo": "LTMA - 007",
+      "nombre": "LAP TOP MANTENIMIENTO",
+      "activo": true
+    },
+    {
+      "id": 101,
+      "equipo_id": 10,
+      "codigo": "ESCOR - 008",
+      "nombre": "ESCRITORIO CORDINADORES",
+      "activo": true
+    }
+  ],
   "ordenes_mantenimiento": [],
   "mantenimientos_programados": [],
   "mant_ejecuciones": [],
