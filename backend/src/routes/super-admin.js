@@ -612,8 +612,8 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/mant-role
 router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
   const { user_id, email, mant_role } = req.body || {};
-  if (mant_role && !['admin'].includes(mant_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: admin o null' });
+  if (mant_role && !['supervisor_mant', 'tecnico_mant', 'admin'].includes(mant_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: supervisor_mant, tecnico_mant, admin o null' });
   const db = readCompras();
   const rhhDb = readRhh();
   let user = email

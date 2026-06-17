@@ -325,6 +325,8 @@
         </label>
         <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Requiere también activar Compras</small>
         <select class="modal-input" id="cm-mant-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="supervisor_mant">Supervisor</option>
+          <option value="tecnico_mant">Técnico de Mantenimiento</option>
           <option value="admin">Admin (acceso total)</option>
         </select>
       </div>
@@ -410,7 +412,7 @@ const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'
 const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
 const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
 const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
-const ROLE_LABELS_MANT       = { admin:'Admin' };
+const ROLE_LABELS_MANT       = { supervisor_mant:'Supervisor', tecnico_mant:'Técnico', admin:'Admin' };
 const ROLE_LABELS_INV        = { admin:'Admin', inventarios:'Inventarios', recepcion:'Recepción', comprador:'Comprador' };
 const INV_TYPES_LIST = [
   { key:'quimicos_proceso',    label:'Quimicos Proceso' },
@@ -557,7 +559,9 @@ function renderUsersTable() {
            <select class="role-sel" style="color:${mr ? '#b45309' : '#9ca3af'}"
              onchange="changeMantRole('${esc(u.email)}', this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
-             <option value="admin" ${mr==='admin' ?'selected':''}>Admin</option>
+             <option value="supervisor_mant" ${mr==='supervisor_mant'?'selected':''}>Supervisor</option>
+             <option value="tecnico_mant"    ${mr==='tecnico_mant'   ?'selected':''}>Técnico</option>
+             <option value="admin"           ${mr==='admin'          ?'selected':''}>Admin</option>
            </select>
          </div>`;
 
