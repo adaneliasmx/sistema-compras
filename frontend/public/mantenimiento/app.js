@@ -489,46 +489,198 @@ async function viewSemana(el) {
 
 // ── VISTA: PROGRAMADOS + GANTT ────────────────────────────────────────────────
 async function viewProgramados(el) {
-  const items = await apiFetch('/programados?all=1');
-  const hoy = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const vp = { anio: now.getFullYear(), mes: now.getMonth() + 1, tab: 'ordenes', ordenes: [], programados: [], tecnicos: [] };
 
-  // Días del mes actual para el Gantt
-  const ahora = new Date();
-  const anio = ahora.getFullYear(), mes = ahora.getMonth();
-  const diasMes = new Date(anio, mes + 1, 0).getDate();
-  const dias = Array.from({ length: diasMes }, (_, i) => i + 1);
+  const [progs, tecs] = await Promise.all([apiFetch('/programados?all=1'), apiFetch('/tecnicos')]);
+  vp.programados = progs;
+  vp.tecnicos = tecs;
 
-  el.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0;font-size:18px">🗓 Mantenimientos programados</h2>
-      <div style="display:flex;gap:8px">
-        <button id="btn-toggle-vista" class="btn-secondary" style="font-size:12px;padding:5px 12px">📅 Ver calendario</button>
-        <button id="btn-nuevo-prog" class="btn-primary" style="font-size:12px;padding:5px 12px">➕ Nuevo</button>
+  async function reloadOrdenes() {
+    try { vp.ordenes = await apiFetch(`/ordenes/mes?anio=${vp.anio}&mes=${vp.mes}`); }
+    catch { vp.ordenes = []; }
+  }
+
+  function getMesLabel() {
+    return new Date(vp.anio, vp.mes - 1).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+  }
+
+  const freqLabel = { diario:'Diario', semanal:'Semanal', quincenal:'Quincenal', mensual:'Mensual', trimestral:'Trimestral', semestral:'Semestral', anual:'Anual', personalizado:'Personalizado' };
+  const stBg  = { abierta:'#fef3c7', asignada:'#dbeafe', cerrada:'#dcfce7', cancelada:'#f1f5f9', en_proceso:'#ede9fe' };
+  const stTxt = { abierta:'#92400e', asignada:'#1e40af', cerrada:'#15803d', cancelada:'#6b7280', en_proceso:'#5b21b6' };
+  const stLbl = { abierta:'⏳ Pendiente', asignada:'🔵 Asignada', cerrada:'✅ Cerrada', cancelada:'✖ Cancelada', en_proceso:'🟣 En proceso' };
+
+  function renderVP() {
+    const { tab, ordenes, programados } = vp;
+    const nm = getMesLabel();
+    const total = ordenes.length;
+    const pendientes = ordenes.filter(o => o.status === 'abierta').length;
+    const asignadas  = ordenes.filter(o => o.status === 'asignada').length;
+    const cerradas   = ordenes.filter(o => o.status === 'cerrada').length;
+
+    const rowsOrdenes = ordenes.map(o => `
+      <tr style="border-top:1px solid #f1f5f9">
+        <td style="padding:8px 10px;font-size:13px;white-space:nowrap;color:${o.aplazado?'#d97706':'#374151'}" title="${o.aplazado?'Aplazada. Original: '+(o.fecha_programada_original||''):''}">
+          ${fmtDate(o.fecha_programada)}${o.aplazado?' 📅':''}
+        </td>
+        <td style="padding:8px 10px;font-size:13px;font-weight:600">${escHtml(o.equipo_nombre)}</td>
+        <td style="padding:8px 10px;font-size:13px">${escHtml(o.descripcion_falla||'—')}</td>
+        <td style="padding:8px 10px;font-size:12px;color:#9ca3af">${escHtml(o.prog_frecuencia?freqLabel[o.prog_frecuencia]||o.prog_frecuencia:'—')}</td>
+        <td style="padding:8px 10px;font-size:13px;color:${o.tecnico_nombre?'#374151':'#9ca3af'}">${escHtml(o.tecnico_nombre||'Sin asignar')}</td>
+        <td style="padding:8px 10px">
+          <span style="background:${stBg[o.status]||'#f1f5f9'};color:${stTxt[o.status]||'#6b7280'};padding:2px 9px;border-radius:10px;font-size:11px;font-weight:600">
+            ${stLbl[o.status]||o.status}
+          </span>
+        </td>
+        <td style="padding:8px 10px;white-space:nowrap;display:flex;gap:4px">
+          ${['abierta','asignada'].includes(o.status) ? `
+            <button class="btn-secondary vp-asignar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="${o.tecnico_nombre?'Reasignar':'Asignar'}">👤</button>
+            <button class="btn-secondary vp-aplazar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Aplazar">📅</button>
+            <button class="btn-secondary vp-cancelar" data-id="${o.id}" data-prog-id="${o.programado_id||''}" style="font-size:11px;padding:3px 8px;color:#dc2626" title="Cancelar">✖</button>
+          ` : ''}
+        </td>
+      </tr>`).join('');
+
+    const rowsCatalogo = programados.map(p => `
+      <tr style="border-top:1px solid #f1f5f9;opacity:${p.status==='activo'?1:.55}">
+        <td style="padding:8px 10px;font-size:13px;font-weight:600">${escHtml(p.equipo_nombre)}</td>
+        <td style="padding:8px 10px;font-size:13px">${escHtml(p.tarea)}</td>
+        <td style="padding:8px 10px;font-size:12px">${freqLabel[p.frecuencia]||p.frecuencia}${p.frecuencia==='personalizado'?` (${p.dias_intervalo}d)`:''}</td>
+        <td style="padding:8px 10px;font-size:13px;color:${p.vencido?'#dc2626':p.proximo?'#d97706':'#374151'}">${fmtDate(p.proxima_fecha)}</td>
+        <td style="padding:8px 10px;font-size:13px;color:${p.tecnico_nombre?'#374151':'#9ca3af'}">${escHtml(p.tecnico_nombre||'—')}</td>
+        <td style="padding:8px 10px">
+          <span style="background:${p.status==='activo'?'#dcfce7':'#f1f5f9'};color:${p.status==='activo'?'#15803d':'#6b7280'};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">
+            ${p.status==='activo'?'Activo':'Inactivo'}
+          </span>
+        </td>
+        <td style="padding:8px 10px;white-space:nowrap">
+          <button class="btn-secondary vp-toggle-prog" data-id="${p.id}" data-status="${p.status}" style="font-size:11px;padding:3px 8px">${p.status==='activo'?'Pausar':'Activar'}</button>
+        </td>
+      </tr>`).join('');
+
+    el.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <h2 style="margin:0;font-size:18px">🗓 Programados</h2>
+        <div style="display:flex;gap:6px">
+          <button id="vp-tab-ord" class="${tab==='ordenes'?'btn-primary':'btn-secondary'}" style="font-size:12px;padding:5px 12px">📋 Órdenes del mes</button>
+          <button id="vp-tab-cat" class="${tab==='catalogo'?'btn-primary':'btn-secondary'}" style="font-size:12px;padding:5px 12px">📂 Catálogo de actividades</button>
+        </div>
       </div>
-    </div>
 
-    <div id="gantt-view">
-      ${renderGantt(items, dias, anio, mes)}
-    </div>
-    <div id="cal-view" style="display:none">
-      ${renderCalendario(items, anio, mes)}
-    </div>`;
+      ${tab === 'ordenes' ? `
+      <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden">
+        <div style="padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <button id="vp-prev" class="btn-secondary" style="padding:4px 12px;font-size:16px;line-height:1">‹</button>
+            <span style="font-size:15px;font-weight:700;text-transform:capitalize;min-width:160px;text-align:center">${nm}</span>
+            <button id="vp-next" class="btn-secondary" style="padding:4px 12px;font-size:16px;line-height:1">›</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <span style="font-size:12px;color:#6b7280">${total} total · <span style="color:#92400e">${pendientes} pend.</span> · <span style="color:#1e40af">${asignadas} asig.</span> · <span style="color:#15803d">${cerradas} cerr.</span></span>
+            <button id="vp-generar" class="btn-primary" style="font-size:12px;padding:5px 12px">⚙️ Generar órdenes del mes</button>
+          </div>
+        </div>
+        ${rowsOrdenes ? `
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead style="background:#f8fafc">
+              <tr style="font-size:11px;color:#6b7280;text-transform:uppercase">
+                <th style="padding:8px 10px;text-align:left">Fecha</th>
+                <th style="padding:8px 10px;text-align:left">Equipo</th>
+                <th style="padding:8px 10px;text-align:left">Tarea</th>
+                <th style="padding:8px 10px;text-align:left">Frecuencia</th>
+                <th style="padding:8px 10px;text-align:left">Técnico</th>
+                <th style="padding:8px 10px;text-align:left">Estado</th>
+                <th style="padding:8px 10px;text-align:left">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>${rowsOrdenes}</tbody>
+          </table>
+        </div>` : `
+        <div style="text-align:center;padding:36px;color:#9ca3af">
+          <div style="font-size:36px;margin-bottom:10px">🗓</div>
+          <p style="font-size:14px;margin:0 0 6px">No hay órdenes generadas para ${nm}.</p>
+          <p style="font-size:12px;color:#9ca3af">Presiona <strong>Generar órdenes del mes</strong> para crear las OTs basadas en las actividades del catálogo.</p>
+        </div>`}
+      </div>` : `
+      <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden">
+        <div style="padding:12px 16px;background:#f8fafc;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:14px;font-weight:700">Actividades periódicas — ${programados.filter(p=>p.status==='activo').length} activas</span>
+          <button id="vp-nuevo" class="btn-primary" style="font-size:12px;padding:5px 12px">➕ Nueva actividad</button>
+        </div>
+        ${rowsCatalogo ? `
+        <div style="overflow-x:auto">
+          <table style="width:100%;border-collapse:collapse">
+            <thead style="background:#f8fafc">
+              <tr style="font-size:11px;color:#6b7280;text-transform:uppercase">
+                <th style="padding:8px 10px;text-align:left">Equipo</th>
+                <th style="padding:8px 10px;text-align:left">Tarea</th>
+                <th style="padding:8px 10px;text-align:left">Frecuencia</th>
+                <th style="padding:8px 10px;text-align:left">Próxima fecha</th>
+                <th style="padding:8px 10px;text-align:left">Técnico resp.</th>
+                <th style="padding:8px 10px;text-align:left">Estado</th>
+                <th style="padding:8px 10px"></th>
+              </tr>
+            </thead>
+            <tbody>${rowsCatalogo}</tbody>
+          </table>
+        </div>` : `
+        <div style="text-align:center;padding:36px;color:#9ca3af">
+          <p>Sin actividades programadas. Agrega una nueva actividad.</p>
+        </div>`}
+      </div>`}
+    `;
 
-  let vistaActual = 'gantt';
-  document.getElementById('btn-toggle-vista').onclick = () => {
-    if (vistaActual === 'gantt') {
-      document.getElementById('gantt-view').style.display = 'none';
-      document.getElementById('cal-view').style.display = '';
-      document.getElementById('btn-toggle-vista').textContent = '📊 Ver Gantt';
-      vistaActual = 'cal';
+    // Tabs
+    document.getElementById('vp-tab-ord').onclick = async () => { vp.tab='ordenes'; await reloadOrdenes(); renderVP(); bindVP(); };
+    document.getElementById('vp-tab-cat').onclick = async () => { vp.tab='catalogo'; vp.programados = await apiFetch('/programados?all=1'); renderVP(); bindVP(); };
+    bindVP();
+  }
+
+  function bindVP() {
+    const onDone = async () => { await reloadOrdenes(); renderVP(); bindVP(); };
+
+    if (vp.tab === 'ordenes') {
+      document.getElementById('vp-prev').onclick = async () => {
+        vp.mes--; if (vp.mes < 1) { vp.mes = 12; vp.anio--; }
+        await onDone();
+      };
+      document.getElementById('vp-next').onclick = async () => {
+        vp.mes++; if (vp.mes > 12) { vp.mes = 1; vp.anio++; }
+        await onDone();
+      };
+      document.getElementById('vp-generar').onclick = async () => {
+        const btn = document.getElementById('vp-generar');
+        btn.disabled = true; btn.textContent = 'Generando...';
+        try {
+          const r = await apiFetch('/programados/generar-mes', { method:'POST', body: JSON.stringify({ anio: vp.anio, mes: vp.mes }) });
+          vp.ordenes = r.ordenes;
+          if (r.created > 0) alert(`✅ ${r.created} nueva(s) orden(es) generada(s).`);
+          else alert(`ℹ️ Sin cambios. Todas las órdenes del mes ya existían.`);
+          renderVP(); bindVP();
+        } catch(e) { alert('Error: ' + e.message); btn.disabled = false; btn.textContent = '⚙️ Generar órdenes del mes'; }
+      };
+      el.querySelectorAll('.vp-asignar').forEach(btn => btn.onclick = () => modalAsignarProgramada(Number(btn.dataset.id), vp, onDone));
+      el.querySelectorAll('.vp-aplazar').forEach(btn => btn.onclick = () => modalAplazarProgramada(Number(btn.dataset.id), vp, onDone));
+      el.querySelectorAll('.vp-cancelar').forEach(btn => btn.onclick = () => modalCancelarProgramada(Number(btn.dataset.id), Number(btn.dataset.progId)||null, vp, onDone));
     } else {
-      document.getElementById('gantt-view').style.display = '';
-      document.getElementById('cal-view').style.display = 'none';
-      document.getElementById('btn-toggle-vista').textContent = '📅 Ver calendario';
-      vistaActual = 'gantt';
+      document.getElementById('vp-nuevo').onclick = () => modalNuevoProgramado();
+      el.querySelectorAll('.vp-toggle-prog').forEach(btn => {
+        btn.onclick = async () => {
+          const newStatus = btn.dataset.status === 'activo' ? 'inactivo' : 'activo';
+          try {
+            await apiFetch(`/programados/${btn.dataset.id}`, { method:'PATCH', body: JSON.stringify({ status: newStatus }) });
+            vp.programados = await apiFetch('/programados?all=1');
+            renderVP(); bindVP();
+          } catch(e) { alert('Error: ' + e.message); }
+        };
+      });
     }
-  };
-  document.getElementById('btn-nuevo-prog').onclick = () => modalNuevoProgramado();
+  }
+
+  await reloadOrdenes();
+  renderVP();
+  bindVP();
 }
 
 function renderGantt(items, dias, anio, mes) {
@@ -976,6 +1128,158 @@ async function modalNuevaParte(equipoId) {
   };
 }
 
+// ── Modal: Asignar técnico a OT programada (con validación de carga) ──────────
+async function modalAsignarProgramada(ordenId, vp, onDone) {
+  const orden = vp.ordenes.find(o => o.id === ordenId);
+  if (!orden) return;
+  const fecha = orden.fecha_programada;
+
+  // Fetch load for each technician concurrently
+  const tecnicosConCarga = await Promise.all(
+    vp.tecnicos.map(t =>
+      apiFetch(`/tecnicos/${t.id}/carga?anio=${vp.anio}&mes=${vp.mes}`)
+        .then(carga => ({ ...t, carga }))
+        .catch(() => ({ ...t, carga: {} }))
+    )
+  );
+
+  const optsTec = tecnicosConCarga.map(t => {
+    const mes = Object.values(t.carga).reduce((a,b)=>a+b,0);
+    return `<option value="${t.id}" data-dia="${t.carga[fecha]||0}" data-mes="${mes}" ${orden.tecnico_asignado_id===t.id?'selected':''}>${escHtml(t.full_name)} — ${mes} órdenes este mes</option>`;
+  }).join('');
+
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px">👤 Asignar técnico</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')} · <strong>${fmtDate(fecha)}</strong></p>
+    <div class="mant-form-group">
+      <label>Técnico</label>
+      <select id="as-tec">
+        <option value="">— Sin asignar —</option>
+        ${optsTec}
+      </select>
+    </div>
+    <div id="as-carga" style="min-height:22px;font-size:12px;padding:4px 0;margin-bottom:8px"></div>
+    <div id="as-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="as-ok" class="btn-primary">Asignar</button>
+    </div>`);
+
+  function updateCargaInfo() {
+    const sel = overlay.querySelector('#as-tec');
+    const opt = sel.options[sel.selectedIndex];
+    const cargaDiv = overlay.querySelector('#as-carga');
+    if (!sel.value) { cargaDiv.textContent = ''; return; }
+    const dia = Number(opt.dataset.dia || 0);
+    const mes = Number(opt.dataset.mes || 0);
+    const warn = dia === 0 ? `✅ Libre el ${fmtDate(fecha)}` : dia === 1 ? `⚠️ Ya tiene 1 orden el ${fmtDate(fecha)}` : `🔴 Tiene ${dia} órdenes el ${fmtDate(fecha)}`;
+    cargaDiv.innerHTML = `<span style="color:${dia===0?'#15803d':dia===1?'#d97706':'#dc2626'}">${warn} · ${mes} órdenes en el mes</span>`;
+  }
+
+  overlay.querySelector('#as-tec').onchange = updateCargaInfo;
+  updateCargaInfo();
+
+  overlay.querySelector('#as-ok').onclick = async () => {
+    const tecId = overlay.querySelector('#as-tec').value;
+    try {
+      await apiFetch(`/ordenes/${ordenId}`, { method:'PATCH', body: JSON.stringify({ tecnico_asignado_id: tecId ? Number(tecId) : null }) });
+      overlay.remove();
+      if (onDone) await onDone();
+    } catch(e) {
+      overlay.querySelector('#as-err').textContent = e.message;
+      overlay.querySelector('#as-err').style.display = 'block';
+    }
+  };
+}
+
+// ── Modal: Aplazar OT programada ─────────────────────────────────────────────
+async function modalAplazarProgramada(ordenId, vp, onDone) {
+  const orden = vp.ordenes.find(o => o.id === ordenId);
+  if (!orden) return;
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px">📅 Aplazar orden</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')}</p>
+    <p style="font-size:13px;margin:0 0 12px">Fecha programada actual: <strong>${fmtDate(orden.fecha_programada)}</strong>${orden.fecha_programada_original?` (original: ${fmtDate(orden.fecha_programada_original)})`:''}</p>
+    <div class="mant-form-group">
+      <label>Nueva fecha *</label>
+      <input id="apl-fecha" type="date" value="${orden.fecha_programada||''}"/>
+    </div>
+    <div class="mant-form-group">
+      <label>Motivo del aplazamiento</label>
+      <input id="apl-motivo" type="text" placeholder="Ej: Sin refacciones, técnico no disponible..."/>
+    </div>
+    <div id="apl-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="apl-ok" class="btn-primary">📅 Aplazar</button>
+    </div>`);
+
+  overlay.querySelector('#apl-ok').onclick = async () => {
+    const nuevaFecha = overlay.querySelector('#apl-fecha').value;
+    const motivo     = overlay.querySelector('#apl-motivo').value.trim();
+    if (!nuevaFecha || nuevaFecha === orden.fecha_programada) {
+      overlay.querySelector('#apl-err').textContent = 'Selecciona una fecha diferente a la actual';
+      overlay.querySelector('#apl-err').style.display = 'block'; return;
+    }
+    try {
+      await apiFetch(`/ordenes/${ordenId}/aplazar`, { method:'PATCH', body: JSON.stringify({ nueva_fecha: nuevaFecha, motivo }) });
+      overlay.remove();
+      if (onDone) await onDone();
+    } catch(e) {
+      overlay.querySelector('#apl-err').textContent = e.message;
+      overlay.querySelector('#apl-err').style.display = 'block';
+    }
+  };
+}
+
+// ── Modal: Cancelar OT programada (solo esta / todo el programa) ──────────────
+async function modalCancelarProgramada(ordenId, programadoId, vp, onDone) {
+  const orden = vp.ordenes.find(o => o.id === ordenId);
+  const prog  = vp.programados.find(p => p.id === programadoId);
+  if (!orden) return;
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px">❌ Cancelar orden</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')} · ${fmtDate(orden.fecha_programada)}</p>
+    <div style="margin-bottom:16px">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:10px;font-size:13px">
+        <input type="radio" name="cn-tipo" value="ocurrencia" checked style="margin-top:3px;flex-shrink:0"/>
+        <span>
+          <strong>Solo esta ocurrencia</strong><br>
+          <span style="color:#6b7280;font-size:12px">Cancela únicamente el ${fmtDate(orden.fecha_programada)}. Las demás órdenes del programa continúan normalmente.</span>
+        </span>
+      </label>
+      ${prog ? `
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;font-size:13px">
+        <input type="radio" name="cn-tipo" value="programa" style="margin-top:3px;flex-shrink:0"/>
+        <span>
+          <strong>Desactivar programa completo</strong><br>
+          <span style="color:#6b7280;font-size:12px">Cancela esta orden y pausa la actividad <em>"${escHtml(prog.tarea)}"</em>. No se generarán futuras órdenes hasta reactivarla.</span>
+        </span>
+      </label>` : ''}
+    </div>
+    <div id="cn-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Volver</button>
+      <button id="cn-ok" class="btn-primary" style="background:#dc2626;border-color:#dc2626">Confirmar cancelación</button>
+    </div>`);
+
+  overlay.querySelector('#cn-ok').onclick = async () => {
+    const tipo = overlay.querySelector('[name=cn-tipo]:checked')?.value || 'ocurrencia';
+    try {
+      await apiFetch(`/ordenes/${ordenId}`, { method:'PATCH', body: JSON.stringify({ status: 'cancelada' }) });
+      if (tipo === 'programa' && programadoId) {
+        await apiFetch(`/programados/${programadoId}`, { method:'PATCH', body: JSON.stringify({ status: 'inactivo' }) });
+        alert('✅ Orden cancelada y programa desactivado.');
+      }
+      overlay.remove();
+      if (onDone) await onDone();
+    } catch(e) {
+      overlay.querySelector('#cn-err').textContent = e.message;
+      overlay.querySelector('#cn-err').style.display = 'block';
+    }
+  };
+}
+
 async function modalNuevoProgramado() {
   const [equipos, tecnicos] = await Promise.all([apiFetch('/equipos'), apiFetch('/tecnicos')]);
   const overlay = openModal(`
@@ -997,7 +1301,11 @@ async function modalNuevoProgramado() {
         <select id="mp-frec">
           <option value="diario">Diario</option>
           <option value="semanal">Semanal</option>
+          <option value="quincenal">Quincenal (cada 14 días)</option>
           <option value="mensual" selected>Mensual</option>
+          <option value="trimestral">Trimestral (cada 3 meses)</option>
+          <option value="semestral">Semestral (cada 6 meses)</option>
+          <option value="anual">Anual</option>
           <option value="personalizado">Personalizado</option>
         </select>
       </div>

@@ -76,6 +76,24 @@ router.get('/ordenes', (req, res) => {
   res.json(ordenes);
 });
 
+// GET /api/mant/ordenes/mes — OTs tipo programado del mes
+router.get('/ordenes/mes', mantAllowRoles('admin'), (req, res) => {
+  const year  = Number(req.query.anio) || new Date().getFullYear();
+  const month = Number(req.query.mes)  || (new Date().getMonth() + 1);
+  const pad = n => String(n).padStart(2,'0');
+  const mStart = `${year}-${pad(month)}-01`;
+  const mEnd   = `${year}-${pad(month)}-${new Date(year, month, 0).getDate()}`;
+  const db = readMant(); const dbMain = readMain();
+  const ordenes = (db.ordenes_mantenimiento || [])
+    .filter(o => o.tipo === 'programado' && o.fecha_programada >= mStart && o.fecha_programada <= mEnd)
+    .sort((a, b) => (a.fecha_programada||'').localeCompare(b.fecha_programada||''))
+    .map(o => {
+      const prog = (db.mantenimientos_programados || []).find(p => p.id === o.programado_id) || {};
+      return { ...enrichOrden(o, db, dbMain), prog_frecuencia: prog.frecuencia || null, prog_tarea: prog.tarea || null };
+    });
+  res.json(ordenes);
+});
+
 // GET /api/mant/ordenes/urgencias-nuevas — polling para alerta de técnicos
 router.get('/ordenes/urgencias-nuevas', (req, res) => {
   const db = readMant();
@@ -159,13 +177,34 @@ router.patch('/ordenes/:id', mantAllowRoles('admin'), (req, res) => {
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (orden.status === 'cerrada') return res.status(400).json({ error: 'La orden ya está cerrada' });
 
-  const { tecnico_asignado_id, nivel_urgencia, status } = req.body;
+  const { tecnico_asignado_id, nivel_urgencia, status, fecha_programada, descripcion_falla } = req.body;
   if (tecnico_asignado_id !== undefined) {
     orden.tecnico_asignado_id = tecnico_asignado_id ? Number(tecnico_asignado_id) : null;
     if (orden.status === 'abierta' && tecnico_asignado_id) orden.status = 'asignada';
+    if (!tecnico_asignado_id && orden.status === 'asignada') orden.status = 'abierta';
   }
   if (nivel_urgencia) orden.nivel_urgencia = nivel_urgencia;
   if (status && ['abierta','asignada','en_proceso','cancelada'].includes(status)) orden.status = status;
+  if (fecha_programada !== undefined) orden.fecha_programada = fecha_programada;
+  if (descripcion_falla !== undefined) orden.descripcion_falla = descripcion_falla;
+  orden.updated_at = new Date().toISOString();
+  writeMant(db);
+  res.json(orden);
+});
+
+// PATCH /api/mant/ordenes/:id/aplazar
+router.patch('/ordenes/:id/aplazar', mantAllowRoles('admin'), (req, res) => {
+  const db = readMant();
+  const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (orden.status === 'cerrada') return res.status(400).json({ error: 'No se puede aplazar una orden cerrada' });
+  const { nueva_fecha, motivo } = req.body;
+  if (!nueva_fecha) return res.status(400).json({ error: 'nueva_fecha requerida' });
+  orden.fecha_programada_original = orden.fecha_programada_original || orden.fecha_programada;
+  orden.fecha_programada = nueva_fecha;
+  orden.fecha_requerida = nueva_fecha;
+  orden.aplazado = true;
+  orden.motivo_aplazamiento = motivo || null;
   orden.updated_at = new Date().toISOString();
   writeMant(db);
   res.json(orden);
@@ -318,6 +357,77 @@ router.patch('/partes/:id', mantAllowRoles('admin'), (req, res) => {
 
 // ── MANTENIMIENTOS PROGRAMADOS ────────────────────────────────────────────────
 
+// POST /programados/generar-mes — genera OTs para el mes (idempotente)
+router.post('/programados/generar-mes', mantAllowRoles('admin'), (req, res) => {
+  const year  = Number(req.body.anio);
+  const month = Number(req.body.mes) - 1; // 0-indexed
+  if (!year || isNaN(month)) return res.status(400).json({ error: 'anio y mes requeridos' });
+  const pad = n => String(n).padStart(2,'0');
+  const mStart = `${year}-${pad(month+1)}-01`;
+  const mEnd   = `${year}-${pad(month+1)}-${new Date(year, month+1, 0).getDate()}`;
+
+  const db = readMant(); const dbMain = readMain();
+  const progs = (db.mantenimientos_programados || []).filter(p => p.status !== 'inactivo');
+  let created = 0;
+
+  for (const prog of progs) {
+    const dates = getOccurrencesInMonth(prog, year, month);
+    for (const fecha of dates) {
+      const exists = (db.ordenes_mantenimiento || []).some(o =>
+        o.programado_id === prog.id && o.fecha_programada === fecha && o.status !== 'cancelada'
+      );
+      if (exists) continue;
+      const now = new Date().toISOString();
+      const folio = nextFolio(db);
+      const ot = {
+        id: nextId(db.ordenes_mantenimiento),
+        folio,
+        tipo: 'programado',
+        status: prog.tecnico_responsable_id ? 'asignada' : 'abierta',
+        prioridad: 'normal',
+        nivel_urgencia: 'baja',
+        equipo_id: prog.equipo_id,
+        parte_equipo_id: prog.parte_equipo_id || null,
+        descripcion_falla: prog.tarea,
+        departamento_id: null,
+        departamento_nombre: null,
+        solicitante_user_id: null,
+        hora_solicitud: '00:00',
+        tecnico_asignado_id: prog.tecnico_responsable_id || null,
+        fecha_solicitud: now.slice(0, 10),
+        fecha_programada: fecha,
+        fecha_requerida: fecha,
+        programado_id: prog.id,
+        origen_produccion: null,
+        aplazado: false,
+        motivo_aplazamiento: null,
+        fecha_programada_original: null,
+        fecha_cierre: null,
+        hora_cierre: null,
+        cerrada_por_user_id: null,
+        descripcion_trabajo: null,
+        refaccion_utilizada: null,
+        parte_danada: null,
+        created_at: now,
+        updated_at: now,
+      };
+      if (!db.ordenes_mantenimiento) db.ordenes_mantenimiento = [];
+      db.ordenes_mantenimiento.push(ot);
+      created++;
+    }
+  }
+  if (created > 0) writeMant(db);
+
+  const ordenes = (db.ordenes_mantenimiento || [])
+    .filter(o => o.tipo === 'programado' && o.fecha_programada >= mStart && o.fecha_programada <= mEnd)
+    .sort((a, b) => (a.fecha_programada||'').localeCompare(b.fecha_programada||''))
+    .map(o => {
+      const prog = (db.mantenimientos_programados || []).find(p => p.id === o.programado_id) || {};
+      return { ...enrichOrden(o, db, dbMain), prog_frecuencia: prog.frecuencia || null };
+    });
+  res.json({ created, ordenes });
+});
+
 router.get('/programados', mantAllowRoles('tecnico_mant', 'admin'), (req, res) => {
   const db = readMant();
   const dbMain = readMain();
@@ -467,6 +577,25 @@ router.get('/tecnicos', mantAllowRoles('admin'), (req, res) => {
   res.json(tecnicos.map(u => ({ id: u.id, full_name: u.full_name, email: u.email, mant_role: u.mant_role })));
 });
 
+// GET /tecnicos/:id/carga — cantidad de órdenes por día del técnico en el mes
+router.get('/tecnicos/:id/carga', mantAllowRoles('admin'), (req, res) => {
+  const tecId = Number(req.params.id);
+  const year  = Number(req.query.anio) || new Date().getFullYear();
+  const month = Number(req.query.mes)  || (new Date().getMonth() + 1);
+  const pad = n => String(n).padStart(2,'0');
+  const mStart = `${year}-${pad(month)}-01`;
+  const mEnd   = `${year}-${pad(month)}-${new Date(year, month, 0).getDate()}`;
+  const db = readMant();
+  const carga = {};
+  (db.ordenes_mantenimiento || [])
+    .filter(o => o.tecnico_asignado_id === tecId && o.status !== 'cancelada' && o.status !== 'cerrada')
+    .forEach(o => {
+      const f = o.fecha_programada || o.fecha_solicitud;
+      if (f >= mStart && f <= mEnd) carga[f] = (carga[f] || 0) + 1;
+    });
+  res.json(carga);
+});
+
 // ── Usuarios del módulo (gestión de roles) ────────────────────────────────────
 router.get('/usuarios', mantAllowRoles('admin'), (req, res) => {
   const db = readMain();
@@ -492,15 +621,63 @@ router.patch('/usuarios/:id/rol', mantAllowRoles('admin'), (req, res) => {
 function calcNextDate(prog) {
   const base = prog.fecha_ultimo_mant || prog.fecha_inicio;
   if (!base) return prog.fecha_inicio || null;
-  const d = new Date(base);
-  switch (prog.frecuencia) {
-    case 'diario':       d.setDate(d.getDate() + 1); break;
-    case 'semanal':      d.setDate(d.getDate() + 7); break;
-    case 'mensual':      d.setMonth(d.getMonth() + 1); break;
-    case 'personalizado': d.setDate(d.getDate() + (Number(prog.dias_intervalo) || 30)); break;
-    default: return null;
-  }
+  const d = new Date(base + 'T12:00:00');
+  advanceDateMant(d, prog);
   return d.toISOString().slice(0, 10);
+}
+
+function advanceDateMant(d, prog) {
+  switch (prog.frecuencia) {
+    case 'diario':        d.setDate(d.getDate() + 1); break;
+    case 'semanal':       d.setDate(d.getDate() + 7); break;
+    case 'quincenal':     d.setDate(d.getDate() + 14); break;
+    case 'mensual':       d.setMonth(d.getMonth() + 1); break;
+    case 'trimestral':    d.setMonth(d.getMonth() + 3); break;
+    case 'semestral':     d.setMonth(d.getMonth() + 6); break;
+    case 'anual':         d.setFullYear(d.getFullYear() + 1); break;
+    case 'personalizado': d.setDate(d.getDate() + (Number(prog.dias_intervalo) || 30)); break;
+    default: d.setFullYear(d.getFullYear() + 100); break; // exit guard
+  }
+}
+
+// Calcula todas las ocurrencias de un programado dentro de un mes dado (0-indexed month)
+function getOccurrencesInMonth(prog, year, month) {
+  if (!prog.fecha_inicio || prog.status === 'inactivo') return [];
+  const pad = n => String(n).padStart(2,'0');
+  const mStartStr = `${year}-${pad(month+1)}-01`;
+  const mEndStr   = `${year}-${pad(month+1)}-${new Date(year, month+1, 0).getDate()}`;
+  if (prog.fecha_inicio > mEndStr) return [];
+
+  // Fast-forward to near mStart
+  let cur = new Date(prog.fecha_inicio + 'T12:00:00');
+  const mStart = new Date(year, month, 1, 12);
+  const DAY = 86400000;
+  const stepDays = { diario:1, semanal:7, quincenal:14, personalizado: Number(prog.dias_intervalo)||30 };
+  const stepMonths = { mensual:1, trimestral:3, semestral:6, anual:12 };
+
+  if (cur < mStart) {
+    if (stepDays[prog.frecuencia]) {
+      const s = stepDays[prog.frecuencia];
+      const steps = Math.max(0, Math.floor((mStart - cur) / (s * DAY)) - 1);
+      if (steps > 0) cur = new Date(cur.getTime() + steps * s * DAY);
+    } else if (stepMonths[prog.frecuencia]) {
+      const sm = stepMonths[prog.frecuencia];
+      const monthsDiff = (year - cur.getFullYear()) * 12 + (month - cur.getMonth());
+      const steps = Math.max(0, Math.floor(monthsDiff / sm) - 1);
+      if (steps > 0) cur.setMonth(cur.getMonth() + steps * sm);
+    }
+  }
+
+  const results = [];
+  for (let i = 0; i < 300; i++) {
+    const s = cur.toISOString().slice(0, 10);
+    if (s > mEndStr) break;
+    if (s >= mStartStr) results.push(s);
+    const prev = cur.getTime();
+    advanceDateMant(cur, prog);
+    if (cur.getTime() <= prev) break; // stale guard
+  }
+  return results;
 }
 
 function daysDiff(desde, hasta) {
