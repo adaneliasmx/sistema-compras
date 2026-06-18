@@ -113,7 +113,9 @@ function renderApp() {
         ${navItems.map(n => `<button class="mant-nav-btn${state.view===n.id?' active':''}" data-view="${n.id}">${n.label}</button>`).join('')}
       </div>
       <div class="mant-nav-user">
-        ${escHtml(state.user.full_name)} · <button onclick="logout()" style="background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:12px">Salir</button>
+        ${escHtml(state.user.full_name)}
+        <span style="font-size:10px;background:rgba(255,255,255,.15);padding:2px 6px;border-radius:4px;margin:0 6px">${role}</span>
+        · <button onclick="logout()" style="background:none;border:none;color:rgba(255,255,255,.5);cursor:pointer;font-size:12px">Salir</button>
       </div>
     </nav>
     <div class="mant-main" id="mant-content">
