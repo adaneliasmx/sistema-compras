@@ -137,7 +137,7 @@ function buildNavItems(role) {
   const isAdmin = role === 'admin' || role === 'superadmin_mant';
   const items = [];
   if (isAdmin || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
-  if (role === 'supervisor_mant') items.push({ id: 'nueva', label: '➕ Nueva solicitud' });
+  if (isAdmin || role === 'supervisor_mant') items.push({ id: 'nueva', label: '➕ Nueva solicitud' });
   if (role === 'supervisor_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis solicitudes' });
   if (role === 'tecnico_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis órdenes' });
   if (isAdmin || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
@@ -236,7 +236,8 @@ async function viewOrdenes(el, soloMias) {
   const paramExtra = soloMias && state.user.mant_role === 'supervisor_mant'
     ? `?solicitante_id=${state.user.id}` : '';
   const ordenes = await apiFetch('/ordenes' + paramExtra);
-  const tecnicos = state.user.mant_role === 'admin' ? await apiFetch('/tecnicos') : [];
+  const isAdminRole = ['admin','superadmin_mant'].includes(state.user.mant_role);
+  const tecnicos = isAdminRole ? await apiFetch('/tecnicos') : [];
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
@@ -285,7 +286,7 @@ async function viewOrdenes(el, soloMias) {
 
 function renderOrdenesTable(ordenes, tecnicos) {
   if (!ordenes.length) return '<div style="text-align:center;padding:32px;color:#9ca3af">Sin órdenes</div>';
-  const isAdmin = state.user.mant_role === 'admin';
+  const isAdmin = ['admin','superadmin_mant'].includes(state.user.mant_role);
   const isSupervisor = state.user.mant_role === 'supervisor_mant';
   return `
     <table class="mant-table">
@@ -311,6 +312,7 @@ function renderOrdenesTable(ordenes, tecnicos) {
               ${isAdmin && o.status!=='cerrada' ? `<button class="btn-secondary btn-asignar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Asignar técnico">👤</button>` : ''}
               ${!isSupervisor && o.status!=='cerrada' && o.status!=='cancelada' ? `<button class="btn-primary btn-cerrar-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#16a34a;border-color:#16a34a">✅</button>` : ''}
               <button class="btn-secondary btn-pdf-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Imprimir PDF">🖨</button>
+              ${state.user.mant_role==='superadmin_mant' ? `<button class="btn-secondary btn-borrar-orden" data-id="${o.id}" data-folio="${escHtml(o.folio)}" style="font-size:11px;padding:3px 8px;color:#dc2626" title="Borrar orden">🗑</button>` : ''}
             </td>
           </tr>`).join('')}
       </tbody>
@@ -329,6 +331,13 @@ function bindOrdenesTable(tecnicos) {
   });
   document.querySelectorAll('.btn-pdf-orden').forEach(btn => {
     btn.onclick = () => generarPDFOrden(Number(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-borrar-orden').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`¿Borrar orden ${btn.dataset.folio}? Esta acción no se puede deshacer.`)) return;
+      await apiFetch(`/ordenes/${btn.dataset.id}`, { method: 'DELETE' });
+      loadView(state.view);
+    };
   });
 }
 
@@ -1063,7 +1072,7 @@ async function modalDetalleOrden(ordenId) {
         ${o.parte_danada?`<div><b>Parte dañada:</b> ${escHtml(o.parte_danada)}</div>`:''}
       </div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-      ${state.user?.mant_role === 'superadmin_mant' && o.status !== 'cerrada' ? `<button id="btn-borrar-orden" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🗑 Borrar orden</button>` : '<span></span>'}
+      ${state.user?.mant_role === 'superadmin_mant' ? `<button id="btn-borrar-orden" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🗑 Borrar orden</button>` : '<span></span>'}
       <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cerrar</button>
     </div>`);
   const btnBorrar = document.getElementById('btn-borrar-orden');
