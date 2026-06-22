@@ -195,8 +195,8 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   const mainDb = db.read();
   const tecnicos_mant = integracion_mant_activa
     ? (mainDb.users || [])
-        .filter(u => u.mant_role === 'tecnico_mant' && u.activo !== false)
-        .map(u => ({ id: u.id, nombre: u.nombre || u.username }))
+        .filter(u => u.mant_role === 'tecnico_mant' && u.active)
+        .map(u => ({ id: u.id, nombre: u.full_name || u.email }))
     : [];
 
   // Baker / L1 tienen su propio conjunto de catálogos (misma estructura)
