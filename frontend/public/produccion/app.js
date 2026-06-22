@@ -2299,7 +2299,7 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
     </div>
     <div id="bkp-ot-section" style="display:none;margin-top:12px;padding:14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px">
       <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px">⚙️ Solicitud de Mantenimiento requerida</div>
-      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta eficiencia. Completa los datos para generar la OT automáticamente.</p>
+      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta disponibilidad. Completa los datos para generar la OT automáticamente.</p>
       <div class="form-group" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:600">Equipo afectado</label>
         <select id="bkp-ot-equipo">
@@ -2946,7 +2946,7 @@ function openModalParo(linea, catalogo, onDone) {
     </div>
     <div id="mp-ot-section" style="display:none;margin-top:12px;padding:14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px">
       <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:10px">⚙️ Solicitud de Mantenimiento requerida</div>
-      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta eficiencia. Completa los datos para generar la OT automáticamente.</p>
+      <p style="font-size:12px;color:#78350f;margin:0 0 10px">Este motivo afecta disponibilidad. Completa los datos para generar la OT automáticamente.</p>
       <div class="form-group" style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:600">Equipo afectado</label>
         <select id="mp-ot-equipo">
@@ -2983,6 +2983,7 @@ function openModalParo(linea, catalogo, onDone) {
 
     // Mostrar sección OT si integración activa y motivo afecta disponibilidad
     const afectaEf = this.options[this.selectedIndex]?.dataset?.afecta === '1';
+    console.log('[OT-DEBUG L3]', { integMant, afectaEf, motivoId: this.value, dataAfecta: this.options[this.selectedIndex]?.dataset?.afecta });
     document.getElementById('mp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
 
