@@ -960,47 +960,76 @@
 
   // ── Data refresh (each 5 min) ─────────────────────────────────────────────
   // ── Alerta urgente de mantenimiento ────────────────────────────────────────
-  let mantAlertaTs  = new Date().toISOString();
-  let mantAlertTimer = null;
+  let mantAlertaTs   = new Date().toISOString();
+  let mantSoundTimer = null;
 
   function playAlertSound() {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      [880, 1100, 880].forEach((freq, i) => {
+      const ctx    = new (window.AudioContext || window.webkitAudioContext)();
+      const beeps  = [880, 1100, 880, 1100, 880, 1100]; // 6 beeps fuertes
+      beeps.forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const g   = ctx.createGain();
         osc.connect(g); g.connect(ctx.destination);
         osc.type = 'square';
         osc.frequency.value = freq;
-        const t = ctx.currentTime + i * 0.35;
-        g.gain.setValueAtTime(0.25, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
-        osc.start(t); osc.stop(t + 0.28);
+        const t = ctx.currentTime + i * 0.28;
+        g.gain.setValueAtTime(1.0, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        osc.start(t); osc.stop(t + 0.22);
       });
     } catch(e) {}
+  }
+
+  function stopAlertSound() {
+    clearInterval(mantSoundTimer);
+    mantSoundTimer = null;
+  }
+
+  function startAlertSound() {
+    stopAlertSound();
+    playAlertSound();
+    mantSoundTimer = setInterval(playAlertSound, 5000); // repite cada 5s
+  }
+
+  function formatHoraMx(iso) {
+    try { return new Date(iso).toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit' }); }
+    catch(e) { return ''; }
   }
 
   function showAlertaMant(urgencias) {
     const overlay = document.getElementById('ss-mant-alert');
     if (!overlay) return;
-    clearTimeout(mantAlertTimer);
     overlay.innerHTML = `
       <div class="ss-mant-alert-box">
         <div class="ss-mant-alert-title">🔧 Alerta de Mantenimiento</div>
         ${urgencias.map(o => `
           <div class="ss-mant-alert-item">
-            <span class="ss-mant-alert-folio">${o.folio || ''}</span>
-            <span class="ss-mant-alert-linea">${o.departamento_nombre || 'Línea'}</span>
-            <span class="ss-mant-alert-desc">${o.descripcion || ''}</span>
+            <div class="ss-mant-alert-folio">${o.folio || ''}</div>
+            <div class="ss-mant-alert-linea">${o.departamento_nombre || 'Línea'}</div>
+            <div class="ss-mant-alert-row">
+              <span class="ss-mant-alert-label">Motivo:</span>
+              <span class="ss-mant-alert-desc">${o.descripcion || ''}</span>
+            </div>
+            <div class="ss-mant-alert-row">
+              <span class="ss-mant-alert-label">Hora de inicio:</span>
+              <span class="ss-mant-alert-hora">${formatHoraMx(o.created_at)}</span>
+            </div>
           </div>`).join('')}
-        <button class="ss-mant-alert-close"
-          onclick="document.getElementById('ss-mant-alert').style.display='none'">
-          ✕ Cerrar
-        </button>
+        <div class="ss-mant-alert-leyenda">⚠️ Favor contactar a técnico de mantenimiento</div>
+        <button class="ss-mant-alert-close" onclick="
+          document.getElementById('ss-mant-alert').style.display='none';
+          stopAlertSound && stopAlertSound();
+        ">✕ Cerrar</button>
       </div>`;
+    // exponer stopAlertSound globalmente para el onclick inline
+    window._stopMantSound = stopAlertSound;
+    overlay.querySelector('.ss-mant-alert-close').onclick = () => {
+      overlay.style.display = 'none';
+      stopAlertSound();
+    };
     overlay.style.display = 'flex';
-    playAlertSound();
-    mantAlertTimer = setTimeout(() => { overlay.style.display = 'none'; }, 30000);
+    startAlertSound();
   }
 
   async function pollUrgencias() {
