@@ -2269,7 +2269,7 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
   const equiposMant = catalogo.equipos_mant || [];
 
   const htmlMotivos = motivos.map(m =>
-    `<option value="${m.id}" data-afecta="${m.afecta_disponibilidad === true ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-afecta="${m.afecta_disponibilidad !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
   const htmlEquipos = equiposMant.map(e =>
@@ -2911,7 +2911,7 @@ function openModalParo(linea, catalogo, onDone) {
   const equiposMant  = catalogo.equipos_mant  || [];
 
   const htmlMotivos = motivosParo.map(m =>
-    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-afecta="${m.afecta_disponibilidad === true ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-afecta="${m.afecta_disponibilidad !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
   const htmlEquipos = equiposMant.map(e =>
@@ -5161,7 +5161,7 @@ async function viewCatalogos(el, linea) {
         const campo = td.dataset.campo;
         const item  = items.find(i => String(i.id) === String(id));
         if (!item) return;
-        const newVal = item[campo] === false; // false→true, true/undefined→false
+        const newVal = !item[campo]; // true→false, false/undefined→true
         try {
           await PATCH(`/catalogos/${linea}/${apiTipo(activeTab)}/${id}`, { [campo]: newVal });
           loadAndRender();
