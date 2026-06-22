@@ -1106,7 +1106,7 @@ async function viewLinea(el, linea) {
         return;
       }
       if (pa && pa.tipo !== 'cambio_turno') {
-        showCierreParoModal(linea, pa, el, () => openModalCarga(linea, catalogo));
+        showCierreParoModal(linea, pa, catalogo, () => openModalCarga(linea, catalogo));
         return;
       }
       openModalCarga(linea, catalogo);
@@ -1119,7 +1119,7 @@ async function viewLinea(el, linea) {
         return;
       }
       if (pa && pa.tipo !== 'cambio_turno') {
-        showCierreParoModal(linea, pa, el, () => openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea)));
+        showCierreParoModal(linea, pa, catalogo, () => openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea)));
         return;
       }
       openModalCargaVacia(linea, catalogo, () => viewLinea(el, linea));
@@ -1132,6 +1132,11 @@ async function viewLinea(el, linea) {
     });
     el.querySelector('#btn-cerrar-paro')?.addEventListener('click', async (ev) => {
       const id = ev.currentTarget.dataset.id;
+      // Si es paro manual con OT vinculada → mostrar modal para registrar técnico
+      if (paroActivo && paroActivo.tipo !== 'cambio_turno' && paroActivo.ot_mantenimiento_id) {
+        showCierreParoModal(linea, paroActivo, catalogo, () => { state.paroActivo[linea] = null; viewLinea(el, linea); });
+        return;
+      }
       try {
         await PATCH(`/paros/${linea}/${id}/cerrar`, {});
         state.paroActivo[linea] = null;
@@ -1157,7 +1162,7 @@ async function viewLinea(el, linea) {
           return;
         }
         if (pa && pa.tipo !== 'cambio_turno') {
-          showCierreParoModal(linea, pa, el, () => {
+          showCierreParoModal(linea, pa, catalogo, () => {
             const carga = cargas.find(c => String(c.id) === String(btn.dataset.descargar));
             openModalDescargar(linea, carga, catalogo, () => viewLinea(el, linea));
           });
@@ -1304,6 +1309,10 @@ async function viewBaker(el) {
     });
     el.querySelector('#btn-baker-cerrar-paro')?.addEventListener('click', async (ev) => {
       const id = ev.currentTarget.dataset.id;
+      if (paroActivo?.ot_mantenimiento_id) {
+        showCierreParoModal('baker', paroActivo, catalogo, () => viewBaker(el));
+        return;
+      }
       try {
         await PATCH(`/baker/paros/${id}/cerrar`, {});
         viewBaker(el);
@@ -1501,6 +1510,10 @@ async function viewL1(el) {
     });
     el.querySelector('#btn-l1-cerrar-paro')?.addEventListener('click', async (ev) => {
       const id = ev.currentTarget.dataset.id;
+      if (paroActivo?.ot_mantenimiento_id) {
+        showCierreParoModal('l1', paroActivo, catalogo, () => viewL1(el));
+        return;
+      }
       try {
         await PATCH(`/l1/paros/${id}/cerrar`, {});
         viewL1(el);
@@ -2370,8 +2383,22 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
   });
 }
 
-// ── Modal: cierre obligatorio de paro antes de continuar ──────────────────────
-function showCierreParoModal(linea, paro, elContainer, onClosed) {
+// ── Modal: cierre de paro (con registro de técnico si hay OT vinculada) ────────
+function showCierreParoModal(linea, paro, catalogo, onClosed) {
+  const tecnicos = catalogo?.tecnicos_mant || [];
+  const tieneOT  = !!paro.ot_mantenimiento_id;
+
+  const otSection = tieneOT ? `
+    <div style="margin-top:12px;padding:12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px">
+      <div style="font-weight:700;font-size:13px;color:#1e40af;margin-bottom:8px">🔧 OT vinculada${paro.ot_folio ? ' · ' + escHtml(paro.ot_folio) : ''}</div>
+      <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Técnico que atendió</label>
+      <select id="cpm-tecnico" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        <option value="">— Sin técnico —</option>
+        ${tecnicos.map(t => `<option value="${t.id}">${escHtml(t.nombre)}</option>`).join('')}
+      </select>
+      <p style="font-size:11px;color:#6b7280;margin:6px 0 0">La OT quedará abierta hasta que el técnico la cierre formalmente desde Mantenimiento.</p>
+    </div>` : '';
+
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay active';
   overlay.innerHTML = `
@@ -2385,6 +2412,7 @@ function showCierreParoModal(linea, paro, elContainer, onClosed) {
           <div><strong>Motivo:</strong> ${escHtml(paro.motivo || '—')}${paro.sub_motivo ? ' › ' + escHtml(paro.sub_motivo) : ''}</div>
           <div style="margin-top:4px"><strong>Inicio:</strong> ${escHtml(paro.fecha_inicio || '')} ${escHtml(paro.hora_inicio || '')}</div>
         </div>
+        ${otSection}
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline" id="cpm-cancelar">Cancelar</button>
@@ -2395,15 +2423,28 @@ function showCierreParoModal(linea, paro, elContainer, onClosed) {
 
   overlay.querySelector('#cpm-cancelar').addEventListener('click', () => overlay.remove());
   overlay.querySelector('#cpm-cerrar').addEventListener('click', async () => {
+    const btn = overlay.querySelector('#cpm-cerrar');
+    btn.disabled = true; btn.textContent = 'Cerrando...';
     try {
-      await PATCH(`/paros/${linea}/${paro.id}/cerrar`, {});
-      state.paroActivo[linea] = null;
+      const paroPath = linea === 'baker' ? `/baker/paros/${paro.id}/cerrar`
+                     : linea === 'l1'    ? `/l1/paros/${paro.id}/cerrar`
+                     : `/paros/${linea}/${paro.id}/cerrar`;
+      await PATCH(paroPath, {});
+
+      // Asignar técnico a OT si aplica (sin cerrar la OT)
+      if (tieneOT) {
+        const tecnicoId = overlay.querySelector('#cpm-tecnico')?.value || null;
+        try {
+          await PATCH(`/ot/${paro.ot_mantenimiento_id}/asignar-tecnico`, { tecnico_id: tecnicoId });
+        } catch (otErr) {
+          console.warn('[PARO] No se pudo asignar técnico a OT:', otErr.message);
+        }
+      }
+
       overlay.remove();
-      // Refresh linea view then run callback
-      const elActual = document.getElementById('p-content');
-      if (elActual) await viewLinea(elActual, linea);
       if (onClosed) onClosed();
     } catch (e) {
+      btn.disabled = false; btn.textContent = '✅ Cerrar Paro y continuar';
       alert('Error al cerrar paro: ' + e.message);
     }
   });

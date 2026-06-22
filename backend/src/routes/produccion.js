@@ -192,6 +192,12 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   const equipos_mant = integracion_mant_activa
     ? (mdb.equipos_mant || []).filter(e => e.activo !== false)
     : [];
+  const mainDb = db.read();
+  const tecnicos_mant = integracion_mant_activa
+    ? (mainDb.users || [])
+        .filter(u => u.mant_role === 'tecnico_mant' && u.activo !== false)
+        .map(u => ({ id: u.id, nombre: u.nombre || u.username }))
+    : [];
 
   // Baker / L1 tienen su propio conjunto de catálogos (misma estructura)
   if (linea === 'baker' || linea === 'l1') {
@@ -211,7 +217,8 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
       sub_motivos:          (pdb[`sub_motivos_paro_${s}`]     || []).filter(x => x.activo !== false),
       operadores,
       integracion_mant_activa,
-      equipos_mant
+      equipos_mant,
+      tecnicos_mant
     });
   }
 
@@ -232,8 +239,27 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
     sub_motivos:  pdb[`sub_motivos_paro_${l}`] || [],
     operadores,
     integracion_mant_activa,
-    equipos_mant
+    equipos_mant,
+    tecnicos_mant
   });
+});
+
+// PATCH /ot/:id/asignar-tecnico — asigna técnico a OT existente sin cerrarla
+router.patch('/ot/:id/asignar-tecnico', produccionAllowRoles('produccion'), (req, res) => {
+  const { tecnico_id } = req.body || {};
+  const mdb = readMant();
+  if (!mdb.settings?.integracion_produccion_activa) {
+    return res.status(400).json({ error: 'Integración no activa' });
+  }
+  const ot = (mdb.ordenes_mantenimiento || []).find(o => String(o.id) === String(req.params.id));
+  if (!ot) return res.status(404).json({ error: 'OT no encontrada' });
+  if (tecnico_id) {
+    ot.tecnico_asignado_id = Number(tecnico_id);
+    ot.status = 'asignada';
+  }
+  ot.updated_at = new Date().toISOString();
+  writeMant(mdb);
+  res.json(ot);
 });
 
 router.get('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res) => {
