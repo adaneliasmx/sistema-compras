@@ -244,22 +244,28 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   });
 });
 
-// GET /urgencias-mant — OTs urgentes nuevas para alerta en pizarrón (usa token producción)
+// GET /urgencias-mant — OTs urgentes para alerta en pizarrón (usa token producción)
+// ?desde=ISO  → solo las nuevas desde ese timestamp
+// ?ids=1,2,3  → verifica cuáles de esos IDs siguen abiertas
 router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => {
   const mdb = readMant();
   if (!mdb.settings?.alerta_pizarron_activa || !mdb.settings?.integracion_produccion_activa) {
     return res.json([]);
   }
+  const ordenes = mdb.ordenes_mantenimiento || [];
+  // Modo check: ¿siguen abiertas estas IDs?
+  if (req.query.ids) {
+    const ids = req.query.ids.split(',').map(Number).filter(Boolean);
+    const activas = ordenes
+      .filter(o => ids.includes(o.id) && o.status === 'abierta')
+      .map(o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at }));
+    return res.json(activas);
+  }
+  // Modo normal: nuevas desde timestamp
   const desde = req.query.desde || new Date(Date.now() - 60 * 1000).toISOString();
-  const nuevas = (mdb.ordenes_mantenimiento || [])
+  const nuevas = ordenes
     .filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= desde)
-    .map(o => ({
-      id: o.id,
-      folio: o.folio,
-      descripcion: o.descripcion,
-      departamento_nombre: o.departamento_nombre,
-      created_at: o.created_at
-    }));
+    .map(o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at }));
   res.json(nuevas);
 });
 

@@ -962,6 +962,7 @@
   // ── Alerta urgente de mantenimiento ────────────────────────────────────────
   let mantAlertaTs   = new Date().toISOString();
   let mantSoundTimer = null;
+  let mantAlertIds   = []; // IDs de OTs actualmente en pantalla
 
   function playAlertSound() {
     try {
@@ -1022,18 +1023,34 @@
           stopAlertSound && stopAlertSound();
         ">✕ Cerrar</button>
       </div>`;
-    // exponer stopAlertSound globalmente para el onclick inline
-    window._stopMantSound = stopAlertSound;
-    overlay.querySelector('.ss-mant-alert-close').onclick = () => {
-      overlay.style.display = 'none';
-      stopAlertSound();
-    };
+    overlay.querySelector('.ss-mant-alert-close').onclick = closeAlertaMant;
+    mantAlertIds = urgencias.map(o => o.id);
     overlay.style.display = 'flex';
     startAlertSound();
   }
 
+  function closeAlertaMant() {
+    const overlay = document.getElementById('ss-mant-alert');
+    if (overlay) overlay.style.display = 'none';
+    stopAlertSound();
+    mantAlertIds = [];
+  }
+
   async function pollUrgencias() {
     try {
+      const overlay = document.getElementById('ss-mant-alert');
+      const alertaVisible = overlay && overlay.style.display !== 'none';
+
+      // Si hay alerta en pantalla, verificar si las OTs siguen abiertas
+      if (alertaVisible && mantAlertIds.length > 0) {
+        const activas = await apiFetch(`/urgencias-mant?ids=${mantAlertIds.join(',')}`);
+        if (Array.isArray(activas) && activas.length === 0) {
+          closeAlertaMant(); // todas cerradas → cerrar alerta
+          return;
+        }
+      }
+
+      // Buscar OTs nuevas
       const data = await apiFetch(`/urgencias-mant?desde=${encodeURIComponent(mantAlertaTs)}`);
       if (Array.isArray(data) && data.length > 0) {
         mantAlertaTs = new Date().toISOString();
