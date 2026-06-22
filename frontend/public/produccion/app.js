@@ -2256,7 +2256,7 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
   const equiposMant = catalogo.equipos_mant || [];
 
   const htmlMotivos = motivos.map(m =>
-    `<option value="${m.id}" data-afecta="${m.afecta_eficiencia !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-afecta="${m.afecta_disponibilidad === true ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
   const htmlEquipos = equiposMant.map(e =>
@@ -2318,7 +2318,7 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
     const subSel = document.getElementById('bkp-submotivo');
     subSel.innerHTML = '<option value="">— Ninguno —</option>' + subs.map(s => `<option value="${s.id}">${escHtml(s.nombre)}</option>`).join('');
 
-    // Mostrar sección OT si integración activa y motivo afecta eficiencia
+    // Mostrar sección OT si integración activa y motivo afecta disponibilidad
     const afectaEf = e.target.options[e.target.selectedIndex]?.dataset?.afecta === '1';
     document.getElementById('bkp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
@@ -2870,7 +2870,7 @@ function openModalParo(linea, catalogo, onDone) {
   const equiposMant  = catalogo.equipos_mant  || [];
 
   const htmlMotivos = motivosParo.map(m =>
-    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-afecta="${m.afecta_eficiencia !== false ? '1' : '0'}">${escHtml(m.nombre)}</option>`
+    `<option value="${m.id}" data-nombre="${escHtml(m.nombre)}" data-afecta="${m.afecta_disponibilidad === true ? '1' : '0'}">${escHtml(m.nombre)}</option>`
   ).join('');
 
   const htmlEquipos = equiposMant.map(e =>
@@ -2940,7 +2940,7 @@ function openModalParo(linea, catalogo, onDone) {
       : '<option value="">— Sin sub-motivos —</option>';
     subSel.disabled = filtrados.length === 0;
 
-    // Mostrar sección OT si integración activa y motivo afecta eficiencia
+    // Mostrar sección OT si integración activa y motivo afecta disponibilidad
     const afectaEf = this.options[this.selectedIndex]?.dataset?.afecta === '1';
     document.getElementById('mp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
