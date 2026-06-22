@@ -2336,6 +2336,12 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
     document.getElementById('bkp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
 
+  // Auto-seleccionar equipo según la línea activa
+  if (integMant) {
+    const equipoAuto = equiposMant.find(e => e.linea_produccion?.toUpperCase() === linea.toUpperCase());
+    if (equipoAuto) document.getElementById('bkp-ot-equipo').value = equipoAuto.id;
+  }
+
   document.getElementById('bkp-save').addEventListener('click', async () => {
     const motivoSel = document.getElementById('bkp-motivo');
     const motivoId  = motivoSel.value;
@@ -2983,9 +2989,14 @@ function openModalParo(linea, catalogo, onDone) {
 
     // Mostrar sección OT si integración activa y motivo afecta disponibilidad
     const afectaEf = this.options[this.selectedIndex]?.dataset?.afecta === '1';
-    console.log('[OT-DEBUG L3]', { integMant, afectaEf, motivoId: this.value, dataAfecta: this.options[this.selectedIndex]?.dataset?.afecta });
     document.getElementById('mp-ot-section').style.display = (integMant && afectaEf) ? '' : 'none';
   });
+
+  // Auto-seleccionar equipo según la línea activa
+  if (integMant) {
+    const equipoAuto = equiposMant.find(e => e.linea_produccion?.toUpperCase() === linea.toUpperCase());
+    if (equipoAuto) document.getElementById('mp-ot-equipo').value = equipoAuto.id;
+  }
 
   document.getElementById('mp-submit').addEventListener('click', async () => {
     const motivoSel   = document.getElementById('mp-motivo');

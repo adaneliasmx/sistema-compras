@@ -959,6 +959,65 @@
   }
 
   // ── Data refresh (each 5 min) ─────────────────────────────────────────────
+  // ── Alerta urgente de mantenimiento ────────────────────────────────────────
+  let mantAlertaTs  = new Date().toISOString();
+  let mantAlertTimer = null;
+
+  function playAlertSound() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [880, 1100, 880].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const g   = ctx.createGain();
+        osc.connect(g); g.connect(ctx.destination);
+        osc.type = 'square';
+        osc.frequency.value = freq;
+        const t = ctx.currentTime + i * 0.35;
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+        osc.start(t); osc.stop(t + 0.28);
+      });
+    } catch(e) {}
+  }
+
+  function showAlertaMant(urgencias) {
+    const overlay = document.getElementById('ss-mant-alert');
+    if (!overlay) return;
+    clearTimeout(mantAlertTimer);
+    overlay.innerHTML = `
+      <div class="ss-mant-alert-box">
+        <div class="ss-mant-alert-title">🔧 Alerta de Mantenimiento</div>
+        ${urgencias.map(o => `
+          <div class="ss-mant-alert-item">
+            <span class="ss-mant-alert-folio">${o.folio || ''}</span>
+            <span class="ss-mant-alert-linea">${o.departamento_nombre || 'Línea'}</span>
+            <span class="ss-mant-alert-desc">${o.descripcion || ''}</span>
+          </div>`).join('')}
+        <button class="ss-mant-alert-close"
+          onclick="document.getElementById('ss-mant-alert').style.display='none'">
+          ✕ Cerrar
+        </button>
+      </div>`;
+    overlay.style.display = 'flex';
+    playAlertSound();
+    mantAlertTimer = setTimeout(() => { overlay.style.display = 'none'; }, 30000);
+  }
+
+  async function pollUrgencias() {
+    try {
+      const data = await apiFetch(`/urgencias-mant?desde=${encodeURIComponent(mantAlertaTs)}`);
+      if (Array.isArray(data) && data.length > 0) {
+        mantAlertaTs = new Date().toISOString();
+        showAlertaMant(data);
+      }
+    } catch(e) {}
+  }
+
+  function startPollUrgencias() {
+    pollUrgencias();
+    setInterval(pollUrgencias, 30 * 1000);
+  }
+
   function startDataRefresh() {
     setInterval(async () => {
       await fetchKpi();
@@ -989,6 +1048,7 @@
     startClock();
     startDataRefresh();
     updateTurnoBadge();
+    startPollUrgencias();
   }
 
   // ── Init ──────────────────────────────────────────────────────────────────

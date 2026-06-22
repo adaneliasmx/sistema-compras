@@ -244,6 +244,25 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
   });
 });
 
+// GET /urgencias-mant — OTs urgentes nuevas para alerta en pizarrón (usa token producción)
+router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => {
+  const mdb = readMant();
+  if (!mdb.settings?.alerta_pizarron_activa || !mdb.settings?.integracion_produccion_activa) {
+    return res.json([]);
+  }
+  const desde = req.query.desde || new Date(Date.now() - 60 * 1000).toISOString();
+  const nuevas = (mdb.ordenes_mantenimiento || [])
+    .filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= desde)
+    .map(o => ({
+      id: o.id,
+      folio: o.folio,
+      descripcion: o.descripcion,
+      departamento_nombre: o.departamento_nombre,
+      created_at: o.created_at
+    }));
+  res.json(nuevas);
+});
+
 // PATCH /ot/:id/asignar-tecnico — asigna técnico a OT existente sin cerrarla
 router.patch('/ot/:id/asignar-tecnico', produccionAllowRoles('produccion'), (req, res) => {
   const { tecnico_id } = req.body || {};
