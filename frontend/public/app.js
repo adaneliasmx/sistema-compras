@@ -2088,24 +2088,36 @@ async function approvalsView() {
     if (ar && ac) { ac.innerHTML = html; ar.style.display = ''; }
   };
 
-  const spendTable = (data, ccName, subName) => {
+  const spendTable = (data, ccName, subName, type) => {
     const hasSub = data.some(d => d.sub_cost_center !== null);
-    return `<table style="width:100%;font-size:12px;border-collapse:collapse">
+    const allZero = data.every(d => !d.total);
+    const typeLabel = type === 'weekly' ? 'las últimas 8 semanas'
+      : type === 'monthly' ? 'los últimos 12 meses'
+      : 'los últimos 3 años';
+    const table = `<table style="width:100%;font-size:12px;border-collapse:collapse">
       <thead><tr style="background:#f1f5f9">
         <th style="padding:4px 8px;text-align:left">Período</th>
         <th style="padding:4px 8px;text-align:right">Total empresa</th>
         <th style="padding:4px 8px;text-align:right">${escapeHtml(ccName || 'C. Costo')}</th>
         ${hasSub ? `<th style="padding:4px 8px;text-align:right">${escapeHtml(subName || 'Sub CC')}</th>` : ''}
       </tr></thead>
-      <tbody>${data.map((d, idx) => `
-        <tr style="background:${idx%2?'#f8fafc':'white'};border-bottom:1px solid #e5e7eb">
-          <td style="padding:3px 8px">${d.label}</td>
+      <tbody>${data.map((d, idx) => {
+        const isCurrent = idx === data.length - 1;
+        const bg = isCurrent ? '#dbeafe' : idx%2 ? '#f8fafc' : 'white';
+        const fw = isCurrent ? '600' : 'normal';
+        return `<tr style="background:${bg};border-bottom:1px solid #e5e7eb;font-weight:${fw}">
+          <td style="padding:3px 8px">${isCurrent ? '▶ ' : ''}${d.label}</td>
           <td style="padding:3px 8px;text-align:right">$${fmtMXN(d.total)}</td>
           <td style="padding:3px 8px;text-align:right">$${fmtMXN(d.cost_center)}</td>
           ${hasSub ? `<td style="padding:3px 8px;text-align:right">${d.sub_cost_center !== null ? '$'+fmtMXN(d.sub_cost_center) : '-'}</td>` : ''}
-        </tr>`).join('')}
+        </tr>`;
+      }).join('')}
       </tbody>
     </table>`;
+    const noHistory = allZero
+      ? `<div style="margin-top:5px;color:#2563eb;font-size:11px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:4px;padding:4px 8px">Sin compras registradas en ${typeLabel}</div>`
+      : '';
+    return table + noHistory;
   };
 
   // ── Detalles (panel expandible) ───────────────────────────────────────────
@@ -2231,15 +2243,15 @@ async function approvalsView() {
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
             <div>
               <div class="small muted" style="margin-bottom:4px">Últimas 8 semanas</div>
-              ${spendTable(ctx.item_spending.weekly, cc, sub)}
+              ${spendTable(ctx.item_spending.weekly, cc, sub, 'weekly')}
             </div>
             <div>
               <div class="small muted" style="margin-bottom:4px">Últimos 12 meses</div>
-              ${spendTable(ctx.item_spending.monthly, cc, sub)}
+              ${spendTable(ctx.item_spending.monthly, cc, sub, 'monthly')}
             </div>
             <div>
               <div class="small muted" style="margin-bottom:4px">Por año</div>
-              ${spendTable(ctx.item_spending.annual, cc, sub)}
+              ${spendTable(ctx.item_spending.annual, cc, sub, 'annual')}
             </div>
           </div>
         </div>` : ''}
@@ -2249,15 +2261,15 @@ async function approvalsView() {
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
             <div>
               <div class="small muted" style="margin-bottom:4px">Últimas 8 semanas</div>
-              ${spendTable(ctx.spending.weekly, cc, sub)}
+              ${spendTable(ctx.spending.weekly, cc, sub, 'weekly')}
             </div>
             <div>
               <div class="small muted" style="margin-bottom:4px">Últimos 12 meses</div>
-              ${spendTable(ctx.spending.monthly, cc, sub)}
+              ${spendTable(ctx.spending.monthly, cc, sub, 'monthly')}
             </div>
             <div>
               <div class="small muted" style="margin-bottom:4px">Por año</div>
-              ${spendTable(ctx.spending.annual, cc, sub)}
+              ${spendTable(ctx.spending.annual, cc, sub, 'annual')}
             </div>
           </div>
         </div>
