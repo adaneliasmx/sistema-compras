@@ -125,7 +125,13 @@ router.get('/items/:id/context', allowRoles('autorizador', 'comprador', 'pagos',
     weekly: Array.from({ length: 8 }, (_, i) => {
       const to = new Date(now); to.setDate(to.getDate() - i * 7);
       const from = new Date(to); from.setDate(from.getDate() - 7);
-      return { label: `S-${i + 1}`, ...periodFn(from, to) };
+      // Número de semana ISO del inicio del período
+      const d = new Date(Date.UTC(from.getFullYear(), from.getMonth(), from.getDate()));
+      const day = d.getUTCDay() || 7;
+      d.setUTCDate(d.getUTCDate() + 4 - day);
+      const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+      const weekNum = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+      return { label: `S${weekNum}-${d.getUTCFullYear()}`, ...periodFn(from, to) };
     }).reverse(),
     monthly: Array.from({ length: 12 }, (_, i) => {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
