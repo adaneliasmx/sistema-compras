@@ -8402,6 +8402,10 @@ async function kpiView() {
     const cols    = 2 + periods.length;
     const thCols  = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111">${esc(p)}</th>`).join('');
     if (!kpi.cost_centers.length) return '<div class="muted small" style="padding:16px">Sin centros de costo activos</div>';
+    const periodTotals = periods.map((_, i) =>
+      kpi.cost_centers.reduce((sum, cc) => sum + (((cc[byKey]||[])[i])?.amount || 0), 0)
+    );
+    const grandTotal = kpi.cost_centers.reduce((sum, cc) => sum + (cc.total || 0), 0);
     return `
       <div class="table-wrap">
         <table style="font-size:12px;border-collapse:collapse;min-width:100%">
@@ -8433,6 +8437,13 @@ async function kpiView() {
                 }).join('') : ''}`;
             }).join('')}
           </tbody>
+          <tfoot>
+            <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
+              <td style="padding:7px 12px;font-weight:700;font-size:12px">TOTAL</td>
+              <td style="text-align:right;padding:7px 10px;font-weight:700">${fmt$(grandTotal)}</td>
+              ${periodTotals.map(t => `<td style="text-align:right;padding:7px 10px;font-weight:700">${t>0?fmt$(t):'—'}</td>`).join('')}
+            </tr>
+          </tfoot>
         </table>
       </div>`;
   }
