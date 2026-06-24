@@ -5954,7 +5954,7 @@ function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowR
 
   const obsPadX = 3, obsPadY = 4;
   const obsInnerW = usW - obsPadX * 2;
-  const obsFullText = `The data presented in this certificate is automatically generated from process titration records and may require additional validation by the quality department. We reserve the right to verify process information if deemed necessary. This certificate covers all materials processed through ${tipoCfg.typeOfCoating} during the period ${weekRange}. However, material conditions may be affected by the client's environment or storage conditions; therefore, any anomaly or claim must be reviewed individually using the official QR code on the packaging label FAL 01 02 Rev. 0.`;
+  const obsFullText = `The data presented in this certificate is automatically generated from process titration records and may require additional validation by the quality department. We reserve the right to verify process information if deemed necessary. This certificate covers all materials processed through ${tipoCfg.typeOfCoating} during the period ${weekRange}. However, material conditions may be affected by the client's environment, storage conditions, or handling and manipulation by third parties beyond our control; therefore, any anomaly or claim must be reviewed individually using the official QR code on the packaging label FAL 01 02 Rev. 0.`;
 
   doc.setFont('helvetica', 'normal'); doc.setFontSize(6);
   const obsWrapped = doc.splitTextToSize(obsFullText, obsInnerW);
@@ -6020,8 +6020,8 @@ function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowR
     doc.text('Electronic signature record / Registro de firma electrónica', cx, y + 46, { align: 'center' });
   }
 
-  drawSig(mL,        'Elaboration and compilation of data', 'Eng. Quality', 'LUIS RAMIREZ',       esignLR);
-  drawSig(mL + sigW, 'Review and approval',                 'Eng. Processes', 'ADAN ELIAS RAMIREZ', esignAER);
+  drawSig(mL,        'Elaboration and compilation of data', 'Quality Engineer', 'LUIS RAMIREZ',       esignLR);
+  drawSig(mL + sigW, 'Review and approval',                 'Process Engineer', 'ADAN ELIAS RAMIREZ', esignAER);
 
   // ── PIE DE PÁGINA ─────────────────────────────────────────────────────────
   doc.setDrawColor(0); doc.setLineWidth(0.4);
