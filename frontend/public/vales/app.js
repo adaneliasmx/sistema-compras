@@ -5789,16 +5789,24 @@ ${canEmit ? `
 </button>` : ''}`;
 
     if (canEmit) {
-      document.getElementById('btn-cert-pdf')?.addEventListener('click', () => {
-        generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults });
+      document.getElementById('btn-cert-pdf')?.addEventListener('click', async () => {
+        await generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults });
       });
     }
   });
 }
 
-function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults }) {
+async function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowResults }) {
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+
+  // Cargar logo de empresa
+  const logoImg = await new Promise(resolve => {
+    const img = new Image();
+    img.onload  = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = '/img/logo.png';
+  });
 
   const pgW = 215.9, pgH = 279.4;
   const mL = 14, mR = 14;
@@ -5810,14 +5818,20 @@ function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange, rowR
   doc.setDrawColor(0); doc.setLineWidth(0.5);
   doc.rect(mL, y, usW, hdrH);
 
-  // Área izquierda (logo/empresa)
+  // Área izquierda (logo empresa)
   const logoW = 54;
-  doc.setFillColor(15, 23, 42);
+  doc.setFillColor(255, 255, 255);
   doc.rect(mL, y, logoW, hdrH, 'F');
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.setTextColor(255, 255, 255);
-  doc.text('SISTEMAS INTEGRADOS', mL + logoW / 2, y + 10, { align: 'center' });
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(7);
-  doc.text('Registros de Calidad', mL + logoW / 2, y + 16, { align: 'center' });
+  if (logoImg) {
+    // Logo centrado en el área, reservando espacio para la leyenda inferior
+    const imgW = logoW - 6;
+    const imgH = imgW * (logoImg.naturalHeight / logoImg.naturalWidth);
+    const imgX = mL + (logoW - imgW) / 2;
+    const imgY = y + 2;
+    doc.addImage(logoImg, 'PNG', imgX, imgY, imgW, Math.min(imgH, hdrH - 9));
+  }
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(6); doc.setTextColor(60, 60, 60);
+  doc.text('Corporativo Cuesto S. de R.L de C.V', mL + logoW / 2, y + hdrH - 3, { align: 'center' });
 
   // Título central
   doc.setTextColor(0, 0, 0);
