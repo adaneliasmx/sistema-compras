@@ -5824,7 +5824,7 @@ async function generarCertificadoPDF({ tipoCfg, certNum, semana, anio, weekRange
   doc.rect(mL, y, logoW, hdrH, 'F');
   if (logoImg) {
     // Logo centrado en el área, reservando espacio para la leyenda inferior
-    const imgW = logoW - 6;
+    const imgW = logoW - 16;
     const imgH = imgW * (logoImg.naturalHeight / logoImg.naturalWidth);
     const imgX = mL + (logoW - imgW) / 2;
     const imgY = y + 2;
