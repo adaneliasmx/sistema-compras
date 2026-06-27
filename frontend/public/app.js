@@ -2532,7 +2532,7 @@ async function purchasesView() {
         <h3>Compras</h3>
         <div style="display:flex;gap:8px">
           <select id="poCurrency"><option>MXN</option><option>USD</option></select>
-          <button class="btn-secondary" id="expPoBtn">Exportar</button>
+          <button onclick="openExportModal()" style="background:#1d4ed8;color:white;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">⬇ Exportar Excel</button>
         </div>
       </div>
 
@@ -4573,7 +4573,6 @@ async function purchasesView() {
     } finally { btn.disabled = false; }
   };
 
-  expPoBtn.onclick = () => downloadCsv('compras_db', 'compras_db.csv', {});
   bindCommon();
   renderTab('pendientes');
 }
@@ -7749,6 +7748,279 @@ async function adminView() {
   bindCommon();
 }
 
+// ── EXPORTAR EXCEL (Auditoría + Compras) ─────────────────────────────────────
+async function openExportModal() {
+  if (document.getElementById('export-modal')) return;
+
+  const allStatuses = ['En cotización','En autorización','Autorizado','En proceso','Entregado','Facturado','Cancelado','Rechazado'];
+  let allRows = [], costCenters = [];
+  try {
+    [allRows, costCenters] = await Promise.all([
+      api('/api/audit/items?sort=req_date&order=desc&search=&status=&cc_id='),
+      api('/api/catalogs/cost-centers').catch(() => [])
+    ]);
+  } catch(e) { alert('Error al cargar datos para exportar'); return; }
+
+  const modal = document.createElement('div');
+  modal.id = 'export-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9000;display:flex;align-items:center;justify-content:center;padding:16px';
+
+  modal.innerHTML = `
+    <div style="background:white;border-radius:12px;padding:24px;width:580px;max-width:100%;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <h3 style="margin:0;font-size:15px;color:#1d4ed8">⬇ Exportar Excel — Auditoría de Compras</h3>
+        <button id="exp-close" style="background:none;border:none;cursor:pointer;font-size:20px;color:#6b7280;line-height:1">✕</button>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px">Rango de fechas</div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px">Desde:
+            <input type="date" id="exp-date-from" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"/>
+          </label>
+          <label style="font-size:12px;display:flex;align-items:center;gap:6px">Hasta:
+            <input type="date" id="exp-date-to" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px"/>
+          </label>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:#374151">Estatus</span>
+          <label style="font-size:12px;color:#6b7280;cursor:pointer;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="exp-status-all" checked> Todos
+          </label>
+        </div>
+        <div id="exp-status-list" style="display:flex;flex-wrap:wrap;gap:6px;opacity:0.4;pointer-events:none">
+          ${allStatuses.map(s => `<label style="font-size:11px;cursor:pointer;background:#f1f5f9;padding:3px 8px;border-radius:4px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="exp-status-cb" value="${escapeHtml(s)}" checked> ${escapeHtml(s)}</label>`).join('')}
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <span style="font-size:12px;font-weight:600;color:#374151">Centros de Costo</span>
+          <label style="font-size:12px;color:#6b7280;cursor:pointer;display:flex;align-items:center;gap:4px">
+            <input type="checkbox" id="exp-cc-all" checked> Todos
+          </label>
+        </div>
+        <div id="exp-cc-list" style="display:flex;flex-wrap:wrap;gap:6px;opacity:0.4;pointer-events:none">
+          ${costCenters.map(c => `<label style="font-size:11px;cursor:pointer;background:#f1f5f9;padding:3px 8px;border-radius:4px;display:flex;align-items:center;gap:4px"><input type="checkbox" class="exp-cc-cb" value="${c.id}" checked> ${escapeHtml(c.name)}</label>`).join('')}
+        </div>
+      </div>
+
+      <div style="margin-bottom:20px;background:#f8fafc;border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+        <label style="font-size:12px;font-weight:600;color:#374151;cursor:pointer;display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="exp-tables-toggle" checked> Agregar tablas dinámicas
+        </label>
+        <div id="exp-tables-list" style="margin-top:10px;display:flex;flex-direction:column;gap:6px;padding-left:22px">
+          <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="checkbox" class="exp-table-cb" value="semana" checked> Costos por semana (CC → Sub CC → Ítem)</label>
+          <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="checkbox" class="exp-table-cb" value="usuario" checked> Costos por usuario</label>
+          <label style="font-size:12px;cursor:pointer;display:flex;align-items:center;gap:6px"><input type="checkbox" class="exp-table-cb" value="proveedor" checked> Costos por proveedor</label>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px">
+        <button id="exp-download-btn" style="flex:1;background:#1d4ed8;color:white;border:none;border-radius:7px;font-size:13px;font-weight:600;padding:9px 0;cursor:pointer">⬇ Descargar Excel</button>
+        <button id="exp-cancel" style="background:#f1f5f9;color:#374151;border:1px solid #d1d5db;border-radius:7px;font-size:13px;padding:9px 16px;cursor:pointer">Cancelar</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+
+  const now = new Date();
+  document.getElementById('exp-date-from').value = `${now.getFullYear()}-01-01`;
+  document.getElementById('exp-date-to').value   = now.toISOString().slice(0, 10);
+
+  const closeModal = () => modal.remove();
+  document.getElementById('exp-close').onclick   = closeModal;
+  document.getElementById('exp-cancel').onclick  = closeModal;
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  // Toggle Todos / individual — Estatus
+  document.getElementById('exp-status-all').onchange = function() {
+    const list = document.getElementById('exp-status-list');
+    list.style.opacity = this.checked ? '0.4' : '1';
+    list.style.pointerEvents = this.checked ? 'none' : 'auto';
+    if (this.checked) document.querySelectorAll('.exp-status-cb').forEach(cb => cb.checked = true);
+  };
+  document.querySelectorAll('.exp-status-cb').forEach(cb => {
+    cb.onchange = () => {
+      const allChk = [...document.querySelectorAll('.exp-status-cb')].every(c => c.checked);
+      document.getElementById('exp-status-all').checked = allChk;
+    };
+  });
+
+  // Toggle Todos / individual — CC
+  document.getElementById('exp-cc-all').onchange = function() {
+    const list = document.getElementById('exp-cc-list');
+    list.style.opacity = this.checked ? '0.4' : '1';
+    list.style.pointerEvents = this.checked ? 'none' : 'auto';
+    if (this.checked) document.querySelectorAll('.exp-cc-cb').forEach(cb => cb.checked = true);
+  };
+  document.querySelectorAll('.exp-cc-cb').forEach(cb => {
+    cb.onchange = () => {
+      const allChk = [...document.querySelectorAll('.exp-cc-cb')].every(c => c.checked);
+      document.getElementById('exp-cc-all').checked = allChk;
+    };
+  });
+
+  // Toggle tablas dinámicas
+  document.getElementById('exp-tables-toggle').onchange = function() {
+    const list = document.getElementById('exp-tables-list');
+    list.style.opacity = this.checked ? '1' : '0.4';
+    list.style.pointerEvents = this.checked ? 'auto' : 'none';
+  };
+
+  document.getElementById('exp-download-btn').onclick = () => {
+    const dateFrom   = document.getElementById('exp-date-from').value;
+    const dateTo     = document.getElementById('exp-date-to').value;
+    const statusAll  = document.getElementById('exp-status-all').checked;
+    const ccAll      = document.getElementById('exp-cc-all').checked;
+    const addTables  = document.getElementById('exp-tables-toggle').checked;
+
+    const selStatuses = statusAll
+      ? allStatuses
+      : [...document.querySelectorAll('.exp-status-cb:checked')].map(cb => cb.value);
+    const selCcIds = ccAll
+      ? null
+      : [...document.querySelectorAll('.exp-cc-cb:checked')].map(cb => Number(cb.value));
+    const selTables = addTables
+      ? [...document.querySelectorAll('.exp-table-cb:checked')].map(cb => cb.value)
+      : [];
+
+    const filtered = allRows.filter(r => {
+      if (dateFrom && r.req_date < dateFrom) return false;
+      if (dateTo   && r.req_date > dateTo)   return false;
+      if (!selStatuses.includes(r.status))    return false;
+      if (selCcIds && !selCcIds.includes(r.cost_center_id)) return false;
+      return true;
+    });
+
+    if (!filtered.length) { alert('Sin datos para los filtros seleccionados.'); return; }
+
+    // Helper: ISO week label
+    function weekLabel(dateStr) {
+      if (!dateStr) return null;
+      const d  = new Date(dateStr + 'T12:00:00Z');
+      const dt = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      const day = dt.getUTCDay() || 7;
+      dt.setUTCDate(dt.getUTCDate() + 4 - day);
+      const ys = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+      const wn = Math.ceil((((dt - ys) / 86400000) + 1) / 7);
+      return `S${wn}-${dt.getUTCFullYear()}`;
+    }
+    function weekSortKey(wl) {
+      const m = wl.match(/^S(\d+)-(\d+)$/);
+      return m ? parseInt(m[2]) * 100 + parseInt(m[1]) : 0;
+    }
+    const weeks = [...new Set(filtered.map(r => weekLabel(r.req_date)).filter(Boolean))]
+      .sort((a, b) => weekSortKey(a) - weekSortKey(b));
+
+    function rowWAmt(r, wl) {
+      return weekLabel(r.req_date) === wl ? Number(r.total || 0) : 0;
+    }
+    function weekTotals(subset) {
+      return weeks.map(wl => subset.reduce((s, r) => s + rowWAmt(r, wl), 0));
+    }
+
+    const wb = XLSX.utils.book_new();
+
+    // ── Hoja 1: Datos ────────────────────────────────────────────
+    const wsData = XLSX.utils.aoa_to_sheet([
+      ['Folio REQ','Fecha','Solicitante','Ítem','Proveedor','Centro de Costo','Sub CC','Cantidad','Unidad','P.U.','Total','Moneda','Estatus','PO'],
+      ...filtered.map(r => [
+        r.req_folio, r.req_date, r.requester_name, r.item_name,
+        r.supplier_name || '', r.cost_center_name, r.sub_cost_center_name || '',
+        Number(r.quantity), r.unit || '', Number(r.unit_cost), Number(r.total),
+        r.currency, r.status, r.po_folio || ''
+      ])
+    ]);
+    wsData['!cols'] = [{wch:14},{wch:11},{wch:22},{wch:32},{wch:26},{wch:22},{wch:18},{wch:8},{wch:7},{wch:12},{wch:12},{wch:8},{wch:16},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsData, 'Datos');
+
+    // ── Hoja 2: Por Semana (CC > SubCC > Ítem) ───────────────────
+    if (selTables.includes('semana')) {
+      const hdr = ['Centro de Costo', 'Sub CC', 'Ítem', 'Total', ...weeks];
+      const data = [hdr];
+      const grandW = weeks.map(() => 0);
+      let grandT = 0;
+
+      // Build hierarchy
+      const ccNames = [...new Set(filtered.map(r => r.cost_center_name || 'Sin CC'))].sort();
+      ccNames.forEach(cc => {
+        const ccRows = filtered.filter(r => (r.cost_center_name || 'Sin CC') === cc);
+        const ccT = ccRows.reduce((s, r) => s + Number(r.total || 0), 0);
+        const ccW = weekTotals(ccRows);
+        data.push([cc, '', '', ccT, ...ccW]);
+        grandT += ccT; ccW.forEach((v, i) => grandW[i] += v);
+
+        const sccNames = [...new Set(ccRows.map(r => r.sub_cost_center_name || 'Sin Sub CC'))].sort();
+        sccNames.forEach(scc => {
+          const sccRows = ccRows.filter(r => (r.sub_cost_center_name || 'Sin Sub CC') === scc);
+          const sccT = sccRows.reduce((s, r) => s + Number(r.total || 0), 0);
+          const sccW = weekTotals(sccRows);
+          data.push(['', '  ' + scc, '', sccT, ...sccW]);
+
+          const itemNames = [...new Set(sccRows.map(r => r.item_name || 'Sin ítem'))].sort();
+          itemNames.forEach(item => {
+            const iRows = sccRows.filter(r => (r.item_name || 'Sin ítem') === item);
+            const iT = iRows.reduce((s, r) => s + Number(r.total || 0), 0);
+            const iW = weekTotals(iRows);
+            data.push(['', '', '    ' + item, iT, ...iW]);
+          });
+        });
+      });
+      data.push(['TOTAL', '', '', grandT, ...grandW]);
+
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{wch:26},{wch:24},{wch:38},{wch:14},...weeks.map(() => ({wch:12}))];
+      XLSX.utils.book_append_sheet(wb, ws, 'Por Semana');
+    }
+
+    // ── Hoja 3: Por Usuario ───────────────────────────────────────
+    if (selTables.includes('usuario')) {
+      const hdr = ['Solicitante', 'Total', ...weeks];
+      const data = [hdr];
+      const users = [...new Set(filtered.map(r => r.requester_name || 'Sin usuario'))].sort();
+      let grandT = 0; const grandW = weeks.map(() => 0);
+      users.forEach(u => {
+        const uRows = filtered.filter(r => (r.requester_name || 'Sin usuario') === u);
+        const t = uRows.reduce((s, r) => s + Number(r.total || 0), 0);
+        const w = weekTotals(uRows);
+        data.push([u, t, ...w]);
+        grandT += t; w.forEach((v, i) => grandW[i] += v);
+      });
+      data.push(['TOTAL', grandT, ...grandW]);
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{wch:28},{wch:14},...weeks.map(() => ({wch:12}))];
+      XLSX.utils.book_append_sheet(wb, ws, 'Por Usuario');
+    }
+
+    // ── Hoja 4: Por Proveedor ─────────────────────────────────────
+    if (selTables.includes('proveedor')) {
+      const hdr = ['Proveedor', 'Total', ...weeks];
+      const data = [hdr];
+      const supps = [...new Set(filtered.map(r => r.supplier_name || 'Sin proveedor'))].sort();
+      let grandT = 0; const grandW = weeks.map(() => 0);
+      supps.forEach(s => {
+        const sRows = filtered.filter(r => (r.supplier_name || 'Sin proveedor') === s);
+        const t = sRows.reduce((acc, r) => acc + Number(r.total || 0), 0);
+        const w = weekTotals(sRows);
+        data.push([s, t, ...w]);
+        grandT += t; w.forEach((v, i) => grandW[i] += v);
+      });
+      data.push(['TOTAL', grandT, ...grandW]);
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      ws['!cols'] = [{wch:32},{wch:14},...weeks.map(() => ({wch:12}))];
+      XLSX.utils.book_append_sheet(wb, ws, 'Por Proveedor');
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Auditoria-Compras-${today}.xlsx`);
+    closeModal();
+  };
+}
+
 // ── AUDITORÍA ────────────────────────────────────────────────────────────────
 async function auditView() {
   const fmtMXN = v => Number(v || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 });
@@ -7785,6 +8057,7 @@ async function auditView() {
       <div class="card section">
         <div class="module-title" style="margin-bottom:12px">
           <h3 style="margin:0">🔎 Auditoría de Compras <span style="background:#6366f1;color:white;border-radius:10px;padding:2px 10px;font-size:13px;margin-left:8px">${rows.length}</span></h3>
+          <button onclick="openExportModal()" style="background:#1d4ed8;color:white;border:none;border-radius:7px;padding:6px 14px;font-size:12px;font-weight:600;cursor:pointer">⬇ Exportar Excel</button>
         </div>
 
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;align-items:center">
