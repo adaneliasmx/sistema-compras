@@ -213,7 +213,7 @@ function ordenCard(o) {
             ${o.parte_nombre && o.parte_nombre!=='-' ? `<span style="color:#6b7280;font-size:12px"> / ${escHtml(o.parte_nombre)}</span>` : ''}
           </div>
           ${row('Línea', escHtml(o.departamento_nombre))}
-          ${row('Solicitante', escHtml(o.solicitante_nombre))}
+          ${row('Solicitante', escHtml(o.solicitante_nombre || '—'))}
           ${row('Motivo del paro', escHtml(o.motivo_paro))}
           ${row('Descripción falla', escHtml(descFalla))}
           ${row('Apertura', `${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? ' ' + o.hora_solicitud : ''} · ⏱ ${tiempoTranscurrido}`)}
@@ -302,10 +302,10 @@ function renderOrdenesTable(ordenes, tecnicos) {
         ${ordenes.map(o => `
           <tr>
             <td style="font-family:monospace;font-size:11px;color:#2563eb">${escHtml(o.folio)}</td>
-            <td style="font-size:11px">${o.tipo === 'correctivo_urgente' ? '🚨 Urgente' : o.tipo === 'programado' ? '🗓 Prog.' : '📝 Solicitud'}</td>
+            <td style="font-size:11px">${o.tipo === 'correctivo_urgente' ? '🚨 Urgente' : o.tipo === 'programado' ? '🗓 Prog.' : '📝 Solicitud'}${o.origen_produccion ? `<br><span style="display:inline-block;margin-top:3px;font-size:10px;background:#dbeafe;color:#1d4ed8;border-radius:4px;padding:1px 5px" title="Generada automáticamente desde producción">⚙ Auto</span>` : ''}</td>
             <td style="font-size:12px"><b>${escHtml(o.equipo_nombre)}</b>${o.parte_nombre&&o.parte_nombre!=='-'?`<br><span style="color:#6b7280">${escHtml(o.parte_nombre)}</span>`:''}</td>
             <td style="font-size:12px;max-width:200px">${(() => { const d = o.descripcion_falla || o.descripcion || ''; return escHtml(d.slice(0,90)) + (d.length>90?'…':''); })()}</td>
-            <td style="font-size:12px">${escHtml(o.solicitante_nombre)}</td>
+            <td style="font-size:12px">${escHtml(o.solicitante_nombre || '—')}</td>
             <td style="font-size:11px;white-space:nowrap">${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? `<br><span style="color:#6b7280">${escHtml(o.hora_solicitud)}</span>` : ''}</td>
             <td>${urgenciaBadge(o.nivel_urgencia)}</td>
             <td style="font-size:12px">${o.tecnico_nombre ? escHtml(o.tecnico_nombre) : '<span style="color:#9ca3af">—</span>'}</td>
@@ -1051,7 +1051,7 @@ async function modalDetalleOrden(ordenId) {
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;background:#f8fafc;border-radius:8px;padding:12px;font-size:12px;margin-bottom:14px">
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Departamento</div><b>${escHtml(o.departamento_nombre||'—')}</b></div>
-      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Solicitante</div>${escHtml(o.solicitante_nombre)}</div>
+      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Solicitante</div>${escHtml(o.solicitante_nombre || '—')}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Equipo</div><b>${escHtml(o.equipo_nombre)}</b></div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Parte</div>${escHtml(o.parte_nombre||'—')}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Fecha solicitud</div>${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}</div>

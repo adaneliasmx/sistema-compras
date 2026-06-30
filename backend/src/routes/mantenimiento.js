@@ -32,6 +32,11 @@ function enrichOrden(o, db, dbMain) {
   const cerradoPor = o.cerrada_por_user_id
     ? (dbMain.users || []).find(u => u.id === o.cerrada_por_user_id) || {}
     : {};
+  // Fallback: resolve solicitante_nombre from solicitante_user_id if not stored
+  const solicitanteNombre = o.solicitante_nombre ||
+    (o.solicitante_user_id
+      ? ((dbMain.users || []).find(u => u.id === o.solicitante_user_id) || {}).full_name || null
+      : null);
   return {
     ...o,
     equipo_nombre: equipo.nombre || '-',
@@ -39,6 +44,7 @@ function enrichOrden(o, db, dbMain) {
     parte_nombre: parte.nombre || '-',
     tecnico_nombre: tecnico.full_name || null,
     cerrada_por_nombre: cerradoPor.full_name || null,
+    solicitante_nombre: solicitanteNombre,
   };
 }
 
