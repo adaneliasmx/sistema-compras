@@ -202,20 +202,23 @@ async function viewUrgencias(el) {
 function ordenCard(o) {
   const tiempoTranscurrido = o.created_at ? timeSince(o.created_at) : '—';
   const isAdmin = state.user.mant_role === 'admin';
+  const descFalla = o.descripcion_falla || o.descripcion || '—';
+  const row = (label, val) => val ? `<div style="display:flex;gap:6px;font-size:12px;margin-bottom:3px"><span style="color:#6b7280;min-width:110px">${label}:</span><span style="color:#111;font-weight:500">${val}</span></div>` : '';
   return `
     <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid ${o.nivel_urgencia==='alta'?'#dc2626':o.nivel_urgencia==='media'?'#f59e0b':'#22c55e'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
-        <div>
-          <div style="font-weight:700;font-size:15px;margin-bottom:4px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:700;font-size:15px;margin-bottom:8px">
             ${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}
             ${o.parte_nombre && o.parte_nombre!=='-' ? `<span style="color:#6b7280;font-size:12px"> / ${escHtml(o.parte_nombre)}</span>` : ''}
           </div>
-          <div style="font-size:12px;color:#6b7280;margin-bottom:6px">
-            Solicitado por <b>${escHtml(o.solicitante_nombre)}</b> · ${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}
-            · ⏱ <b>${tiempoTranscurrido}</b>
-          </div>
-          <div style="font-size:13px;color:#374151;margin-bottom:8px">${escHtml(o.descripcion_falla)}</div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          ${row('Línea', escHtml(o.departamento_nombre))}
+          ${row('Solicitante', escHtml(o.solicitante_nombre))}
+          ${row('Motivo del paro', escHtml(o.motivo_paro))}
+          ${row('Descripción falla', escHtml(descFalla))}
+          ${row('Apertura', `${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? ' ' + o.hora_solicitud : ''} · ⏱ ${tiempoTranscurrido}`)}
+          ${o.fecha_cierre ? row('Cierre', `${fmtDate(o.fecha_cierre)}${o.hora_cierre ? ' ' + o.hora_cierre : ''}`) : ''}
+          <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
             ${urgenciaBadge(o.nivel_urgencia)}
             ${statusBadge(o.status)}
             ${o.maquina_parada ? '<span class="urgencia-badge urgencia-alta">⛔ Máq. parada</span>' : ''}
@@ -301,9 +304,9 @@ function renderOrdenesTable(ordenes, tecnicos) {
             <td style="font-family:monospace;font-size:11px;color:#2563eb">${escHtml(o.folio)}</td>
             <td style="font-size:11px">${o.tipo === 'correctivo_urgente' ? '🚨 Urgente' : o.tipo === 'programado' ? '🗓 Prog.' : '📝 Solicitud'}</td>
             <td style="font-size:12px"><b>${escHtml(o.equipo_nombre)}</b>${o.parte_nombre&&o.parte_nombre!=='-'?`<br><span style="color:#6b7280">${escHtml(o.parte_nombre)}</span>`:''}</td>
-            <td style="font-size:12px;max-width:180px">${escHtml((o.descripcion_falla||'').slice(0,80))}${(o.descripcion_falla||'').length>80?'…':''}</td>
+            <td style="font-size:12px;max-width:200px">${(() => { const d = o.descripcion_falla || o.descripcion || ''; return escHtml(d.slice(0,90)) + (d.length>90?'…':''); })()}</td>
             <td style="font-size:12px">${escHtml(o.solicitante_nombre)}</td>
-            <td style="font-size:11px;white-space:nowrap">${fmtDate(o.fecha_solicitud)}</td>
+            <td style="font-size:11px;white-space:nowrap">${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? `<br><span style="color:#6b7280">${escHtml(o.hora_solicitud)}</span>` : ''}</td>
             <td>${urgenciaBadge(o.nivel_urgencia)}</td>
             <td style="font-size:12px">${o.tecnico_nombre ? escHtml(o.tecnico_nombre) : '<span style="color:#9ca3af">—</span>'}</td>
             <td>${statusBadge(o.status)}</td>

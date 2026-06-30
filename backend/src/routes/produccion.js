@@ -1261,6 +1261,8 @@ router.post('/vincular-ot', produccionAllowRoles('produccion'), (req, res) => {
     equipo_id: equipo_id ? Number(equipo_id) : null,
     parte_equipo_id: null,
     descripcion: descripcion_falla || `Paro en ${linea.toUpperCase()}: ${paro.motivo}`,
+    descripcion_falla: descripcion_falla || '',
+    motivo_paro: paro.motivo || null,
     departamento_nombre: linea.toUpperCase(),
     departamento_id: null,
     solicitante_user_id: req.prodUser?.id || null,
