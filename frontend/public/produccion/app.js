@@ -2351,8 +2351,10 @@ function openModalParoBaker(catalogo, onDone, linea = 'baker') {
 
     // Validar OT si aplica
     if (integMant && afectaEf) {
-      const otDesc = document.getElementById('bkp-ot-descripcion')?.value?.trim();
-      if (!otDesc) { alert('Describe la falla para generar la orden de mantenimiento'); return; }
+      const otEquipoBk = document.getElementById('bkp-ot-equipo')?.value;
+      const otDesc     = document.getElementById('bkp-ot-descripcion')?.value?.trim();
+      if (!otEquipoBk) { alert('Selecciona el equipo afectado para generar la orden de mantenimiento'); return; }
+      if (!otDesc)     { alert('Describe la falla para generar la orden de mantenimiento'); return; }
     }
 
     const subSel    = document.getElementById('bkp-submotivo');
@@ -3010,8 +3012,10 @@ function openModalParo(linea, catalogo, onDone) {
 
     // Validar OT si aplica
     if (integMant && afectaEf) {
-      const otDesc = document.getElementById('mp-ot-descripcion')?.value?.trim();
-      if (!otDesc) { alert('Describe la falla para generar la orden de mantenimiento'); return; }
+      const otEquipo = document.getElementById('mp-ot-equipo')?.value;
+      const otDesc   = document.getElementById('mp-ot-descripcion')?.value?.trim();
+      if (!otEquipo) { alert('Selecciona el equipo afectado para generar la orden de mantenimiento'); return; }
+      if (!otDesc)   { alert('Describe la falla para generar la orden de mantenimiento'); return; }
     }
 
     const btn = document.getElementById('mp-submit');

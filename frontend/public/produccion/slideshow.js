@@ -1059,9 +1059,19 @@
     } catch(e) {}
   }
 
-  function startPollUrgencias() {
-    pollUrgencias();
+  async function initPollUrgencias() {
+    // Carga inicial: verificar OTs urgentes actualmente abiertas (independiente de cuándo se cargó la página)
+    try {
+      const abiertas = await apiFetch('/urgencias-mant?activas=1');
+      if (Array.isArray(abiertas) && abiertas.length > 0) {
+        showAlertaMant(abiertas);
+      }
+    } catch(e) {}
     setInterval(pollUrgencias, 30 * 1000);
+  }
+
+  function startPollUrgencias() {
+    initPollUrgencias();
   }
 
   function startDataRefresh() {

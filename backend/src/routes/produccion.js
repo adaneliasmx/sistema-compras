@@ -245,6 +245,7 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
 });
 
 // GET /urgencias-mant — OTs urgentes para alerta en pizarrón (usa token producción)
+// ?activas=1  → todas las OTs urgentes actualmente abiertas (para carga inicial del pizarrón)
 // ?desde=ISO  → solo las nuevas desde ese timestamp
 // ?ids=1,2,3  → verifica cuáles de esos IDs siguen abiertas
 router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => {
@@ -253,20 +254,19 @@ router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => 
     return res.json([]);
   }
   const ordenes = mdb.ordenes_mantenimiento || [];
+  const toDto = o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at });
+  // Modo activas: todas las OTs urgentes abiertas (sin filtro de fecha)
+  if (req.query.activas) {
+    return res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta').map(toDto));
+  }
   // Modo check: ¿siguen abiertas estas IDs?
   if (req.query.ids) {
     const ids = req.query.ids.split(',').map(Number).filter(Boolean);
-    const activas = ordenes
-      .filter(o => ids.includes(o.id) && o.status === 'abierta')
-      .map(o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at }));
-    return res.json(activas);
+    return res.json(ordenes.filter(o => ids.includes(o.id) && o.status === 'abierta').map(toDto));
   }
   // Modo normal: nuevas desde timestamp
   const desde = req.query.desde || new Date(Date.now() - 60 * 1000).toISOString();
-  const nuevas = ordenes
-    .filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= desde)
-    .map(o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at }));
-  res.json(nuevas);
+  res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= desde).map(toDto));
 });
 
 // PATCH /ot/:id/asignar-tecnico — asigna técnico a OT existente sin cerrarla
@@ -1263,7 +1263,8 @@ router.post('/vincular-ot', produccionAllowRoles('produccion'), (req, res) => {
     descripcion: descripcion_falla || `Paro en ${linea.toUpperCase()}: ${paro.motivo}`,
     departamento_nombre: linea.toUpperCase(),
     departamento_id: null,
-    solicitante_user_id: null,
+    solicitante_user_id: req.prodUser?.id || null,
+    solicitante_nombre: req.prodUser?.nombre || null,
     tecnico_asignado_id: null,
     fecha_solicitud: now.slice(0, 10),
     fecha_requerida: null,
