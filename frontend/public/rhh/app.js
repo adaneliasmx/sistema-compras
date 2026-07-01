@@ -4038,7 +4038,8 @@ async function buildEvalSessionTab(sessions, forms) {
 }
 
 async function buildEvalFormsTab(forms) {
-  const selectedPosId = window._evalFormPosId || (state.positions[0] && state.positions[0].id);
+  if (!window._evalFormPosId && state.positions[0]) window._evalFormPosId = state.positions[0].id;
+  const selectedPosId = window._evalFormPosId;
   let formHtml = '';
   if (selectedPosId) {
     const form = forms.find(f => f.position_id === Number(selectedPosId));
