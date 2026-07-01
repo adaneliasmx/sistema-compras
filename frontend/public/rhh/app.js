@@ -105,6 +105,12 @@ function fmtDateDisplay(str) {
   return `${d}/${m}/${y}`;
 }
 
+// ── Escape HTML ───────────────────────────────────────────────────────────────
+function escHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
 // ── API helper ────────────────────────────────────────────────────────────────
 async function api(url, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
