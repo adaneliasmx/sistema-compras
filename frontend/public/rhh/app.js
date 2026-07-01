@@ -3923,446 +3923,522 @@ function exportHistorialCSV(employeeId) {
 // EVALUACIONES
 // ══════════════════════════════════════════════════════════════════════════════
 
-let evalTab = 'periodos';
+let evalTab = 'sesion';
+let evalSessionId = null;
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EVALUACIONES — Vista RH/Admin
+// ══════════════════════════════════════════════════════════════════════════════
 
 async function evaluacionesView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando evaluaciones...</div>', 'evaluaciones');
 
   try {
-    const [periods, templates] = await Promise.all([
-      api('/api/rhh/evaluations/periods'),
-      api('/api/rhh/evaluations/templates')
+    const [sessions, forms] = await Promise.all([
+      api('/api/rhh/evaluations/sessions'),
+      api('/api/rhh/evaluations/forms')
     ]);
+    if (!evalSessionId && sessions.length > 0) evalSessionId = sessions[sessions.length - 1].id;
 
-    const tabContent = evalTab === 'periodos'
-      ? await buildPeriodosTab(periods || [], templates || [])
-      : evalTab === 'plantillas'
-      ? buildPlantillasTab(templates || [])
-      : await buildResultadosTab(periods || []);
+    const tabContent = evalTab === 'sesion'
+      ? await buildEvalSessionTab(sessions || [], forms || [])
+      : await buildEvalFormsTab(forms || []);
 
     const content = `
-      <div class="module-title">
-        <h2>⭐ Evaluaciones de Desempeño</h2>
-      </div>
+      <div class="module-title"><h2>⭐ Evaluaciones de Desempeño</h2></div>
       <div class="tabs">
-        <button class="tab-btn ${evalTab==='periodos'?'active':''}" onclick="evalTab='periodos';evaluacionesView()">📅 Periodos</button>
-        <button class="tab-btn ${evalTab==='plantillas'?'active':''}" onclick="evalTab='plantillas';evaluacionesView()">📋 Plantillas</button>
-        <button class="tab-btn ${evalTab==='resultados'?'active':''}" onclick="evalTab='resultados';evaluacionesView()">📊 Resultados</button>
+        <button class="tab-btn ${evalTab==='sesion'?'active':''}" onclick="evalTab='sesion';evaluacionesView()">📋 Sesión</button>
+        <button class="tab-btn ${evalTab==='formularios'?'active':''}" onclick="evalTab='formularios';evaluacionesView()">📄 Formularios por Puesto</button>
       </div>
-      ${tabContent}
-    `;
+      ${tabContent}`;
     el.innerHTML = shell(content, 'evaluaciones');
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'evaluaciones');
   }
 }
 
-async function buildPeriodosTab(periods, templates) {
-  const empOpts = state.employees.map(e =>
-    `<option value="${e.id}">${e.full_name}</option>`).join('');
-  const tplOpts = templates.map(t =>
-    `<option value="${t.id}">${t.name}</option>`).join('');
-  const userOpts = state.employees.map(e =>
-    `<option value="${e.id}">${e.full_name}</option>`).join('');
-
-  const STATUS_LABEL = { open: 'Abierto', closed: 'Cerrado', draft: 'Borrador' };
-
-  const periodsHtml = periods.length === 0
-    ? '<div class="empty-state"><div class="empty-icon">📅</div><p>No hay periodos registrados</p></div>'
-    : periods.map(p => {
-        const completedCount = (p.evaluations || []).filter(e => e.completed).length;
-        const totalCount = (p.evaluations || []).length;
-        return `
-          <div class="card" style="margin-bottom:12px;padding:16px;border-left:4px solid ${p.status==='closed'?'#059669':'#f59e0b'};">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <strong>${p.name}</strong>
-              <span class="badge">${STATUS_LABEL[p.status] || p.status}</span>
-            </div>
-            <div class="small muted">${fmtDateDisplay(p.start_date)} → ${fmtDateDisplay(p.end_date)}</div>
-            <div class="small muted" style="margin-top:4px;">Evaluaciones: ${completedCount}/${totalCount} completadas</div>
-            ${p.status === 'closed' || p.status === 'open' ? `
-              <div style="display:flex;gap:12px;margin-top:10px;flex-wrap:wrap;align-items:center;">
-                <label style="font-weight:normal;font-size:13px;">
-                  Calidad cumplida:
-                  <select onchange="updatePeriodo(${p.id},{quality_met:this.value==='true'})" style="font-size:13px;padding:3px 6px;">
-                    <option value="true" ${p.quality_met===true?'selected':''}>Sí</option>
-                    <option value="false" ${p.quality_met===false?'selected':''}>No</option>
-                    <option value="null" ${p.quality_met===null?'selected':''}>—</option>
-                  </select>
-                </label>
-                <label style="font-weight:normal;font-size:13px;">
-                  Reclamos cumplidos:
-                  <select onchange="updatePeriodo(${p.id},{claims_met:this.value==='true'})" style="font-size:13px;padding:3px 6px;">
-                    <option value="true" ${p.claims_met===true?'selected':''}>Sí</option>
-                    <option value="false" ${p.claims_met===false?'selected':''}>No</option>
-                    <option value="null" ${p.claims_met===null?'selected':''}>—</option>
-                  </select>
-                </label>
-                ${p.status === 'open' ? `<button class="btn-ghost" style="font-size:12px;" onclick="updatePeriodo(${p.id},{status:'closed'})">🔒 Cerrar periodo</button>` : ''}
-              </div>` : ''}
-          </div>`;
-      }).join('');
-
+async function buildEvalSessionTab(sessions, forms) {
+  const sessionOpts = sessions.map(s =>
+    `<option value="${s.id}" ${s.id===evalSessionId?'selected':''}>${escHtml(s.name)} (${s.status==='open'?'Abierta':'Cerrada'})</option>`
+  ).join('');
+  let session = null;
+  if (evalSessionId) {
+    try { session = await api(`/api/rhh/evaluations/sessions/${evalSessionId}`); } catch(e) {}
+  }
+  const supervisorUsers = (state.rhhUsers || []).filter(u => u.role === 'supervisor');
+  const supOptsBase = '<option value="">— Sin asignar —</option>' +
+    supervisorUsers.map(u => `<option value="${u.id}">${escHtml(u.full_name)}</option>`).join('');
+  let entriesHtml = '<div class="card section"><div class="empty-state"><p>Selecciona o crea una sesión</p></div></div>';
+  if (session) {
+    const employees = state.employees;
+    const entryRows = employees.map(emp => {
+      const entry = (session.entries || []).find(e => e.employee_id === emp.id);
+      const pos = state.positions.find(p => p.id === emp.position_id);
+      const isSaved = entry && entry.saved;
+      const supOpts = supOptsBase.replace(`value="${entry && entry.evaluador_id}"`, `value="${entry && entry.evaluador_id}" selected`);
+      const evalSel = `<select id="ev-eval-${emp.id}" style="font-size:12px;padding:3px 6px;min-width:120px;"${isSaved?' disabled':''}>${supOpts}</select>`;
+      const numField = (field, val) => {
+        const hasVal = val !== null && val !== undefined;
+        return `<input type="number" id="ev-${field}-${emp.id}" min="0" value="${hasVal?val:''}" placeholder="—" style="width:55px;font-size:12px;padding:3px 5px;text-align:center;${isSaved?'background:#f0fdf4;':''}" ${isSaved?'disabled':''}>`;
+      };
+      return `<tr id="ev-row-${emp.id}" style="${isSaved?'background:#f0fdf4;':''}">
+        <td style="font-size:13px;font-weight:600">${escHtml(emp.full_name)}</td>
+        <td style="font-size:12px;color:#6b7280">${escHtml(pos?pos.name:'—')}</td>
+        <td>${evalSel}</td>
+        <td style="text-align:center">${numField('asis', entry?entry.asistencias:undefined)}</td>
+        <td style="text-align:center">${numField('falt', entry?entry.faltas:undefined)}</td>
+        <td style="text-align:center">${numField('ret', entry?entry.retardos:undefined)}</td>
+        <td style="text-align:center">${numField('acta', entry?entry.actas:undefined)}</td>
+        <td style="text-align:center">${numField('amon', entry?entry.amonestaciones:undefined)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn-ghost" style="font-size:11px;padding:3px 8px;" onclick="evalRellenar(${evalSessionId},${emp.id})" title="Datos del sistema">🔄 Rellenar</button>
+          ${!isSaved
+            ? `<button class="btn-primary" style="font-size:11px;padding:3px 8px;" onclick="evalGuardarFila(${evalSessionId},${emp.id})">💾 Guardar</button>`
+            : `<button class="btn-ghost" style="font-size:11px;padding:3px 8px;" onclick="evalEditarFila(${emp.id})">✏️ Editar</button>`}
+        </td>
+      </tr>`;
+    }).join('');
+    const savedCount = (session.entries || []).filter(e => e.saved).length;
+    entriesHtml = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="small muted">Progreso: <strong>${savedCount}/${employees.length}</strong> empleados guardados</div>
+        ${session.status==='open'
+          ? `<button class="btn-ghost" style="font-size:12px;" onclick="cerrarSesion(${session.id})">🔒 Cerrar sesión</button>`
+          : '<span class="badge" style="background:#059669;">✓ Cerrada</span>'}
+      </div>
+      <div class="card section table-wrap">
+        <table><thead><tr>
+          <th>Trabajador</th><th>Puesto</th><th>Evaluador</th>
+          <th style="text-align:center">Asistencias</th><th style="text-align:center">Faltas</th>
+          <th style="text-align:center">Retardos</th><th style="text-align:center">Actas Adm.</th>
+          <th style="text-align:center">Amonest.</th><th>Acciones</th>
+        </tr></thead>
+        <tbody>${entryRows}</tbody>
+        </table>
+      </div>`;
+  }
   return `
     <div class="card section" style="margin-bottom:16px;">
-      <h3>Crear nuevo periodo</h3>
-      <div class="row">
-        <div><label>Nombre *</label><input id="ep-name" placeholder="Ej: Marzo 2026" /></div>
-        <div><label>Fecha inicio *</label><input id="ep-start" type="date" /></div>
-      </div>
-      <div class="row">
-        <div><label>Fecha fin *</label><input id="ep-end" type="date" /></div>
-      </div>
-      <h4 style="margin:12px 0 8px;">Asignaciones (evaluador → evaluado)</h4>
-      <div id="ep-assignments" style="margin-bottom:8px;"></div>
-      <button class="btn-ghost" onclick="addEpAssignment('${empOpts.replace(/'/g,"\\'")}','${tplOpts.replace(/'/g,"\\'")}','${userOpts.replace(/'/g,"\\'")}')">+ Agregar asignación</button>
-      <div class="actions" style="margin-top:12px;">
-        <button class="btn-primary" onclick="savePeriodo()">💾 Guardar periodo</button>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-weight:600;">Sesión:</label>
+        ${sessions.length>0
+          ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="evalSessionId=Number(this.value);evalTab='sesion';evaluacionesView()"><option value="">Seleccionar...</option>${sessionOpts}</select>`
+          : '<span class="small muted">Sin sesiones aún</span>'}
+        <button class="btn-primary" style="font-size:13px;" onclick="openNuevaSesionModal()">+ Nueva sesión</button>
       </div>
     </div>
-    <div>${periodsHtml}</div>
-  `;
+    ${entriesHtml}`;
 }
 
-let _epEmpOpts = '', _epTplOpts = '', _epUserOpts = '';
-function addEpAssignment(empOpts, tplOpts, userOpts) {
-  if (empOpts) { _epEmpOpts = empOpts; _epTplOpts = tplOpts; _epUserOpts = userOpts; }
-  const container = document.getElementById('ep-assignments');
-  if (!container) return;
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.style.cssText = 'margin-bottom:8px;align-items:center;';
-  row.innerHTML = `
-    <div><label style="font-size:12px;">Evaluador</label>
-      <select class="ep-evaluator" style="font-size:13px;"><option value="">—</option>${_epUserOpts}</select></div>
-    <div><label style="font-size:12px;">Evaluado</label>
-      <select class="ep-employee" style="font-size:13px;"><option value="">—</option>${_epEmpOpts}</select></div>
-    <div><label style="font-size:12px;">Plantilla</label>
-      <select class="ep-template" style="font-size:13px;"><option value="">—</option>${_epTplOpts}</select></div>
-    <div style="align-self:flex-end;"><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="this.closest('.row').remove()">✕</button></div>
-  `;
-  container.appendChild(row);
-}
-
-async function savePeriodo() {
-  const name = document.getElementById('ep-name')?.value?.trim();
-  const start_date = document.getElementById('ep-start')?.value;
-  const end_date = document.getElementById('ep-end')?.value;
-  if (!name || !start_date || !end_date) {
-    toast('Nombre, fecha inicio y fecha fin son requeridos', 'warning');
-    return;
-  }
-  const evaluations = [];
-  document.querySelectorAll('#ep-assignments .row').forEach(row => {
-    const ev = row.querySelector('.ep-evaluator')?.value;
-    const emp = row.querySelector('.ep-employee')?.value;
-    const tpl = row.querySelector('.ep-template')?.value;
-    if (ev && emp && tpl) {
-      evaluations.push({ evaluator_id: Number(ev), employee_id: Number(emp), template_id: Number(tpl) });
-    }
-  });
-  try {
-    await api('/api/rhh/evaluations/periods', {
-      method: 'POST',
-      body: JSON.stringify({ name, start_date, end_date, evaluations })
-    });
-    toast('Periodo creado');
-    evaluacionesView();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
-
-async function updatePeriodo(id, body) {
-  try {
-    await api(`/api/rhh/evaluations/periods/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify(body)
-    });
-    toast('Periodo actualizado');
-    evaluacionesView();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
-}
-
-function buildPlantillasTab(templates) {
-  const FIELD_TYPES = { score_1_5: 'Puntuación 1-5', score_1_10: 'Puntuación 1-10', boolean: 'Sí/No', text: 'Texto' };
-
-  const tplList = templates.length === 0
-    ? '<div class="empty-state"><div class="empty-icon">📋</div><p>No hay plantillas registradas</p></div>'
-    : templates.map(t => `
-        <div class="card" style="margin-bottom:10px;padding:14px;">
-          <strong>${t.name}</strong>
-          ${t.position_id ? `<span class="small muted"> — ${state.positions.find(p=>p.id===t.position_id)?.name||''}</span>` : ''}
-          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">
-            ${(t.fields||[]).map(f => `<span class="badge">${f.label} (${f.weight}%)</span>`).join('')}
+async function buildEvalFormsTab(forms) {
+  const selectedPosId = window._evalFormPosId || (state.positions[0] && state.positions[0].id);
+  let formHtml = '';
+  if (selectedPosId) {
+    const form = forms.find(f => f.position_id === Number(selectedPosId));
+    window._evalFormItems = (form && form.items || []).map(i => Object.assign({}, i));
+    window._evalFormId = form ? form.id : null;
+    const items = window._evalFormItems;
+    const VPTS = { alto:5, medio:3, bajo:1 };
+    const totalPts = items.reduce((s,i) => s+(VPTS[i.valor]||0), 0);
+    const itemRows = items.map((it, idx) => `
+      <tr>
+        <td style="font-size:13px">${escHtml(it.name)}</td>
+        <td style="text-align:center">
+          <select onchange="window._evalFormItems[${idx}].valor=this.value" style="font-size:12px;padding:3px;">
+            <option value="alto" ${it.valor==='alto'?'selected':''}>Alto (5pts)</option>
+            <option value="medio" ${it.valor==='medio'?'selected':''}>Medio (3pts)</option>
+            <option value="bajo" ${it.valor==='bajo'?'selected':''}>Bajo (1pt)</option>
+          </select>
+        </td>
+        <td style="text-align:center">
+          <select onchange="window._evalFormItems[${idx}].tipo=this.value" style="font-size:12px;padding:3px;">
+            <option value="actividades_area" ${it.tipo==='actividades_area'?'selected':''}>Actividades de Área</option>
+            <option value="5s_seguridad_limpieza" ${it.tipo==='5s_seguridad_limpieza'?'selected':''}>5'S, Seg. y Limpieza</option>
+            <option value="conducta" ${it.tipo==='conducta'?'selected':''}>Conducta</option>
+          </select>
+        </td>
+        <td style="text-align:center;font-weight:700;color:#2563eb">${VPTS[it.valor]||0} pts</td>
+        <td><button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="evalDeleteItem(${idx})">✕</button></td>
+      </tr>`).join('');
+    formHtml = `
+      <div class="card section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <h4 style="margin:0">Ítems — Total: <strong style="color:#2563eb">${totalPts} pts</strong></h4>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-ghost" style="font-size:13px;" onclick="evalAddItem()">+ Agregar ítem</button>
+            <button class="btn-primary" style="font-size:13px;" onclick="evalSaveForm(${form?form.id:0},${selectedPosId})">💾 Guardar formulario</button>
           </div>
-        </div>`
-      ).join('');
-
-  const posOpts = state.positions.map(p =>
-    `<option value="${p.id}">${p.name}</option>`).join('');
-
+        </div>
+        ${items.length===0
+          ? '<div class="empty-state"><p>Sin ítems. Agrega el primero.</p></div>'
+          : `<table><thead><tr><th>Ítem</th><th style="text-align:center">Valor</th><th style="text-align:center">Tipo</th><th style="text-align:center">Pts</th><th></th></tr></thead>
+              <tbody id="eval-items-tbody">${itemRows}</tbody>
+              <tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="3">TOTAL</td><td style="text-align:center;color:#2563eb">${totalPts}</td><td></td></tr></tfoot>
+             </table>`}
+      </div>`;
+  }
   return `
     <div class="card section" style="margin-bottom:16px;">
-      <h3>Nueva plantilla de evaluación</h3>
-      <div class="row">
-        <div><label>Nombre *</label><input id="tpl-name" placeholder="Ej: Evaluación Operativo" /></div>
-        <div><label>Puesto (opcional)</label>
-          <select id="tpl-pos"><option value="">Todos los puestos</option>${posOpts}</select>
-        </div>
-      </div>
-      <h4 style="margin:12px 0 8px;">Campos de evaluación</h4>
-      <div id="tpl-fields"></div>
-      <button class="btn-ghost" onclick="addTplField()">+ Agregar campo</button>
-      <div class="actions" style="margin-top:12px;">
-        <button class="btn-primary" onclick="saveTemplate()">💾 Guardar plantilla</button>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="font-weight:600;">Puesto:</label>
+        <select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="window._evalFormPosId=Number(this.value);evalTab='formularios';evaluacionesView()">
+          <option value="">Seleccionar puesto...</option>
+          ${state.positions.map(p => { const hf=forms.some(f=>f.position_id===p.id); return `<option value="${p.id}" ${p.id===Number(selectedPosId)?'selected':''}>${escHtml(p.name)}${hf?' ✓':''}</option>`; }).join('')}
+        </select>
       </div>
     </div>
-    <div>${tplList}</div>
-  `;
+    ${formHtml}`;
 }
 
-function addTplField() {
-  const container = document.getElementById('tpl-fields');
-  if (!container) return;
-  const idx = container.children.length;
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.style.cssText = 'margin-bottom:8px;align-items:center;';
+function evalAddItem() {
+  if (!window._evalFormPosId) { toast('Selecciona un puesto primero', 'warning'); return; }
+  if (!window._evalFormItems) window._evalFormItems = [];
+  const tbody = document.getElementById('eval-items-tbody');
+  if (!tbody) { evaluacionesView(); return; }
+  const idx = window._evalFormItems.length;
+  window._evalFormItems.push({ id: 0, name: '', valor: 'alto', tipo: 'actividades_area' });
+  const row = document.createElement('tr');
   row.innerHTML = `
-    <div><label style="font-size:12px;">Etiqueta</label><input class="tpl-f-label" placeholder="Ej: Puntualidad" style="font-size:13px;" /></div>
-    <div><label style="font-size:12px;">Tipo</label>
-      <select class="tpl-f-type" style="font-size:13px;">
-        <option value="score_1_5">Puntuación 1-5</option>
-        <option value="score_1_10">Puntuación 1-10</option>
-        <option value="boolean">Sí/No</option>
-        <option value="text">Texto</option>
-      </select></div>
-    <div><label style="font-size:12px;">Peso %</label><input class="tpl-f-weight" type="number" min="0" max="100" value="0" style="font-size:13px;width:70px;" /></div>
-    <div style="align-self:flex-end;"><button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="this.closest('.row').remove()">✕</button></div>
-  `;
-  container.appendChild(row);
+    <td><input class="eval-item-name" data-idx="${idx}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;"/></td>
+    <td style="text-align:center"><select class="eval-item-valor" data-idx="${idx}" style="font-size:12px;padding:3px;">
+      <option value="alto">Alto (5pts)</option><option value="medio">Medio (3pts)</option><option value="bajo">Bajo (1pt)</option></select></td>
+    <td style="text-align:center"><select class="eval-item-tipo" data-idx="${idx}" style="font-size:12px;padding:3px;">
+      <option value="actividades_area">Actividades de Área</option>
+      <option value="5s_seguridad_limpieza">5'S, Seg. y Limpieza</option>
+      <option value="conducta">Conducta</option></select></td>
+    <td style="text-align:center;color:#2563eb;font-weight:700" id="eval-new-pts-${idx}">5 pts</td>
+    <td><button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="window._evalFormItems.splice(${idx},1);this.closest('tr').remove()">✕</button></td>`;
+  row.querySelector('.eval-item-name').oninput = function(e) { window._evalFormItems[idx].name = e.target.value; };
+  row.querySelector('.eval-item-valor').onchange = function(e) {
+    window._evalFormItems[idx].valor = e.target.value;
+    const el = document.getElementById('eval-new-pts-'+idx);
+    if (el) el.textContent = ({alto:5,medio:3,bajo:1}[e.target.value]||0) + ' pts';
+  };
+  row.querySelector('.eval-item-tipo').onchange = function(e) { window._evalFormItems[idx].tipo = e.target.value; };
+  tbody.appendChild(row);
 }
 
-async function saveTemplate() {
-  const name = document.getElementById('tpl-name')?.value?.trim();
-  const position_id = document.getElementById('tpl-pos')?.value || null;
-  if (!name) { toast('El nombre de la plantilla es requerido', 'warning'); return; }
+function evalDeleteItem(idx) { if (window._evalFormItems) window._evalFormItems.splice(idx, 1); evaluacionesView(); }
 
-  const fields = [];
-  document.querySelectorAll('#tpl-fields .row').forEach((row, i) => {
-    const label = row.querySelector('.tpl-f-label')?.value?.trim();
-    const type = row.querySelector('.tpl-f-type')?.value;
-    const weight = Number(row.querySelector('.tpl-f-weight')?.value) || 0;
-    if (label) fields.push({ id: i + 1, label, type, weight, description: '' });
-  });
-
+async function evalSaveForm(formId, positionId) {
+  if (!positionId) { toast('Selecciona un puesto', 'warning'); return; }
+  const items = (window._evalFormItems || []).map(function(it, idx) {
+    const ne = document.querySelector('.eval-item-name[data-idx="'+idx+'"]');
+    const ve = document.querySelector('.eval-item-valor[data-idx="'+idx+'"]');
+    const te = document.querySelector('.eval-item-tipo[data-idx="'+idx+'"]');
+    return { id: it.id||0, name: ne?ne.value.trim():it.name, valor: ve?ve.value:it.valor, tipo: te?te.value:it.tipo };
+  }).filter(function(it) { return it.name; });
+  if (!items.length) { toast('Agrega al menos un ítem', 'warning'); return; }
+  for (var i=0;i<items.length;i++) { if (!items[i].name||!items[i].valor||!items[i].tipo) { toast('Todos los ítems deben tener nombre, valor y tipo','warning'); return; } }
   try {
-    await api('/api/rhh/evaluations/templates', {
-      method: 'POST',
-      body: JSON.stringify({ name, position_id, fields })
+    if (!formId) { var nf = await api('/api/rhh/evaluations/forms', { method:'POST', body: JSON.stringify({ position_id: positionId }) }); formId = nf.id; }
+    await api('/api/rhh/evaluations/forms/'+formId, { method:'PATCH', body: JSON.stringify({ items: items }) });
+    toast('Formulario guardado'); evaluacionesView();
+  } catch(err) { toast(err.message,'error'); }
+}
+
+function openNuevaSesionModal() {
+  var now = new Date();
+  var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = '<div class="modal" style="max-width:400px;">' +
+    '<div class="modal-header"><h3>Nueva sesión de evaluación</h3></div>' +
+    '<div class="modal-body">' +
+      '<div class="form-group"><label>Nombre *</label><input id="ns-name" value="' + meses[now.getMonth()] + ' ' + now.getFullYear() + '" /></div>' +
+      '<div class="row">' +
+        '<div class="form-group"><label>Mes *</label><input id="ns-month" type="number" min="1" max="12" value="' + (now.getMonth()+1) + '" /></div>' +
+        '<div class="form-group"><label>Año *</label><input id="ns-year" type="number" min="2024" max="2099" value="' + now.getFullYear() + '" /></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="modal-footer">' +
+      '<button class="btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">Cancelar</button>' +
+      '<button class="btn-primary" onclick="guardarNuevaSesion()">💾 Crear sesión</button>' +
+    '</div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) { if (e.target===modal) modal.remove(); });
+}
+
+async function guardarNuevaSesion() {
+  var name  = document.getElementById('ns-name') && document.getElementById('ns-name').value.trim();
+  var month = Number(document.getElementById('ns-month') && document.getElementById('ns-month').value);
+  var year  = Number(document.getElementById('ns-year') && document.getElementById('ns-year').value);
+  if (!name||!month||!year) { toast('Completa todos los campos','warning'); return; }
+  try {
+    var s = await api('/api/rhh/evaluations/sessions',{method:'POST',body:JSON.stringify({name:name,month:month,year:year})});
+    evalSessionId = s.id;
+    var ov = document.querySelector('.modal-overlay'); if(ov) ov.remove();
+    toast('Sesión creada'); evaluacionesView();
+  } catch(err) { toast(err.message,'error'); }
+}
+
+async function evalGuardarFila(sessionId, empId) {
+  var evEl = document.getElementById('ev-eval-'+empId);
+  var evaluador_id = evEl ? evEl.value : null;
+  var asistencias = document.getElementById('ev-asis-'+empId) ? document.getElementById('ev-asis-'+empId).value : null;
+  var faltas = document.getElementById('ev-falt-'+empId) ? document.getElementById('ev-falt-'+empId).value : null;
+  var retardos = document.getElementById('ev-ret-'+empId) ? document.getElementById('ev-ret-'+empId).value : null;
+  var actas = document.getElementById('ev-acta-'+empId) ? document.getElementById('ev-acta-'+empId).value : null;
+  var amonestaciones = document.getElementById('ev-amon-'+empId) ? document.getElementById('ev-amon-'+empId).value : null;
+  if ([asistencias,faltas,retardos,actas,amonestaciones].some(function(v){return v===''||v===null||v===undefined;})) {
+    toast('Completa todos los campos numéricos (incluyendo 0)','warning'); return;
+  }
+  try {
+    await api('/api/rhh/evaluations/sessions/'+sessionId+'/entries',{method:'PATCH',body:JSON.stringify({
+      employee_id:empId, evaluador_id:evaluador_id?Number(evaluador_id):null,
+      asistencias:Number(asistencias), faltas:Number(faltas), retardos:Number(retardos),
+      actas:Number(actas), amonestaciones:Number(amonestaciones)
+    })});
+    toast('Guardado'); evaluacionesView();
+  } catch(err) { toast(err.message,'error'); }
+}
+
+function evalEditarFila(empId) {
+  var row = document.getElementById('ev-row-'+empId); if (!row) return;
+  row.style.background = '';
+  row.querySelectorAll('input,select').forEach(function(el){ el.removeAttribute('disabled'); });
+  var cells = row.cells;
+  cells[cells.length-1].innerHTML = '<button class="btn-primary" style="font-size:11px;padding:3px 8px;" onclick="evalGuardarFila('+evalSessionId+','+empId+')">💾 Guardar</button>';
+}
+
+async function evalRellenar(sessionId, empId) {
+  try {
+    var session = await api('/api/rhh/evaluations/sessions/'+sessionId);
+    var month = session.month, year = session.year;
+    var from = year+'-'+String(month).padStart(2,'0')+'-01';
+    var to   = year+'-'+String(month).padStart(2,'0')+'-31';
+    var incs = await api('/api/rhh/incidences?employee_id='+empId+'&fecha_ini='+from+'&fecha_fin='+to).catch(function(){return[];});
+    var faltas=0,retardos=0,actas=0,amonestaciones=0;
+    (incs||[]).forEach(function(i){
+      if(['falta','ausencia'].indexOf(i.type)>=0) faltas++;
+      else if(i.type==='retardo') retardos++;
+      else if(i.type==='acta_administrativa') actas++;
+      else if(i.type==='amonestacion') amonestaciones++;
     });
-    toast('Plantilla creada');
-    evaluacionesView();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+    var setV=function(id,v){var el=document.getElementById(id);if(el){el.value=v;el.disabled=false;}};
+    setV('ev-falt-'+empId,faltas); setV('ev-ret-'+empId,retardos);
+    setV('ev-acta-'+empId,actas); setV('ev-amon-'+empId,amonestaciones);
+    toast('Datos rellenados desde el sistema');
+  } catch(e) { toast('No se pudieron obtener datos automáticamente','warning'); }
 }
 
-async function buildResultadosTab(periods) {
-  const periodOpts = periods.map(p =>
-    `<option value="${p.id}">${p.name}</option>`).join('');
-
-  const selectedPeriodId = window._evalResultPeriodId || (periods[0]?.id);
-  let resultsHtml = '';
-
-  if (selectedPeriodId) {
-    try {
-      const data = await api(`/api/rhh/evaluations/results/${selectedPeriodId}`);
-      if (data?.results?.length > 0) {
-        const rows = data.results.map(r => `
-          <tr>
-            <td>${r.employee_name}</td>
-            <td style="text-align:center;font-weight:700;">${r.score?.toFixed(1) ?? '—'}</td>
-            <td style="text-align:center;">${r.dia_desempeno?.toFixed(2) ?? '—'}</td>
-            <td style="text-align:center;">${r.dia_calidad ?? '—'}</td>
-            <td style="text-align:center;">${r.dia_reclamos ?? '—'}</td>
-            <td style="text-align:center;font-weight:700;color:#059669;">${r.bonus_days?.toFixed(2) ?? '—'}</td>
-          </tr>`).join('');
-        const totalBonus = data.results.reduce((s, r) => s + (r.bonus_days || 0), 0);
-        resultsHtml = `
-          <table>
-            <thead><tr>
-              <th>Empleado</th><th style="text-align:center;">Score (%)</th>
-              <th style="text-align:center;">Día desempeño</th>
-              <th style="text-align:center;">Día calidad</th>
-              <th style="text-align:center;">Día reclamos</th>
-              <th style="text-align:center;">Total días bono</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-            <tfoot>
-              <tr style="background:#f0fdf4;font-weight:700;">
-                <td>TOTAL</td><td></td><td></td><td></td><td></td>
-                <td style="text-align:center;color:#059669;">${totalBonus.toFixed(2)}</td>
-              </tr>
-            </tfoot>
-          </table>`;
-      } else {
-        resultsHtml = '<div class="empty-state"><p>Sin resultados para este periodo</p></div>';
-      }
-    } catch (e) {
-      resultsHtml = `<div class="notice error">${e.message}</div>`;
-    }
-  }
-
-  return `
-    <div style="margin-bottom:16px;display:flex;align-items:center;gap:12px;">
-      <label style="font-weight:600;">Periodo:</label>
-      <select onchange="window._evalResultPeriodId=Number(this.value);evaluacionesView();evalTab='resultados';"
-              style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;">
-        <option value="">Seleccionar...</option>${periodOpts.replace(`value="${selectedPeriodId}"`, `value="${selectedPeriodId}" selected`)}
-      </select>
-    </div>
-    <div class="card section table-wrap">${resultsHtml || '<div class="empty-state"><p>Selecciona un periodo</p></div>'}</div>
-  `;
+async function cerrarSesion(sessionId) {
+  if (!confirm('¿Cerrar esta sesión de evaluación?')) return;
+  try {
+    await api('/api/rhh/evaluations/sessions/'+sessionId,{method:'PATCH',body:JSON.stringify({status:'closed'})});
+    toast('Sesión cerrada'); evaluacionesView();
+  } catch(err) { toast(err.message,'error'); }
 }
 
-// ── Mis evaluaciones (empleados/supervisores como evaluadores) ─────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// MIS EVALUACIONES — Vista Supervisor / Empleado
+// ══════════════════════════════════════════════════════════════════════════════
 
 async function misEvaluacionesView() {
-  const el = document.getElementById('app');
-  const hash = state.user?.role === 'empleado' ? 'mis-evaluaciones' : 'mis-evaluaciones';
-  el.innerHTML = shell('<div class="loading-overlay">Cargando evaluaciones pendientes...</div>', 'mis-evaluaciones');
-
-  try {
-    const pending = await api('/api/rhh/evaluations/my-pending') || [];
-
-    const rows = pending.length === 0
-      ? '<div class="empty-state"><div class="empty-icon">⭐</div><p>No tienes evaluaciones pendientes</p></div>'
-      : pending.map((p, i) => `
-          <div class="card" style="margin-bottom:12px;padding:16px;">
-            <div style="display:flex;justify-content:space-between;align-items:center;">
-              <div>
-                <strong>${p.period_name}</strong>
-                <div class="small muted">Evaluar a: ${p.employee_name}</div>
-                <div class="small muted">Plantilla: ${p.template_name}</div>
-              </div>
-              <button class="btn-primary" onclick="openEvalForm(${i})">Evaluar →</button>
-            </div>
-            <div id="eval-form-${i}" style="display:none;margin-top:16px;"></div>
-          </div>`).join('');
-
-    el.innerHTML = shell(`
-      <div class="module-title">
-        <h2>⭐ Mis Evaluaciones Pendientes</h2>
-      </div>
-      ${rows}
-    `, 'mis-evaluaciones');
-
-    // Guardar datos para uso en formularios
-    window._pendingEvals = pending;
-  } catch (err) {
-    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'mis-evaluaciones');
-  }
+  if (state.user && state.user.role === 'empleado') await empleadoEvalView();
+  else await supervisorEvalView();
 }
 
-function openEvalForm(idx) {
-  const container = document.getElementById(`eval-form-${idx}`);
-  if (!container) return;
-  const isVisible = container.style.display !== 'none';
-  container.style.display = isVisible ? 'none' : 'block';
-  if (isVisible) return;
-
-  const pending = window._pendingEvals?.[idx];
-  if (!pending) return;
-
-  const fields = pending.template?.fields || [];
-  const fieldsHtml = fields.map(f => {
-    const inputId = `ef-f-${idx}-${f.id}`;
-    let inputHtml = '';
-    if (f.type === 'score_1_5') {
-      inputHtml = `<div style="display:flex;gap:6px;margin-top:6px;">
-        ${[1,2,3,4,5].map(v =>
-          `<label style="display:flex;flex-direction:column;align-items:center;gap:4px;font-weight:normal;">
-            <input type="radio" name="${inputId}" value="${v}" style="width:auto;" />${v}
-          </label>`).join('')}
-      </div>`;
-    } else if (f.type === 'score_1_10') {
-      inputHtml = `<input type="range" id="${inputId}" min="1" max="10" value="5"
-        oninput="document.getElementById('${inputId}-val').textContent=this.value"
-        style="width:100%;margin-top:6px;" />
-        <span id="${inputId}-val" style="font-size:13px;color:#059669;">5</span>/10`;
-    } else if (f.type === 'boolean') {
-      inputHtml = `<label style="display:flex;align-items:center;gap:8px;font-weight:normal;margin-top:6px;">
-        <input type="checkbox" id="${inputId}" style="width:auto;" /> Sí
-      </label>`;
-    } else if (f.type === 'text') {
-      inputHtml = `<textarea id="${inputId}" rows="2" placeholder="Comentario..." style="margin-top:6px;"></textarea>`;
-    }
-
-    return `
-      <div style="margin-bottom:16px;padding:12px;background:#f9fafb;border-radius:8px;border:1px solid var(--line);">
-        <label style="font-weight:600;">${f.label} <span class="small muted">(${f.weight}%)</span></label>
-        ${inputHtml}
-      </div>`;
-  }).join('');
-
-  container.innerHTML = `
-    <div>
-      ${fieldsHtml}
-      <div>
-        <label>Notas adicionales</label>
-        <textarea id="eval-notes-${idx}" rows="2" placeholder="Observaciones opcionales..."></textarea>
-      </div>
-      <div class="actions" style="margin-top:12px;">
-        <button class="btn-primary" onclick="submitEvaluation(${idx})">📤 Enviar evaluación</button>
-      </div>
-    </div>
-  `;
-}
-
-async function submitEvaluation(idx) {
-  const pending = window._pendingEvals?.[idx];
-  if (!pending) return;
-
-  const fields = pending.template?.fields || [];
-  const answers = fields.map(f => {
-    const inputId = `ef-f-${idx}-${f.id}`;
-    let value;
-    if (f.type === 'score_1_5') {
-      const checked = document.querySelector(`input[name="${inputId}"]:checked`);
-      value = checked ? Number(checked.value) : 0;
-    } else if (f.type === 'score_1_10') {
-      value = Number(document.getElementById(inputId)?.value || 5);
-    } else if (f.type === 'boolean') {
-      value = document.getElementById(inputId)?.checked || false;
-    } else {
-      value = document.getElementById(inputId)?.value?.trim() || '';
-    }
-    return { field_id: f.id, value };
-  });
-
-  const notes = document.getElementById(`eval-notes-${idx}`)?.value?.trim() || '';
-
+async function supervisorEvalView() {
+  var el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando...</div>', 'mis-evaluaciones');
   try {
-    await api('/api/rhh/evaluations/submit', {
-      method: 'POST',
-      body: JSON.stringify({
-        period_id: pending.period_id,
-        employee_id: pending.employee_id,
-        template_id: pending.template_id,
-        answers,
-        notes
-      })
+    var pending = await api('/api/rhh/evaluations/sessions/my-pending') || [];
+    window._supPending = pending;
+    var grouped = {};
+    pending.forEach(function(p) {
+      if (!grouped[p.session_id]) grouped[p.session_id] = { name: p.session_name, items: [] };
+      grouped[p.session_id].items.push(p);
     });
-    toast('Evaluación enviada exitosamente');
-    misEvaluacionesView();
-  } catch (err) {
-    toast(err.message, 'error');
-  }
+    var sectionsHtml = Object.entries(grouped).map(function(entry) {
+      var sid = entry[0], group = entry[1];
+      var rows = group.items.map(function(p) {
+        var pidx = pending.indexOf(p);
+        return '<tr>' +
+          '<td style="font-size:13px;font-weight:600">' + escHtml(p.employee_name) + '</td>' +
+          '<td style="font-size:12px;color:#6b7280">' + escHtml(p.position_name) + '</td>' +
+          '<td style="text-align:center">' + (p.asistencias!=null?p.asistencias:'—') + '</td>' +
+          '<td style="text-align:center">' + (p.faltas!=null?p.faltas:'—') + '</td>' +
+          '<td style="text-align:center">' + (p.retardos!=null?p.retardos:'—') + '</td>' +
+          '<td style="text-align:center">' + (p.actas!=null?p.actas:'—') + '</td>' +
+          '<td style="text-align:center">' + (p.amonestaciones!=null?p.amonestaciones:'—') + '</td>' +
+          '<td style="text-align:center">' +
+            (p.completed
+              ? '<span class="badge" style="background:#059669;">✓ Completada</span>'
+              : '<button class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="openEvalStarsModal(window._supPending['+pidx+'])">⭐ Evaluar</button>') +
+          '</td></tr>';
+      }).join('');
+      return '<div class="module-title"><h3 style="font-size:16px;">📋 ' + escHtml(group.name) + '</h3></div>' +
+        '<div class="card section table-wrap" style="margin-bottom:16px;"><table>' +
+        '<thead><tr><th>Trabajador</th><th>Puesto</th>' +
+        '<th style="text-align:center">Asistencias</th><th style="text-align:center">Faltas</th>' +
+        '<th style="text-align:center">Retardos</th><th style="text-align:center">Actas</th>' +
+        '<th style="text-align:center">Amonest.</th><th style="text-align:center">Evaluación</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    }).join('');
+    el.innerHTML = shell(
+      '<div class="module-title"><h2>⭐ Mis Evaluaciones</h2></div>' +
+      (Object.keys(grouped).length===0
+        ? '<div class="card section"><div class="empty-state"><div class="empty-icon">✅</div><p>No tienes evaluaciones pendientes</p></div></div>'
+        : sectionsHtml),
+      'mis-evaluaciones');
+  } catch(err) { el.innerHTML = shell('<div class="notice error">' + err.message + '</div>','mis-evaluaciones'); }
+}
+
+function openEvalStarsModal(p) {
+  if (!p) return;
+  var TIPO_LABEL = { actividades_area:'Actividades de Área', '5s_seguridad_limpieza':"5'S, Seg. y Limpieza", conducta:'Conducta' };
+  var VPTS = { alto:5, medio:3, bajo:1 };
+  var byTipo = {};
+  (p.form_items||[]).forEach(function(it) { if (!byTipo[it.tipo]) byTipo[it.tipo]=[]; byTipo[it.tipo].push(it); });
+  var tiposHtml = Object.entries(byTipo).map(function(entry) {
+    var tipo = entry[0], items = entry[1];
+    return '<div style="margin-bottom:20px;">' +
+      '<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#2563eb;border-bottom:2px solid #dbeafe;padding-bottom:6px;margin-bottom:12px;">' + (TIPO_LABEL[tipo]||tipo) + '</div>' +
+      items.map(function(it) {
+        var mp = VPTS[it.valor]||0;
+        return '<div style="margin-bottom:14px;padding:10px;background:#f9fafb;border-radius:8px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+            '<span style="font-size:13px;font-weight:600;">' + escHtml(it.name) + '</span>' +
+            '<span style="font-size:11px;color:#6b7280;background:#e0e7ff;padding:2px 8px;border-radius:10px;">' + it.valor + ' · ' + mp + 'pts</span>' +
+          '</div>' +
+          '<div class="star-rating" data-item-id="' + it.id + '" data-max-pts="' + mp + '" style="display:flex;gap:8px;">' +
+            [1,2,3,4,5].map(function(s){ return '<span class="star" data-val="'+s+'" onclick="setStarRating(this.closest(\'.star-rating\'),'+s+')" style="font-size:28px;cursor:pointer;color:#d1d5db;transition:color .15s;">★</span>'; }).join('') +
+          '</div>' +
+          '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Puntos: <span id="star-pts-' + it.id + '">0</span> / ' + mp + '</div>' +
+        '</div>';
+      }).join('') +
+    '</div>';
+  }).join('');
+  var modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML =
+    '<div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto;">' +
+    '<div class="modal-header" style="position:sticky;top:0;background:white;z-index:1;padding-bottom:12px;border-bottom:1px solid #e5e7eb;">' +
+      '<h3 style="margin:0;">⭐ Evaluación: ' + escHtml(p.employee_name) + '</h3>' +
+      '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + escHtml(p.position_name) + ' · ' + escHtml(p.session_name) + '</div>' +
+    '</div>' +
+    '<div class="modal-body">' +
+      '<div style="background:#f0f9ff;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;display:flex;gap:16px;flex-wrap:wrap;">' +
+        '<span>✅ Asistencias: <b>' + (p.asistencias!=null?p.asistencias:'—') + '</b></span>' +
+        '<span>❌ Faltas: <b>' + (p.faltas!=null?p.faltas:'—') + '</b></span>' +
+        '<span>⏰ Retardos: <b>' + (p.retardos!=null?p.retardos:'—') + '</b></span>' +
+        '<span>📋 Actas: <b>' + (p.actas!=null?p.actas:'—') + '</b></span>' +
+        '<span>⚠️ Amonest.: <b>' + (p.amonestaciones!=null?p.amonestaciones:'—') + '</b></span>' +
+      '</div>' +
+      (p.form_items && p.form_items.length ? tiposHtml : '<div class="empty-state"><p>Sin ítems de evaluación para este puesto</p></div>') +
+      '<div style="background:#f0fdf4;border-radius:8px;padding:12px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;">' +
+        '<span style="font-weight:600;">Puntos obtenidos:</span>' +
+        '<span id="eval-total-pts" style="font-size:18px;font-weight:700;color:#059669;">0 / ' + p.form_total_points + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="modal-footer" style="position:sticky;bottom:0;background:white;padding-top:12px;border-top:1px solid #e5e7eb;">' +
+      '<button class="btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">Cancelar</button>' +
+      '<button class="btn-primary" onclick="submitStarsEvaluation(' + p.session_id + ',' + p.employee_id + ',' + p.form_id + ',' + p.form_total_points + ')">✅ Confirmar evaluación</button>' +
+    '</div></div>';
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+}
+
+function setStarRating(container, val) {
+  container.querySelectorAll('.star').forEach(function(s){ s.style.color = Number(s.dataset.val)<=val?'#f59e0b':'#d1d5db'; });
+  container.dataset.stars = val;
+  var mp = Number(container.dataset.maxPts)||0;
+  var pts = Math.round((val/5)*mp*100)/100;
+  var pEl = document.getElementById('star-pts-'+container.dataset.itemId); if(pEl) pEl.textContent = pts;
+  var total = 0;
+  document.querySelectorAll('.star-rating').forEach(function(cr){
+    total += Math.round(((Number(cr.dataset.stars)||0)/5)*(Number(cr.dataset.maxPts)||0)*100)/100;
+  });
+  var tEl = document.getElementById('eval-total-pts');
+  if (tEl) { var mx = tEl.textContent.split('/')[1]; mx = mx ? mx.trim() : '0'; tEl.textContent = Math.round(total*100)/100 + ' / ' + mx; }
+}
+
+async function submitStarsEvaluation(sessionId, employeeId, formId, formTotalPts) {
+  var containers = document.querySelectorAll('.star-rating');
+  var item_scores = []; var allFilled = true;
+  containers.forEach(function(cr){ if(!cr.dataset.stars) allFilled=false; item_scores.push({item_id:Number(cr.dataset.itemId),stars:Number(cr.dataset.stars)||0}); });
+  if (!allFilled) { toast('Debes calificar todos los ítems con estrellas','warning'); return; }
+  if (!confirm('¿Confirmar y enviar evaluación? Esta acción no se puede deshacer.')) return;
+  try {
+    var result = await api('/api/rhh/evaluations/eval-results',{method:'POST',body:JSON.stringify({session_id:sessionId,employee_id:employeeId,form_id:formId,item_scores:item_scores})});
+    var ov = document.querySelector('.modal-overlay'); if(ov) ov.remove();
+    toast('Evaluación completada: '+result.score_pct+'%');
+    supervisorEvalView();
+  } catch(err) { toast(err.message,'error'); }
+}
+
+async function empleadoEvalView() {
+  var el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando...</div>','mis-evaluaciones');
+  try {
+    var empId = state.user && state.user.employee_id;
+    if (!empId) { el.innerHTML = shell('<div class="notice">Tu cuenta no está vinculada a un empleado</div>','mis-evaluaciones'); return; }
+    var history = await api('/api/rhh/evaluations/eval-results/employee/'+empId) || [];
+    var now = new Date();
+    var selMonth = window._evalEmpMonth || (now.getMonth()+1);
+    var selYear  = window._evalEmpYear  || now.getFullYear();
+    var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+    var monthResult = history.find(function(r){ return r.month===selMonth && r.year===selYear; });
+    var stats = [
+      ['Calificación', monthResult ? monthResult.score_pct.toFixed(1)+'%' : '—', monthResult && monthResult.score_pct>=80?'#059669':monthResult && monthResult.score_pct>=60?'#f59e0b':'#dc2626'],
+      ['Asistencias', monthResult && monthResult.asistencias!=null ? monthResult.asistencias : '—','#059669'],
+      ['Faltas', monthResult && monthResult.faltas!=null ? monthResult.faltas : '—','#dc2626'],
+      ['Retardos', monthResult && monthResult.retardos!=null ? monthResult.retardos : '—','#f59e0b'],
+      ['Amonestaciones', monthResult && monthResult.amonestaciones!=null ? monthResult.amonestaciones : '—','#7c3aed'],
+      ['Actas Adm.', monthResult && monthResult.actas!=null ? monthResult.actas : '—','#374151']
+    ];
+    var statsHtml = monthResult
+      ? '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:12px;margin-bottom:20px;">' +
+          stats.map(function(s){ return '<div class="card" style="text-align:center;padding:16px;"><div style="font-size:'+(s[0]==='Calificación'?'26':'22')+'px;font-weight:700;color:'+s[2]+'">'+s[1]+'</div><div style="font-size:11px;color:#6b7280;margin-top:4px;">'+s[0]+'</div></div>'; }).join('') +
+        '</div>'
+      : '<div class="card section" style="text-align:center;padding:32px;color:#9ca3af;margin-bottom:20px;">Sin evaluación para ' + meses[selMonth-1] + ' ' + selYear + '</div>';
+    var monthOpts = meses.map(function(m,i){ return '<option value="'+(i+1)+'" '+(i+1===selMonth?'selected':'')+'>'+m+'</option>'; }).join('');
+    var yearOpts  = [selYear-1,selYear,selYear+1].map(function(y){ return '<option value="'+y+'" '+(y===selYear?'selected':'')+'>'+y+'</option>'; }).join('');
+    var yearHistory = history.filter(function(r){ return r.year===selYear; });
+    var chartData = meses.map(function(_,i){ var r=yearHistory.find(function(r){return r.month===i+1;}); return r?r.score_pct:null; });
+    el.innerHTML = shell(
+      '<div class="module-title"><h2>⭐ Mi Evaluación</h2>' +
+        '<div style="font-size:14px;color:#6b7280;margin-top:4px;">' + escHtml(state.user&&state.user.full_name||'') + '</div></div>' +
+      '<div class="card section" style="margin-bottom:16px;"><div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">' +
+        '<label style="font-weight:600;">Mes:</label>' +
+        '<select style="padding:6px 10px;border-radius:6px;border:1px solid #d1d5db;" onchange="window._evalEmpMonth=Number(this.value);empleadoEvalView()">' + monthOpts + '</select>' +
+        '<select style="padding:6px 10px;border-radius:6px;border:1px solid #d1d5db;" onchange="window._evalEmpYear=Number(this.value);empleadoEvalView()">' + yearOpts + '</select>' +
+      '</div></div>' +
+      statsHtml +
+      '<div class="card section"><h4 style="margin:0 0 12px;">📊 Historial ' + selYear + '</h4><canvas id="eval-year-chart" height="160"></canvas></div>',
+      'mis-evaluaciones');
+    var canvas = document.getElementById('eval-year-chart');
+    if (canvas) drawEvalBarChart(canvas, meses, chartData);
+  } catch(err){ el.innerHTML=shell('<div class="notice error">'+err.message+'</div>','mis-evaluaciones'); }
+}
+
+function drawEvalBarChart(canvas, labels, data) {
+  var W = canvas.offsetWidth||600; canvas.width=W; canvas.height=160;
+  var ctx = canvas.getContext('2d');
+  var H=160,padL=36,padR=12,padT=16,padB=28,chartH=H-padT-padB;
+  ctx.clearRect(0,0,W,H);
+  [0,25,50,75,100].forEach(function(v){
+    var y=padT+chartH-(v/100)*chartH;
+    ctx.strokeStyle='#e5e7eb';ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();
+    ctx.fillStyle='#9ca3af';ctx.font='10px sans-serif';ctx.textAlign='right';ctx.fillText(v+'%',padL-4,y+4);
+  });
+  var barW = Math.max(4,Math.floor((W-padL-padR)/12)-4);
+  data.forEach(function(val,i){
+    var x=padL+i*((W-padL-padR)/12)+2;
+    if(val===null){ctx.fillStyle='#e5e7eb';ctx.fillRect(x,padT+chartH-4,barW,4);}
+    else{
+      var bH=Math.max(4,(val/100)*chartH);
+      ctx.fillStyle=val>=80?'#059669':val>=60?'#f59e0b':'#dc2626';
+      ctx.fillRect(x,padT+chartH-bH,barW,bH);
+      ctx.fillStyle='#374151';ctx.font='bold 10px sans-serif';ctx.textAlign='center';
+      ctx.fillText(val.toFixed(0)+'%',x+barW/2,padT+chartH-bH-4);
+    }
+    ctx.fillStyle='#6b7280';ctx.font='10px sans-serif';ctx.textAlign='center';
+    ctx.fillText(labels[i].slice(0,3),x+barW/2,H-padB+14);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

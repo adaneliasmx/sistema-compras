@@ -51,7 +51,10 @@ const EMPTY_DB = {
   rhh_notifications: [],
   rhh_weekly_rol: [],
   rhh_rol_slots: [],
-  rhh_rol_assignments: []
+  rhh_rol_assignments: [],
+  rhh_eval_forms: [],
+  rhh_eval_sessions: [],
+  rhh_eval_results: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)
