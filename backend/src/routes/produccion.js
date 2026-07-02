@@ -255,9 +255,10 @@ router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => 
   }
   const ordenes = mdb.ordenes_mantenimiento || [];
   const toDto = o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at });
-  // Modo activas: todas las OTs urgentes abiertas (sin filtro de fecha)
+  // Modo activas: OTs urgentes abiertas en las últimas 8 h (carga inicial pizarrón — omite históricas no cerradas)
   if (req.query.activas) {
-    return res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta').map(toDto));
+    const hace8h = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
+    return res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= hace8h).map(toDto));
   }
   // Modo check: ¿siguen abiertas estas IDs?
   if (req.query.ids) {
