@@ -344,6 +344,15 @@ router.patch('/equipos/:id', mantAllowRoles('admin'), (req, res) => {
   res.json(equipo);
 });
 
+router.delete('/equipos/:id', mantAllowRoles('admin'), (req, res) => {
+  const db = readMant();
+  const idx = (db.equipos_mant || []).findIndex(e => e.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Equipo no encontrado' });
+  db.equipos_mant.splice(idx, 1);
+  writeMant(db);
+  res.json({ ok: true });
+});
+
 // ── CATÁLOGO PARTES ───────────────────────────────────────────────────────────
 
 router.get('/equipos/:id/partes', (req, res) => {
@@ -376,6 +385,15 @@ router.patch('/partes/:id', mantAllowRoles('admin'), (req, res) => {
   if (activo !== undefined) parte.activo = activo;
   writeMant(db);
   res.json(parte);
+});
+
+router.delete('/partes/:id', mantAllowRoles('admin'), (req, res) => {
+  const db = readMant();
+  const idx = (db.partes_equipo || []).findIndex(p => p.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Parte no encontrada' });
+  db.partes_equipo.splice(idx, 1);
+  writeMant(db);
+  res.json({ ok: true });
 });
 
 // ── MANTENIMIENTOS PROGRAMADOS ────────────────────────────────────────────────

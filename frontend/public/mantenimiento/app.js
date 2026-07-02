@@ -905,7 +905,11 @@ async function viewCatalogos(el) {
                 <span style="font-size:11px;color:#6b7280;margin-left:6px">${e.codigo||''} · ${e.tipo}</span>
                 ${e.linea_produccion?`<span style="font-size:11px;background:#eff6ff;color:#2563eb;padding:1px 6px;border-radius:4px;margin-left:4px">${e.linea_produccion}</span>`:''}
               </div>
-              <button class="btn-secondary btn-partes-equipo" data-id="${e.id}" data-nombre="${escHtml(e.nombre)}" style="font-size:11px;padding:3px 8px">Partes</button>
+              <div style="display:flex;gap:4px;align-items:center">
+                <button class="btn-secondary btn-partes-equipo" data-id="${e.id}" data-nombre="${escHtml(e.nombre)}" style="font-size:11px;padding:3px 8px">Partes</button>
+                <button class="btn-edit-equipo" data-id="${e.id}" style="background:none;border:1px solid #d1d5db;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:13px" title="Editar equipo">✏️</button>
+                <button class="btn-del-equipo" data-id="${e.id}" data-nombre="${escHtml(e.nombre)}" style="background:none;border:1px solid #fca5a5;border-radius:6px;padding:3px 7px;cursor:pointer;font-size:13px;color:#dc2626" title="Eliminar equipo">✕</button>
+              </div>
             </div>`).join('')}
         </div>
       </div>
@@ -934,6 +938,24 @@ async function viewCatalogos(el) {
   };
 
   document.getElementById('btn-nuevo-equipo').onclick = () => modalNuevoEquipo();
+
+  document.querySelectorAll('.btn-edit-equipo').forEach(btn => {
+    btn.onclick = () => {
+      const e = equipos.find(eq => eq.id === Number(btn.dataset.id));
+      if (e) modalEditarEquipo(e);
+    };
+  });
+
+  document.querySelectorAll('.btn-del-equipo').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`¿Eliminar equipo "${btn.dataset.nombre}"? Esta acción no se puede deshacer.`)) return;
+      try {
+        await apiFetch(`/equipos/${btn.dataset.id}`, { method: 'DELETE' });
+        loadView('catalogos');
+      } catch(e) { alert('Error: ' + e.message); }
+    };
+  });
+
   document.querySelectorAll('.btn-partes-equipo').forEach(btn => {
     btn.onclick = async () => {
       const id = Number(btn.dataset.id);
@@ -942,14 +964,42 @@ async function viewCatalogos(el) {
       const btnNueva = document.getElementById('btn-nueva-parte');
       btnNueva.style.display = '';
       btnNueva.onclick = () => modalNuevaParte(id);
-      const partes = await apiFetch(`/equipos/${id}/partes?all=1`);
-      document.getElementById('partes-list').innerHTML = partes.length ?
-        partes.map(p => `
-          <div style="display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid #f1f5f9;opacity:${p.activo?1:.5}">
-            <span style="font-size:13px">${escHtml(p.nombre)}</span>
-            <span style="font-size:11px;color:#6b7280">${p.codigo||''}</span>
-          </div>`).join('') :
-        '<p style="color:#9ca3af;font-size:13px;text-align:center">Sin partes registradas</p>';
+      await renderPartesList(id);
+    };
+  });
+}
+
+async function renderPartesList(equipoId) {
+  const partes = await apiFetch(`/equipos/${equipoId}/partes?all=1`);
+  const listEl = document.getElementById('partes-list');
+  listEl.innerHTML = partes.length ?
+    partes.map(p => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px;border-bottom:1px solid #f1f5f9;opacity:${p.activo?1:.5}">
+        <div>
+          <span style="font-size:13px">${escHtml(p.nombre)}</span>
+          <span style="font-size:11px;color:#6b7280;margin-left:6px">${p.codigo||''}</span>
+        </div>
+        <div style="display:flex;gap:4px">
+          <button class="btn-edit-parte" data-id="${p.id}" style="background:none;border:1px solid #d1d5db;border-radius:6px;padding:2px 6px;cursor:pointer;font-size:13px" title="Editar parte">✏️</button>
+          <button class="btn-del-parte" data-id="${p.id}" data-nombre="${escHtml(p.nombre)}" data-equipo="${equipoId}" style="background:none;border:1px solid #fca5a5;border-radius:6px;padding:2px 6px;cursor:pointer;font-size:13px;color:#dc2626" title="Eliminar parte">✕</button>
+        </div>
+      </div>`).join('') :
+    '<p style="color:#9ca3af;font-size:13px;text-align:center">Sin partes registradas</p>';
+
+  listEl.querySelectorAll('.btn-edit-parte').forEach(btn => {
+    btn.onclick = () => {
+      const p = partes.find(x => x.id === Number(btn.dataset.id));
+      if (p) modalEditarParte(p, equipoId);
+    };
+  });
+
+  listEl.querySelectorAll('.btn-del-parte').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm(`¿Eliminar parte "${btn.dataset.nombre}"? Esta acción no se puede deshacer.`)) return;
+      try {
+        await apiFetch(`/partes/${btn.dataset.id}`, { method: 'DELETE' });
+        await renderPartesList(Number(btn.dataset.equipo));
+      } catch(e) { alert('Error: ' + e.message); }
     };
   });
 }
@@ -1131,6 +1181,50 @@ async function modalNuevoEquipo() {
   };
 }
 
+async function modalEditarEquipo(equipo) {
+  const overlay = openModal(`
+    <h3 style="margin:0 0 16px">✏️ Editar equipo</h3>
+    <div class="mant-form-group"><label>Nombre *</label><input id="e-nombre" type="text" value="${escHtml(equipo.nombre)}"/></div>
+    <div class="mant-form-group"><label>Código</label><input id="e-codigo" type="text" value="${escHtml(equipo.codigo||'')}"/></div>
+    <div class="mant-form-group"><label>Tipo</label>
+      <select id="e-tipo">
+        <option value="linea" ${equipo.tipo==='linea'?'selected':''}>Línea de producción</option>
+        <option value="auxiliar" ${equipo.tipo==='auxiliar'?'selected':''}>Auxiliar</option>
+        <option value="electrico" ${equipo.tipo==='electrico'?'selected':''}>Eléctrico</option>
+        <option value="otro" ${equipo.tipo==='otro'?'selected':''}>Otro</option>
+      </select>
+    </div>
+    <div class="mant-form-group"><label>Línea de producción asociada</label>
+      <select id="e-linea">
+        <option value="" ${!equipo.linea_produccion?'selected':''}>— Ninguna —</option>
+        <option value="Baker" ${equipo.linea_produccion==='Baker'?'selected':''}>Baker</option>
+        <option value="L1" ${equipo.linea_produccion==='L1'?'selected':''}>Línea 1</option>
+        <option value="L3" ${equipo.linea_produccion==='L3'?'selected':''}>Línea 3</option>
+        <option value="L4" ${equipo.linea_produccion==='L4'?'selected':''}>Línea 4</option>
+      </select>
+    </div>
+    <div id="e-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="e-ok" class="btn-primary">Guardar cambios</button>
+    </div>`);
+  overlay.querySelector('#e-ok').onclick = async () => {
+    try {
+      await apiFetch(`/equipos/${equipo.id}`, { method: 'PATCH', body: JSON.stringify({
+        nombre: overlay.querySelector('#e-nombre').value.trim(),
+        codigo: overlay.querySelector('#e-codigo').value.trim(),
+        tipo:   overlay.querySelector('#e-tipo').value,
+        linea_produccion: overlay.querySelector('#e-linea').value || null,
+      }) });
+      overlay.remove();
+      loadView('catalogos');
+    } catch(e) {
+      overlay.querySelector('#e-err').textContent = e.message;
+      overlay.querySelector('#e-err').style.display = 'block';
+    }
+  };
+}
+
 async function modalNuevaParte(equipoId) {
   const overlay = openModal(`
     <h3 style="margin:0 0 16px">⚙ Nueva parte</h3>
@@ -1152,6 +1246,31 @@ async function modalNuevaParte(equipoId) {
       // Recargar la lista de partes
       const btn = document.querySelector(`.btn-partes-equipo[data-id="${equipoId}"]`);
       if (btn) btn.click();
+    } catch(e) {
+      overlay.querySelector('#p-err').textContent = e.message;
+      overlay.querySelector('#p-err').style.display = 'block';
+    }
+  };
+}
+
+async function modalEditarParte(parte, equipoId) {
+  const overlay = openModal(`
+    <h3 style="margin:0 0 16px">✏️ Editar parte</h3>
+    <div class="mant-form-group"><label>Nombre *</label><input id="p-nombre" type="text" value="${escHtml(parte.nombre)}"/></div>
+    <div class="mant-form-group"><label>Código</label><input id="p-codigo" type="text" value="${escHtml(parte.codigo||'')}"/></div>
+    <div id="p-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="p-ok" class="btn-primary">Guardar cambios</button>
+    </div>`);
+  overlay.querySelector('#p-ok').onclick = async () => {
+    try {
+      await apiFetch(`/partes/${parte.id}`, { method: 'PATCH', body: JSON.stringify({
+        nombre: overlay.querySelector('#p-nombre').value.trim(),
+        codigo: overlay.querySelector('#p-codigo').value.trim(),
+      }) });
+      overlay.remove();
+      await renderPartesList(equipoId);
     } catch(e) {
       overlay.querySelector('#p-err').textContent = e.message;
       overlay.querySelector('#p-err').style.display = 'block';
