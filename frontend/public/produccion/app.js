@@ -1039,7 +1039,13 @@ async function viewLinea(el, linea) {
               const nuevoParo = await POST(`/paros/${linea}/pendiente-motivo`, { hora_inicio: horaIni, fecha_inicio: fechaIni });
               paroActivo = nuevoParo;
               state.paroActivo[linea] = nuevoParo;
-            } catch (_) { /* 409 = ya existe paro activo, ignorar */ }
+            } catch (err) {
+              // 409 = ya existe paro activo en otra pestaña/sesión — sincronizar estado
+              try {
+                const existente = await GET(`/paros/${linea}/activo`);
+                if (existente?.paro) { paroActivo = existente.paro; state.paroActivo[linea] = existente.paro; }
+              } catch (_) {}
+            }
           }
         }
       }
@@ -1282,7 +1288,7 @@ async function viewBaker(el) {
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-baker-paro">⏸ Registrar Paro</button>' : ''}
             ${planesUrl ? `<a href="${escHtml(planesUrl)}" target="_blank" rel="noopener" class="btn btn-outline btn-sm">📋 Consulta Planes de Control</a>` : ''}
             <button class="btn btn-outline btn-sm" id="btn-baker-scrap" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">🗑 SCRAP</button>
-            <button class="btn btn-primary" id="btn-baker-carga"${cargas.length >= 7 ? ' disabled title="Máx. 7 herramentales activos"' : ''}>+ Registrar Herramental</button>
+            <button class="btn btn-primary" id="btn-baker-carga"${cargas.length >= 7 ? ' disabled title="Máx. 7 herramentales activos"' : paroActivo ? ' disabled title="Cierra el paro activo antes de registrar"' : ''}>+ Registrar Herramental</button>
           </div>
         </div>
       </div>
@@ -1483,7 +1489,7 @@ async function viewL1(el) {
           <div class="tarjetero-actions">
             ${!paroActivo ? '<button class="btn btn-danger btn-sm" id="btn-l1-paro">⏸ Registrar Paro</button>' : ''}
             <button class="btn btn-outline btn-sm" id="btn-l1-scrap" style="background:#fef3c7;color:#92400e;border-color:#fbbf24">🗑 SCRAP</button>
-            <button class="btn btn-primary" id="btn-l1-carga"${cargas.length >= MAX_L1 ? ` disabled title="Máx. ${MAX_L1} herramentales activos"` : ''}>+ Registrar Herramental</button>
+            <button class="btn btn-primary" id="btn-l1-carga"${cargas.length >= MAX_L1 ? ` disabled title="Máx. ${MAX_L1} herramentales activos"` : paroActivo ? ' disabled title="Cierra el paro activo antes de registrar"' : ''}>+ Registrar Herramental</button>
           </div>
         </div>
       </div>

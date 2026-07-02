@@ -487,6 +487,10 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
   const pdb = dbProd.read();
   const l = lineaKey(linea);
 
+  // Candado: no permitir carga si hay paro activo en esta línea
+  const paroActivo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado !== 'cerrado');
+  if (paroActivo) return res.status(409).json({ error: `Hay un paro activo en ${linea} (${paroActivo.motivo || 'sin motivo'}). Ciérralo antes de registrar una carga.`, paro: paroActivo });
+
   // Get herramental
   const herramentales = pdb[`herramentales_${l}`] || [];
   const herramental = herramentales.find(h => String(h.id) === String(herramental_id));
@@ -3177,6 +3181,10 @@ router.post('/l1/cargas', (req, res) => {
   if (!pdb.cargas_l1) pdb.cargas_l1 = [];
   if (!pdb.herramentales_l1) pdb.herramentales_l1 = [];
 
+  // Candado: no permitir carga si hay paro activo en L1
+  const paroActivoL1 = (pdb.paros_l1 || []).find(p => !p.fecha_fin);
+  if (paroActivoL1) return res.status(409).json({ error: `Hay un paro activo en L1 (${paroActivoL1.motivo || 'sin motivo'}). Ciérralo antes de registrar una carga.`, paro: paroActivoL1 });
+
   const body = req.body || {};
   const { herramental_id, proceso_id, sub_proceso_id, operador_id } = body;
   if (!herramental_id) return res.status(400).json({ error: 'herramental_id es requerido' });
@@ -3635,6 +3643,10 @@ router.post('/baker/cargas', (req, res) => {
   const pdb = dbProd.read();
   if (!pdb.cargas_baker) pdb.cargas_baker = [];
   if (!pdb.herramentales_baker) pdb.herramentales_baker = [];
+
+  // Candado: no permitir carga si hay paro activo en Baker
+  const paroActivoBaker = (pdb.paros_baker || []).find(p => !p.fecha_fin);
+  if (paroActivoBaker) return res.status(409).json({ error: `Hay un paro activo en Baker (${paroActivoBaker.motivo || 'sin motivo'}). Ciérralo antes de registrar una carga.`, paro: paroActivoBaker });
 
   const body = req.body || {};
   const { herramental_id, proceso_id, sub_proceso_id, operador_id } = body;
