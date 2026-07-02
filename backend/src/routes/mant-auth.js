@@ -28,6 +28,16 @@ router.post('/login', (req, res) => {
   });
 });
 
+// GET /api/mant/auth/usuarios — lista pública para dropdown de login
+router.get('/usuarios', (req, res) => {
+  const db = read();
+  const users = (db.users || [])
+    .filter(u => u.active !== false && u.mant_role)
+    .map(u => ({ email: u.email, nombre: u.full_name }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+  res.json(users);
+});
+
 // GET /api/mant/auth/me
 router.get('/me', mantAuthRequired, (req, res) => res.json(req.mantUser));
 

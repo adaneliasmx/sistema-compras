@@ -72,30 +72,60 @@ function renderLogin() {
         <h2>🔧 Mantenimiento</h2>
         <p>Inicia sesión para continuar</p>
         <div id="login-err" style="color:#dc2626;font-size:13px;margin-bottom:10px;display:none"></div>
-        <div class="mant-form-group"><label>Correo electrónico</label>
-          <input id="l-email" type="email" placeholder="usuario@empresa.com" autocomplete="username"/>
+        <div class="mant-form-group"><label>Usuario</label>
+          <select id="l-email" style="width:100%;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;background:#fff;color:#1e293b">
+            <option value="">— Cargando usuarios... —</option>
+          </select>
         </div>
         <div class="mant-form-group"><label>Contraseña</label>
           <input id="l-pass" type="password" placeholder="••••••••" autocomplete="current-password"/>
         </div>
-        <button id="l-btn" class="btn-primary" style="width:100%;padding:10px">Entrar</button>
+        <button id="l-btn" class="btn-primary" style="width:100%;padding:10px;font-size:15px">Ingresar</button>
       </div>
     </div>`;
 
+  const sel = document.getElementById('l-email');
+  const err = document.getElementById('login-err');
+
+  fetch('/api/mant/auth/usuarios')
+    .then(r => r.json())
+    .then(usuarios => {
+      if (!Array.isArray(usuarios) || usuarios.length === 0) {
+        sel.innerHTML = '<option value="">— Sin usuarios registrados —</option>';
+        return;
+      }
+      sel.innerHTML = '<option value="">— Seleccionar usuario —</option>' +
+        usuarios.map(u => `<option value="${escHtml(u.email)}">${escHtml(u.nombre)}</option>`).join('');
+    })
+    .catch(() => { sel.innerHTML = '<option value="">— Error al cargar usuarios —</option>'; });
+
   const doLogin = async () => {
-    const email = document.getElementById('l-email').value.trim();
+    const email = sel.value.trim();
     const pass  = document.getElementById('l-pass').value;
-    const err   = document.getElementById('login-err');
     err.style.display = 'none';
+    if (!email) { err.textContent = 'Selecciona un usuario'; err.style.display = 'block'; return; }
+    if (!pass)  { err.textContent = 'Ingresa la contraseña'; err.style.display = 'block'; return; }
+    const btn = document.getElementById('l-btn');
+    btn.disabled = true; btn.textContent = 'Verificando...';
     try {
-      const d = await fetch('/api/mant/auth/login', {
+      const res = await fetch('/api/mant/auth/login', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password: pass })
-      }).then(r => r.json());
-      if (d.error) { err.textContent = d.error; err.style.display = 'block'; return; }
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        err.textContent = d.error || 'Error al iniciar sesión';
+        err.style.display = 'block';
+        btn.disabled = false; btn.textContent = 'Ingresar';
+        return;
+      }
       saveSession(d.token, d.user);
       render();
-    } catch { err.textContent = 'Error de conexión'; err.style.display = 'block'; }
+    } catch (e) {
+      err.textContent = 'Error de conexión';
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Ingresar';
+    }
   };
   document.getElementById('l-btn').onclick = doLogin;
   document.getElementById('l-pass').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
