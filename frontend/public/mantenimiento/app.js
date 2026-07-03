@@ -289,12 +289,19 @@ function ordenCard(o) {
     }
   }
 
+  // Reanudación = paro ya cerrado desde producción → técnico solo cierra el informe
+  const esReanudacion = o.produccion_paro_cerrado === true;
+
   let actionBtns = '';
   if (isAdmin) {
     actionBtns += `<button class="btn-asignar btn-secondary" data-id="${o.id}" style="font-size:12px;padding:5px 10px">👤 Asignar técnico</button>`;
   }
   if (role !== 'supervisor_mant') {
-    if (['abierta','asignada'].includes(o.status)) {
+    if (esReanudacion) {
+      // Máquina ya reanudada desde producción → solo cerrar el informe
+      actionBtns += `<button class="btn-cerrar-informe btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#16a34a;border-color:#16a34a">✅ Cerrar informe</button>`;
+    } else if (['abierta','asignada'].includes(o.status)) {
+      // Paro activo o sin vínculo → flujo normal: iniciar proceso
       actionBtns += `<button class="btn-iniciar-proceso btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#7c3aed;border-color:#7c3aed">▶ En proceso</button>`;
     } else if (o.status === 'en_proceso') {
       actionBtns += `<button class="btn-cerrar-informe btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#16a34a;border-color:#16a34a">✅ Cerrar informe</button>`;
@@ -302,7 +309,7 @@ function ordenCard(o) {
   }
 
   return `
-    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid ${o.produccion_paro_cerrado===false?'#dc2626':o.nivel_urgencia==='alta'?'#dc2626':o.nivel_urgencia==='media'?'#f59e0b':'#22c55e'}">
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid ${esReanudacion?'#7c3aed':o.produccion_paro_cerrado===false?'#dc2626':o.nivel_urgencia==='alta'?'#dc2626':o.nivel_urgencia==='media'?'#f59e0b':'#22c55e'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
           <div style="font-weight:700;font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">

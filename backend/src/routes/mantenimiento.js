@@ -50,7 +50,8 @@ function enrichOrden(o, db, dbMain) {
   if (o.origen_produccion && o.origen_produccion.paro_id) {
     const linea = (o.origen_produccion.linea || '').toLowerCase();
     const parosKey = linea === 'baker' ? 'paros_baker' : linea === 'l1' ? 'paros_l1' : 'paros';
-    const paro = (dbMain[parosKey] || []).find(p => p.id === o.origen_produccion.paro_id);
+    // eslint-disable-next-line eqeqeq
+    const paro = (dbMain[parosKey] || []).find(p => p.id == o.origen_produccion.paro_id);
     if (paro) {
       produccion_paro_cerrado = !!(paro.fecha_fin || paro.estado === 'cerrado');
       produccion_paro_fecha_inicio = paro.fecha_inicio || null;
