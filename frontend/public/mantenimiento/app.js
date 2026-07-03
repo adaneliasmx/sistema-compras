@@ -1283,8 +1283,8 @@ async function modalIniciarProceso(ordenId) {
       <label>Status del equipo *</label>
       <select id="ip-status-equipo">
         <option value="">— Selecciona —</option>
-        <option value="trabajando_normalmente">✅ Trabajando normalmente</option>
-        <option value="trabajando_con_ajuste">⚠️ Trabajando con ajuste</option>
+        <option value="trabajando_normal">✅ Trabajando normalmente</option>
+        <option value="trabajando_ajuste">⚠️ Trabajando con ajuste</option>
         <option value="maquina_parada">⛔ Máquina parada</option>
       </select>
     </div>
