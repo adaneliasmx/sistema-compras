@@ -31,7 +31,7 @@ function urgenciaBadge(u) {
   return `<span class="urgencia-badge ${cls}">${emoji} ${u || 'baja'}</span>`;
 }
 function statusBadge(s) {
-  const map = { abierta:'status-abierta 🔴 Abierta', asignada:'status-asignada 🔵 Asignada', en_proceso:'status-proceso 🟣 En proceso', cerrada:'status-cerrada ✅ Cerrada', cancelada:'status-cerrada ✖ Cancelada' };
+  const map = { abierta:'status-abierta 🔴 Abierta', asignada:'status-asignada 🔵 Asignada', en_proceso:'status-proceso 🟣 En proceso', en_validacion:'status-validacion 🟠 En validación', cerrada:'status-cerrada ✅ Cerrada', cancelada:'status-cerrada ✖ Cancelada' };
   const txt = map[s] || s;
   const parts = txt.split(' ');
   const cls = parts[0]; const label = parts.slice(1).join(' ');
@@ -169,6 +169,7 @@ function buildNavItems(role) {
   if (isAdmin || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
   if (isAdmin || role === 'supervisor_mant') items.push({ id: 'nueva', label: '➕ Nueva solicitud' });
   if (role === 'supervisor_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis solicitudes' });
+  if (role === 'supervisor_mant' || isAdmin) items.push({ id: 'validacion', label: '🔍 En validación' });
   if (role === 'tecnico_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis órdenes' });
   if (isAdmin || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
   if (isAdmin || role === 'supervisor_mant') items.push({ id: 'semana', label: '📅 Plan semanal' });
@@ -186,6 +187,7 @@ async function loadView(view) {
       case 'urgencias':   await viewUrgencias(el); break;
       case 'nueva':       viewNuevaOrden(el); break;
       case 'mis-ordenes': await viewOrdenes(el, true); break;
+      case 'validacion':  await viewValidacion(el); break;
       case 'ordenes':     await viewOrdenes(el, false); break;
       case 'semana':      await viewSemana(el); break;
       case 'programados': await viewProgramados(el); break;
@@ -200,9 +202,29 @@ async function loadView(view) {
 
 // ── VISTA: URGENCIAS ──────────────────────────────────────────────────────────
 async function viewUrgencias(el) {
-  const ordenes = await apiFetch('/ordenes?tipo=correctivo_urgente&status=abierta');
-  const asignadas = await apiFetch('/ordenes?tipo=correctivo_urgente&status=asignada');
-  const all = [...ordenes, ...asignadas].sort((a,b) => b.created_at.localeCompare(a.created_at));
+  const [abiertas, asignadas, en_proceso] = await Promise.all([
+    apiFetch('/ordenes?tipo=correctivo_urgente&status=abierta'),
+    apiFetch('/ordenes?tipo=correctivo_urgente&status=asignada'),
+    apiFetch('/ordenes?tipo=correctivo_urgente&status=en_proceso'),
+  ]);
+
+  function getTurnoNum(hora) {
+    if (!hora) return 99;
+    const parts = hora.split(':');
+    const mins = Number(parts[0]) * 60 + Number(parts[1] || 0);
+    if (mins >= 390 && mins < 870) return 1;   // 6:30–14:30
+    if (mins >= 870 && mins < 1290) return 2;  // 14:30–21:30
+    return 3;                                   // 21:30–6:30
+  }
+
+  const all = [...abiertas, ...asignadas, ...en_proceso].sort((a, b) => {
+    const aPrio = a.produccion_paro_cerrado === false ? 0 : 1;
+    const bPrio = b.produccion_paro_cerrado === false ? 0 : 1;
+    if (aPrio !== bPrio) return aPrio - bPrio;
+    const tA = getTurnoNum(a.hora_solicitud), tB = getTurnoNum(b.hora_solicitud);
+    if (tA !== tB) return tA - tB;
+    return b.created_at.localeCompare(a.created_at);
+  });
 
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
@@ -218,69 +240,149 @@ async function viewUrgencias(el) {
       all.map(o => ordenCard(o)).join('')
     }`;
 
-  // Botones de asignar técnico (solo admin)
-  if (state.user.mant_role === 'admin') {
+  const isAdmin = ['admin','superadmin_mant'].includes(state.user.mant_role);
+  if (isAdmin) {
     el.querySelectorAll('.btn-asignar').forEach(btn => {
       btn.onclick = () => modalAsignar(Number(btn.dataset.id));
     });
   }
-  el.querySelectorAll('.btn-cerrar-orden').forEach(btn => {
+  el.querySelectorAll('.btn-iniciar-proceso').forEach(btn => {
+    btn.onclick = () => modalIniciarProceso(Number(btn.dataset.id));
+  });
+  el.querySelectorAll('.btn-cerrar-informe').forEach(btn => {
     btn.onclick = () => modalCerrarOrden(Number(btn.dataset.id));
   });
 }
 
+function getTurnoBadge(hora) {
+  if (!hora) return '';
+  const parts = hora.split(':');
+  const mins = Number(parts[0]) * 60 + Number(parts[1] || 0);
+  const turno = (mins >= 390 && mins < 870) ? 'T1' : (mins >= 870 && mins < 1290) ? 'T2' : 'T3';
+  return `<span style="font-size:11px;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:4px;padding:1px 6px;color:#374151">${turno}</span>`;
+}
+
 function ordenCard(o) {
   const tiempoTranscurrido = o.created_at ? timeSince(o.created_at) : '—';
-  const isAdmin = state.user.mant_role === 'admin';
+  const isAdmin = ['admin','superadmin_mant'].includes(state.user.mant_role);
+  const role = state.user.mant_role;
   const descFalla = o.descripcion_falla || o.descripcion || '—';
   const row = (label, val) => val ? `<div style="display:flex;gap:6px;font-size:12px;margin-bottom:3px"><span style="color:#6b7280;min-width:110px">${label}:</span><span style="color:#111;font-weight:500">${val}</span></div>` : '';
+
+  let subStatusBadge = '';
+  let paroInfoHtml = '';
+  if (o.produccion_paro_cerrado === false) {
+    subStatusBadge = '<span class="urgencia-badge urgencia-alta" style="font-size:11px">⛔ Máquina parada</span>';
+  } else if (o.produccion_paro_cerrado === true) {
+    subStatusBadge = '<span class="urgencia-badge" style="background:#ede9fe;color:#5b21b6;font-size:11px">🔄 Reanudación de máquina</span>';
+    if (o.produccion_paro_fecha_inicio) {
+      const durMin = o.produccion_paro_fecha_fin
+        ? Math.round((new Date(o.produccion_paro_fecha_fin) - new Date(o.produccion_paro_fecha_inicio)) / 60000)
+        : null;
+      const durStr = durMin !== null ? (durMin >= 60 ? `${Math.floor(durMin/60)}h ${durMin%60}m` : `${durMin}m`) : null;
+      paroInfoHtml = `
+        <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:8px;margin-top:8px;font-size:12px">
+          ${row('Apertura paro', fmtDateTime(o.produccion_paro_fecha_inicio))}
+          ${o.produccion_paro_fecha_fin ? row('Cierre paro', fmtDateTime(o.produccion_paro_fecha_fin)) : ''}
+          ${durStr ? row('Duración paro', durStr) : ''}
+        </div>`;
+    }
+  }
+
+  let actionBtns = '';
+  if (isAdmin) {
+    actionBtns += `<button class="btn-asignar btn-secondary" data-id="${o.id}" style="font-size:12px;padding:5px 10px">👤 Asignar técnico</button>`;
+  }
+  if (role !== 'supervisor_mant') {
+    if (['abierta','asignada'].includes(o.status)) {
+      actionBtns += `<button class="btn-iniciar-proceso btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#7c3aed;border-color:#7c3aed">▶ En proceso</button>`;
+    } else if (o.status === 'en_proceso') {
+      actionBtns += `<button class="btn-cerrar-informe btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#16a34a;border-color:#16a34a">✅ Cerrar informe</button>`;
+    }
+  }
+
   return `
-    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid ${o.nivel_urgencia==='alta'?'#dc2626':o.nivel_urgencia==='media'?'#f59e0b':'#22c55e'}">
+    <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid ${o.produccion_paro_cerrado===false?'#dc2626':o.nivel_urgencia==='alta'?'#dc2626':o.nivel_urgencia==='media'?'#f59e0b':'#22c55e'}">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
         <div style="flex:1;min-width:0">
-          <div style="font-weight:700;font-size:15px;margin-bottom:8px">
+          <div style="font-weight:700;font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             ${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}
             ${o.parte_nombre && o.parte_nombre!=='-' ? `<span style="color:#6b7280;font-size:12px"> / ${escHtml(o.parte_nombre)}</span>` : ''}
+            ${getTurnoBadge(o.hora_solicitud)}
           </div>
           ${row('Línea', escHtml(o.departamento_nombre))}
           ${row('Solicitante', escHtml(o.solicitante_nombre || '—'))}
           ${row('Motivo del paro', escHtml(o.motivo_paro))}
           ${row('Descripción falla', escHtml(descFalla))}
           ${row('Apertura', `${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? ' ' + o.hora_solicitud : ''} · ⏱ ${tiempoTranscurrido}`)}
-          ${o.fecha_cierre ? row('Cierre', `${fmtDate(o.fecha_cierre)}${o.hora_cierre ? ' ' + o.hora_cierre : ''}`) : ''}
+          ${o.diagnostico ? row('Diagnóstico', escHtml(o.diagnostico)) : ''}
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
             ${urgenciaBadge(o.nivel_urgencia)}
             ${statusBadge(o.status)}
-            ${o.maquina_parada ? '<span class="urgencia-badge urgencia-alta">⛔ Máq. parada</span>' : ''}
+            ${subStatusBadge}
             ${o.tecnico_nombre ? `<span style="font-size:12px;color:#2563eb">👤 ${escHtml(o.tecnico_nombre)}</span>` : '<span style="font-size:12px;color:#9ca3af">Sin asignar</span>'}
           </div>
+          ${paroInfoHtml}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;min-width:130px">
-          ${isAdmin ? `<button class="btn-asignar btn-secondary" data-id="${o.id}" style="font-size:12px;padding:5px 10px">👤 Asignar técnico</button>` : ''}
-          <button class="btn-cerrar-orden btn-primary" data-id="${o.id}" style="font-size:12px;padding:5px 10px;background:#16a34a;border-color:#16a34a">✅ Cerrar orden</button>
+          ${actionBtns}
         </div>
       </div>
     </div>`;
 }
 
-// ── VISTA: TODAS LAS ÓRDENES ──────────────────────────────────────────────────
+// ── VISTA: ÓRDENES (tabs para soloMias, tabla plana para todas) ───────────────
 async function viewOrdenes(el, soloMias) {
-  // supervisor filtra por solicitante; técnico filtra por asignado (el backend ya lo restringe)
-  const paramExtra = soloMias && state.user.mant_role === 'supervisor_mant'
-    ? `?solicitante_id=${state.user.id}` : '';
-  const ordenes = await apiFetch('/ordenes' + paramExtra);
-  const isAdminRole = ['admin','superadmin_mant'].includes(state.user.mant_role);
+  const role = state.user.mant_role;
+  const isAdminRole = ['admin','superadmin_mant'].includes(role);
+  const ordenes = await apiFetch('/ordenes');
   const tecnicos = isAdminRole ? await apiFetch('/tecnicos') : [];
 
+  if (soloMias) {
+    const title = role === 'supervisor_mant' ? '📋 Mis solicitudes' : '📋 Mis órdenes';
+    const tabs = [
+      { id: 'sin_atender', label: '⏳ Sin atender', statuses: ['abierta','asignada'] },
+      { id: 'en_proceso',  label: '🟣 En proceso',  statuses: ['en_proceso'] },
+      { id: 'cerradas',    label: '✅ Cerradas',     statuses: ['cerrada','en_validacion'] },
+    ];
+    if (!state._ordenesTab || !tabs.find(t => t.id === state._ordenesTab)) state._ordenesTab = 'sin_atender';
+
+    const renderTabs = () => {
+      const active = tabs.find(t => t.id === state._ordenesTab) || tabs[0];
+      const filtered = ordenes.filter(o => active.statuses.includes(o.status));
+      el.innerHTML = `
+        <div style="margin-bottom:16px">
+          <h2 style="margin:0 0 12px;font-size:18px">${title}</h2>
+          <div style="display:flex;gap:0;border-bottom:2px solid #e2e8f0">
+            ${tabs.map(t => {
+              const count = ordenes.filter(o => t.statuses.includes(o.status)).length;
+              const isAct = t.id === state._ordenesTab;
+              return `<button class="tab-ord-btn" data-tab="${t.id}" style="background:none;border:none;border-bottom:2px solid ${isAct?'#2563eb':'transparent'};padding:8px 16px;font-size:13px;cursor:pointer;color:${isAct?'#2563eb':'#6b7280'};margin-bottom:-2px;font-weight:${isAct?'700':'400'}">${t.label} <span style="background:#f1f5f9;border-radius:10px;padding:1px 7px;font-size:11px">${count}</span></button>`;
+            }).join('')}
+          </div>
+        </div>
+        <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden">
+          <div id="ordenes-table-wrap">${renderOrdenesTable(filtered, tecnicos)}</div>
+        </div>`;
+      el.querySelectorAll('.tab-ord-btn').forEach(btn => {
+        btn.onclick = () => { state._ordenesTab = btn.dataset.tab; renderTabs(); };
+      });
+      bindOrdenesTable(tecnicos);
+    };
+    renderTabs();
+    return;
+  }
+
+  // Vista plana (todas las órdenes — admin / técnico)
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:8px">
-      <h2 style="margin:0;font-size:18px">${soloMias ? '📋 Mis órdenes' : '📋 Todas las órdenes'}</h2>
+      <h2 style="margin:0;font-size:18px">📋 Todas las órdenes</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <input id="f-text" placeholder="🔍 Buscar folio, equipo..." style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:220px"/>
         <select id="f-status" style="padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
           <option value="">Todos los estatus</option>
           <option value="abierta">Abierta</option><option value="asignada">Asignada</option>
-          <option value="en_proceso">En proceso</option><option value="cerrada">Cerrada</option>
+          <option value="en_proceso">En proceso</option><option value="en_validacion">En validación</option><option value="cerrada">Cerrada</option>
         </select>
         <select id="f-tipo" style="padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
           <option value="">Todos los tipos</option>
@@ -291,9 +393,7 @@ async function viewOrdenes(el, soloMias) {
       </div>
     </div>
     <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden">
-      <div id="ordenes-table-wrap">
-        ${renderOrdenesTable(ordenes, tecnicos)}
-      </div>
+      <div id="ordenes-table-wrap">${renderOrdenesTable(ordenes, tecnicos)}</div>
     </div>`;
 
   const reFilter = () => {
@@ -342,8 +442,10 @@ function renderOrdenesTable(ordenes, tecnicos) {
             <td>${statusBadge(o.status)}</td>
             <td style="white-space:nowrap">
               <button class="btn-secondary btn-ver-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Ver detalle">🔍</button>
-              ${isAdmin && o.status!=='cerrada' ? `<button class="btn-secondary btn-asignar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Asignar técnico">👤</button>` : ''}
-              ${!isSupervisor && o.status!=='cerrada' && o.status!=='cancelada' ? `<button class="btn-primary btn-cerrar-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#16a34a;border-color:#16a34a">✅</button>` : ''}
+              ${isAdmin && !['cerrada','en_validacion','cancelada'].includes(o.status) ? `<button class="btn-secondary btn-asignar" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Asignar técnico">👤</button>` : ''}
+              ${!isSupervisor && ['abierta','asignada'].includes(o.status) ? `<button class="btn-primary btn-iniciar-proceso" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#7c3aed;border-color:#7c3aed" title="Iniciar proceso">▶</button>` : ''}
+              ${!isSupervisor && o.status==='en_proceso' ? `<button class="btn-primary btn-cerrar-informe" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#16a34a;border-color:#16a34a" title="Cerrar informe">✅</button>` : ''}
+              ${isSupervisor && o.status==='en_validacion' ? `<button class="btn-primary btn-validar-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px;background:#f59e0b;border-color:#f59e0b" title="Validar cierre">🔍 Val.</button>` : ''}
               <button class="btn-secondary btn-pdf-orden" data-id="${o.id}" style="font-size:11px;padding:3px 8px" title="Imprimir PDF">🖨</button>
               ${state.user.mant_role==='superadmin_mant' ? `<button class="btn-secondary btn-borrar-orden" data-id="${o.id}" data-folio="${escHtml(o.folio)}" style="font-size:11px;padding:3px 8px;color:#dc2626" title="Borrar orden">🗑</button>` : ''}
             </td>
@@ -359,8 +461,14 @@ function bindOrdenesTable(tecnicos) {
   document.querySelectorAll('.btn-asignar').forEach(btn => {
     btn.onclick = () => modalAsignar(Number(btn.dataset.id));
   });
-  document.querySelectorAll('.btn-cerrar-orden').forEach(btn => {
+  document.querySelectorAll('.btn-iniciar-proceso').forEach(btn => {
+    btn.onclick = () => modalIniciarProceso(Number(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-cerrar-informe').forEach(btn => {
     btn.onclick = () => modalCerrarOrden(Number(btn.dataset.id));
+  });
+  document.querySelectorAll('.btn-validar-orden').forEach(btn => {
+    btn.onclick = () => modalValidarOrden(Number(btn.dataset.id));
   });
   document.querySelectorAll('.btn-pdf-orden').forEach(btn => {
     btn.onclick = () => generarPDFOrden(Number(btn.dataset.id));
@@ -387,8 +495,14 @@ function viewNuevaOrden(el) {
         <div class="mant-form-group"><label>Equipo *</label>
           <select id="n-equipo"><option value="">Cargando...</option></select>
         </div>
+        <div class="mant-form-group" id="n-equipo-otro-wrap" style="display:none"><label>Nombre del equipo *</label>
+          <input id="n-equipo-otro" type="text" placeholder="Especifica el nombre del equipo"/>
+        </div>
         <div class="mant-form-group"><label>Parte del equipo</label>
           <select id="n-parte"><option value="">— Selecciona primero el equipo —</option></select>
+        </div>
+        <div class="mant-form-group" id="n-parte-otro-wrap" style="display:none"><label>Nombre de la parte</label>
+          <input id="n-parte-otro" type="text" placeholder="Especifica el nombre de la parte"/>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
           <div class="mant-form-group"><label>Fecha</label>
@@ -427,25 +541,41 @@ function viewNuevaOrden(el) {
   apiFetch('/equipos').then(equipos => {
     const sel = document.getElementById('n-equipo');
     sel.innerHTML = '<option value="">— Selecciona equipo —</option>' +
-      equipos.map(e => `<option value="${e.id}">${escHtml(e.nombre)}</option>`).join('');
+      equipos.map(e => `<option value="${e.id}">${escHtml(e.nombre)}</option>`).join('') +
+      '<option value="otro">Otro (especificar)...</option>';
     sel.onchange = () => {
       const id = sel.value;
+      const otroWrap = document.getElementById('n-equipo-otro-wrap');
       const pSel = document.getElementById('n-parte');
+      const pOtroWrap = document.getElementById('n-parte-otro-wrap');
+      otroWrap.style.display = id === 'otro' ? '' : 'none';
+      pOtroWrap.style.display = 'none';
+      if (id === 'otro') {
+        pSel.innerHTML = '<option value="">— Sin parte específica —</option><option value="otro">Otro (especificar)...</option>';
+        pSel.onchange = () => { pOtroWrap.style.display = pSel.value === 'otro' ? '' : 'none'; };
+        return;
+      }
       pSel.innerHTML = '<option value="">Cargando...</option>';
       if (!id) { pSel.innerHTML = '<option value="">— Selecciona equipo primero —</option>'; return; }
       apiFetch(`/equipos/${id}/partes`).then(partes => {
         pSel.innerHTML = '<option value="">— Sin parte específica —</option>' +
-          partes.map(p => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('');
+          partes.map(p => `<option value="${p.id}">${escHtml(p.nombre)}</option>`).join('') +
+          '<option value="otro">Otro (especificar)...</option>';
+        pSel.onchange = () => { pOtroWrap.style.display = pSel.value === 'otro' ? '' : 'none'; };
       });
     };
   });
 
   document.getElementById('n-submit').onclick = async () => {
     const msg = document.getElementById('nueva-msg');
+    const equipoVal = document.getElementById('n-equipo').value;
+    const parteVal  = document.getElementById('n-parte').value;
     const body = {
       departamento_id:  document.getElementById('n-dpto').value || null,
-      equipo_id:        document.getElementById('n-equipo').value,
-      parte_equipo_id:  document.getElementById('n-parte').value || null,
+      equipo_id:        equipoVal,
+      equipo_custom:    equipoVal === 'otro' ? (document.getElementById('n-equipo-otro').value.trim() || null) : null,
+      parte_equipo_id:  (parteVal && parteVal !== 'otro') ? parteVal : null,
+      parte_custom:     parteVal === 'otro' ? (document.getElementById('n-parte-otro').value.trim() || null) : null,
       fecha_solicitud:  document.getElementById('n-fecha').value,
       hora_solicitud:   document.getElementById('n-hora').value,
       maquina_parada:   document.getElementById('n-parada').checked,
@@ -455,6 +585,10 @@ function viewNuevaOrden(el) {
     if (!body.departamento_id || !body.equipo_id || !body.descripcion_falla) {
       msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
       msg.textContent = 'Departamento, equipo y descripción son requeridos'; return;
+    }
+    if (body.equipo_id === 'otro' && !body.equipo_custom) {
+      msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
+      msg.textContent = 'Especifica el nombre del equipo'; return;
     }
     try {
       await apiFetch('/ordenes', { method: 'POST', body: JSON.stringify(body) });
@@ -1078,8 +1212,9 @@ async function modalAsignar(ordenId) {
 async function modalCerrarOrden(ordenId) {
   const orden = await apiFetch(`/ordenes/${ordenId}`);
   const overlay = openModal(`
-    <h3 style="margin:0 0 4px">✅ Cerrar orden — ${escHtml(orden.folio)}</h3>
-    <p style="font-size:12px;color:#6b7280;margin:0 0 16px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')}</p>
+    <h3 style="margin:0 0 4px">✅ Cerrar informe — ${escHtml(orden.folio)}</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 4px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')}</p>
+    <p style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:6px 10px;margin:0 0 14px">La orden pasará a "En validación" hasta que el supervisor confirme el cierre.</p>
     <div class="mant-form-group"><label>Descripción del trabajo realizado *</label>
       <textarea id="m-trabajo" placeholder="Describe el trabajo ejecutado..."></textarea>
     </div>
@@ -1092,7 +1227,7 @@ async function modalCerrarOrden(ordenId) {
     <div id="m-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end">
       <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
-      <button id="m-ok" class="btn-primary" style="background:#16a34a;border-color:#16a34a">✅ Confirmar cierre</button>
+      <button id="m-ok" class="btn-primary" style="background:#16a34a;border-color:#16a34a">✅ Enviar a validación</button>
     </div>`);
   overlay.querySelector('#m-ok').onclick = async () => {
     const body = {
@@ -1100,12 +1235,16 @@ async function modalCerrarOrden(ordenId) {
       refaccion_utilizada: overlay.querySelector('#m-refaccion').value.trim() || null,
       parte_danada:        overlay.querySelector('#m-parte-danada').value.trim() || null,
     };
+    if (!body.descripcion_trabajo) {
+      overlay.querySelector('#m-err').textContent = 'La descripción del trabajo es requerida';
+      overlay.querySelector('#m-err').style.display = 'block'; return;
+    }
     try {
       const result = await apiFetch(`/ordenes/${ordenId}/cerrar`, { method: 'POST', body: JSON.stringify(body) });
       overlay.remove();
       if (result.paro_cerrado) {
         const { linea, paro_id } = result.paro_cerrado;
-        alert(`✅ Orden cerrada. El paro de producción en ${linea.toUpperCase()} (ID ${paro_id}) fue cerrado automáticamente.`);
+        alert(`✅ Informe enviado a validación. El paro de producción en ${linea.toUpperCase()} (ID ${paro_id}) fue cerrado automáticamente.`);
       }
       loadView(state.view);
     } catch(e) {
@@ -1113,6 +1252,164 @@ async function modalCerrarOrden(ordenId) {
       overlay.querySelector('#m-err').style.display = 'block';
     }
   };
+}
+
+// ── Modal: Iniciar proceso (técnico) ──────────────────────────────────────────
+async function modalIniciarProceso(ordenId) {
+  const orden = await apiFetch(`/ordenes/${ordenId}`);
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px">▶ Iniciar proceso — ${escHtml(orden.folio)}</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 12px">${escHtml(orden.equipo_nombre)} · ${escHtml(orden.descripcion_falla||'')}</p>
+    ${orden.tecnico_asignado_id && orden.tecnico_asignado_id !== state.user.id ? `
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:10px;margin-bottom:12px;font-size:12px;color:#92400e">
+        ⚠️ Esta orden está asignada a <b>${escHtml(orden.tecnico_nombre||'otro técnico')}</b>. Al continuar, quedarás registrado como quien la atiende.
+      </div>` : ''}
+    <div class="mant-form-group">
+      <label>Diagnóstico *</label>
+      <textarea id="ip-diagnostico" placeholder="Describe el diagnóstico de la falla..." rows="3" style="resize:vertical"></textarea>
+    </div>
+    <div class="mant-form-group">
+      <label>Tiempo estimado de cierre *</label>
+      <input id="ip-tiempo-estimado" type="datetime-local"/>
+    </div>
+    <div class="mant-form-group">
+      <label>Status del equipo *</label>
+      <select id="ip-status-equipo">
+        <option value="">— Selecciona —</option>
+        <option value="trabajando_normalmente">✅ Trabajando normalmente</option>
+        <option value="trabajando_con_ajuste">⚠️ Trabajando con ajuste</option>
+        <option value="maquina_parada">⛔ Máquina parada</option>
+      </select>
+    </div>
+    <div id="ip-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="ip-ok" class="btn-primary" style="background:#7c3aed;border-color:#7c3aed">▶ Iniciar proceso</button>
+    </div>`);
+  overlay.querySelector('#ip-ok').onclick = async () => {
+    const diagnostico = overlay.querySelector('#ip-diagnostico').value.trim();
+    const tiempo_estimado_cierre = overlay.querySelector('#ip-tiempo-estimado').value;
+    const status_equipo = overlay.querySelector('#ip-status-equipo').value;
+    const errEl = overlay.querySelector('#ip-err');
+    if (!diagnostico || !tiempo_estimado_cierre || !status_equipo) {
+      errEl.textContent = 'Todos los campos son requeridos'; errEl.style.display = 'block'; return;
+    }
+    try {
+      await apiFetch(`/ordenes/${ordenId}/iniciar-proceso`, {
+        method: 'PATCH',
+        body: JSON.stringify({ diagnostico, tiempo_estimado_cierre, status_equipo }),
+      });
+      overlay.remove();
+      loadView(state.view);
+    } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  };
+}
+
+function calcDiff(isoA, isoB) {
+  const mins = Math.round((new Date(isoB) - new Date(isoA)) / 60000);
+  if (isNaN(mins) || mins < 0) return '—';
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+
+// ── Modal: Validar cierre (supervisor) ────────────────────────────────────────
+async function modalValidarOrden(ordenId) {
+  const o = await apiFetch(`/ordenes/${ordenId}`);
+  const tRespuesta = (o.fecha_solicitud && o.hora_solicitud && o.fecha_en_proceso && o.hora_en_proceso)
+    ? calcDiff(`${o.fecha_solicitud}T${o.hora_solicitud}`, `${o.fecha_en_proceso}T${o.hora_en_proceso}`) : '—';
+  const tTrabajo = (o.fecha_en_proceso && o.hora_en_proceso && o.fecha_cierre && o.hora_cierre)
+    ? calcDiff(`${o.fecha_en_proceso}T${o.hora_en_proceso}`, `${o.fecha_cierre}T${o.hora_cierre}`) : '—';
+  const infoRow = (label, val) => `<div style="display:flex;gap:6px;padding:5px 0;border-bottom:1px solid #f1f5f9;font-size:12px"><span style="color:#6b7280;min-width:130px">${label}</span><span style="font-weight:500">${val}</span></div>`;
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px;font-size:16px">🔍 Validar cierre — ${escHtml(o.folio)}</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">${escHtml(o.equipo_nombre)}${o.parte_nombre&&o.parte_nombre!=='-'?' / '+escHtml(o.parte_nombre):''}</p>
+    <div style="background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:14px">
+      ${infoRow('Apertura', `${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}`)}
+      ${infoRow('Inicio atención', o.fecha_en_proceso ? `${fmtDate(o.fecha_en_proceso)} ${o.hora_en_proceso||''}` : '—')}
+      ${infoRow('Tiempo de respuesta', tRespuesta)}
+      ${infoRow('Cierre', o.fecha_cierre ? `${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''}` : '—')}
+      ${infoRow('Tiempo de trabajo', tTrabajo)}
+      ${infoRow('Atendido por', escHtml(o.atendida_por_nombre || o.tecnico_nombre || '—'))}
+    </div>
+    ${o.diagnostico ? `<div style="margin-bottom:12px"><div style="font-size:10px;color:#9ca3af;text-transform:uppercase;font-weight:600;margin-bottom:4px">Diagnóstico</div><div style="background:#f8fafc;border-radius:6px;padding:8px;font-size:12px">${escHtml(o.diagnostico)}</div></div>` : ''}
+    ${o.descripcion_trabajo ? `<div style="margin-bottom:14px"><div style="font-size:10px;color:#9ca3af;text-transform:uppercase;font-weight:600;margin-bottom:4px">Trabajo realizado</div><div style="background:#f8fafc;border-radius:6px;padding:8px;font-size:12px">${escHtml(o.descripcion_trabajo)}${o.refaccion_utilizada?`<br><span style="color:#6b7280">Refacción: ${escHtml(o.refaccion_utilizada)}</span>`:''}${o.parte_danada?`<br><span style="color:#6b7280">Parte dañada: ${escHtml(o.parte_danada)}</span>`:''}</div></div>` : ''}
+    <div id="rechazo-wrap" style="display:none;margin-bottom:12px">
+      <div class="mant-form-group">
+        <label>Motivo de rechazo *</label>
+        <textarea id="motivo-rechazo" placeholder="Describe el motivo por el que se rechaza el cierre..." rows="3"></textarea>
+      </div>
+    </div>
+    <div id="val-err" style="color:#dc2626;font-size:13px;display:none;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cancelar</button>
+      <button id="btn-rechazar" class="btn-secondary" style="color:#dc2626;border-color:#fca5a5">✖ Rechazar</button>
+      <button id="btn-confirmar" class="btn-primary" style="background:#16a34a;border-color:#16a34a">✅ Confirmar cierre</button>
+    </div>`);
+
+  let rechazando = false;
+  overlay.querySelector('#btn-rechazar').onclick = async () => {
+    if (!rechazando) {
+      rechazando = true;
+      overlay.querySelector('#rechazo-wrap').style.display = '';
+      const rBtn = overlay.querySelector('#btn-rechazar');
+      rBtn.textContent = '✖ Confirmar rechazo';
+      rBtn.style.cssText += ';background:#dc2626;color:white;border-color:#dc2626';
+    } else {
+      const motivo = overlay.querySelector('#motivo-rechazo').value.trim();
+      const errEl = overlay.querySelector('#val-err');
+      if (!motivo) { errEl.textContent = 'El motivo de rechazo es requerido'; errEl.style.display = 'block'; return; }
+      try {
+        await apiFetch(`/ordenes/${ordenId}/rechazar`, { method: 'PATCH', body: JSON.stringify({ motivo_rechazo: motivo }) });
+        overlay.remove();
+        const subject = encodeURIComponent(`Rechazo OT ${o.folio} — ${o.equipo_nombre}`);
+        const body = encodeURIComponent(`Estimado equipo de mantenimiento,\n\nLa orden ${o.folio} (${o.equipo_nombre}) fue rechazada por el supervisor.\n\nMotivo: ${motivo}\n\nPor favor revisa y corrige el informe.\n\nSaludos`);
+        window.open(`mailto:ecoronado@cuesto.com.mx?subject=${subject}&body=${body}`, '_blank');
+        loadView(state.view);
+      } catch(e) { overlay.querySelector('#val-err').textContent = e.message; overlay.querySelector('#val-err').style.display = 'block'; }
+    }
+  };
+  overlay.querySelector('#btn-confirmar').onclick = async () => {
+    try {
+      await apiFetch(`/ordenes/${ordenId}/validar`, { method: 'PATCH' });
+      overlay.remove();
+      loadView(state.view);
+    } catch(e) { overlay.querySelector('#val-err').textContent = e.message; overlay.querySelector('#val-err').style.display = 'block'; }
+  };
+}
+
+// ── VISTA: EN VALIDACIÓN (supervisor / admin) ─────────────────────────────────
+async function viewValidacion(el) {
+  const ordenes = await apiFetch('/ordenes?status=en_validacion');
+  el.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 style="margin:0;font-size:18px">🔍 En validación</h2>
+      <span style="font-size:12px;color:#6b7280">${ordenes.length} orden(es) pendiente(s) de confirmación</span>
+    </div>
+    ${ordenes.length === 0 ? `
+      <div style="text-align:center;padding:48px;color:#6b7280;background:white;border-radius:10px;border:1px solid #e2e8f0">
+        <div style="font-size:32px;margin-bottom:8px">✅</div>
+        <div style="font-weight:600">Sin órdenes pendientes de validación</div>
+        <div style="font-size:13px;margin-top:4px">Todas las órdenes cerradas han sido confirmadas</div>
+      </div>` :
+      ordenes.map(o => `
+        <div style="background:white;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px;border-left:4px solid #f59e0b">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;font-size:15px;margin-bottom:6px">${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}${o.parte_nombre&&o.parte_nombre!=='-'?` <span style="color:#6b7280;font-size:12px">/ ${escHtml(o.parte_nombre)}</span>`:''}</div>
+              <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${escHtml((o.descripcion_falla||'').slice(0,100))}</div>
+              <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Atendido por:</span> <b>${escHtml(o.atendida_por_nombre || o.tecnico_nombre || '—')}</b></div>
+              <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Cierre:</span> ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''}</div>
+              <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${urgenciaBadge(o.nivel_urgencia)} ${statusBadge(o.status)}</div>
+            </div>
+            <div style="flex-shrink:0">
+              <button class="btn-primary btn-validar-orden" data-id="${o.id}" style="padding:8px 16px;font-size:13px">🔍 Ver informe y validar</button>
+            </div>
+          </div>
+        </div>`).join('')
+    }`;
+  el.querySelectorAll('.btn-validar-orden').forEach(btn => {
+    btn.onclick = () => modalValidarOrden(Number(btn.dataset.id));
+  });
 }
 
 async function modalDetalleOrden(ordenId) {
@@ -1147,12 +1444,19 @@ async function modalDetalleOrden(ordenId) {
         <div style="font-weight:700;color:#713f12;margin-bottom:4px">🏭 Generada desde Producción</div>
         <div>Línea: <b>${escHtml(String(o.origen_produccion.linea||'').toUpperCase())}</b> · Paro: <b>${escHtml(String(o.origen_produccion.folio_paro||o.origen_produccion.paro_id||''))}</b></div>
       </div>` : ''}
-    ${o.status === 'cerrada' ? `
-      <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;font-size:12px">
-        <div style="font-weight:700;color:#15803d;margin-bottom:8px">✅ Cierre — ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''} · ${escHtml(o.cerrada_por_nombre||'')}</div>
+    ${o.diagnostico ? `
+      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px;font-size:12px;margin-bottom:12px">
+        <div style="font-weight:700;color:#5b21b6;margin-bottom:4px">🔬 Diagnóstico</div>
+        <div>${escHtml(o.diagnostico)}</div>
+        ${o.tiempo_estimado_cierre?`<div style="margin-top:4px;color:#6b7280">Cierre estimado: ${fmtDateTime(o.tiempo_estimado_cierre)}</div>`:''}
+      </div>` : ''}
+    ${['cerrada','en_validacion'].includes(o.status) && o.descripcion_trabajo ? `
+      <div style="background:${o.status==='cerrada'?'#f0fdf4':'#fffbeb'};border:1px solid ${o.status==='cerrada'?'#bbf7d0':'#fde68a'};border-radius:8px;padding:12px;font-size:12px">
+        <div style="font-weight:700;color:${o.status==='cerrada'?'#15803d':'#92400e'};margin-bottom:8px">${o.status==='cerrada'?'✅ Cerrada':'🟠 En validación'} — ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''} · ${escHtml(o.atendida_por_nombre||o.cerrada_por_nombre||'')}</div>
         <div><b>Trabajo:</b> ${escHtml(o.descripcion_trabajo)}</div>
         ${o.refaccion_utilizada?`<div><b>Refacción:</b> ${escHtml(o.refaccion_utilizada)}</div>`:''}
         ${o.parte_danada?`<div><b>Parte dañada:</b> ${escHtml(o.parte_danada)}</div>`:''}
+        ${o.validado_por_nombre?`<div style="margin-top:4px;color:#15803d">✅ Validado por: ${escHtml(o.validado_por_nombre)}</div>`:''}
       </div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
       ${state.user?.mant_role === 'superadmin_mant' ? `<button id="btn-borrar-orden" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🗑 Borrar orden</button>` : '<span></span>'}

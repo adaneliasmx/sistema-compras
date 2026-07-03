@@ -37,14 +37,39 @@ function enrichOrden(o, db, dbMain) {
     (o.solicitante_user_id
       ? ((dbMain.users || []).find(u => u.id === o.solicitante_user_id) || {}).full_name || null
       : null);
+  const atendidaPor = o.atendida_por_user_id
+    ? (dbMain.users || []).find(u => u.id === o.atendida_por_user_id) || {}
+    : {};
+  const validadoPor = o.validado_por_user_id
+    ? (dbMain.users || []).find(u => u.id === o.validado_por_user_id) || {}
+    : {};
+  // Resoler estado del paro de producción vinculado
+  let produccion_paro_cerrado = null;
+  let produccion_paro_fecha_inicio = null;
+  let produccion_paro_fecha_fin = null;
+  if (o.origen_produccion && o.origen_produccion.paro_id) {
+    const linea = (o.origen_produccion.linea || '').toLowerCase();
+    const parosKey = linea === 'baker' ? 'paros_baker' : linea === 'l1' ? 'paros_l1' : 'paros';
+    const paro = (dbMain[parosKey] || []).find(p => p.id === o.origen_produccion.paro_id);
+    if (paro) {
+      produccion_paro_cerrado = !!(paro.fecha_fin || paro.estado === 'cerrado');
+      produccion_paro_fecha_inicio = paro.fecha_inicio || null;
+      produccion_paro_fecha_fin = paro.fecha_fin || null;
+    }
+  }
   return {
     ...o,
-    equipo_nombre: equipo.nombre || '-',
+    equipo_nombre: o.equipo_custom || equipo.nombre || '-',
     equipo_codigo: equipo.codigo || '-',
-    parte_nombre: parte.nombre || '-',
+    parte_nombre: o.parte_custom || parte.nombre || '-',
     tecnico_nombre: tecnico.full_name || null,
     cerrada_por_nombre: cerradoPor.full_name || null,
+    atendida_por_nombre: atendidaPor.full_name || null,
+    validado_por_nombre: validadoPor.full_name || null,
     solicitante_nombre: solicitanteNombre,
+    produccion_paro_cerrado,
+    produccion_paro_fecha_inicio,
+    produccion_paro_fecha_fin,
   };
 }
 
@@ -58,13 +83,20 @@ router.get('/ordenes', (req, res) => {
 
   let ordenes = db.ordenes_mantenimiento || [];
 
-  // Técnico ve sus órdenes + órdenes sin asignar
+  // Técnico: ve todas las órdenes activas (para atender cualquiera) + sus propias cerradas/en_validacion
   if (req.mantUser.mant_role === 'tecnico_mant') {
-    ordenes = ordenes.filter(o => o.tecnico_asignado_id === req.mantUser.id || !o.tecnico_asignado_id);
+    ordenes = ordenes.filter(o =>
+      ['abierta','asignada','en_proceso'].includes(o.status) ||
+      o.tecnico_asignado_id === req.mantUser.id ||
+      o.atendida_por_user_id === req.mantUser.id
+    );
   }
-  // Supervisor solo ve sus propias solicitudes
+  // Supervisor: ve sus solicitudes + todas las órdenes en_validacion
   if (req.mantUser.mant_role === 'supervisor_mant') {
-    ordenes = ordenes.filter(o => o.solicitante_user_id === req.mantUser.id);
+    ordenes = ordenes.filter(o =>
+      o.solicitante_user_id === req.mantUser.id ||
+      o.status === 'en_validacion'
+    );
   }
 
   if (status)        ordenes = ordenes.filter(o => o.status === status);
@@ -121,8 +153,11 @@ router.get('/ordenes/:id', (req, res) => {
   const dbMain = readMain();
   const o = (db.ordenes_mantenimiento || []).find(x => x.id === Number(req.params.id));
   if (!o) return res.status(404).json({ error: 'Orden no encontrada' });
-  // Técnico solo ve sus órdenes o las sin asignar
-  if (req.mantUser.mant_role === 'tecnico_mant' && o.tecnico_asignado_id && o.tecnico_asignado_id !== req.mantUser.id) {
+  // Técnico solo queda bloqueado si la orden ya está cerrada/cancelada y no es suya
+  if (req.mantUser.mant_role === 'tecnico_mant' &&
+      ['cerrada','cancelada'].includes(o.status) &&
+      o.tecnico_asignado_id !== req.mantUser.id &&
+      o.atendida_por_user_id !== req.mantUser.id) {
     return res.status(403).json({ error: 'Sin acceso a esta orden' });
   }
   res.json(enrichOrden(o, db, dbMain));
@@ -139,14 +174,18 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
     ? (dbMainLocal.cost_centers || []).find(c => c.id === Number(req.body.departamento_id))
     : null;
 
+  const equipoIdRaw = req.body.equipo_id;
+  const parteIdRaw  = req.body.parte_equipo_id;
   const orden = {
     id: nextId(db.ordenes_mantenimiento),
     folio,
     tipo: 'correctivo_solicitud',
     origen: 'mantenimiento',
     paro_id: null,
-    equipo_id: Number(req.body.equipo_id) || null,
-    parte_equipo_id: req.body.parte_equipo_id ? Number(req.body.parte_equipo_id) : null,
+    equipo_id: (equipoIdRaw && equipoIdRaw !== 'otro') ? Number(equipoIdRaw) : null,
+    equipo_custom: (equipoIdRaw === 'otro') ? (req.body.equipo_custom || 'Otro') : null,
+    parte_equipo_id: (parteIdRaw && parteIdRaw !== 'otro') ? Number(parteIdRaw) : null,
+    parte_custom: (parteIdRaw === 'otro') ? (req.body.parte_custom || 'Otra') : null,
     solicitante_nombre: req.mantUser.full_name,
     solicitante_user_id: req.mantUser.id,
     departamento_id: dpto ? dpto.id : null,
@@ -197,7 +236,7 @@ router.patch('/ordenes/:id', mantAllowRoles('admin', 'supervisor_mant'), (req, r
     if (!tecnico_asignado_id && orden.status === 'asignada') orden.status = 'abierta';
   }
   if (nivel_urgencia) orden.nivel_urgencia = nivel_urgencia;
-  if (status && ['abierta','asignada','en_proceso','cancelada'].includes(status)) orden.status = status;
+  if (status && ['abierta','asignada','en_proceso','en_validacion','cancelada'].includes(status)) orden.status = status;
   if (fecha_programada !== undefined) orden.fecha_programada = fecha_programada;
   if (descripcion_falla !== undefined) orden.descripcion_falla = descripcion_falla;
   orden.updated_at = new Date().toISOString();
@@ -233,30 +272,37 @@ router.patch('/ordenes/:id/aplazar', mantAllowRoles('admin'), (req, res) => {
   res.json(orden);
 });
 
-// POST /api/mant/ordenes/:id/cerrar — cierre con firma
+// POST /api/mant/ordenes/:id/cerrar — técnico envía a validación
 router.post('/ordenes/:id/cerrar', (req, res) => {
   const db = readMant();
   const dbMain = readMain();
   const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
-  if (orden.status === 'cerrada') return res.status(400).json({ error: 'La orden ya está cerrada' });
-
-  // Técnico solo puede cerrar sus propias órdenes
-  if (req.mantUser.mant_role === 'tecnico_mant' && orden.tecnico_asignado_id !== req.mantUser.id) {
-    return res.status(403).json({ error: 'Solo el técnico asignado puede cerrar esta orden' });
-  }
+  if (['cerrada','en_validacion'].includes(orden.status)) return res.status(400).json({ error: 'La orden ya fue cerrada o está en validación' });
 
   const { descripcion_trabajo, refaccion_utilizada, parte_danada } = req.body;
   if (!descripcion_trabajo) return res.status(400).json({ error: 'Descripción del trabajo requerida' });
 
   const now = new Date().toISOString();
-  orden.status = 'cerrada';
+  // Si no tiene técnico asignado, auto-asignar al que cierra
+  if (!orden.tecnico_asignado_id) {
+    orden.tecnico_asignado_id = req.mantUser.id;
+    orden.status = 'asignada'; // transitorio antes de en_validacion
+  }
+  // Registrar quién atendió realmente
+  orden.atendida_por_user_id = req.mantUser.id;
+  if (!Array.isArray(orden.historial_atencion)) orden.historial_atencion = [];
+  orden.historial_atencion.push({ user_id: req.mantUser.id, nombre: req.mantUser.full_name, accion: 'cierre', ts: now });
+
+  orden.status = 'en_validacion';
   orden.fecha_cierre = now.slice(0, 10);
   orden.hora_cierre = now.slice(11, 16);
   orden.cerrada_por_user_id = req.mantUser.id;
   orden.descripcion_trabajo = descripcion_trabajo;
   orden.refaccion_utilizada = refaccion_utilizada || null;
   orden.parte_danada = parte_danada || null;
+  // Si estaba con máquina parada y no se registró el fin, cerrarlo ahora
+  if (orden.maquina_parada_inicio && !orden.maquina_parada_fin) orden.maquina_parada_fin = now;
   orden.updated_at = now;
 
   // Si es un mantenimiento programado → registrar ejecución y calcular próxima fecha
@@ -306,6 +352,82 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
   }
 
   res.json({ ok: true, orden, paro_cerrado });
+});
+
+// PATCH /api/mant/ordenes/:id/iniciar-proceso — técnico inicia atención
+router.patch('/ordenes/:id/iniciar-proceso', (req, res) => {
+  const db = readMant();
+  const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (orden.status === 'en_proceso') return res.status(400).json({ error: 'La orden ya está en proceso' });
+  if (['cerrada','en_validacion','cancelada'].includes(orden.status)) {
+    return res.status(400).json({ error: 'No se puede iniciar proceso en una orden cerrada o cancelada' });
+  }
+  const { diagnostico, tiempo_estimado_cierre, status_equipo } = req.body;
+  if (!diagnostico) return res.status(400).json({ error: 'Diagnóstico requerido' });
+  if (!tiempo_estimado_cierre) return res.status(400).json({ error: 'Tiempo estimado de cierre requerido' });
+  if (!['trabajando_normal','trabajando_ajuste','maquina_parada'].includes(status_equipo)) {
+    return res.status(400).json({ error: 'status_equipo inválido' });
+  }
+  const now = new Date().toISOString();
+  // Auto-asignar si no tiene técnico
+  if (!orden.tecnico_asignado_id) orden.tecnico_asignado_id = req.mantUser.id;
+  // Registrar historial
+  if (!Array.isArray(orden.historial_atencion)) orden.historial_atencion = [];
+  orden.historial_atencion.push({ user_id: req.mantUser.id, nombre: req.mantUser.full_name, accion: 'en_proceso', ts: now });
+  orden.atendida_por_user_id = req.mantUser.id;
+  orden.diagnostico = diagnostico;
+  orden.tiempo_estimado_cierre = tiempo_estimado_cierre;
+  orden.status_equipo = status_equipo;
+  orden.fecha_en_proceso = now.slice(0, 10);
+  orden.hora_en_proceso  = now.slice(11, 16);
+  if (status_equipo === 'maquina_parada') orden.maquina_parada_inicio = now;
+  orden.status = 'en_proceso';
+  orden.updated_at = now;
+  writeMant(db);
+  const dbMain = readMain();
+  res.json(enrichOrden(orden, db, dbMain));
+});
+
+// PATCH /api/mant/ordenes/:id/validar — supervisor confirma cierre
+router.patch('/ordenes/:id/validar', mantAllowRoles('supervisor_mant', 'admin', 'superadmin_mant'), (req, res) => {
+  const db = readMant();
+  const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (orden.status !== 'en_validacion') return res.status(400).json({ error: 'La orden no está en validación' });
+  const now = new Date().toISOString();
+  if (orden.maquina_parada_inicio && !orden.maquina_parada_fin) orden.maquina_parada_fin = now;
+  orden.status = 'cerrada';
+  orden.fecha_validacion = now.slice(0, 10);
+  orden.hora_validacion  = now.slice(11, 16);
+  orden.validado_por_user_id = req.mantUser.id;
+  orden.updated_at = now;
+  writeMant(db);
+  const dbMain = readMain();
+  res.json(enrichOrden(orden, db, dbMain));
+});
+
+// PATCH /api/mant/ordenes/:id/rechazar — supervisor rechaza, vuelve a abierta
+router.patch('/ordenes/:id/rechazar', mantAllowRoles('supervisor_mant', 'admin', 'superadmin_mant'), (req, res) => {
+  const db = readMant();
+  const orden = (db.ordenes_mantenimiento || []).find(o => o.id === Number(req.params.id));
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  if (orden.status !== 'en_validacion') return res.status(400).json({ error: 'La orden no está en validación' });
+  const { motivo_rechazo } = req.body;
+  if (!motivo_rechazo) return res.status(400).json({ error: 'Motivo de rechazo requerido' });
+  const now = new Date().toISOString();
+  orden.status = 'abierta';
+  orden.motivo_rechazo = motivo_rechazo;
+  orden.fecha_rechazo = now.slice(0, 10);
+  orden.rechazado_por_user_id = req.mantUser.id;
+  // Limpiar campos de cierre para que vuelva al flujo normal
+  orden.fecha_cierre = null;
+  orden.hora_cierre = null;
+  orden.cerrada_por_user_id = null;
+  orden.updated_at = now;
+  writeMant(db);
+  const dbMain = readMain();
+  res.json({ ok: true, orden: enrichOrden(orden, db, dbMain) });
 });
 
 // ── CATÁLOGO EQUIPOS ──────────────────────────────────────────────────────────
