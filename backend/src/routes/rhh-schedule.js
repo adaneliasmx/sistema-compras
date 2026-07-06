@@ -1326,6 +1326,7 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (re
     const wsName = wb.SheetNames[0];
     const ws = wb.Sheets[wsName];
     const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    wb.Sheets = {}; // liberar memoria del workbook xlsx
 
     // Column mapping: status at [6,10,14,18,22], TE at [8,12,16,20,24] (Mon-Fri)
     const STATUS_COLS = [6, 10, 14, 18, 22];

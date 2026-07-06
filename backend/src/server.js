@@ -99,6 +99,7 @@ app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), { index: 
 
 // ── API Health + memoria ──────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
+  if (global.gc) global.gc();
   const m = process.memoryUsage();
   const mb = v => Math.round(v / 1024 / 1024);
   const heapUsedMB = mb(m.heapUsed);

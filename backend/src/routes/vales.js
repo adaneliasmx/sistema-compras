@@ -2725,6 +2725,7 @@ router.post('/admin/import-excel', valesAuthRequired, valesAllowRoles('admin'),
         });
         resumen[linea] = titCount;
       });
+      wb.Sheets = {}; // liberar memoria del workbook xlsx
 
       if (!headers.length) {
         return res.status(400).json({ error: 'No se encontraron titulaciones 2026 en el archivo. Verifica que sea el archivo correcto.' });
