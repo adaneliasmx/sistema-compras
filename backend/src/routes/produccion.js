@@ -1302,7 +1302,7 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const l = lineaKey(linea);
 
   // Candado: no permitir dos paros activos simultáneos para la misma línea
-  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado === 'activo');
+  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado !== 'cerrado');
   if (openParo) {
     return res.status(409).json({
       error: `Ya hay un paro activo en ${linea}: "${openParo.motivo}" (desde ${openParo.hora_inicio}). Ciérralo antes de registrar uno nuevo.`
@@ -1361,12 +1361,34 @@ router.post('/paros/:linea/pendiente-motivo', produccionAuthRequired, (req, res)
   const { hora_inicio, fecha_inicio } = req.body || {};
   const pdb = dbProd.read();
 
-  // Candado: si ya hay paro activo, devolver 409 con el paro existente
-  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado === 'activo');
+  // Candado 1: si ya hay paro activo, devolver 409 con el paro existente
+  const openParo = (pdb.paros || []).find(p => p.linea === linea && !p.fecha_fin && p.estado !== 'cerrado');
   if (openParo) return res.status(409).json({ error: 'Ya hay un paro activo', paro: openParo });
 
-  const _fecha = fecha_inicio || nowDateStr();
-  const _hora  = hora_inicio  || nowTimeStr();
+  let _fecha = fecha_inicio || nowDateStr();
+  let _hora  = hora_inicio  || nowTimeStr();
+
+  // Candado 2: ajustar hora_inicio al fin del paro cerrado más reciente en este período.
+  // Evita solapamientos cuando el pendiente_motivo se crea retroactivo a la última carga
+  // y ya existe uno o más paros cerrados que cubren parte de ese tiempo.
+  const _toMs = (f, h) => new Date(`${f}T${h}:00`).getTime();
+  const _cerradosPosterior = (pdb.paros || []).filter(p =>
+    p.linea === linea && p.fecha_fin && p.hora_fin &&
+    _toMs(p.fecha_fin, p.hora_fin) > _toMs(_fecha, _hora)
+  );
+  if (_cerradosPosterior.length > 0) {
+    const _masReciente = _cerradosPosterior.reduce((max, p) =>
+      _toMs(p.fecha_fin, p.hora_fin) > _toMs(max.fecha_fin, max.hora_fin) ? p : max
+    );
+    _fecha = _masReciente.fecha_fin;
+    _hora  = _masReciente.hora_fin;
+  }
+
+  // Candado 3: si el inicio ajustado tiene más de 2 horas, ya no corresponde al turno actual
+  if ((Date.now() - _toMs(_fecha, _hora)) / 60000 > 120) {
+    return res.json({ skipped: true, reason: 'Última actividad fuera del turno actual' });
+  }
+
   const turno  = getTurno(_hora);
 
   if (!pdb.paros) pdb.paros = [];
