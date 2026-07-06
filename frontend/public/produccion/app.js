@@ -6481,7 +6481,11 @@ async function viewConfiguracion(el) {
 
     el2.querySelectorAll('.ss-img-del').forEach(btn => {
       btn.addEventListener('click', () => {
+        const delId = btn.dataset.imgId;
         btn.closest('.ss-img-row').remove();
+        if (el._ssCfg) {
+          el._ssCfg.slides = el._ssCfg.slides.filter(s => String(s.id) !== String(delId));
+        }
       });
     });
   }
@@ -6533,22 +6537,38 @@ async function viewConfiguracion(el) {
 
   await loadSsConfig();
 
+  // Comprime imagen usando Canvas (max 1280px, JPEG 75%) antes de guardar como base64
+  function compressImage(file) {
+    return new Promise(resolve => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const MAX = 1280;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width  = Math.round(img.width  * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL('image/jpeg', 0.75));
+      };
+      img.src = url;
+    });
+  }
+
   // Image upload
   document.getElementById('ss-img-upload').addEventListener('change', async (ev) => {
     const file = ev.target.files[0];
     if (!file) return;
-    if (file.size > 2 * 1024 * 1024) { alert('La imagen no puede superar 2MB'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const ssCfg = el._ssCfg || { slides: [] };
-      const maxId = Math.max(0, ...ssCfg.slides.map(s => s.id || 0));
-      const newSlide = { id: maxId + 1, type: 'imagen', imagen_b64: reader.result, titulo: '', duracion_seg: null, activo: true };
-      ssCfg.slides = [...ssCfg.slides, newSlide];
-      el._ssCfg = ssCfg;
-      renderImgSlides(ssCfg.slides.filter(s => s.type === 'imagen'));
-      ev.target.value = '';
-    };
-    reader.readAsDataURL(file);
+    if (file.size > 10 * 1024 * 1024) { alert('La imagen no puede superar 10MB'); return; }
+    const b64 = await compressImage(file);
+    const ssCfg = el._ssCfg || { slides: [] };
+    const maxId = Math.max(0, ...ssCfg.slides.map(s => s.id || 0));
+    const newSlide = { id: maxId + 1, type: 'imagen', imagen_b64: b64, titulo: '', duracion_seg: null, activo: true };
+    ssCfg.slides = [...ssCfg.slides, newSlide];
+    el._ssCfg = ssCfg;
+    renderImgSlides(ssCfg.slides.filter(s => s.type === 'imagen'));
+    ev.target.value = '';
   });
 
   // Save slideshow config
