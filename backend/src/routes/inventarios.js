@@ -316,9 +316,12 @@ router.get('/recepciones', invAuthRequired, (req, res) => {
   res.json(rows.sort((a, b) => b.created_at.localeCompare(a.created_at)));
 });
 
-router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin'), (req, res) => {
+router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin', 'inventarios'), (req, res) => {
   const { inv_type, item_key, item_label, cantidad, kg, fecha, factura } = req.body;
   if (!inv_type || !item_key || !fecha) return res.status(400).json({ error: 'inv_type, item_key y fecha son requeridos' });
+  if (req.invUser.role === 'inventarios' && inv_type !== 'quimicos_proceso') {
+    return res.status(403).json({ error: 'El rol inventarios solo puede registrar recepción de Químicos Proceso' });
+  }
   const db = readInv();
   db.inv_recepciones = db.inv_recepciones || [];
   const rec = {

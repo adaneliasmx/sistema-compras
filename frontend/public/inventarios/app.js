@@ -127,11 +127,15 @@ function buildNav() {
     return btn;
   };
 
-  // Recepcion: admin + recepcion
+  // Recepcion: admin + recepcion (todos los tipos) | inventarios (solo quimicos)
   if (role === 'admin' || role === 'recepcion') {
     addGroup('Recepcion');
     addLink('📥', 'Registrar Recepcion', 'recepcion');
     addLink('📋', 'Historial Recepciones', 'recepcion-hist');
+  } else if (role === 'inventarios') {
+    addGroup('Recepcion');
+    addLink('📥', 'Registrar Recepcion', 'recepcion', { inv_type: 'quimicos_proceso' });
+    addLink('📋', 'Historial Recepciones', 'recepcion-hist', { inv_type: 'quimicos_proceso' });
   }
 
   // Conteos: admin + inventarios (por permisos)
@@ -188,8 +192,8 @@ async function renderView(view, params) {
   main.innerHTML = '<div class="page-loading">Cargando...</div>';
   try {
     switch (view) {
-      case 'recepcion':       await renderRecepcion(main); break;
-      case 'recepcion-hist':  await renderRecepcionHist(main); break;
+      case 'recepcion':       await renderRecepcion(main, params.inv_type || null); break;
+      case 'recepcion-hist':  await renderRecepcionHist(main, params.inv_type || null); break;
       case 'conteo':          await renderConteo(main, params.inv_type); break;
       case 'comprador':       await renderComprador(main, params.inv_type); break;
       case 'requisicion':     await renderRequisicion(main); break;
@@ -233,7 +237,7 @@ function showApp() {
 // ════════════════════════════════════════════════════════════════════════════════
 
 // ── RECEPCION ─────────────────────────────────────────────────────────────────
-async function renderRecepcion(main) {
+async function renderRecepcion(main, invTypeFilter = null) {
   // Load items config + catalog
   const [rCfg, rVales, rCompras] = await Promise.all([
     apiGet('/items-config'),
@@ -250,8 +254,8 @@ async function renderRecepcion(main) {
       <div class="form-row cols-2" style="margin-bottom:12px">
         <div class="form-group">
           <label>Inventario</label>
-          <select class="form-input" id="rec-type">
-            ${INV_TYPES.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}
+          <select class="form-input" id="rec-type" ${invTypeFilter ? 'disabled' : ''}>
+            ${(invTypeFilter ? INV_TYPES.filter(t => t.key === invTypeFilter) : INV_TYPES).map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
@@ -347,14 +351,15 @@ async function renderRecepcion(main) {
 }
 
 // ── HISTORIAL RECEPCIONES ─────────────────────────────────────────────────────
-async function renderRecepcionHist(main) {
+async function renderRecepcionHist(main, invTypeFilter = null) {
   main.innerHTML = `
     <div class="page-title">📋 Historial de Recepciones</div>
     <div class="card">
       <div class="toolbar">
-        <select class="form-input" id="rh-type" style="width:220px">
-          <option value="">Todos los inventarios</option>
-          ${INV_TYPES.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}
+        <select class="form-input" id="rh-type" style="width:220px" ${invTypeFilter ? 'disabled' : ''}>
+          ${invTypeFilter
+            ? (INV_TYPES.filter(t => t.key === invTypeFilter).map(t => `<option value="${t.key}" selected>${esc(t.label)}</option>`).join(''))
+            : `<option value="">Todos los inventarios</option>${INV_TYPES.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}`}
         </select>
         <input type="date" class="form-input" id="rh-desde" style="width:150px" placeholder="Desde"/>
         <input type="date" class="form-input" id="rh-hasta" style="width:150px" placeholder="Hasta"/>
@@ -363,7 +368,7 @@ async function renderRecepcionHist(main) {
       <div id="rh-table"><div class="empty-msg">Selecciona filtros y presiona Buscar</div></div>
     </div>
   `;
-  document.getElementById('rh-search').onclick = async () => {
+  const doSearch = async () => {
     const inv_type = document.getElementById('rh-type').value;
     const desde    = document.getElementById('rh-desde').value;
     const hasta    = document.getElementById('rh-hasta').value;
@@ -390,6 +395,8 @@ async function renderRecepcionHist(main) {
       </table></div>
     ` : '<div class="empty-msg">Sin registros</div>';
   };
+  document.getElementById('rh-search').onclick = doSearch;
+  if (invTypeFilter) doSearch();
 }
 window.delRecepcion = async (id) => {
   if (!confirm('¿Eliminar esta recepcion?')) return;
