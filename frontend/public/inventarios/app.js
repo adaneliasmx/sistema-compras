@@ -1489,85 +1489,130 @@ async function renderAdminItems(main) {
     const isVales  = selType === 'quimicos_proceso';
 
     if (isNew && isVales) {
-      // ── Quimicos Proceso: dropdown de items_vales + opcional link a compras ──
+      // ── Quimicos Proceso: catálogo Vales O ingreso manual ──
       loadItems().then(existing => {
-        const addedKeys  = new Set(existing.map(i => i.item_key));
-        const available  = catalogVales.filter(v => !addedKeys.has(`v_${v.id}`));
-        // Map id → catalog object para acceso sin data-attributes
-        const valesMap   = Object.fromEntries(catalogVales.map(v => [v.id, v]));
-
+        const addedKeys = new Set(existing.map(i => i.item_key));
+        const available = catalogVales.filter(v => !addedKeys.has(`v_${v.id}`));
+        const valesMap  = Object.fromEntries(catalogVales.map(v => [v.id, v]));
         const comprasWidget = buildComprasSearchWidget(catalogCompras, new Set(), null);
 
         openModal('Agregar item — Quimicos Proceso', `
-          <div class="form-group" style="margin-bottom:12px">
-            <label>Producto del catálogo de Vales</label>
-            <select class="form-input" id="im-vales-sel">
-              <option value="">— Seleccionar producto —</option>
-              ${available.map(v =>
-                `<option value="${v.id}">${esc(v.nombre)}${v.proveedor ? ' ['+esc(v.proveedor)+']' : ''}${v.peso_kg ? ' — '+v.peso_kg+' kg/tambo' : ''}</option>`
-              ).join('')}
-            </select>
+          <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <button type="button" id="src-cat-btn" style="flex:1;padding:7px;font-size:12px;background:#3b82f6;color:white;border:none;cursor:pointer;font-weight:600">📦 Del catálogo Vales</button>
+            <button type="button" id="src-man-btn" style="flex:1;padding:7px;font-size:12px;background:white;color:#374151;border:none;cursor:pointer">✏️ Nuevo manual</button>
           </div>
-          <div id="im-vales-detail" style="display:none">
-            <div class="alert alert-info" id="im-vales-info" style="margin-bottom:10px"></div>
-            <div class="form-row cols-2" style="margin-bottom:10px">
-              <div class="form-group"><label>Min (kg)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
-              <div class="form-group"><label>Max (kg)</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
+          <div id="src-cat-section">
+            <div class="form-group" style="margin-bottom:12px">
+              <label>Producto del catálogo de Vales</label>
+              <select class="form-input" id="im-vales-sel">
+                <option value="">— Seleccionar producto —</option>
+                ${available.map(v => `<option value="${v.id}">${esc(v.nombre)}${v.proveedor?' ['+esc(v.proveedor)+']':''}${v.peso_kg?' — '+v.peso_kg+' kg/tambo':''}</option>`).join('')}
+              </select>
+            </div>
+            <div id="im-vales-detail" style="display:none">
+              <div class="alert alert-info" id="im-vales-info" style="margin-bottom:10px"></div>
+              <div class="form-row cols-2" style="margin-bottom:10px">
+                <div class="form-group"><label>Min (kg)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
+                <div class="form-group"><label>Max (kg)</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
+              </div>
+              <div class="form-row cols-2" style="margin-bottom:10px">
+                <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" step="0.01"/></div>
+                <div class="form-group"><label>Densidad</label><input type="number" class="form-input" id="im-densidad" step="0.0001"/></div>
+              </div>
+              <div class="form-row cols-2" style="margin-bottom:12px">
+                <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="KG"/></div>
+                <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+              </div>
+              <hr class="divider"/>${comprasWidget.html}
+            </div>
+          </div>
+          <div id="src-man-section" style="display:none">
+            <div class="form-group" style="margin-bottom:10px">
+              <label>Nombre del item *</label>
+              <input type="text" class="form-input" id="im-man-nombre" placeholder="Nombre del producto"/>
             </div>
             <div class="form-row cols-2" style="margin-bottom:10px">
-              <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-peso" step="0.01"/></div>
-              <div class="form-group"><label>Densidad</label><input type="number" class="form-input" id="im-densidad" step="0.0001"/></div>
+              <div class="form-group"><label>Min (kg)</label><input type="number" class="form-input" id="im-man-min" step="0.01"/></div>
+              <div class="form-group"><label>Max (kg)</label><input type="number" class="form-input" id="im-man-max" step="0.01"/></div>
+            </div>
+            <div class="form-row cols-2" style="margin-bottom:10px">
+              <div class="form-group"><label>Peso por tambo (kg)</label><input type="number" class="form-input" id="im-man-peso" step="0.01"/></div>
+              <div class="form-group"><label>Densidad</label><input type="number" class="form-input" id="im-man-densidad" step="0.0001"/></div>
             </div>
             <div class="form-row cols-2" style="margin-bottom:12px">
-              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" value="KG"/></div>
-              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-man-unidad" value="KG"/></div>
+              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-man-proveedor" placeholder="Nombre del proveedor"/></div>
             </div>
-            <hr class="divider"/>
-            ${comprasWidget.html}
           </div>
           <div id="im-err" class="alert alert-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
-        `);
+        `, { large: true });
+
+        let srcMode = 'catalog';
+        const activateTab = (mode) => {
+          srcMode = mode;
+          const isCat = mode === 'catalog';
+          document.getElementById('src-cat-section').style.display = isCat ? '' : 'none';
+          document.getElementById('src-man-section').style.display = isCat ? 'none' : '';
+          document.getElementById('src-cat-btn').style.cssText = `flex:1;padding:7px;font-size:12px;border:none;cursor:pointer;font-weight:600;background:${isCat?'#3b82f6':'white'};color:${isCat?'white':'#374151'}`;
+          document.getElementById('src-man-btn').style.cssText = `flex:1;padding:7px;font-size:12px;border:none;cursor:pointer;font-weight:${isCat?'400':'600'};background:${isCat?'white':'#3b82f6'};color:${isCat?'#374151':'white'}`;
+          document.getElementById('im-save').disabled = isCat; // catálogo requiere selección; manual se habilita directo
+        };
+        document.getElementById('src-cat-btn').onclick = () => activateTab('catalog');
+        document.getElementById('src-man-btn').onclick = () => activateTab('manual');
 
         comprasWidget.wire();
 
         document.getElementById('im-vales-sel').onchange = function() {
-          const detail  = document.getElementById('im-vales-detail');
+          const detail = document.getElementById('im-vales-detail');
           const saveBtn = document.getElementById('im-save');
           if (!this.value) { detail.style.display = 'none'; saveBtn.disabled = true; return; }
           const v = valesMap[Number(this.value)];
           if (!v) return;
-          detail.style.display = '';
-          saveBtn.disabled = false;
-          document.getElementById('im-peso').value      = v.peso_kg    ?? '';
-          document.getElementById('im-densidad').value  = v.densidad   ?? '';
-          document.getElementById('im-proveedor').value = v.proveedor  ?? '';
+          detail.style.display = ''; saveBtn.disabled = false;
+          document.getElementById('im-peso').value      = v.peso_kg   ?? '';
+          document.getElementById('im-densidad').value  = v.densidad  ?? '';
+          document.getElementById('im-proveedor').value = v.proveedor ?? '';
           document.getElementById('im-vales-info').textContent =
-            `${v.nombre}${v.proveedor ? ' · '+v.proveedor : ''}${v.peso_kg ? ' · '+v.peso_kg+' kg/tambo' : ''}`;
+            `${v.nombre}${v.proveedor?' · '+v.proveedor:''}${v.peso_kg?' · '+v.peso_kg+' kg/tambo':''}`;
         };
 
         document.getElementById('im-save').onclick = async () => {
-          const selEl    = document.getElementById('im-vales-sel');
-          if (!selEl.value) return;
-          const v        = valesMap[Number(selEl.value)];
-          if (!v) return;
-          const item_key  = `v_${v.id}`;
-          const peso_kg   = document.getElementById('im-peso').value      ? Number(document.getElementById('im-peso').value)     : null;
-          const densidad  = document.getElementById('im-densidad').value  ? Number(document.getElementById('im-densidad').value) : null;
-          const proveedor = document.getElementById('im-proveedor').value.trim() || null;
-          const min_val   = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-          const max_val   = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-          const unidad    = document.getElementById('im-unidad').value.trim() || 'KG';
-          const catId     = document.getElementById('im-cat-id').value;
-          const errEl     = document.getElementById('im-err');
+          const errEl = document.getElementById('im-err');
           errEl.style.display = 'none';
-          const r = await apiPost('/items-config', {
-            inv_type: selType, item_key, item_label: v.nombre,
-            min_val, max_val, unidad, peso_kg, densidad, proveedor,
-            vales_item_id: v.id,
-            compras_item_id: catId ? Number(catId) : null,
-            activo: true
-          });
+          let payload;
+          if (srcMode === 'manual') {
+            const nombre = document.getElementById('im-man-nombre').value.trim();
+            if (!nombre) { errEl.textContent = 'El nombre del item es requerido'; errEl.style.display = ''; return; }
+            payload = {
+              inv_type: selType, item_key: 'm_' + Date.now(), item_label: nombre,
+              min_val:   document.getElementById('im-man-min').value !== ''     ? Number(document.getElementById('im-man-min').value)     : null,
+              max_val:   document.getElementById('im-man-max').value !== ''     ? Number(document.getElementById('im-man-max').value)     : null,
+              peso_kg:   document.getElementById('im-man-peso').value           ? Number(document.getElementById('im-man-peso').value)    : null,
+              densidad:  document.getElementById('im-man-densidad').value       ? Number(document.getElementById('im-man-densidad').value): null,
+              unidad:    document.getElementById('im-man-unidad').value.trim()  || 'KG',
+              proveedor: document.getElementById('im-man-proveedor').value.trim() || null,
+              activo: true
+            };
+          } else {
+            const selEl = document.getElementById('im-vales-sel');
+            if (!selEl.value) { errEl.textContent = 'Selecciona un producto del catálogo'; errEl.style.display = ''; return; }
+            const v = valesMap[Number(selEl.value)];
+            if (!v) return;
+            payload = {
+              inv_type: selType, item_key: `v_${v.id}`, item_label: v.nombre,
+              min_val:          document.getElementById('im-min').value !== ''     ? Number(document.getElementById('im-min').value)     : null,
+              max_val:          document.getElementById('im-max').value !== ''     ? Number(document.getElementById('im-max').value)     : null,
+              peso_kg:          document.getElementById('im-peso').value           ? Number(document.getElementById('im-peso').value)    : null,
+              densidad:         document.getElementById('im-densidad').value       ? Number(document.getElementById('im-densidad').value): null,
+              unidad:           document.getElementById('im-unidad').value.trim()  || 'KG',
+              proveedor:        document.getElementById('im-proveedor').value.trim() || null,
+              vales_item_id:    v.id,
+              compras_item_id:  document.getElementById('im-cat-id').value ? Number(document.getElementById('im-cat-id').value) : null,
+              activo: true
+            };
+          }
+          const r = await apiPost('/items-config', payload);
           if (!r) return;
           const d = await r.json();
           if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
@@ -1579,11 +1624,10 @@ async function renderAdminItems(main) {
       return;
 
     } else if (isNew && !isVales) {
-      // ── EPP / Insumos / Titulacion: buscador de catalog_items ──
+      // ── EPP / Insumos / Titulacion: catálogo Compras O ingreso manual ──
       loadItems().then(existing => {
-        const addedKeys    = new Set(existing.map(i => i.item_key));
+        const addedKeys = new Set(existing.map(i => i.item_key));
         const comprasWidget = buildComprasSearchWidget(catalogCompras, addedKeys, (c) => {
-          // Auto-fill cuando se selecciona del catálogo
           document.getElementById('im-unidad').value    = c.unit || '';
           document.getElementById('im-proveedor').value = c.supplier_name || '';
           document.getElementById('im-detail-fields').style.display = '';
@@ -1591,38 +1635,85 @@ async function renderAdminItems(main) {
         });
 
         openModal(`Agregar item — ${INV_TYPES.find(t=>t.key===selType)?.label}`, `
-          ${comprasWidget.html}
-          <div id="im-detail-fields" style="display:none">
+          <div style="display:flex;gap:0;margin-bottom:14px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+            <button type="button" id="src-cat-btn" style="flex:1;padding:7px;font-size:12px;background:#3b82f6;color:white;border:none;cursor:pointer;font-weight:600">📦 Del catálogo</button>
+            <button type="button" id="src-man-btn" style="flex:1;padding:7px;font-size:12px;background:white;color:#374151;border:none;cursor:pointer">✏️ Nuevo manual</button>
+          </div>
+          <div id="src-cat-section">
+            ${comprasWidget.html}
+            <div id="im-detail-fields" style="display:none">
+              <div class="form-row cols-2" style="margin-bottom:10px">
+                <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
+                <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
+              </div>
+              <div class="form-row cols-2" style="margin-bottom:14px">
+                <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" placeholder="pza, kg, lt..."/></div>
+                <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+              </div>
+            </div>
+          </div>
+          <div id="src-man-section" style="display:none">
+            <div class="form-group" style="margin-bottom:10px">
+              <label>Nombre del item *</label>
+              <input type="text" class="form-input" id="im-man-nombre" placeholder="Nombre del producto"/>
+            </div>
             <div class="form-row cols-2" style="margin-bottom:10px">
-              <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-min" step="0.01"/></div>
-              <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-max" step="0.01"/></div>
+              <div class="form-group"><label>Minimo (alerta)</label><input type="number" class="form-input" id="im-man-min" step="0.01"/></div>
+              <div class="form-group"><label>Maximo</label><input type="number" class="form-input" id="im-man-max" step="0.01"/></div>
             </div>
             <div class="form-row cols-2" style="margin-bottom:14px">
-              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-unidad" placeholder="pza, kg, lt..."/></div>
-              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-proveedor" placeholder="Auto-llenado"/></div>
+              <div class="form-group"><label>Unidad</label><input class="form-input" id="im-man-unidad" placeholder="pza, kg, lt..."/></div>
+              <div class="form-group"><label>Proveedor</label><input class="form-input" id="im-man-proveedor" placeholder="Nombre del proveedor"/></div>
             </div>
           </div>
           <div id="im-err" class="alert alert-error" style="display:none"></div>
           <button class="btn btn-primary btn-block" id="im-save" disabled>Agregar item</button>
         `);
 
+        let srcMode = 'catalog';
+        const activateTab = (mode) => {
+          srcMode = mode;
+          const isCat = mode === 'catalog';
+          document.getElementById('src-cat-section').style.display = isCat ? '' : 'none';
+          document.getElementById('src-man-section').style.display = isCat ? 'none' : '';
+          document.getElementById('src-cat-btn').style.cssText = `flex:1;padding:7px;font-size:12px;border:none;cursor:pointer;font-weight:600;background:${isCat?'#3b82f6':'white'};color:${isCat?'white':'#374151'}`;
+          document.getElementById('src-man-btn').style.cssText = `flex:1;padding:7px;font-size:12px;border:none;cursor:pointer;font-weight:${isCat?'400':'600'};background:${isCat?'white':'#3b82f6'};color:${isCat?'#374151':'white'}`;
+          if (!isCat) document.getElementById('im-save').disabled = false;
+        };
+        document.getElementById('src-cat-btn').onclick = () => activateTab('catalog');
+        document.getElementById('src-man-btn').onclick = () => activateTab('manual');
+
         comprasWidget.wire();
 
         document.getElementById('im-save').onclick = async () => {
-          const catId      = document.getElementById('im-cat-id').value;
-          const catLabel   = document.getElementById('im-cat-label').value;
-          if (!catId || !catLabel) { document.getElementById('im-err').textContent = 'Selecciona un item del catálogo'; document.getElementById('im-err').style.display = ''; return; }
-          const min_val    = document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null;
-          const max_val    = document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null;
-          const unidad     = document.getElementById('im-unidad').value.trim() || null;
-          const proveedor  = document.getElementById('im-proveedor').value.trim() || null;
-          const errEl      = document.getElementById('im-err');
+          const errEl = document.getElementById('im-err');
           errEl.style.display = 'none';
-          const r = await apiPost('/items-config', {
-            inv_type: selType, item_key: `c_${catId}`, item_label: catLabel,
-            min_val, max_val, unidad, proveedor,
-            compras_item_id: Number(catId), activo: true
-          });
+          let payload;
+          if (srcMode === 'manual') {
+            const nombre = document.getElementById('im-man-nombre').value.trim();
+            if (!nombre) { errEl.textContent = 'El nombre del item es requerido'; errEl.style.display = ''; return; }
+            payload = {
+              inv_type: selType, item_key: 'm_' + Date.now(), item_label: nombre,
+              min_val:   document.getElementById('im-man-min').value !== '' ? Number(document.getElementById('im-man-min').value) : null,
+              max_val:   document.getElementById('im-man-max').value !== '' ? Number(document.getElementById('im-man-max').value) : null,
+              unidad:    document.getElementById('im-man-unidad').value.trim() || null,
+              proveedor: document.getElementById('im-man-proveedor').value.trim() || null,
+              activo: true
+            };
+          } else {
+            const catId    = document.getElementById('im-cat-id').value;
+            const catLabel = document.getElementById('im-cat-label').value;
+            if (!catId || !catLabel) { errEl.textContent = 'Selecciona un item del catálogo'; errEl.style.display = ''; return; }
+            payload = {
+              inv_type: selType, item_key: `c_${catId}`, item_label: catLabel,
+              min_val:          document.getElementById('im-min').value !== '' ? Number(document.getElementById('im-min').value) : null,
+              max_val:          document.getElementById('im-max').value !== '' ? Number(document.getElementById('im-max').value) : null,
+              unidad:           document.getElementById('im-unidad').value.trim() || null,
+              proveedor:        document.getElementById('im-proveedor').value.trim() || null,
+              compras_item_id:  Number(catId), activo: true
+            };
+          }
+          const r = await apiPost('/items-config', payload);
           if (!r) return;
           const d = await r.json();
           if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
