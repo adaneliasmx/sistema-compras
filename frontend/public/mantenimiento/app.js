@@ -643,12 +643,8 @@ function _mostrarPanelEnvioOT(el, orden, info) {
 
         <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:20px">
           <div style="font-weight:600;font-size:13px;margin-bottom:8px">📱 Enviar por WhatsApp</div>
-          <div style="display:flex;gap:8px;margin-bottom:6px">
-            <input id="env-wa-num" type="tel" placeholder="521XXXXXXXXXX (con código de país)"
-              style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>
-            <button id="btn-env-wa" class="btn-secondary" style="white-space:nowrap;padding:6px 14px;font-size:13px">Enviar 📱</button>
-          </div>
-          <div style="font-size:11px;color:#6b7280">El PDF se descargará automáticamente para que lo adjuntes en WhatsApp</div>
+          <button id="btn-env-wa" class="btn-secondary" style="width:100%;padding:8px 14px;font-size:13px">Abrir WhatsApp y seleccionar contacto 📱</button>
+          <div style="font-size:11px;color:#6b7280;margin-top:6px">El mensaje se pre-redacta; tú eliges el contacto dentro de WhatsApp · El PDF se descarga automáticamente para adjuntarlo</div>
         </div>
 
         <div style="display:flex;gap:8px">
@@ -704,11 +700,8 @@ function _mostrarPanelEnvioOT(el, orden, info) {
   };
 
   document.getElementById('btn-env-wa').onclick = async () => {
-    let num = document.getElementById('env-wa-num').value.trim().replace(/\D/g, '');
-    if (!num) { alert('Ingresa el número de WhatsApp'); return; }
-    if (!num.startsWith('52')) num = '52' + num;
     await generarPDFOrden(orden.id, true);
-    window.open(`https://wa.me/${num}?text=${encodeURIComponent(waMsg)}`, '_blank');
+    window.open(`https://wa.me/?text=${encodeURIComponent(waMsg)}`, '_blank');
   };
 
   document.getElementById('btn-env-pdf').onclick = () => generarPDFOrden(orden.id, true);
