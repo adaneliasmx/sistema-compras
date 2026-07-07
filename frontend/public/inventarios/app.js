@@ -319,14 +319,17 @@ async function renderRecepcion(main, invTypeFilter = null) {
               </div>
             </div>
           </div>
-          <div class="form-row cols-2" style="margin-bottom:4px">
-            <div class="form-group">
-              <label>Revisó</label>
-              <input type="text" class="form-input" id="rec-reviso" value="${esc(ME?.nombre || '')}" readonly style="background:#f0f2f5"/>
-            </div>
-            <div class="form-group">
-              <label>Resultado de Inspección</label>
-              <div id="rec-qc-badge" style="margin-top:6px;padding:8px 14px;border-radius:6px;font-weight:700;font-size:13px;display:inline-block;background:#dcfce7;color:#15803d">✅ LIBERADO</div>
+          <div style="border-top:1px solid #e2e8f0;margin:12px 0 12px;padding-top:12px">
+            <div style="font-weight:600;font-size:13px;color:#374151;margin-bottom:12px">🔓 Liberación</div>
+            <div class="form-row cols-2" style="margin-bottom:4px">
+              <div class="form-group">
+                <label>Revisó</label>
+                <input type="text" class="form-input" id="rec-reviso" value="${esc(ME?.nombre || '')}" readonly style="background:#f0f2f5"/>
+              </div>
+              <div class="form-group">
+                <label>Estado</label>
+                <div id="rec-qc-badge" style="margin-top:6px;padding:8px 16px;border-radius:6px;font-weight:700;font-size:13px;display:inline-block;background:#dcfce7;color:#15803d;border:2px solid #86efac">✅ LIBERADO</div>
+              </div>
             </div>
           </div>
         </div>
@@ -383,10 +386,10 @@ async function renderRecepcion(main, invTypeFilter = null) {
     const badge = document.getElementById('rec-qc-badge');
     if (!badge) return;
     if (falla) {
-      badge.style.background = '#fef2f2'; badge.style.color = '#dc2626';
+      badge.style.background = '#fef2f2'; badge.style.color = '#dc2626'; badge.style.borderColor = '#fca5a5';
       badge.textContent = '⚠️ EN CUARENTENA';
     } else {
-      badge.style.background = '#dcfce7'; badge.style.color = '#15803d';
+      badge.style.background = '#dcfce7'; badge.style.color = '#15803d'; badge.style.borderColor = '#86efac';
       badge.textContent = '✅ LIBERADO';
     }
   }
@@ -397,6 +400,7 @@ async function renderRecepcion(main, invTypeFilter = null) {
   document.querySelectorAll('input[name="rec-golpeado"], input[name="rec-sellos"], input[name="rec-caducidad"]')
     .forEach(r => r.addEventListener('change', updateQcBadge));
   buildItemSelect();
+  updateQcSection(); // mostrar/ocultar sección QC según el tipo seleccionado al cargar
 
   document.getElementById('rec-save').onclick = async () => {
     const inv_type    = document.getElementById('rec-type').value;
