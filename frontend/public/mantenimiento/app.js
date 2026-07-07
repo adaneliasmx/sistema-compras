@@ -597,16 +597,122 @@ function viewNuevaOrden(el) {
       msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
       msg.textContent = 'Especifica el nombre del equipo'; return;
     }
+    // Capturar nombres de display antes de que el form desaparezca
+    const equipoNombre = equipoVal === 'otro'
+      ? (body.equipo_custom || 'Otro')
+      : (document.getElementById('n-equipo').options[document.getElementById('n-equipo').selectedIndex]?.text || '—');
+    const dptoNombre = document.getElementById('n-dpto').options[document.getElementById('n-dpto').selectedIndex]?.text || '—';
+    const parteNombre = (() => {
+      const pv = document.getElementById('n-parte').value;
+      if (!pv || pv === '') return '—';
+      if (pv === 'otro') return body.parte_custom || 'Otra';
+      return document.getElementById('n-parte').options[document.getElementById('n-parte').selectedIndex]?.text || '—';
+    })();
     try {
-      await apiFetch('/ordenes', { method: 'POST', body: JSON.stringify(body) });
-      // Navegar a "Mis solicitudes" para que vea la orden recién creada
-      state.view = 'mis-ordenes';
-      renderApp();
+      const orden = await apiFetch('/ordenes', { method: 'POST', body: JSON.stringify(body) });
+      _mostrarPanelEnvioOT(el, orden, { equipo_nombre: equipoNombre, dpto_nombre: dptoNombre, parte_nombre: parteNombre });
     } catch (e) {
       msg.style.cssText = 'display:block;background:#fef2f2;color:#dc2626;border:1px solid #fca5a5';
       msg.textContent = e.message;
     }
   };
+}
+
+// ── PANEL DE ENVÍO POST-CREACIÓN ──────────────────────────────────────────────
+function _mostrarPanelEnvioOT(el, orden, info) {
+  const urgLabel = { alta: '🔴 ALTA', media: '🟡 MEDIA', baja: '🟢 BAJA' }[orden.nivel_urgencia] || (orden.nivel_urgencia || '').toUpperCase();
+  el.innerHTML = `
+    <div style="max-width:600px">
+      <h2 style="margin:0 0 20px;font-size:18px">➕ Nueva solicitud de mantenimiento</h2>
+      <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:24px">
+        <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:16px;margin-bottom:20px;text-align:center">
+          <div style="font-size:28px;margin-bottom:6px">✅</div>
+          <div style="font-weight:700;color:#15803d;font-size:15px">¡Solicitud creada exitosamente!</div>
+          <div style="font-size:13px;color:#166534;margin-top:4px">Folio: <strong>${escHtml(orden.folio)}</strong></div>
+        </div>
+        <p style="font-size:13px;color:#374151;margin:0 0 16px">Notifica al área de mantenimiento por correo o WhatsApp:</p>
+
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:10px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">📧 Enviar por correo electrónico</div>
+          <div style="display:flex;gap:8px">
+            <input id="env-correo-dest" type="email" placeholder="mantenimiento@empresa.com"
+              style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>
+            <button id="btn-env-correo" class="btn-secondary" style="white-space:nowrap;padding:6px 14px;font-size:13px">Enviar 📧</button>
+          </div>
+        </div>
+
+        <div style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:20px">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px">📱 Enviar por WhatsApp</div>
+          <div style="display:flex;gap:8px;margin-bottom:6px">
+            <input id="env-wa-num" type="tel" placeholder="521XXXXXXXXXX (con código de país)"
+              style="flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>
+            <button id="btn-env-wa" class="btn-secondary" style="white-space:nowrap;padding:6px 14px;font-size:13px">Enviar 📱</button>
+          </div>
+          <div style="font-size:11px;color:#6b7280">El PDF se descargará automáticamente para que lo adjuntes en WhatsApp</div>
+        </div>
+
+        <div style="display:flex;gap:8px">
+          <button id="btn-env-pdf" class="btn-secondary" style="flex:1;padding:9px;font-size:13px">🖨 Descargar PDF</button>
+          <button id="btn-ver-sols" class="btn-primary" style="flex:1;padding:9px;font-size:13px">Ver mis solicitudes →</button>
+        </div>
+      </div>
+    </div>`;
+
+  const emailSubject = `Solicitud de Mantenimiento ${orden.folio}`;
+  const emailBody = [
+    `Se generó la solicitud de mantenimiento ${orden.folio}.`,
+    ``,
+    `── Datos de la solicitud ───────────────────────`,
+    `Folio:            ${orden.folio}`,
+    `Fecha / Hora:     ${orden.fecha_solicitud || '—'}  ${orden.hora_solicitud || ''}`,
+    `Departamento:     ${info.dpto_nombre || '—'}`,
+    `Solicitante:      ${orden.solicitante_nombre || '—'}`,
+    `Equipo:           ${info.equipo_nombre || '—'}`,
+    `Parte del equipo: ${info.parte_nombre && info.parte_nombre !== '—' ? info.parte_nombre : '—'}`,
+    `Urgencia:         ${urgLabel}`,
+    `Máquina parada:   ${orden.maquina_parada ? 'SÍ' : 'NO'}`,
+    `────────────────────────────────────────────────`,
+    `Descripción de la falla:`,
+    orden.descripcion_falla || '—',
+    ``,
+    `Por favor atender a la brevedad posible.`,
+  ].join('\n');
+
+  const waMsg = [
+    `*SOLICITUD DE MANTENIMIENTO*`,
+    `Folio: *${orden.folio}*`,
+    ``,
+    `📅 ${orden.fecha_solicitud || '—'} ${orden.hora_solicitud || ''}`,
+    `🏭 Departamento: ${info.dpto_nombre || '—'}`,
+    `👤 Solicitante: ${orden.solicitante_nombre || '—'}`,
+    `⚙️ Equipo: ${info.equipo_nombre || '—'}`,
+    ...(info.parte_nombre && info.parte_nombre !== '—' ? [`🔩 Parte: ${info.parte_nombre}`] : []),
+    `⚠️ Urgencia: ${urgLabel}`,
+    `🔴 Máquina parada: ${orden.maquina_parada ? 'SÍ' : 'NO'}`,
+    ``,
+    `📋 *Descripción:*`,
+    orden.descripcion_falla || '—',
+    ``,
+    `Por favor atender a la brevedad posible.`,
+  ].join('\n');
+
+  document.getElementById('btn-env-correo').onclick = () => {
+    const dest = document.getElementById('env-correo-dest').value.trim();
+    if (!dest) { alert('Ingresa el correo destino'); return; }
+    const url = `mailto:${encodeURIComponent(dest)}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+    window.open(url, '_blank');
+  };
+
+  document.getElementById('btn-env-wa').onclick = async () => {
+    let num = document.getElementById('env-wa-num').value.trim().replace(/\D/g, '');
+    if (!num) { alert('Ingresa el número de WhatsApp'); return; }
+    if (!num.startsWith('52')) num = '52' + num;
+    await generarPDFOrden(orden.id, true);
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(waMsg)}`, '_blank');
+  };
+
+  document.getElementById('btn-env-pdf').onclick = () => generarPDFOrden(orden.id, true);
+  document.getElementById('btn-ver-sols').onclick = () => { state.view = 'mis-ordenes'; renderApp(); };
 }
 
 // ── VISTA: PLAN SEMANAL (ADMIN) ───────────────────────────────────────────────
@@ -1858,7 +1964,7 @@ async function modalNuevoProgramado() {
 }
 
 // ── PDF de orden — 2 copias (original + copia) en hoja carta ─────────────────
-async function generarPDFOrden(ordenId) {
+async function generarPDFOrden(ordenId, descarga = false) {
   const o = await apiFetch(`/ordenes/${ordenId}`);
   const { jsPDF } = window.jspdf;
 
@@ -1988,8 +2094,12 @@ async function generarPDFOrden(ordenId) {
   drawCopy(0, 'ORIGINAL');
   drawCopy(COPY_H, 'COPIA');
 
-  const url = doc.output('bloburl');
-  window.open(url, '_blank');
+  if (descarga) {
+    doc.save(`OT-${o.folio}.pdf`);
+  } else {
+    const url = doc.output('bloburl');
+    window.open(url, '_blank');
+  }
 }
 
 // ── POLLING URGENCIAS ─────────────────────────────────────────────────────────

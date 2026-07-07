@@ -208,7 +208,7 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
     created_at: now,
     updated_at: now,
   };
-  if (!orden.equipo_id) return res.status(400).json({ error: 'Equipo requerido' });
+  if (!orden.equipo_id && !orden.equipo_custom) return res.status(400).json({ error: 'Equipo requerido' });
   if (!orden.descripcion_falla) return res.status(400).json({ error: 'Descripción de falla requerida' });
 
   db.ordenes_mantenimiento.push(orden);
