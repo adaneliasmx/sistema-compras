@@ -137,7 +137,7 @@ function buildNav() {
   // Conteos: admin + inventarios (por permisos)
   if (role === 'admin' || role === 'inventarios') {
     addGroup('Conteo Semanal');
-    const types = role === 'admin' ? INV_TYPES : INV_TYPES.filter(t => perms.includes(t.key));
+    const types = INV_TYPES;
     for (const t of types) {
       addLink(t.icon, t.label, 'conteo', { inv_type: t.key });
     }
@@ -218,10 +218,7 @@ function showApp() {
   // Default view
   const role = ME.role;
   if (role === 'admin' || role === 'inventarios') {
-    const perms = ME.permisos_inv || [];
-    const first = role === 'admin' ? INV_TYPES[0].key : (perms[0] || null);
-    if (first) navigate('conteo', { inv_type: first });
-    else navigate('vale-epp-nuevo');
+    navigate('conteo', { inv_type: INV_TYPES[0].key });
   } else if (role === 'recepcion') {
     navigate('recepcion');
   } else if (role === 'comprador') {
