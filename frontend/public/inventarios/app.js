@@ -18,6 +18,7 @@ async function apiGet(path)        { return api('GET',    path); }
 async function apiPost(path, body) { return api('POST',   path, body); }
 async function apiPut(path, body)  { return api('PUT',    path, body); }
 async function apiDel(path)        { return api('DELETE', path); }
+async function apiPatch(path, body){ return api('PATCH',  path, body); }
 
 function esc(s) { return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmt(n, dec=2) { if (n == null) return '—'; return Number(n).toLocaleString('es-MX', { maximumFractionDigits: dec }); }
@@ -154,6 +155,8 @@ function buildNav() {
       addLink(t.icon, t.label, 'comprador', { inv_type: t.key });
     }
     addLink('📄', 'Nueva Requisicion', 'requisicion');
+    addGroup('Cuarentena');
+    addLink('⚠️', 'Cuarentena Quimicos', 'cuarentena');
   }
 
   // Vales EPP: admin + inventarios
@@ -194,6 +197,7 @@ async function renderView(view, params) {
     switch (view) {
       case 'recepcion':       await renderRecepcion(main, params.inv_type || null); break;
       case 'recepcion-hist':  await renderRecepcionHist(main, params.inv_type || null); break;
+      case 'cuarentena':      await renderCuarentena(main); break;
       case 'conteo':          await renderConteo(main, params.inv_type); break;
       case 'comprador':       await renderComprador(main, params.inv_type); break;
       case 'requisicion':     await renderRequisicion(main); break;
@@ -283,6 +287,50 @@ async function renderRecepcion(main, invTypeFilter = null) {
           <input type="number" class="form-input" id="rec-kg" min="0" step="0.01" placeholder="0" readonly style="background:#f0f2f5"/>
         </div>
       </div>
+      <div id="rec-qc-section" style="display:${invTypeFilter === 'quimicos_proceso' ? '' : 'none'}">
+        <div style="border-top:2px solid #e2e8f0;padding-top:14px;margin-top:4px;margin-bottom:12px">
+          <div style="font-weight:600;font-size:13px;color:#374151;margin-bottom:12px">🔬 Control de Calidad</div>
+          <div class="form-row cols-2" style="margin-bottom:12px">
+            <div class="form-group">
+              <label>No. Certificado de Calidad</label>
+              <input type="text" class="form-input" id="rec-cert" placeholder="Número de certificado"/>
+            </div>
+            <div class="form-group">
+              <label>Fecha de Caducidad Vigente</label>
+              <div style="display:flex;gap:16px;padding-top:8px">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-caducidad" value="true" checked/> Sí</label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-caducidad" value="false"/> No</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-row cols-2" style="margin-bottom:12px">
+            <div class="form-group">
+              <label>Material Golpeado</label>
+              <div style="display:flex;gap:16px;padding-top:8px">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-golpeado" value="false" checked/> No</label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-golpeado" value="true"/> Sí</label>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>Sellos de Seguridad No Violados</label>
+              <div style="display:flex;gap:16px;padding-top:8px">
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-sellos" value="true" checked/> Sí</label>
+                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-sellos" value="false"/> No</label>
+              </div>
+            </div>
+          </div>
+          <div class="form-row cols-2" style="margin-bottom:4px">
+            <div class="form-group">
+              <label>Revisó</label>
+              <input type="text" class="form-input" id="rec-reviso" value="${esc(ME?.nombre || '')}" readonly style="background:#f0f2f5"/>
+            </div>
+            <div class="form-group">
+              <label>Resultado de Inspección</label>
+              <div id="rec-qc-badge" style="margin-top:6px;padding:8px 14px;border-radius:6px;font-weight:700;font-size:13px;display:inline-block;background:#dcfce7;color:#15803d">✅ LIBERADO</div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div id="rec-err" class="alert alert-error" style="display:none"></div>
       <button class="btn btn-primary" id="rec-save">Guardar Recepcion</button>
     </div>
@@ -322,31 +370,66 @@ async function renderRecepcion(main, invTypeFilter = null) {
     }
   }
 
-  document.getElementById('rec-type').onchange = buildItemSelect;
+  function updateQcSection() {
+    const inv_type = document.getElementById('rec-type').value;
+    const qcEl = document.getElementById('rec-qc-section');
+    if (qcEl) qcEl.style.display = inv_type === 'quimicos_proceso' ? '' : 'none';
+  }
+  function updateQcBadge() {
+    const golpeado  = document.querySelector('input[name="rec-golpeado"]:checked')?.value === 'true';
+    const sellosOk  = document.querySelector('input[name="rec-sellos"]:checked')?.value !== 'false';
+    const caducidad = document.querySelector('input[name="rec-caducidad"]:checked')?.value !== 'false';
+    const falla = golpeado || !sellosOk || !caducidad;
+    const badge = document.getElementById('rec-qc-badge');
+    if (!badge) return;
+    if (falla) {
+      badge.style.background = '#fef2f2'; badge.style.color = '#dc2626';
+      badge.textContent = '⚠️ EN CUARENTENA';
+    } else {
+      badge.style.background = '#dcfce7'; badge.style.color = '#15803d';
+      badge.textContent = '✅ LIBERADO';
+    }
+  }
+
+  document.getElementById('rec-type').onchange = () => { buildItemSelect(); updateQcSection(); };
   document.getElementById('rec-item').onchange = updateKg;
   document.getElementById('rec-qty').oninput   = updateKg;
+  document.querySelectorAll('input[name="rec-golpeado"], input[name="rec-sellos"], input[name="rec-caducidad"]')
+    .forEach(r => r.addEventListener('change', updateQcBadge));
   buildItemSelect();
 
   document.getElementById('rec-save').onclick = async () => {
-    const inv_type = document.getElementById('rec-type').value;
-    const selOpt   = document.getElementById('rec-item').selectedOptions[0];
-    const item_key = selOpt?.value;
-    const item_label = selOpt?.dataset.label || item_key;
-    const cantidad = Number(document.getElementById('rec-qty').value) || null;
-    const kg       = Number(document.getElementById('rec-kg').value) || null;
-    const fecha    = document.getElementById('rec-fecha').value;
-    const factura  = document.getElementById('rec-factura').value.trim() || null;
-    const errEl    = document.getElementById('rec-err');
+    const inv_type    = document.getElementById('rec-type').value;
+    const selOpt      = document.getElementById('rec-item').selectedOptions[0];
+    const item_key    = selOpt?.value;
+    const item_label  = selOpt?.dataset.label || item_key;
+    const cantidad    = Number(document.getElementById('rec-qty').value) || null;
+    const kg          = Number(document.getElementById('rec-kg').value) || null;
+    const fecha       = document.getElementById('rec-fecha').value;
+    const factura     = document.getElementById('rec-factura').value.trim() || null;
+    const errEl       = document.getElementById('rec-err');
     errEl.style.display = 'none';
     if (!inv_type || !item_key || !fecha) { errEl.textContent = 'Completa los campos requeridos'; errEl.style.display = ''; return; }
-    const r = await apiPost('/recepciones', { inv_type, item_key, item_label, cantidad, kg, fecha, factura });
+    // Campos QC (solo quimicos_proceso)
+    const qcActive        = inv_type === 'quimicos_proceso';
+    const cert_calidad    = qcActive ? (document.getElementById('rec-cert')?.value?.trim() || null) : null;
+    const material_golpeado = qcActive ? (document.querySelector('input[name="rec-golpeado"]:checked')?.value === 'true') : null;
+    const sellos_ok       = qcActive ? (document.querySelector('input[name="rec-sellos"]:checked')?.value !== 'false') : null;
+    const caducidad_vigente = qcActive ? (document.querySelector('input[name="rec-caducidad"]:checked')?.value !== 'false') : null;
+    const reviso          = qcActive ? (document.getElementById('rec-reviso')?.value?.trim() || null) : null;
+    const r = await apiPost('/recepciones', { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
+      cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso });
     if (!r) return;
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
-    alert('Recepcion guardada exitosamente.');
+    const msg = d.estatus_calidad === 'cuarentena'
+      ? '⚠️ Recepción registrada. El material fue enviado a CUARENTENA por no cumplir los criterios de calidad.'
+      : '✅ Recepción guardada exitosamente. Material LIBERADO.';
+    alert(msg);
     document.getElementById('rec-qty').value = '';
     document.getElementById('rec-kg').value  = '';
     document.getElementById('rec-factura').value = '';
+    if (document.getElementById('rec-cert')) document.getElementById('rec-cert').value = '';
   };
 }
 
@@ -378,6 +461,12 @@ async function renderRecepcionHist(main, invTypeFilter = null) {
     if (hasta)    qs += `&hasta=${hasta}`;
     const r = await apiGet('/recepciones?' + qs.slice(1));
     const rows = r.ok ? await r.json() : [];
+    const qcBadge = row => {
+      if (row.inv_type !== 'quimicos_proceso' || !row.estatus_calidad) return '<span style="color:#9ca3af">—</span>';
+      return row.estatus_calidad === 'liberado'
+        ? '<span style="color:#15803d;font-weight:600">✅ Liberado</span>'
+        : '<span style="color:#dc2626;font-weight:600">⚠️ Cuarentena</span>';
+    };
     const tbody = rows.map(row => `<tr>
       <td>${esc(row.fecha)}</td>
       <td>${esc(INV_TYPES.find(t=>t.key===row.inv_type)?.label || row.inv_type)}</td>
@@ -385,12 +474,13 @@ async function renderRecepcionHist(main, invTypeFilter = null) {
       <td class="text-right">${fmt(row.cantidad)}</td>
       <td class="text-right">${fmt(row.kg)} kg</td>
       <td>${esc(row.factura || '—')}</td>
+      <td>${qcBadge(row)}</td>
       <td>${esc(row.usuario_nombre)}</td>
       ${ME.role === 'admin' ? `<td><button class="btn btn-danger btn-sm" onclick="delRecepcion(${row.id})">Eliminar</button></td>` : '<td></td>'}
     </tr>`).join('');
     document.getElementById('rh-table').innerHTML = rows.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>Fecha</th><th>Inventario</th><th>Item</th><th>Cantidad</th><th>Kg</th><th>Factura</th><th>Usuario</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Inventario</th><th>Item</th><th>Cantidad</th><th>Kg</th><th>Factura</th><th>Calidad</th><th>Usuario</th><th></th></tr></thead>
         <tbody>${tbody}</tbody>
       </table></div>
     ` : '<div class="empty-msg">Sin registros</div>';
@@ -403,6 +493,59 @@ window.delRecepcion = async (id) => {
   const r = await apiDel('/recepciones/' + id);
   if (r?.ok) navigate('recepcion-hist');
 };
+
+// ── CUARENTENA ────────────────────────────────────────────────────────────────
+async function renderCuarentena(main) {
+  main.innerHTML = '<div class="page-loading">Cargando...</div>';
+  const r = await apiGet('/recepciones?inv_type=quimicos_proceso&estatus_calidad=cuarentena');
+  const rows = r?.ok ? await r.json() : [];
+
+  const criterio = row => {
+    const razones = [];
+    if (row.material_golpeado)   razones.push('Material golpeado');
+    if (row.sellos_ok === false)  razones.push('Sellos violados');
+    if (row.caducidad_vigente === false) razones.push('Caducidad no vigente');
+    return razones.length ? razones.join(', ') : '—';
+  };
+
+  main.innerHTML = `
+    <div class="page-title">⚠️ Cuarentena — Químicos Proceso</div>
+    <div class="card">
+      <p style="font-size:13px;color:#6b7280;margin:0 0 14px">Recepciones que no pasaron el control de calidad. Solo <strong>admin</strong> y <strong>comprador</strong> pueden liberar.</p>
+      ${rows.length ? `
+        <div class="table-wrap"><table>
+          <thead><tr>
+            <th>Fecha</th><th>Item</th><th>Cant.</th><th>Kg</th>
+            <th>Certificado</th><th>Criterios fallidos</th>
+            <th>Revisó</th><th>Recibido por</th><th></th>
+          </tr></thead>
+          <tbody>
+            ${rows.map(row => `<tr>
+              <td>${esc(row.fecha)}</td>
+              <td>${esc(row.item_label)}</td>
+              <td class="text-right">${fmt(row.cantidad)}</td>
+              <td class="text-right">${fmt(row.kg)} kg</td>
+              <td>${esc(row.cert_calidad || '—')}</td>
+              <td style="color:#dc2626;font-size:12px">${esc(criterio(row))}</td>
+              <td>${esc(row.reviso || '—')}</td>
+              <td>${esc(row.usuario_nombre)}</td>
+              <td><button class="btn btn-primary btn-sm btn-liberar" data-id="${row.id}" style="font-size:11px;padding:3px 10px;background:#16a34a;border-color:#16a34a">✅ Liberar</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table></div>
+      ` : '<div class="empty-msg">Sin ítems en cuarentena ✅</div>'}
+    </div>`;
+
+  main.querySelectorAll('.btn-liberar').forEach(btn => {
+    btn.onclick = async () => {
+      if (!confirm('¿Confirmas liberar este ítem de cuarentena? Se registrará tu nombre como responsable.')) return;
+      btn.disabled = true; btn.textContent = '...';
+      const res = await apiPatch(`/recepciones/${btn.dataset.id}/liberar`, {});
+      if (res?.ok) renderCuarentena(main);
+      else { const d = await res?.json(); alert(d?.error || 'Error al liberar'); btn.disabled = false; btn.textContent = '✅ Liberar'; }
+    };
+  });
+}
 
 // ── CONTEO SEMANAL ────────────────────────────────────────────────────────────
 async function renderConteo(main, inv_type) {

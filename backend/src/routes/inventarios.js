@@ -306,21 +306,31 @@ router.get('/catalog/employees', invAuthRequired, (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/recepciones', invAuthRequired, (req, res) => {
-  const { inv_type, item_key, desde, hasta } = req.query;
+  const { inv_type, item_key, desde, hasta, estatus_calidad } = req.query;
   const db = readInv();
   let rows = db.inv_recepciones || [];
-  if (inv_type) rows = rows.filter(r => r.inv_type === inv_type);
-  if (item_key) rows = rows.filter(r => r.item_key === item_key);
-  if (desde)    rows = rows.filter(r => r.fecha >= desde);
-  if (hasta)    rows = rows.filter(r => r.fecha <= hasta);
+  if (inv_type)        rows = rows.filter(r => r.inv_type === inv_type);
+  if (item_key)        rows = rows.filter(r => r.item_key === item_key);
+  if (desde)           rows = rows.filter(r => r.fecha >= desde);
+  if (hasta)           rows = rows.filter(r => r.fecha <= hasta);
+  if (estatus_calidad) rows = rows.filter(r => r.estatus_calidad === estatus_calidad);
   res.json(rows.sort((a, b) => b.created_at.localeCompare(a.created_at)));
 });
 
 router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin', 'inventarios'), (req, res) => {
-  const { inv_type, item_key, item_label, cantidad, kg, fecha, factura } = req.body;
+  const { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
+          cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso } = req.body;
   if (!inv_type || !item_key || !fecha) return res.status(400).json({ error: 'inv_type, item_key y fecha son requeridos' });
   if (req.invUser.role === 'inventarios' && inv_type !== 'quimicos_proceso') {
     return res.status(403).json({ error: 'El rol inventarios solo puede registrar recepción de Químicos Proceso' });
+  }
+  // Calcular estatus de calidad para quimicos_proceso
+  let estatus_calidad = null;
+  if (inv_type === 'quimicos_proceso') {
+    const falla = material_golpeado === true || material_golpeado === 'true'
+               || sellos_ok === false || sellos_ok === 'false'
+               || caducidad_vigente === false || caducidad_vigente === 'false';
+    estatus_calidad = falla ? 'cuarentena' : 'liberado';
   }
   const db = readInv();
   db.inv_recepciones = db.inv_recepciones || [];
@@ -329,10 +339,31 @@ router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin',
     inv_type, item_key, item_label: item_label || item_key,
     cantidad: cantidad || null, kg: kg || null,
     fecha, factura: factura || null,
+    cert_calidad: cert_calidad || null,
+    material_golpeado: material_golpeado === true || material_golpeado === 'true',
+    sellos_ok: sellos_ok !== false && sellos_ok !== 'false',
+    caducidad_vigente: caducidad_vigente !== false && caducidad_vigente !== 'false',
+    reviso: reviso || null,
+    estatus_calidad,
+    liberado_por: null,
+    fecha_liberacion: null,
     usuario_id: req.invUser.id, usuario_nombre: req.invUser.nombre,
     created_at: new Date().toISOString()
   };
   db.inv_recepciones.push(rec);
+  writeInv(db);
+  res.json(rec);
+});
+
+router.patch('/recepciones/:id/liberar', invAuthRequired, invAllowRoles('admin', 'comprador'), (req, res) => {
+  const id = Number(req.params.id);
+  const db = readInv();
+  const rec = (db.inv_recepciones || []).find(r => r.id === id);
+  if (!rec) return res.status(404).json({ error: 'Recepción no encontrada' });
+  if (rec.estatus_calidad !== 'cuarentena') return res.status(400).json({ error: 'El ítem no está en cuarentena' });
+  rec.estatus_calidad = 'liberado';
+  rec.liberado_por = req.invUser.nombre;
+  rec.fecha_liberacion = new Date().toISOString();
   writeInv(db);
   res.json(rec);
 });
