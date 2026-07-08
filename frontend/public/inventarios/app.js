@@ -579,19 +579,17 @@ async function renderCuarentena(main) {
 async function renderConteo(main, inv_type) {
   const tipoInfo = INV_TYPES.find(t => t.key === inv_type) || { label: inv_type, icon: '📦' };
   const now = new Date();
-  // Get current week conteo, items config, form config, and resumen semana in parallel
-  const [rConteos, rItems, rCfg, rResumen] = await Promise.all([
+  // Get current week conteo, items config, and form config in parallel
+  const [rConteos, rItems, rCfg] = await Promise.all([
     apiGet(`/conteos?inv_type=${inv_type}`),
     apiGet(`/items-config?inv_type=${inv_type}`),
-    apiGet('/config'),
-    inv_type === 'quimicos_proceso' ? apiGet(`/resumen-semana/${inv_type}`) : Promise.resolve(null)
+    apiGet('/config')
   ]);
   const conteos  = rConteos?.ok ? await rConteos.json() : [];
   const itemsCfg = rItems?.ok  ? await rItems.json()   : [];
   const allCfgs  = rCfg?.ok   ? await rCfg.json()     : [];
   const formCfg  = allCfgs.find(c => c.inv_type === inv_type) || {};
   const activeItems = itemsCfg.filter(i => i.activo !== false);
-  let resumenData = (rResumen?.ok ? await rResumen.json() : null) || { items: {} };
 
   // Current ISO week
   function isoWeek(d) {
@@ -608,8 +606,8 @@ async function renderConteo(main, inv_type) {
   const existing = conteos.find(c => c.year === curYear && c.week === curWeek);
 
   const isQuimicos = inv_type === 'quimicos_proceso';
-  // colCount: quimicos = Item+Tambos+Porrones+Kg+Unidad+Recibo+Salidas=7, others = Item+Cantidad+Unidad=3
-  const conteoColCount = isQuimicos ? 7 : 3;
+  // colCount: quimicos = Item+Tambos+Porrones+Kg+Unidad=5, others = Item+Cantidad+Unidad=3
+  const conteoColCount = isQuimicos ? 5 : 3;
 
   // Build input rows grouped by proveedor
   const conteoGrouped = {};
@@ -633,17 +631,12 @@ async function renderConteo(main, inv_type) {
         const porronesVal = ex?.porrones ?? '';
         const kgCalc = (Number(tambosVal) * pesoKg + Number(porronesVal) * 15 * densidad).toFixed(2);
         const kgShow = (tambosVal !== '' || porronesVal !== '') ? kgCalc : (ex?.kg ?? '');
-        const rs = resumenData.items?.[item.item_key] || {};
-        const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
-        const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
         return `<tr data-key="${esc(item.item_key)}">
           <td>${esc(item.item_label)}</td>
           <td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" data-peso="${pesoKg}" data-densidad="${densidad}" value="${tambosVal}" min="0" step="0.01" style="width:80px"/></td>
           <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${porronesVal}" min="0" step="0.01" style="width:80px"/></td>
           <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${kgShow}" min="0" step="0.01" style="width:90px;background:#f8fafc" readonly/></td>
           <td><span class="text-muted" style="font-size:.8rem">kg</span></td>
-          <td id="rs-rec-${esc(item.item_key)}" style="font-weight:600;color:${rs.recibido_tambos != null ? '#16a34a' : '#9ca3af'};white-space:nowrap">${recStr}</td>
-          <td id="rs-sal-${esc(item.item_key)}" style="font-weight:600;color:${rs.salidas_tambos  != null ? '#ea580c' : '#9ca3af'};white-space:nowrap">${salStr}</td>
         </tr>`;
       } else {
         return `<tr data-key="${esc(item.item_key)}">
@@ -682,7 +675,7 @@ async function renderConteo(main, inv_type) {
         <table id="conteo-table">
           <thead><tr>
             <th>Item</th>
-            ${isQuimicos ? '<th>Tambos</th><th>Porrones 15L</th><th>Kg (calculado)</th><th></th><th style="color:#16a34a">↑ Recibo sem.</th><th style="color:#ea580c">↓ Salidas sem.</th>' : '<th>Cantidad</th><th>Unidad</th>'}
+            ${isQuimicos ? '<th>Tambos</th><th>Porrones 15L</th><th>Kg (calculado)</th><th>Unidad</th>' : '<th>Cantidad</th><th>Unidad</th>'}
           </tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -690,9 +683,8 @@ async function renderConteo(main, inv_type) {
       <div id="conteo-err" class="alert alert-error" style="display:none;margin-top:12px"></div>
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-primary" id="conteo-save">Guardar Conteo</button>
-        ${isQuimicos ? '<button class="btn btn-secondary" id="conteo-actualizar">🔄 Actualizar entradas/salidas</button>' : ''}
         <button class="btn btn-secondary" id="conteo-comportamientos">Ver Comportamientos</button>
-        <button class="btn btn-outline" id="conteo-imprimir">Imprimir</button>
+        <button class="btn btn-outline" onclick="window.print()">Imprimir</button>
       </div>
       `}
     </div>
@@ -744,93 +736,6 @@ async function renderConteo(main, inv_type) {
   document.getElementById('conteo-comportamientos').onclick = () => {
     renderComportamientosModal(inv_type, tipoInfo.label);
   };
-
-  // Botón Actualizar entradas/salidas (solo quimicos)
-  if (isQuimicos) {
-    document.getElementById('conteo-actualizar')?.addEventListener('click', async () => {
-      const btn = document.getElementById('conteo-actualizar');
-      btn.disabled = true; btn.textContent = 'Actualizando...';
-      const r = await apiGet(`/resumen-semana/${inv_type}`);
-      if (r?.ok) {
-        resumenData = await r.json();
-        for (const [key, val] of Object.entries(resumenData.items || {})) {
-          const recEl = document.getElementById(`rs-rec-${key}`);
-          const salEl = document.getElementById(`rs-sal-${key}`);
-          if (recEl) {
-            recEl.textContent  = val.recibido_tambos != null ? `+${fmt(val.recibido_tambos)} T` : '—';
-            recEl.style.color  = val.recibido_tambos != null ? '#16a34a' : '#9ca3af';
-          }
-          if (salEl) {
-            salEl.textContent  = val.salidas_tambos != null ? `-${fmt(val.salidas_tambos)} T` : '—';
-            salEl.style.color  = val.salidas_tambos != null ? '#ea580c' : '#9ca3af';
-          }
-        }
-      }
-      btn.disabled = false; btn.textContent = '🔄 Actualizar entradas/salidas';
-    });
-  }
-
-  // Botón Imprimir — genera página de impresión con cantidades y alertas
-  document.getElementById('conteo-imprimir')?.addEventListener('click', () => {
-    const fecha = document.getElementById('conteo-fecha')?.value || today();
-    const usuario = ME?.nombre || '—';
-    let alertas = [];
-    const rows = activeItems.map(item => {
-      const key      = item.item_key;
-      const tambosEl = document.querySelector(`.conteo-tambos[data-key="${key}"]`);
-      const porrEl   = document.querySelector(`.conteo-porrones[data-key="${key}"]`);
-      const kgEl     = document.querySelector(`.conteo-kg[data-key="${key}"]`);
-      const tambos   = tambosEl ? Number(tambosEl.value) || null : null;
-      const porrones = porrEl   ? Number(porrEl.value)   || null : null;
-      const kg       = kgEl     ? Number(kgEl.value)     || null : null;
-      const rs       = isQuimicos ? (resumenData.items?.[key] || {}) : {};
-      const min      = item.min_val;
-      const max      = item.max_val;
-      let estado = '—', estadoClass = '';
-      if (tambos !== null && min !== null) {
-        if (tambos <= 0)       { estado = 'AGOTADO'; estadoClass = 'color:#dc2626;font-weight:700'; alertas.push(`${item.item_label}: AGOTADO`); }
-        else if (tambos < min) { estado = 'BAJO';    estadoClass = 'color:#d97706;font-weight:700'; alertas.push(`${item.item_label}: Stock BAJO (${tambos} T < min ${min} T)`); }
-        else if (max !== null && tambos > max) { estado = 'EXCESO'; estadoClass = 'color:#7c3aed;font-weight:700'; alertas.push(`${item.item_label}: EXCESO (${tambos} T > max ${max} T)`); }
-        else estado = 'OK';
-      }
-      const stockStr = isQuimicos
-        ? `${tambos ?? '—'} T / ${porrones ?? '—'} P${kg ? ` (${fmt(kg)} kg)` : ''}`
-        : `${tambos ?? '—'}`;
-      const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
-      const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
-      return `<tr>
-        <td>${esc(item.item_label)}</td>
-        <td>${stockStr}</td>
-        ${isQuimicos ? `<td style="color:#16a34a">${recStr}</td><td style="color:#ea580c">${salStr}</td>` : ''}
-        <td>${min ?? '—'}</td><td>${max ?? '—'}</td>
-        <td style="${estadoClass}">${estado}</td>
-      </tr>`;
-    }).join('');
-    const alertHtml = alertas.length
-      ? `<div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px">
-          <strong>⚠️ Alertas (${alertas.length}):</strong><ul style="margin:6px 0 0 18px">${alertas.map(a => `<li>${a}</li>`).join('')}</ul>
-         </div>`
-      : `<div style="margin-top:16px;padding:8px 14px;background:#dcfce7;border:1px solid #86efac;border-radius:6px">✅ Sin alertas — todos los items dentro del rango.</div>`;
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Conteo Semanal</title>
-      <style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}
-      table{border-collapse:collapse;width:100%}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}
-      th{background:#dbeafe;font-weight:700}tr:nth-child(even){background:#f8fafc}
-      h2{margin:0 0 4px}p{margin:2px 0 12px;color:#64748b}</style></head>
-      <body>
-      <h2>📦 Inventario Semanal — ${esc(tipoInfo.label)}</h2>
-      <p>Semana ${curWeek} / ${curYear} &nbsp;|&nbsp; Fecha: ${fecha} &nbsp;|&nbsp; Registrado por: ${esc(usuario)}</p>
-      <table><thead><tr>
-        <th>Item</th><th>Stock actual</th>
-        ${isQuimicos ? '<th>↑ Recibo sem.</th><th>↓ Salidas sem.</th>' : ''}
-        <th>Min (T)</th><th>Max (T)</th><th>Estado</th>
-      </tr></thead><tbody>${rows}</tbody></table>
-      ${alertHtml}
-      </body></html>`;
-    const win = window.open('', '_blank');
-    win.document.write(html);
-    win.document.close();
-    win.print();
-  });
 }
 
 // ── COMPORTAMIENTOS (modal) ───────────────────────────────────────────────────
@@ -904,104 +809,166 @@ async function loadCompradorTab(tab, inv_type) {
   el.innerHTML = '<div class="page-loading">Cargando...</div>';
 
   if (tab === 'semana') {
-    const r = await apiGet(`/consumo-semanal/${inv_type}`);
+    const isQ = inv_type === 'quimicos_proceso';
+    const [r, rRes] = await Promise.all([
+      apiGet(`/consumo-semanal/${inv_type}`),
+      isQ ? apiGet(`/resumen-semana/${inv_type}`) : Promise.resolve(null)
+    ]);
     if (!r?.ok) { el.innerHTML = '<div class="alert alert-error">Error al cargar</div>'; return; }
     const data = await r.json();
+    let resumen = (rRes?.ok ? await rRes.json() : null) || { items: {} };
 
-    const showTambos = inv_type === 'quimicos_proceso';
-    let unit = 'kg'; // default display
-
-    function renderSemana(u) {
-      const isTambos = u === 'tambos';
-      const isQ = inv_type === 'quimicos_proceso';
-      // columns: Item | Stock actual | Consumo (vales) | Recibido | Pendiente | Min | Max | Estado
-      const semColCount = isQ ? (isTambos ? 8 : 8) : 7;
-
-      function rowHtml(row) {
-        const curVal     = isTambos ? (row.cur_tambos ?? row.cur_tambos_raw) : row.cur_kg;
-        const consumoVal = row.consumo_kg != null
-          ? (isTambos && row.peso_kg ? Math.round((row.consumo_kg / row.peso_kg) * 100) / 100 : row.consumo_kg)
-          : null;
-        const minVal = row.min_val;
-        const unit   = isTambos ? 'T' : 'kg';
-
-        let statusClass = '', statusDot = 'ok', stockLabel = 'OK';
-        if (curVal === null || curVal === undefined) { statusClass = ''; statusDot = 'gray'; stockLabel = 'S/D'; }
-        else if (minVal !== null && curVal <= 0)     { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; }
-        else if (minVal !== null && curVal < minVal) { statusClass = 'stock-low';   statusDot = 'low';   stockLabel = 'BAJO'; }
-
-        const recibidoStr  = row.recibido_kg != null  ? `${fmt(row.recibido_kg)} kg`  : '—';
-        const pendienteStr = row.pendiente_qty != null ? `${fmt(row.pendiente_qty)} ${row.pendiente_unit || ''}` : '—';
-
-        return `<tr class="${statusClass}">
-          <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
-          <td class="text-right">${curVal != null ? fmt(curVal)+' '+unit : '—'}</td>
-          <td class="text-right">${consumoVal != null ? fmt(consumoVal)+' '+unit : '—'}</td>
-          <td class="text-right">${recibidoStr}</td>
-          <td class="text-right">${pendienteStr}</td>
-          <td class="text-right">${row.min_val != null ? fmt(row.min_val, 0) : '—'}</td>
-          <td class="text-right">${row.max_val != null ? fmt(row.max_val, 0) : '—'}</td>
-          <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':'badge-gray'}">${stockLabel}</span></td>
-        </tr>`;
+    if (isQ) {
+      // ── Quimicos: Item | Tambos | Porrones | Kg | ↑ Recibo sem. | ↓ Salidas sem. | Min | Max | Estado
+      function buildQTable(res) {
+        const grouped = {};
+        data.rows.forEach(row => {
+          const prov = row.proveedor || '(Sin proveedor)';
+          if (!grouped[prov]) grouped[prov] = [];
+          grouped[prov].push(row);
+        });
+        const provs = Object.keys(grouped).sort((a, b) =>
+          a === '(Sin proveedor)' ? 1 : b === '(Sin proveedor)' ? -1 : a.localeCompare(b));
+        const rows = provs.flatMap(prov => {
+          const hdr = `<tr><td colspan="9" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${grouped[prov].length})</span></td></tr>`;
+          const itemRows = grouped[prov].map(row => {
+            const rs      = res.items?.[row.item_key] || {};
+            const tambos  = row.cur_tambos_raw;
+            const porrones = row.cur_porrones;
+            const kg      = row.cur_kg;
+            const min = row.min_val; const max = row.max_val;
+            const recStr  = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+            const salStr  = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
+            let statusDot = 'ok', stockLabel = 'OK', statusClass = '';
+            if (tambos == null)              { statusDot = 'gray';  stockLabel = 'S/D'; }
+            else if (min != null && tambos <= 0)  { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; }
+            else if (min != null && tambos < min) { statusClass = 'stock-low';   statusDot = 'low';   stockLabel = 'BAJO'; }
+            else if (max != null && tambos > max) { statusDot = 'high'; stockLabel = 'EXCESO'; }
+            return `<tr class="${statusClass}">
+              <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
+              <td class="text-right">${tambos  != null ? fmt(tambos)  : '—'}</td>
+              <td class="text-right">${porrones != null ? fmt(porrones) : '—'}</td>
+              <td class="text-right">${kg != null ? fmt(kg)+' kg' : '—'}</td>
+              <td class="text-right" style="color:${rs.recibido_tambos != null ? '#16a34a' : '#9ca3af'};font-weight:600">${recStr}</td>
+              <td class="text-right" style="color:${rs.salidas_tambos  != null ? '#ea580c' : '#9ca3af'};font-weight:600">${salStr}</td>
+              <td class="text-right">${min != null ? fmt(min, 0) : '—'}</td>
+              <td class="text-right">${max != null ? fmt(max, 0) : '—'}</td>
+              <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':statusDot==='high'?'badge-purple':'badge-gray'}">${stockLabel}</span></td>
+            </tr>`;
+          });
+          return [hdr, ...itemRows];
+        }).join('');
+        return data.rows.length
+          ? `<div class="table-wrap"><table><thead><tr>
+              <th>Item</th><th>Tambos</th><th>Porrones</th><th>Kg inventario</th>
+              <th style="color:#16a34a">↑ Recibo sem.</th>
+              <th style="color:#ea580c">↓ Salidas sem.</th>
+              <th>Min (T)</th><th>Max (T)</th><th>Estado</th>
+             </tr></thead><tbody>${rows}</tbody></table></div>`
+          : '<div class="empty-msg">Sin datos de conteo</div>';
       }
 
-      const semGrouped = {};
-      data.rows.forEach(row => {
-        const prov = row.proveedor || '(Sin proveedor)';
-        if (!semGrouped[prov]) semGrouped[prov] = [];
-        semGrouped[prov].push(row);
-      });
-      const semProveedores = Object.keys(semGrouped).sort((a, b) =>
-        a === '(Sin proveedor)' ? 1 : b === '(Sin proveedor)' ? -1 : a.localeCompare(b)
-      );
-      const rows = semProveedores.flatMap(prov => {
-        const provRows = semGrouped[prov];
-        const hdr = `<tr><td colspan="${semColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${provRows.length})</span></td></tr>`;
-        return [hdr, ...provRows.map(rowHtml)];
-      }).join('');
-
-      const unitLabel = isTambos ? 'Tambos' : 'Kg';
-      return `
+      el.innerHTML = `
         <div class="card">
           <div class="card-header">
             <div>
               <div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div>
               <div class="page-subtitle">Conteo actual: ${data.cur_fecha || 'Sin conteo'}</div>
             </div>
-            ${showTambos ? `<div class="toggle-unit" id="unit-toggle">
-              <button data-u="kg" class="${u==='kg'?'active':''}">Kg</button>
-              <button data-u="tambos" class="${u==='tambos'?'active':''}">Tambos</button>
-            </div>` : ''}
           </div>
-          ${data.rows.length ? `<div class="table-wrap"><table>
-            <thead><tr>
-              <th>Item</th>
-              <th>Stock actual (${unitLabel})</th>
-              <th>Consumo sem. ant. (vales)</th>
-              <th>Recibido sem.</th>
-              <th>Pendiente recibir</th>
-              <th>Min</th><th>Max</th><th>Estado</th>
-            </tr></thead>
-            <tbody>${rows}</tbody>
-          </table></div>` : '<div class="empty-msg">Sin datos de conteo</div>'}
-          <div style="margin-top:12px;display:flex;gap:8px">
-            <button class="btn btn-outline btn-sm" onclick="window.print()">Imprimir</button>
+          <div id="comprador-q-table">${buildQTable(resumen)}</div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-secondary btn-sm" id="comprador-actualizar">🔄 Actualizar entradas/salidas</button>
+            <button class="btn btn-outline btn-sm" id="comprador-imprimir">Imprimir</button>
           </div>
-        </div>
-      `;
-    }
+        </div>`;
 
-    el.innerHTML = renderSemana(unit);
-    if (showTambos) {
-      document.getElementById('unit-toggle')?.addEventListener('click', e => {
-        const btn = e.target.closest('[data-u]');
-        if (!btn) return;
-        unit = btn.dataset.u;
-        el.innerHTML = renderSemana(unit);
-        if (showTambos) {
-          document.getElementById('unit-toggle')?.addEventListener('click', arguments.callee);
+      document.getElementById('comprador-actualizar').onclick = async () => {
+        const btn = document.getElementById('comprador-actualizar');
+        btn.disabled = true; btn.textContent = 'Actualizando...';
+        const rr = await apiGet(`/resumen-semana/${inv_type}`);
+        if (rr?.ok) { resumen = await rr.json(); document.getElementById('comprador-q-table').innerHTML = buildQTable(resumen); }
+        btn.disabled = false; btn.textContent = '🔄 Actualizar entradas/salidas';
+      };
+
+      document.getElementById('comprador-imprimir').onclick = () => {
+        const usuario = ME?.nombre || '—';
+        const alertas = [];
+        const rows = data.rows.map(row => {
+          const rs = resumen.items?.[row.item_key] || {};
+          const tambos = row.cur_tambos_raw; const porrones = row.cur_porrones; const kg = row.cur_kg;
+          const min = row.min_val; const max = row.max_val;
+          let estado = '—', clr = '';
+          if (tambos != null && min != null) {
+            if (tambos <= 0)       { estado = 'AGOTADO'; clr = 'color:#dc2626;font-weight:700'; alertas.push(`${row.item_label}: AGOTADO`); }
+            else if (tambos < min) { estado = 'BAJO';    clr = 'color:#d97706;font-weight:700'; alertas.push(`${row.item_label}: BAJO (${tambos} T < min ${min} T)`); }
+            else if (max != null && tambos > max) { estado = 'EXCESO'; clr = 'color:#7c3aed;font-weight:700'; alertas.push(`${row.item_label}: EXCESO (${tambos} T > max ${max} T)`); }
+            else estado = 'OK';
+          }
+          const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+          const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
+          return `<tr>
+            <td>${esc(row.item_label)}</td>
+            <td>${tambos != null ? fmt(tambos)+' T' : '—'} / ${porrones != null ? fmt(porrones)+' P' : '—'}${kg ? ` (${fmt(kg)} kg)` : ''}</td>
+            <td style="color:#16a34a">${recStr}</td><td style="color:#ea580c">${salStr}</td>
+            <td>${min ?? '—'}</td><td>${max ?? '—'}</td>
+            <td style="${clr}">${estado}</td></tr>`;
+        }).join('');
+        const alertHtml = alertas.length
+          ? `<div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px"><strong>Alertas (${alertas.length}):</strong><ul style="margin:6px 0 0 18px">${alertas.map(a=>`<li>${a}</li>`).join('')}</ul></div>`
+          : `<div style="margin-top:16px;padding:8px 14px;background:#dcfce7;border:1px solid #86efac;border-radius:6px">Sin alertas — todos los items dentro del rango.</div>`;
+        const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Inventario Semanal</title>
+          <style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#dbeafe;font-weight:700}tr:nth-child(even){background:#f8fafc}h2{margin:0 0 4px}p{margin:2px 0 12px;color:#64748b}</style></head>
+          <body><h2>Inventario Semanal — Quimicos Proceso</h2>
+          <p>Semana ${data.cur_week} / ${data.cur_year} &nbsp;|&nbsp; Conteo: ${data.cur_fecha||'Sin conteo'} &nbsp;|&nbsp; Generado por: ${esc(usuario)}</p>
+          <table><thead><tr><th>Item</th><th>Stock actual</th><th>Recibo sem.</th><th>Salidas sem.</th><th>Min (T)</th><th>Max (T)</th><th>Estado</th></tr></thead>
+          <tbody>${rows}</tbody></table>${alertHtml}</body></html>`;
+        const win = window.open('', '_blank');
+        win.document.write(html); win.document.close(); win.print();
+      };
+
+    } else {
+      // ── Otros tipos: tabla original (kg, consumo sem. ant., recibido, pendiente)
+      function renderSemana(u) {
+        const isTambos = u === 'tambos';
+        const semColCount = 7;
+        function rowHtml(row) {
+          const curVal     = row.cur_kg;
+          const consumoVal = row.consumo_kg;
+          const minVal     = row.min_val;
+          let statusClass = '', statusDot = 'ok', stockLabel = 'OK';
+          if (curVal == null)               { statusDot = 'gray';  stockLabel = 'S/D'; }
+          else if (minVal != null && curVal <= 0)  { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; }
+          else if (minVal != null && curVal < minVal) { statusClass = 'stock-low'; statusDot = 'low'; stockLabel = 'BAJO'; }
+          const recStr = row.recibido_kg  != null ? `${fmt(row.recibido_kg)} kg`  : '—';
+          const penStr = row.pendiente_qty != null ? `${fmt(row.pendiente_qty)} ${row.pendiente_unit || ''}` : '—';
+          return `<tr class="${statusClass}">
+            <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
+            <td class="text-right">${curVal != null ? fmt(curVal)+' kg' : '—'}</td>
+            <td class="text-right">${consumoVal != null ? fmt(consumoVal)+' kg' : '—'}</td>
+            <td class="text-right">${recStr}</td>
+            <td class="text-right">${penStr}</td>
+            <td class="text-right">${row.min_val != null ? fmt(row.min_val, 0) : '—'}</td>
+            <td class="text-right">${row.max_val != null ? fmt(row.max_val, 0) : '—'}</td>
+            <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':'badge-gray'}">${stockLabel}</span></td>
+          </tr>`;
         }
-      });
+        const grouped = {};
+        data.rows.forEach(row => { const p = row.proveedor||'(Sin proveedor)'; if(!grouped[p]) grouped[p]=[]; grouped[p].push(row); });
+        const provs = Object.keys(grouped).sort((a,b) => a==='(Sin proveedor)'?1:b==='(Sin proveedor)'?-1:a.localeCompare(b));
+        const rows = provs.flatMap(prov => {
+          const hdr = `<tr><td colspan="${semColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem">${esc(prov)}</td></tr>`;
+          return [hdr, ...grouped[prov].map(rowHtml)];
+        }).join('');
+        return `<div class="card">
+          <div class="card-header"><div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div><div class="page-subtitle">Conteo actual: ${data.cur_fecha||'Sin conteo'}</div></div>
+          ${data.rows.length ? `<div class="table-wrap"><table>
+            <thead><tr><th>Item</th><th>Stock actual (kg)</th><th>Consumo sem. ant.</th><th>Recibido sem.</th><th>Pendiente recibir</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
+            <tbody>${rows}</tbody></table></div>` : '<div class="empty-msg">Sin datos de conteo</div>'}
+          <div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="window.print()">Imprimir</button></div>
+        </div>`;
+      }
+      el.innerHTML = renderSemana('kg');
     }
 
   } else if (tab === 'comportamientos') {
