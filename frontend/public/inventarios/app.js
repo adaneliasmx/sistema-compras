@@ -296,11 +296,9 @@ async function renderRecepcion(main, invTypeFilter = null) {
               <input type="text" class="form-input" id="rec-cert" placeholder="Número de certificado"/>
             </div>
             <div class="form-group">
-              <label>Fecha de Caducidad Vigente</label>
-              <div style="display:flex;gap:16px;padding-top:8px">
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-caducidad" value="true" checked/> Sí</label>
-                <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="radio" name="rec-caducidad" value="false"/> No</label>
-              </div>
+              <label>Fecha de Caducidad</label>
+              <input type="date" class="form-input" id="rec-caducidad-fecha"/>
+              <div id="rec-cad-badge" style="margin-top:5px;font-size:11px;font-weight:600;color:#6b7280">— Ingresa la fecha de caducidad</div>
             </div>
           </div>
           <div class="form-row cols-2" style="margin-bottom:12px">
@@ -378,29 +376,50 @@ async function renderRecepcion(main, invTypeFilter = null) {
     const qcEl = document.getElementById('rec-qc-section');
     if (qcEl) qcEl.style.display = inv_type === 'quimicos_proceso' ? '' : 'none';
   }
+  function checkCad() {
+    const v = document.getElementById('rec-caducidad-fecha')?.value;
+    if (!v) return { ok: true, rejected: false, critico: false, warn: false, label: '— Ingresa la fecha de caducidad', color: '#6b7280' };
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const exp   = new Date(v + 'T00:00:00'); exp.setHours(0, 0, 0, 0);
+    const diff  = Math.round((exp - today) / 86400000);
+    if (diff < 0)  return { ok: false, rejected: true,  critico: false, warn: false, label: '❌ VENCIDA — Material rechazado', color: '#dc2626' };
+    if (diff < 30) return { ok: false, rejected: false, critico: true,  warn: false, label: `🔴 CRITICO — ${diff} días restantes (< 1 mes) → Cuarentena`, color: '#dc2626' };
+    const meses = (diff / 30).toFixed(1);
+    if (diff < 90) return { ok: true,  rejected: false, critico: false, warn: true,  label: `⚠️ REGULAR — ~${meses} meses de vigencia`, color: '#d97706' };
+    return               { ok: true,  rejected: false, critico: false, warn: false, label: `✅ BUENA — ~${meses} meses de vigencia`, color: '#15803d' };
+  }
+  function updateCadBadge() {
+    const c = checkCad();
+    const el = document.getElementById('rec-cad-badge');
+    if (el) { el.textContent = c.label; el.style.color = c.color; }
+  }
   function updateQcBadge() {
-    const golpeado  = document.querySelector('input[name="rec-golpeado"]:checked')?.value === 'true';
-    const sellosOk  = document.querySelector('input[name="rec-sellos"]:checked')?.value !== 'false';
-    const caducidad = document.querySelector('input[name="rec-caducidad"]:checked')?.value !== 'false';
-    const falla = golpeado || !sellosOk || !caducidad;
-    const badge = document.getElementById('rec-qc-badge');
+    const golpeado = document.querySelector('input[name="rec-golpeado"]:checked')?.value === 'true';
+    const sellosOk = document.querySelector('input[name="rec-sellos"]:checked')?.value !== 'false';
+    const cad      = checkCad();
+    const falla    = golpeado || !sellosOk || cad.critico;
+    const badge    = document.getElementById('rec-qc-badge');
     if (!badge) return;
-    if (falla) {
+    if (cad.rejected) {
+      badge.style.background = '#fef2f2'; badge.style.color = '#dc2626'; badge.style.borderColor = '#fca5a5';
+      badge.textContent = '❌ RECHAZADO — Material vencido';
+    } else if (falla) {
       badge.style.background = '#fef2f2'; badge.style.color = '#dc2626'; badge.style.borderColor = '#fca5a5';
       badge.textContent = '⚠️ EN CUARENTENA';
     } else {
       badge.style.background = '#dcfce7'; badge.style.color = '#15803d'; badge.style.borderColor = '#86efac';
-      badge.textContent = '✅ LIBERADO';
+      badge.textContent = cad.warn ? '✅ LIBERADO — Vigencia regular' : '✅ LIBERADO';
     }
   }
 
   document.getElementById('rec-type').onchange = () => { buildItemSelect(); updateQcSection(); };
   document.getElementById('rec-item').onchange = updateKg;
   document.getElementById('rec-qty').oninput   = updateKg;
-  document.querySelectorAll('input[name="rec-golpeado"], input[name="rec-sellos"], input[name="rec-caducidad"]')
+  document.querySelectorAll('input[name="rec-golpeado"], input[name="rec-sellos"]')
     .forEach(r => r.addEventListener('change', updateQcBadge));
+  document.getElementById('rec-caducidad-fecha')?.addEventListener('change', () => { updateCadBadge(); updateQcBadge(); });
   buildItemSelect();
-  updateQcSection(); // mostrar/ocultar sección QC según el tipo seleccionado al cargar
+  updateQcSection();
 
   document.getElementById('rec-save').onclick = async () => {
     const inv_type    = document.getElementById('rec-type').value;
@@ -419,10 +438,13 @@ async function renderRecepcion(main, invTypeFilter = null) {
     const cert_calidad    = qcActive ? (document.getElementById('rec-cert')?.value?.trim() || null) : null;
     const material_golpeado = qcActive ? (document.querySelector('input[name="rec-golpeado"]:checked')?.value === 'true') : null;
     const sellos_ok       = qcActive ? (document.querySelector('input[name="rec-sellos"]:checked')?.value !== 'false') : null;
-    const caducidad_vigente = qcActive ? (document.querySelector('input[name="rec-caducidad"]:checked')?.value !== 'false') : null;
+    const fecha_caducidad = qcActive ? (document.getElementById('rec-caducidad-fecha')?.value || null) : null;
+    const cad             = qcActive ? checkCad() : null;
+    if (qcActive && cad.rejected) { errEl.textContent = 'Material vencido — no se puede registrar'; errEl.style.display = ''; return; }
+    const caducidad_vigente = qcActive ? !cad.critico : null;
     const reviso          = qcActive ? (document.getElementById('rec-reviso')?.value?.trim() || null) : null;
     const r = await apiPost('/recepciones', { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
-      cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso });
+      cert_calidad, material_golpeado, sellos_ok, fecha_caducidad, caducidad_vigente, reviso });
     if (!r) return;
     const d = await r.json();
     if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
@@ -434,6 +456,8 @@ async function renderRecepcion(main, invTypeFilter = null) {
     document.getElementById('rec-kg').value  = '';
     document.getElementById('rec-factura').value = '';
     if (document.getElementById('rec-cert')) document.getElementById('rec-cert').value = '';
+    const cadFechaEl = document.getElementById('rec-caducidad-fecha');
+    if (cadFechaEl) { cadFechaEl.value = ''; updateCadBadge(); updateQcBadge(); }
   };
 }
 
@@ -555,17 +579,19 @@ async function renderCuarentena(main) {
 async function renderConteo(main, inv_type) {
   const tipoInfo = INV_TYPES.find(t => t.key === inv_type) || { label: inv_type, icon: '📦' };
   const now = new Date();
-  // Get current week conteo, items config, and form config in parallel
-  const [rConteos, rItems, rCfg] = await Promise.all([
+  // Get current week conteo, items config, form config, and resumen semana in parallel
+  const [rConteos, rItems, rCfg, rResumen] = await Promise.all([
     apiGet(`/conteos?inv_type=${inv_type}`),
     apiGet(`/items-config?inv_type=${inv_type}`),
-    apiGet('/config')
+    apiGet('/config'),
+    inv_type === 'quimicos_proceso' ? apiGet(`/resumen-semana/${inv_type}`) : Promise.resolve(null)
   ]);
   const conteos  = rConteos?.ok ? await rConteos.json() : [];
   const itemsCfg = rItems?.ok  ? await rItems.json()   : [];
   const allCfgs  = rCfg?.ok   ? await rCfg.json()     : [];
   const formCfg  = allCfgs.find(c => c.inv_type === inv_type) || {};
   const activeItems = itemsCfg.filter(i => i.activo !== false);
+  let resumenData = (rResumen?.ok ? await rResumen.json() : null) || { items: {} };
 
   // Current ISO week
   function isoWeek(d) {
@@ -582,8 +608,8 @@ async function renderConteo(main, inv_type) {
   const existing = conteos.find(c => c.year === curYear && c.week === curWeek);
 
   const isQuimicos = inv_type === 'quimicos_proceso';
-  // colCount: quimicos = Item+Tambos+Porrones+Kg+Unidad=5, others = Item+Cantidad+Unidad=3
-  const conteoColCount = isQuimicos ? 5 : 3;
+  // colCount: quimicos = Item+Tambos+Porrones+Kg+Unidad+Recibo+Salidas=7, others = Item+Cantidad+Unidad=3
+  const conteoColCount = isQuimicos ? 7 : 3;
 
   // Build input rows grouped by proveedor
   const conteoGrouped = {};
@@ -607,12 +633,17 @@ async function renderConteo(main, inv_type) {
         const porronesVal = ex?.porrones ?? '';
         const kgCalc = (Number(tambosVal) * pesoKg + Number(porronesVal) * 15 * densidad).toFixed(2);
         const kgShow = (tambosVal !== '' || porronesVal !== '') ? kgCalc : (ex?.kg ?? '');
+        const rs = resumenData.items?.[item.item_key] || {};
+        const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+        const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
         return `<tr data-key="${esc(item.item_key)}">
           <td>${esc(item.item_label)}</td>
           <td><input type="number" class="form-input conteo-tambos" data-key="${esc(item.item_key)}" data-peso="${pesoKg}" data-densidad="${densidad}" value="${tambosVal}" min="0" step="0.01" style="width:80px"/></td>
           <td><input type="number" class="form-input conteo-porrones" data-key="${esc(item.item_key)}" value="${porronesVal}" min="0" step="0.01" style="width:80px"/></td>
           <td><input type="number" class="form-input conteo-kg" data-key="${esc(item.item_key)}" value="${kgShow}" min="0" step="0.01" style="width:90px;background:#f8fafc" readonly/></td>
           <td><span class="text-muted" style="font-size:.8rem">kg</span></td>
+          <td id="rs-rec-${esc(item.item_key)}" style="font-weight:600;color:${rs.recibido_tambos != null ? '#16a34a' : '#9ca3af'};white-space:nowrap">${recStr}</td>
+          <td id="rs-sal-${esc(item.item_key)}" style="font-weight:600;color:${rs.salidas_tambos  != null ? '#ea580c' : '#9ca3af'};white-space:nowrap">${salStr}</td>
         </tr>`;
       } else {
         return `<tr data-key="${esc(item.item_key)}">
@@ -651,7 +682,7 @@ async function renderConteo(main, inv_type) {
         <table id="conteo-table">
           <thead><tr>
             <th>Item</th>
-            ${isQuimicos ? '<th>Tambos</th><th>Porrones 15L</th><th>Kg (calculado)</th><th>Unidad</th>' : '<th>Cantidad</th><th>Unidad</th>'}
+            ${isQuimicos ? '<th>Tambos</th><th>Porrones 15L</th><th>Kg (calculado)</th><th></th><th style="color:#16a34a">↑ Recibo sem.</th><th style="color:#ea580c">↓ Salidas sem.</th>' : '<th>Cantidad</th><th>Unidad</th>'}
           </tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -659,8 +690,9 @@ async function renderConteo(main, inv_type) {
       <div id="conteo-err" class="alert alert-error" style="display:none;margin-top:12px"></div>
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn btn-primary" id="conteo-save">Guardar Conteo</button>
+        ${isQuimicos ? '<button class="btn btn-secondary" id="conteo-actualizar">🔄 Actualizar entradas/salidas</button>' : ''}
         <button class="btn btn-secondary" id="conteo-comportamientos">Ver Comportamientos</button>
-        <button class="btn btn-outline" onclick="window.print()">Imprimir</button>
+        <button class="btn btn-outline" id="conteo-imprimir">Imprimir</button>
       </div>
       `}
     </div>
@@ -712,6 +744,93 @@ async function renderConteo(main, inv_type) {
   document.getElementById('conteo-comportamientos').onclick = () => {
     renderComportamientosModal(inv_type, tipoInfo.label);
   };
+
+  // Botón Actualizar entradas/salidas (solo quimicos)
+  if (isQuimicos) {
+    document.getElementById('conteo-actualizar')?.addEventListener('click', async () => {
+      const btn = document.getElementById('conteo-actualizar');
+      btn.disabled = true; btn.textContent = 'Actualizando...';
+      const r = await apiGet(`/resumen-semana/${inv_type}`);
+      if (r?.ok) {
+        resumenData = await r.json();
+        for (const [key, val] of Object.entries(resumenData.items || {})) {
+          const recEl = document.getElementById(`rs-rec-${key}`);
+          const salEl = document.getElementById(`rs-sal-${key}`);
+          if (recEl) {
+            recEl.textContent  = val.recibido_tambos != null ? `+${fmt(val.recibido_tambos)} T` : '—';
+            recEl.style.color  = val.recibido_tambos != null ? '#16a34a' : '#9ca3af';
+          }
+          if (salEl) {
+            salEl.textContent  = val.salidas_tambos != null ? `-${fmt(val.salidas_tambos)} T` : '—';
+            salEl.style.color  = val.salidas_tambos != null ? '#ea580c' : '#9ca3af';
+          }
+        }
+      }
+      btn.disabled = false; btn.textContent = '🔄 Actualizar entradas/salidas';
+    });
+  }
+
+  // Botón Imprimir — genera página de impresión con cantidades y alertas
+  document.getElementById('conteo-imprimir')?.addEventListener('click', () => {
+    const fecha = document.getElementById('conteo-fecha')?.value || today();
+    const usuario = ME?.nombre || '—';
+    let alertas = [];
+    const rows = activeItems.map(item => {
+      const key      = item.item_key;
+      const tambosEl = document.querySelector(`.conteo-tambos[data-key="${key}"]`);
+      const porrEl   = document.querySelector(`.conteo-porrones[data-key="${key}"]`);
+      const kgEl     = document.querySelector(`.conteo-kg[data-key="${key}"]`);
+      const tambos   = tambosEl ? Number(tambosEl.value) || null : null;
+      const porrones = porrEl   ? Number(porrEl.value)   || null : null;
+      const kg       = kgEl     ? Number(kgEl.value)     || null : null;
+      const rs       = isQuimicos ? (resumenData.items?.[key] || {}) : {};
+      const min      = item.min_val;
+      const max      = item.max_val;
+      let estado = '—', estadoClass = '';
+      if (tambos !== null && min !== null) {
+        if (tambos <= 0)       { estado = 'AGOTADO'; estadoClass = 'color:#dc2626;font-weight:700'; alertas.push(`${item.item_label}: AGOTADO`); }
+        else if (tambos < min) { estado = 'BAJO';    estadoClass = 'color:#d97706;font-weight:700'; alertas.push(`${item.item_label}: Stock BAJO (${tambos} T < min ${min} T)`); }
+        else if (max !== null && tambos > max) { estado = 'EXCESO'; estadoClass = 'color:#7c3aed;font-weight:700'; alertas.push(`${item.item_label}: EXCESO (${tambos} T > max ${max} T)`); }
+        else estado = 'OK';
+      }
+      const stockStr = isQuimicos
+        ? `${tambos ?? '—'} T / ${porrones ?? '—'} P${kg ? ` (${fmt(kg)} kg)` : ''}`
+        : `${tambos ?? '—'}`;
+      const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+      const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
+      return `<tr>
+        <td>${esc(item.item_label)}</td>
+        <td>${stockStr}</td>
+        ${isQuimicos ? `<td style="color:#16a34a">${recStr}</td><td style="color:#ea580c">${salStr}</td>` : ''}
+        <td>${min ?? '—'}</td><td>${max ?? '—'}</td>
+        <td style="${estadoClass}">${estado}</td>
+      </tr>`;
+    }).join('');
+    const alertHtml = alertas.length
+      ? `<div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px">
+          <strong>⚠️ Alertas (${alertas.length}):</strong><ul style="margin:6px 0 0 18px">${alertas.map(a => `<li>${a}</li>`).join('')}</ul>
+         </div>`
+      : `<div style="margin-top:16px;padding:8px 14px;background:#dcfce7;border:1px solid #86efac;border-radius:6px">✅ Sin alertas — todos los items dentro del rango.</div>`;
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Conteo Semanal</title>
+      <style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}
+      table{border-collapse:collapse;width:100%}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}
+      th{background:#dbeafe;font-weight:700}tr:nth-child(even){background:#f8fafc}
+      h2{margin:0 0 4px}p{margin:2px 0 12px;color:#64748b}</style></head>
+      <body>
+      <h2>📦 Inventario Semanal — ${esc(tipoInfo.label)}</h2>
+      <p>Semana ${curWeek} / ${curYear} &nbsp;|&nbsp; Fecha: ${fecha} &nbsp;|&nbsp; Registrado por: ${esc(usuario)}</p>
+      <table><thead><tr>
+        <th>Item</th><th>Stock actual</th>
+        ${isQuimicos ? '<th>↑ Recibo sem.</th><th>↓ Salidas sem.</th>' : ''}
+        <th>Min (T)</th><th>Max (T)</th><th>Estado</th>
+      </tr></thead><tbody>${rows}</tbody></table>
+      ${alertHtml}
+      </body></html>`;
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.print();
+  });
 }
 
 // ── COMPORTAMIENTOS (modal) ───────────────────────────────────────────────────

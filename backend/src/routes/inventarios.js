@@ -31,6 +31,15 @@ function isoWeekStart(year, week) {
   monday.setDate(jan4.getDate() - dayOfWeek + (week - 1) * 7);
   return monday;
 }
+function calcCadStatus(fecha_caducidad) {
+  if (!fecha_caducidad) return { ok: true, rejected: false, critico: false };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const exp   = new Date(fecha_caducidad + 'T00:00:00'); exp.setHours(0, 0, 0, 0);
+  const diff  = Math.round((exp - today) / 86400000);
+  if (diff < 0)  return { ok: false, rejected: true,  critico: false };
+  if (diff < 30) return { ok: false, rejected: false, critico: true  };
+  return               { ok: true,  rejected: false, critico: false };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // AUTH
@@ -319,7 +328,8 @@ router.get('/recepciones', invAuthRequired, (req, res) => {
 
 router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin', 'inventarios'), (req, res) => {
   const { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
-          cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso } = req.body;
+          cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso,
+          fecha_caducidad } = req.body;
   if (!inv_type || !item_key || !fecha) return res.status(400).json({ error: 'inv_type, item_key y fecha son requeridos' });
   if (req.invUser.role === 'inventarios' && inv_type !== 'quimicos_proceso') {
     return res.status(403).json({ error: 'El rol inventarios solo puede registrar recepción de Químicos Proceso' });
@@ -327,13 +337,18 @@ router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin',
   // Calcular estatus de calidad para quimicos_proceso
   let estatus_calidad = null;
   if (inv_type === 'quimicos_proceso') {
+    const cadSt = calcCadStatus(fecha_caducidad);
+    if (cadSt.rejected) return res.status(400).json({ error: 'Material vencido — no se puede registrar la recepción' });
+    const cadFalla = cadSt.critico
+      || (!fecha_caducidad && (caducidad_vigente === false || caducidad_vigente === 'false'));
     const falla = material_golpeado === true || material_golpeado === 'true'
                || sellos_ok === false || sellos_ok === 'false'
-               || caducidad_vigente === false || caducidad_vigente === 'false';
+               || cadFalla;
     estatus_calidad = falla ? 'cuarentena' : 'liberado';
   }
   const db = readInv();
   db.inv_recepciones = db.inv_recepciones || [];
+  const cadSt2 = calcCadStatus(fecha_caducidad);
   const rec = {
     id: nextId(db.inv_recepciones),
     inv_type, item_key, item_label: item_label || item_key,
@@ -342,7 +357,8 @@ router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin',
     cert_calidad: cert_calidad || null,
     material_golpeado: material_golpeado === true || material_golpeado === 'true',
     sellos_ok: sellos_ok !== false && sellos_ok !== 'false',
-    caducidad_vigente: caducidad_vigente !== false && caducidad_vigente !== 'false',
+    fecha_caducidad: fecha_caducidad || null,
+    caducidad_vigente: fecha_caducidad ? !cadSt2.critico : (caducidad_vigente !== false && caducidad_vigente !== 'false'),
     reviso: reviso || null,
     estatus_calidad,
     liberado_por: null,
@@ -374,6 +390,70 @@ router.delete('/recepciones/:id', invAuthRequired, invAllowRoles('admin'), (req,
   db.inv_recepciones = (db.inv_recepciones || []).filter(r => r.id !== id);
   writeInv(db);
   res.json({ ok: true });
+});
+
+// Resumen de entradas (recepciones) y salidas (vales) de la semana actual por item
+router.get('/resumen-semana/:inv_type', invAuthRequired, (req, res) => {
+  const { inv_type } = req.params;
+  const now      = new Date();
+  const curYear  = isoYear(now);
+  const curWeek  = isoWeek(now);
+  const curStart = isoWeekStart(curYear, curWeek);
+  const curEnd   = new Date(curStart); curEnd.setDate(curEnd.getDate() + 6);
+  const startStr = curStart.toISOString().slice(0, 10);
+  const endStr   = curEnd.toISOString().slice(0, 10);
+
+  const db  = readInv();
+  const cfg = (db.inv_items_config || []).filter(i => i.inv_type === inv_type && i.activo !== false);
+
+  // Recepciones liberadas de la semana actual
+  const recs = (db.inv_recepciones || []).filter(r =>
+    r.inv_type === inv_type &&
+    r.fecha >= startStr && r.fecha <= endStr &&
+    r.estatus_calidad !== 'cuarentena'
+  );
+
+  // Salidas desde vales de la semana actual (solo quimicos_proceso)
+  const valesMap = {};
+  if (inv_type === 'quimicos_proceso') {
+    try {
+      const dbVales   = readVales();
+      const valesItems = dbVales.items_vales || [];
+      const folios = new Set(
+        (dbVales.vales_header || [])
+          .filter(h => h.fecha >= startStr && h.fecha <= endStr)
+          .map(h => h.folio_vale)
+      );
+      const kgByCode = {};
+      for (const det of (dbVales.vales_detalle || []).filter(d => folios.has(d.folio_vale))) {
+        kgByCode[det.item] = (kgByCode[det.item] || 0) + (det.kg_equivalentes || 0);
+      }
+      for (const cfgItem of cfg) {
+        if (cfgItem.vales_item_id) {
+          const vi = valesItems.find(v => v.id === cfgItem.vales_item_id);
+          if (vi && kgByCode[vi.item]) {
+            valesMap[cfgItem.item_key] = Math.round(kgByCode[vi.item] * 100) / 100;
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  const items = {};
+  for (const item of cfg) {
+    const recibidoKg = recs
+      .filter(r => r.item_key === item.item_key)
+      .reduce((s, r) => s + (Number(r.kg) || 0), 0);
+    const salidasKg = valesMap[item.item_key] || 0;
+    const p = item.peso_kg || null;
+    items[item.item_key] = {
+      recibido_kg:     recibidoKg || null,
+      recibido_tambos: (p && recibidoKg > 0) ? Math.round((recibidoKg / p) * 100) / 100 : null,
+      salidas_kg:      salidasKg  || null,
+      salidas_tambos:  (p && salidasKg  > 0) ? Math.round((salidasKg  / p) * 100) / 100 : null,
+    };
+  }
+  res.json({ week: curWeek, year: curYear, start: startStr, end: endStr, items });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
