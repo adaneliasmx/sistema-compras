@@ -819,8 +819,15 @@ async function loadCompradorTab(tab, inv_type) {
     let resumen = (rRes?.ok ? await rRes.json() : null) || { items: {} };
 
     if (isQ) {
-      // ── Quimicos: Item | Tambos | Porrones | Kg | ↑ Recibo sem. | ↓ Salidas sem. | Min | Max | Estado
-      function buildQTable(res) {
+      // ── Quimicos: toggle Unidades (T/P) vs Kg, resalte de filas en riesgo
+      let viewMode = 'unidades'; // 'unidades' | 'kg'
+
+      // Colores de resalte por estado (inline para que funcionen en print)
+      const riskBg = { empty: '#fee2e2', low: '#fef9c3', high: '#f3e8ff' };
+
+      function buildQTable(res, mode) {
+        const isKg = mode === 'kg';
+        const colCount = isKg ? 7 : 8;
         const grouped = {};
         data.rows.forEach(row => {
           const prov = row.proveedor || '(Sin proveedor)';
@@ -830,41 +837,57 @@ async function loadCompradorTab(tab, inv_type) {
         const provs = Object.keys(grouped).sort((a, b) =>
           a === '(Sin proveedor)' ? 1 : b === '(Sin proveedor)' ? -1 : a.localeCompare(b));
         const rows = provs.flatMap(prov => {
-          const hdr = `<tr><td colspan="9" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${grouped[prov].length})</span></td></tr>`;
+          const hdr = `<tr><td colspan="${colCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem;letter-spacing:.5px">${esc(prov)} <span style="font-weight:400;opacity:.7">(${grouped[prov].length})</span></td></tr>`;
           const itemRows = grouped[prov].map(row => {
-            const rs      = res.items?.[row.item_key] || {};
-            const tambos  = row.cur_tambos_raw;
+            const rs       = res.items?.[row.item_key] || {};
+            const tambos   = row.cur_tambos_raw;
             const porrones = row.cur_porrones;
-            const kg      = row.cur_kg;
+            const kg       = row.cur_kg;
+            const pesoKg   = row.peso_kg || null;
             const min = row.min_val; const max = row.max_val;
-            const recStr  = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
-            const salStr  = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
-            let statusDot = 'ok', stockLabel = 'OK', statusClass = '';
-            if (tambos == null)              { statusDot = 'gray';  stockLabel = 'S/D'; }
-            else if (min != null && tambos <= 0)  { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; }
-            else if (min != null && tambos < min) { statusClass = 'stock-low';   statusDot = 'low';   stockLabel = 'BAJO'; }
-            else if (max != null && tambos > max) { statusDot = 'high'; stockLabel = 'EXCESO'; }
-            return `<tr class="${statusClass}">
+            // Estado basado en tambos
+            let statusDot = 'ok', stockLabel = 'OK', statusClass = '', rowBg = '';
+            if (tambos == null)                   { statusDot = 'gray';  stockLabel = 'S/D'; }
+            else if (min != null && tambos <= 0)  { statusClass = 'stock-empty'; statusDot = 'empty'; stockLabel = 'AGOTADO'; rowBg = riskBg.empty; }
+            else if (min != null && tambos < min) { statusClass = 'stock-low';   statusDot = 'low';   stockLabel = 'BAJO';    rowBg = riskBg.low;   }
+            else if (max != null && tambos > max) { statusDot = 'high'; stockLabel = 'EXCESO'; rowBg = riskBg.high; }
+            const badgeClass = statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':statusDot==='high'?'badge-purple':'badge-gray';
+            // Valores según modo
+            let stockCells, recStr, salStr, minStr, maxStr;
+            if (isKg) {
+              const kgMin = (min != null && pesoKg) ? fmt(min * pesoKg, 0)+' kg' : (min != null ? fmt(min,0) : '—');
+              const kgMax = (max != null && pesoKg) ? fmt(max * pesoKg, 0)+' kg' : (max != null ? fmt(max,0) : '—');
+              stockCells = `<td class="text-right">${kg != null ? fmt(kg)+' kg' : '—'}</td>`;
+              recStr  = rs.recibido_kg  != null ? `+${fmt(rs.recibido_kg)} kg`  : '—';
+              salStr  = rs.salidas_kg   != null ? `-${fmt(rs.salidas_kg)} kg`   : '—';
+              minStr  = kgMin; maxStr = kgMax;
+            } else {
+              stockCells = `<td class="text-right">${tambos  != null ? fmt(tambos)  : '—'}</td>
+                            <td class="text-right">${porrones != null ? fmt(porrones) : '—'}</td>`;
+              recStr  = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+              salStr  = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
+              minStr  = min != null ? fmt(min, 0)+' T' : '—';
+              maxStr  = max != null ? fmt(max, 0)+' T' : '—';
+            }
+            return `<tr class="${statusClass}" style="${rowBg ? 'background:'+rowBg : ''}">
               <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
-              <td class="text-right">${tambos  != null ? fmt(tambos)  : '—'}</td>
-              <td class="text-right">${porrones != null ? fmt(porrones) : '—'}</td>
-              <td class="text-right">${kg != null ? fmt(kg)+' kg' : '—'}</td>
-              <td class="text-right" style="color:${rs.recibido_tambos != null ? '#16a34a' : '#9ca3af'};font-weight:600">${recStr}</td>
-              <td class="text-right" style="color:${rs.salidas_tambos  != null ? '#ea580c' : '#9ca3af'};font-weight:600">${salStr}</td>
-              <td class="text-right">${min != null ? fmt(min, 0) : '—'}</td>
-              <td class="text-right">${max != null ? fmt(max, 0) : '—'}</td>
-              <td><span class="badge ${statusDot==='ok'?'badge-green':statusDot==='low'?'badge-yellow':statusDot==='empty'?'badge-red':statusDot==='high'?'badge-purple':'badge-gray'}">${stockLabel}</span></td>
+              ${stockCells}
+              <td class="text-right" style="color:${rs.recibido_tambos != null || rs.recibido_kg != null ? '#16a34a' : '#9ca3af'};font-weight:600">${recStr}</td>
+              <td class="text-right" style="color:${rs.salidas_tambos  != null || rs.salidas_kg  != null ? '#ea580c' : '#9ca3af'};font-weight:600">${salStr}</td>
+              <td class="text-right">${minStr}</td>
+              <td class="text-right">${maxStr}</td>
+              <td><span class="badge ${badgeClass}">${stockLabel}</span></td>
             </tr>`;
           });
           return [hdr, ...itemRows];
         }).join('');
+
+        const headers = isKg
+          ? `<th>Item</th><th>Kg inventario</th><th style="color:#16a34a">↑ Recibo sem.</th><th style="color:#ea580c">↓ Salidas sem.</th><th>Min</th><th>Max</th><th>Estado</th>`
+          : `<th>Item</th><th>Tambos</th><th>Porrones</th><th style="color:#16a34a">↑ Recibo sem.</th><th style="color:#ea580c">↓ Salidas sem.</th><th>Min</th><th>Max</th><th>Estado</th>`;
+
         return data.rows.length
-          ? `<div class="table-wrap"><table><thead><tr>
-              <th>Item</th><th>Tambos</th><th>Porrones</th><th>Kg inventario</th>
-              <th style="color:#16a34a">↑ Recibo sem.</th>
-              <th style="color:#ea580c">↓ Salidas sem.</th>
-              <th>Min (T)</th><th>Max (T)</th><th>Estado</th>
-             </tr></thead><tbody>${rows}</tbody></table></div>`
+          ? `<div class="table-wrap"><table><thead><tr>${headers}</tr></thead><tbody>${rows}</tbody></table></div>`
           : '<div class="empty-msg">Sin datos de conteo</div>';
       }
 
@@ -875,54 +898,95 @@ async function loadCompradorTab(tab, inv_type) {
               <div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div>
               <div class="page-subtitle">Conteo actual: ${data.cur_fecha || 'Sin conteo'}</div>
             </div>
+            <div class="toggle-unit" id="q-view-toggle">
+              <button data-m="unidades" class="active">Tambos / Porrones</button>
+              <button data-m="kg">Kilogramos</button>
+            </div>
           </div>
-          <div id="comprador-q-table">${buildQTable(resumen)}</div>
+          <div id="comprador-q-table">${buildQTable(resumen, viewMode)}</div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" id="comprador-actualizar">🔄 Actualizar entradas/salidas</button>
             <button class="btn btn-outline btn-sm" id="comprador-imprimir">Imprimir</button>
           </div>
         </div>`;
 
+      document.getElementById('q-view-toggle').addEventListener('click', e => {
+        const btn = e.target.closest('[data-m]');
+        if (!btn) return;
+        viewMode = btn.dataset.m;
+        document.querySelectorAll('#q-view-toggle [data-m]').forEach(b => b.classList.toggle('active', b === btn));
+        document.getElementById('comprador-q-table').innerHTML = buildQTable(resumen, viewMode);
+      });
+
       document.getElementById('comprador-actualizar').onclick = async () => {
         const btn = document.getElementById('comprador-actualizar');
         btn.disabled = true; btn.textContent = 'Actualizando...';
         const rr = await apiGet(`/resumen-semana/${inv_type}`);
-        if (rr?.ok) { resumen = await rr.json(); document.getElementById('comprador-q-table').innerHTML = buildQTable(resumen); }
+        if (rr?.ok) { resumen = await rr.json(); document.getElementById('comprador-q-table').innerHTML = buildQTable(resumen, viewMode); }
         btn.disabled = false; btn.textContent = '🔄 Actualizar entradas/salidas';
       };
 
       document.getElementById('comprador-imprimir').onclick = () => {
         const usuario = ME?.nombre || '—';
         const alertas = [];
+        const isKgPrint = viewMode === 'kg';
         const rows = data.rows.map(row => {
           const rs = resumen.items?.[row.item_key] || {};
           const tambos = row.cur_tambos_raw; const porrones = row.cur_porrones; const kg = row.cur_kg;
+          const pesoKg = row.peso_kg || null;
           const min = row.min_val; const max = row.max_val;
-          let estado = '—', clr = '';
+          let estado = '—', rowStyle = '';
           if (tambos != null && min != null) {
-            if (tambos <= 0)       { estado = 'AGOTADO'; clr = 'color:#dc2626;font-weight:700'; alertas.push(`${row.item_label}: AGOTADO`); }
-            else if (tambos < min) { estado = 'BAJO';    clr = 'color:#d97706;font-weight:700'; alertas.push(`${row.item_label}: BAJO (${tambos} T < min ${min} T)`); }
-            else if (max != null && tambos > max) { estado = 'EXCESO'; clr = 'color:#7c3aed;font-weight:700'; alertas.push(`${row.item_label}: EXCESO (${tambos} T > max ${max} T)`); }
+            if (tambos <= 0)       { estado = 'AGOTADO'; rowStyle = `background:${riskBg.empty}`; alertas.push(`${row.item_label}: AGOTADO`); }
+            else if (tambos < min) { estado = 'BAJO';    rowStyle = `background:${riskBg.low}`;   alertas.push(`${row.item_label}: BAJO (${tambos} T < min ${min} T)`); }
+            else if (max != null && tambos > max) { estado = 'EXCESO'; rowStyle = `background:${riskBg.high}`; alertas.push(`${row.item_label}: EXCESO`); }
             else estado = 'OK';
           }
-          const recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
-          const salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
-          return `<tr>
-            <td>${esc(row.item_label)}</td>
-            <td>${tambos != null ? fmt(tambos)+' T' : '—'} / ${porrones != null ? fmt(porrones)+' P' : '—'}${kg ? ` (${fmt(kg)} kg)` : ''}</td>
-            <td style="color:#16a34a">${recStr}</td><td style="color:#ea580c">${salStr}</td>
-            <td>${min ?? '—'}</td><td>${max ?? '—'}</td>
-            <td style="${clr}">${estado}</td></tr>`;
+          let stockCell, recStr, salStr, minStr, maxStr;
+          if (isKgPrint) {
+            stockCell = kg != null ? `${fmt(kg)} kg` : '—';
+            recStr = rs.recibido_kg  != null ? `+${fmt(rs.recibido_kg)} kg`  : '—';
+            salStr = rs.salidas_kg   != null ? `-${fmt(rs.salidas_kg)} kg`   : '—';
+            minStr = (min != null && pesoKg) ? fmt(min*pesoKg,0)+' kg' : (min ?? '—');
+            maxStr = (max != null && pesoKg) ? fmt(max*pesoKg,0)+' kg' : (max ?? '—');
+          } else {
+            stockCell = `${tambos != null ? fmt(tambos)+' T' : '—'} / ${porrones != null ? fmt(porrones)+' P' : '—'}`;
+            recStr = rs.recibido_tambos != null ? `+${fmt(rs.recibido_tambos)} T` : '—';
+            salStr = rs.salidas_tambos  != null ? `-${fmt(rs.salidas_tambos)} T`  : '—';
+            minStr = min != null ? fmt(min,0)+' T' : '—';
+            maxStr = max != null ? fmt(max,0)+' T' : '—';
+          }
+          return `<tr style="${rowStyle}">
+            <td>${esc(row.item_label)}</td><td>${stockCell}</td>
+            <td>${recStr}</td><td>${salStr}</td>
+            <td>${minStr}</td><td>${maxStr}</td>
+            <td><strong>${estado}</strong></td></tr>`;
         }).join('');
-        const alertHtml = alertas.length
-          ? `<div style="margin-top:16px;padding:10px 14px;background:#fef3c7;border:1px solid #fbbf24;border-radius:6px"><strong>Alertas (${alertas.length}):</strong><ul style="margin:6px 0 0 18px">${alertas.map(a=>`<li>${a}</li>`).join('')}</ul></div>`
-          : `<div style="margin-top:16px;padding:8px 14px;background:#dcfce7;border:1px solid #86efac;border-radius:6px">Sin alertas — todos los items dentro del rango.</div>`;
+        const alertRows = alertas.map(a => `<tr style="background:#fef3c7"><td colspan="7">⚠️ ${a}</td></tr>`).join('');
+        const unidadLabel = isKgPrint ? 'Kg' : 'Tambos / Porrones';
         const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Inventario Semanal</title>
-          <style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#dbeafe;font-weight:700}tr:nth-child(even){background:#f8fafc}h2{margin:0 0 4px}p{margin:2px 0 12px;color:#64748b}</style></head>
-          <body><h2>Inventario Semanal — Quimicos Proceso</h2>
-          <p>Semana ${data.cur_week} / ${data.cur_year} &nbsp;|&nbsp; Conteo: ${data.cur_fecha||'Sin conteo'} &nbsp;|&nbsp; Generado por: ${esc(usuario)}</p>
-          <table><thead><tr><th>Item</th><th>Stock actual</th><th>Recibo sem.</th><th>Salidas sem.</th><th>Min (T)</th><th>Max (T)</th><th>Estado</th></tr></thead>
-          <tbody>${rows}</tbody></table>${alertHtml}</body></html>`;
+          <style>
+            @page { size: A4 landscape; margin: 10mm; }
+            body { font-family: Arial, sans-serif; font-size: 10px; margin: 0; }
+            h3 { margin: 0 0 2px; font-size: 13px; }
+            p  { margin: 0 0 6px; color: #555; font-size: 9px; }
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #94a3b8; padding: 3px 6px; }
+            th { background: #dbeafe; font-weight: 700; font-size: 9px; }
+            td { font-size: 9px; }
+            .ok { color: #15803d; } .alerta { color: #b45309; font-weight: 700; }
+            -webkit-print-color-adjust: exact; print-color-adjust: exact;
+          </style></head>
+          <body>
+          <h3>Inventario Semanal — Quimicos Proceso &nbsp;|&nbsp; ${unidadLabel}</h3>
+          <p>Semana ${data.cur_week} / ${data.cur_year} &nbsp;&nbsp; Conteo: ${data.cur_fecha||'Sin conteo'} &nbsp;&nbsp; Generado por: ${esc(usuario)}</p>
+          <table><thead><tr>
+            <th>Item</th><th>Stock actual</th><th>↑ Recibo sem.</th><th>↓ Salidas sem.</th><th>Min</th><th>Max</th><th>Estado</th>
+          </tr></thead><tbody>
+          ${rows}
+          ${alertRows ? `<tr><td colspan="7" style="padding:0"></td></tr>${alertRows}` : ''}
+          </tbody></table>
+          </body></html>`;
         const win = window.open('', '_blank');
         win.document.write(html); win.document.close(); win.print();
       };
