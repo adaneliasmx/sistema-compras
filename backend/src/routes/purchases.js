@@ -1085,6 +1085,86 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
   });
 });
 
+// KPI de costos por Proveedor
+router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), async (req, res) => {
+  const db = read();
+  const now = new Date();
+  const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const usdRate = await getUsdToMxn();
+
+  const toMxn = ri => Number(ri.quantity || 0) * Number(ri.unit_cost || 0) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
+  const activeItems = (db.requisition_items || []).filter(ri =>
+    !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
+    Number(ri.unit_cost || 0) > 0 && ri.supplier_id
+  );
+  const sumSpend = (items, from, to) =>
+    items.filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
+         .reduce((s, ri) => s + toMxn(ri), 0);
+
+  function isoWeekNum(date) {
+    const d = new Date(date); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    const w1 = new Date(d.getFullYear(), 0, 4);
+    return 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+  }
+  function isoWeekYearOf(date) {
+    const d = new Date(date); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+    return d.getFullYear();
+  }
+  function isoWeekMonday(year, week) {
+    const jan4 = new Date(year, 0, 4);
+    const dow = (jan4.getDay() + 6) % 7;
+    const mon = new Date(jan4); mon.setDate(jan4.getDate() - dow + (week - 1) * 7); mon.setHours(0,0,0,0);
+    return mon;
+  }
+
+  const curWk = isoWeekNum(now);
+  const curWkYear = isoWeekYearOf(now);
+  const weeks = Array.from({ length: 8 }, (_, i) => {
+    let wk = curWk - i, yr = curWkYear;
+    if (wk <= 0) { yr--; wk += isoWeekNum(new Date(yr, 11, 28)); }
+    const from = isoWeekMonday(yr, wk);
+    const to = new Date(from); to.setDate(to.getDate() + 6); to.setHours(23,59,59,999);
+    return { label: `Sem ${wk}`, from, to };
+  }).reverse();
+
+  const months = Array.from({ length: 6 }, (_, i) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
+  }).reverse();
+
+  const result = (db.suppliers || [])
+    .filter(s => s.active !== false)
+    .map(sup => {
+      const supItems = activeItems.filter(ri => ri.supplier_id === sup.id);
+      if (!supItems.length) return null;
+      const itemMap = {};
+      supItems.forEach(ri => {
+        const ci = db.catalog_items.find(c => c.id === ri.catalog_item_id);
+        const name = ci ? ci.name : (ri.manual_item_name || 'Sin nombre');
+        if (!itemMap[name]) itemMap[name] = [];
+        itemMap[name].push(ri);
+      });
+      const items = Object.entries(itemMap).map(([name, riList]) => ({
+        name,
+        total:    riList.reduce((s, ri) => s + toMxn(ri), 0),
+        by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(riList, p.from, p.to) })),
+        by_month: months.map(p => ({ label: p.label, amount: sumSpend(riList, p.from, p.to) })),
+      })).sort((a, b) => b.total - a.total);
+      return {
+        id: sup.id, name: sup.business_name, code: sup.code || '',
+        total:    supItems.reduce((s, ri) => s + toMxn(ri), 0),
+        by_week:  weeks.map(p => ({ label: p.label, amount: sumSpend(supItems, p.from, p.to) })),
+        by_month: months.map(p => ({ label: p.label, amount: sumSpend(supItems, p.from, p.to) })),
+        items
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.total - a.total);
+
+  res.json({ suppliers: result, weeks_labels: weeks.map(p => p.label), months_labels: months.map(p => p.label), usd_rate: usdRate });
+});
+
 // Cancelar PO completa (comprador/admin) — libera los ítems para re-proceso
 router.post('/purchase-orders/:id/cancel', allowRoles('comprador', 'admin'), (req, res) => {
   const db = read();

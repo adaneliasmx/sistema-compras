@@ -8721,15 +8721,71 @@ async function kpiView() {
       </div>`;
   }
 
+  function buildProveedorTable(data, period, expandedSup, selSupId) {
+    const periods = period === 'week' ? (data.weeks_labels||[]) : (data.months_labels||[]);
+    const byKey   = period === 'week' ? 'by_week' : 'by_month';
+    let rows = data.suppliers || [];
+    if (selSupId !== 'all') rows = rows.filter(s => s.id === Number(selSupId));
+    if (!rows.length) return '<div class="muted small" style="padding:16px">Sin datos de gasto por proveedor para el período</div>';
+    const cols = 2 + periods.length;
+    const thCols = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111">${esc(p)}</th>`).join('');
+    const periodTotals = periods.map((_, i) => rows.reduce((sum, s) => sum + (((s[byKey]||[])[i])?.amount || 0), 0));
+    const grandTotal = rows.reduce((s, sup) => s + (sup.total||0), 0);
+    return `
+      <div class="table-wrap">
+        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+          <thead>
+            <tr>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px">Proveedor / Ítem</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total</th>
+              ${thCols}
+            </tr>
+          </thead>
+          <tbody>
+            ${rows.map(sup => {
+              const isExp = expandedSup === sup.id || selSupId !== 'all';
+              const byP = sup[byKey] || [];
+              return `
+                <tr class="kpi-sup-row" data-supid="${sup.id}" style="cursor:pointer;background:${isExp?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb">
+                  <td style="padding:7px 12px;font-weight:600;color:#111">${isExp?'▼ ':'▶ '}<b>${esc(sup.name)}</b> <span style="color:#9ca3af;font-weight:400;font-size:11px">${sup.code||''}</span></td>
+                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmt$(sup.total)}</td>
+                  ${byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
+                </tr>
+                ${isExp ? (sup.items||[]).map(it => {
+                  const itP = it[byKey]||[];
+                  return `<tr style="background:#f0f5ff">
+                    <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">↳ ${esc(it.name)}</td>
+                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#4b5563;font-size:11px">${fmt$(it.total)}</td>
+                    ${itP.map(p => `<td style="text-align:right;padding:5px 10px;color:#4b5563;font-size:11px">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
+                  </tr>`;
+                }).join('') : ''}`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
+              <td style="padding:7px 12px;font-weight:700;font-size:12px">TOTAL</td>
+              <td style="text-align:right;padding:7px 10px;font-weight:700">${fmt$(grandTotal)}</td>
+              ${periodTotals.map(t => `<td style="text-align:right;padding:7px 10px;font-weight:700">${t>0?fmt$(t):'—'}</td>`).join('')}
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  }
+
   try {
-    const [efData, cosData] = await Promise.all([
+    const [efData, cosData, supData] = await Promise.all([
       api('/api/dashboard/kpi-eficiencia'),
-      api('/api/purchases/kpi-costs')
+      api('/api/purchases/kpi-costs'),
+      api('/api/purchases/kpi-costs-supplier')
     ]);
 
-    let efPeriod   = 'week';
-    let cosPeriod  = 'week';
-    let expandedCC = null;
+    let efPeriod     = 'week';
+    let cosPeriod    = 'week';
+    let expandedCC   = null;
+    let supPeriod    = 'week';
+    let selSupId     = 'all';
+    let expandedSup  = null;
+    let supChartInst = null;
 
     function renderEf() {
       document.getElementById('kpi-ef-body').innerHTML = buildEficienciaTable(efData, efPeriod);
@@ -8750,9 +8806,10 @@ async function kpiView() {
     }
 
     app.innerHTML = shell(`
-      <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0">
-        <button id="kpi-main-ef"  class="tab-btn tab-active"  style="padding:10px 20px;font-size:13px;font-weight:700">📊 KPI Eficiencia de Compras</button>
-        <button id="kpi-main-cos" class="tab-btn"              style="padding:10px 20px;font-size:13px;font-weight:700">💰 KPI Costos por CC</button>
+      <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0;flex-wrap:wrap">
+        <button id="kpi-main-ef"  class="tab-btn tab-active" style="padding:10px 20px;font-size:13px;font-weight:700">📊 KPI Eficiencia de Compras</button>
+        <button id="kpi-main-cos" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">💰 KPI Costos por CC</button>
+        <button id="kpi-main-sup" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">🏢 KPI Costos por Proveedor</button>
       </div>
 
       <div id="kpi-panel-ef">
@@ -8780,27 +8837,128 @@ async function kpiView() {
         </p>
         <div id="kpi-cos-body"></div>
       </div>
+
+      <div id="kpi-panel-sup" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">🏢 KPI de Costos por Proveedor</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-sup-wk" class="btn-primary"   style="padding:4px 14px;font-size:12px" onclick="kpiSupPeriod('week')">Por semana</button>
+            <button id="kpi-sup-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px" onclick="kpiSupPeriod('month')">Por mes</button>
+          </div>
+        </div>
+        <div style="margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <label style="font-size:13px;font-weight:600;color:#374151">Proveedor:</label>
+          <select id="kpi-sup-filter" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;min-width:240px">
+            <option value="all">— Todos los proveedores —</option>
+            ${(supData.suppliers||[]).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')}
+          </select>
+          ${supData.usd_rate ? `<span style="color:#059669;font-weight:600;font-size:12px">USD→MXN @ $${Number(supData.usd_rate).toFixed(2)}</span>` : ''}
+        </div>
+        <div id="kpi-sup-body"></div>
+        <div id="kpi-sup-chart-wrap" style="margin-top:20px;background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:16px;display:none">
+          <div style="font-weight:600;font-size:13px;color:#374151;margin-bottom:12px" id="kpi-sup-chart-title"></div>
+          <canvas id="kpi-sup-chart" height="110"></canvas>
+        </div>
+      </div>
     `, 'kpis');
 
-    window.kpiEfPeriod = p => { efPeriod = p; renderEf(); };
+    window.kpiEfPeriod  = p => { efPeriod  = p; renderEf(); };
     window.kpiCosPeriod = p => { cosPeriod = p; renderCos(); };
+    window.kpiSupPeriod = p => { supPeriod = p; renderSup(); };
 
-    document.getElementById('kpi-main-ef').onclick = () => {
-      document.getElementById('kpi-panel-ef').style.display  = '';
-      document.getElementById('kpi-panel-cos').style.display = 'none';
-      document.getElementById('kpi-main-ef').classList.add('tab-active');
-      document.getElementById('kpi-main-cos').classList.remove('tab-active');
+    function renderSup() {
+      document.getElementById('kpi-sup-body').innerHTML = buildProveedorTable(supData, supPeriod, expandedSup, selSupId);
+      document.getElementById('kpi-sup-wk').className = `btn-${supPeriod==='week'?'primary':'secondary'}`;
+      document.getElementById('kpi-sup-mo').className = `btn-${supPeriod==='month'?'primary':'secondary'}`;
+
+      // Bind expand-click on supplier rows
+      document.querySelectorAll('.kpi-sup-row').forEach(row => {
+        row.onclick = () => {
+          const id = Number(row.dataset.supid);
+          expandedSup = expandedSup === id ? null : id;
+          renderSup();
+        };
+      });
+
+      // Chart
+      const periods     = supPeriod === 'week' ? (supData.weeks_labels||[]) : (supData.months_labels||[]);
+      const byKey       = supPeriod === 'week' ? 'by_week' : 'by_month';
+      const chartWrap   = document.getElementById('kpi-sup-chart-wrap');
+      const chartTitle  = document.getElementById('kpi-sup-chart-title');
+      const chartCanvas = document.getElementById('kpi-sup-chart');
+
+      let chartRows = supData.suppliers || [];
+      if (selSupId !== 'all') chartRows = chartRows.filter(s => s.id === Number(selSupId));
+
+      if (!chartRows.length) { chartWrap.style.display = 'none'; return; }
+
+      chartWrap.style.display = '';
+      const isSingle = chartRows.length === 1;
+      chartTitle.textContent = isSingle
+        ? `Tendencia de gasto — ${chartRows[0].name}`
+        : `Tendencia de gasto total — Todos los proveedores`;
+
+      const amounts = periods.map((_, i) => chartRows.reduce((sum, s) => sum + (((s[byKey]||[])[i])?.amount || 0), 0));
+
+      if (supChartInst) { supChartInst.destroy(); supChartInst = null; }
+      supChartInst = new Chart(chartCanvas, {
+        type: 'bar',
+        data: {
+          labels: periods,
+          datasets: [{
+            label: isSingle ? chartRows[0].name : 'Total proveedores',
+            data: amounts,
+            backgroundColor: 'rgba(30,58,138,0.75)',
+            borderColor: '#1e3a8a',
+            borderWidth: 1,
+            borderRadius: 4
+          }]
+        },
+        options: {
+          responsive: true,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: ctx => '$' + Number(ctx.parsed.y||0).toLocaleString('es-MX', {maximumFractionDigits:0})
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              ticks: {
+                callback: v => '$' + Number(v).toLocaleString('es-MX', {maximumFractionDigits:0})
+              }
+            }
+          }
+        }
+      });
+    }
+
+    document.getElementById('kpi-sup-filter').onchange = function() {
+      selSupId = this.value;
+      expandedSup = null;
+      renderSup();
     };
-    document.getElementById('kpi-main-cos').onclick = () => {
-      document.getElementById('kpi-panel-ef').style.display  = 'none';
-      document.getElementById('kpi-panel-cos').style.display = '';
-      document.getElementById('kpi-main-ef').classList.remove('tab-active');
-      document.getElementById('kpi-main-cos').classList.add('tab-active');
+
+    const _showTab = (show, hide1, hide2, activeBtn, inactiveBtn1, inactiveBtn2) => {
+      document.getElementById(show).style.display  = '';
+      document.getElementById(hide1).style.display = 'none';
+      document.getElementById(hide2).style.display = 'none';
+      document.getElementById(activeBtn).classList.add('tab-active');
+      document.getElementById(inactiveBtn1).classList.remove('tab-active');
+      document.getElementById(inactiveBtn2).classList.remove('tab-active');
     };
+
+    document.getElementById('kpi-main-ef').onclick  = () => _showTab('kpi-panel-ef',  'kpi-panel-cos', 'kpi-panel-sup', 'kpi-main-ef',  'kpi-main-cos', 'kpi-main-sup');
+    document.getElementById('kpi-main-cos').onclick = () => _showTab('kpi-panel-cos', 'kpi-panel-ef',  'kpi-panel-sup', 'kpi-main-cos', 'kpi-main-ef',  'kpi-main-sup');
+    document.getElementById('kpi-main-sup').onclick = () => _showTab('kpi-panel-sup', 'kpi-panel-ef',  'kpi-panel-cos', 'kpi-main-sup', 'kpi-main-ef',  'kpi-main-cos');
 
     bindCommon();
     renderEf();
     renderCos();
+    renderSup();
 
   } catch(e) {
     app.innerHTML = shell(`<div style="color:#dc2626;padding:16px">Error al cargar KPIs: ${e.message}</div>`, 'kpis');
