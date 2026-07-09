@@ -92,11 +92,11 @@ router.get('/ordenes', (req, res) => {
       o.atendida_por_user_id === req.mantUser.id
     );
   }
-  // Supervisor: ve sus solicitudes + todas las órdenes en_validacion
+  // Supervisor: ve sus propias solicitudes + órdenes automáticas (producción) en_validacion
   if (req.mantUser.mant_role === 'supervisor_mant') {
     ordenes = ordenes.filter(o =>
       o.solicitante_user_id === req.mantUser.id ||
-      o.status === 'en_validacion'
+      (o.status === 'en_validacion' && o.origen_produccion)
     );
   }
 
