@@ -1503,8 +1503,9 @@ async function viewValidacion(el) {
           <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap">
             <div style="flex:1;min-width:0">
               <div style="font-weight:700;font-size:15px;margin-bottom:6px">${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}${o.parte_nombre&&o.parte_nombre!=='-'?` <span style="color:#6b7280;font-size:12px">/ ${escHtml(o.parte_nombre)}</span>`:''}</div>
+              <div style="font-size:10px;font-weight:700;letter-spacing:0.3px;margin-bottom:6px;padding:3px 8px;border-radius:4px;display:inline-block;${o.origen_produccion?'background:#dbeafe;color:#1e40af':'background:#f0fdf4;color:#15803d'}">${o.origen_produccion?'⚙ ORDEN AUTOMÁTICA A TRAVÉS DE SISTEMA PRODUCCIÓN':'✏ ORDEN MANUAL A TRAVÉS DE SISTEMA MANTENIMIENTO'}</div>
               <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${escHtml((o.descripcion_falla||'').slice(0,100))}</div>
-              <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Solicitado por:</span> <b>${escHtml(o.solicitante_nombre || '—')}</b> · ${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}</div>
+              <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Solicitado por:</span> <b>${escHtml(o.solicitante_nombre || '—')}</b> · ${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''} ${getTurnoBadge(o.hora_solicitud)}</div>
               <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Atendido por:</span> <b>${escHtml(o.atendida_por_nombre || o.tecnico_nombre || '—')}</b></div>
               <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Cierre:</span> ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''}</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${urgenciaBadge(o.nivel_urgencia)} ${statusBadge(o.status)}</div>
