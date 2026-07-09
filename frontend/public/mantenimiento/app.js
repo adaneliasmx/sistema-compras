@@ -8,6 +8,7 @@ async function apiFetch(path, opts = {}) {
   if (state.token) headers['Authorization'] = `Bearer ${state.token}`;
   const res = await fetch('/api/mant' + path, { ...opts, headers });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout(); throw new Error('Sesión expirada'); }
   if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
   return data;
 }
@@ -1503,6 +1504,7 @@ async function viewValidacion(el) {
             <div style="flex:1;min-width:0">
               <div style="font-weight:700;font-size:15px;margin-bottom:6px">${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}${o.parte_nombre&&o.parte_nombre!=='-'?` <span style="color:#6b7280;font-size:12px">/ ${escHtml(o.parte_nombre)}</span>`:''}</div>
               <div style="font-size:12px;color:#6b7280;margin-bottom:8px">${escHtml((o.descripcion_falla||'').slice(0,100))}</div>
+              <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Solicitado por:</span> <b>${escHtml(o.solicitante_nombre || '—')}</b> · ${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}</div>
               <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Atendido por:</span> <b>${escHtml(o.atendida_por_nombre || o.tecnico_nombre || '—')}</b></div>
               <div style="font-size:12px;margin-bottom:3px"><span style="color:#6b7280">Cierre:</span> ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''}</div>
               <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">${urgenciaBadge(o.nivel_urgencia)} ${statusBadge(o.status)}</div>
