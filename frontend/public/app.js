@@ -5713,7 +5713,40 @@ async function invoicingView() {
       setTimeout(invoicingView, 1000);
     } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
   };
-  expInvBtn.onclick = () => downloadCsv('invoices', 'facturas.csv');
+  expInvBtn.onclick = () => {
+    function isoWeekLabel(dateStr) {
+      if (!dateStr) return '';
+      const d = new Date(dateStr); d.setHours(0,0,0,0);
+      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      const w1 = new Date(d.getFullYear(), 0, 4);
+      const wk = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
+      return `Sem ${d.getFullYear()}-${String(wk).padStart(2,'0')}`;
+    }
+    // Lookup: po_id → invoices[]
+    const invByPo = {};
+    invs.forEach(inv => {
+      if (!invByPo[inv.purchase_order_id]) invByPo[inv.purchase_order_id] = [];
+      invByPo[inv.purchase_order_id].push(inv);
+    });
+    const sortedPos = [...pos].sort((a, b) => (b.created_at||'').localeCompare(a.created_at||''));
+    const header = ['Fecha de PO','Semana','PO','Proveedor','Status','Total','No. de Factura','Fecha de Factura'];
+    const dataRows = [];
+    sortedPos.forEach(po => {
+      const poInvs = invByPo[po.id] || [];
+      if (!poInvs.length) {
+        dataRows.push([(po.created_at||'').slice(0,10), isoWeekLabel(po.created_at), po.folio, po.supplier_name||'', po.status, Number(po.total_amount||0), 'Pendiente', '—']);
+      } else {
+        poInvs.forEach(inv => {
+          dataRows.push([(po.created_at||'').slice(0,10), isoWeekLabel(po.created_at), po.folio, po.supplier_name||'', po.status, Number(po.total_amount||0), inv.invoice_number||'Pendiente', (inv.created_at||'').slice(0,10)||'—']);
+        });
+      }
+    });
+    const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+    ws['!cols'] = [{wch:13},{wch:14},{wch:16},{wch:28},{wch:18},{wch:14},{wch:20},{wch:16}];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Facturación POs');
+    XLSX.writeFile(wb, `Facturacion-POs-${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
 
   // ── Tabla dinámica: filtro + orden + agrupación por proveedor ─────────────
   let _invSort = 'created_at', _invDir = -1, _invSupp = '';
