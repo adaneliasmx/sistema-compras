@@ -1009,7 +1009,7 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
 
   const sumSpend = (items, from, to) =>
     items
-      .filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
+      .filter(ri => { const d = new Date(ri.created_at || 0); return d >= from && d < to; })
       .reduce((s, ri) => s + toMxn(ri), 0);
 
   // ISO week helpers
