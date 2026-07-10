@@ -1007,9 +1007,11 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     Number(ri.unit_cost || 0) > 0
   );
 
+  // Fecha de la requisición (inmutable) como ancla de período — nunca updated_at
+  const reqDateMap = new Map((db.requisitions || []).map(r => [r.id, r.created_at]));
   const sumSpend = (items, from, to) =>
     items
-      .filter(ri => { const d = new Date(ri.created_at || 0); return d >= from && d < to; })
+      .filter(ri => { const d = new Date(reqDateMap.get(ri.requisition_id) || ri.created_at || 0); return d >= from && d < to; })
       .reduce((s, ri) => s + toMxn(ri), 0);
 
   // ISO week helpers
@@ -1097,8 +1099,9 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
     !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
     Number(ri.unit_cost || 0) > 0 && ri.supplier_id
   );
+  const reqDateMap = new Map((db.requisitions || []).map(r => [r.id, r.created_at]));
   const sumSpend = (items, from, to) =>
-    items.filter(ri => { const d = new Date(ri.updated_at || ri.created_at || 0); return d >= from && d < to; })
+    items.filter(ri => { const d = new Date(reqDateMap.get(ri.requisition_id) || ri.created_at || 0); return d >= from && d < to; })
          .reduce((s, ri) => s + toMxn(ri), 0);
 
   function isoWeekNum(date) {
