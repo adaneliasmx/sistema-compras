@@ -4283,20 +4283,22 @@ async function purchasesView() {
                     const isExpanded = expandedCC === cc.id;
                     const hasSccs = cc.sub_cost_centers && cc.sub_cost_centers.length > 0;
                     const byPeriod = cc[byKey] || [];
+                    const ccPeriodTotal = byPeriod.reduce((s, p) => s + (p.amount||0), 0);
                     return `
                       <tr class="kpi-cc-row" data-ccid="${cc.id}" style="cursor:${hasSccs?'pointer':'default'};background:${isExpanded?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb" title="${hasSccs?'Clic para ver sub-centros':''}">
                         <td style="padding:7px 10px;font-weight:600">${hasSccs?(isExpanded?'▼ ':'▶ '):''}<b>${escapeHtml(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
-                        <td style="text-align:right;padding:7px 8px;font-weight:600;color:#1d4ed8">${fmt(cc.total)}</td>
+                        <td style="text-align:right;padding:7px 8px;font-weight:600;color:#1d4ed8">${ccPeriodTotal>0?fmt(ccPeriodTotal):'—'}</td>
                         ${byPeriod.map(p => `<td style="text-align:right;padding:7px 8px;color:${p.amount>0?'#374151':'#d1d5db'}">${p.amount>0?fmt(p.amount):'—'}</td>`).join('')}
                       </tr>
                       ${isExpanded && hasSccs ? cc.sub_cost_centers.map(scc => {
                         const sccByPeriod = scc[byKey] || [];
+                        const sccPeriodTotal = sccByPeriod.reduce((s, p) => s + (p.amount||0), 0);
                         return `
                         <tr style="background:#f0f5ff">
                           <td style="padding:5px 10px 5px 28px;font-size:11px">↳ <b>${escapeHtml(scc.name)}</b> <span style="color:#9ca3af">${scc.code||''}</span>
                             ${scc.items && scc.items.length ? `<span style="color:#6b7280"> · ${scc.items.length} ítem(s)</span>` : ''}
                           </td>
-                          <td style="text-align:right;padding:5px 8px;font-size:11px;color:#4b5563;font-weight:600">${fmt(scc.total)}</td>
+                          <td style="text-align:right;padding:5px 8px;font-size:11px;color:#4b5563;font-weight:600">${sccPeriodTotal>0?fmt(sccPeriodTotal):'—'}</td>
                           ${sccByPeriod.map(p => `<td style="text-align:right;padding:5px 8px;font-size:11px;color:${p.amount>0?'#4b5563':'#d1d5db'}">${p.amount>0?fmt(p.amount):'—'}</td>`).join('')}
                         </tr>
                         ${scc.items && scc.items.length ? `
