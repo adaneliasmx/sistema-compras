@@ -8711,14 +8711,14 @@ async function kpiView() {
     const periodTotals = periods.map((_, i) =>
       kpi.cost_centers.reduce((sum, cc) => sum + (((cc[byKey]||[])[i])?.amount || 0), 0)
     );
-    const grandTotal = kpi.cost_centers.reduce((sum, cc) => sum + (cc.total || 0), 0);
+    const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
     return `
       <div class="table-wrap">
         <table style="font-size:12px;border-collapse:collapse;min-width:100%">
           <thead>
             <tr>
               <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:200px">Centro de Costo</th>
-              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total período</th>
               ${thCols}
             </tr>
           </thead>
@@ -8727,17 +8727,19 @@ async function kpiView() {
               const isExp = expandedCC === cc.id;
               const hasScc = cc.sub_cost_centers?.length > 0;
               const byP = cc[byKey] || [];
+              const ccRowTotal = byP.reduce((s, p) => s + (p.amount||0), 0);
               return `
                 <tr class="kpi-cc-row" data-ccid="${cc.id}" style="cursor:${hasScc?'pointer':'default'};background:${isExp?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb">
                   <td style="padding:7px 12px;font-weight:600;color:#111">${hasScc?(isExp?'▼ ':'▶ '):''}<b>${esc(cc.name)}</b> <span style="color:#9ca3af;font-weight:400">${cc.code||''}</span></td>
-                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmt$(cc.total)}</td>
+                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${ccRowTotal>0?fmt$(ccRowTotal):'—'}</td>
                   ${byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
                 </tr>
                 ${isExp && hasScc ? cc.sub_cost_centers.map(scc => {
                   const sP = scc[byKey]||[];
+                  const sccRowTotal = sP.reduce((s, p) => s + (p.amount||0), 0);
                   return `<tr style="background:#f0f5ff">
                     <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">↳ <b>${esc(scc.name)}</b> <span style="color:#9ca3af">${scc.code||''}</span></td>
-                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#111;font-size:11px">${fmt$(scc.total)}</td>
+                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#111;font-size:11px">${sccRowTotal>0?fmt$(sccRowTotal):'—'}</td>
                     ${sP.map(p => `<td style="text-align:right;padding:5px 10px;color:#111;font-size:11px">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
                   </tr>`;
                 }).join('') : ''}`;
@@ -8746,7 +8748,7 @@ async function kpiView() {
           <tfoot>
             <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
               <td style="padding:7px 12px;font-weight:700;font-size:12px">TOTAL</td>
-              <td style="text-align:right;padding:7px 10px;font-weight:700">${fmt$(grandTotal)}</td>
+              <td style="text-align:right;padding:7px 10px;font-weight:700">${grandTotal>0?fmt$(grandTotal):'—'}</td>
               ${periodTotals.map(t => `<td style="text-align:right;padding:7px 10px;font-weight:700">${t>0?fmt$(t):'—'}</td>`).join('')}
             </tr>
           </tfoot>
@@ -8763,14 +8765,14 @@ async function kpiView() {
     const cols = 2 + periods.length;
     const thCols = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111">${esc(p)}</th>`).join('');
     const periodTotals = periods.map((_, i) => rows.reduce((sum, s) => sum + (((s[byKey]||[])[i])?.amount || 0), 0));
-    const grandTotal = rows.reduce((s, sup) => s + (sup.total||0), 0);
+    const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
     return `
       <div class="table-wrap">
         <table style="font-size:12px;border-collapse:collapse;min-width:100%">
           <thead>
             <tr>
               <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px">Proveedor / Ítem</th>
-              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total período</th>
               ${thCols}
             </tr>
           </thead>
@@ -8778,17 +8780,19 @@ async function kpiView() {
             ${rows.map(sup => {
               const isExp = expandedSup === sup.id || selSupId !== 'all';
               const byP = sup[byKey] || [];
+              const supRowTotal = byP.reduce((s, p) => s + (p.amount||0), 0);
               return `
                 <tr class="kpi-sup-row" data-supid="${sup.id}" style="cursor:pointer;background:${isExp?'#eff6ff':'#fff'};border-top:2px solid #e5e7eb">
                   <td style="padding:7px 12px;font-weight:600;color:#111">${isExp?'▼ ':'▶ '}<b>${esc(sup.name)}</b> <span style="color:#9ca3af;font-weight:400;font-size:11px">${sup.code||''}</span></td>
-                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmt$(sup.total)}</td>
+                  <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${supRowTotal>0?fmt$(supRowTotal):'—'}</td>
                   ${byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
                 </tr>
                 ${isExp ? (sup.items||[]).map(it => {
                   const itP = it[byKey]||[];
+                  const itRowTotal = itP.reduce((s, p) => s + (p.amount||0), 0);
                   return `<tr style="background:#f0f5ff">
                     <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">↳ ${esc(it.name)}</td>
-                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#4b5563;font-size:11px">${fmt$(it.total)}</td>
+                    <td style="text-align:right;padding:5px 10px;font-weight:600;color:#4b5563;font-size:11px">${itRowTotal>0?fmt$(itRowTotal):'—'}</td>
                     ${itP.map(p => `<td style="text-align:right;padding:5px 10px;color:#4b5563;font-size:11px">${p.amount>0?fmt$(p.amount):'—'}</td>`).join('')}
                   </tr>`;
                 }).join('') : ''}`;
