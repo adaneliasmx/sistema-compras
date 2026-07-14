@@ -483,9 +483,9 @@ router.post('/conteos', invAuthRequired, invAllowRoles('inventarios', 'admin'), 
   }
   const db = readInv();
 
-  // Verificar permisos de tipo
+  // Verificar permisos de tipo (permisos_inv vacío = acceso a todos los tipos)
   const { role, permisos_inv } = req.invUser;
-  if (role === 'inventarios' && !permisos_inv.includes(inv_type)) {
+  if (role === 'inventarios' && permisos_inv.length > 0 && !permisos_inv.includes(inv_type)) {
     return res.status(403).json({ error: 'Sin acceso a este inventario' });
   }
 

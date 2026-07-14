@@ -40,7 +40,8 @@ function invCanAccessType(inv_type) {
     if (!req.invUser) return res.status(401).json({ error: 'No autenticado' });
     const { role, permisos_inv } = req.invUser;
     if (role === 'admin' || role === 'recepcion' || role === 'comprador') return next();
-    if (role === 'inventarios' && (permisos_inv || []).includes(inv_type)) return next();
+    // Si permisos_inv está vacío el rol inventarios tiene acceso a todos los tipos
+    if (role === 'inventarios' && (!(permisos_inv || []).length || permisos_inv.includes(inv_type))) return next();
     return res.status(403).json({ error: 'Sin acceso a este inventario' });
   };
 }
