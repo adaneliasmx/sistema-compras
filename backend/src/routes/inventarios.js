@@ -327,7 +327,7 @@ router.get('/recepciones', invAuthRequired, (req, res) => {
 });
 
 router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin', 'inventarios'), (req, res) => {
-  const { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
+  const { inv_type, item_key, item_label, cantidad, kg, fecha, factura, po,
           cert_calidad, material_golpeado, sellos_ok, caducidad_vigente, reviso,
           fecha_caducidad } = req.body;
   if (!inv_type || !item_key || !fecha) return res.status(400).json({ error: 'inv_type, item_key y fecha son requeridos' });
@@ -353,7 +353,7 @@ router.post('/recepciones', invAuthRequired, invAllowRoles('recepcion', 'admin',
     id: nextId(db.inv_recepciones),
     inv_type, item_key, item_label: item_label || item_key,
     cantidad: cantidad || null, kg: kg || null,
-    fecha, factura: factura || null,
+    fecha, factura: factura || null, po: po || null,
     cert_calidad: cert_calidad || null,
     material_golpeado: material_golpeado === true || material_golpeado === 'true',
     sellos_ok: sellos_ok !== false && sellos_ok !== 'false',

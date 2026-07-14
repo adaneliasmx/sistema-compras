@@ -277,6 +277,13 @@ async function renderRecepcion(main, invTypeFilter = null) {
           <input type="text" class="form-input" id="rec-factura" placeholder="Opcional"/>
         </div>
       </div>
+      <div class="form-row cols-2" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>PO (Orden de Compra)</label>
+          <input type="text" class="form-input" id="rec-po" placeholder="Opcional"/>
+        </div>
+        <div class="form-group"></div>
+      </div>
       <div class="form-row cols-2" style="margin-bottom:16px">
         <div class="form-group">
           <label id="rec-qty-label">Cantidad (Tambos)</label>
@@ -430,6 +437,7 @@ async function renderRecepcion(main, invTypeFilter = null) {
     const kg          = Number(document.getElementById('rec-kg').value) || null;
     const fecha       = document.getElementById('rec-fecha').value;
     const factura     = document.getElementById('rec-factura').value.trim() || null;
+    const po          = document.getElementById('rec-po').value.trim() || null;
     const errEl       = document.getElementById('rec-err');
     errEl.style.display = 'none';
     if (!inv_type || !item_key || !fecha) { errEl.textContent = 'Completa los campos requeridos'; errEl.style.display = ''; return; }
@@ -443,7 +451,7 @@ async function renderRecepcion(main, invTypeFilter = null) {
     if (qcActive && cad.rejected) { errEl.textContent = 'Material vencido — no se puede registrar'; errEl.style.display = ''; return; }
     const caducidad_vigente = qcActive ? !cad.critico : null;
     const reviso          = qcActive ? (document.getElementById('rec-reviso')?.value?.trim() || null) : null;
-    const r = await apiPost('/recepciones', { inv_type, item_key, item_label, cantidad, kg, fecha, factura,
+    const r = await apiPost('/recepciones', { inv_type, item_key, item_label, cantidad, kg, fecha, factura, po,
       cert_calidad, material_golpeado, sellos_ok, fecha_caducidad, caducidad_vigente, reviso });
     if (!r) return;
     const d = await r.json();
@@ -455,6 +463,7 @@ async function renderRecepcion(main, invTypeFilter = null) {
     document.getElementById('rec-qty').value = '';
     document.getElementById('rec-kg').value  = '';
     document.getElementById('rec-factura').value = '';
+    document.getElementById('rec-po').value = '';
     if (document.getElementById('rec-cert')) document.getElementById('rec-cert').value = '';
     const cadFechaEl = document.getElementById('rec-caducidad-fecha');
     if (cadFechaEl) { cadFechaEl.value = ''; updateCadBadge(); updateQcBadge(); }
