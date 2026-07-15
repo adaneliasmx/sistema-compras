@@ -720,8 +720,9 @@ router.get('/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req
 // POST /api/rhh/employees/import-excel
 router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const XLSX = require('xlsx');
-  const { file_base64, mode = 'preview', to_create = [], duplicates = [], resolutions = {} } = req.body || {};
+  const { file_base64, mode = 'preview', truly_new = [], to_resolve = [], resolutions = {} } = req.body || {};
 
+  // ── Helpers compartidos ──
   function xlsxDate(val) {
     if (!val && val !== 0) return null;
     if (typeof val === 'number') {
@@ -772,6 +773,16 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       }));
   }
 
+  // Similitud de nombres: porcentaje de palabras en común (palabras > 2 letras)
+  function nameSim(a, b) {
+    const wA = a.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const wB = b.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    if (!wA.length || !wB.length) return 0;
+    let hits = 0;
+    for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
+    return hits / Math.max(wA.length, wB.length);
+  }
+
   // ── PREVIEW ──
   if (mode === 'preview') {
     if (!file_base64) return res.status(400).json({ error: 'file_base64 requerido' });
@@ -786,25 +797,50 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
     }
 
     const db = read();
-    const existing = db.rhh_employees || [];
-    const toCreate = [], dupList = [];
+    const existing = (db.rhh_employees || []).filter(e => e.status !== 'deleted');
+
+    const exactDups   = [];   // coincidencia por email/RFC/CURP/NSS
+    const similarName = [];   // sin coincidencia exacta pero nombre similar
+    const trulyNew    = [];   // sin ninguna coincidencia
 
     for (const row of rows) {
-      const matches = [];
+      // 1. Buscar coincidencias exactas
+      const exactMatches = [];
       for (const emp of existing) {
-        if (emp.status === 'deleted') continue;
         const reasons = [];
         if (row.email && emp.email && row.email === emp.email.toLowerCase()) reasons.push('correo');
         if (row.rfc  && emp.rfc  && row.rfc  === emp.rfc.toUpperCase())  reasons.push('RFC');
         if (row.curp && emp.curp && row.curp === emp.curp.toUpperCase()) reasons.push('CURP');
         if (row.nss  && emp.nss  && row.nss  === emp.nss)                reasons.push('NSS');
-        if (reasons.length) matches.push({ id: emp.id, full_name: emp.full_name, email: emp.email, status: emp.status, reasons });
+        if (reasons.length) exactMatches.push({ id: emp.id, full_name: emp.full_name, email: emp.email, status: emp.status, reasons });
       }
-      if (!matches.length) toCreate.push(row);
-      else dupList.push({ incoming: row, matches });
+      if (exactMatches.length) {
+        exactDups.push({ incoming: row, matches: exactMatches, match_type: 'exact' });
+        continue;
+      }
+
+      // 2. Sin coincidencia exacta: buscar por similitud de nombre
+      const suggestions = [];
+      for (const emp of existing) {
+        const score = nameSim(row.full_name, emp.full_name);
+        if (score >= 0.35) suggestions.push({ id: emp.id, full_name: emp.full_name, email: emp.email, status: emp.status, score: Math.round(score * 100) });
+      }
+      suggestions.sort((a, b) => b.score - a.score);
+
+      if (suggestions.length) {
+        similarName.push({ incoming: row, suggestions: suggestions.slice(0, 5), match_type: 'name' });
+      } else {
+        trulyNew.push(row);
+      }
     }
 
-    return res.json({ mode: 'preview', to_create: toCreate, duplicates: dupList, total: rows.length });
+    return res.json({
+      mode: 'preview',
+      exact_duplicates: exactDups,
+      similar_name: similarName,
+      truly_new: trulyNew,
+      total: rows.length
+    });
   }
 
   // ── COMMIT ──
@@ -853,7 +889,8 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
     let created = 0, updated = 0, skipped = 0;
     const errors = [];
 
-    for (const row of to_create) {
+    // Auto-crear los completamente nuevos
+    for (const row of truly_new) {
       if (!row.full_name) continue;
       const newId = nextId(employees);
       employees.push({
@@ -870,8 +907,9 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       created++;
     }
 
-    for (const dup of duplicates) {
-      const key = dup.incoming.email || dup.incoming.full_name;
+    // Aplicar resoluciones (exactos + similares por nombre — misma lógica)
+    for (const item of to_resolve) {
+      const key = item.incoming.email || item.incoming.full_name;
       const action = resolutions[key] || 'skip';
       if (action === 'skip') { skipped++; continue; }
       if (action === 'create') {
@@ -879,7 +917,7 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
         employees.push({
           id: newId,
           employee_number: 'EMP-' + String(newId).padStart(3, '0'),
-          ...applyRow(dup.incoming),
+          ...applyRow(item.incoming),
           contract_type: 'indefinido',
           base_salary: 0,
           checker_number: '',
@@ -892,7 +930,7 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
         const targetId = Number(action.split(':')[1]);
         const idx = employees.findIndex(e => e.id === targetId);
         if (idx !== -1) {
-          employees[idx] = { ...employees[idx], ...applyRow(dup.incoming), updated_at: new Date().toISOString() };
+          employees[idx] = { ...employees[idx], ...applyRow(item.incoming), updated_at: new Date().toISOString() };
           updated++;
         } else {
           errors.push('Empleado no encontrado: ID ' + targetId);
