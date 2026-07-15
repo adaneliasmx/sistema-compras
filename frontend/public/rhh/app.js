@@ -881,10 +881,10 @@ async function empleadosView() {
         <h2>👥 Gestión de Empleados</h2>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
           <button class="btn-primary" onclick="empTab='nuevo';empEditId=null;empleadosView()">+ Nuevo empleado</button>
-          <button class="btn-ghost" onclick="exportEmpleadosCSV()">⬇ Exportar CSV</button>
+          <button class="btn-ghost" onclick="exportEmpleadosExcel()">⬇ Exportar Base</button>
           <label class="btn-ghost" style="cursor:pointer;margin:0;">
-            ⬆ Importar CSV
-            <input type="file" accept=".csv" style="display:none;" onchange="importEmpleadosCSV(this)">
+            ⬆ Importar Base
+            <input type="file" accept=".xlsx,.xls" style="display:none;" onchange="importEmpleadosExcel(this)">
           </label>
         </div>
       </div>
@@ -950,12 +950,55 @@ function empFormHtml(emp) {
       </div>
       <div class="row">
         <div>
+          <label>No. Nómina</label>
+          <input id="ef-nomina" value="${emp?.nomina_number || ''}" placeholder="003" />
+        </div>
+        <div>
           <label>Teléfono</label>
           <input id="ef-phone" value="${emp?.phone || ''}" placeholder="555-0000" />
         </div>
+      </div>
+      <div class="row">
         <div>
           <label>Fecha de nacimiento</label>
           <input id="ef-birth" type="date" value="${emp?.birth_date || ''}" />
+        </div>
+        <div>
+          <label>Sexo</label>
+          <select id="ef-gender">
+            <option value="">Sin especificar</option>
+            <option value="Masculino" ${(emp?.gender||'').trim()==='Masculino'?'selected':''}>Masculino</option>
+            <option value="Femenino"  ${(emp?.gender||'').trim()==='Femenino'?'selected':''}>Femenino</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div style="grid-column:1/-1;">
+          <label>Dirección</label>
+          <input id="ef-address" value="${(emp?.address||'').replace(/"/g,'&quot;')}" placeholder="Calle y número, colonia..." />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Tipo de sangre</label>
+          <select id="ef-blood">
+            <option value="">Desconocido</option>
+            ${['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(t=>`<option value="${t}" ${(emp?.blood_type||'').trim()===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label>Hijos</label>
+          <input id="ef-children" value="${emp?.children||''}" placeholder="NO / SI (2)" />
+        </div>
+      </div>
+      <div class="row">
+        <div>
+          <label>Alergias</label>
+          <input id="ef-allergies" value="${(emp?.allergies||'').replace(/"/g,'&quot;')}" placeholder="NO / Penicilina..." />
+        </div>
+        <div>
+          <label>Enfermedades</label>
+          <input id="ef-diseases" value="${(emp?.diseases||'').replace(/"/g,'&quot;')}" placeholder="NO / Diabetes..." />
         </div>
       </div>
 
@@ -1128,7 +1171,15 @@ async function saveEmployee() {
     emergency_contact_name: document.getElementById('ef-ec-name')?.value?.trim() || '',
     emergency_contact_phone: document.getElementById('ef-ec-phone')?.value?.trim() || '',
     // Vacaciones
-    total_vacation_days: document.getElementById('ef-vac-days')?.value ? Number(document.getElementById('ef-vac-days').value) : 15
+    total_vacation_days: document.getElementById('ef-vac-days')?.value ? Number(document.getElementById('ef-vac-days').value) : 15,
+    // Datos adicionales
+    nomina_number: document.getElementById('ef-nomina')?.value?.trim() || '',
+    address:   document.getElementById('ef-address')?.value?.trim() || '',
+    gender:    document.getElementById('ef-gender')?.value || '',
+    blood_type:document.getElementById('ef-blood')?.value || '',
+    children:  document.getElementById('ef-children')?.value?.trim() || '',
+    allergies: document.getElementById('ef-allergies')?.value?.trim() || '',
+    diseases:  document.getElementById('ef-diseases')?.value?.trim() || ''
   };
 
   if (!body.full_name || !body.email) {
@@ -6232,67 +6283,164 @@ function checadorSetTab(i) { checadorState.tab = i; renderChecador(); }
 window.addEventListener('hashchange', render);
 document.addEventListener('DOMContentLoaded', init);
 
-// ── Exportar / Importar CSV de empleados ──────────────────────────────────────
-function exportEmpleadosCSV() {
-  const employees = state.employees;
-  if (!employees.length) { toast('Sin empleados para exportar', 'warning'); return; }
-  const headers = ['No. Empleado','Nombre','Email','Teléfono','Departamento','Puesto','Turno','Tipo Contrato','Salario Diario','Salario Base','RFC','CURP','NSS','Núm. Checador','Fecha Ingreso','Días Vacaciones','Estatus','Proyecto'];
-  const rows = employees.map(e => [
-    e.employee_number || '',
-    (e.full_name || '').replace(/,/g, ';'),
-    e.email || '',
-    e.phone || '',
-    e.department?.name || '',
-    e.position?.name || '',
-    e.shift?.code || '',
-    e.contract_type || '',
-    e.daily_salary || '',
-    e.base_salary || '',
-    e.rfc || '',
-    e.curp || '',
-    e.nss || '',
-    e.checker_number || '',
-    e.hire_date || e.start_date || '',
-    e.total_vacation_days || 15,
-    e.status || '',
-    e.project || ''
-  ].join(','));
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `empleados_${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click(); URL.revokeObjectURL(url);
-  toast('CSV descargado');
+// ── Exportar / Importar Base de Empleados (Excel) ─────────────────────────────
+
+async function exportEmpleadosExcel() {
+  try {
+    toast('Generando archivo...', 'info');
+    const resp = await fetch('/api/rhh/employees/export-excel', {
+      headers: { 'Authorization': 'Bearer ' + (localStorage.getItem('rhh_token') || '') }
+    });
+    if (!resp.ok) { const e = await resp.json().catch(()=>({})); throw new Error(e.error || 'Error al exportar'); }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const fecha = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `BASE_DE_DATOS_COLABORADORES_${fecha}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Archivo descargado');
+  } catch (err) { toast(err.message, 'error'); }
 }
 
-async function importEmpleadosCSV(input) {
-  const file = input.files[0]; if (!file) return;
-  const text = await file.text();
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-  if (lines.length < 2) { toast('CSV vacío o inválido', 'warning'); return; }
-  const headers = lines[0].split(',').map(h => h.trim().toLowerCase()
-    .replace('no. empleado', 'employee_number').replace('nombre', 'full_name')
-    .replace('email', 'email').replace('teléfono', 'phone').replace('departamento', 'department')
-    .replace('puesto', 'position').replace('turno', 'shift_code').replace('tipo contrato', 'contract_type')
-    .replace('salario diario', 'daily_salary').replace('salario base', 'base_salary')
-    .replace('rfc', 'rfc').replace('curp', 'curp').replace('nss', 'nss')
-    .replace('núm. checador', 'checker_number').replace('fecha ingreso', 'hire_date')
-    .replace('días vacaciones', 'vacation_days').replace('estatus', 'status').replace('proyecto', 'project')
-  );
-  const rows = lines.slice(1).map(line => {
-    const vals = line.split(',');
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = (vals[i] || '').trim(); });
-    return obj;
-  }).filter(r => r.full_name || r.email);
-  if (!rows.length) { toast('Sin filas válidas en el CSV', 'warning'); return; }
+async function importEmpleadosExcel(input) {
+  const file = input.files[0];
+  input.value = '';
+  if (!file) return;
+  toast('Leyendo archivo...', 'info');
   try {
-    const result = await api('/api/rhh/employees/import-csv', { method: 'POST', body: JSON.stringify({ rows }) });
-    toast(`Importado: ${result.created} creados, ${result.updated} actualizados${result.errors.length ? ' · ' + result.errors.length + ' errores' : ''}`);
+    const buf = await file.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+    const preview = await api('/api/rhh/employees/import-excel', {
+      method: 'POST',
+      body: JSON.stringify({ file_base64: b64, mode: 'preview' })
+    });
+    showImportExcelModal(preview);
+  } catch (err) { toast(err.message || 'Error al leer archivo', 'error'); }
+}
+
+function showImportExcelModal(preview) {
+  const { to_create = [], duplicates = [], total = 0 } = preview;
+
+  const resolutions = {};
+  // default: duplicados → actualizar al primer match
+  for (const dup of duplicates) {
+    const key = dup.incoming.email || dup.incoming.full_name;
+    resolutions[key] = dup.matches[0] ? `update:${dup.matches[0].id}` : 'skip';
+  }
+
+  function renderModal() {
+    let modal = document.getElementById('import-excel-modal');
+    if (!modal) { modal = document.createElement('div'); modal.id = 'import-excel-modal'; document.body.appendChild(modal); }
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px;';
+
+    const dupRows = duplicates.map(dup => {
+      const key = dup.incoming.email || dup.incoming.full_name;
+      const sel = resolutions[key] || 'skip';
+      const matchOpts = dup.matches.map(m =>
+        `<option value="update:${m.id}" ${sel===`update:${m.id}`?'selected':''}>
+           Actualizar: ${m.full_name} (${m.status}) [${m.reasons.join(', ')}]
+         </option>`
+      ).join('');
+      return `
+        <tr style="border-bottom:1px solid #e5e7eb;">
+          <td style="padding:8px;font-size:13px;"><strong>${dup.incoming.full_name}</strong><br>
+            <span style="color:#6b7280;font-size:11px;">${dup.incoming.email||''} · RFC: ${dup.incoming.rfc||'-'}</span>
+          </td>
+          <td style="padding:8px;">
+            <select style="width:100%;font-size:12px;" onchange="
+              (function(el){
+                const k='${key.replace(/'/g,"\\'").replace(/"/g,'&quot;')}';
+                window._importResolutions=window._importResolutions||{};
+                window._importResolutions[k]=el.value;
+              })(this)
+            ">
+              ${matchOpts}
+              <option value="create" ${sel==='create'?'selected':''}>➕ Crear como nuevo</option>
+              <option value="skip"   ${sel==='skip'  ?'selected':''}>⊘ Omitir</option>
+            </select>
+          </td>
+        </tr>`;
+    }).join('');
+
+    modal.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:28px;width:min(800px,96vw);box-shadow:0 20px 60px rgba(0,0,0,.25);">
+        <h3 style="margin:0 0 4px;">📥 Importar Base de Colaboradores</h3>
+        <p style="color:#6b7280;font-size:13px;margin:0 0 20px;">
+          Total en archivo: <strong>${total}</strong> ·
+          Nuevos sin conflicto: <strong style="color:#059669;">${to_create.length}</strong> ·
+          Posibles duplicados: <strong style="color:#d97706;">${duplicates.length}</strong>
+        </p>
+
+        ${duplicates.length > 0 ? `
+          <h4 style="margin:0 0 8px;color:#92400e;">⚠️ Colaboradores con coincidencias en el sistema</h4>
+          <p style="font-size:12px;color:#6b7280;margin:0 0 12px;">
+            El sistema detectó coincidencias por correo, RFC, CURP o NSS. Elige qué hacer con cada uno:
+          </p>
+          <div style="max-height:320px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:16px;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead style="background:#f9fafb;position:sticky;top:0;">
+                <tr>
+                  <th style="padding:8px;font-size:12px;text-align:left;">Colaborador en archivo</th>
+                  <th style="padding:8px;font-size:12px;text-align:left;">Acción</th>
+                </tr>
+              </thead>
+              <tbody>${dupRows}</tbody>
+            </table>
+          </div>
+        ` : ''}
+
+        ${to_create.length > 0 ? `
+          <details style="margin-bottom:16px;">
+            <summary style="cursor:pointer;font-size:13px;font-weight:600;color:#059669;">
+              ✅ ${to_create.length} colaboradores nuevos (se crearán automáticamente)
+            </summary>
+            <ul style="margin:8px 0 0 16px;font-size:12px;color:#374151;">
+              ${to_create.map(r=>`<li>${r.full_name} <span style="color:#9ca3af;">${r.email||''}</span></li>`).join('')}
+            </ul>
+          </details>
+        ` : ''}
+
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">
+          <button class="btn-ghost" onclick="document.getElementById('import-excel-modal').remove()">Cancelar</button>
+          <button class="btn-primary" onclick="commitImportExcel()">✅ Confirmar importación</button>
+        </div>
+      </div>`;
+
+    // Guardar resolutions en window para que los selects los actualicen
+    window._importResolutions = { ...resolutions };
+    window._importPreview = preview;
+  }
+
+  renderModal();
+}
+
+async function commitImportExcel() {
+  const preview = window._importPreview;
+  const resolutions = window._importResolutions || {};
+  if (!preview) return;
+
+  try {
+    const result = await api('/api/rhh/employees/import-excel', {
+      method: 'POST',
+      body: JSON.stringify({
+        mode: 'commit',
+        to_create: preview.to_create,
+        duplicates: preview.duplicates,
+        resolutions
+      })
+    });
+    document.getElementById('import-excel-modal')?.remove();
+    const msg = `Importado: ${result.created} creados, ${result.updated} actualizados, ${result.skipped} omitidos` +
+      (result.errors?.length ? ` · ${result.errors.length} errores` : '');
+    toast(msg, result.errors?.length ? 'warning' : 'success');
     await loadCatalogs();
     empleadosView();
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) { toast(err.message || 'Error al importar', 'error'); }
 }
 
 // ── Crear cuenta de usuario para empleado ─────────────────────────────────────

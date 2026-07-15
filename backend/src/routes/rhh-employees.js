@@ -99,7 +99,9 @@ router.post('/doc-templates', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (r
 });
 
 // GET /api/rhh/employees/:id
-router.get('/:id', rhhAuthRequired, (req, res) => {
+router.get('/:id', rhhAuthRequired, (req, res, next) => {
+  // Pasar al siguiente handler si el id no es numérico (ej: 'export-excel')
+  if (!/^\d+$/.test(req.params.id)) return next();
   const db = read();
   const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
@@ -119,7 +121,8 @@ router.post('/', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
     full_name, email, phone, department_id, position_id, shift_id,
     supervisor_id, start_date, hire_date, birth_date, contract_type, base_salary, status,
     rfc, curp, nss, checker_number, daily_salary, enabled_positions,
-    primary_position_id, project, emergency_contact_name, emergency_contact_phone
+    primary_position_id, project, emergency_contact_name, emergency_contact_phone,
+    nomina_number, address, blood_type, allergies, diseases, children, gender
   } = req.body || {};
 
   if (!full_name || !email) return res.status(400).json({ error: 'Nombre y email son requeridos' });
@@ -158,6 +161,13 @@ router.post('/', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
     project: project || '',
     emergency_contact_name: emergency_contact_name || '',
     emergency_contact_phone: emergency_contact_phone || '',
+    nomina_number: nomina_number || '',
+    address: address || '',
+    blood_type: blood_type || '',
+    allergies: allergies || '',
+    diseases: diseases || '',
+    children: children || '',
+    gender: gender || '',
     photo: null,
     created_at: new Date().toISOString()
   };
@@ -182,7 +192,8 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
     'rfc', 'curp', 'nss', 'checker_number',
     'primary_position_id', 'enabled_positions',
     'project', 'emergency_contact_name', 'emergency_contact_phone',
-    'total_vacation_days'
+    'total_vacation_days',
+    'nomina_number', 'address', 'blood_type', 'allergies', 'diseases', 'children', 'gender'
   ];
 
   const emp = { ...db.rhh_employees[idx] };
@@ -616,6 +627,285 @@ router.post('/:id/link-compras', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
   emp.updated_at = new Date().toISOString();
   write(db);
   res.json({ ok: true, compras_email: emp.compras_email });
+});
+
+// ── Exportar base de datos como XLSX ──────────────────────────────────────────
+
+// GET /api/rhh/employees/export-excel
+router.get('/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const XLSX = require('xlsx');
+  const db = read();
+
+  function fmtDate(str) {
+    if (!str) return '';
+    const d = new Date(str + 'T12:00:00');
+    if (isNaN(d)) return str;
+    return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+  }
+
+  function calcAge(birthStr) {
+    if (!birthStr) return '';
+    const b = new Date(birthStr);
+    const today = new Date();
+    let age = today.getFullYear() - b.getFullYear();
+    if (today.getMonth() < b.getMonth() || (today.getMonth() === b.getMonth() && today.getDate() < b.getDate())) age--;
+    return age;
+  }
+
+  const HDR_BASE = ['#','No. Nomina','NOMBRE DEL EMPLEADO','Departamento/Proyecto','AREA','Puesto','Turno',
+    'Fecha de ingreso','Fecha de ingreso real','S.D','RFC','CURP','NSS','Telefono','Dirección',
+    'Contacto de emergencia','Tel de emergencia','Cumpleaños','','Edad','Sexo','Tipo Sangre',
+    'Alergias','Enfermedades','Hijos','Correo electronico','Vacaciones',''];
+
+  const HDR_BAJAS = ['#','No.Nomina','NOMBRE DEL EMPLEADO','Área','Puesto','Turno',
+    'Fecha de ingreso','Fecha de ingreso real','S.D','RFC','CURP','NSS','Telefono','Dirección',
+    'Contacto de emergencia','Tel de emergencia','Cumpleaños','','Edad','Sexo','Tipo Sangre',
+    'Alergias','Enfermedades','Hijos','Correo electronico','','',''];
+
+  const HDR_CORREOS = ['#','No. Nomina','NOMBRE DEL EMPLEADO','Puesto','Área Real',
+    'Area por Proyecto','S.D. ACTUAL','S.D. NUEVO','Correo electronico'];
+
+  function toBaseRow(emp, idx) {
+    const dept  = (db.rhh_departments||[]).find(d=>d.id===emp.department_id);
+    const pos   = (db.rhh_positions||[]).find(p=>p.id===emp.position_id);
+    const shift = (db.rhh_shifts||[]).find(s=>s.id===emp.shift_id);
+    return [String(idx+1).padStart(3,'0'), emp.nomina_number||'', emp.full_name||'',
+      emp.project||'', dept?dept.name:'', pos?pos.name:'', shift?(shift.code||shift.name):'',
+      fmtDate(emp.hire_date||emp.start_date), fmtDate(emp.start_date||emp.hire_date),
+      emp.daily_salary||'', emp.rfc||'', emp.curp||'', emp.nss||'', emp.phone||'',
+      emp.address||'', emp.emergency_contact_name||'', emp.emergency_contact_phone||'',
+      fmtDate(emp.birth_date), '', calcAge(emp.birth_date),
+      emp.gender||'', emp.blood_type||'', emp.allergies||'', emp.diseases||'',
+      emp.children||'', emp.email||'', emp.total_vacation_days||15, ''];
+  }
+
+  function toBajasRow(emp, idx) {
+    const dept  = (db.rhh_departments||[]).find(d=>d.id===emp.department_id);
+    const pos   = (db.rhh_positions||[]).find(p=>p.id===emp.position_id);
+    const shift = (db.rhh_shifts||[]).find(s=>s.id===emp.shift_id);
+    return [String(idx+1).padStart(3,'0'), emp.nomina_number||'', emp.full_name||'',
+      dept?dept.name:'', pos?pos.name:'', shift?(shift.code||shift.name):'',
+      fmtDate(emp.hire_date||emp.start_date), fmtDate(emp.start_date||emp.hire_date),
+      emp.daily_salary||'', emp.rfc||'', emp.curp||'', emp.nss||'', emp.phone||'',
+      emp.address||'', emp.emergency_contact_name||'', emp.emergency_contact_phone||'',
+      fmtDate(emp.birth_date), '', calcAge(emp.birth_date),
+      emp.gender||'', emp.blood_type||'', emp.allergies||'', emp.diseases||'',
+      emp.children||'', emp.email||'', emp.termination_date?fmtDate(emp.termination_date):'', '', ''];
+  }
+
+  const activos = (db.rhh_employees||[]).filter(e=>e.status==='active');
+  const bajas   = (db.rhh_employees||[]).filter(e=>e.status==='inactive');
+  const todos   = (db.rhh_employees||[]).filter(e=>e.status!=='deleted');
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HDR_BASE,  ...activos.map(toBaseRow)]),  'Base de datos');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HDR_BAJAS, ...bajas.map(toBajasRow)]),   'BAJAS');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([HDR_CORREOS, ...todos.map((emp, idx) => {
+    const pos  = (db.rhh_positions||[]).find(p=>p.id===emp.position_id);
+    const dept = (db.rhh_departments||[]).find(d=>d.id===emp.department_id);
+    return [String(idx+1).padStart(3,'0'), emp.nomina_number||'', emp.full_name||'',
+      pos?pos.name:'', dept?dept.name:'', emp.project||'',
+      emp.daily_salary||'', emp.daily_salary||'', emp.email||''];
+  })]), 'correos actualizados');
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const fecha = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="BASE_DE_DATOS_COLABORADORES_${fecha}.xlsx"`);
+  res.send(buf);
+});
+
+// ── Importar base de datos desde XLSX (preview + commit) ──────────────────────
+
+// POST /api/rhh/employees/import-excel
+router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const XLSX = require('xlsx');
+  const { file_base64, mode = 'preview', to_create = [], duplicates = [], resolutions = {} } = req.body || {};
+
+  function xlsxDate(val) {
+    if (!val && val !== 0) return null;
+    if (typeof val === 'number') {
+      const d = new Date((val - 25569) * 86400 * 1000);
+      return d.toISOString().slice(0, 10);
+    }
+    if (typeof val === 'string') {
+      const m = val.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (m) return `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(val.trim())) return val.trim();
+    }
+    return null;
+  }
+
+  function parseSheet(ws) {
+    const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    let hi = 0;
+    for (let i = 0; i < Math.min(raw.length, 5); i++) {
+      if (raw[i].some(c => String(c).toUpperCase().includes('NOMBRE'))) { hi = i; break; }
+    }
+    return raw.slice(hi + 1)
+      .filter(r => r[2] && String(r[2]).trim())
+      .map(r => ({
+        nomina_number:           String(r[1]  || '').trim(),
+        full_name:               String(r[2]  || '').trim(),
+        project:                 String(r[3]  || '').trim(),
+        area:                    String(r[4]  || '').trim(),
+        position_name:           String(r[5]  || '').trim(),
+        shift_code:              String(r[6]  || '').trim(),
+        hire_date:               xlsxDate(r[7]),
+        start_date:              xlsxDate(r[8]) || xlsxDate(r[7]),
+        daily_salary:            r[9]  ? Number(r[9])  : null,
+        rfc:                     String(r[10] || '').trim().toUpperCase(),
+        curp:                    String(r[11] || '').trim().toUpperCase(),
+        nss:                     String(r[12] || '').trim(),
+        phone:                   String(r[13] || '').trim(),
+        address:                 String(r[14] || '').trim(),
+        emergency_contact_name:  String(r[15] || '').trim(),
+        emergency_contact_phone: String(r[16] || '').trim(),
+        birth_date:              xlsxDate(r[17]),
+        gender:                  String(r[20] || '').trim(),
+        blood_type:              String(r[21] || '').trim(),
+        allergies:               String(r[22] || '').trim(),
+        diseases:                String(r[23] || '').trim(),
+        children:                String(r[24] || '').trim(),
+        email:                   String(r[25] || '').trim().toLowerCase(),
+        total_vacation_days:     r[26] ? Number(r[26]) : 15
+      }));
+  }
+
+  // ── PREVIEW ──
+  if (mode === 'preview') {
+    if (!file_base64) return res.status(400).json({ error: 'file_base64 requerido' });
+    let rows;
+    try {
+      const buf = Buffer.from(file_base64, 'base64');
+      const wb2 = XLSX.read(buf, { type: 'buffer' });
+      const sName = wb2.SheetNames.find(n => n.trim().toLowerCase().startsWith('base de datos')) || wb2.SheetNames[0];
+      rows = parseSheet(wb2.Sheets[sName]);
+    } catch (e) {
+      return res.status(400).json({ error: 'Error al leer archivo: ' + e.message });
+    }
+
+    const db = read();
+    const existing = db.rhh_employees || [];
+    const toCreate = [], dupList = [];
+
+    for (const row of rows) {
+      const matches = [];
+      for (const emp of existing) {
+        if (emp.status === 'deleted') continue;
+        const reasons = [];
+        if (row.email && emp.email && row.email === emp.email.toLowerCase()) reasons.push('correo');
+        if (row.rfc  && emp.rfc  && row.rfc  === emp.rfc.toUpperCase())  reasons.push('RFC');
+        if (row.curp && emp.curp && row.curp === emp.curp.toUpperCase()) reasons.push('CURP');
+        if (row.nss  && emp.nss  && row.nss  === emp.nss)                reasons.push('NSS');
+        if (reasons.length) matches.push({ id: emp.id, full_name: emp.full_name, email: emp.email, status: emp.status, reasons });
+      }
+      if (!matches.length) toCreate.push(row);
+      else dupList.push({ incoming: row, matches });
+    }
+
+    return res.json({ mode: 'preview', to_create: toCreate, duplicates: dupList, total: rows.length });
+  }
+
+  // ── COMMIT ──
+  if (mode === 'commit') {
+    const db = read();
+    const employees = db.rhh_employees || [];
+
+    function applyRow(row) {
+      const dept  = (db.rhh_departments||[]).find(d => d.name?.trim().toLowerCase() === (row.area||'').toLowerCase());
+      const pos   = (db.rhh_positions||[]).find(p  => p.name?.trim().toLowerCase() === (row.position_name||'').toLowerCase());
+      const shift = (db.rhh_shifts||[]).find(s =>
+        s.code?.toLowerCase() === (row.shift_code||'').toLowerCase() ||
+        s.name?.toLowerCase() === (row.shift_code||'').toLowerCase()
+      );
+      return {
+        full_name: row.full_name,
+        email: row.email || null,
+        phone: row.phone || null,
+        nomina_number: row.nomina_number || '',
+        address: row.address || '',
+        blood_type: row.blood_type || '',
+        allergies: row.allergies || '',
+        diseases: row.diseases || '',
+        children: row.children || '',
+        gender: row.gender || '',
+        department_id: dept ? dept.id : null,
+        position_id: pos ? pos.id : null,
+        primary_position_id: pos ? pos.id : null,
+        enabled_positions: pos ? [pos.id] : [],
+        shift_id: shift ? shift.id : null,
+        hire_date: row.hire_date || null,
+        start_date: row.start_date || row.hire_date || null,
+        birth_date: row.birth_date || null,
+        daily_salary: row.daily_salary || null,
+        rfc: row.rfc || '',
+        curp: row.curp || '',
+        nss: row.nss || '',
+        project: row.project || '',
+        emergency_contact_name: row.emergency_contact_name || '',
+        emergency_contact_phone: row.emergency_contact_phone || '',
+        total_vacation_days: row.total_vacation_days || 15,
+        status: 'active'
+      };
+    }
+
+    let created = 0, updated = 0, skipped = 0;
+    const errors = [];
+
+    for (const row of to_create) {
+      if (!row.full_name) continue;
+      const newId = nextId(employees);
+      employees.push({
+        id: newId,
+        employee_number: 'EMP-' + String(newId).padStart(3, '0'),
+        ...applyRow(row),
+        contract_type: 'indefinido',
+        base_salary: 0,
+        checker_number: '',
+        supervisor_id: null,
+        photo: null,
+        created_at: new Date().toISOString()
+      });
+      created++;
+    }
+
+    for (const dup of duplicates) {
+      const key = dup.incoming.email || dup.incoming.full_name;
+      const action = resolutions[key] || 'skip';
+      if (action === 'skip') { skipped++; continue; }
+      if (action === 'create') {
+        const newId = nextId(employees);
+        employees.push({
+          id: newId,
+          employee_number: 'EMP-' + String(newId).padStart(3, '0'),
+          ...applyRow(dup.incoming),
+          contract_type: 'indefinido',
+          base_salary: 0,
+          checker_number: '',
+          supervisor_id: null,
+          photo: null,
+          created_at: new Date().toISOString()
+        });
+        created++;
+      } else if (action && action.startsWith('update:')) {
+        const targetId = Number(action.split(':')[1]);
+        const idx = employees.findIndex(e => e.id === targetId);
+        if (idx !== -1) {
+          employees[idx] = { ...employees[idx], ...applyRow(dup.incoming), updated_at: new Date().toISOString() };
+          updated++;
+        } else {
+          errors.push('Empleado no encontrado: ID ' + targetId);
+        }
+      }
+    }
+
+    db.rhh_employees = employees;
+    write(db);
+    return res.json({ ok: true, created, updated, skipped, errors });
+  }
+
+  return res.status(400).json({ error: 'mode debe ser preview o commit' });
 });
 
 module.exports = router;
