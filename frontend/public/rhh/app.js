@@ -6326,85 +6326,193 @@ async function importEmpleadosExcel(input) {
 function showImportExcelModal(preview) {
   const { exact_duplicates = [], similar_name = [], truly_new = [], total = 0 } = preview;
 
-  // Resolutions: key = email || full_name, value = 'create'|'skip'|'update:ID'
-  // Default para exactos: actualizar al primer match
-  // Default para similares por nombre: 'create' (el usuario decide si ligar)
-  const resolutions = {};
+  // Estado global del modal
+  window._importResolutions = {};
+  window._importEdits       = {};   // key → campos editados manualmente
+  window._importRows        = [];   // idx → { key, incoming }
+  window._importPreview     = preview;
+
+  // Defaults de resolución
   for (const d of exact_duplicates) {
     const key = d.incoming.email || d.incoming.full_name;
-    resolutions[key] = d.matches[0] ? `update:${d.matches[0].id}` : 'create';
+    window._importResolutions[key] = d.matches[0] ? `update:${d.matches[0].id}` : 'create';
   }
   for (const s of similar_name) {
     const key = s.incoming.email || s.incoming.full_name;
-    resolutions[key] = 'create';  // default: crear como nuevo
+    window._importResolutions[key] = 'create';
   }
 
-  window._importResolutions = resolutions;
-  window._importPreview = preview;
-
-  // Función para actualizar resolución desde select/botón (llamada desde HTML inline)
-  window._setImportRes = function(key, value) {
-    window._importResolutions[key] = value;
-    // Actualizar estado visual del botón activo
-    const grp = document.querySelector(`[data-reskey="${CSS.escape(key)}"]`);
-    if (grp) {
-      grp.querySelectorAll('.res-btn').forEach(b => {
-        b.style.background = b.dataset.val === value ? '#064e3b' : '';
-        b.style.color = b.dataset.val === value ? '#fff' : '';
-      });
-    }
+  // Cambiar resolución (botones de acción)
+  window._setImportRes = function(idx, value) {
+    const row = window._importRows[idx];
+    if (!row) return;
+    window._importResolutions[row.key] = value;
+    const grp = document.querySelector(`[data-resgrp="${idx}"]`);
+    if (grp) grp.querySelectorAll('.res-btn').forEach(b => {
+      const on = b.dataset.val === value;
+      b.style.background = on ? '#064e3b' : '';
+      b.style.color = on ? '#fff' : '';
+      b.style.fontWeight = on ? '700' : '';
+    });
   };
 
+  // Abrir / cerrar mini-formulario de edición
+  window._toggleImportEdit = function(idx) {
+    const existing = document.getElementById('ief-' + idx);
+    if (existing) { existing.remove(); return; }
+    const row = window._importRows[idx];
+    if (!row) return;
+    const data = { ...row.incoming, ...(window._importEdits[row.key] || {}) };
+    const tr = document.querySelector(`tr[data-rowid="${idx}"]`);
+    if (!tr) return;
+
+    function fi(id, label, val, type) {
+      return `<div>
+        <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:2px;">${label}</label>
+        <input id="ief-${idx}-${id}" type="${type||'text'}" value="${(val||'').toString().replace(/"/g,'&quot;')}"
+          style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:5px 8px;font-size:12px;" />
+      </div>`;
+    }
+    function fs(id, label, val, opts) {
+      return `<div>
+        <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:2px;">${label}</label>
+        <select id="ief-${idx}-${id}" style="width:100%;border:1px solid #d1d5db;border-radius:6px;padding:5px 8px;font-size:12px;">
+          ${opts.map(o=>`<option value="${o}" ${val===o?'selected':''}>${o||'—'}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+
+    const formHtml = `
+      <tr id="ief-${idx}">
+        <td colspan="3" style="padding:0 8px 12px;">
+          <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+              <strong style="font-size:12px;color:#0369a1;">✏️ Editar datos antes de importar</strong>
+              <span style="font-size:11px;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:6px;">
+                🔒 Correo no se modifica — vinculado a cuenta de usuario
+              </span>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
+              ${fi('full_name','Nombre completo',data.full_name)}
+              <div>
+                <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:2px;">Correo electrónico 🔒</label>
+                <input type="email" value="${data.email||''}" disabled
+                  style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px;font-size:12px;background:#f3f4f6;color:#9ca3af;" />
+              </div>
+              ${fi('nomina_number','No. Nómina',data.nomina_number)}
+              ${fi('rfc','RFC',data.rfc)}
+              ${fi('curp','CURP',data.curp)}
+              ${fi('nss','NSS',data.nss)}
+              ${fi('phone','Teléfono',data.phone)}
+              ${fi('hire_date','Fecha de ingreso',data.hire_date,'date')}
+              ${fi('birth_date','Fecha de nacimiento',data.birth_date,'date')}
+              ${fi('daily_salary','Salario diario',data.daily_salary,'number')}
+              ${fi('position_name','Puesto',data.position_name)}
+              ${fi('shift_code','Turno',data.shift_code)}
+              ${fi('address','Dirección',data.address)}
+              ${fs('gender','Sexo',data.gender,['','Masculino','Femenino'])}
+              ${fs('blood_type','Tipo de sangre',data.blood_type,['','A+','A-','B+','B-','AB+','AB-','O+','O-'])}
+              ${fi('children','Hijos',data.children)}
+              ${fi('allergies','Alergias',data.allergies)}
+              ${fi('diseases','Enfermedades',data.diseases)}
+              ${fi('total_vacation_days','Días vacaciones',data.total_vacation_days,'number')}
+              ${fi('emergency_contact_name','Contacto emergencia',data.emergency_contact_name)}
+              ${fi('emergency_contact_phone','Tel emergencia',data.emergency_contact_phone)}
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button onclick="window._saveImportEdit(${idx})"
+                style="font-size:12px;padding:6px 14px;background:#064e3b;color:#fff;border:none;border-radius:6px;cursor:pointer;">
+                💾 Aplicar edición
+              </button>
+              <button onclick="document.getElementById('ief-${idx}')?.remove()"
+                style="font-size:12px;padding:6px 14px;background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;">
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+    tr.insertAdjacentHTML('afterend', formHtml);
+  };
+
+  // Guardar edición y marcar visualmente la fila
+  window._saveImportEdit = function(idx) {
+    const row = window._importRows[idx];
+    if (!row) return;
+    const fields = ['full_name','nomina_number','rfc','curp','nss','phone','hire_date',
+      'birth_date','daily_salary','position_name','shift_code','address','gender',
+      'blood_type','children','allergies','diseases','total_vacation_days',
+      'emergency_contact_name','emergency_contact_phone'];
+    const edits = {};
+    for (const f of fields) {
+      const el = document.getElementById(`ief-${idx}-${f}`);
+      if (el) edits[f] = el.value.trim();
+    }
+    window._importEdits[row.key] = edits;
+    document.getElementById('ief-' + idx)?.remove();
+    // Mostrar badge de "editado"
+    const badge = document.querySelector(`[data-editbadge="${idx}"]`);
+    if (badge) { badge.style.display = 'inline'; }
+    // Actualizar nombre visible en la celda si cambió
+    const nameEl = document.querySelector(`[data-namecel="${idx}"]`);
+    if (nameEl && edits.full_name) nameEl.textContent = edits.full_name;
+    toast('Edición guardada', 'success');
+  };
+
+  // Construir fila de resolución
+  let rowIdx = 0;
   function resRow(item, defaultVal, suggestions) {
     const inc = item.incoming;
     const key = inc.email || inc.full_name;
-    const keyAttr = key.replace(/"/g, '&quot;');
-    const sel = resolutions[key] || defaultVal;
-
-    // Opciones de actualizar: si tiene matches exactos o sugerencias por nombre
+    const idx = rowIdx++;
+    window._importRows[idx] = { key, incoming: inc };
+    const sel = window._importResolutions[key] || defaultVal;
     const matchItems = item.matches || suggestions || [];
+
     const updateBtns = matchItems.map(m => {
-      const label = m.reasons ? `[${m.reasons.join(',')}] ` : `${m.score}% `;
-      const active = sel === `update:${m.id}`;
+      const label = m.reasons ? `[${m.reasons.join(',')}]` : `${m.score}%`;
+      const on = sel === `update:${m.id}`;
       return `<button class="res-btn" data-val="update:${m.id}"
-        style="font-size:11px;padding:4px 8px;border:1px solid #d1fae5;border-radius:6px;cursor:pointer;white-space:nowrap;
-               background:${active?'#064e3b':''};color:${active?'#fff':''};"
-        onclick="window._setImportRes('${keyAttr}','update:${m.id}')">
-        🔗 ${label}${m.full_name}
+        title="${m.full_name} · ${m.email||''}"
+        style="font-size:11px;padding:4px 8px;border:1px solid #d1fae5;border-radius:6px;cursor:pointer;
+               background:${on?'#064e3b':''};color:${on?'#fff':''};font-weight:${on?'700':''};"
+        onclick="window._setImportRes(${idx},'update:${m.id}')">
+        🔗 ${label} ${m.full_name}
       </button>`;
     }).join('');
 
-    const createActive = sel === 'create';
-    const skipActive   = sel === 'skip';
-
     return `
-      <tr style="border-bottom:1px solid #f3f4f6;vertical-align:top;">
-        <td style="padding:10px 8px;font-size:13px;min-width:200px;">
-          <strong>${inc.full_name}</strong><br>
+      <tr data-rowid="${idx}" style="border-bottom:1px solid #f3f4f6;vertical-align:top;">
+        <td style="padding:10px 8px;font-size:13px;min-width:180px;">
+          <strong data-namecel="${idx}">${inc.full_name}</strong>
+          <span data-editbadge="${idx}" style="display:none;font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 6px;border-radius:8px;margin-left:4px;">✏️ editado</span><br>
           <span style="color:#6b7280;font-size:11px;">${inc.email||'—'}</span><br>
           <span style="color:#9ca3af;font-size:10px;">RFC: ${inc.rfc||'—'} · NSS: ${inc.nss||'—'}</span>
         </td>
         <td style="padding:10px 8px;">
-          <div data-reskey="${keyAttr}" style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">
+          <div data-resgrp="${idx}" style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-bottom:6px;">
             ${updateBtns}
             <button class="res-btn" data-val="create"
               style="font-size:11px;padding:4px 8px;border:1px solid #d1fae5;border-radius:6px;cursor:pointer;
-                     background:${createActive?'#064e3b':''};color:${createActive?'#fff':''};"
-              onclick="window._setImportRes('${keyAttr}','create')">➕ Crear nuevo</button>
+                     background:${sel==='create'?'#064e3b':''};color:${sel==='create'?'#fff':''};font-weight:${sel==='create'?'700':''};"
+              onclick="window._setImportRes(${idx},'create')">➕ Crear nuevo</button>
             <button class="res-btn" data-val="skip"
-              style="font-size:11px;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;color:#6b7280;
-                     background:${skipActive?'#6b7280':''};color:${skipActive?'#fff':'#6b7280'};"
-              onclick="window._setImportRes('${keyAttr}','skip')">⊘ Omitir</button>
+              style="font-size:11px;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;
+                     background:${sel==='skip'?'#6b7280':''};color:${sel==='skip'?'#fff':'#6b7280'};"
+              onclick="window._setImportRes(${idx},'skip')">⊘ Omitir</button>
           </div>
+          <button onclick="window._toggleImportEdit(${idx})"
+            style="font-size:11px;padding:3px 10px;border:1px solid #93c5fd;border-radius:6px;cursor:pointer;color:#1d4ed8;background:#eff6ff;">
+            ✏️ Editar datos
+          </button>
         </td>
       </tr>`;
   }
 
-  const thead = `<thead style="background:#f9fafb;position:sticky;top:0;z-index:1;">
-    <tr>
-      <th style="padding:8px;font-size:12px;text-align:left;font-weight:600;">En el archivo</th>
-      <th style="padding:8px;font-size:12px;text-align:left;font-weight:600;">Acción</th>
-    </tr></thead>`;
+  const thead = `<thead style="background:#f9fafb;position:sticky;top:0;z-index:1;"><tr>
+    <th style="padding:8px;font-size:12px;text-align:left;font-weight:600;">En el archivo</th>
+    <th style="padding:8px;font-size:12px;text-align:left;font-weight:600;">Acción · Editar</th>
+  </tr></thead>`;
 
   const exactRows = exact_duplicates.map(d => resRow(d, `update:${(d.matches[0]||{}).id||''}`, null)).join('');
   const simRows   = similar_name.map(s => resRow({ incoming: s.incoming, matches: null }, 'create', s.suggestions)).join('');
@@ -6414,24 +6522,25 @@ function showImportExcelModal(preview) {
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px 16px;';
 
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:16px;padding:28px;width:min(860px,98vw);box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="background:#fff;border-radius:16px;padding:28px;width:min(900px,98vw);box-shadow:0 20px 60px rgba(0,0,0,.3);">
       <h3 style="margin:0 0 4px;">📥 Importar Base de Colaboradores</h3>
       <p style="color:#6b7280;font-size:13px;margin:0 0 20px;">
         Total en archivo: <strong>${total}</strong> ·
-        <span style="color:#059669;">✅ ${truly_new.length} completamente nuevos</span> ·
+        <span style="color:#059669;">✅ ${truly_new.length} nuevos</span> ·
         <span style="color:#d97706;">⚠️ ${exact_duplicates.length} duplicados exactos</span> ·
         <span style="color:#7c3aed;">🔍 ${similar_name.length} similares por nombre</span>
       </p>
 
       ${exact_duplicates.length > 0 ? `
         <details open>
-          <summary style="cursor:pointer;font-weight:700;font-size:14px;color:#92400e;margin-bottom:10px;padding:8px;background:#fef3c7;border-radius:8px;">
+          <summary style="cursor:pointer;font-weight:700;font-size:14px;color:#92400e;padding:8px;background:#fef3c7;border-radius:8px;margin-bottom:8px;">
             ⚠️ Duplicados exactos (${exact_duplicates.length}) — coinciden por correo, RFC, CURP o NSS
           </summary>
-          <p style="font-size:12px;color:#6b7280;margin:8px 0;">
-            Elige si actualizar el registro existente, crear uno nuevo o ignorarlo.
+          <p style="font-size:12px;color:#6b7280;margin:6px 0 8px;">
+            Al ligar, se actualizan todos los campos <strong>excepto el correo</strong> (credencial de acceso).
+            Usa ✏️ Editar para ajustar los datos antes de importar.
           </p>
-          <div style="max-height:280px;overflow-y:auto;border:1px solid #fde68a;border-radius:8px;margin-bottom:16px;">
+          <div style="max-height:320px;overflow-y:auto;border:1px solid #fde68a;border-radius:8px;margin-bottom:16px;">
             <table style="width:100%;border-collapse:collapse;">${thead}<tbody>${exactRows}</tbody></table>
           </div>
         </details>
@@ -6439,14 +6548,14 @@ function showImportExcelModal(preview) {
 
       ${similar_name.length > 0 ? `
         <details open>
-          <summary style="cursor:pointer;font-weight:700;font-size:14px;color:#5b21b6;margin-bottom:10px;padding:8px;background:#f5f3ff;border-radius:8px;">
-            🔍 Similares por nombre (${similar_name.length}) — podrían ya existir con nombre diferente
+          <summary style="cursor:pointer;font-weight:700;font-size:14px;color:#5b21b6;padding:8px;background:#f5f3ff;border-radius:8px;margin-bottom:8px;">
+            🔍 Similares por nombre (${similar_name.length}) — podrían existir con nombre distinto
           </summary>
-          <p style="font-size:12px;color:#6b7280;margin:8px 0;">
-            El sistema encontró colaboradores con nombres parecidos en el sistema. Puedes ligarlos
-            al registro existente o crear uno nuevo.
+          <p style="font-size:12px;color:#6b7280;margin:6px 0 8px;">
+            Usa 🔗 para ligar al existente (actualiza datos, preserva correo) o ➕ para crear como nuevo.
+            Con ✏️ Editar puedes ajustar los datos antes de confirmar.
           </p>
-          <div style="max-height:320px;overflow-y:auto;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:16px;">
+          <div style="max-height:360px;overflow-y:auto;border:1px solid #ddd6fe;border-radius:8px;margin-bottom:16px;">
             <table style="width:100%;border-collapse:collapse;">${thead}<tbody>${simRows}</tbody></table>
           </div>
         </details>
@@ -6463,8 +6572,8 @@ function showImportExcelModal(preview) {
         </details>
       ` : ''}
 
-      ${(exact_duplicates.length === 0 && similar_name.length === 0 && truly_new.length === 0) ?
-        '<div style="text-align:center;color:#6b7280;padding:24px;">Sin datos para importar.</div>' : ''}
+      ${(!exact_duplicates.length && !similar_name.length && !truly_new.length)
+        ? '<p style="text-align:center;color:#6b7280;padding:24px;">Sin datos para importar.</p>' : ''}
 
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;padding-top:16px;border-top:1px solid #e5e7eb;">
         <button class="btn-ghost" onclick="document.getElementById('import-excel-modal').remove()">Cancelar</button>
@@ -6476,20 +6585,25 @@ function showImportExcelModal(preview) {
 async function commitImportExcel() {
   const preview = window._importPreview;
   const resolutions = window._importResolutions || {};
+  const edits = window._importEdits || {};
   if (!preview) return;
 
-  // to_resolve = exact_duplicates + similar_name (ambos necesitan resolución)
-  const to_resolve = [...(preview.exact_duplicates || []), ...(preview.similar_name || []).map(s => ({ incoming: s.incoming }))];
+  // Merge edits into each incoming row before sending
+  function mergeEdits(row) {
+    const key = row.email || row.full_name;
+    return edits[key] ? { ...row, ...edits[key] } : row;
+  }
+
+  const truly_new = (preview.truly_new || []).map(mergeEdits);
+  const to_resolve = [
+    ...(preview.exact_duplicates || []).map(d => ({ incoming: mergeEdits(d.incoming) })),
+    ...(preview.similar_name     || []).map(s => ({ incoming: mergeEdits(s.incoming) }))
+  ];
 
   try {
     const result = await api('/api/rhh/employees/import-excel', {
       method: 'POST',
-      body: JSON.stringify({
-        mode: 'commit',
-        truly_new: preview.truly_new || [],
-        to_resolve,
-        resolutions
-      })
+      body: JSON.stringify({ mode: 'commit', truly_new, to_resolve, resolutions })
     });
     document.getElementById('import-excel-modal')?.remove();
     const msg = `Importado: ${result.created} creados, ${result.updated} actualizados, ${result.skipped} omitidos` +

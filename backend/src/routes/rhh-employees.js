@@ -930,7 +930,10 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
         const targetId = Number(action.split(':')[1]);
         const idx = employees.findIndex(e => e.id === targetId);
         if (idx !== -1) {
-          employees[idx] = { ...employees[idx], ...applyRow(item.incoming), updated_at: new Date().toISOString() };
+          const applied = applyRow(item.incoming);
+          // Preservar correo y contraseña del empleado existente (credencial de usuario)
+          delete applied.email;
+          employees[idx] = { ...employees[idx], ...applied, updated_at: new Date().toISOString() };
           updated++;
         } else {
           errors.push('Empleado no encontrado: ID ' + targetId);
