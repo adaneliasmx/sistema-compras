@@ -6388,17 +6388,10 @@ function showImportExcelModal(preview) {
           <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:10px;padding:14px;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
               <strong style="font-size:12px;color:#0369a1;">✏️ Editar datos antes de importar</strong>
-              <span style="font-size:11px;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:6px;">
-                🔒 Correo no se modifica — vinculado a cuenta de usuario
-              </span>
+              <span style="font-size:11px;color:#6b7280;">(el correo se elige en la fila de arriba)</span>
             </div>
             <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin-bottom:12px;">
               ${fi('full_name','Nombre completo',data.full_name)}
-              <div>
-                <label style="font-size:11px;color:#6b7280;display:block;margin-bottom:2px;">Correo electrónico 🔒</label>
-                <input type="email" value="${data.email||''}" disabled
-                  style="width:100%;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px;font-size:12px;background:#f3f4f6;color:#9ca3af;" />
-              </div>
               ${fi('nomina_number','No. Nómina',data.nomina_number)}
               ${fi('rfc','RFC',data.rfc)}
               ${fi('curp','CURP',data.curp)}
@@ -6435,6 +6428,13 @@ function showImportExcelModal(preview) {
     tr.insertAdjacentHTML('afterend', formHtml);
   };
 
+  // Cambiar correo seleccionado para la fila
+  window._setImportEmail = function(idx, email) {
+    const row = window._importRows[idx];
+    if (!row) return;
+    window._importEdits[row.key] = { ...(window._importEdits[row.key] || {}), email };
+  };
+
   // Guardar edición y marcar visualmente la fila
   window._saveImportEdit = function(idx) {
     const row = window._importRows[idx];
@@ -6448,7 +6448,8 @@ function showImportExcelModal(preview) {
       const el = document.getElementById(`ief-${idx}-${f}`);
       if (el) edits[f] = el.value.trim();
     }
-    window._importEdits[row.key] = edits;
+    // Merge: preservar email elegido en el selector de correo
+    window._importEdits[row.key] = { ...(window._importEdits[row.key] || {}), ...edits };
     document.getElementById('ief-' + idx)?.remove();
     // Mostrar badge de "editado"
     const badge = document.querySelector(`[data-editbadge="${idx}"]`);
@@ -6481,6 +6482,24 @@ function showImportExcelModal(preview) {
       </button>`;
     }).join('');
 
+    // Opciones de correo: Excel + todos los matches del sistema
+    const emailOpts = [];
+    if (inc.email) emailOpts.push({ label: `📥 Archivo: ${inc.email}`, val: inc.email });
+    for (const m of matchItems) {
+      if (m.email && m.email !== inc.email) {
+        emailOpts.push({ label: `🗂️ Sistema: ${m.email} (${m.full_name.trim()})`, val: m.email });
+      }
+    }
+    const emailSelector = emailOpts.length > 1
+      ? `<div style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+           <span style="font-size:11px;color:#374151;font-weight:600;">📧 Correo a usar:</span>
+           <select id="iems-${idx}" style="font-size:11px;border:1px solid #93c5fd;border-radius:6px;padding:3px 6px;color:#1e40af;"
+             onchange="window._setImportEmail(${idx},this.value)">
+             ${emailOpts.map(e=>`<option value="${e.val}">${e.label}</option>`).join('')}
+           </select>
+         </div>`
+      : (inc.email ? `<div style="margin-top:6px;font-size:11px;color:#6b7280;">📧 ${inc.email}</div>` : '');
+
     return `
       <tr data-rowid="${idx}" style="border-bottom:1px solid #f3f4f6;vertical-align:top;">
         <td style="padding:10px 8px;font-size:13px;min-width:180px;">
@@ -6501,10 +6520,13 @@ function showImportExcelModal(preview) {
                      background:${sel==='skip'?'#6b7280':''};color:${sel==='skip'?'#fff':'#6b7280'};"
               onclick="window._setImportRes(${idx},'skip')">⊘ Omitir</button>
           </div>
-          <button onclick="window._toggleImportEdit(${idx})"
-            style="font-size:11px;padding:3px 10px;border:1px solid #93c5fd;border-radius:6px;cursor:pointer;color:#1d4ed8;background:#eff6ff;">
-            ✏️ Editar datos
-          </button>
+          ${emailSelector}
+          <div style="margin-top:6px;">
+            <button onclick="window._toggleImportEdit(${idx})"
+              style="font-size:11px;padding:3px 10px;border:1px solid #93c5fd;border-radius:6px;cursor:pointer;color:#1d4ed8;background:#eff6ff;">
+              ✏️ Editar otros datos
+            </button>
+          </div>
         </td>
       </tr>`;
   }

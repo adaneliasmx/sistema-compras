@@ -931,8 +931,6 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
         const idx = employees.findIndex(e => e.id === targetId);
         if (idx !== -1) {
           const applied = applyRow(item.incoming);
-          // Preservar correo y contraseña del empleado existente (credencial de usuario)
-          delete applied.email;
           employees[idx] = { ...employees[idx], ...applied, updated_at: new Date().toISOString() };
           updated++;
         } else {
