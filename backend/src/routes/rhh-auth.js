@@ -49,6 +49,21 @@ router.get('/me', rhhAuthRequired, (req, res) => {
   res.json({ ...user, employee });
 });
 
+// PATCH /api/rhh/auth/users/:id/email — cambiar correo de login (admin/rh only)
+router.patch('/users/:id/email', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const { email } = req.body || {};
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'Correo inválido' });
+  const db = read();
+  const user = (db.rhh_users || []).find(u => u.id === Number(req.params.id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const dup = (db.rhh_users || []).find(u => u.id !== user.id && u.email?.toLowerCase() === email.trim().toLowerCase());
+  if (dup) return res.status(409).json({ error: 'Ese correo ya está en uso por otro usuario' });
+  user.email = email.trim().toLowerCase();
+  user.updated_at = new Date().toISOString();
+  write(db);
+  res.json({ ok: true, email: user.email });
+});
+
 // PATCH /api/rhh/auth/users/:id/reset-password — admin/rh only
 router.patch('/users/:id/reset-password', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
   const { new_password } = req.body || {};

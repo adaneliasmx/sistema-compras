@@ -830,7 +830,8 @@ async function empleadosView() {
                    const empUser = state.rhhUsers?.find(u => u.employee_id === emp.id);
                    const userBadge = hasUser
                      ? `<span style="font-size:10px;background:#d1fae5;color:#065f46;padding:2px 6px;border-radius:8px;">👤 ${empUser?.role || '—'}</span>
-                        <button class="btn-ghost" style="font-size:10px;padding:2px 6px;color:#7c3aed;" title="Restablecer contraseña" onclick="openResetPwdModal(${empUser?.id},'${(emp.full_name||'').replace(/'/g,"\\'")}')">🔑</button>`
+                        <button class="btn-ghost" style="font-size:10px;padding:2px 6px;color:#7c3aed;" title="Restablecer contraseña" onclick="openResetPwdModal(${empUser?.id},'${(emp.full_name||'').replace(/'/g,"\\'")}')">🔑</button>
+                        <button class="btn-ghost" style="font-size:10px;padding:2px 6px;color:#0369a1;" title="Cambiar correo de login" onclick="openChangeLoginEmailModal(${empUser?.id},'${(emp.full_name||'').replace(/'/g,"\\'")}','${empUser?.email||''}','${emp.email||''}')">📧</button>`
                      : `<button class="btn-ghost" style="font-size:11px;color:#7c3aed;" onclick="openCreateUserModal(${emp.id},'${(emp.full_name || '').replace(/'/g, "\\'")}','${emp.email || ''}')">+ Cuenta</button>`;
                    const comprasLink = emp.compras_email
                      ? `<br><span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:6px;" title="Vinculado a Compras: ${emp.compras_email}">🔗 ${emp.compras_email}</span>`
@@ -6814,6 +6815,69 @@ async function saveResetPwd(userId) {
     });
     document.getElementById('reset-pwd-modal')?.remove();
     toast('Contraseña restablecida');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Cambiar correo de login de usuario RHH ────────────────────────────────────
+function openChangeLoginEmailModal(userId, empName, currentLoginEmail, empContactEmail) {
+  document.getElementById('change-login-email-modal')?.remove();
+  const overlay = document.createElement('div');
+  overlay.id = 'change-login-email-modal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;display:flex;align-items:center;justify-content:center;';
+
+  // Construir opciones únicas: correo de login actual + correo de contacto del empleado
+  const opts = new Map();
+  if (currentLoginEmail) opts.set(currentLoginEmail.toLowerCase(), `🔑 Login actual: ${currentLoginEmail}`);
+  if (empContactEmail && empContactEmail.toLowerCase() !== currentLoginEmail?.toLowerCase()) {
+    opts.set(empContactEmail.toLowerCase(), `📋 Correo del empleado: ${empContactEmail}`);
+  }
+
+  const optHtml = [...opts.entries()].map(([val, label]) =>
+    `<option value="${val}" ${val === currentLoginEmail?.toLowerCase() ? 'selected' : ''}>${label}</option>`
+  ).join('');
+
+  overlay.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:24px;width:400px;max-width:95vw;">
+      <h3 style="margin:0 0 4px;">📧 Correo de acceso</h3>
+      <p style="font-size:13px;color:#6b7280;margin:0 0 16px;">${empName}</p>
+
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Correo actual de login</label>
+      <div style="font-size:13px;color:#0369a1;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:8px 12px;margin-bottom:16px;">
+        ${currentLoginEmail || '—'}
+      </div>
+
+      <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Seleccionar correo para login</label>
+      <select id="cle-select" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;margin-bottom:8px;">
+        ${optHtml}
+        <option value="__custom__">✏️ Escribir otro correo...</option>
+      </select>
+      <input id="cle-custom" type="email" placeholder="otro@correo.com"
+        style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;margin-bottom:16px;display:none;box-sizing:border-box;"
+        oninput="document.getElementById('cle-select').value='__custom__'" />
+
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('change-login-email-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="saveLoginEmail(${userId})">💾 Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  document.getElementById('cle-select').addEventListener('change', function() {
+    document.getElementById('cle-custom').style.display = this.value === '__custom__' ? 'block' : 'none';
+  });
+}
+
+async function saveLoginEmail(userId) {
+  const sel = document.getElementById('cle-select')?.value;
+  const custom = document.getElementById('cle-custom')?.value?.trim();
+  const email = sel === '__custom__' ? custom : sel;
+  if (!email || !email.includes('@')) { toast('Correo inválido', 'warning'); return; }
+  try {
+    await api(`/api/rhh/auth/users/${userId}/email`, { method: 'PATCH', body: JSON.stringify({ email }) });
+    document.getElementById('change-login-email-modal')?.remove();
+    toast(`Correo de login actualizado: ${email}`);
+    await loadCatalogs();
+    empleadosView();
   } catch (err) { toast(err.message, 'error'); }
 }
 

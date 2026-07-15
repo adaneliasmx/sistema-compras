@@ -773,10 +773,13 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       }));
   }
 
-  // Similitud de nombres: porcentaje de palabras en común (palabras > 2 letras)
+  // Similitud de nombres: porcentaje de palabras en común (sin acentos, palabras > 2 letras)
   function nameSim(a, b) {
-    const wA = a.toLowerCase().split(/\s+/).filter(w => w.length > 2);
-    const wB = b.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    function norm(s) {
+      return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    }
+    const wA = norm(a).split(/\s+/).filter(w => w.length > 2);
+    const wB = norm(b).split(/\s+/).filter(w => w.length > 2);
     if (!wA.length || !wB.length) return 0;
     let hits = 0;
     for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
