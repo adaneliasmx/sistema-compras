@@ -180,6 +180,7 @@
           <div style="display:flex;gap:8px;flex-wrap:wrap;">
             <button class="btn-ghost" onclick="importAccesos()" title="Cargar accesos desde JSON">📤 Importar</button>
             <button class="btn-ghost" onclick="exportAccesos()" title="Descargar base de accesos como JSON">📥 Exportar</button>
+            <button class="btn-ghost" onclick="toggleRhhSync()" id="rhhSyncToggleBtn" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe">👥 Vincular RHH</button>
             <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
           </div>
         </div>
@@ -205,6 +206,24 @@
               <tr><td colspan="8" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VINCULAR EMPLEADOS RHH -->
+    <div id="rhhSyncPanel" style="display:none;margin-top:16px">
+      <div class="card">
+        <div class="card-header">
+          <h2>👥 Vincular empleados RHH como usuarios del sistema</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="rhhSyncMsg" style="font-size:13px;color:var(--muted)"></span>
+            <button class="btn-ghost" id="rhhSyncSelectAllBtn" style="display:none" onclick="rhhSyncSelectAll()">☑ Seleccionar pendientes</button>
+            <button class="btn-primary" id="rhhSyncCommitBtn" style="display:none" onclick="rhhSyncCommit()">✅ Vincular seleccionados</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:12px">
+          <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Crea cuentas de sistema para empleados del módulo RHH. Contraseña inicial: <b>Demo123*</b></p>
+          <div id="rhhSyncTableWrap"></div>
         </div>
       </div>
     </div>
@@ -1124,6 +1143,98 @@ async function rhhReseed() {
     catch { localStorage.removeItem(TOKEN_KEY); }
   }
 })();
+
+// ── Vincular empleados RHH ────────────────────────────────────────────────────
+let _rhhSyncRows = [];
+let _rhhSyncOpen = false;
+
+function toggleRhhSync() {
+  _rhhSyncOpen = !_rhhSyncOpen;
+  document.getElementById('rhhSyncPanel').style.display = _rhhSyncOpen ? 'block' : 'none';
+  document.getElementById('rhhSyncToggleBtn').style.background = _rhhSyncOpen ? '#1d4ed8' : '#eff6ff';
+  document.getElementById('rhhSyncToggleBtn').style.color = _rhhSyncOpen ? 'white' : '#1d4ed8';
+  if (_rhhSyncOpen) rhhSyncLoad();
+}
+
+async function rhhSyncLoad() {
+  const msgEl = document.getElementById('rhhSyncMsg');
+  const wrap = document.getElementById('rhhSyncTableWrap');
+  const commitBtn = document.getElementById('rhhSyncCommitBtn');
+  const selectAllBtn = document.getElementById('rhhSyncSelectAllBtn');
+  msgEl.textContent = 'Cargando...';
+  wrap.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Cargando empleados...</div>';
+  commitBtn.style.display = 'none';
+  selectAllBtn.style.display = 'none';
+  try {
+    _rhhSyncRows = await api('/api/super-admin/rhh-employees-preview');
+    const pending = _rhhSyncRows.filter(r => !r.has_compras_user || !r.has_rhh_user);
+    msgEl.textContent = `${_rhhSyncRows.length} empleados · ${pending.length} pendientes`;
+    if (pending.length) { commitBtn.style.display = ''; selectAllBtn.style.display = ''; }
+
+    wrap.innerHTML = `<div style="overflow-x:auto;max-height:420px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:#f8fafc">
+          <tr style="border-bottom:2px solid var(--line)">
+            <th style="padding:8px;text-align:left;width:24px"></th>
+            <th style="padding:8px;text-align:left">Empleado</th>
+            <th style="padding:8px;text-align:left">Depto</th>
+            <th style="padding:8px;text-align:left">Correo empleado</th>
+            <th style="padding:8px;text-align:center;width:80px">RHH</th>
+            <th style="padding:8px;text-align:center;width:80px">Compras</th>
+            <th style="padding:8px;text-align:left">Correo de acceso</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${_rhhSyncRows.map((r, i) => {
+            const done = r.has_rhh_user && r.has_compras_user;
+            const emails = [...new Set([r.emp_email, r.rhh_login_email, r.compras_user_email].filter(Boolean))];
+            const emailCtrl = emails.length > 1
+              ? `<select data-idx="${i}" class="rhh-sync-email" style="font-size:11px;padding:2px 4px;border:1px solid #e2e8f0;border-radius:6px;max-width:180px">${emails.map(e => `<option value="${e}">${e}</option>`).join('')}</select>`
+              : `<span style="color:var(--muted)">${emails[0] || '—'}</span>`;
+            return `<tr style="border-bottom:1px solid #f1f5f9;${done ? 'opacity:.45' : ''}">
+              <td style="padding:6px 8px"><input type="checkbox" class="rhh-sync-chk" data-idx="${i}" ${done ? 'disabled' : ''}></td>
+              <td style="padding:6px 8px;font-weight:600">${r.full_name}${r.match_type ? ` <span style="font-size:10px;color:var(--muted);font-weight:400">(${r.match_type})</span>` : ''}</td>
+              <td style="padding:6px 8px;color:var(--muted)">${r.department}</td>
+              <td style="padding:6px 8px;color:var(--muted)">${r.emp_email || '—'}</td>
+              <td style="padding:6px 8px;text-align:center">${r.has_rhh_user ? '<span style="color:#16a34a;font-size:16px">✓</span>' : '<span style="color:#dc2626;font-size:16px">✗</span>'}</td>
+              <td style="padding:6px 8px;text-align:center">${r.has_compras_user ? '<span style="color:#16a34a;font-size:16px">✓</span>' : '<span style="color:#dc2626;font-size:16px">✗</span>'}</td>
+              <td style="padding:6px 8px">${emailCtrl}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+  } catch(e) {
+    msgEl.textContent = e.message;
+    wrap.innerHTML = '';
+  }
+}
+
+function rhhSyncSelectAll() {
+  document.querySelectorAll('.rhh-sync-chk:not([disabled])').forEach(c => { c.checked = true; });
+}
+
+async function rhhSyncCommit() {
+  const checked = [...document.querySelectorAll('.rhh-sync-chk:checked')];
+  if (!checked.length) { alert('Selecciona al menos un empleado.'); return; }
+  if (!confirm(`¿Crear accesos para ${checked.length} empleado(s)?\nContraseña inicial: Demo123*`)) return;
+  const msgEl = document.getElementById('rhhSyncMsg');
+  msgEl.textContent = 'Vinculando...';
+  try {
+    const selections = checked.map(chk => {
+      const idx = Number(chk.dataset.idx);
+      const row = _rhhSyncRows[idx];
+      const emailEl = document.querySelector(`.rhh-sync-email[data-idx="${idx}"]`);
+      const chosen_email = emailEl ? emailEl.value : (row.emp_email || row.rhh_login_email || row.compras_user_email);
+      return { emp_id: row.emp_id, chosen_email, create_rhh: !row.has_rhh_user, create_compras: !row.has_compras_user };
+    });
+    const out = await api('/api/super-admin/rhh-employees-sync', { method: 'POST', body: JSON.stringify({ selections }) });
+    msgEl.textContent = `✅ RHH: +${out.createdRhh} | Compras: +${out.createdCompras}${out.skipped ? ` | Sin correo: ${out.skipped}` : ''}`;
+    if (out.errors?.length) console.warn('Sync errors:', out.errors);
+    setTimeout(rhhSyncLoad, 800);
+    loadData();
+  } catch(e) { msgEl.textContent = '❌ ' + e.message; }
+}
 </script>
 </body>
 </html>

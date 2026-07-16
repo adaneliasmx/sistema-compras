@@ -773,6 +773,113 @@ router.patch('/inv-users/password', superAdminRequired, (req, res) => {
 });
 
 // POST /api/super-admin/rhh-reseed
+// ── Vincular empleados RHH existentes a módulos ───────────────────────────────
+function _nSA(s) {
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+}
+function _simSA(a, b) {
+  const wA = _nSA(a).split(/\s+/).filter(w => w.length > 2);
+  const wB = _nSA(b).split(/\s+/).filter(w => w.length > 2);
+  if (!wA.length || !wB.length) return 0;
+  let hits = 0;
+  for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
+  return hits / Math.max(wA.length, wB.length);
+}
+
+router.get('/rhh-employees-preview', superAdminRequired, (req, res) => {
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  const employees = (rhhDb.rhh_employees || []).filter(e => e.active !== false && e.status !== 'baja');
+  const comprasUsers = comprasDb.users || [];
+
+  const result = employees.map(emp => {
+    const byEmail = comprasUsers.find(u => u.email && emp.email && _nSA(u.email) === _nSA(emp.email));
+    const byName = !byEmail ? comprasUsers.find(u => _simSA(u.full_name, emp.full_name) >= 0.6) : null;
+    const comprasMatch = byEmail || byName;
+    const rhhUser = (rhhDb.rhh_users || []).find(u => u.employee_id === emp.id);
+    return {
+      emp_id: emp.id,
+      full_name: emp.full_name,
+      emp_email: emp.email || '',
+      department: emp.department || '',
+      has_rhh_user: !!rhhUser,
+      rhh_user_id: rhhUser?.id || null,
+      rhh_login_email: rhhUser?.email || '',
+      has_compras_user: !!comprasMatch,
+      compras_user_id: comprasMatch?.id || null,
+      compras_user_email: comprasMatch?.email || '',
+      match_type: byEmail ? 'email' : byName ? 'nombre' : null
+    };
+  });
+
+  result.sort((a, b) => {
+    if (a.has_compras_user !== b.has_compras_user) return a.has_compras_user ? 1 : -1;
+    if (a.has_rhh_user !== b.has_rhh_user) return a.has_rhh_user ? 1 : -1;
+    return a.full_name.localeCompare(b.full_name);
+  });
+
+  res.json(result);
+});
+
+router.post('/rhh-employees-sync', superAdminRequired, (req, res) => {
+  const { selections } = req.body || {};
+  if (!Array.isArray(selections) || !selections.length) {
+    return res.status(400).json({ error: 'Se requiere "selections" array' });
+  }
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  let createdCompras = 0, createdRhh = 0, skipped = 0;
+  const errors = [];
+
+  for (const sel of selections) {
+    const { emp_id, chosen_email, create_compras, create_rhh } = sel;
+    const emp = (rhhDb.rhh_employees || []).find(e => e.id === emp_id);
+    if (!emp) { errors.push(`Empleado ID ${emp_id} no encontrado`); continue; }
+    const email = (chosen_email || emp.email || '').trim().toLowerCase();
+    if (!email) { errors.push(`${emp.full_name}: sin correo`); skipped++; continue; }
+
+    if (create_compras) {
+      const exists = (comprasDb.users || []).find(u => _nSA(u.email) === _nSA(email));
+      if (!exists) {
+        if (!comprasDb.users) comprasDb.users = [];
+        comprasDb.users.push({
+          id: nextIdCompras(comprasDb.users),
+          full_name: emp.full_name,
+          email,
+          password_hash: bcrypt.hashSync('Demo123*', 10),
+          role_code: 'cliente_requisicion',
+          department: emp.department || 'GENERAL',
+          active: true,
+          created_at: new Date().toISOString()
+        });
+        createdCompras++;
+      }
+    }
+
+    if (create_rhh) {
+      const exists = (rhhDb.rhh_users || []).find(u => u.employee_id === emp_id);
+      if (!exists) {
+        if (!rhhDb.rhh_users) rhhDb.rhh_users = [];
+        rhhDb.rhh_users.push({
+          id: nextIdRhh(rhhDb.rhh_users),
+          full_name: emp.full_name,
+          email,
+          password_hash: bcrypt.hashSync('Demo123*', 10),
+          role: 'empleado',
+          employee_id: emp_id,
+          active: true,
+          created_at: new Date().toISOString()
+        });
+        createdRhh++;
+      }
+    }
+  }
+
+  writeCompras(comprasDb);
+  writeRhh(rhhDb);
+  res.json({ ok: true, createdCompras, createdRhh, skipped, errors });
+});
+
 router.post('/rhh-reseed', superAdminRequired, async (req, res) => {
   try {
     const data = await forceSeedFromJson();
