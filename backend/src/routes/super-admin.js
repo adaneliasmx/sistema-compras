@@ -785,9 +785,9 @@ router.get('/detect-duplicates', superAdminRequired, (req, res) => {
     const wA = norm(a).split(/\s+/).filter(w => w.length > 2);
     const wB = norm(b).split(/\s+/).filter(w => w.length > 2);
     if (!wA.length || !wB.length) return 0;
-    let hits = 0;
-    for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
-    return hits / Math.max(wA.length, wB.length);
+    let hAB = 0; for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hAB++; }
+    let hBA = 0; for (const w of wB) { if (wA.some(wa => wa.includes(w) || w.includes(wa))) hBA++; }
+    return Math.max(hAB / wA.length, hBA / wB.length);
   }
 
   function findPairs(users, module) {
@@ -885,9 +885,9 @@ function _simSA(a, b) {
   const wA = _nSA(a).split(/\s+/).filter(w => w.length > 2);
   const wB = _nSA(b).split(/\s+/).filter(w => w.length > 2);
   if (!wA.length || !wB.length) return 0;
-  let hits = 0;
-  for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
-  return hits / Math.max(wA.length, wB.length);
+  let hAB = 0; for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hAB++; }
+  let hBA = 0; for (const w of wB) { if (wA.some(wa => wa.includes(w) || w.includes(wa))) hBA++; }
+  return Math.max(hAB / wA.length, hBA / wB.length);
 }
 
 router.get('/rhh-employees-preview', superAdminRequired, (req, res) => {
