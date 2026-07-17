@@ -773,6 +773,110 @@ router.patch('/inv-users/password', superAdminRequired, (req, res) => {
 });
 
 // POST /api/super-admin/rhh-reseed
+// ── Detectar y unificar usuarios duplicados ───────────────────────────────────
+router.get('/detect-duplicates', superAdminRequired, (req, res) => {
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+
+  function norm(s) {
+    return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+  }
+  function sim(a, b) {
+    const wA = norm(a).split(/\s+/).filter(w => w.length > 2);
+    const wB = norm(b).split(/\s+/).filter(w => w.length > 2);
+    if (!wA.length || !wB.length) return 0;
+    let hits = 0;
+    for (const w of wA) { if (wB.some(wb => wb.includes(w) || w.includes(wb))) hits++; }
+    return hits / Math.max(wA.length, wB.length);
+  }
+
+  function findPairs(users, module) {
+    const pairs = [];
+    const active = users.filter(u => u.active !== false && !u.merged_into);
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const a = active[i], b = active[j];
+        if (norm(a.email) === norm(b.email)) continue; // mismo correo = misma cuenta
+        const s = sim(a.full_name, b.full_name);
+        if (s >= 0.55) {
+          pairs.push({
+            module,
+            similarity: Math.round(s * 100),
+            a: { id: a.id, full_name: a.full_name, email: a.email, role: a.role_code || a.role, employee_id: a.employee_id || null, active: a.active !== false },
+            b: { id: b.id, full_name: b.full_name, email: b.email, role: b.role_code || b.role, employee_id: b.employee_id || null, active: b.active !== false }
+          });
+        }
+      }
+    }
+    return pairs.sort((x, y) => y.similarity - x.similarity);
+  }
+
+  const comprasPairs = findPairs(comprasDb.users || [], 'compras');
+  const rhhPairs = findPairs(rhhDb.rhh_users || [], 'rhh');
+  res.json([...comprasPairs, ...rhhPairs]);
+});
+
+router.post('/merge-users', superAdminRequired, (req, res) => {
+  const { module, keep_id, remove_id, login_email, keep_name } = req.body || {};
+  if (!module || !keep_id || !remove_id || !login_email) {
+    return res.status(400).json({ error: 'module, keep_id, remove_id y login_email requeridos' });
+  }
+
+  if (module === 'compras') {
+    const db = readCompras();
+    const keeper = (db.users || []).find(u => u.id === Number(keep_id));
+    const removed = (db.users || []).find(u => u.id === Number(remove_id));
+    if (!keeper || !removed) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    // Verificar que el email elegido no lo tenga otro usuario distinto
+    const emailLow = login_email.trim().toLowerCase();
+    const conflict = (db.users || []).find(u => u.id !== Number(keep_id) && u.id !== Number(remove_id) && u.email?.toLowerCase() === emailLow);
+    if (conflict) return res.status(409).json({ error: 'Ese correo ya está en uso por otro usuario' });
+
+    keeper.email = emailLow;
+    if (keep_name) keeper.full_name = keep_name;
+    keeper.active = true;
+    keeper.updated_at = new Date().toISOString();
+
+    removed.active = false;
+    removed.merged_into = Number(keep_id);
+    removed.updated_at = new Date().toISOString();
+
+    writeCompras(db);
+    return res.json({ ok: true, kept: keeper.id, removed: removed.id });
+  }
+
+  if (module === 'rhh') {
+    const db = readRhh();
+    const keeper = (db.rhh_users || []).find(u => u.id === Number(keep_id));
+    const removed = (db.rhh_users || []).find(u => u.id === Number(remove_id));
+    if (!keeper || !removed) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const emailLow = login_email.trim().toLowerCase();
+    const conflict = (db.rhh_users || []).find(u => u.id !== Number(keep_id) && u.id !== Number(remove_id) && u.email?.toLowerCase() === emailLow);
+    if (conflict) return res.status(409).json({ error: 'Ese correo ya está en uso por otro usuario' });
+
+    // Transferir employee_id si el keeper no tiene uno y el removed sí
+    if (!keeper.employee_id && removed.employee_id) {
+      keeper.employee_id = removed.employee_id;
+    }
+
+    keeper.email = emailLow;
+    if (keep_name) keeper.full_name = keep_name;
+    keeper.active = true;
+    keeper.updated_at = new Date().toISOString();
+
+    removed.active = false;
+    removed.merged_into = Number(keep_id);
+    removed.updated_at = new Date().toISOString();
+
+    writeRhh(db);
+    return res.json({ ok: true, kept: keeper.id, removed: removed.id });
+  }
+
+  res.status(400).json({ error: 'Módulo no soportado: compras | rhh' });
+});
+
 // ── Vincular empleados RHH existentes a módulos ───────────────────────────────
 function _nSA(s) {
   return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();

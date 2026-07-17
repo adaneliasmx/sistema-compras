@@ -181,6 +181,7 @@
             <button class="btn-ghost" onclick="importAccesos()" title="Cargar accesos desde JSON">📤 Importar</button>
             <button class="btn-ghost" onclick="exportAccesos()" title="Descargar base de accesos como JSON">📥 Exportar</button>
             <button class="btn-ghost" onclick="toggleRhhSync()" id="rhhSyncToggleBtn" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe">👥 Vincular RHH</button>
+            <button class="btn-ghost" onclick="toggleDupPanel()" id="dupToggleBtn" style="background:#fef9c3;color:#92400e;border-color:#fde68a">🔀 Detectar duplicados</button>
             <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
           </div>
         </div>
@@ -206,6 +207,23 @@
               <tr><td colspan="8" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- DUPLICADOS -->
+    <div id="dupPanel" style="display:none;margin-top:16px">
+      <div class="card">
+        <div class="card-header">
+          <h2>🔀 Unificar cuentas duplicadas</h2>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span id="dupMsg" style="font-size:13px;color:var(--muted)"></span>
+            <button class="btn-primary" id="dupCommitBtn" style="display:none;background:#92400e;border-color:#92400e" onclick="dupCommit()">🔀 Unificar seleccionados</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:14px">
+          <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Se detectan pares de cuentas con nombres similares. Para cada par: elige cuál cuenta conservar, cuál correo usar como login y marca la casilla para unificar. La cuenta eliminada queda inactiva con sus datos intactos.</p>
+          <div id="dupTableWrap"></div>
         </div>
       </div>
     </div>
@@ -1143,6 +1161,122 @@ async function rhhReseed() {
     catch { localStorage.removeItem(TOKEN_KEY); }
   }
 })();
+
+// ── Detectar y unificar duplicados ───────────────────────────────────────────
+let _dupPairs = [];
+let _dupOpen = false;
+
+function toggleDupPanel() {
+  _dupOpen = !_dupOpen;
+  document.getElementById('dupPanel').style.display = _dupOpen ? 'block' : 'none';
+  const btn = document.getElementById('dupToggleBtn');
+  btn.style.background = _dupOpen ? '#92400e' : '#fef9c3';
+  btn.style.color = _dupOpen ? 'white' : '#92400e';
+  if (_dupOpen) dupLoad();
+}
+
+async function dupLoad() {
+  const msgEl = document.getElementById('dupMsg');
+  const wrap = document.getElementById('dupTableWrap');
+  const commitBtn = document.getElementById('dupCommitBtn');
+  msgEl.textContent = 'Detectando...';
+  wrap.innerHTML = '<div style="padding:20px;color:var(--muted);font-size:13px">Analizando usuarios...</div>';
+  commitBtn.style.display = 'none';
+  try {
+    _dupPairs = await api('/api/super-admin/detect-duplicates');
+    if (!_dupPairs.length) {
+      msgEl.textContent = '✅ Sin duplicados detectados.';
+      wrap.innerHTML = '';
+      return;
+    }
+    msgEl.textContent = `${_dupPairs.length} par(es) con nombres similares`;
+    commitBtn.style.display = '';
+
+    wrap.innerHTML = _dupPairs.map((p, i) => {
+      const modLabel = p.module === 'compras' ? '🛒 Compras' : '👥 RHH';
+      const modColor = p.module === 'compras' ? '#1d4ed8' : '#7c3aed';
+      return `
+      <div class="dup-pair" data-idx="${i}" style="border:1.5px solid #e2e8f0;border-radius:12px;padding:14px;margin-bottom:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="checkbox" class="dup-chk" data-idx="${i}" style="width:16px;height:16px">
+            <span style="font-size:12px;font-weight:700;background:#f1f5f9;padding:3px 8px;border-radius:6px;color:${modColor}">${modLabel}</span>
+            <span style="font-size:12px;color:var(--muted)">Similitud: <b>${p.similarity}%</b></span>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          ${['a','b'].map(side => {
+            const u = p[side];
+            return `
+            <div style="border:1.5px solid #e2e8f0;border-radius:10px;padding:12px;background:#fafafa">
+              <div style="font-weight:700;font-size:13px;margin-bottom:4px">${u.full_name}</div>
+              <div style="font-size:12px;color:var(--muted);margin-bottom:8px">${u.email} · ${u.role || '—'}</div>
+              ${u.employee_id ? `<div style="font-size:11px;color:#7c3aed;margin-bottom:8px">Empleado RHH #${u.employee_id}</div>` : ''}
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;font-weight:600">
+                  <input type="radio" name="dup-keep-${i}" value="${side}" ${side==='a'?'checked':''}>
+                  Conservar esta cuenta
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer">
+                  <input type="radio" name="dup-email-${i}" value="${u.email}" data-name="${u.full_name}" ${side==='a'?'checked':''}>
+                  Usar <b style="margin:0 3px">${u.email}</b> como login
+                </label>
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) {
+    msgEl.textContent = '❌ ' + e.message;
+    wrap.innerHTML = '';
+  }
+}
+
+async function dupCommit() {
+  const checked = [...document.querySelectorAll('.dup-chk:checked')];
+  if (!checked.length) { alert('Marca al menos un par para unificar.'); return; }
+  if (!confirm(`¿Unificar ${checked.length} par(es)?\n\nLa cuenta secundaria quedará inactiva con sus datos intactos.`)) return;
+
+  const msgEl = document.getElementById('dupMsg');
+  msgEl.textContent = 'Unificando...';
+  let ok = 0, errors = [];
+
+  for (const chk of checked) {
+    const i = Number(chk.dataset.idx);
+    const p = _dupPairs[i];
+    const keepSide = document.querySelector(`input[name="dup-keep-${i}"]:checked`)?.value || 'a';
+    const loginEmail = document.querySelector(`input[name="dup-email-${i}"]:checked`)?.value || p.a.email;
+    const nameRadio = document.querySelector(`input[name="dup-email-${i}"]:checked`);
+    const keepName = document.querySelector(`input[name="dup-keep-${i}"]:checked`)
+      ? p[document.querySelector(`input[name="dup-keep-${i}"]:checked`).value].full_name
+      : p.a.full_name;
+
+    const keeper = p[keepSide];
+    const removed = p[keepSide === 'a' ? 'b' : 'a'];
+
+    try {
+      await api('/api/super-admin/merge-users', {
+        method: 'POST',
+        body: JSON.stringify({
+          module: p.module,
+          keep_id: keeper.id,
+          remove_id: removed.id,
+          login_email: loginEmail,
+          keep_name: keepName
+        })
+      });
+      ok++;
+    } catch(e) {
+      errors.push(`${keeper.full_name} / ${removed.full_name}: ${e.message}`);
+    }
+  }
+
+  msgEl.textContent = `✅ ${ok} unificado(s)${errors.length ? ` · ${errors.length} error(es)` : ''}`;
+  if (errors.length) console.warn('Merge errors:', errors);
+  setTimeout(dupLoad, 600);
+  loadData();
+}
 
 // ── Vincular empleados RHH ────────────────────────────────────────────────────
 let _rhhSyncRows = [];
