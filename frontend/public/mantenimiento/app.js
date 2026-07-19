@@ -1555,6 +1555,161 @@ async function viewValidacion(el) {
   });
 }
 
+// ── Helpers para modalDetalleOrden ───────────────────────────────────────────
+function buildParoHtml(o) {
+  if (!o.maquina_parada) return '';
+  const inicio = o.maquina_parada_inicio || o.produccion_paro_fecha_inicio || null;
+  const fin    = o.maquina_parada_fin    || o.produccion_paro_fecha_fin    || null;
+  if (!inicio) return '';
+  const dur = fin
+    ? calcDiff(inicio, fin)
+    : calcDiff(inicio, new Date().toISOString()) + ' (en curso)';
+  return `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;margin-bottom:14px">
+    <div style="font-weight:700;font-size:13px;color:#dc2626;margin-bottom:10px">⛔ Paro de máquina</div>
+    <div style="display:flex;gap:8px;margin-bottom:2px">
+      <div style="width:12px;height:12px;border-radius:50%;background:#dc2626;flex-shrink:0;margin-top:2px"></div>
+      <div><div style="font-weight:600;font-size:12px">Inicio paro</div><div style="font-size:11px;color:#6b7280">${fmtDateTime(inicio)}</div></div>
+    </div>
+    <div style="display:flex;gap:8px;margin:2px 0">
+      <div style="width:12px;flex-shrink:0;display:flex;justify-content:center"><div style="width:2px;min-height:20px;background:#fecaca"></div></div>
+      <div style="font-size:11px;color:#dc2626;padding:2px 0"><span style="background:#fee2e2;border-radius:8px;padding:1px 8px">⏱ ${dur}</span></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <div style="width:12px;height:12px;border-radius:50%;background:${fin?'#16a34a':'#f59e0b'};flex-shrink:0;margin-top:2px"></div>
+      <div><div style="font-weight:600;font-size:12px">${fin?'Fin paro':'Sin cierre aún'}</div>
+        <div style="font-size:11px;color:#6b7280">${fin ? fmtDateTime(fin)+' — Máquina reanudada' : '⏳ Máquina sigue parada'}</div></div>
+    </div>
+  </div>`;
+}
+
+function buildTimelineHtml(o) {
+  const historial = Array.isArray(o.historial) ? o.historial : [];
+  const items = [];
+
+  function addConnector(label, dur) {
+    items.push(`<div style="display:flex;gap:8px;margin:2px 0">
+      <div style="width:12px;flex-shrink:0;display:flex;justify-content:center"><div style="width:2px;min-height:20px;background:#d1d5db"></div></div>
+      <div style="font-size:11px;color:#6b7280;padding:2px 0">${label&&dur ? `<span style="background:#f1f5f9;border-radius:8px;padding:1px 8px">${label}: <b>${dur}</b></span>` : ''}</div>
+    </div>`);
+  }
+
+  function addEvent(color, titleHtml, sub, bodyHtml) {
+    items.push(`<div style="display:flex;gap:8px;margin:0">
+      <div style="width:12px;flex-shrink:0;padding-top:2px"><div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 0 0 2px ${color}"></div></div>
+      <div style="flex:1;min-width:0;margin-bottom:4px">
+        <div style="font-weight:600;font-size:12px">${titleHtml}</div>
+        ${sub ? `<div style="font-size:11px;color:#6b7280;margin-top:1px">${sub}</div>` : ''}
+        ${bodyHtml ? `<div style="margin-top:6px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:11px">${bodyHtml}</div>` : ''}
+      </div>
+    </div>`);
+  }
+
+  function closureBody(h) {
+    const p = [];
+    if (h.descripcion_trabajo) p.push(`<div><span style="color:#6b7280">Trabajo:</span> ${escHtml(h.descripcion_trabajo)}</div>`);
+    if (h.refaccion_utilizada) p.push(`<div><span style="color:#6b7280">Refacción:</span> ${escHtml(h.refaccion_utilizada)}</div>`);
+    if (h.parte_danada)        p.push(`<div><span style="color:#6b7280">Parte dañada:</span> ${escHtml(h.parte_danada)}</div>`);
+    return p.join('') || null;
+  }
+
+  function calcTotal() {
+    if (!o.fecha_solicitud || !o.hora_solicitud) return '—';
+    const ini = `${o.fecha_solicitud}T${o.hora_solicitud}`;
+    if (o.status === 'cerrada' && o.fecha_validacion)
+      return calcDiff(ini, `${o.fecha_validacion}T${o.hora_validacion||'00:00'}`);
+    return calcDiff(ini, new Date().toISOString()) + ' (en curso)';
+  }
+
+  // SOLICITUD
+  addEvent('#3b82f6', '📋 Solicitud', `${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}`, null);
+  let prevTs = o.fecha_solicitud && o.hora_solicitud ? `${o.fecha_solicitud}T${o.hora_solicitud}` : null;
+
+  if (historial.length > 0) {
+    historial.forEach(h => {
+      if (h.tipo === 'atencion') {
+        const tsIni = h.fecha_inicio && h.hora_inicio ? `${h.fecha_inicio}T${h.hora_inicio}` : null;
+        const tsFin = h.fecha_cierre && h.hora_cierre ? `${h.fecha_cierre}T${h.hora_cierre}` : null;
+        if (prevTs && tsIni) addConnector('⏳ Tiempo de respuesta', calcDiff(prevTs, tsIni));
+        else addConnector(null, null);
+        addEvent('#7c3aed',
+          `🔧 ${h.numero}ª Atención${!tsFin ? ' <span style="color:#16a34a;font-weight:400">— En curso...</span>' : ''}`,
+          `${fmtDate(h.fecha_inicio)} ${h.hora_inicio||''} · ${escHtml(h.tecnico_nombre||'—')}`,
+          closureBody(h));
+        if (tsFin) {
+          addConnector('🔨 Tiempo de trabajo', calcDiff(tsIni, tsFin));
+          addEvent('#f59e0b', '📤 Enviado a validación', `${fmtDate(h.fecha_cierre)} ${h.hora_cierre||''}`, null);
+          prevTs = tsFin;
+        } else {
+          addConnector('⏱ En proceso', tsIni ? calcDiff(tsIni, new Date().toISOString()) : '—');
+          prevTs = tsIni;
+        }
+      } else if (h.tipo === 'rechazo') {
+        addEvent('#dc2626', `⚠️ Rechazo #${h.numero}`,
+          `${h.fecha||'—'} ${h.hora&&h.hora!=='—'?h.hora:''} · ${escHtml(h.rechazado_por_nombre||'—')}`,
+          `<div><span style="color:#6b7280">Motivo:</span> ${escHtml(h.motivo||'')}</div>`);
+        prevTs = h.fecha && h.hora && h.hora !== '—' ? `${h.fecha}T${h.hora}` : prevTs;
+      }
+    });
+    // Ciclo en_proceso actual (aún no guardado en historial)
+    if (o.status === 'en_proceso' && o.fecha_en_proceso) {
+      const num = historial.filter(h => h.tipo === 'atencion').length + 1;
+      const tsIni = `${o.fecha_en_proceso}T${o.hora_en_proceso||'00:00'}`;
+      if (prevTs) addConnector('⏳ Tiempo de respuesta', calcDiff(prevTs, tsIni));
+      addEvent('#7c3aed', `🔧 ${num}ª Atención <span style="color:#16a34a;font-weight:400">— En curso...</span>`,
+        `${fmtDate(o.fecha_en_proceso)} ${o.hora_en_proceso||''} · ${escHtml(o.atendida_por_nombre||o.tecnico_nombre||'—')}`, null);
+      addConnector('⏱ En proceso', calcDiff(tsIni, new Date().toISOString()));
+    }
+  } else {
+    // Fallback legacy (órdenes sin historial)
+    if (o.fecha_en_proceso) {
+      const tsIni = `${o.fecha_en_proceso}T${o.hora_en_proceso||'00:00'}`;
+      if (prevTs) addConnector('⏳ Tiempo de respuesta', calcDiff(prevTs, tsIni));
+      addEvent('#7c3aed',
+        `🔧 1ª Atención${o.status==='en_proceso'?' <span style="color:#16a34a;font-weight:400">— En curso...</span>':''}`,
+        `${fmtDate(o.fecha_en_proceso)} ${o.hora_en_proceso||''} · ${escHtml(o.atendida_por_nombre||o.tecnico_nombre||'—')}`,
+        ['en_validacion','cerrada'].includes(o.status) ? closureBody(o) : null);
+      if (o.fecha_cierre && o.hora_cierre) {
+        const tsFin = `${o.fecha_cierre}T${o.hora_cierre}`;
+        addConnector('🔨 Tiempo de trabajo', calcDiff(tsIni, tsFin));
+        addEvent('#f59e0b', '📤 Enviado a validación', `${fmtDate(o.fecha_cierre)} ${o.hora_cierre}`, null);
+        prevTs = tsFin;
+      } else if (o.status === 'en_proceso') {
+        addConnector('⏱ En proceso', calcDiff(tsIni, new Date().toISOString()));
+      }
+      if (o.motivo_rechazo) {
+        addEvent('#dc2626', '⚠️ Rechazo #1', `${o.fecha_rechazo||'—'}`,
+          `<div><span style="color:#6b7280">Motivo:</span> ${escHtml(o.motivo_rechazo)}</div>`);
+      }
+    }
+  }
+
+  // Cierre final validado
+  if (o.status === 'cerrada') {
+    addConnector(null, null);
+    addEvent('#16a34a', '✅ Orden cerrada',
+      `Validado por: ${escHtml(o.validado_por_nombre||'—')} · ${fmtDate(o.fecha_validacion)} ${o.hora_validacion||''}`, null);
+  }
+
+  // Resumen
+  const nAtenciones = historial.filter(h => h.tipo === 'atencion').length
+    + (o.status === 'en_proceso' && historial.length > 0 ? 1 : 0)
+    + (historial.length === 0 && o.fecha_en_proceso ? 1 : 0);
+  const nRechazos = historial.filter(h => h.tipo === 'rechazo').length
+    + (historial.length === 0 && o.motivo_rechazo ? 1 : 0);
+
+  const stats = [
+    `<div style="font-size:12px"><span style="color:#6b7280">⏱ Tiempo total:</span> <b>${calcTotal()}</b></div>`,
+    nAtenciones > 0 ? `<div style="font-size:12px"><span style="color:#6b7280">🔄 Atenciones:</span> <b>${nAtenciones}</b></div>` : '',
+    nRechazos   > 0 ? `<div style="font-size:12px"><span style="color:#dc2626">⚠️ Rechazos:</span> <b>${nRechazos}</b></div>` : '',
+  ].filter(Boolean).join('');
+
+  return `<div style="background:#f8fafc;border-radius:8px;padding:14px;margin-bottom:14px">
+    <div style="font-weight:700;font-size:13px;color:#374151;margin-bottom:12px">⏱ Tiempos</div>
+    ${items.join('')}
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #e2e8f0">${stats}</div>
+  </div>`;
+}
+
 async function modalDetalleOrden(ordenId) {
   const o = await apiFetch(`/ordenes/${ordenId}`);
   openModal(`
@@ -1574,33 +1729,26 @@ async function modalDetalleOrden(ordenId) {
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Solicitante</div>${escHtml(o.solicitante_nombre || '—')}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Equipo</div><b>${escHtml(o.equipo_nombre)}</b></div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Parte</div>${escHtml(o.parte_nombre||'—')}</div>
-      <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Fecha solicitud</div>${fmtDate(o.fecha_solicitud)} ${o.hora_solicitud||''}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Técnico asignado</div>${escHtml(o.tecnico_nombre||'Sin asignar')}</div>
       <div><div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase">Máquina parada</div>${o.maquina_parada?'⛔ Sí':'✅ No'}</div>
     </div>
-    <div style="font-size:12px;margin-bottom:12px">
+    <div style="font-size:12px;margin-bottom:14px">
       <div style="color:#9ca3af;font-size:10px;font-weight:600;text-transform:uppercase;margin-bottom:4px">Descripción de la falla</div>
-      <div style="background:#f8fafc;border-radius:6px;padding:10px">${escHtml(o.descripcion_falla)}</div>
+      <div style="background:#f8fafc;border-radius:6px;padding:10px">${escHtml(o.descripcion_falla||'—')}</div>
     </div>
     ${o.origen_produccion ? `
-      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px;font-size:12px;margin-bottom:12px">
+      <div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:10px;font-size:12px;margin-bottom:14px">
         <div style="font-weight:700;color:#713f12;margin-bottom:4px">🏭 Generada desde Producción</div>
         <div>Línea: <b>${escHtml(String(o.origen_produccion.linea||'').toUpperCase())}</b> · Paro: <b>${escHtml(String(o.origen_produccion.folio_paro||o.origen_produccion.paro_id||''))}</b></div>
       </div>` : ''}
     ${o.diagnostico ? `
-      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px;font-size:12px;margin-bottom:12px">
+      <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:10px;font-size:12px;margin-bottom:14px">
         <div style="font-weight:700;color:#5b21b6;margin-bottom:4px">🔬 Diagnóstico</div>
         <div>${escHtml(o.diagnostico)}</div>
         ${o.tiempo_estimado_cierre?`<div style="margin-top:4px;color:#6b7280">Cierre estimado: ${fmtDateTime(o.tiempo_estimado_cierre)}</div>`:''}
       </div>` : ''}
-    ${['cerrada','en_validacion'].includes(o.status) && o.descripcion_trabajo ? `
-      <div style="background:${o.status==='cerrada'?'#f0fdf4':'#fffbeb'};border:1px solid ${o.status==='cerrada'?'#bbf7d0':'#fde68a'};border-radius:8px;padding:12px;font-size:12px">
-        <div style="font-weight:700;color:${o.status==='cerrada'?'#15803d':'#92400e'};margin-bottom:8px">${o.status==='cerrada'?'✅ Cerrada':'🟠 En validación'} — ${fmtDate(o.fecha_cierre)} ${o.hora_cierre||''} · ${escHtml(o.atendida_por_nombre||o.cerrada_por_nombre||'')}</div>
-        <div><b>Trabajo:</b> ${escHtml(o.descripcion_trabajo)}</div>
-        ${o.refaccion_utilizada?`<div><b>Refacción:</b> ${escHtml(o.refaccion_utilizada)}</div>`:''}
-        ${o.parte_danada?`<div><b>Parte dañada:</b> ${escHtml(o.parte_danada)}</div>`:''}
-        ${o.validado_por_nombre?`<div style="margin-top:4px;color:#15803d">✅ Validado por: ${escHtml(o.validado_por_nombre)}</div>`:''}
-      </div>` : ''}
+    ${buildParoHtml(o)}
+    ${buildTimelineHtml(o)}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
       ${state.user?.mant_role === 'superadmin_mant' ? `<button id="btn-borrar-orden" style="background:#fee2e2;border:1px solid #fca5a5;color:#dc2626;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer">🗑 Borrar orden</button>` : '<span></span>'}
       <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cerrar</button>

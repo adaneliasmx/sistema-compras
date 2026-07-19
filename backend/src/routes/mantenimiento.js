@@ -309,6 +309,24 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
   orden.parte_danada = parte_danada || null;
   // Si estaba con máquina parada y no se registró el fin, cerrarlo ahora
   if (orden.maquina_parada_inicio && !orden.maquina_parada_fin) orden.maquina_parada_fin = now;
+
+  // Guardar ciclo de atención en historial unificado
+  if (!Array.isArray(orden.historial)) orden.historial = [];
+  const atencionNum = orden.historial.filter(e => e.tipo === 'atencion').length + 1;
+  orden.historial.push({
+    tipo: 'atencion',
+    numero: atencionNum,
+    fecha_inicio: orden.fecha_en_proceso || null,
+    hora_inicio: orden.hora_en_proceso || null,
+    fecha_cierre: now.slice(0, 10),
+    hora_cierre: now.slice(11, 16),
+    tecnico_id: req.mantUser.id,
+    tecnico_nombre: req.mantUser.full_name,
+    descripcion_trabajo,
+    refaccion_utilizada: refaccion_utilizada || null,
+    parte_danada: parte_danada || null,
+  });
+
   orden.updated_at = now;
 
   // Si es un mantenimiento programado → registrar ejecución y calcular próxima fecha
@@ -422,14 +440,31 @@ router.patch('/ordenes/:id/rechazar', mantAllowRoles('supervisor_mant', 'admin',
   const { motivo_rechazo } = req.body;
   if (!motivo_rechazo) return res.status(400).json({ error: 'Motivo de rechazo requerido' });
   const now = new Date().toISOString();
+
+  // Guardar rechazo en historial unificado
+  if (!Array.isArray(orden.historial)) orden.historial = [];
+  const rechazoNum = orden.historial.filter(e => e.tipo === 'rechazo').length + 1;
+  orden.historial.push({
+    tipo: 'rechazo',
+    numero: rechazoNum,
+    fecha: now.slice(0, 10),
+    hora: now.slice(11, 16),
+    motivo: motivo_rechazo,
+    rechazado_por_id: req.mantUser.id,
+    rechazado_por_nombre: req.mantUser.full_name,
+  });
+
   orden.status = 'abierta';
   orden.motivo_rechazo = motivo_rechazo;
   orden.fecha_rechazo = now.slice(0, 10);
   orden.rechazado_por_user_id = req.mantUser.id;
-  // Limpiar campos de cierre para que vuelva al flujo normal
+  // Limpiar campos de cierre y en_proceso para que el siguiente ciclo empiece fresco
   orden.fecha_cierre = null;
   orden.hora_cierre = null;
   orden.cerrada_por_user_id = null;
+  orden.fecha_en_proceso = null;
+  orden.hora_en_proceso = null;
+  orden.atendida_por_user_id = null;
   orden.updated_at = now;
   writeMant(db);
   const dbMain = readMain();
