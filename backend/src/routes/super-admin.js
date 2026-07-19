@@ -5,6 +5,8 @@ const { read: readCompras, write: writeCompras, nextId: nextIdCompras } = requir
 const { read: readRhh, write: writeRhh, nextId: nextIdRhh, forceSeedFromJson } = require('../db-rhh');
 const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = require('../db-produccion');
 const { read: readInv, write: writeInv, nextId: nextIdInv } = require('../db-inventarios');
+const { read: readVales, write: writeVales } = require('../db-vales');
+const { read: readMant, write: writeMant } = require('../db-mantenimiento');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -1036,6 +1038,199 @@ router.post('/rhh-reseed', superAdminRequired, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ── Herramienta: detectar y corregir fechas con bug UTC ───────────────────────
+// Lógica: si hora está en rango 00:00–04:59 → probable registro creado después de
+// las 19:00 hora México pero guardado con fecha/hora UTC (un día adelante).
+// Corrección: fecha − 1 día, hora + 19 h.
+function utcBugDateStr(dateStr) {
+  // Resta 1 día a una cadena YYYY-MM-DD
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+function utcBugTimeStr(timeStr) {
+  // timeStr = "HH:MM", suma 19 h mod 24
+  const [h, m] = timeStr.split(':').map(Number);
+  const nh = (h + 19) % 24;
+  return String(nh).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+function isUtcBugTime(timeStr) {
+  if (!timeStr || typeof timeStr !== 'string') return false;
+  const h = parseInt(timeStr.slice(0, 2), 10);
+  return h >= 0 && h <= 4;
+}
+
+// GET /api/super-admin/fix-utc/preview
+router.get('/fix-utc/preview', superAdminRequired, (req, res) => {
+  const affected = [];
+
+  // 1. db-vales: vales_header (fecha + hora)
+  try {
+    const vdb = readVales();
+    for (const v of (vdb.vales_header || [])) {
+      if (v.fecha && v.hora && isUtcBugTime(v.hora)) {
+        affected.push({
+          modulo: 'Vales — Encabezado de vale',
+          id: v.id,
+          descripcion: `Folio ${v.folio_vale || v.id} · Línea: ${v.linea || '-'}`,
+          campos: [
+            { campo: 'fecha', valor_actual: v.fecha, valor_correcto: utcBugDateStr(v.fecha) },
+            { campo: 'hora',  valor_actual: v.hora,  valor_correcto: utcBugTimeStr(v.hora)  },
+          ],
+          _db: 'vales', _col: 'vales_header',
+        });
+      }
+    }
+  } catch(e) { /* DB no disponible */ }
+
+  // 2. db-vales: kardex_vales (solo fecha, detectada via created_at si existe)
+  try {
+    const vdb = readVales();
+    for (const k of (vdb.kardex_vales || [])) {
+      if (!k.fecha || !k.created_at) continue;
+      const utcHour = parseInt((k.created_at || '').slice(11, 13), 10);
+      if (utcHour < 19) continue;
+      const utcDate = (k.created_at || '').slice(0, 10);
+      if (k.fecha !== utcDate) continue;
+      affected.push({
+        modulo: 'Vales — Kardex',
+        id: k.id,
+        descripcion: `${k.tipo || 'MOVIMIENTO'} · Item: ${k.item || '-'} · Ref: ${k.referencia || '-'}`,
+        campos: [
+          { campo: 'fecha', valor_actual: k.fecha, valor_correcto: utcBugDateStr(k.fecha) },
+        ],
+        _db: 'vales', _col: 'kardex_vales',
+      });
+    }
+  } catch(e) { /* */ }
+
+  // 3. db-mantenimiento: ordenes_mantenimiento (fecha_solicitud, via created_at)
+  try {
+    const mdb = readMant();
+    for (const o of (mdb.ordenes_mantenimiento || [])) {
+      if (!o.created_at) continue;
+      const utcHour = parseInt(o.created_at.slice(11, 13), 10);
+      if (utcHour < 19) continue;
+      const utcDate = o.created_at.slice(0, 10);
+      if (o.fecha_solicitud !== utcDate) continue;
+      affected.push({
+        modulo: 'Mantenimiento — Orden',
+        id: o.id,
+        descripcion: `${o.folio || ('OT-' + o.id)} · ${o.descripcion || '-'}`,
+        campos: [
+          { campo: 'fecha_solicitud', valor_actual: o.fecha_solicitud, valor_correcto: utcBugDateStr(o.fecha_solicitud) },
+        ],
+        _db: 'mantenimiento', _col: 'ordenes_mantenimiento',
+      });
+    }
+  } catch(e) { /* */ }
+
+  // 4. db-rhh: rhh_vacancies (opened_date/filled_date, via updated_at/created_at)
+  try {
+    const rdb = readRhh();
+    for (const v of (rdb.rhh_vacancies || [])) {
+      const ts = v.created_at || v.updated_at;
+      if (!ts) continue;
+      const utcHour = parseInt(ts.slice(11, 13), 10);
+      if (utcHour < 19) continue;
+      const utcDate = ts.slice(0, 10);
+      const camposAfectados = [];
+      if (v.opened_date && v.opened_date === utcDate)
+        camposAfectados.push({ campo: 'opened_date', valor_actual: v.opened_date, valor_correcto: utcBugDateStr(v.opened_date) });
+      if (v.filled_date && v.filled_date === utcDate)
+        camposAfectados.push({ campo: 'filled_date', valor_actual: v.filled_date, valor_correcto: utcBugDateStr(v.filled_date) });
+      if (camposAfectados.length)
+        affected.push({
+          modulo: 'RHH — Vacante',
+          id: v.id,
+          descripcion: `Puesto ID ${v.position_id || '-'} · Estado: ${v.status || '-'}`,
+          campos: camposAfectados,
+          _db: 'rhh', _col: 'rhh_vacancies',
+        });
+    }
+  } catch(e) { /* */ }
+
+  // 5. db-rhh: complaints/incidencias (date, via created_at)
+  try {
+    const rdb = readRhh();
+    for (const c of (rdb.complaints || [])) {
+      if (!c.created_at) continue;
+      const utcHour = parseInt(c.created_at.slice(11, 13), 10);
+      if (utcHour < 19) continue;
+      const utcDate = c.created_at.slice(0, 10);
+      if (c.date !== utcDate) continue;
+      affected.push({
+        modulo: 'RHH — Incidencia/Queja',
+        id: c.id,
+        descripcion: `Código: ${c.tracking_code || c.id} · Categoría: ${c.category || '-'}`,
+        campos: [
+          { campo: 'date', valor_actual: c.date, valor_correcto: utcBugDateStr(c.date) },
+        ],
+        _db: 'rhh', _col: 'complaints',
+      });
+    }
+  } catch(e) { /* */ }
+
+  res.json({ total: affected.length, affected });
+});
+
+// POST /api/super-admin/fix-utc/apply
+// body: { corrections: [{ _db, _col, id, campos:[{campo, valor_correcto}] }] }
+router.post('/fix-utc/apply', superAdminRequired, (req, res) => {
+  const { corrections = [] } = req.body || {};
+  if (!corrections.length) return res.status(400).json({ error: 'Sin correcciones' });
+
+  let applied = 0;
+
+  // Agrupar por DB
+  const byDb = {};
+  for (const c of corrections) {
+    if (!byDb[c._db]) byDb[c._db] = [];
+    byDb[c._db].push(c);
+  }
+
+  if (byDb.vales) {
+    const vdb = readVales();
+    for (const c of byDb.vales) {
+      const col = vdb[c._col];
+      if (!col) continue;
+      const rec = col.find(r => r.id === c.id);
+      if (!rec) continue;
+      for (const { campo, valor_correcto } of c.campos) rec[campo] = valor_correcto;
+      applied++;
+    }
+    writeVales(vdb);
+  }
+
+  if (byDb.mantenimiento) {
+    const mdb = readMant();
+    for (const c of byDb.mantenimiento) {
+      const col = mdb[c._col];
+      if (!col) continue;
+      const rec = col.find(r => r.id === c.id);
+      if (!rec) continue;
+      for (const { campo, valor_correcto } of c.campos) rec[campo] = valor_correcto;
+      applied++;
+    }
+    writeMant(mdb);
+  }
+
+  if (byDb.rhh) {
+    const rdb = readRhh();
+    for (const c of byDb.rhh) {
+      const col = rdb[c._col];
+      if (!col) continue;
+      const rec = col.find(r => r.id === c.id);
+      if (!rec) continue;
+      for (const { campo, valor_correcto } of c.campos) rec[campo] = valor_correcto;
+      applied++;
+    }
+    writeRhh(rdb);
+  }
+
+  res.json({ ok: true, applied });
 });
 
 module.exports = router;
