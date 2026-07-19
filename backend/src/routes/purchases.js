@@ -9,6 +9,10 @@ router.use(authRequired);
 // URL de la plataforma — se usa en correos para que proveedores accedan al portal
 const PORTAL_LOGIN_URL = 'https://cuestocompras.onrender.com/compras#/login';
 
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
 // Construye la URL base del servidor de forma robusta (soporta proxies de Render)
 function getBaseUrl(req) {
   if (process.env.FRONTEND_URL) return process.env.FRONTEND_URL.replace(/\/$/, '');
@@ -868,7 +872,7 @@ router.patch('/purchase-orders/:id/status', allowRoles('comprador', 'admin'), (r
         dbVales.kardex_vales = dbVales.kardex_vales || [];
         dbVales.kardex_vales.push({
           id: nextIdVales(dbVales.kardex_vales),
-          fecha: now.toISOString().slice(0, 10),
+          fecha: nowMxDate(),
           tipo: 'ENTRADA',
           referencia: po.folio || ('PO-' + po.id),
           item: catItem.vales_item,

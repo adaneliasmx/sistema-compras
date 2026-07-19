@@ -5,6 +5,10 @@ const router = express.Router();
 
 const VALID_TYPES = ['falta', 'vacacion', 'incapacidad', 'permiso', 'permiso_con_goce', 'permiso_sin_goce', 'tiempo_extra', 'cumpleanos'];
 
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
 // ── Mapeo incidencia → estado de asistencia ───────────────────────────────────
 const INC_TO_ATT_STATUS = {
   falta:             'falta',
@@ -140,7 +144,7 @@ router.post('/complaints', rhhAuthRequired, (req, res) => {
 
   const complaint = {
     id: nextId(complaints),
-    date: new Date().toISOString().slice(0, 10),
+    date: nowMxDate(),
     category: String(category),
     description: String(description).trim(),
     status: 'new',

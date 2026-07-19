@@ -6,6 +6,10 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
 function enrichEmployee(emp, db) {
   const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id) || null;
   const pos = (db.rhh_positions || []).find(p => p.id === emp.position_id) || null;
@@ -556,8 +560,8 @@ router.post('/import-csv', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req,
         full_name: row.full_name, email: row.email.toLowerCase(),
         phone: row.phone || null, department_id: dept?.id || null,
         position_id: pos?.id || null, shift_id: shift?.id || null,
-        supervisor_id: null, start_date: row.start_date || new Date().toISOString().slice(0, 10),
-        hire_date: row.hire_date || row.start_date || new Date().toISOString().slice(0, 10),
+        supervisor_id: null, start_date: row.start_date || nowMxDate(),
+        hire_date: row.hire_date || row.start_date || nowMxDate(),
         birth_date: row.birth_date || null, status: row.status || 'active',
         contract_type: row.contract_type || 'indefinido',
         base_salary: Number(row.base_salary) || 0, daily_salary: Number(row.daily_salary) || null,

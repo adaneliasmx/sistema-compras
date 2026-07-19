@@ -3,6 +3,10 @@ const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
 function enrichVacancy(v, db) {
   const pos = (db.rhh_positions || []).find(p => p.id === v.position_id) || null;
   const dept = (db.rhh_departments || []).find(d => d.id === v.department_id) || null;
@@ -74,7 +78,7 @@ router.post('/', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
     priority: priority || 'media',
     project: project || '',
     notes: notes || '',
-    opened_date: new Date().toISOString().slice(0, 10),
+    opened_date: nowMxDate(),
     filled_date: null,
     opened_by: req.rhhUser.id,
     filled_by: null
@@ -104,7 +108,7 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
     v.status = status;
     if (status === 'filled') {
       v.filled_by = req.rhhUser.id;
-      v.filled_date = filled_date || new Date().toISOString().slice(0, 10);
+      v.filled_date = filled_date || nowMxDate();
     }
   }
   if (notes !== undefined) v.notes = notes;

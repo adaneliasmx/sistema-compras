@@ -1273,7 +1273,7 @@ router.post('/vincular-ot', produccionAllowRoles('produccion'), (req, res) => {
     solicitante_user_id: req.prodUser?.id || null,
     solicitante_nombre: req.prodUser?.nombre || null,
     tecnico_asignado_id: null,
-    fecha_solicitud: now.slice(0, 10),
+    fecha_solicitud: nowDateStr(),
     fecha_requerida: null,
     programado_id: null,
     origen_produccion: { linea, paro_id: Number(paro_id), folio_paro: paro.folio || null },

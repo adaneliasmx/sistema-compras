@@ -8,8 +8,16 @@ const router = express.Router();
 router.use(valesAuthRequired);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+const MX_TZ = 'America/Mexico_City';
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: MX_TZ });
+}
+function nowMxTime() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: MX_TZ, hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+}
+
 function generateFolio(prefix, collection) {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  const today = nowMxDate().replace(/-/g, '');
   const prefix_date = `${prefix}-${today}-`;
   const count = (collection || []).filter(h => {
     const f = h.folio_vale || h.folio_correccion || '';
@@ -322,8 +330,8 @@ router.post('/vales', valesAllowRoles('admin', 'operador'), (req, res) => {
   const header = {
     id: nextId(db.vales_header),
     folio_vale,
-    fecha: body.fecha || now.toISOString().slice(0, 10),
-    hora: body.hora || now.toTimeString().slice(0, 5),
+    fecha: body.fecha || nowMxDate(),
+    hora: body.hora || nowMxTime(),
     turno: body.turno || '',
     linea: body.linea,
     solicita: body.solicita || '',
