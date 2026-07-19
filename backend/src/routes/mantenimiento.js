@@ -173,6 +173,7 @@ router.get('/ordenes/:id', (req, res) => {
 router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
   const db = readMant();
   const now = new Date().toISOString();
+  const { fecha: fechaMx, hora: horaMx } = nowMxStr();
   const folio = nextFolio(db);
   // Resolver nombre del departamento
   const dbMainLocal = readMain();
@@ -196,8 +197,8 @@ router.post('/ordenes', mantAllowRoles('supervisor_mant'), (req, res) => {
     solicitante_user_id: req.mantUser.id,
     departamento_id: dpto ? dpto.id : null,
     departamento_nombre: dpto ? dpto.name : null,
-    fecha_solicitud: req.body.fecha_solicitud || now.slice(0, 10),
-    hora_solicitud: req.body.hora_solicitud || now.slice(11, 16),
+    fecha_solicitud: req.body.fecha_solicitud || fechaMx,
+    hora_solicitud: req.body.hora_solicitud || horaMx,
     maquina_parada: !!req.body.maquina_parada,
     descripcion_falla: req.body.descripcion_falla || '',
     nivel_urgencia: req.body.maquina_parada ? 'alta' : (req.body.nivel_urgencia || 'media'),
@@ -290,6 +291,7 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
   if (!descripcion_trabajo) return res.status(400).json({ error: 'Descripción del trabajo requerida' });
 
   const now = new Date().toISOString();
+  const { fecha: fechaMx, hora: horaMx } = nowMxStr();
   // Si no tiene técnico asignado, auto-asignar al que cierra
   if (!orden.tecnico_asignado_id) {
     orden.tecnico_asignado_id = req.mantUser.id;
@@ -301,8 +303,8 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
   orden.historial_atencion.push({ user_id: req.mantUser.id, nombre: req.mantUser.full_name, accion: 'cierre', ts: now });
 
   orden.status = 'en_validacion';
-  orden.fecha_cierre = now.slice(0, 10);
-  orden.hora_cierre = now.slice(11, 16);
+  orden.fecha_cierre = fechaMx;
+  orden.hora_cierre = horaMx;
   orden.cerrada_por_user_id = req.mantUser.id;
   orden.descripcion_trabajo = descripcion_trabajo;
   orden.refaccion_utilizada = refaccion_utilizada || null;
@@ -318,8 +320,8 @@ router.post('/ordenes/:id/cerrar', (req, res) => {
     numero: atencionNum,
     fecha_inicio: orden.fecha_en_proceso || null,
     hora_inicio: orden.hora_en_proceso || null,
-    fecha_cierre: now.slice(0, 10),
-    hora_cierre: now.slice(11, 16),
+    fecha_cierre: fechaMx,
+    hora_cierre: horaMx,
     tecnico_id: req.mantUser.id,
     tecnico_nombre: req.mantUser.full_name,
     descripcion_trabajo,
@@ -394,6 +396,7 @@ router.patch('/ordenes/:id/iniciar-proceso', (req, res) => {
     return res.status(400).json({ error: 'status_equipo inválido' });
   }
   const now = new Date().toISOString();
+  const { fecha: fechaMx, hora: horaMx } = nowMxStr();
   // Auto-asignar si no tiene técnico
   if (!orden.tecnico_asignado_id) orden.tecnico_asignado_id = req.mantUser.id;
   // Registrar historial
@@ -403,8 +406,8 @@ router.patch('/ordenes/:id/iniciar-proceso', (req, res) => {
   orden.diagnostico = diagnostico;
   orden.tiempo_estimado_cierre = tiempo_estimado_cierre;
   orden.status_equipo = status_equipo;
-  orden.fecha_en_proceso = now.slice(0, 10);
-  orden.hora_en_proceso  = now.slice(11, 16);
+  orden.fecha_en_proceso = fechaMx;
+  orden.hora_en_proceso  = horaMx;
   if (status_equipo === 'maquina_parada') orden.maquina_parada_inicio = now;
   orden.status = 'en_proceso';
   orden.updated_at = now;
@@ -420,10 +423,11 @@ router.patch('/ordenes/:id/validar', mantAllowRoles('supervisor_mant', 'admin', 
   if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
   if (orden.status !== 'en_validacion') return res.status(400).json({ error: 'La orden no está en validación' });
   const now = new Date().toISOString();
+  const { fecha: fechaMx, hora: horaMx } = nowMxStr();
   if (orden.maquina_parada_inicio && !orden.maquina_parada_fin) orden.maquina_parada_fin = now;
   orden.status = 'cerrada';
-  orden.fecha_validacion = now.slice(0, 10);
-  orden.hora_validacion  = now.slice(11, 16);
+  orden.fecha_validacion = fechaMx;
+  orden.hora_validacion  = horaMx;
   orden.validado_por_user_id = req.mantUser.id;
   orden.updated_at = now;
   writeMant(db);
@@ -440,6 +444,7 @@ router.patch('/ordenes/:id/rechazar', mantAllowRoles('supervisor_mant', 'admin',
   const { motivo_rechazo } = req.body;
   if (!motivo_rechazo) return res.status(400).json({ error: 'Motivo de rechazo requerido' });
   const now = new Date().toISOString();
+  const { fecha: fechaMx, hora: horaMx } = nowMxStr();
 
   // Guardar rechazo en historial unificado
   if (!Array.isArray(orden.historial)) orden.historial = [];
@@ -447,8 +452,8 @@ router.patch('/ordenes/:id/rechazar', mantAllowRoles('supervisor_mant', 'admin',
   orden.historial.push({
     tipo: 'rechazo',
     numero: rechazoNum,
-    fecha: now.slice(0, 10),
-    hora: now.slice(11, 16),
+    fecha: fechaMx,
+    hora: horaMx,
     motivo: motivo_rechazo,
     rechazado_por_id: req.mantUser.id,
     rechazado_por_nombre: req.mantUser.full_name,
@@ -456,7 +461,7 @@ router.patch('/ordenes/:id/rechazar', mantAllowRoles('supervisor_mant', 'admin',
 
   orden.status = 'abierta';
   orden.motivo_rechazo = motivo_rechazo;
-  orden.fecha_rechazo = now.slice(0, 10);
+  orden.fecha_rechazo = fechaMx;
   orden.rechazado_por_user_id = req.mantUser.id;
   // Limpiar campos de cierre y en_proceso para que el siguiente ciclo empiece fresco
   orden.fecha_cierre = null;
