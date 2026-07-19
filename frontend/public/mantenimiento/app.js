@@ -203,10 +203,11 @@ async function loadView(view) {
 
 // ── VISTA: URGENCIAS ──────────────────────────────────────────────────────────
 async function viewUrgencias(el) {
-  const [abiertas, asignadas, en_proceso] = await Promise.all([
+  const [abiertas, asignadas, en_proceso, rechazadas] = await Promise.all([
     apiFetch('/ordenes?tipo=correctivo_urgente&status=abierta'),
     apiFetch('/ordenes?tipo=correctivo_urgente&status=asignada'),
     apiFetch('/ordenes?tipo=correctivo_urgente&status=en_proceso'),
+    apiFetch('/ordenes?rechazada=1'),
   ]);
 
   function getTurnoNum(hora) {
@@ -218,6 +219,10 @@ async function viewUrgencias(el) {
     return 3;                                   // 21:30–6:30
   }
 
+  // Deduplicar: rechazadas que ya aparecen en urgentes activas no se repiten
+  const idsUrgentes = new Set([...abiertas, ...asignadas, ...en_proceso].map(o => o.id));
+  const soloRechazadas = rechazadas.filter(o => !idsUrgentes.has(o.id));
+
   const all = [...abiertas, ...asignadas, ...en_proceso].sort((a, b) => {
     const aPrio = a.produccion_paro_cerrado === false ? 0 : 1;
     const bPrio = b.produccion_paro_cerrado === false ? 0 : 1;
@@ -227,12 +232,39 @@ async function viewUrgencias(el) {
     return b.created_at.localeCompare(a.created_at);
   });
 
+  const rechazadasHtml = soloRechazadas.length === 0 ? '' : `
+    <div style="margin-bottom:16px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:15px;font-weight:700;color:#b45309">⚠️ Órdenes rechazadas — requieren corrección</span>
+        <span style="background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:12px;padding:1px 8px;font-size:12px;font-weight:600">${soloRechazadas.length}</span>
+      </div>
+      ${soloRechazadas.map(o => `
+        <div style="background:#fffbeb;border:2px solid #fcd34d;border-left:5px solid #f59e0b;border-radius:10px;padding:14px 16px;margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <div style="font-weight:700;font-size:15px">${escHtml(o.folio)} — ${escHtml(o.equipo_nombre)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <span style="background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700">⚠️ RECHAZADA</span>
+              ${urgenciaBadge(o.nivel_urgencia)}
+              ${statusBadge(o.status)}
+            </div>
+          </div>
+          <div style="font-size:13px;color:#374151;margin-bottom:6px"><b>Falla:</b> ${escHtml((o.descripcion_falla||'').slice(0,120))}</div>
+          <div style="font-size:13px;background:#fef08a;border-left:3px solid #eab308;padding:6px 10px;border-radius:4px;margin-bottom:6px">
+            <b>Motivo de rechazo:</b> ${escHtml(o.motivo_rechazo || '—')}
+          </div>
+          <div style="font-size:12px;color:#6b7280">
+            Rechazado el ${escHtml(o.fecha_rechazo||'—')} · Solicitante: ${escHtml(o.solicitante_nombre||'—')} · Técnico: ${o.tecnico_nombre ? escHtml(o.tecnico_nombre) : 'Sin asignar'}
+          </div>
+        </div>`).join('')}
+    </div>`;
+
   el.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h2 style="margin:0;font-size:18px">🚨 Urgencias activas</h2>
       <span style="font-size:12px;color:#6b7280">Actualiza cada 30s</span>
     </div>
-    ${all.length === 0 ? `
+    ${rechazadasHtml}
+    ${all.length === 0 && soloRechazadas.length === 0 ? `
       <div style="text-align:center;padding:48px;color:#6b7280;background:white;border-radius:10px;border:1px solid #e2e8f0">
         <div style="font-size:32px;margin-bottom:8px">✅</div>
         <div style="font-weight:600">Sin urgencias activas</div>
@@ -324,9 +356,11 @@ function ordenCard(o) {
           ${row('Descripción falla', escHtml(descFalla))}
           ${row('Apertura', `${fmtDate(o.fecha_solicitud)}${o.hora_solicitud ? ' ' + o.hora_solicitud : ''} · ⏱ ${tiempoTranscurrido}`)}
           ${o.diagnostico ? row('Diagnóstico', escHtml(o.diagnostico)) : ''}
+          ${o.motivo_rechazo ? `<div style="background:#fef3c7;border-left:3px solid #f59e0b;border-radius:4px;padding:6px 10px;margin-top:6px;font-size:12px"><b style="color:#b45309">⚠️ Rechazada:</b> ${escHtml(o.motivo_rechazo)}</div>` : ''}
           <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:8px">
             ${urgenciaBadge(o.nivel_urgencia)}
             ${statusBadge(o.status)}
+            ${o.motivo_rechazo ? '<span style="background:#fef3c7;color:#b45309;border:1px solid #fcd34d;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:700">⚠️ RECHAZADA</span>' : ''}
             ${subStatusBadge}
             ${o.tecnico_nombre ? `<span style="font-size:12px;color:#2563eb">👤 ${escHtml(o.tecnico_nombre)}</span>` : '<span style="font-size:12px;color:#9ca3af">Sin asignar</span>'}
           </div>
