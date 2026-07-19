@@ -1195,6 +1195,13 @@ async function viewCatalogos(el) {
       </div>
     </div>
 
+    ${state.user.mant_role === 'superadmin_mant' ? `
+    <div style="background:white;border-radius:10px;border:1px solid #fcd34d;padding:16px;margin-bottom:16px">
+      <b style="font-size:14px;display:block;margin-bottom:6px">🛠️ Herramientas de superadministrador</b>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:10px">Detección y corrección de fechas mal guardadas por desfase UTC (afecta registros guardados antes del fix del 2026-07-18).</div>
+      <button id="btn-fix-fechas" class="btn-secondary" style="font-size:13px;padding:6px 14px;border-color:#f59e0b;color:#92400e">🔍 Revisar fechas con error UTC</button>
+    </div>` : ''}
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
       <!-- Equipos -->
       <div style="background:white;border-radius:10px;border:1px solid #e2e8f0;padding:16px">
@@ -1241,6 +1248,10 @@ async function viewCatalogos(el) {
       alert('Error guardando configuración: ' + e.message);
     }
   };
+
+  if (document.getElementById('btn-fix-fechas')) {
+    document.getElementById('btn-fix-fechas').onclick = () => modalFixFechasUtc();
+  }
 
   document.getElementById('btn-nuevo-equipo').onclick = () => modalNuevoEquipo();
 
@@ -1762,6 +1773,101 @@ async function modalDetalleOrden(ordenId) {
       loadView(state.view);
     };
   }
+}
+
+async function modalFixFechasUtc() {
+  const overlay = openModal(`
+    <h3 style="margin:0 0 4px;font-size:16px">🛠️ Revisar fechas con error UTC</h3>
+    <p style="font-size:12px;color:#6b7280;margin:0 0 14px">Buscando órdenes afectadas...</p>
+    <div id="fix-fechas-body" style="min-height:60px;display:flex;align-items:center;justify-content:center">
+      <span style="color:#9ca3af;font-size:13px">⏳ Cargando...</span>
+    </div>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px">
+      <button onclick="this.closest('[style*=fixed]').remove()" class="btn-secondary">Cerrar</button>
+      <button id="btn-aplicar-fix" class="btn-primary" style="display:none;background:#d97706;border-color:#d97706">✅ Corregir seleccionadas</button>
+    </div>`);
+
+  const body = overlay.querySelector('#fix-fechas-body');
+  const btnAplicar = overlay.querySelector('#btn-aplicar-fix');
+
+  let afectadas = [];
+  try {
+    afectadas = await apiFetch('/admin/fix-fechas-utc');
+  } catch(e) {
+    body.innerHTML = `<div style="color:#dc2626;font-size:13px">Error: ${escHtml(e.message)}</div>`;
+    return;
+  }
+
+  if (!afectadas.length) {
+    body.innerHTML = `<div style="text-align:center;padding:20px;color:#16a34a;font-size:14px">✅ Sin fechas incorrectas detectadas</div>`;
+    return;
+  }
+
+  const labelCampo = {
+    fecha_cierre: 'Fecha cierre', fecha_en_proceso: 'Fecha inicio atención',
+    fecha_validacion: 'Fecha validación', fecha_rechazo: 'Fecha rechazo',
+  };
+
+  body.innerHTML = `
+    <div style="width:100%">
+      <div style="font-size:12px;color:#92400e;background:#fef3c7;border:1px solid #fcd34d;border-radius:6px;padding:8px 12px;margin-bottom:12px">
+        Se encontraron <b>${afectadas.length}</b> orden(es) con fechas desplazadas por UTC. Selecciona cuáles corregir:
+      </div>
+      <div style="max-height:340px;overflow-y:auto">
+        ${afectadas.map(o => `
+          <div style="border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+            <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+              <input type="checkbox" class="chk-fix-orden" data-id="${o.id}" checked style="margin-top:2px;width:15px;height:15px;flex-shrink:0">
+              <div style="flex:1;min-width:0">
+                <div style="font-weight:700;font-size:13px;margin-bottom:6px">${escHtml(o.folio)}</div>
+                ${o.campos.map(c => `
+                  <div style="font-size:11px;display:flex;gap:8px;align-items:center;margin-bottom:3px;flex-wrap:wrap">
+                    <span style="color:#6b7280;min-width:130px">${escHtml(labelCampo[c.campo] || c.campo)}:</span>
+                    <span style="background:#fee2e2;color:#dc2626;padding:1px 6px;border-radius:4px;font-family:monospace">${escHtml(c.de_fecha)} ${escHtml(c.de_hora)}</span>
+                    <span style="color:#9ca3af">→</span>
+                    <span style="background:#dcfce7;color:#16a34a;padding:1px 6px;border-radius:4px;font-family:monospace">${escHtml(c.a_fecha)} ${escHtml(c.a_hora)}</span>
+                  </div>`).join('')}
+              </div>
+            </label>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-top:8px">
+        <label style="cursor:pointer;display:flex;align-items:center;gap:6px">
+          <input type="checkbox" id="chk-fix-todos" checked> Seleccionar / deseleccionar todas
+        </label>
+      </div>
+      <div id="fix-result" style="display:none;margin-top:10px;padding:8px 12px;border-radius:6px;font-size:13px"></div>
+    </div>`;
+
+  btnAplicar.style.display = '';
+
+  overlay.querySelector('#chk-fix-todos').onchange = function() {
+    overlay.querySelectorAll('.chk-fix-orden').forEach(c => c.checked = this.checked);
+  };
+
+  btnAplicar.onclick = async () => {
+    const ids = [...overlay.querySelectorAll('.chk-fix-orden:checked')].map(c => Number(c.dataset.id));
+    if (!ids.length) { alert('Selecciona al menos una orden'); return; }
+    btnAplicar.disabled = true;
+    btnAplicar.textContent = '⏳ Corrigiendo...';
+    try {
+      const r = await apiFetch('/admin/fix-fechas-utc', { method: 'POST', body: JSON.stringify({ ids }) });
+      const res = overlay.querySelector('#fix-result');
+      res.style.display = '';
+      res.style.cssText += 'background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;display:block';
+      res.textContent = `✅ ${r.ordenes_corregidas} orden(es) corregida(s) — ${r.campos_corregidos} campo(s) actualizados`;
+      btnAplicar.style.display = 'none';
+      // Deshabilitar checkboxes corregidos
+      ids.forEach(id => {
+        const chk = overlay.querySelector(`.chk-fix-orden[data-id="${id}"]`);
+        if (chk) { chk.disabled = true; chk.closest('div[style*=border]').style.opacity = '.5'; }
+      });
+    } catch(e) {
+      btnAplicar.disabled = false;
+      btnAplicar.textContent = '✅ Corregir seleccionadas';
+      alert('Error: ' + e.message);
+    }
+  };
 }
 
 async function modalNuevoEquipo() {

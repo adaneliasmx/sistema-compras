@@ -712,64 +712,92 @@ router.patch('/settings', mantAllowRoles('admin'), (req, res) => {
   res.json(db.settings);
 });
 
-// ── MIGRACIÓN TEMPORAL: corregir fechas UTC → Mexico CDT (UTC-5) ──────────────
-// Ejecutar UNA sola vez. Detecta campos con hora 00-04 UTC en fechas futuras y los convierte.
-router.post('/admin/fix-fechas-utc', mantAllowRoles('superadmin_mant'), (req, res) => {
-  const db = readMant();
-  const hoy = nowMxStr().fecha; // fecha real local hoy
-  const OFFSET = 5; // Mexico CDT = UTC-5
-  const fixes = [];
+// ── HERRAMIENTA: corregir fechas UTC → Mexico CDT (UTC-5) ────────────────────
+function _detectarFechasUtc(db) {
+  const hoy = nowMxStr().fecha;
+  const OFFSET = 5;
+  const porOrden = {};
 
-  function fixFechaHora(fecha, hora) {
-    if (!fecha || !hora) return null;
-    if (fecha <= hoy) return null; // fecha ya correcta o pasada, no tocar
+  function evalCampo(o, fk, hk) {
+    const fecha = o[fk], hora = hk ? o[hk] : '00:00';
+    if (!fecha || !hora || fecha <= hoy) return;
     const h = parseInt(hora.slice(0, 2));
-    if (h >= OFFSET) return null; // hora >= 05:00 UTC → ya sería mismo día en Mexico, no tocar
-    // hora UTC 00-04 con fecha futura → la fecha real es hoy, hora local = h + (24 - OFFSET)
+    if (h >= OFFSET) return;
     const horaLocal = String(h + (24 - OFFSET)).padStart(2, '0') + hora.slice(2);
-    return { fecha: hoy, hora: horaLocal };
+    if (!porOrden[o.id]) porOrden[o.id] = { id: o.id, folio: o.folio, equipo: o.equipo_custom || o.equipo_id, campos: [] };
+    porOrden[o.id].campos.push({ campo: fk, de_fecha: fecha, de_hora: hk ? o[hk] : '', a_fecha: hoy, a_hora: hk ? horaLocal : '' });
   }
 
   (db.ordenes_mantenimiento || []).forEach(o => {
-    const campos = [
-      { fk: 'fecha_cierre',      hk: 'hora_cierre' },
-      { fk: 'fecha_en_proceso',  hk: 'hora_en_proceso' },
-      { fk: 'fecha_validacion',  hk: 'hora_validacion' },
-      { fk: 'fecha_rechazo',     hk: null },
-    ];
-    campos.forEach(({ fk, hk }) => {
-      const fix = fixFechaHora(o[fk], hk ? o[hk] : '00:00');
-      if (fix) {
-        fixes.push({ id: o.id, folio: o.folio, campo: fk, de: `${o[fk]} ${hk?o[hk]:''}`, a: `${fix.fecha} ${hk?fix.hora:''}` });
-        o[fk] = fix.fecha;
-        if (hk) o[hk] = fix.hora;
-      }
-    });
-    // Corregir historial
+    evalCampo(o, 'fecha_cierre', 'hora_cierre');
+    evalCampo(o, 'fecha_en_proceso', 'hora_en_proceso');
+    evalCampo(o, 'fecha_validacion', 'hora_validacion');
+    evalCampo(o, 'fecha_rechazo', null);
     (o.historial || []).forEach((h, i) => {
       if (h.tipo === 'atencion') {
-        const fc = fixFechaHora(h.fecha_cierre, h.hora_cierre);
-        if (fc) {
-          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].fecha_cierre`, de: `${h.fecha_cierre} ${h.hora_cierre}`, a: `${fc.fecha} ${fc.hora}` });
-          h.fecha_cierre = fc.fecha; h.hora_cierre = fc.hora;
+        if (h.fecha_cierre && h.hora_cierre && h.fecha_cierre > hoy && parseInt(h.hora_cierre) < OFFSET) {
+          const hl = String(parseInt(h.hora_cierre) + (24 - OFFSET)).padStart(2, '0') + h.hora_cierre.slice(2);
+          if (!porOrden[o.id]) porOrden[o.id] = { id: o.id, folio: o.folio, equipo: o.equipo_custom || o.equipo_id, campos: [] };
+          porOrden[o.id].campos.push({ campo: `historial[${i}].cierre`, de_fecha: h.fecha_cierre, de_hora: h.hora_cierre, a_fecha: hoy, a_hora: hl });
         }
-        const fi = fixFechaHora(h.fecha_inicio, h.hora_inicio);
-        if (fi) {
-          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].fecha_inicio`, de: `${h.fecha_inicio} ${h.hora_inicio}`, a: `${fi.fecha} ${fi.hora}` });
-          h.fecha_inicio = fi.fecha; h.hora_inicio = fi.hora;
+        if (h.fecha_inicio && h.hora_inicio && h.fecha_inicio > hoy && parseInt(h.hora_inicio) < OFFSET) {
+          const hl = String(parseInt(h.hora_inicio) + (24 - OFFSET)).padStart(2, '0') + h.hora_inicio.slice(2);
+          if (!porOrden[o.id]) porOrden[o.id] = { id: o.id, folio: o.folio, equipo: o.equipo_custom || o.equipo_id, campos: [] };
+          porOrden[o.id].campos.push({ campo: `historial[${i}].inicio`, de_fecha: h.fecha_inicio, de_hora: h.hora_inicio, a_fecha: hoy, a_hora: hl });
         }
+      } else if (h.tipo === 'rechazo' && h.fecha && h.hora && h.fecha > hoy && parseInt(h.hora) < OFFSET) {
+        const hl = String(parseInt(h.hora) + (24 - OFFSET)).padStart(2, '0') + h.hora.slice(2);
+        if (!porOrden[o.id]) porOrden[o.id] = { id: o.id, folio: o.folio, equipo: o.equipo_custom || o.equipo_id, campos: [] };
+        porOrden[o.id].campos.push({ campo: `historial[${i}].rechazo`, de_fecha: h.fecha, de_hora: h.hora, a_fecha: hoy, a_hora: hl });
+      }
+    });
+  });
+  return Object.values(porOrden);
+}
+
+// GET — preview sin cambios
+router.get('/admin/fix-fechas-utc', mantAllowRoles('superadmin_mant'), (req, res) => {
+  const db = readMant();
+  res.json(_detectarFechasUtc(db));
+});
+
+// POST — corregir solo las órdenes con los IDs indicados
+router.post('/admin/fix-fechas-utc', mantAllowRoles('superadmin_mant'), (req, res) => {
+  const ids = new Set((req.body.ids || []).map(Number));
+  if (!ids.size) return res.status(400).json({ error: 'Sin IDs seleccionados' });
+  const db = readMant();
+  const hoy = nowMxStr().fecha;
+  const OFFSET = 5;
+  let corregidos = 0;
+
+  function aplicar(fecha, hora) {
+    if (!fecha || !hora || fecha <= hoy) return null;
+    const h = parseInt(hora.slice(0, 2));
+    if (h >= OFFSET) return null;
+    return { fecha: hoy, hora: String(h + (24 - OFFSET)).padStart(2, '0') + hora.slice(2) };
+  }
+
+  (db.ordenes_mantenimiento || []).filter(o => ids.has(o.id)).forEach(o => {
+    [['fecha_cierre','hora_cierre'],['fecha_en_proceso','hora_en_proceso'],['fecha_validacion','hora_validacion']].forEach(([fk,hk]) => {
+      const r = aplicar(o[fk], o[hk]);
+      if (r) { o[fk] = r.fecha; o[hk] = r.hora; corregidos++; }
+    });
+    if (o.fecha_rechazo > hoy) { o.fecha_rechazo = hoy; corregidos++; }
+    (o.historial || []).forEach(h => {
+      if (h.tipo === 'atencion') {
+        const rc = aplicar(h.fecha_cierre, h.hora_cierre);
+        if (rc) { h.fecha_cierre = rc.fecha; h.hora_cierre = rc.hora; corregidos++; }
+        const ri = aplicar(h.fecha_inicio, h.hora_inicio);
+        if (ri) { h.fecha_inicio = ri.fecha; h.hora_inicio = ri.hora; corregidos++; }
       } else if (h.tipo === 'rechazo') {
-        const fr = fixFechaHora(h.fecha, h.hora);
-        if (fr) {
-          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].rechazo`, de: `${h.fecha} ${h.hora}`, a: `${fr.fecha} ${fr.hora}` });
-          h.fecha = fr.fecha; h.hora = fr.hora;
-        }
+        const rr = aplicar(h.fecha, h.hora);
+        if (rr) { h.fecha = rr.fecha; h.hora = rr.hora; corregidos++; }
       }
     });
   });
 
-  if (fixes.length > 0) writeMant(db);
-  res.json({ ok: true, corregidos: fixes.length, detalle: fixes });
+  writeMant(db);
+  res.json({ ok: true, ordenes_corregidas: ids.size, campos_corregidos: corregidos });
 });
 
 // ── KPIs ──────────────────────────────────────────────────────────────────────
