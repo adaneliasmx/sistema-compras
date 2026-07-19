@@ -712,6 +712,66 @@ router.patch('/settings', mantAllowRoles('admin'), (req, res) => {
   res.json(db.settings);
 });
 
+// ── MIGRACIÓN TEMPORAL: corregir fechas UTC → Mexico CDT (UTC-5) ──────────────
+// Ejecutar UNA sola vez. Detecta campos con hora 00-04 UTC en fechas futuras y los convierte.
+router.post('/admin/fix-fechas-utc', mantAllowRoles('superadmin_mant'), (req, res) => {
+  const db = readMant();
+  const hoy = nowMxStr().fecha; // fecha real local hoy
+  const OFFSET = 5; // Mexico CDT = UTC-5
+  const fixes = [];
+
+  function fixFechaHora(fecha, hora) {
+    if (!fecha || !hora) return null;
+    if (fecha <= hoy) return null; // fecha ya correcta o pasada, no tocar
+    const h = parseInt(hora.slice(0, 2));
+    if (h >= OFFSET) return null; // hora >= 05:00 UTC → ya sería mismo día en Mexico, no tocar
+    // hora UTC 00-04 con fecha futura → la fecha real es hoy, hora local = h + (24 - OFFSET)
+    const horaLocal = String(h + (24 - OFFSET)).padStart(2, '0') + hora.slice(2);
+    return { fecha: hoy, hora: horaLocal };
+  }
+
+  (db.ordenes_mantenimiento || []).forEach(o => {
+    const campos = [
+      { fk: 'fecha_cierre',      hk: 'hora_cierre' },
+      { fk: 'fecha_en_proceso',  hk: 'hora_en_proceso' },
+      { fk: 'fecha_validacion',  hk: 'hora_validacion' },
+      { fk: 'fecha_rechazo',     hk: null },
+    ];
+    campos.forEach(({ fk, hk }) => {
+      const fix = fixFechaHora(o[fk], hk ? o[hk] : '00:00');
+      if (fix) {
+        fixes.push({ id: o.id, folio: o.folio, campo: fk, de: `${o[fk]} ${hk?o[hk]:''}`, a: `${fix.fecha} ${hk?fix.hora:''}` });
+        o[fk] = fix.fecha;
+        if (hk) o[hk] = fix.hora;
+      }
+    });
+    // Corregir historial
+    (o.historial || []).forEach((h, i) => {
+      if (h.tipo === 'atencion') {
+        const fc = fixFechaHora(h.fecha_cierre, h.hora_cierre);
+        if (fc) {
+          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].fecha_cierre`, de: `${h.fecha_cierre} ${h.hora_cierre}`, a: `${fc.fecha} ${fc.hora}` });
+          h.fecha_cierre = fc.fecha; h.hora_cierre = fc.hora;
+        }
+        const fi = fixFechaHora(h.fecha_inicio, h.hora_inicio);
+        if (fi) {
+          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].fecha_inicio`, de: `${h.fecha_inicio} ${h.hora_inicio}`, a: `${fi.fecha} ${fi.hora}` });
+          h.fecha_inicio = fi.fecha; h.hora_inicio = fi.hora;
+        }
+      } else if (h.tipo === 'rechazo') {
+        const fr = fixFechaHora(h.fecha, h.hora);
+        if (fr) {
+          fixes.push({ id: o.id, folio: o.folio, campo: `historial[${i}].rechazo`, de: `${h.fecha} ${h.hora}`, a: `${fr.fecha} ${fr.hora}` });
+          h.fecha = fr.fecha; h.hora = fr.hora;
+        }
+      }
+    });
+  });
+
+  if (fixes.length > 0) writeMant(db);
+  res.json({ ok: true, corregidos: fixes.length, detalle: fixes });
+});
+
 // ── KPIs ──────────────────────────────────────────────────────────────────────
 
 router.get('/kpis', mantAllowRoles('admin'), (req, res) => {
