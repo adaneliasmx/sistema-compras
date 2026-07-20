@@ -6,29 +6,31 @@ const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
-// ── Rate limiting: 5 intentos fallidos por IP cada 15 minutos ────────────────
-const _loginAttempts = new Map(); // ip → { count, resetAt }
+// ── Rate limiting: 5 intentos fallidos por EMAIL+IP cada 15 minutos ──────────
+// Keyed por email+IP: cada cuenta tiene su propio contador por dispositivo/red,
+// sin bloquear a otros usuarios que comparten la misma IP pública.
+const _loginAttempts = new Map(); // "email|ip" → { count, resetAt }
 const RATE_MAX = 5;
 const RATE_WINDOW = 15 * 60 * 1000;
 
 function _getIp(req) {
   return ((req.headers['x-forwarded-for'] || '').split(',')[0] || req.socket?.remoteAddress || '').trim();
 }
-function _checkLimit(ip) {
+function _checkLimit(key) {
   const now = Date.now();
-  const e = _loginAttempts.get(ip);
+  const e = _loginAttempts.get(key);
   if (!e || now > e.resetAt) return { blocked: false };
   if (e.count >= RATE_MAX) return { blocked: true, wait: Math.ceil((e.resetAt - now) / 60000) };
   return { blocked: false };
 }
-function _recordFail(ip) {
+function _recordFail(key) {
   const now = Date.now();
-  const e = _loginAttempts.get(ip) || { count: 0, resetAt: now + RATE_WINDOW };
+  const e = _loginAttempts.get(key) || { count: 0, resetAt: now + RATE_WINDOW };
   if (now > e.resetAt) { e.count = 0; e.resetAt = now + RATE_WINDOW; }
   e.count++;
-  _loginAttempts.set(ip, e);
+  _loginAttempts.set(key, e);
 }
-function _clearLimit(ip) { _loginAttempts.delete(ip); }
+function _clearLimit(key) { _loginAttempts.delete(key); }
 
 // ── Cookie helpers ────────────────────────────────────────────────────────────
 function _setSessionCookie(res, token) {
@@ -40,20 +42,21 @@ function _clearSessionCookie(res) {
 }
 
 router.post('/login', (req, res) => {
-  const ip = _getIp(req);
-  const limit = _checkLimit(ip);
+  const { email, password } = req.body || {};
+  const emailKey = String(email || '').toLowerCase().trim();
+  const key = `${emailKey}|${_getIp(req)}`;
+  const limit = _checkLimit(key);
   if (limit.blocked) {
     return res.status(429).json({ error: `Demasiados intentos fallidos. Intenta en ${limit.wait} minuto${limit.wait !== 1 ? 's' : ''}.` });
   }
 
-  const { email, password } = req.body || {};
   const db = read();
-  const user = db.users.find(u => u.email?.toLowerCase() === String(email || '').toLowerCase() && u.active);
-  if (!user) { _recordFail(ip); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+  const user = db.users.find(u => u.email?.toLowerCase() === emailKey && u.active);
+  if (!user) { _recordFail(key); return res.status(401).json({ error: 'Credenciales inválidas' }); }
   const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
-  if (!ok) { _recordFail(ip); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+  if (!ok) { _recordFail(key); return res.status(401).json({ error: 'Credenciales inválidas' }); }
 
-  _clearLimit(ip);
+  _clearLimit(key);
   const token = jwt.sign({ sub: user.id, module: 'compras', role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
   _setSessionCookie(res, token);
   res.json({
