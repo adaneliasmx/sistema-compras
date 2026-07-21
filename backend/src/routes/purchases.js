@@ -1267,6 +1267,7 @@ router.post('/:po_id/clarifications', allowRoles('proveedor'), (req, res) => {
     requested_unit_cost:   b.requested_unit_cost !== undefined ? Number(b.requested_unit_cost) : null,
     original_quantity:     poItem.quantity,
     requested_quantity:    b.requested_quantity  !== undefined ? Number(b.requested_quantity)  : null,
+    requested_total:       b.requested_total     !== undefined ? Number(b.requested_total)     : null,
     message:               b.message || '',
     admin_comment:         null,
     created_at:            new Date().toISOString(),
@@ -1275,7 +1276,37 @@ router.post('/:po_id/clarifications', allowRoles('proveedor'), (req, res) => {
   };
   db.clarification_requests.push(row);
   write(db);
-  res.status(201).json(row);
+
+  // Generar mailto para notificar a compradores/admin
+  const catItem  = (db.catalog_items || []).find(c => c.id === poItem.catalog_item_id);
+  const itemDesc = catItem?.name || poItem.manual_item_name || poItem.description || `ítem #${poItem.id}`;
+  const supplier = (db.suppliers || []).find(s => s.id === po.supplier_id) || {};
+  const buyers   = (db.users || []).filter(u => u.active && ['comprador','admin'].includes(u.role_code));
+  const toEmails = buyers.map(u => u.email).filter(Boolean).join(';');
+  const fmt = n => `$${Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const lineas = [
+    row.requested_quantity  !== null ? `Cantidad: ${poItem.quantity} → ${row.requested_quantity} ${poItem.unit||''}` : null,
+    row.requested_unit_cost !== null ? `Precio unit.: ${fmt(poItem.unit_cost)} → ${fmt(row.requested_unit_cost)}` : null,
+    row.requested_total     !== null ? `Total solicitado: ${fmt(row.requested_total)}` : null,
+  ].filter(Boolean).join('\n');
+  const mailSubject = encodeURIComponent(`Solicitud de aclaración — ${po.folio}`);
+  const mailBody = encodeURIComponent(
+    `Equipo de Compras,\n\n` +
+    `El proveedor ${supplier.business_name || ''} solicita una aclaración en la orden ${po.folio}.\n\n` +
+    `Ítem: ${itemDesc}\n${lineas}\n\nMensaje del proveedor:\n${row.message}\n\n` +
+    `Ingresa al portal de compras para aceptar o rechazar la solicitud.`
+  );
+  const mailto = toEmails ? `mailto:${encodeURIComponent(toEmails)}?subject=${mailSubject}&body=${mailBody}` : null;
+
+  const waText = encodeURIComponent(
+    `📋 *Solicitud de aclaración — ${po.folio}*\n` +
+    `Proveedor: ${supplier.business_name || ''}\n` +
+    `Ítem: ${itemDesc}\n${lineas}\n\n` +
+    `Mensaje: ${row.message}`
+  );
+  const whatsapp_url = `https://wa.me/523316998192?text=${waText}`;
+
+  res.status(201).json({ ...row, mailto, whatsapp_url });
 });
 
 // POST /clarifications/:id/accept — comprador/admin acepta y aplica cambios
@@ -1326,7 +1357,8 @@ router.post('/clarifications/:id/accept', allowRoles('comprador', 'admin'), (req
   const fmt = n => `$${Number(n||0).toLocaleString('es-MX',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const lineasCambio = [
     clarif.requested_unit_cost !== null ? `Precio unitario: ${fmt(clarif.original_unit_cost)} → ${fmt(clarif.requested_unit_cost)}` : null,
-    clarif.requested_quantity  !== null ? `Cantidad: ${clarif.original_quantity} → ${clarif.requested_quantity}`                     : null
+    clarif.requested_quantity  !== null ? `Cantidad: ${clarif.original_quantity} → ${clarif.requested_quantity}`                     : null,
+    clarif.requested_total     !== null && clarif.requested_total !== undefined ? `Total solicitado: ${fmt(clarif.requested_total)}` : null
   ].filter(Boolean).join(' | ');
 
   const subject = encodeURIComponent(`Aclaración ACEPTADA — PO ${po.folio}`);

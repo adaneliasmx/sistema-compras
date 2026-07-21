@@ -4887,65 +4887,103 @@ async function proveedorPOView() {
       const poId    = btn.dataset.poid;
       const itemId  = btn.dataset.poitemid;
       const desc    = btn.dataset.desc || '-';
-      const qty     = btn.dataset.qty;
+      const qty     = Number(btn.dataset.qty || 0);
       const unit    = btn.dataset.unit;
-      const cost    = Number(btn.dataset.cost||0).toFixed(2);
-      // Remove any existing modal
+      const cost    = Number(btn.dataset.cost || 0);
+      const totalOrig = (qty * cost).toFixed(2);
       document.getElementById('clarif-modal')?.remove();
       const overlay = document.createElement('div');
       overlay.id = 'clarif-modal';
       overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center';
       overlay.innerHTML = `
-        <div style="background:#fff;border-radius:10px;padding:24px;width:420px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
+        <div style="background:#fff;border-radius:10px;padding:24px;width:460px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.2)">
           <h3 style="margin:0 0 4px;font-size:16px">💬 Solicitar aclaración</h3>
-          <p style="margin:0 0 14px;font-size:12px;color:#6b7280">Ítem: <b>${desc}</b></p>
-          <div style="background:#f8fafc;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:14px">
-            <div>Cantidad actual: <b>${qty} ${unit}</b></div>
-            <div>Precio unitario actual: <b>$${cost}</b></div>
+          <p style="margin:0 0 14px;font-size:12px;color:#6b7280">Ítem: <b>${escapeHtml(desc)}</b></p>
+          <div style="background:#f8fafc;border-radius:6px;padding:8px 12px;font-size:12px;margin-bottom:14px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <div>Cantidad: <b>${qty} ${unit}</b></div>
+            <div>Precio unit.: <b>$${cost.toFixed(2)}</b></div>
+            <div>Total: <b>$${totalOrig}</b></div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
             <div>
-              <label style="font-size:12px;display:block;margin-bottom:3px">Nueva cantidad (opcional)</label>
+              <label style="font-size:12px;display:block;margin-bottom:3px">Nueva cantidad</label>
               <input id="clarif-qty" type="number" min="0" step="any" placeholder="${qty}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
             </div>
             <div>
-              <label style="font-size:12px;display:block;margin-bottom:3px">Nuevo precio unit. (opcional)</label>
-              <input id="clarif-cost" type="number" min="0" step="any" placeholder="${cost}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
+              <label style="font-size:12px;display:block;margin-bottom:3px">Nuevo precio unit.</label>
+              <input id="clarif-cost" type="number" min="0" step="any" placeholder="${cost.toFixed(2)}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
+            </div>
+            <div>
+              <label style="font-size:12px;display:block;margin-bottom:3px">Nuevo total</label>
+              <input id="clarif-total" type="number" min="0" step="any" placeholder="${totalOrig}" style="width:100%;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/>
             </div>
           </div>
           <div style="margin-bottom:14px">
             <label style="font-size:12px;display:block;margin-bottom:3px">Mensaje / motivo *</label>
             <textarea id="clarif-msg" rows="3" placeholder="Explica el motivo de la aclaración..." style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px;resize:vertical;box-sizing:border-box"></textarea>
           </div>
-          <div style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
+          <div id="clarif-actions" style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
             <button id="clarif-cancel" class="btn-secondary" style="font-size:12px;padding:5px 14px">Cancelar</button>
             <button id="clarif-submit" class="btn-primary" style="font-size:12px;padding:5px 14px">Enviar solicitud</button>
           </div>
           <div id="clarif-error" style="font-size:12px;color:#dc2626;margin-top:8px;text-align:right"></div>
         </div>`;
       document.body.appendChild(overlay);
+
+      // Auto-calcular total cuando cambian qty o price
+      const qtyEl  = document.getElementById('clarif-qty');
+      const costEl = document.getElementById('clarif-cost');
+      const totEl  = document.getElementById('clarif-total');
+      let lastEdited = '';
+      const recalcTotal = () => {
+        if (lastEdited === 'total') return;
+        const q = parseFloat(qtyEl.value) || qty;
+        const c = parseFloat(costEl.value) || cost;
+        totEl.value = (q * c).toFixed(2);
+      };
+      const recalcCost = () => {
+        const t = parseFloat(totEl.value);
+        const q = parseFloat(qtyEl.value) || qty;
+        if (t && q) costEl.value = (t / q).toFixed(4);
+      };
+      qtyEl.oninput  = () => { lastEdited = 'qty';   recalcTotal(); };
+      costEl.oninput = () => { lastEdited = 'cost';  recalcTotal(); };
+      totEl.oninput  = () => { lastEdited = 'total'; recalcCost(); };
+
       document.getElementById('clarif-cancel').onclick = () => overlay.remove();
       overlay.onclick = e => { if (e.target === overlay) overlay.remove(); };
+
       document.getElementById('clarif-submit').onclick = async () => {
-        const newQty  = document.getElementById('clarif-qty').value;
-        const newCost = document.getElementById('clarif-cost').value;
-        const message = document.getElementById('clarif-msg').value.trim();
-        const errEl   = document.getElementById('clarif-error');
+        const newQty   = qtyEl.value;
+        const newCost  = costEl.value;
+        const newTotal = totEl.value;
+        const message  = document.getElementById('clarif-msg').value.trim();
+        const errEl    = document.getElementById('clarif-error');
         if (!message) { errEl.textContent = 'El mensaje es obligatorio'; return; }
         const submitBtn = document.getElementById('clarif-submit');
         submitBtn.disabled = true;
         submitBtn.textContent = 'Enviando...';
         try {
-          await api(`/api/purchases/${poId}/clarifications`, { method: 'POST', body: JSON.stringify({
-            po_item_id: Number(itemId),
-            requested_quantity: newQty ? Number(newQty) : null,
-            requested_unit_cost: newCost ? Number(newCost) : null,
+          const data = await api(`/api/purchases/${poId}/clarifications`, { method: 'POST', body: JSON.stringify({
+            po_item_id:          Number(itemId),
+            requested_quantity:  newQty   ? Number(newQty)   : null,
+            requested_unit_cost: newCost  ? Number(newCost)  : null,
+            requested_total:     newTotal ? Number(newTotal) : null,
             message
           })});
-          overlay.remove();
-          // Show success feedback inline
+
+          // Mostrar botones de notificación
+          const actionsEl = document.getElementById('clarif-actions');
+          actionsEl.innerHTML = `
+            <span style="font-size:12px;color:#16a34a;font-weight:600;margin-right:auto">✅ Solicitud enviada</span>
+            ${data.mailto    ? `<a href="${data.mailto}" style="font-size:12px;padding:5px 12px;border-radius:6px;background:#dbeafe;color:#1d4ed8;font-weight:700;text-decoration:none;border:1px solid #bfdbfe">📧 Enviar correo</a>` : ''}
+            ${data.whatsapp_url ? `<a href="${data.whatsapp_url}" target="_blank" rel="noopener" style="font-size:12px;padding:5px 12px;border-radius:6px;background:#dcfce7;color:#15803d;font-weight:700;text-decoration:none;border:1px solid #bbf7d0">💬 WhatsApp</a>` : ''}
+            <button onclick="document.getElementById('clarif-modal').remove()" class="btn-secondary" style="font-size:12px;padding:5px 12px">Cerrar</button>`;
+          errEl.textContent = '';
+
+          // Feedback en la celda
           const td = btn.closest('td');
-          if (td) { td.innerHTML = '<span style="font-size:11px;color:#6366f1;font-weight:600">✅ Enviada</span>'; }
+          if (td) td.innerHTML = '<span style="font-size:11px;color:#6366f1;font-weight:600">✅ Enviada</span>';
         } catch(e) {
           errEl.textContent = e.message;
           submitBtn.disabled = false;
@@ -5603,6 +5641,7 @@ async function invoicingView() {
           const changes = [];
           if (c.requested_quantity !== null && c.requested_quantity !== undefined) changes.push(`Cant: ${c.original_quantity}→${c.requested_quantity}`);
           if (c.requested_unit_cost !== null && c.requested_unit_cost !== undefined) changes.push(`Precio: $${Number(c.original_unit_cost||0).toFixed(2)}→$${Number(c.requested_unit_cost||0).toFixed(2)}`);
+          if (c.requested_total !== null && c.requested_total !== undefined) changes.push(`Total solicitado: $${Number(c.requested_total||0).toFixed(2)}`);
           const isPending = c.status === 'pendiente';
           return `<tr style="border-bottom:1px solid #f3f4f6">
             <td style="padding:5px 8px;font-weight:600">${c.po_folio||'-'}</td>
