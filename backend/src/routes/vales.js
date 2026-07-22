@@ -2759,6 +2759,138 @@ router.post('/admin/import-excel', valesAuthRequired, valesAllowRoles('admin'),
   }
 );
 
+// ── IMPORTAR TITULACIONES DESDE EXCEL ────────────────────────────────────────
+// POST /import-excel-tit/preview → detecta conflictos sin escribir
+router.post('/import-excel-tit/preview', valesAllowRoles('admin'), (req, res) => {
+  try {
+    const { linea, rows, mapping } = req.body || {};
+    if (!linea || !Array.isArray(rows) || !mapping)
+      return res.status(400).json({ error: 'linea, rows y mapping requeridos' });
+
+    const db       = readVales();
+    const headers  = db.titulaciones_header  || [];
+    const detalles = db.titulaciones_detalle || [];
+    const params   = db.parametros_titulacion || [];
+    const conflicts = [];
+    let newRows = 0;
+
+    for (const row of rows) {
+      const clave    = String(row.turno || '');
+      const existing = headers.find(h =>
+        h.linea === linea && h.fecha === row.fecha && String(h.clave_titulacion) === clave
+      );
+      if (!existing) { newRows++; continue; }
+
+      const rowDets = detalles.filter(d => d.header_id === existing.id);
+      for (const [colIdx, paramId] of Object.entries(mapping)) {
+        if (!paramId) continue;
+        const vE = row.valores[colIdx];
+        if (vE === null || vE === undefined || String(vE).trim() === '') continue;
+        const det = rowDets.find(d => d.parametro_id === Number(paramId));
+        if (!det || det.valor_registrado === null || det.valor_registrado === undefined || String(det.valor_registrado).trim() === '') continue;
+        const numE = parseFloat(vE), numS = parseFloat(det.valor_registrado);
+        const diff = (!isNaN(numE) && !isNaN(numS)) ? Math.abs(numE - numS) > 0.001 : String(vE) !== String(det.valor_registrado);
+        if (diff) {
+          const p = params.find(p => p.id === Number(paramId));
+          conflicts.push({
+            fecha: row.fecha, turno: clave,
+            param_id: Number(paramId),
+            param_nombre: p?.nombre_parametro || String(paramId),
+            tanque:       p?.no_tanque || '',
+            header_id:    existing.id,
+            detalle_id:   det.id,
+            valor_sistema: det.valor_registrado,
+            valor_excel:   vE
+          });
+        }
+      }
+    }
+    res.json({ total: rows.length, new_rows: newRows, conflicts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// POST /import-excel-tit/execute → importa los datos con resoluciones de conflicto
+router.post('/import-excel-tit/execute', valesAllowRoles('admin'), (req, res) => {
+  try {
+    const { linea, rows, mapping, conflict_resolutions = {} } = req.body || {};
+    if (!linea || !Array.isArray(rows) || !mapping)
+      return res.status(400).json({ error: 'linea, rows y mapping requeridos' });
+
+    const db = readVales();
+    seedParametrosTitulacion(db);
+    db.titulaciones_header  = db.titulaciones_header  || [];
+    db.titulaciones_detalle = db.titulaciones_detalle || [];
+
+    let imported = 0, updated = 0, skipped = 0;
+    const affectedHeaderIds = new Set();
+
+    for (const row of rows) {
+      const clave  = String(row.turno || '');
+      const turnoN = parseFloat(clave.split('.')[0]) || 1;
+      const numTit = parseFloat(clave.split('.')[1]) || 1;
+
+      let header = db.titulaciones_header.find(h =>
+        h.linea === linea && h.fecha === row.fecha && String(h.clave_titulacion) === clave
+      );
+      if (!header) {
+        header = {
+          id: nextId(db.titulaciones_header), linea,
+          fecha: row.fecha, turno: turnoN,
+          numero_titulacion: numTit, clave_titulacion: clave,
+          analista: row.analista || '', semana: null,
+          año: parseInt(row.fecha.slice(0, 4)),
+          estado: 'ok', quimico_snapshot: {},
+          created_at: row.fecha + 'T00:00:00.000Z',
+          updated_at: row.fecha + 'T00:00:00.000Z',
+          importado: true
+        };
+        db.titulaciones_header.push(header);
+        imported++;
+      }
+      affectedHeaderIds.add(header.id);
+
+      for (const [colIdx, paramId] of Object.entries(mapping)) {
+        if (!paramId) continue;
+        const vRaw = row.valores[colIdx];
+        if (vRaw === null || vRaw === undefined || String(vRaw).trim() === '') continue;
+        const param = db.parametros_titulacion.find(p => p.id === Number(paramId));
+        if (!param) continue;
+        const valor = typeof vRaw === 'number' ? vRaw : (parseFloat(vRaw) || vRaw);
+        let det = db.titulaciones_detalle.find(d =>
+          d.header_id === header.id && d.parametro_id === Number(paramId)
+        );
+        if (!det) {
+          db.titulaciones_detalle.push({
+            id: nextId(db.titulaciones_detalle),
+            header_id: header.id, parametro_id: Number(paramId),
+            valor_registrado: valor, estado_param: calcEstadoParam(valor, param),
+            corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+          });
+        } else {
+          const cKey = `${row.fecha}|${clave}|${linea}|${paramId}`;
+          if ((conflict_resolutions[cKey] || 'excel') === 'excel') {
+            det.valor_registrado = valor;
+            det.estado_param     = calcEstadoParam(valor, param);
+            updated++;
+          } else { skipped++; }
+        }
+      }
+    }
+
+    // Recalcular estado de cada header afectado
+    for (const h of db.titulaciones_header.filter(h => affectedHeaderIds.has(h.id))) {
+      const dets = db.titulaciones_detalle.filter(d => d.header_id === h.id);
+      if      (dets.some(d => d.estado_param === 'fuera'))       h.estado = 'fuera_de_rango';
+      else if (dets.some(d => d.estado_param === 'limite'))      h.estado = 'limite';
+      else if (dets.every(d => d.estado_param === 'sin_dato'))   h.estado = 'sin_dato';
+      else h.estado = 'ok';
+    }
+
+    writeVales(db);
+    res.json({ imported, updated, skipped, total: rows.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── EXPORTAR BASE DE DATOS (admin) ────────────────────────────────────────────
 router.get('/export-db', valesAllowRoles('admin'), (req, res) => {
   try {

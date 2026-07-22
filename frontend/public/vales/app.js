@@ -230,6 +230,7 @@ const MENU = {
     ['tanques',  '🏭', 'Tanques'],
     ['usuarios', '👤', 'Usuarios'],
     ['---', '', 'Herramientas'],
+    ['importar-excel-tit', '📊', 'Importar Titulaciones Excel'],
     ['importar-sqlite', '🗄️', 'Importar SQLite'],
     ['exportar-db',     '💾', 'Exportar BD']
   ]
@@ -247,6 +248,7 @@ const SECTION_TITLES = {
   'items':             'Catálogo de Productos',
   'tanques':           'Catálogo de Tanques',
   'usuarios':          'Gestión de Usuarios',
+  'importar-excel-tit':'Importar Titulaciones desde Excel',
   'importar-sqlite':   'Importar desde Base Antigua (SQLite)',
   'exportar-db':       'Exportar Base de Datos',
   'titulaciones':      'Registrar Titulación',
@@ -464,6 +466,7 @@ async function renderMain() {
       case 'items':             el.innerHTML = await viewItems(); bindItems(); return;
       case 'tanques':           el.innerHTML = await viewTanques(); bindTanques(); return;
       case 'usuarios':          el.innerHTML = await viewUsuarios(); bindUsuarios(); return;
+      case 'importar-excel-tit': el.innerHTML = viewImportarExcelTit(); bindImportarExcelTit(); return;
       case 'importar-sqlite':   el.innerHTML = await viewImportarSqlite(); bindImportarSqlite(); return;
       case 'exportar-db':       el.innerHTML = viewExportarDb(); bindExportarDb(); return;
       case 'titulaciones':      el.innerHTML = await viewTitulaciones(); bindTitulaciones(); return;
@@ -3075,6 +3078,472 @@ function bindImportarSqlite() {
     } catch(e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;
     }
+  });
+}
+
+// ── Importar Titulaciones desde Excel (wizard 4 pasos) ────────────────────────
+let _tix = {};
+const _TIX_SHEETS = { 'LINEA 1':'Titulacion linea 1', 'LINEA 3':'Titulación L3', 'LINEA 4':'Titulacion L4', 'BAKER':'Titulacion Baker' };
+
+function viewImportarExcelTit() {
+  _tix = { step:1, wb:null, linea:'', fechaIni:'', fechaFin:'', columns:[], rows:[], params:[], tanques:[], mapping:{}, newRows:0, conflicts:[], conflictRes:{}, result:null };
+  return `<div id="tix-wrap"></div>`;
+}
+function bindImportarExcelTit() { _tixRender(); }
+function _tixRender() { const w = document.getElementById('tix-wrap'); if (w) { w.innerHTML = _tixStepHtml(); _tixBind(); } }
+function _tixStepHtml() {
+  if (_tix.step === 1) return _tixStep1Html();
+  if (_tix.step === 2) return _tixStep2Html();
+  if (_tix.step === 3) return _tixStep3Html();
+  return _tixStep4Html();
+}
+
+function _tixStep1Html() {
+  return `
+  <div class="table-card" style="max-width:680px">
+    <div class="table-header"><h3>📊 Importar Titulaciones desde Excel — Paso 1 / 4</h3></div>
+    <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+      <div>
+        <label class="flabel">Archivo Excel (4-CA-102 Reporte titulaciones)</label>
+        <div style="display:flex;align-items:center;gap:10px;margin-top:6px">
+          <label class="btn btn-outline" style="cursor:pointer;margin:0">
+            📂 Seleccionar...
+            <input type="file" id="tix-file" accept=".xlsx,.xls" style="display:none"/>
+          </label>
+          <span id="tix-fname" style="color:#78716c;font-size:13px">Ningún archivo seleccionado</span>
+        </div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div><label class="flabel">Línea</label>
+          <select id="tix-linea" class="modal-input" style="width:160px">
+            <option value="">— Seleccionar —</option>
+            <option>LINEA 1</option><option>LINEA 3</option>
+            <option>LINEA 4</option><option>BAKER</option>
+          </select>
+        </div>
+        <div><label class="flabel">Desde</label>
+          <input type="date" id="tix-fi" class="modal-input" style="width:145px"/>
+        </div>
+        <div><label class="flabel">Hasta</label>
+          <input type="date" id="tix-ff" class="modal-input" style="width:145px" value="${today()}"/>
+        </div>
+      </div>
+      <div id="tix-err1" style="color:#dc2626;font-size:13px;min-height:18px"></div>
+      <div><button class="btn btn-primary" id="tix-next1">Analizar →</button></div>
+    </div>
+  </div>`;
+}
+
+function _tixParamOpts(cidx) {
+  const cur = String(_tix.mapping[cidx] || '');
+  const sel = v => String(v) === cur ? ' selected' : '';
+  const lTids = new Set(_tix.tanques.filter(t => t.linea === _tix.linea).map(t => t.id));
+  const lP = _tix.params.filter(p => lTids.has(p.tanque_id));
+  const oP = _tix.params.filter(p => !lTids.has(p.tanque_id));
+  const optP = ps => ps.map(p => `<option value="${p.id}"${sel(p.id)}>${esc((p.no_tanque||p.nombre_tanque||''))} → ${esc(p.nombre_parametro)}</option>`).join('');
+  return `<option value=""${sel('')}>— Ignorar —</option>
+    ${lP.length ? `<optgroup label="── ${_tix.linea} ──">${optP(lP)}</optgroup>` : ''}
+    ${oP.length ? `<optgroup label="── Otros ──">${optP(oP)}</optgroup>` : ''}
+    <option value="__new__">＋ Nuevo parámetro...</option>`;
+}
+
+function _tixNewParamForm(cidx) {
+  const tLinea = _tix.tanques.filter(t => t.linea === _tix.linea);
+  const tankOpts = tLinea.map(t => `<option value="${t.id}">${esc(t.no_tanque)}</option>`).join('');
+  const inp = s => `class="modal-input" style="font-size:12px;${s}"`;
+  return `<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;padding:8px 0">
+    <div><label class="flabel" style="font-size:11px">Tanque *</label>
+      <select class="np-tank ${inp('width:170px')}" ><option value="">— Seleccionar —</option>${tankOpts}</select></div>
+    <div><label class="flabel" style="font-size:11px">Parámetro *</label>
+      <input class="np-nombre ${inp('width:90px')}" placeholder="Ej: AL"/></div>
+    <div><label class="flabel" style="font-size:11px">Unidad</label>
+      <input class="np-unidad ${inp('width:60px')}" placeholder="pts / °C"></div>
+    <div><label class="flabel" style="font-size:11px">Rango</label>
+      <select class="np-rango ${inp('width:90px')}">
+        <option value="ninguno">ninguno</option><option value="entre">entre</option>
+        <option value="maximo">máximo</option><option value="minimo">mínimo</option>
+      </select></div>
+    <div><label class="flabel" style="font-size:11px">Mín</label>
+      <input type="number" step="any" class="np-min ${inp('width:55px')}"/></div>
+    <div><label class="flabel" style="font-size:11px">Máx</label>
+      <input type="number" step="any" class="np-max ${inp('width:55px')}"/></div>
+    <div><label class="flabel" style="font-size:11px">Obj</label>
+      <input type="number" step="any" class="np-obj ${inp('width:55px')}"/></div>
+    <div style="display:flex;gap:5px;align-self:flex-end">
+      <button class="btn btn-primary btn-xs np-save" data-cidx="${cidx}" style="font-size:11px;padding:4px 10px">Guardar</button>
+      <button class="btn btn-outline btn-xs np-cancel" data-cidx="${cidx}" style="font-size:11px;padding:4px 7px">✕</button>
+    </div>
+    <div class="np-err" style="color:#dc2626;font-size:11px;width:100%"></div>
+  </div>`;
+}
+
+function _tixStep2Html() {
+  const TH = 'padding:5px 8px;font-size:11px;font-weight:600;color:#64748b;text-align:left;white-space:nowrap';
+  const rows = _tix.columns.map(col => {
+    const samples = col.samples.filter(s => s !== null && s !== undefined).slice(0,3).join(', ') || '—';
+    return `<tr data-cidx="${col.idx}" style="border-bottom:1px solid #f1f5f9">
+      <td style="padding:5px 8px;font-size:12px;color:#1e293b;font-weight:500;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(col.label)}">${esc(col.label)}</td>
+      <td style="padding:5px 8px;font-size:11px;color:#78716c;font-style:italic">${samples}</td>
+      <td style="padding:4px 8px">
+        <select class="tix-map-sel" data-cidx="${col.idx}" style="font-size:12px;width:100%;max-width:320px">
+          ${_tixParamOpts(col.idx)}
+        </select>
+      </td>
+    </tr>
+    <tr class="tix-np-row" data-cidx="${col.idx}" style="display:none;background:#f0fdf4">
+      <td colspan="3" style="padding:0 8px">${_tixNewParamForm(col.idx)}</td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="table-card" style="max-width:900px">
+    <div class="table-header">
+      <h3>📊 Paso 2 / 4 — Mapear columnas</h3>
+      <span style="font-size:12px;color:#93c5fd">${_tix.linea} · ${_tix.rows.length} filas · ${_tix.fechaIni} → ${_tix.fechaFin}</span>
+    </div>
+    <div style="padding:12px">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap">
+        <button class="btn btn-outline" id="tix-back2">← Atrás</button>
+        <button class="btn btn-primary" id="tix-next2">Vista previa →</button>
+        <span style="font-size:12px;color:#78716c">${_tix.columns.length} columnas detectadas · asigna cada una a un parámetro o ignórala</span>
+      </div>
+      <div style="overflow-x:auto">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr style="background:#f1f5f9">
+            <th style="${TH};width:220px">Columna Excel</th>
+            <th style="${TH};width:160px">Muestra de valores</th>
+            <th style="${TH}">Parámetro del sistema</th>
+          </tr></thead>
+          <tbody id="tix-map-body">${rows}</tbody>
+        </table>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _tixStep3Html() {
+  const c = _tix.conflicts;
+  const conflictsHtml = c.length === 0
+    ? `<div style="color:#15803d;padding:10px 14px;background:#f0fdf4;border-radius:6px;font-weight:500">✅ Sin conflictos — todos los valores son nuevos o coinciden</div>`
+    : `<div style="margin-top:4px">
+        <div style="font-size:13px;font-weight:600;margin-bottom:6px;color:#92400e">⚠️ ${c.length} valores difieren entre Excel y sistema:</div>
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button class="btn btn-outline btn-xs" id="tix-all-excel" style="font-size:11px">Todos → Excel</button>
+          <button class="btn btn-outline btn-xs" id="tix-all-sis" style="font-size:11px">Todos → Sistema</button>
+        </div>
+        <div style="overflow-x:auto;max-height:380px">
+          <table style="width:100%;border-collapse:collapse;font-size:12px">
+            <thead style="position:sticky;top:0;z-index:1"><tr style="background:#fef3c7">
+              <th style="padding:5px 8px;text-align:left">Fecha</th>
+              <th style="padding:5px 8px;text-align:left">Turno</th>
+              <th style="padding:5px 8px;text-align:left">Tanque</th>
+              <th style="padding:5px 8px;text-align:left">Parámetro</th>
+              <th style="padding:5px 8px;text-align:right;color:#1d4ed8">Sistema</th>
+              <th style="padding:5px 8px;text-align:right;color:#15803d">Excel</th>
+              <th style="padding:5px 8px;text-align:center;min-width:130px">Conservar</th>
+            </tr></thead>
+            <tbody>${c.map(cf => {
+              const ck = `${cf.fecha}|${cf.turno}|${_tix.linea}|${cf.param_id}`;
+              const r  = _tix.conflictRes[ck] || 'excel';
+              return `<tr style="border-bottom:1px solid #fde68a">
+                <td style="padding:4px 8px">${cf.fecha}</td>
+                <td style="padding:4px 8px">${cf.turno}</td>
+                <td style="padding:4px 8px;font-size:11px;color:#78716c;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(cf.tanque)}">${esc(cf.tanque)}</td>
+                <td style="padding:4px 8px;font-weight:500">${esc(cf.param_nombre)}</td>
+                <td style="padding:4px 8px;text-align:right;color:#1d4ed8">${cf.valor_sistema}</td>
+                <td style="padding:4px 8px;text-align:right;color:#15803d">${cf.valor_excel}</td>
+                <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+                  <label style="cursor:pointer;margin-right:8px">
+                    <input type="radio" name="cr_${ck.replace(/[|]/g,'_')}" value="sistema" class="tix-cr" data-ck="${esc(ck)}" ${r==='sistema'?'checked':''}/> Sis.
+                  </label>
+                  <label style="cursor:pointer">
+                    <input type="radio" name="cr_${ck.replace(/[|]/g,'_')}" value="excel" class="tix-cr" data-ck="${esc(ck)}" ${r==='excel'?'checked':''}/> Excel
+                  </label>
+                </td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>
+      </div>`;
+  return `
+  <div class="table-card" style="max-width:920px">
+    <div class="table-header"><h3>📊 Paso 3 / 4 — Vista previa</h3></div>
+    <div style="padding:16px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
+        <div style="background:#f0fdf4;padding:10px 18px;border-radius:8px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:#15803d">${_tix.newRows}</div>
+          <div style="font-size:11px;color:#166534">Titulaciones nuevas</div>
+        </div>
+        <div style="background:#eff6ff;padding:10px 18px;border-radius:8px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:#1d4ed8">${_tix.rows.length - _tix.newRows}</div>
+          <div style="font-size:11px;color:#1e40af">Ya existen en sistema</div>
+        </div>
+        <div style="background:#fffbeb;padding:10px 18px;border-radius:8px;text-align:center">
+          <div style="font-size:24px;font-weight:700;color:#d97706">${_tix.conflicts.length}</div>
+          <div style="font-size:11px;color:#92400e">Valores en conflicto</div>
+        </div>
+      </div>
+      ${conflictsHtml}
+      <div style="display:flex;gap:8px;margin-top:16px;align-items:center">
+        <button class="btn btn-outline" id="tix-back3">← Atrás</button>
+        <button class="btn btn-primary" id="tix-execute" style="background:#15803d">✅ Importar ahora</button>
+        <span id="tix-exec-msg" style="font-size:12px;color:#dc2626"></span>
+      </div>
+    </div>
+  </div>`;
+}
+
+function _tixStep4Html() {
+  const r = _tix.result || {};
+  return `
+  <div class="table-card" style="max-width:600px">
+    <div class="table-header"><h3>📊 Importación completada</h3></div>
+    <div style="padding:20px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px">
+        <div style="background:#f0fdf4;padding:12px 20px;border-radius:8px;text-align:center">
+          <div style="font-size:26px;font-weight:700;color:#15803d">${r.imported||0}</div>
+          <div style="font-size:12px;color:#166534">Titulaciones nuevas</div>
+        </div>
+        <div style="background:#eff6ff;padding:12px 20px;border-radius:8px;text-align:center">
+          <div style="font-size:26px;font-weight:700;color:#1d4ed8">${r.updated||0}</div>
+          <div style="font-size:12px;color:#1e40af">Valores actualizados</div>
+        </div>
+        <div style="background:#f8fafc;padding:12px 20px;border-radius:8px;text-align:center">
+          <div style="font-size:26px;font-weight:700;color:#64748b">${r.skipped||0}</div>
+          <div style="font-size:12px;color:#64748b">Conservados del sistema</div>
+        </div>
+      </div>
+      <button class="btn btn-outline" id="tix-restart">← Nueva importación</button>
+    </div>
+  </div>`;
+}
+
+// ── Bind por paso ──────────────────────────────────────────────────────────────
+function _tixBind() {
+  if (_tix.step === 1) _tixBind1();
+  else if (_tix.step === 2) _tixBind2();
+  else if (_tix.step === 3) _tixBind3();
+  else _tixBind4();
+}
+
+function _tixParseExcel() {
+  const sheetName = _TIX_SHEETS[_tix.linea];
+  if (!sheetName) throw new Error('Línea no reconocida: ' + _tix.linea);
+  const ws = _tix.wb.Sheets[sheetName];
+  if (!ws) throw new Error(`Hoja "${sheetName}" no encontrada en el archivo`);
+  const allRows = XLSX.utils.sheet_to_json(ws, { header:1, defval:null });
+  const multiHdr = _tix.linea === 'BAKER' || _tix.linea === 'LINEA 1';
+  const dataStart = multiHdr ? 3 : 1;
+  const h0 = allRows[0] || [], h2 = multiHdr ? (allRows[2] || []) : [];
+  const skip = /^(sem$|semana|a[ñn]o|mes$|month|year|week|analista)/i;
+  const columns = [];
+  for (let i = 3; i < h0.length; i++) {
+    const g0 = String(h0[i] || '').replace(/[\r\n]+/g,' ').trim();
+    const g2 = String(h2[i] || '').replace(/[\r\n]+/g,' ').trim();
+    let label;
+    if (multiHdr) label = _tix.linea === 'LINEA 1' ? (g0 && g2 ? `${g0} / ${g2}` : g0||g2) : g0;
+    else label = g0;
+    if (!label || skip.test(label)) continue;
+    columns.push({ idx:i, label, samples:[] });
+  }
+  function toDate(v) {
+    if (typeof v !== 'number' || v < 40000) return null;
+    return new Date(Math.round((v - 25569)*86400*1000)).toISOString().slice(0,10);
+  }
+  function toTurno(v) {
+    const n = parseFloat(v);
+    if (isNaN(n)) return String(v||'').trim();
+    return n.toFixed(1);
+  }
+  const rows = [];
+  for (const r of allRows.slice(dataStart)) {
+    const fecha = toDate(r[0]);
+    if (!fecha || fecha < _tix.fechaIni || fecha > _tix.fechaFin) continue;
+    const turno = toTurno(r[1]);
+    if (!turno || turno === '0.0') continue;
+    const valores = {};
+    for (const col of columns) {
+      const v = r[col.idx];
+      valores[col.idx] = (v !== null && v !== undefined && String(v).trim() !== '') ? v : null;
+    }
+    rows.push({ fecha, turno, analista: String(r[2]||'').trim(), valores });
+  }
+  for (const col of columns) {
+    col.samples = rows.map(r => r.valores[col.idx]).filter(v => v !== null).slice(0,3);
+  }
+  return { columns, rows };
+}
+
+function _tixBind1() {
+  document.getElementById('tix-file')?.addEventListener('change', function() {
+    const f = this.files[0]; if (!f) return;
+    document.getElementById('tix-fname').textContent = f.name;
+    const rd = new FileReader();
+    rd.onload = e => {
+      try { _tix.wb = XLSX.read(e.target.result, { type:'array' }); }
+      catch(err) { document.getElementById('tix-err1').textContent = 'Error leyendo archivo: '+err.message; _tix.wb = null; }
+    };
+    rd.readAsArrayBuffer(f);
+  });
+  document.getElementById('tix-next1')?.addEventListener('click', () => {
+    const err = document.getElementById('tix-err1'); err.textContent = '';
+    if (!_tix.wb) { err.textContent = 'Selecciona un archivo Excel primero'; return; }
+    const linea = document.getElementById('tix-linea')?.value;
+    const fi    = document.getElementById('tix-fi')?.value;
+    const ff    = document.getElementById('tix-ff')?.value;
+    if (!linea) { err.textContent = 'Selecciona una línea'; return; }
+    if (!fi || !ff) { err.textContent = 'Selecciona el rango de fechas'; return; }
+    if (fi > ff) { err.textContent = 'Fecha inicio debe ser antes de fecha fin'; return; }
+    _tix.linea = linea; _tix.fechaIni = fi; _tix.fechaFin = ff;
+    try {
+      const parsed = _tixParseExcel();
+      if (!parsed.rows.length) { err.textContent = `Sin filas con datos en ${fi} → ${ff} para ${linea}`; return; }
+      _tix.columns = parsed.columns; _tix.rows = parsed.rows;
+    } catch(e) { err.textContent = 'Error analizando Excel: '+e.message; return; }
+    const btn = document.getElementById('tix-next1');
+    btn.disabled = true; btn.textContent = '⏳ Cargando...';
+    Promise.all([GET('/parametros-titulacion').catch(()=>[]), GET('/tanques').catch(()=>[])]).then(([params, tanques]) => {
+      _tix.params = params || []; _tix.tanques = tanques || [];
+      _tix.step = 2; _tixRender();
+    }).catch(e => { err.textContent = 'Error cargando parámetros: '+e.message; btn.disabled=false; btn.textContent='Analizar →'; });
+  });
+}
+
+function _tixBind2() {
+  document.getElementById('tix-back2')?.addEventListener('click', () => { _tix.step=1; _tixRender(); });
+
+  const body = document.getElementById('tix-map-body');
+
+  // Mapping selects
+  body?.addEventListener('change', e => {
+    const sel = e.target.closest('.tix-map-sel'); if (!sel) return;
+    const cidx = sel.dataset.cidx;
+    const val  = sel.value;
+    const npRow = document.querySelector(`.tix-np-row[data-cidx="${cidx}"]`);
+    if (val === '__new__') {
+      if (npRow) npRow.style.display = '';
+      sel.value = String(_tix.mapping[cidx] || ''); // revert
+    } else {
+      _tix.mapping[cidx] = val ? Number(val) : null;
+      if (npRow) npRow.style.display = 'none';
+    }
+  });
+
+  // Nuevo param: guardar / cancelar
+  body?.addEventListener('click', async e => {
+    const saveBtn = e.target.closest('.np-save');
+    if (saveBtn) {
+      const cidx  = saveBtn.dataset.cidx;
+      const npRow = document.querySelector(`.tix-np-row[data-cidx="${cidx}"]`);
+      const errEl = npRow?.querySelector('.np-err');
+      const tankId = npRow?.querySelector('.np-tank')?.value;
+      const nombre = npRow?.querySelector('.np-nombre')?.value?.trim();
+      if (!tankId || !nombre) { if (errEl) errEl.textContent = 'Tanque y nombre son requeridos'; return; }
+      if (errEl) errEl.textContent = '';
+      try {
+        const body2 = {
+          tanque_id:       Number(tankId),
+          nombre_parametro: nombre,
+          unidad:           npRow.querySelector('.np-unidad')?.value || '',
+          tipo_rango:       npRow.querySelector('.np-rango')?.value  || 'ninguno',
+          valor_min:  parseFloat(npRow.querySelector('.np-min')?.value) || null,
+          valor_max:  parseFloat(npRow.querySelector('.np-max')?.value) || null,
+          objetivo:   parseFloat(npRow.querySelector('.np-obj')?.value) || null,
+          frecuencia: 2, activo: true, orden: 0
+        };
+        const newP = await POST('/parametros-titulacion', body2);
+        _tix.params.push(newP);
+        _tix.mapping[cidx] = newP.id;
+        // Actualizar el select de esa fila
+        const sel = document.querySelector(`.tix-map-sel[data-cidx="${cidx}"]`);
+        if (sel) {
+          const opt = document.createElement('option');
+          opt.value = newP.id; opt.selected = true;
+          opt.textContent = `${newP.no_tanque||''} → ${newP.nombre_parametro}`;
+          const newOpt = sel.querySelector('option[value="__new__"]');
+          if (newOpt) sel.insertBefore(opt, newOpt); else sel.appendChild(opt);
+          sel.value = newP.id;
+        }
+        npRow.style.display = 'none';
+      } catch(err) { if (errEl) errEl.textContent = 'Error: '+err.message; }
+      return;
+    }
+    const cancelBtn = e.target.closest('.np-cancel');
+    if (cancelBtn) {
+      const npRow = document.querySelector(`.tix-np-row[data-cidx="${cancelBtn.dataset.cidx}"]`);
+      if (npRow) npRow.style.display = 'none';
+    }
+  });
+
+  document.getElementById('tix-next2')?.addEventListener('click', async () => {
+    // Sync mapping from current select values
+    document.querySelectorAll('.tix-map-sel').forEach(sel => {
+      const v = sel.value;
+      _tix.mapping[sel.dataset.cidx] = (v && v !== '__new__') ? Number(v) : null;
+    });
+    if (!Object.values(_tix.mapping).some(Boolean)) { alert('Asigna al menos un parámetro para continuar'); return; }
+    const btn = document.getElementById('tix-next2');
+    btn.disabled = true; btn.textContent = '⏳ Analizando...';
+    // Build mapped rows (only mapped cols, only rows with ≥1 value)
+    const mappedMapping = Object.fromEntries(Object.entries(_tix.mapping).filter(([,v])=>v));
+    const mappedRows = _tix.rows.map(r => ({
+      fecha: r.fecha, turno: r.turno, analista: r.analista,
+      valores: Object.fromEntries(Object.keys(mappedMapping).map(ci => [ci, r.valores[ci]]))
+    })).filter(r => Object.values(r.valores).some(v => v !== null && v !== undefined));
+    try {
+      const data = await POST('/import-excel-tit/preview', { linea: _tix.linea, rows: mappedRows, mapping: mappedMapping });
+      _tix.newRows   = data.new_rows;
+      _tix.conflicts = data.conflicts || [];
+      _tix.conflictRes = {};
+      _tix.conflicts.forEach(c => { _tix.conflictRes[`${c.fecha}|${c.turno}|${_tix.linea}|${c.param_id}`] = 'excel'; });
+      _tix._mappedRows    = mappedRows;
+      _tix._mappedMapping = mappedMapping;
+      _tix.step = 3; _tixRender();
+    } catch(e) {
+      btn.disabled=false; btn.textContent='Vista previa →';
+      alert('Error: '+e.message);
+    }
+  });
+}
+
+function _tixBind3() {
+  document.getElementById('tix-back3')?.addEventListener('click', () => { _tix.step=2; _tixRender(); });
+  document.getElementById('tix-all-excel')?.addEventListener('click', () => {
+    document.querySelectorAll('.tix-cr[value="excel"]').forEach(r => { r.checked=true; _tix.conflictRes[r.dataset.ck]='excel'; });
+  });
+  document.getElementById('tix-all-sis')?.addEventListener('click', () => {
+    document.querySelectorAll('.tix-cr[value="sistema"]').forEach(r => { r.checked=true; _tix.conflictRes[r.dataset.ck]='sistema'; });
+  });
+  document.getElementById('tix-execute')?.addEventListener('change', e => {
+    const r = e.target.closest('.tix-cr'); if (r) _tix.conflictRes[r.dataset.ck] = r.value;
+  });
+  // Capture radio changes (delegado en document para alcanzar los radios dentro de la tabla)
+  document.addEventListener('change', function _tixCrChange(e) {
+    const r = e.target.closest('.tix-cr');
+    if (!r) return;
+    _tix.conflictRes[r.dataset.ck] = r.value;
+  }, { once: false });
+
+  document.getElementById('tix-execute')?.addEventListener('click', async () => {
+    document.querySelectorAll('.tix-cr').forEach(r => { if (r.checked) _tix.conflictRes[r.dataset.ck] = r.value; });
+    const btn = document.getElementById('tix-execute');
+    const msg = document.getElementById('tix-exec-msg');
+    btn.disabled=true; btn.textContent='⏳ Importando...';
+    try {
+      const data = await POST('/import-excel-tit/execute', {
+        linea:    _tix.linea,
+        rows:     _tix._mappedRows,
+        mapping:  _tix._mappedMapping,
+        conflict_resolutions: _tix.conflictRes
+      });
+      _tix.result = data; _tix.step = 4; _tixRender();
+    } catch(e) { btn.disabled=false; btn.textContent='✅ Importar ahora'; msg.textContent='Error: '+e.message; }
+  });
+}
+
+function _tixBind4() {
+  document.getElementById('tix-restart')?.addEventListener('click', () => {
+    _tix = { step:1, wb:null, linea:'', fechaIni:'', fechaFin:'', columns:[], rows:[], params:[], tanques:[], mapping:{}, newRows:0, conflicts:[], conflictRes:{}, result:null };
+    _tixRender();
   });
 }
 
