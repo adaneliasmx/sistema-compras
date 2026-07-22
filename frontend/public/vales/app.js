@@ -230,7 +230,8 @@ const MENU = {
     ['tanques',  '🏭', 'Tanques'],
     ['usuarios', '👤', 'Usuarios'],
     ['---', '', 'Herramientas'],
-    ['importar-sqlite', '🗄️', 'Importar SQLite']
+    ['importar-sqlite', '🗄️', 'Importar SQLite'],
+    ['exportar-db',     '💾', 'Exportar BD']
   ]
 };
 
@@ -247,6 +248,7 @@ const SECTION_TITLES = {
   'tanques':           'Catálogo de Tanques',
   'usuarios':          'Gestión de Usuarios',
   'importar-sqlite':   'Importar desde Base Antigua (SQLite)',
+  'exportar-db':       'Exportar Base de Datos',
   'titulaciones':      'Registrar Titulación',
   'tit-reporte':       'Reporte de Titulaciones',
   'tit-estadisticas':  'Estadísticas SPC',
@@ -463,6 +465,7 @@ async function renderMain() {
       case 'tanques':           el.innerHTML = await viewTanques(); bindTanques(); return;
       case 'usuarios':          el.innerHTML = await viewUsuarios(); bindUsuarios(); return;
       case 'importar-sqlite':   el.innerHTML = await viewImportarSqlite(); bindImportarSqlite(); return;
+      case 'exportar-db':       el.innerHTML = viewExportarDb(); bindExportarDb(); return;
       case 'titulaciones':      el.innerHTML = await viewTitulaciones(); bindTitulaciones(); return;
       case 'tit-reporte':       el.innerHTML = await viewTitReporte(); bindTitReporte(); return;
       case 'tit-estadisticas':  el.innerHTML = await viewTitEstadisticas(); bindTitEstadisticas(); return;
@@ -3071,6 +3074,58 @@ function bindImportarSqlite() {
       state.tanques = await GET('/tanques');
     } catch(e) {
       el.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;
+    }
+  });
+}
+
+// ── Exportar BD ────────────────────────────────────────────────────────────────
+function viewExportarDb() {
+  return `
+  <div class="table-card" style="max-width:600px">
+    <div class="table-header">
+      <h3>💾 Exportar base de datos</h3>
+    </div>
+    <div style="padding:20px">
+      <p style="color:#78716c;margin-bottom:20px">
+        Descarga un respaldo completo de la base de datos de Registros de Calidad en formato JSON.
+        El archivo incluye: productos, tanques, vales, kardex, correcciones, titulaciones e inventario.
+      </p>
+      <button class="btn btn-primary" id="btn-export-db" style="background:#7c3aed">
+        💾 Descargar respaldo JSON
+      </button>
+      <div id="export-db-msg" style="margin-top:16px"></div>
+    </div>
+  </div>`;
+}
+
+function bindExportarDb() {
+  document.getElementById('btn-export-db')?.addEventListener('click', async () => {
+    const msgEl = document.getElementById('export-db-msg');
+    const btn   = document.getElementById('btn-export-db');
+    btn.disabled = true;
+    btn.textContent = '⏳ Generando...';
+    try {
+      const res = await fetch('/api/vales/export-db', {
+        headers: { Authorization: `Bearer ${state.token}` }
+      });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || `Error ${res.status}`);
+      }
+      const blob = await res.blob();
+      const disposition = res.headers.get('Content-Disposition') || '';
+      const match = disposition.match(/filename="([^"]+)"/);
+      const filename = match ? match[1] : 'vales-backup.json';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+      msgEl.innerHTML = `<div class="alert alert-ok" style="color:#15803d;background:#f0fdf4;padding:10px 14px;border-radius:6px">✔ Respaldo descargado: <strong>${filename}</strong></div>`;
+    } catch(e) {
+      msgEl.innerHTML = `<div class="alert alert-warn">⚠️ Error: ${e.message}</div>`;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Descargar respaldo JSON';
     }
   });
 }

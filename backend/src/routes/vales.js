@@ -2759,4 +2759,18 @@ router.post('/admin/import-excel', valesAuthRequired, valesAllowRoles('admin'),
   }
 );
 
+// ── EXPORTAR BASE DE DATOS (admin) ────────────────────────────────────────────
+router.get('/export-db', valesAllowRoles('admin'), (req, res) => {
+  try {
+    const db = readVales();
+    const fecha = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const filename = `vales-backup-${fecha}.json`;
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(JSON.stringify(db, null, 2));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
