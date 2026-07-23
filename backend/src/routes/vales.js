@@ -2191,7 +2191,7 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
   const params = (db.parametros_titulacion || []).filter(p => {
     const tanque = tanques.find(t => t.id === p.tanque_id);
     if (!tanque || tanque.linea !== b.linea) return false;
-    if (!p.activo) return false;
+    if (p.activo === false) return false;
     // Filtro por químico
     if (p.quimico) {
       const quActivo = quimico_snapshot[p.tanque_id] || tanque.quimico_activo;
@@ -2263,6 +2263,7 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
     const detalles = (db.titulaciones_detalle || []).filter(d => d.header_id === header.id);
     const params = db.parametros_titulacion || [];
     let hayFuera = false;
+    // Actualizar detalles existentes
     detalles.forEach(d => {
       if (b.valores[d.parametro_id] == null) return;
       const nuevoValor = parseFloat(b.valores[d.parametro_id]);
@@ -2277,6 +2278,29 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
       d.corrected_at = now.toISOString();
       d.corrected_by = req.valesUser.full_name;
       if ((b.observaciones || {})[d.parametro_id]) d.observaciones = b.observaciones[d.parametro_id];
+    });
+    // Crear detalles faltantes (parámetros que no se incluyeron en el POST original)
+    const existingParamIds = new Set(detalles.map(d => d.parametro_id));
+    Object.entries(b.valores).forEach(([pidStr, val]) => {
+      const pid = Number(pidStr);
+      if (existingParamIds.has(pid) || val == null) return;
+      const param = params.find(p => p.id === pid);
+      if (!param) return;
+      const nuevoValor = parseFloat(val);
+      if (isNaN(nuevoValor)) return;
+      const estado_param = calcEstadoParam(nuevoValor, param);
+      if (estado_param === 'fuera') hayFuera = true;
+      db.titulaciones_detalle.push({
+        id: nextId(db.titulaciones_detalle),
+        header_id: header.id,
+        parametro_id: pid,
+        valor_registrado: nuevoValor,
+        estado_param,
+        corregido: false,
+        valor_corregido: null,
+        valor_original: null,
+        observaciones: (b.observaciones || {})[pid] || ''
+      });
     });
     header.estado = hayFuera ? 'fuera_de_rango' : 'corregido';
   }
