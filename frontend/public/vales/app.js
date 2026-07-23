@@ -5849,9 +5849,16 @@ async function generarReporteTitulacion(headerId) {
   const tanquesLinea = tanques_cat.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
   const paramsLinea = params_cat.filter(p => tanquesLinea.some(t => t.id === p.tanque_id) && p.activo !== false);
 
-  // Clasificación primaria por campo 'tipo' (fuente original, siempre correcto).
-  // es_enjuague puede sobreescribir solo cuando tipo NO es 'ENJUAGUE' (e.g. tanques nuevos sin tipo estándar).
-  const isEnj     = t => t.tipo === 'ENJUAGUE' || (t.es_enjuague === true && t.tipo !== 'ENJUAGUE');
+  // Clasificación: 'tipo' es la fuente primaria (case-insensitive).
+  // Si tipo está vacío/undefined, se usa es_enjuague como respaldo.
+  // Si tipo tiene cualquier valor distinto a 'ENJUAGUE', se ignora es_enjuague
+  // (evita clasificación incorrecta por flags mal configurados en producción).
+  const isEnj = t => {
+    const tp = (t.tipo || '').trim().toUpperCase();
+    if (tp === 'ENJUAGUE') return true;
+    if (tp) return false;
+    return t.es_enjuague === true;
+  };
   const enjuagues = tanquesLinea.filter(isEnj);
   const proceso   = tanquesLinea.filter(t => !isEnj(t));
 
