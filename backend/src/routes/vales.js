@@ -2313,6 +2313,51 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
   res.json({ param, valores: result });
 });
 
+// ── GET /admin/diag-titulaciones ─────────────────────────────────────────────
+// Diagnóstico rápido del estado de titulaciones en la BD de producción
+router.get('/admin/diag-titulaciones', valesAuthRequired, valesAllowRoles('admin'), (req, res) => {
+  const db = readVales();
+  const params   = db.parametros_titulacion || [];
+  const tanques  = db.tanques_vales || [];
+  const headers  = db.titulaciones_header || [];
+  const detalles = db.titulaciones_detalle || [];
+
+  const bakerTanques = tanques.filter(t => t.linea === 'BAKER');
+  const bakerParams  = params.filter(p => bakerTanques.some(t => t.id === p.tanque_id));
+  const bakerHeaders = headers.filter(h => h.linea === 'BAKER');
+
+  const paramStats = bakerParams.map(p => {
+    const tk = bakerTanques.find(t => t.id === p.tanque_id);
+    const dets = detalles.filter(d => d.parametro_id === p.id);
+    const conValor = dets.filter(d => d.valor_registrado != null).length;
+    const lastVal = dets.length ? dets[dets.length - 1].valor_registrado : null;
+    return {
+      id: p.id, tanque_id: p.tanque_id,
+      no_tanque: tk ? tk.no_tanque : p.no_tanque,
+      quimico_activo_tanque: tk ? tk.quimico_activo : null,
+      nombre_parametro: p.nombre_parametro,
+      quimico: p.quimico,
+      activo: p.activo,
+      total_detalle: dets.length, con_valor: conValor,
+      ultimo_valor: lastVal
+    };
+  });
+
+  // Orphan param_ids in detalle (no current param matches)
+  const paramIdSet = new Set(params.map(p => p.id));
+  const orphanSet = new Set();
+  detalles.forEach(d => { if (!paramIdSet.has(d.parametro_id)) orphanSet.add(d.parametro_id); });
+
+  res.json({
+    tanques_baker: bakerTanques.length,
+    params_baker: bakerParams.length,
+    headers_baker: bakerHeaders.length,
+    total_detalles: detalles.length,
+    orphan_param_ids: [...orphanSet].slice(0, 20),
+    param_stats: paramStats
+  });
+});
+
 // ── POST /admin/import-historial ─────────────────────────────────────────────
 // Importa el seed de titulaciones 2026 (params + headers + detalles) al DB.
 // Solo se ejecuta si los arrays están vacíos, para evitar duplicados.
