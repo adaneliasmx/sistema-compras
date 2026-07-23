@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Validaciones Almacen | Cuesto-SKF</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Arial,sans-serif;background:#f0f2f5;color:#222;min-height:100vh}
+
+/* ── LOGIN ── */
+#loginPage{display:flex;align-items:center;justify-content:center;min-height:100vh;background:linear-gradient(135deg,#1a3a5c 0%,#2c6e9e 100%)}
+.login-box{background:#fff;border-radius:12px;padding:40px 48px;width:380px;box-shadow:0 8px 32px rgba(0,0,0,.25)}
+.login-box h1{text-align:center;font-size:1.3rem;color:#1a3a5c;margin-bottom:4px}
+.login-box .sub{text-align:center;font-size:.85rem;color:#666;margin-bottom:28px}
+.login-box label{display:block;font-size:.82rem;font-weight:600;color:#444;margin-bottom:4px}
+.login-box input{width:100%;padding:10px 12px;border:1px solid #ccd;border-radius:6px;font-size:.95rem;margin-bottom:16px}
+.login-box input:focus{outline:none;border-color:#2c6e9e}
+.btn-primary{width:100%;padding:11px;background:#1a3a5c;color:#fff;border:none;border-radius:6px;font-size:1rem;font-weight:600;cursor:pointer}
+.btn-primary:hover{background:#2c5f8a}
+.login-err{color:#c0392b;font-size:.82rem;text-align:center;margin-top:8px;min-height:18px}
+
+/* ── LAYOUT PRINCIPAL ── */
+#appPage{display:none;min-height:100vh;flex-direction:column}
+header{background:#1a3a5c;color:#fff;padding:0 24px;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+header h1{font-size:1.05rem;font-weight:700;letter-spacing:.3px}
+.header-right{display:flex;align-items:center;gap:16px;font-size:.82rem}
+.user-badge{background:rgba(255,255,255,.15);padding:4px 12px;border-radius:20px}
+.btn-logout{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;padding:4px 12px;border-radius:4px;cursor:pointer;font-size:.82rem}
+.btn-logout:hover{background:rgba(255,255,255,.1)}
+
+nav{background:#fff;border-bottom:1px solid #e0e4ea;display:flex;gap:4px;padding:0 20px;overflow-x:auto}
+nav button{background:none;border:none;padding:12px 18px;font-size:.88rem;font-weight:500;color:#555;cursor:pointer;border-bottom:3px solid transparent;white-space:nowrap;transition:.15s}
+nav button:hover{color:#1a3a5c;background:#f5f8ff}
+nav button.active{color:#1a3a5c;border-bottom-color:#1a3a5c;font-weight:700}
+
+main{flex:1;padding:24px;max-width:1400px;margin:0 auto;width:100%}
+
+/* ── TARJETAS KPI ── */
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-bottom:28px}
+.kpi{background:#fff;border-radius:10px;padding:20px 22px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid #2c6e9e}
+.kpi.red{border-left-color:#c0392b}
+.kpi.green{border-left-color:#27ae60}
+.kpi.orange{border-left-color:#e67e22}
+.kpi label{font-size:.75rem;color:#888;font-weight:600;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:6px}
+.kpi .val{font-size:2rem;font-weight:700;color:#1a3a5c;line-height:1}
+.kpi .sub{font-size:.78rem;color:#888;margin-top:4px}
+
+/* ── FILTROS ── */
+.filtros{background:#fff;border-radius:10px;padding:18px 20px;margin-bottom:20px;box-shadow:0 1px 4px rgba(0,0,0,.08);display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.filtros label{font-size:.78rem;font-weight:600;color:#555;display:block;margin-bottom:3px}
+.filtros input,.filtros select{padding:8px 10px;border:1px solid #ccd;border-radius:6px;font-size:.85rem;min-width:140px}
+.filtros .btn-buscar{background:#1a3a5c;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.88rem}
+.filtros .btn-buscar:hover{background:#2c5f8a}
+.filtros .btn-clear{background:#f0f2f5;color:#555;border:1px solid #ccd;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:.85rem}
+
+/* ── TABLA ── */
+.tabla-wrap{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);overflow:hidden}
+.tabla-header{padding:16px 20px;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}
+.tabla-header h3{font-size:.95rem;font-weight:700;color:#1a3a5c}
+.tabla-count{font-size:.8rem;color:#888}
+table{width:100%;border-collapse:collapse}
+thead tr{background:#f5f8ff}
+th{padding:10px 14px;font-size:.77rem;font-weight:700;color:#1a3a5c;text-align:left;text-transform:uppercase;letter-spacing:.4px;border-bottom:2px solid #e0e4ea;white-space:nowrap}
+td{padding:9px 14px;font-size:.82rem;border-bottom:1px solid #f0f2f5;vertical-align:middle}
+tr:hover td{background:#fafbff}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:.72rem;font-weight:700}
+.badge.skf{background:#d4e8f7;color:#1a5276}
+.badge.cuesto{background:#d5f5e3;color:#1e8449}
+.badge.faltante{background:#fce4e4;color:#c0392b}
+.badge.sin_qry{background:#fef3cd;color:#b7770d}
+.badge.resuelto{background:#d5f5e3;color:#1e8449}
+.badge.pendiente{background:#fce4e4;color:#c0392b}
+.badge.conforme{background:#d5f5e3;color:#1e8449}
+.badge.extra{background:#fef3cd;color:#b7770d}
+
+/* ── PAGINACION ── */
+.pagination{display:flex;justify-content:center;gap:8px;padding:16px;align-items:center;font-size:.85rem}
+.pagination button{border:1px solid #ccd;background:#fff;padding:5px 12px;border-radius:4px;cursor:pointer}
+.pagination button:hover{background:#f0f4ff}
+.pagination button.active{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
+.pagination span{color:#888}
+
+/* ── VACÍO / CARGANDO ── */
+.empty{text-align:center;padding:48px 20px;color:#aaa}
+.spinner{width:32px;height:32px;border:3px solid #e0e4ea;border-top-color:#1a3a5c;border-radius:50%;animation:spin .7s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── MODAL DETALLE ── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:28px;max-width:800px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.modal h2{font-size:1.05rem;color:#1a3a5c;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid #eee}
+.modal-close{float:right;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;line-height:1}
+.modal-close:hover{color:#c0392b}
+.detail-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:16px}
+.detail-item label{font-size:.72rem;font-weight:700;color:#888;text-transform:uppercase;display:block;margin-bottom:2px}
+.detail-item span{font-size:.88rem;color:#222}
+.section-title{font-size:.82rem;font-weight:700;color:#1a3a5c;text-transform:uppercase;margin:16px 0 8px;border-bottom:1px solid #eee;padding-bottom:4px}
+
+/* ── ALERTAS ── */
+.alert{padding:12px 16px;border-radius:6px;font-size:.85rem;margin-bottom:16px}
+.alert.info{background:#e8f4fd;color:#1a5276;border-left:4px solid #2980b9}
+.alert.warn{background:#fef9e7;color:#7d6608;border-left:4px solid #f1c40f}
+
+footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align:center;padding:8px;margin-top:auto}
+</style>
+</head>
+<body>
+
+<!-- ══════════ LOGIN ══════════ -->
+<div id="loginPage">
+  <div class="login-box">
+    <h1>Validaciones Almacen</h1>
+    <p class="sub">Sistema Cuesto &mdash; SKF</p>
+    <label>Correo electronico</label>
+    <input type="email" id="loginEmail" placeholder="usuario@empresa.com" autocomplete="username">
+    <label>Contrasena</label>
+    <input type="password" id="loginPass" placeholder="••••••" autocomplete="current-password">
+    <button class="btn-primary" onclick="doLogin()">Iniciar sesion</button>
+    <p class="login-err" id="loginErr"></p>
+  </div>
+</div>
+
+<!-- ══════════ APP ══════════ -->
+<div id="appPage">
+  <header>
+    <h1>Validaciones Almacen &nbsp;|&nbsp; Cuesto &mdash; SKF</h1>
+    <div class="header-right">
+      <span class="user-badge" id="headerUser"></span>
+      <button class="btn-logout" onclick="doLogout()">Cerrar sesion</button>
+    </div>
+  </header>
+
+  <nav>
+    <button class="active" onclick="switchTab('resumen')">Dashboard</button>
+    <button onclick="switchTab('embarques')">Embarques</button>
+    <button onclick="switchTab('pendientes')">Pendientes</button>
+    <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
+  </nav>
+
+  <main id="mainContent">
+    <div class="spinner"></div>
+  </main>
+</div>
+
+<!-- ══════════ MODAL DETALLE ══════════ -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeModal(event)">
+  <div class="modal" id="modalContent">
+    <button class="modal-close" onclick="closeModal()">&#x2715;</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<footer>Validaciones Almacen &nbsp;|&nbsp; (c) Corporativo Cuesto &nbsp;|&nbsp; ft AdanEMX</footer>
+
+<script>
+// ── CONFIGURACION ──────────────────────────────────────────────────────────────
+const API = '';  // mismo origen
+
+function apiFetch(path, opts = {}) {
+  const token = localStorage.getItem('val_token');
+  return fetch(API + '/api/val' + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+      ...(opts.headers || {})
+    }
+  }).then(async r => {
+    if (r.status === 401) { doLogout(); return null; }
+    const data = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((data && data.error) || r.statusText);
+    return data;
+  });
+}
+
+// ── AUTH ───────────────────────────────────────────────────────────────────────
+let currentUser = null;
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const d = await fetch('/api/val/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    }).then(r => r.json());
+    if (!d.token) throw new Error(d.error || 'Error de login');
+    localStorage.setItem('val_token', d.token);
+    localStorage.setItem('val_user', JSON.stringify(d.user));
+    startApp(d.user);
+  } catch(e) {
+    document.getElementById('loginErr').textContent = e.message;
+  }
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('loginPage').style.display !== 'none') doLogin();
+});
+
+function doLogout() {
+  localStorage.removeItem('val_token');
+  localStorage.removeItem('val_user');
+  document.getElementById('loginPage').style.display = 'flex';
+  document.getElementById('appPage').style.display = 'none';
+  currentUser = null;
+}
+
+function startApp(user) {
+  currentUser = user;
+  document.getElementById('loginPage').style.display = 'none';
+  document.getElementById('appPage').style.display = 'flex';
+  document.getElementById('appPage').style.flexDirection = 'column';
+  document.getElementById('headerUser').textContent = user.nombre + ' (' + user.role + ')';
+  if (user.role === 'admin') document.getElementById('tabSync').style.display = '';
+  switchTab('resumen');
+}
+
+// Verificar si ya hay sesion activa
+(function checkSession() {
+  const token = localStorage.getItem('val_token');
+  const user  = localStorage.getItem('val_user');
+  if (token && user) {
+    try { startApp(JSON.parse(user)); } catch(_) { doLogout(); }
+  }
+})();
+
+// ── NAVEGACION ─────────────────────────────────────────────────────────────────
+let activeTab = '';
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => {
+    if (b.textContent.toLowerCase().includes(tab === 'resumen' ? 'dashboard' : tab === 'admin' ? 'usuarios' : tab))
+      b.classList.add('active');
+  });
+  const m = document.getElementById('mainContent');
+  m.innerHTML = '<div class="spinner"></div>';
+  if (tab === 'resumen')    renderResumen();
+  if (tab === 'embarques')  renderEmbarques();
+  if (tab === 'pendientes') renderPendientes();
+  if (tab === 'syncstatus') renderSyncStatus();
+}
+
+// ── DASHBOARD / RESUMEN ────────────────────────────────────────────────────────
+async function renderResumen() {
+  const m = document.getElementById('mainContent');
+  const d = await apiFetch('/resumen');
+  if (!d) return;
+
+  const skf = d.skf || {};
+  const cu  = d.cuesto || {};
+  const totalPend = (skf.pendientes_faltante||0)+(skf.pendientes_sin_qry||0)+(cu.pendientes_faltante||0)+(cu.pendientes_sin_qry||0);
+
+  m.innerHTML = `
+    <div class="alert info">Datos sincronizados periodicamente desde las apps de escritorio. Ultima actualizacion al cargar la pagina.</div>
+
+    <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Vista General</h3>
+    <div class="kpi-grid">
+      <div class="kpi blue">
+        <label>Pzas SKF enviadas</label>
+        <div class="val">${(skf.pzas_enviadas||0).toLocaleString()}</div>
+        <div class="sub">Almacen SKF &rarr; CUESTO</div>
+      </div>
+      <div class="kpi green">
+        <label>Pzas ingresadas CUESTO</label>
+        <div class="val">${(cu.pzas_ingresadas||0).toLocaleString()}</div>
+        <div class="sub">Recibidas en CUESTO de SKF</div>
+      </div>
+      <div class="kpi blue">
+        <label>Pzas PT CUESTO enviadas</label>
+        <div class="val">${(cu.pzas_enviadas||0).toLocaleString()}</div>
+        <div class="sub">CUESTO &rarr; SKF</div>
+      </div>
+      <div class="kpi green">
+        <label>Pzas PT recibidas SKF</label>
+        <div class="val">${(skf.pzas_recibidas||0).toLocaleString()}</div>
+        <div class="sub">Recibidas en SKF de CUESTO</div>
+      </div>
+      <div class="${totalPend > 0 ? 'kpi red' : 'kpi green'}">
+        <label>Pendientes totales</label>
+        <div class="val">${totalPend}</div>
+        <div class="sub">Faltantes + Sin QRY activos</div>
+      </div>
+      <div class="kpi">
+        <label>Embarques SKF</label>
+        <div class="val">${skf.embarques||0}</div>
+        <div class="sub">Numeros de embarque registrados</div>
+      </div>
+      <div class="kpi">
+        <label>Embarques CUESTO</label>
+        <div class="val">${cu.embarques||0}</div>
+        <div class="sub">Codigos de envio registrados</div>
+      </div>
+      <div class="kpi orange">
+        <label>Peso enviado SKF</label>
+        <div class="val">${(skf.peso_enviado_kg||0).toLocaleString()}</div>
+        <div class="sub">Kg totales de almacen SKF</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
+      <div class="tabla-wrap">
+        <div class="tabla-header">
+          <h3>Pendientes SKF</h3>
+          <span class="tabla-count">${(skf.pendientes_faltante||0)+(skf.pendientes_sin_qry||0)} activos</span>
+        </div>
+        <table>
+          <thead><tr><th>Tipo</th><th>Cantidad</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${skf.pendientes_faltante||0}</td></tr>
+            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${skf.pendientes_sin_qry||0}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tabla-wrap">
+        <div class="tabla-header">
+          <h3>Pendientes CUESTO</h3>
+          <span class="tabla-count">${(cu.pendientes_faltante||0)+(cu.pendientes_sin_qry||0)} activos</span>
+        </div>
+        <table>
+          <thead><tr><th>Tipo</th><th>Cantidad</th></tr></thead>
+          <tbody>
+            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${cu.pendientes_faltante||0}</td></tr>
+            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${cu.pendientes_sin_qry||0}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+}
+
+// ── EMBARQUES ──────────────────────────────────────────────────────────────────
+let embPage = 1;
+async function renderEmbarques(page = 1) {
+  embPage = page;
+  const m = document.getElementById('mainContent');
+
+  const desde    = document.getElementById('fDesde')?.value || '';
+  const hasta    = document.getElementById('fHasta')?.value || '';
+  const operador = document.getElementById('fOperador')?.value || '';
+  const embarque = document.getElementById('fEmbarque')?.value || '';
+  const side     = document.getElementById('fSide')?.value || '';
+  const tipo     = document.getElementById('fTipo')?.value || '';
+
+  const params = new URLSearchParams({ page, limit: 50 });
+  if (desde)    params.set('desde', desde);
+  if (hasta)    params.set('hasta', hasta);
+  if (operador) params.set('operador', operador);
+  if (embarque) params.set('embarque', embarque);
+  if (side)     params.set('side', side);
+  if (tipo)     params.set('tipo', tipo);
+
+  if (!document.getElementById('fDesde')) {
+    m.innerHTML = `
+      <div class="filtros">
+        <div><label>Desde</label><input type="date" id="fDesde"></div>
+        <div><label>Hasta</label><input type="date" id="fHasta"></div>
+        <div><label>Empresa</label>
+          <select id="fSide"><option value="">Todos</option><option value="skf">SKF</option><option value="cuesto">CUESTO</option></select>
+        </div>
+        <div><label>Tipo</label>
+          <select id="fTipo"><option value="">Todos</option><option value="envios">Envios</option><option value="recepciones">Recepciones</option></select>
+        </div>
+        <div><label>Operador</label><input type="text" id="fOperador" placeholder="Nombre operador"></div>
+        <div><label>No. Embarque</label><input type="text" id="fEmbarque" placeholder="Embarque o codigo"></div>
+        <button class="btn-buscar" onclick="renderEmbarques(1)">Buscar</button>
+        <button class="btn-clear" onclick="clearFiltros()">Limpiar</button>
+      </div>
+      <div id="embTabla"><div class="spinner"></div></div>`;
+  }
+
+  const tablaEl = document.getElementById('embTabla') || m;
+  tablaEl.innerHTML = '<div class="spinner"></div>';
+
+  const d = await apiFetch('/embarques?' + params.toString());
+  if (!d) return;
+
+  const total = d.total || 0;
+  const totalPags = Math.ceil(total / 50);
+
+  tablaEl.innerHTML = `
+    <div class="tabla-wrap">
+      <div class="tabla-header">
+        <h3>Movimientos de almacen</h3>
+        <span class="tabla-count">${total} registros</span>
+      </div>
+      <div style="overflow-x:auto">
+      <table>
+        <thead>
+          <tr>
+            <th>Empresa</th><th>Tipo</th><th>Componente</th>
+            <th>Piezas / QTY</th><th>Peso KG</th><th>Lote</th>
+            <th>Operador</th><th>Embarque</th><th>Fecha</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${d.items.length === 0 ? `<tr><td colspan="10" class="empty">Sin resultados</td></tr>` :
+            d.items.map(r => {
+              const side   = r._side || '';
+              const comp   = r.COMPONENTE || r.componente || '-';
+              const qty    = r.QTY || r.cantidad || '-';
+              const peso   = r.PESO || r.peso || '-';
+              const lote   = r.LOTE || r.lote || '-';
+              const oper   = r.OPERADOR || r.operador_envio || r.operador_recepcion || '-';
+              const emb    = r['NUMERO EMBARQUE'] || r.numero_embarque || r.codigo_envio || r['CODIGO ENVIO'] || '-';
+              const fecha  = r['FECHA ENVIO'] || r.fecha_envio || r.fecha_recepcion || r.fecha || '-';
+              return `<tr>
+                <td><span class="badge ${side.toLowerCase()}">${side}</span></td>
+                <td style="font-size:.78rem;color:#666">${r._tipo||''}</td>
+                <td>${comp}</td>
+                <td style="text-align:right;font-weight:600">${qty}</td>
+                <td style="text-align:right">${peso}</td>
+                <td>${lote}</td>
+                <td>${oper}</td>
+                <td><b>${emb}</b></td>
+                <td>${fecha}</td>
+                <td><button style="background:#e8f4fd;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.78rem" onclick="verDetalleEmbarque('${emb}')">Ver</button></td>
+              </tr>`;
+            }).join('')}
+        </tbody>
+      </table>
+      </div>
+      ${totalPags > 1 ? `<div class="pagination">
+        <button onclick="renderEmbarques(${page-1})" ${page<=1?'disabled':''}>&#8592;</button>
+        <span>Pagina ${page} de ${totalPags}</span>
+        <button onclick="renderEmbarques(${page+1})" ${page>=totalPags?'disabled':''}>&#8594;</button>
+      </div>` : ''}
+    </div>`;
+}
+
+function clearFiltros() {
+  ['fDesde','fHasta','fOperador','fEmbarque'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  ['fSide','fTipo'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.selectedIndex = 0;
+  });
+  renderEmbarques(1);
+}
+
+async function verDetalleEmbarque(num) {
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="spinner"></div>';
+  document.getElementById('modalOverlay').classList.add('open');
+
+  const d = await apiFetch('/reporte/embarque/' + encodeURIComponent(num));
+  if (!d) return;
+
+  const f1 = d.flujo_skf_a_cuesto;
+  const f2 = d.flujo_cuesto_a_skf;
+
+  body.innerHTML = `
+    <h2>Embarque / Codigo: <span style="color:#c0392b">${num}</span></h2>
+
+    <div class="section-title">Flujo: SKF &rarr; CUESTO (material de almacen)</div>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Enviado por SKF</label><span>${f1.enviado_skf.piezas} pzas</span></div>
+      <div class="detail-item"><label>Recibido en CUESTO</label><span>${f1.recibido_cuesto.piezas} pzas</span></div>
+      <div class="detail-item"><label>Diferencia</label><span style="color:${f1.diferencia===0?'#27ae60':'#c0392b'};font-weight:700">${f1.diferencia}</span></div>
+      <div class="detail-item"><label>Pendientes</label><span>${f1.pendientes.length}</span></div>
+    </div>
+
+    <div class="section-title">Flujo: CUESTO &rarr; SKF (producto terminado)</div>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Enviado por CUESTO</label><span>${f2.enviado_cuesto.piezas} pzas</span></div>
+      <div class="detail-item"><label>Recibido en SKF</label><span>${f2.recibido_skf.piezas} pzas</span></div>
+      <div class="detail-item"><label>Diferencia</label><span style="color:${f2.diferencia===0?'#27ae60':'#c0392b'};font-weight:700">${f2.diferencia}</span></div>
+      <div class="detail-item"><label>Pendientes</label><span>${f2.pendientes.length}</span></div>
+    </div>
+
+    ${f1.enviado_skf.registros.length > 0 ? `
+    <div class="section-title">Piezas enviadas por SKF (${f1.enviado_skf.registros.length})</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>NO. SKF</th><th>Componente</th><th>Lote</th><th>QTY</th><th>Peso</th><th>Dispatch</th><th>Fecha</th></tr></thead>
+      <tbody>${f1.enviado_skf.registros.map(r => `
+        <tr><td>${r['NO. SKF']||'-'}</td><td>${r.COMPONENTE||'-'}</td><td>${r.LOTE||'-'}</td>
+        <td>${r.QTY||'-'}</td><td>${r.PESO||'-'}</td><td>${r.DISPACH||'-'}</td><td>${r['FECHA ENVIO']||'-'}</td></tr>`).join('')}
+      </tbody>
+    </table></div>` : ''}
+
+    ${f2.enviado_cuesto.registros.length > 0 ? `
+    <div class="section-title">Piezas PT enviadas por CUESTO (${f2.enviado_cuesto.registros.length})</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Codigo</th><th>Componente</th><th>Lote</th><th>Cantidad</th><th>Proceso</th><th>Fecha</th></tr></thead>
+      <tbody>${f2.enviado_cuesto.registros.map(r => `
+        <tr><td>${r.codigo||'-'}</td><td>${r.componente||'-'}</td><td>${r.lote||'-'}</td>
+        <td>${r.cantidad||'-'}</td><td>${r.proceso||'-'}</td><td>${r.fecha_envio||r.fecha||'-'}</td></tr>`).join('')}
+      </tbody>
+    </table></div>` : ''}`;
+}
+
+// ── PENDIENTES ─────────────────────────────────────────────────────────────────
+async function renderPendientes() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div class="filtros">
+      <div><label>Empresa</label>
+        <select id="pSide"><option value="">Todos</option><option value="skf">SKF</option><option value="cuesto">CUESTO</option></select>
+      </div>
+      <div><label>Tipo</label>
+        <select id="pTipo"><option value="">Todos</option><option value="FALTANTE">FALTANTE</option><option value="SIN_QRY">SIN QRY</option></select>
+      </div>
+      <div><label>Estado</label>
+        <select id="pEstado"><option value="PENDIENTE">Solo activos</option><option value="">Todos</option><option value="RESUELTO">Resueltos</option></select>
+      </div>
+      <div><label>Desde</label><input type="date" id="pDesde"></div>
+      <div><label>Hasta</label><input type="date" id="pHasta"></div>
+      <button class="btn-buscar" onclick="cargarPendientes()">Buscar</button>
+    </div>
+    <div id="pendTabla"><div class="spinner"></div></div>`;
+
+  cargarPendientes();
+}
+
+async function cargarPendientes() {
+  const params = new URLSearchParams();
+  const side   = document.getElementById('pSide')?.value;
+  const tipo   = document.getElementById('pTipo')?.value;
+  const estado = document.getElementById('pEstado')?.value;
+  const desde  = document.getElementById('pDesde')?.value;
+  const hasta  = document.getElementById('pHasta')?.value;
+  if (side)   params.set('side', side);
+  if (tipo)   params.set('tipo', tipo);
+  if (estado) params.set('estado', estado);
+  if (desde)  params.set('desde', desde);
+  if (hasta)  params.set('hasta', hasta);
+
+  const tablaEl = document.getElementById('pendTabla');
+  tablaEl.innerHTML = '<div class="spinner"></div>';
+
+  const rows = await apiFetch('/pendientes?' + params.toString());
+  if (!rows) return;
+
+  tablaEl.innerHTML = `
+    <div class="tabla-wrap">
+      <div class="tabla-header">
+        <h3>Pendientes inter-embarque</h3>
+        <span class="tabla-count">${rows.length} registros</span>
+      </div>
+      <div style="overflow-x:auto"><table>
+        <thead>
+          <tr><th>Empresa</th><th>Tipo</th><th>ID</th><th>Componente</th><th>Lote</th>
+          <th>Embarque deteccion</th><th>Fecha</th><th>Estado</th><th>Resolucion</th></tr>
+        </thead>
+        <tbody>
+          ${rows.length === 0 ? '<tr><td colspan="9" class="empty">Sin pendientes</td></tr>' :
+            rows.map(r => `<tr>
+              <td><span class="badge ${(r._side||'').toLowerCase()}">${r._side||''}</span></td>
+              <td><span class="badge ${(r.tipo||'').toLowerCase().replace('_','-')}">${r.tipo||'-'}</span></td>
+              <td style="font-size:.78rem">${r.dispach||r.codigo||'-'}</td>
+              <td>${r.componente||'-'}</td>
+              <td>${r.lote||'-'}</td>
+              <td>${r.embarque||'-'}</td>
+              <td>${r.fecha_deteccion||'-'}</td>
+              <td><span class="badge ${(r.estado||'PENDIENTE').toLowerCase()}">${r.estado||'PENDIENTE'}</span></td>
+              <td style="font-size:.78rem">${r.embarque_resolucion||'-'}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+// ── ESTADO SYNC (solo admin) ───────────────────────────────────────────────────
+async function renderSyncStatus() {
+  const m = document.getElementById('mainContent');
+  const d = await apiFetch('/sync/status');
+  if (!d) return;
+
+  m.innerHTML = `
+    <div class="alert info">Los usuarios de este modulo se administran desde el <b>Super Admin</b> de la plataforma (menu Validaciones Almacen).</div>
+    <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Estado de sincronizacion</h3>
+    <div class="kpi-grid">
+      <div class="kpi"><label>Envios SKF (almacen)</label><div class="val">${d.val_skf_envios||0}</div><div class="sub">registros sincronizados</div></div>
+      <div class="kpi"><label>Recepciones SKF (PT)</label><div class="val">${d.val_skf_recepciones||0}</div><div class="sub">registros sincronizados</div></div>
+      <div class="kpi red"><label>Pendientes SKF</label><div class="val">${d.val_skf_pendientes||0}</div><div class="sub">registros sincronizados</div></div>
+      <div class="kpi"><label>Envios CUESTO (PT)</label><div class="val">${d.val_cuesto_envios||0}</div><div class="sub">registros sincronizados</div></div>
+      <div class="kpi"><label>Ingresos CUESTO (SKF)</label><div class="val">${d.val_cuesto_ingresos||0}</div><div class="sub">registros sincronizados</div></div>
+      <div class="kpi red"><label>Pendientes CUESTO</label><div class="val">${d.val_cuesto_pendientes||0}</div><div class="sub">registros sincronizados</div></div>
+    </div>
+    <div class="alert info" style="margin-top:8px">Para configurar el sync: edita <b>database/sync_config.json</b> en cada PC y ejecuta <b>setup_taskscheduler.bat</b> como Administrador.</div>`;
+}
+
+// ── MODAL ──────────────────────────────────────────────────────────────────────
+function closeModal(e) {
+  if (!e || e.target === document.getElementById('modalOverlay')) {
+    document.getElementById('modalOverlay').classList.remove('open');
+  }
+}
+</script>
+</body>
+</html>

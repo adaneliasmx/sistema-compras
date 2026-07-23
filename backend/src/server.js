@@ -58,6 +58,9 @@ const inventariosRoutes = require('./routes/inventarios');
 const mantAuthRoutes  = require('./routes/mant-auth');
 const mantRoutes      = require('./routes/mantenimiento');
 
+// ── Módulo Validaciones Almacen (SKF/CUESTO sync) ─────────────────────────────
+const validacionesRoutes = require('./routes/validaciones');
+
 // ── PO Pública (proveedor) ────────────────────────────────────────────────────
 const publicPoRoutes = require('./routes/public-po');
 
@@ -67,6 +70,7 @@ const { initDb: initValesDb } = require('./db-vales');
 const { initDb: initProduccionDb } = require('./db-produccion');
 const { initDb: initInventariosDb } = require('./db-inventarios');
 const { initDb: initMantDb } = require('./db-mantenimiento');
+const { initDb: initValDb } = require('./db-validaciones');
 
 const app = express();
 
@@ -159,6 +163,9 @@ app.use('/api/inv', inventariosRoutes);
 app.use('/api/mant/auth', mantAuthRoutes);
 app.use('/api/mant',      mantRoutes);
 
+// ── API Validaciones Almacen ──────────────────────────────────────────────────
+app.use('/api/val', validacionesRoutes);
+
 // ── API Pública (sin auth) ────────────────────────────────────────────────────
 app.use('/api/public/po', publicPoRoutes);
 
@@ -226,6 +233,10 @@ app.get('/pizarron/vista', (req, res) => res.sendFile(path.resolve(process.cwd()
 app.get('/mantenimiento', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
 app.get('/mantenimiento/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
 
+// Módulo Validaciones Almacen
+app.get('/validaciones-almacen', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+app.get('/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+
 // Vista pública PO (proveedor)
 app.get('/po-view', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/po-view.html'));
@@ -238,7 +249,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);

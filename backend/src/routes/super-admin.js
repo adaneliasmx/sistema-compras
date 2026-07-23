@@ -5,6 +5,7 @@ const { read: readCompras, write: writeCompras, nextId: nextIdCompras } = requir
 const { read: readRhh, write: writeRhh, nextId: nextIdRhh, forceSeedFromJson } = require('../db-rhh');
 const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = require('../db-produccion');
 const { read: readInv, write: writeInv, nextId: nextIdInv } = require('../db-inventarios');
+const { read: readVal, write: writeVal, nextId: nextIdVal } = require('../db-validaciones');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -171,6 +172,11 @@ router.get('/overview', superAdminRequired, (req, res) => {
       id: 'mantenimiento', name: 'Órdenes de Mantenimiento', icon: '🔧', status: 'development', url: null,
       users: (compras.users || []).filter(u => u.mant_role).map(u => ({ id: u.id, name: u.full_name, email: u.email, role: u.mant_role, active: u.active !== false })),
       total_users: (compras.users || []).filter(u => u.mant_role).length
+    },
+    {
+      id: 'validaciones', name: 'Validaciones Almacen (SKF/CUESTO)', icon: '📦', status: 'active', url: '/validaciones-almacen',
+      users: (() => { try { const v = readVal(); return (v.usuarios_val || []).filter(u => u.activo !== false).map(u => ({ id: u.id, name: u.nombre, email: u.email, role: u.role, active: u.activo !== false })); } catch(_) { return []; } })(),
+      total_users: (() => { try { return (readVal().usuarios_val || []).length; } catch(_) { return 0; } })()
     }
   ];
   res.json({ modules });
@@ -607,6 +613,82 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
   writeCompras(comprasDb);
   writeRhh(rhhDb);
   res.json({ ok: true, results });
+});
+
+// ── Validaciones Almacen users ────────────────────────────────────────────────
+
+// GET /api/super-admin/val-users
+router.get('/val-users', superAdminRequired, (req, res) => {
+  const db = readVal();
+  res.json((db.usuarios_val || []).map(u => ({
+    id: u.id, nombre: u.nombre, email: u.email,
+    role: u.role, activo: u.activo !== false
+  })));
+});
+
+// PATCH /api/super-admin/unified-users/val-role
+// Asignar/revocar acceso a Validaciones Almacen.
+// Crea el usuario en usuarios_val si no existe (reutiliza password hash de compras o rhh).
+// Roles validos: admin | viewer | null (null = revocar)
+router.patch('/unified-users/val-role', superAdminRequired, (req, res) => {
+  const { email, val_role } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email requerido' });
+  const validRoles = ['admin', 'viewer'];
+  if (val_role && !validRoles.includes(val_role))
+    return res.status(400).json({ error: 'Rol invalido. Use: admin, viewer o null' });
+
+  const emailLow = email.toLowerCase();
+  const valDb = readVal();
+  valDb.usuarios_val = valDb.usuarios_val || [];
+
+  if (!val_role) {
+    const u = valDb.usuarios_val.find(u => u.email === emailLow);
+    if (u) { u.activo = false; writeVal(valDb); }
+    return res.json({ ok: true });
+  }
+
+  // Obtener password hash del usuario en compras o rhh
+  let passwordHash = bcrypt.hashSync('0000', 10);
+  let nombre = emailLow;
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  const comprasUser = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  const rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (comprasUser) { passwordHash = comprasUser.password_hash; nombre = comprasUser.full_name; }
+  else if (rhhUser) { passwordHash = rhhUser.password_hash; nombre = rhhUser.full_name; }
+
+  const existing = valDb.usuarios_val.find(u => u.email === emailLow);
+  if (existing) {
+    existing.role = val_role;
+    existing.activo = true;
+    writeVal(valDb);
+    return res.json({ ok: true });
+  }
+
+  const newUser = {
+    id: nextIdVal(valDb.usuarios_val),
+    nombre, email: emailLow,
+    password_hash: passwordHash,
+    role: val_role,
+    activo: true,
+    created_at: new Date().toISOString()
+  };
+  valDb.usuarios_val.push(newUser);
+  writeVal(valDb);
+  res.json({ ok: true, created: true, id: newUser.id });
+});
+
+// PATCH /api/super-admin/val-users/password
+router.patch('/val-users/password', superAdminRequired, (req, res) => {
+  const { email, new_password } = req.body || {};
+  if (!email || !new_password || new_password.length < 4)
+    return res.status(400).json({ error: 'email y contrasena (min 4 chars) requeridos' });
+  const db = readVal();
+  const user = (db.usuarios_val || []).find(u => u.email === email.toLowerCase());
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado en Validaciones' });
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  writeVal(db);
+  res.json({ ok: true });
 });
 
 // PATCH /api/super-admin/unified-users/mant-role
