@@ -5754,39 +5754,196 @@ async function invoicingView() {
       setTimeout(invoicingView, 1000);
     } catch(e) { invMsg.textContent = e.message; invMsg.style.color = '#dc2626'; }
   };
-  expInvBtn.onclick = () => {
-    function isoWeekLabel(dateStr) {
-      if (!dateStr) return '';
+  expInvBtn.onclick = async () => {
+    function getIsoWeek(dateStr) {
+      if (!dateStr) return { year: 0, week: 0 };
       const d = new Date(dateStr); d.setHours(0,0,0,0);
-      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
-      const w1 = new Date(d.getFullYear(), 0, 4);
-      const wk = 1 + Math.round(((d - w1) / 86400000 - 3 + ((w1.getDay() + 6) % 7)) / 7);
-      return `Sem ${d.getFullYear()}-${String(wk).padStart(2,'0')}`;
+      d.setDate(d.getDate() + 4 - (d.getDay() || 7));
+      const y1 = new Date(d.getFullYear(), 0, 1);
+      return { year: d.getFullYear(), week: Math.ceil((((d - y1) / 86400000) + 1) / 7) };
     }
-    // Lookup: po_id → invoices[]
-    const invByPo = {};
-    invs.forEach(inv => {
-      if (!invByPo[inv.purchase_order_id]) invByPo[inv.purchase_order_id] = [];
-      invByPo[inv.purchase_order_id].push(inv);
+    const now = new Date();
+    const curWk = getIsoWeek(now.toISOString().slice(0,10));
+    const suppliersForExport = [...new Map(invs.map(i=>[i.supplier_id, i.supplier_name])).entries()]
+      .sort((a,b)=>(a[1]||'').localeCompare(b[1]||''));
+
+    const expModal = document.createElement('div');
+    expModal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;display:flex;align-items:center;justify-content:center';
+    expModal.innerHTML = `
+      <div style="background:#fff;border-radius:12px;padding:28px;width:500px;max-width:95vw;max-height:92vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+        <h3 style="margin:0 0 18px;font-size:16px">📊 Exportar reporte de facturación</h3>
+
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:8px">Período</div>
+          <div style="display:flex;gap:16px;margin-bottom:8px">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epm" value="rango" checked> Rango de fechas</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epm" value="semana"> Por semana</label>
+          </div>
+          <div id="epRango" style="display:flex;gap:10px;flex-wrap:wrap">
+            <div><label style="font-size:12px;display:block;margin-bottom:3px">Desde</label><input type="date" id="epFini" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/></div>
+            <div><label style="font-size:12px;display:block;margin-bottom:3px">Hasta</label><input type="date" id="epFfin" value="${now.toISOString().slice(0,10)}" style="padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/></div>
+          </div>
+          <div id="epSemana" style="display:none;gap:10px;flex-wrap:wrap">
+            <div><label style="font-size:12px;display:block;margin-bottom:3px">Año</label><input type="number" id="epAnio" value="${curWk.year}" min="2020" max="2099" style="width:90px;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/></div>
+            <div><label style="font-size:12px;display:block;margin-bottom:3px">Semana ISO</label><input type="number" id="epWk" value="${curWk.week}" min="1" max="53" style="width:80px;padding:5px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px"/></div>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:6px">Proveedor</div>
+          <select id="epSupp" style="width:100%;padding:6px 8px;border:1px solid #d1d5db;border-radius:5px;font-size:13px">
+            <option value="">Todos los proveedores</option>
+            ${suppliersForExport.map(([id,name])=>`<option value="${id}">${escapeHtml(name||'-')}</option>`).join('')}
+          </select>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:6px">Estatus de pago</div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epSt" value="" checked> Todos</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epSt" value="Pagada"> Pagadas</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epSt" value="Pendiente de pago"> Pendientes</label>
+          </div>
+        </div>
+
+        <div style="margin-bottom:20px;padding:12px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px">
+          <div style="font-size:13px;font-weight:600;color:#15803d;margin-bottom:8px">📁 Descargar PDF y XML de facturas</div>
+          <div style="display:flex;gap:16px;flex-wrap:wrap">
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epF" value="no" checked> No — solo Excel</label>
+            <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="epF" value="si"> Sí — ZIP con archivos</label>
+          </div>
+        </div>
+
+        <div id="epMsg" style="font-size:12px;margin-bottom:10px;min-height:16px"></div>
+
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button id="epCancelBtn" style="padding:8px 20px;border:1px solid #d1d5db;border-radius:6px;background:#f9fafb;cursor:pointer;font-size:13px">Cancelar</button>
+          <button id="epGenBtn" class="btn-primary" style="padding:8px 22px">📥 Generar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(expModal);
+
+    expModal.querySelectorAll('input[name="epm"]').forEach(r => {
+      r.onchange = () => {
+        const isSemana = expModal.querySelector('input[name="epm"]:checked').value === 'semana';
+        expModal.querySelector('#epRango').style.display = isSemana ? 'none' : 'flex';
+        expModal.querySelector('#epSemana').style.display = isSemana ? 'flex' : 'none';
+      };
     });
-    const sortedPos = [...pos].sort((a, b) => (b.created_at||'').localeCompare(a.created_at||''));
-    const header = ['Fecha de PO','Semana','PO','Proveedor','Status','Total','No. de Factura','Fecha de Factura'];
-    const dataRows = [];
-    sortedPos.forEach(po => {
-      const poInvs = invByPo[po.id] || [];
-      if (!poInvs.length) {
-        dataRows.push([(po.created_at||'').slice(0,10), isoWeekLabel(po.created_at), po.folio, po.supplier_name||'', po.status, Number(po.total_amount||0), 'Pendiente', '—']);
-      } else {
-        poInvs.forEach(inv => {
-          dataRows.push([(po.created_at||'').slice(0,10), isoWeekLabel(po.created_at), po.folio, po.supplier_name||'', po.status, Number(po.total_amount||0), inv.invoice_number||'Pendiente', (inv.created_at||'').slice(0,10)||'—']);
+    expModal.querySelector('#epCancelBtn').onclick = () => expModal.remove();
+    expModal.onclick = e => { if (e.target === expModal) expModal.remove(); };
+
+    expModal.querySelector('#epGenBtn').onclick = async () => {
+      const genBtn = expModal.querySelector('#epGenBtn');
+      const msgEl  = expModal.querySelector('#epMsg');
+      genBtn.disabled = true; genBtn.textContent = '⏳ Preparando...';
+      msgEl.textContent = ''; msgEl.style.color = '#6b7280';
+      try {
+        const mode     = expModal.querySelector('input[name="epm"]:checked').value;
+        const suppId   = expModal.querySelector('#epSupp').value;
+        const statusV  = expModal.querySelector('input[name="epSt"]:checked').value;
+        const inclFiles= expModal.querySelector('input[name="epF"]:checked').value === 'si';
+
+        // Datos enriquecidos del backend (solicitante, cc, scc)
+        const reportRows = await api('/api/invoices/report-data');
+
+        // Filtrar por período
+        let filtered = reportRows.slice();
+        if (mode === 'rango') {
+          const fIni = expModal.querySelector('#epFini').value;
+          const fFin = expModal.querySelector('#epFfin').value;
+          if (fIni) filtered = filtered.filter(r => r.fecha_factura >= fIni);
+          if (fFin) filtered = filtered.filter(r => r.fecha_factura <= fFin);
+        } else {
+          const anio = Number(expModal.querySelector('#epAnio').value);
+          const wk   = Number(expModal.querySelector('#epWk').value);
+          filtered = filtered.filter(r => {
+            const w = getIsoWeek(r.fecha_factura);
+            return w.year === anio && w.week === wk;
+          });
+        }
+        if (suppId)   filtered = filtered.filter(r => String(r.supplier_id) === suppId);
+        if (statusV)  filtered = filtered.filter(r => r.estatus_pago === statusV);
+
+        if (!filtered.length) {
+          msgEl.textContent = 'Sin facturas con los filtros seleccionados.';
+          msgEl.style.color = '#f59e0b';
+          genBtn.disabled = false; genBtn.textContent = '📥 Generar';
+          return;
+        }
+
+        // Construir Excel
+        const hdrs = ['Fecha compra','Fecha factura','No. PO','Solicitante','Factura','Proveedor',
+          'Centro de costo','Sub-centro de costo','Total','Moneda','Total c/IVA','Estatus de pago'];
+        if (inclFiles) hdrs.push('Ubicación en ZIP');
+
+        const dataRows = filtered.map(r => {
+          const row = [r.fecha_compra, r.fecha_factura, r.numero_po, r.solicitante, r.factura,
+            r.proveedor, r.centro_costo, r.sub_centro_costo, r.subtotal, r.moneda, r.total_con_iva, r.estatus_pago];
+          if (inclFiles) {
+            const parts = [];
+            if (r.has_pdf) parts.push(`${r.supplier_name_safe}/${r.invoice_number_safe}/factura.pdf`);
+            if (r.has_xml) parts.push(`${r.supplier_name_safe}/${r.invoice_number_safe}/factura.xml`);
+            row.push(parts.join(', ') || '—');
+          }
+          return row;
         });
+
+        const ws = XLSX.utils.aoa_to_sheet([hdrs, ...dataRows]);
+        ws['!cols'] = [{wch:13},{wch:13},{wch:16},{wch:20},{wch:18},{wch:25},{wch:20},{wch:20},{wch:12},{wch:8},{wch:14},{wch:18}];
+        if (inclFiles) ws['!cols'].push({wch:40});
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Facturación');
+
+        if (!inclFiles) {
+          XLSX.writeFile(wb, `Reporte-Facturacion-${now.toISOString().slice(0,10)}.xlsx`);
+          expModal.remove();
+          return;
+        }
+
+        // Construir ZIP
+        msgEl.textContent = '⏳ Descargando archivos adjuntos...';
+        const zip = new JSZip(); // global desde CDN
+        // Agregar Excel al ZIP
+        const xlsxArr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        zip.file(`Reporte-Facturacion-${now.toISOString().slice(0,10)}.xlsx`, xlsxArr);
+
+        // Descargar PDFs/XMLs uno por uno para controlar memoria
+        const withFiles = filtered.filter(r => r.has_pdf || r.has_xml);
+        for (let fi = 0; fi < withFiles.length; fi++) {
+          const r = withFiles[fi];
+          msgEl.textContent = `⏳ Descargando archivos ${fi+1}/${withFiles.length}...`;
+          if (r.has_pdf) {
+            try {
+              const resp = await fetch(`/api/invoices/${r.id}/file/pdf`, { credentials: 'include' });
+              if (resp.ok) zip.file(`${r.supplier_name_safe}/${r.invoice_number_safe}/factura.pdf`, await resp.arrayBuffer());
+            } catch(e) { /* omitir si falla */ }
+          }
+          if (r.has_xml) {
+            try {
+              const resp = await fetch(`/api/invoices/${r.id}/file/xml`, { credentials: 'include' });
+              if (resp.ok) zip.file(`${r.supplier_name_safe}/${r.invoice_number_safe}/factura.xml`, await resp.arrayBuffer());
+            } catch(e) { /* omitir si falla */ }
+          }
+        }
+
+        msgEl.textContent = '⏳ Comprimiendo ZIP...';
+        const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+
+        // Descargar y liberar memoria
+        const dlUrl = URL.createObjectURL(zipBlob);
+        const dlA = document.createElement('a');
+        dlA.href = dlUrl; dlA.download = `Facturacion-${now.toISOString().slice(0,10)}.zip`;
+        document.body.appendChild(dlA); dlA.click(); document.body.removeChild(dlA);
+        setTimeout(() => URL.revokeObjectURL(dlUrl), 1500);
+
+        expModal.remove();
+      } catch(e) {
+        msgEl.textContent = `Error: ${e.message}`;
+        msgEl.style.color = '#dc2626';
+        genBtn.disabled = false; genBtn.textContent = '📥 Generar';
       }
-    });
-    const ws = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
-    ws['!cols'] = [{wch:13},{wch:14},{wch:16},{wch:28},{wch:18},{wch:14},{wch:20},{wch:16}];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Facturación POs');
-    XLSX.writeFile(wb, `Facturacion-POs-${new Date().toISOString().slice(0,10)}.xlsx`);
+    };
   };
 
   // ── Tabla dinámica: filtro + orden + agrupación por proveedor ─────────────
@@ -5824,12 +5981,12 @@ async function invoicingView() {
             <td><b>${escapeHtml(i.invoice_number)}</b><div class="small muted">${String(i.created_at||'').slice(0,10)}</div></td>
             <td style="font-size:12px">${i.po_folio||'-'}</td>
             <td style="font-size:12px">${escapeHtml(i.supplier_name||'-')}</td>
-            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</td>
+            <td style="font-size:12px;text-align:right;font-weight:600">$${Number(i.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})} <span style="font-size:10px;color:#6b7280;font-weight:400">${i.currency||'MXN'}</span></td>
             <td>${statusPill(i.status)}</td>
             <td>
-              ${i.pdf_path ? `<a href="/api/invoices/${i.id}/file/pdf" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
-              ${i.xml_path ? `<a href="/api/invoices/${i.id}/file/xml" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
-              ${!i.pdf_path && !i.xml_path ? '<span class="muted small">—</span>' : ''}
+              ${i.has_pdf ? `<a href="/api/invoices/${i.id}/file/pdf" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none" title="Ver PDF">📄</a>` : ''}
+              ${i.has_xml ? `<a href="/api/invoices/${i.id}/file/xml" target="_blank" onclick="event.stopPropagation()" style="font-size:13px;text-decoration:none;margin-left:4px" title="Ver XML">📋</a>` : ''}
+              ${!i.has_pdf && !i.has_xml ? '<span class="muted small">—</span>' : ''}
             </td>
             <td><button class="btn-secondary" style="font-size:11px;padding:3px 8px" onclick="event.stopPropagation();showInvoiceDetail(${i.id})">Ver detalle</button></td>
           </tr>`;
@@ -6103,14 +6260,17 @@ async function showInvoiceDetail(invId) {
         <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center">
           <div class="small muted">Subtotal</div>
           <div style="font-weight:700;font-size:15px">$${Number(inv.subtotal||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px">${inv.po_currency||'MXN'}</div>
         </div>
         <div style="background:#f8fafc;border-radius:8px;padding:10px;text-align:center">
           <div class="small muted">IVA</div>
           <div style="font-weight:700;font-size:15px">$${Number(inv.taxes||0).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px">${inv.po_currency||'MXN'}</div>
         </div>
         <div style="background:${isFullyPaid?'#f0fff4':'#fef2f2'};border-radius:8px;padding:10px;text-align:center">
           <div class="small muted">${isFullyPaid ? 'Total pagado' : 'Saldo pendiente'}</div>
           <div style="font-weight:700;font-size:15px;color:${isFullyPaid?'#16a34a':'#dc2626'}">$${(isFullyPaid ? Number(inv.total||0) : balance).toLocaleString('es-MX',{minimumFractionDigits:2})}</div>
+          <div style="font-size:11px;color:#6b7280;margin-top:2px">${inv.po_currency||'MXN'}</div>
         </div>
       </div>
 
@@ -6130,10 +6290,10 @@ async function showInvoiceDetail(invId) {
 
       <!-- Archivos -->
       <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-        ${inv.pdf_path
+        ${inv.has_pdf
           ? `<a href="/api/invoices/${inv.id}/file/pdf" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dbeafe;color:#1d4ed8;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📄 Ver PDF</a>`
           : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin PDF adjunto</span>`}
-        ${inv.xml_path
+        ${inv.has_xml
           ? `<a href="/api/invoices/${inv.id}/file/xml" target="_blank" style="display:inline-flex;align-items:center;gap:5px;background:#dcfce7;color:#15803d;padding:6px 14px;border-radius:6px;text-decoration:none;font-size:13px;font-weight:600">📋 Ver XML (CFDI)</a>`
           : `<span style="font-size:12px;color:#6b7280;background:#f3f4f6;padding:6px 14px;border-radius:6px">Sin XML adjunto</span>`}
       </div>
@@ -6155,9 +6315,129 @@ async function showInvoiceDetail(invId) {
   if (payBtn) {
     payBtn.onclick = () => {
       panel.remove();
-      location.hash = '#/pagos';
+      showRegisterPaymentModal(inv);
     };
   }
+}
+
+// ── Modal de registro de pago directo desde facturación ──────────────────────
+function showRegisterPaymentModal(inv) {
+  const paidTotal = (inv.payments || []).reduce((s, p) => s + Number(p.amount || 0), 0);
+  const balance   = Math.max(0, Number(inv.total || 0) - paidTotal);
+  const currency  = inv.po_currency || 'MXN';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1001;display:flex;align-items:center;justify-content:center';
+  panel.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:28px;width:560px;max-width:96vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <h3 style="margin:0 0 4px;font-size:16px">💳 Registrar pago</h3>
+      <div class="small muted" style="margin-bottom:16px">Factura <b>${escapeHtml(inv.invoice_number)}</b> · PO: <b>${escapeHtml(inv.po_folio||'-')}</b> · <b>${escapeHtml(inv.supplier_name||'-')}</b></div>
+
+      <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:12px;margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="small muted">Saldo pendiente</div>
+            <div style="font-size:18px;font-weight:700;color:#1d4ed8">$${balance.toLocaleString('es-MX',{minimumFractionDigits:2})} ${currency}</div>
+          </div>
+          <div style="text-align:right">
+            <div class="small muted">Total factura</div>
+            <div style="font-weight:600">$${Number(inv.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${currency}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          ${inv.has_pdf ? `<a href="/api/invoices/${inv.id}/file/pdf" target="_blank" style="background:#dc2626;color:white;text-decoration:none;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600">📄 PDF</a>` : ''}
+          ${inv.has_xml ? `<a href="/api/invoices/${inv.id}/file/xml" download style="background:#059669;color:white;text-decoration:none;padding:4px 12px;border-radius:5px;font-size:12px;font-weight:600">📋 XML</a>` : ''}
+        </div>
+      </div>
+
+      <div class="row-2" style="margin-bottom:10px">
+        <div><label>Monto a pagar *</label><input id="pmAmount" type="number" value="${balance.toFixed(2)}" placeholder="0.00"/></div>
+        <div><label>Tipo de pago</label>
+          <select id="pmType">
+            <option>Transferencia</option><option>Cheque</option><option>Efectivo</option>
+            <option>SPEI</option><option>Caja chica</option><option>Otro</option>
+          </select>
+        </div>
+      </div>
+      <div id="pmCajachicaInfo" style="display:none;background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">
+        💵 <b>Caja chica</b> — Ingresa el No. de recibo y el concepto abajo.
+      </div>
+      <div class="row-2" style="margin-bottom:10px">
+        <div><label>Referencia / No. recibo *</label><input id="pmRef" placeholder="Ej. SPEI-00123456"/></div>
+        <div><label>Fecha de entrega del material</label><input id="pmDelivery" type="date"/></div>
+      </div>
+      <div class="row-2" style="margin-bottom:10px">
+        <div><label>Días de crédito</label><input id="pmCreditDays" type="number" value="${inv.credit_days||0}" min="0"/></div>
+        <div><label>Comentario</label><input id="pmComment" placeholder="Opcional"/></div>
+      </div>
+      <div style="margin-bottom:14px">
+        <label>📎 Comprobante de pago (PDF, imagen)</label>
+        <input type="file" id="pmProof" accept=".pdf,.jpg,.jpeg,.png,.webp" style="font-size:12px;margin-top:4px;display:block"/>
+        <span class="small muted">Máx. 10 MB · PDF, JPG, PNG, WEBP</span>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;align-items:center">
+          <button class="btn-primary" id="pmSaveBtn">💾 Guardar pago</button>
+          <span id="pmMsg" class="small muted"></span>
+        </div>
+        <button id="pmCloseBtn" style="background:#f3f4f6;border:1px solid #d1d5db;border-radius:6px;padding:7px 20px;cursor:pointer;font-size:13px">Cerrar</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(panel);
+  panel.querySelector('#pmCloseBtn').onclick = () => panel.remove();
+  panel.onclick = e => { if (e.target === panel) panel.remove(); };
+
+  panel.querySelector('#pmType').addEventListener('change', function() {
+    panel.querySelector('#pmCajachicaInfo').style.display = this.value === 'Caja chica' ? '' : 'none';
+    panel.querySelector('#pmRef').placeholder = this.value === 'Caja chica' ? 'No. recibo caja chica' : 'Ej. SPEI-00123456';
+  });
+
+  panel.querySelector('#pmSaveBtn').onclick = async () => {
+    const saveBtn = panel.querySelector('#pmSaveBtn');
+    const msgEl   = panel.querySelector('#pmMsg');
+    try {
+      const amount  = Number(panel.querySelector('#pmAmount').value || 0);
+      if (!amount || amount <= 0) throw new Error('Ingresa un monto mayor a cero');
+      const payType = panel.querySelector('#pmType').value;
+      const ref     = panel.querySelector('#pmRef').value;
+      if (!ref) throw new Error(payType === 'Caja chica' ? 'Ingresa el No. de recibo de caja chica' : 'Ingresa la referencia de pago');
+
+      saveBtn.disabled = true; saveBtn.textContent = '⏳ Guardando...';
+
+      const fd = new FormData();
+      fd.append('invoice_id', inv.id);
+      fd.append('supplier_id', inv.supplier_id);
+      fd.append('amount', amount);
+      fd.append('payment_type', payType);
+      fd.append('reference', ref);
+      fd.append('comment', panel.querySelector('#pmComment').value);
+      fd.append('delivery_date', panel.querySelector('#pmDelivery').value);
+      fd.append('credit_days', panel.querySelector('#pmCreditDays').value || 0);
+      const proofFile = panel.querySelector('#pmProof').files[0];
+      if (proofFile) fd.append('proof', proofFile);
+
+      const res = await fetch('/api/payments', { method: 'POST', credentials: 'include', body: fd });
+      if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
+      const data = await res.json();
+
+      msgEl.textContent = '✅ Pago registrado'; msgEl.style.color = '#16a34a';
+
+      const mailtos = [];
+      if (data.mailto && data.supplier_email) mailtos.push({ label: '📧 Correo al proveedor', mailto: data.mailto, email: data.supplier_email });
+      if (data.compras_mailto && data.compras_emails) mailtos.push({ label: '📧 Notificar a compras', mailto: data.compras_mailto, email: data.compras_emails });
+
+      setTimeout(() => {
+        panel.remove();
+        if (mailtos.length) showPaymentNotifyPanel(mailtos, inv.invoice_number);
+        invoicingView();
+      }, 800);
+    } catch(e) {
+      msgEl.textContent = e.message; msgEl.style.color = '#dc2626';
+      saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar pago';
+    }
+  };
 }
 
 function showPaymentNotifyPanel(mailtos, invoiceNumber) {

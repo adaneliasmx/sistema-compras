@@ -69,7 +69,10 @@ router.get('/', (req, res) => {
         supplier_name: (db.suppliers.find(s => s.id === inv.supplier_id) || {}).business_name || '',
         po_folio: po.folio || '',
         po_advance_percentage: po.advance_percentage || 0,
-        advance_paid_on_po: advancePaid
+        advance_paid_on_po: advancePaid,
+        currency: po.currency || 'MXN',
+        has_pdf: !!(inv.pdf_data || inv.pdf_path),
+        has_xml: !!(inv.xml_data || inv.xml_path)
       };
     });
   res.json(rows);
@@ -347,6 +350,44 @@ router.post('/monthly', allowRoles('comprador', 'proveedor', 'admin'), upload.fi
   res.status(201).json({ ...row, mailto_comprador });
 });
 
+// ── Datos enriquecidos para reporte Excel de facturación ─────────────────────
+router.get('/report-data', allowRoles('admin', 'comprador', 'pagos'), (req, res) => {
+  const db = read();
+  const rows = db.invoices.map(inv => {
+    const po       = db.purchase_orders.find(p => p.id === inv.purchase_order_id) || {};
+    const supplier = db.suppliers.find(s => s.id === inv.supplier_id) || {};
+    const poItems  = (db.purchase_order_items || []).filter(i => i.purchase_order_id === po.id);
+    const firstPoItem = poItems[0] || {};
+    const reqItem  = (db.requisition_items || []).find(r => r.id === firstPoItem.requisition_item_id) || {};
+    const req      = (db.requisitions || []).find(r => r.id === reqItem.requisition_id) || {};
+    const requester= (db.users || []).find(u => u.id === req.requester_user_id) || {};
+    const cc       = (db.cost_centers || []).find(c => c.id === (reqItem.cost_center_id || req.cost_center_id)) || {};
+    const scc      = (db.sub_cost_centers || []).find(c => c.id === (reqItem.sub_cost_center_id || req.sub_cost_center_id)) || {};
+    const safeName = s => (s || '').replace(/[/\\?%*:|"<>]/g, '-').trim() || '-';
+    return {
+      id: inv.id,
+      supplier_id: inv.supplier_id,
+      fecha_compra: String(po.created_at || '').slice(0, 10),
+      fecha_factura: String(inv.created_at || '').slice(0, 10),
+      numero_po: po.folio || '',
+      solicitante: requester.full_name || '',
+      factura: inv.invoice_number || '',
+      proveedor: supplier.business_name || '',
+      centro_costo: cc.name || '',
+      sub_centro_costo: scc.name || '',
+      subtotal: Number(inv.subtotal || 0),
+      moneda: po.currency || 'MXN',
+      total_con_iva: Number(inv.total || 0),
+      estatus_pago: inv.status || '',
+      has_pdf: !!(inv.pdf_data || inv.pdf_path),
+      has_xml: !!(inv.xml_data || inv.xml_path),
+      supplier_name_safe: safeName(supplier.business_name),
+      invoice_number_safe: safeName(inv.invoice_number || String(inv.id))
+    };
+  });
+  res.json(rows);
+});
+
 // ── Detalle de factura con ítems de PO y trazabilidad ────────────────────────
 router.get('/:id', (req, res) => {
   const db = read();
@@ -400,6 +441,7 @@ router.get('/:id', (req, res) => {
     supplier_name: supplier.business_name || '',
     supplier_email: supplier.email || '',
     po_folio: po.folio || '',
+    po_currency: po.currency || 'MXN',
     po_items: poItems,
     due_date: dueDate ? dueDate.toISOString().slice(0, 10) : null,
     days_remaining: daysRemaining,
