@@ -5849,8 +5849,11 @@ async function generarReporteTitulacion(headerId) {
   const tanquesLinea = tanques_cat.filter(t => t.linea === linea).sort((a,b) => String(a.no_tanque).localeCompare(String(b.no_tanque)));
   const paramsLinea = params_cat.filter(p => tanquesLinea.some(t => t.id === p.tanque_id) && p.activo !== false);
 
-  const enjuagues = tanquesLinea.filter(t => t.es_enjuague);
-  const proceso   = tanquesLinea.filter(t => !t.es_enjuague);
+  // Clasificación primaria por campo 'tipo' (fuente original, siempre correcto).
+  // es_enjuague puede sobreescribir solo cuando tipo NO es 'ENJUAGUE' (e.g. tanques nuevos sin tipo estándar).
+  const isEnj     = t => t.tipo === 'ENJUAGUE' || (t.es_enjuague === true && t.tipo !== 'ENJUAGUE');
+  const enjuagues = tanquesLinea.filter(isEnj);
+  const proceso   = tanquesLinea.filter(t => !isEnj(t));
 
   const turnoLabel = { T1:'Turno 1 (6:00–14:00)', T2:'Turno 2 (14:00–22:00)', T3:'Turno 3 (22:00–6:00)' }[header.turno] || header.turno;
   const fecha = header.fecha ? header.fecha.split('T')[0].split('-').reverse().join('/') : '—';
