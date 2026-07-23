@@ -1990,7 +1990,10 @@ router.get('/parametros-titulacion', (req, res) => {
   let params = db.parametros_titulacion || [];
   if (req.query.linea) params = params.filter(p => p.no_tanque && (db.tanques_vales || []).find(t => t.id === p.tanque_id)?.linea === req.query.linea);
   if (req.query.tanque_id) params = params.filter(p => p.tanque_id === Number(req.query.tanque_id));
-  if (req.query.activo !== undefined) { const a = req.query.activo === 'true'; params = params.filter(p => p.activo === a); }
+  if (req.query.activo !== undefined) {
+    const wantActive = req.query.activo === 'true';
+    params = params.filter(p => wantActive ? p.activo !== false : p.activo === false);
+  }
   res.json(params);
 });
 
