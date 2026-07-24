@@ -5974,7 +5974,7 @@ async function generarReporteTitulacion(headerId) {
       <div style="text-align:center">
         <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:1px">Soluciones del proceso</div>
         <div style="font-size:18px;font-weight:800;color:#1e3a5f">Reporte Titulación — ${linea}</div>
-        <div style="font-size:13px;color:#374151">Tit. ${header.numero_titulacion} &nbsp;·&nbsp; ${turnoLabel}</div>
+        <div style="font-size:13px;color:#374151">${header.numero_titulacion === 1 ? '1ra' : '2da'} titulación del turno ${header.turno}</div>
       </div>
       <div style="text-align:right;font-size:13px;line-height:2;color:#374151;background:#f1f5f9;padding:6px 12px;border-radius:6px">
         <div><strong>Fecha:</strong> ${fecha}</div>

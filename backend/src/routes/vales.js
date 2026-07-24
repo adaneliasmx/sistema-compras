@@ -2162,11 +2162,6 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
 
   const now = new Date();
   const tanques = db.tanques_vales || [];
-  // Snapshot de químicos activos en este momento
-  const quimico_snapshot = {};
-  tanques.filter(t => t.linea === b.linea && t.quimico_activo).forEach(t => {
-    quimico_snapshot[t.id] = t.quimico_activo;
-  });
 
   db.titulaciones_header = db.titulaciones_header || [];
   db.titulaciones_detalle = db.titulaciones_detalle || [];
@@ -2181,7 +2176,6 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
     semana: b.semana || null,
     año: b.año || null,
     estado: 'pendiente',
-    quimico_snapshot,
     created_at: now.toISOString(),
     updated_at: now.toISOString()
   };
@@ -2192,11 +2186,6 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
     const tanque = tanques.find(t => t.id === p.tanque_id);
     if (!tanque || tanque.linea !== b.linea) return false;
     if (p.activo === false) return false;
-    // Filtro por químico
-    if (p.quimico) {
-      const quActivo = quimico_snapshot[p.tanque_id] || tanque.quimico_activo;
-      if (quActivo && quActivo !== p.quimico) return false;
-    }
     // Parámetros frecuencia=1 solo en numero_titulacion=1
     if (p.frecuencia === 1 && Number(b.numero_titulacion) !== 1) return false;
     return true;
