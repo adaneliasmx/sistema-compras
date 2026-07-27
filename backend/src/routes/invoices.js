@@ -182,6 +182,7 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
     xml_data: encodeFileForDb(xmlFile?.path, 'xml'),
     pdf_original: pdfFile?.originalname || null,
     xml_original: xmlFile?.originalname || null,
+    payment_method: req.body.payment_method || null,
     registered_by_role: req.user.role_code,
     created_at: new Date().toISOString(),
     created_by_user_id: req.user.id
@@ -227,8 +228,14 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
   // Si el proveedor sube la factura, generar mailto de notificación al área de compras
   let mailto_comprador = null;
   if (req.user.role_code === 'proveedor') {
-    const buyers = (db.users || []).filter(u => (u.role_code === 'comprador' || u.role_code === 'pagos') && u.active !== false);
-    const buyerEmails = buyers.map(u => u.email).filter(Boolean).join(',');
+    const buyers = (db.users || []).filter(u =>
+      ['admin', 'comprador', 'pagos'].includes(u.role_code) && u.active !== false
+    );
+    const supplierUsers = (db.users || []).filter(u =>
+      u.supplier_id === po?.supplier_id && u.active !== false
+      && !['admin', 'comprador', 'pagos'].includes(u.role_code)
+    );
+    const buyerEmails = [...new Set([...buyers, ...supplierUsers].map(u => u.email).filter(Boolean))].join(',');
     if (buyerEmails && po) {
       const supplier2 = (db.suppliers || []).find(s => s.id === po.supplier_id) || {};
       const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
@@ -241,12 +248,13 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
         `── Datos ────────────────────────────────────────────`,
         `PO:          ${po.folio}`,
         `Factura:     ${row.invoice_number}`,
-        `Tipo:        ${invoiceType === 'anticipo' ? 'Anticipo' : 'Normal'}`,
-        `Subtotal:    $${Number(row.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
-        `IVA:         $${Number(row.taxes || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
-        `Total:       $${Number(row.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
-        `PDF:         ${row.pdf_original || 'No adjunto'}`,
-        `XML:         ${row.xml_original || 'No adjunto'}`,
+        `Tipo:            ${invoiceType === 'anticipo' ? 'Anticipo' : 'Normal'}`,
+        `Método de pago:  ${row.payment_method || 'No especificado'}`,
+        `Subtotal:        $${Number(row.subtotal || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `IVA:             $${Number(row.taxes || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `Total:           $${Number(row.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
+        `PDF:             ${row.pdf_original || 'No adjunto'}`,
+        `XML:             ${row.xml_original || 'No adjunto'}`,
         ``,
         `► Revisar en el sistema:`,
         `${baseUrl}/#/facturacion`,

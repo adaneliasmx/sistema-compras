@@ -4736,6 +4736,13 @@ async function proveedorPOView() {
             <div><label style="font-size:12px">Subtotal *</label><input id="sinv-sub-${po.id}" type="number" value="${Number(po.total_amount||0).toFixed(2)}" oninput="document.getElementById('sinv-tax-${po.id}').value=(+this.value*0.16).toFixed(2)"/></div>
             <div><label style="font-size:12px">IVA (16%)</label><input id="sinv-tax-${po.id}" type="number" value="${(Number(po.total_amount||0)*0.16).toFixed(2)}"/></div>
           </div>
+          <div style="margin-top:8px">
+            <label style="font-size:12px">Método de pago SAT</label>
+            <select id="sinv-pm-${po.id}" style="font-size:12px;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;width:100%;max-width:320px">
+              <option value="PPD">PPD — Pago en Parcialidades o Diferido</option>
+              <option value="PUE">PUE — Pago en Una sola Exhibición</option>
+            </select>
+          </div>
           <div class="row-2" style="margin-top:8px">
             <div><label style="font-size:12px">📄 PDF de la factura</label><input type="file" id="sinv-pdf-${po.id}" accept=".pdf" style="font-size:12px"/></div>
             <div><label style="font-size:12px">📋 XML (CFDI)</label><input type="file" id="sinv-xml-${po.id}" accept=".xml" style="font-size:12px"/></div>
@@ -4867,16 +4874,21 @@ async function proveedorPOView() {
         fd.append('subtotal', sub);
         fd.append('taxes', tax);
         fd.append('total', sub + tax);
+        const pmEl = document.getElementById(`sinv-pm-${id}`);
+        if (pmEl) fd.append('payment_method', pmEl.value);
         if (pdfEl && pdfEl.files[0]) fd.append('pdf', pdfEl.files[0]);
         if (xmlEl && xmlEl.files[0]) fd.append('xml', xmlEl.files[0]);
         const res = await fetch('/api/invoices', { method: 'POST', credentials: 'include', body: fd });
         if (!res.ok) throw new Error((await res.json()).error || 'Error al guardar');
         const out2 = await res.json();
-        if (out2.mailto_comprador) { const a = document.createElement('a'); a.href = out2.mailto_comprador; a.click(); }
-        msgEl.textContent = isAnticipo ? '✅ Factura de anticipo subida. El área de pagos recibirá la solicitud.' : '✅ Factura subida correctamente';
-        msgEl.style.color = '#16a34a';
         btn.disabled = true;
-        setTimeout(render, 1200);
+        const msgTxt = isAnticipo ? '✅ Factura de anticipo subida.' : '✅ Factura subida correctamente.';
+        if (out2.mailto_comprador) {
+          msgEl.innerHTML = `<span style="color:#16a34a;font-weight:600">${msgTxt}</span>&nbsp;&nbsp;<a href="${out2.mailto_comprador}" target="_blank" style="display:inline-block;background:#2563eb;color:#fff;padding:4px 12px;border-radius:5px;font-size:12px;text-decoration:none;font-weight:600">📧 Notificar al comprador</a>`;
+        } else {
+          msgEl.innerHTML = `<span style="color:#16a34a;font-weight:600">${msgTxt}</span>`;
+        }
+        setTimeout(render, 5000);
       } catch(e) { if (msgEl) { msgEl.textContent = e.message; msgEl.style.color = '#dc2626'; } }
     };
   });
