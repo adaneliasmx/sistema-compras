@@ -4355,7 +4355,7 @@ async function viewReportes(el) {
             <thead><tr>
               <th>Folio Barril</th><th>Cav.</th><th>Turno</th><th>F. Carga</th><th>Hr Carga</th><th>F. Descarga</th><th>Hr Descarga</th>
               <th>Herramental</th><th>Componente</th><th>No. SKF</th><th>Cantidad</th>
-              <th>Proceso</th><th>Operador</th>
+              <th>Proceso</th><th>Sub-proceso</th><th>Operador</th>
               <th>Resultado / Defecto</th>
               ${isAdmin ? '<th>Acciones</th>' : ''}
             </tr></thead>
@@ -4373,6 +4373,7 @@ async function viewReportes(el) {
                 <td class="mono">${escHtml(c.no_skf || '—')}</td>
                 <td style="text-align:right;font-weight:700">${c.cantidad ?? '—'}</td>
                 <td>${escHtml(c.proceso || '—')}</td>
+                <td>${escHtml(c.sub_proceso || '—')}</td>
                 <td>${escHtml(c.operador || '—')}</td>
                 <td>${rptResultBadge(c)}</td>
                 ${isAdmin ? `<td style="white-space:nowrap"><button class="btn btn-sm" style="padding:2px 8px;font-size:11px;background:#ef4444;color:#fff;border:none" data-del-cav="${c.id}" title="Eliminar cavidad">🗑</button></td>` : ''}
