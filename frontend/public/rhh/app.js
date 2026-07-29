@@ -25,19 +25,17 @@ const MENU_BY_ROLE = {
     ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
   supervisor: [
-    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['ausencias-hoy', '🚨 Ausencias Hoy'],
     ['mis-evaluaciones', '⭐ Mi Evaluación']
   ],
   rh: [
     ['dashboard', '📊 Dashboard'],
-    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['checador', '🕐 Checador'],
     ['empleados', '👥 Empleados'],
-    ['incidencias', '⚠️ Incidencias'],
+    ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
-    ['prenomina', '💰 Prenómina'],
+    ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
     ['evaluaciones', '⭐ Evaluaciones'],
     ['reportes', '📊 Reportes'],
@@ -46,16 +44,14 @@ const MENU_BY_ROLE = {
   ],
   admin: [
     ['dashboard', '📊 Dashboard'],
-    ['lista-asistencia', '📋 ROL / Asistencia'],
     ['checador', '🕐 Checador'],
     ['empleados', '👥 Empleados'],
-    ['incidencias', '⚠️ Incidencias'],
+    ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
-    ['prenomina', '💰 Prenómina'],
+    ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
     ['evaluaciones', '⭐ Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
-    ['plantillas', '📄 Plantillas'],
     ['reportes', '📊 Reportes'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
@@ -1256,10 +1252,255 @@ async function confirmDeactivate(id) {
   }
 }
 
-// ── 6. Incidencias ────────────────────────────────────────────────────────────
+// ── 6. Incidencias Semanales ──────────────────────────────────────────────────
+// Legacy filter (mantener por compatibilidad con misIncidenciasView / checador)
 let incFilter = { employee_id: '', type: '', status: '', date_from: '', date_to: '' };
 
+// Estado módulo semanal
+let incSemPeriodo  = 0;
+let incSemRows     = [];
+let incSemPeriodos = [];
+let _heEmpId       = null;
+
 async function incidenciasView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando períodos...</div>', 'incidencias');
+  try {
+    if (incSemPeriodos.length === 0) {
+      incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
+    }
+    if (!incSemPeriodo && incSemPeriodos.length > 0) {
+      incSemPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+    }
+    await _loadIncSem();
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'incidencias');
+  }
+}
+
+async function _loadIncSem() {
+  try {
+    if (incSemPeriodo) {
+      incSemRows = await api(`/api/rhh/nomina/incidencias?no_periodo=${incSemPeriodo}`) || [];
+    }
+    _renderIncSem();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function _renderIncSem() {
+  const el = document.getElementById('app');
+  const periodo = incSemPeriodos.find(p => p.no_periodo === incSemPeriodo);
+
+  const periodOpts = incSemPeriodos.map(p =>
+    `<option value="${p.no_periodo}" ${p.no_periodo === incSemPeriodo ? 'selected' : ''}>Semana ${p.no_periodo} &nbsp;·&nbsp; ${p.fecha_inicio} al ${p.fecha_fin}</option>`
+  ).join('');
+
+  const tableRows = incSemRows.map((r, idx) => {
+    const empId = r.employee_id;
+    const heBtn = (r.horas_extras_total || 0) > 0
+      ? `<button class="btn-ghost" style="font-size:10px;padding:1px 4px;margin-left:2px;" title="Detalle HE" onclick="showHEDetalle(${empId})">📋</button>`
+      : '';
+    return `<tr>
+      <td style="white-space:nowrap;padding:4px 8px;">
+        <strong style="font-size:12px;">${escHtml(r.employee?.full_name || '—')}</strong><br>
+        <span class="small muted">${escHtml(r.department?.name || '—')}</span>
+      </td>
+      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" value="${r.dias_pagados ?? 7}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].dias_pagados=parseFloat(this.value)||0" /></td>
+      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].faltas=parseFloat(this.value)||0" /></td>
+      <td style="padding:3px;">
+        <input type="number" min="0" max="80" step="0.5" value="${r.horas_extras_total ?? 0}" style="width:56px;font-size:12px;" onchange="incSemRows[${idx}].horas_extras_total=parseFloat(this.value)||0" />${heBtn}
+      </td>
+      <td style="padding:3px;text-align:center;"><input type="checkbox" ${r.despensa ? 'checked' : ''} onchange="incSemRows[${idx}].despensa=this.checked?1:0" /></td>
+      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" placeholder="N/A" value="${r.bono_puntualidad_dias ?? ''}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].bono_puntualidad_dias=this.value===''?null:parseFloat(this.value)" /></td>
+      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" placeholder="N/A" value="${r.bono_eficiencia_dias ?? ''}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].bono_eficiencia_dias=this.value===''?null:parseFloat(this.value)" /></td>
+      <td style="padding:3px;"><input type="number" min="0" step="0.5" placeholder="días" value="${r.bono_instructor ?? ''}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].bono_instructor=this.value===''?null:parseFloat(this.value)" /></td>
+      <td style="padding:3px;text-align:center;"><input type="checkbox" ${r.prima_dominical ? 'checked' : ''} onchange="incSemRows[${idx}].prima_dominical=this.checked?1:0" /></td>
+      <td style="padding:3px;"><input type="number" min="0" step="0.5" placeholder="días" value="${r.vacaciones_dias ?? ''}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].vacaciones_dias=this.value===''?null:parseFloat(this.value)" /></td>
+      <td style="padding:3px;"><input type="number" min="0" step="0.5" placeholder="días" value="${r.gratificacion ?? ''}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].gratificacion=this.value===''?null:parseFloat(this.value)" /></td>
+      <td style="padding:3px;"><input type="text" value="${escHtml(r.notas || '')}" style="width:90px;font-size:12px;" onchange="incSemRows[${idx}].notas=this.value" /></td>
+    </tr>`;
+  }).join('');
+
+  const content = `
+    <div class="module-title">
+      <h2>📋 Incidencias Semanales</h2>
+    </div>
+
+    <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
+        <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="incSemPeriodo=parseInt(this.value);_loadIncSem()">
+          ${periodOpts}
+        </select>
+      </div>
+      ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
+    </div>
+
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn-primary" onclick="guardarTodasIncidencias()">💾 Guardar período</button>
+      <button class="btn-ghost" onclick="exportarIncidencias()">⬇ Exportar CSV</button>
+      <button class="btn-ghost" style="color:#7c3aed;" onclick="location.hash='#autorizaciones'">✅ Autorizaciones pendientes</button>
+    </div>
+
+    <div class="card section" style="overflow-x:auto;padding:0;">
+      ${incSemRows.length === 0
+        ? '<div class="empty-state" style="padding:32px;"><p>Sin empleados activos</p></div>'
+        : `<table style="min-width:1050px;font-size:12px;border-collapse:collapse;">
+             <thead>
+               <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                 <th style="text-align:left;padding:6px 8px;min-width:170px;">Empleado</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Días pagados">Días</th>
+                 <th style="text-align:center;padding:6px 4px;color:#b91c1c;" title="Faltas">Faltas</th>
+                 <th style="text-align:center;padding:6px 4px;color:#059669;" title="Horas Extra">H.Extra</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Despensa (Sí/No)">Desp.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Bono Puntualidad (días)">B.Punt.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Bono Eficiencia (días)">B.Efic.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Bono Instructor (días)">B.Inst.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Prima Dominical">P.Dom.</th>
+                 <th style="text-align:center;padding:6px 4px;color:#1d4ed8;" title="Vacaciones (días)">Vac.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Gratificación (días)">Gratif.</th>
+                 <th style="text-align:left;padding:6px 4px;">Notas</th>
+               </tr>
+             </thead>
+             <tbody>${tableRows}</tbody>
+           </table>`
+      }
+    </div>
+    <div id="he-detalle-panel" style="margin-top:12px;"></div>
+  `;
+
+  el.innerHTML = shell(content, 'incidencias');
+}
+
+async function guardarTodasIncidencias() {
+  if (!incSemPeriodo || incSemRows.length === 0) { toast('Selecciona un período', 'warning'); return; }
+  try {
+    const res = await api('/api/rhh/nomina/incidencias/bulk', {
+      method: 'POST',
+      body: JSON.stringify({
+        no_periodo: incSemPeriodo,
+        rows: incSemRows.map(r => ({
+          employee_id:         r.employee_id,
+          dias_pagados:        r.dias_pagados,
+          faltas:              r.faltas,
+          horas_extras_total:  r.horas_extras_total,
+          despensa:            r.despensa,
+          bono_puntualidad_dias: r.bono_puntualidad_dias,
+          bono_eficiencia_dias:  r.bono_eficiencia_dias,
+          bono_instructor:     r.bono_instructor,
+          prima_dominical:     r.prima_dominical,
+          vacaciones_dias:     r.vacaciones_dias,
+          gratificacion:       r.gratificacion,
+          notas:               r.notas,
+        }))
+      })
+    });
+    toast(`Guardados: ${res.saved} registros`);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function exportarIncidencias() {
+  if (!incSemPeriodo) { toast('Selecciona un período', 'warning'); return; }
+  try {
+    const data = await api(`/api/rhh/nomina/export?no_periodo=${incSemPeriodo}`);
+    if (!data) return;
+    const headers = ['No.Empleado','Nombre','Departamento','Puesto','Días Pagados','Faltas','Horas Extra','Despensa','B.Puntualidad (días)','B.Eficiencia (días)','B.Instructor (días)','Prima Dominical','Vacaciones (días)','Gratificación (días)','Notas'];
+    const csvRows = [headers.join(',')];
+    for (const r of data.rows) {
+      csvRows.push([
+        r.no_empleado,`"${r.nombre}"`,`"${r.departamento}"`,`"${r.puesto}"`,
+        r.dias_pagados,r.faltas,r.horas_extras,r.despensa,
+        r.bono_puntualidad_dias,r.bono_eficiencia_dias,r.bono_instructor,
+        r.prima_dominical,r.vacaciones_dias,r.gratificacion,`"${r.notas}"`
+      ].join(','));
+    }
+    const blob = new Blob(['\uFEFF' + csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href = url;
+    const p = data.periodo;
+    a.download = `incidencias_S${incSemPeriodo}_${(p?.fecha_inicio||'').replace(/\//g,'-')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Exportado');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function showHEDetalle(empId) {
+  _heEmpId = empId;
+  const panel = document.getElementById('he-detalle-panel');
+  if (!panel) return;
+  try {
+    const data = await api(`/api/rhh/nomina/he-detalle?no_periodo=${incSemPeriodo}&employee_id=${empId}`);
+    const empRow = incSemRows.find(r => r.employee_id === empId);
+    const HE_RAZONES = ['Producción','Mantenimiento','Calidad','Almacén','Proyecto SKF','Proyecto AMSTED','Administración','Otro'];
+
+    const detalleRows = (data || []).map(h => `
+      <tr>
+        <td>${h.fecha || '—'}</td>
+        <td>${h.total_horas}h</td>
+        <td>${h.razon || '—'}</td>
+        <td>${h.sub_razon || '—'}</td>
+        <td>${h.solicita || '—'}</td>
+        <td><button class="btn-ghost" style="font-size:10px;color:#b91c1c;" onclick="deleteHEDetalle(${h.id})">✕</button></td>
+      </tr>`).join('');
+
+    panel.innerHTML = `
+      <div class="card section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <h3 style="margin:0;">📋 Detalle HE — ${escHtml(empRow?.employee?.full_name || '')}</h3>
+          <button class="btn-ghost" style="font-size:11px;" onclick="document.getElementById('he-detalle-panel').innerHTML=''">✕ Cerrar</button>
+        </div>
+        ${(data || []).length > 0
+          ? `<table style="font-size:12px;margin-bottom:12px;">
+               <thead><tr><th>Fecha</th><th>Horas</th><th>Razón</th><th>Sub-razón</th><th>Solicita</th><th></th></tr></thead>
+               <tbody>${detalleRows}</tbody>
+             </table>`
+          : '<p style="color:var(--muted);font-size:13px;margin-bottom:10px;">Sin detalles registrados</p>'}
+        <h4 style="margin-top:4px;">+ Agregar día de HE</h4>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div><label style="font-size:11px;display:block;">Fecha</label><input type="date" id="he-fecha" style="width:140px;font-size:12px;" /></div>
+          <div><label style="font-size:11px;display:block;">Horas</label><input type="number" id="he-horas" min="0.5" max="12" step="0.5" style="width:70px;font-size:12px;" placeholder="hrs" /></div>
+          <div><label style="font-size:11px;display:block;">Razón</label>
+            <select id="he-razon" style="font-size:12px;">
+              <option value="">Seleccionar...</option>
+              ${HE_RAZONES.map(r => `<option value="${r}">${r}</option>`).join('')}
+            </select>
+          </div>
+          <div><label style="font-size:11px;display:block;">Sub-razón</label><input id="he-sub" type="text" style="width:130px;font-size:12px;" placeholder="Opcional" /></div>
+          <button class="btn-primary" style="font-size:12px;" onclick="saveHEDetalle(${empId})">Agregar</button>
+        </div>
+      </div>`;
+  } catch (err) { if (panel) panel.innerHTML = `<div class="notice error">${err.message}</div>`; }
+}
+
+async function saveHEDetalle(empId) {
+  const fecha = document.getElementById('he-fecha')?.value;
+  const horas = document.getElementById('he-horas')?.value;
+  const razon = document.getElementById('he-razon')?.value;
+  const sub   = document.getElementById('he-sub')?.value;
+  if (!fecha || !horas) { toast('Fecha y horas son requeridos', 'warning'); return; }
+  try {
+    await api('/api/rhh/nomina/he-detalle', {
+      method: 'POST',
+      body: JSON.stringify({ no_periodo: incSemPeriodo, employee_id: empId, fecha, total_horas: Number(horas), razon, sub_razon: sub })
+    });
+    toast('HE registrada');
+    showHEDetalle(empId);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deleteHEDetalle(id) {
+  if (!confirm('¿Eliminar este registro?')) return;
+  try {
+    await api(`/api/rhh/nomina/he-detalle/${id}`, { method: 'DELETE' });
+    toast('Eliminado');
+    if (_heEmpId) showHEDetalle(_heEmpId);
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── INICIO código antiguo incidencias (se mantiene para misIncidenciasView / checador) ──
+async function _legacyIncidenciasView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando incidencias...</div>', 'incidencias');
 
@@ -1575,32 +1816,31 @@ async function miHorarioView() {
 
 // ── 8. Mis Solicitudes (empleado) ─────────────────────────────────────────────
 async function misSolicitudesView() {
-  _msVacBalance = null; // reset cache on each view load
+  _msVacBalance = null;
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando solicitudes...</div>', 'mis-solicitudes');
 
   try {
     const empId = state.user?.employee_id;
-    const [incidences, vacBalance] = await Promise.all([
+    if (incSemPeriodos.length === 0) {
+      incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
+    }
+    const [incidences, vacSols] = await Promise.all([
       api('/api/rhh/incidences'),
-      empId ? api(`/api/rhh/employees/vacation-balance/${empId}`).catch(() => null) : Promise.resolve(null)
+      api('/api/rhh/nomina/vac-solicitudes').catch(() => []),
     ]);
     if (!incidences) return;
 
     const myIncidences = (incidences || []).filter(i =>
       ['vacacion', 'permiso'].includes(i.type) && i.employee_id === empId
     );
+    const myVacSols = (vacSols || []);
 
-    const vacInfoHtml = vacBalance
-      ? `<div style="padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin-bottom:12px;font-size:13px;">
-          🌴 <strong>Vacaciones ${vacBalance.year}:</strong>
-          Usadas <strong>${vacBalance.vacation_used}</strong> ·
-          Pendientes <strong>${vacBalance.vacation_pending}</strong> ·
-          <span style="color:#059669;font-weight:700;">${vacBalance.vacation_remaining} días disponibles</span> de ${vacBalance.total_vacation_days}
-        </div>`
-      : '';
+    const periodOpts = incSemPeriodos.map(p =>
+      `<option value="${p.no_periodo}">Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
+    ).join('');
 
-    const rows = myIncidences.map(inc => `
+    const incRows = myIncidences.map(inc => `
       <tr>
         <td>${incTypePill(inc.type)}</td>
         <td>${fmtDateDisplay(inc.date)}${inc.date_end && inc.date_end !== inc.date ? ` → ${fmtDateDisplay(inc.date_end)}` : ''}</td>
@@ -1609,20 +1849,57 @@ async function misSolicitudesView() {
         <td>${fmtDateDisplay(inc.created_at?.slice(0, 10))}</td>
       </tr>`).join('');
 
+    const vacSolRows = myVacSols.map(s => {
+      const st = { pendiente: '🟡 Pendiente', aprobada: '✅ Aprobada', rechazada: '❌ Rechazada' }[s.estado] || s.estado;
+      return `<tr>
+        <td>${s.periodo ? `Sem. ${s.periodo.no_periodo} (${s.periodo.fecha_inicio})` : '—'}</td>
+        <td style="text-align:center;font-weight:700;">${s.dias} días</td>
+        <td>${st}</td>
+        <td>${s.notas || '—'}</td>
+        <td>${fmtDateDisplay(s.created_at?.slice(0,10))}</td>
+      </tr>`;
+    }).join('');
+
     const content = `
-      <div class="module-title">
-        <h2>📝 Mis Solicitudes</h2>
+      <div class="module-title"><h2>📝 Mis Solicitudes</h2></div>
+
+      <div class="card section" style="margin-bottom:14px;">
+        <h3>🌴 Solicitar Vacaciones por Semana</h3>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:10px;">Selecciona la semana y cuántos días solicitas. Tu supervisor recibirá la solicitud para autorizar.</p>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;">
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Semana *</label>
+            <select id="ms-vac-periodo" style="font-size:13px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;">
+              <option value="">Seleccionar...</option>
+              ${periodOpts}
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Días solicitados *</label>
+            <input type="number" id="ms-vac-dias" min="0.5" max="7" step="0.5" style="width:80px;font-size:13px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" placeholder="días" />
+          </div>
+          <div style="flex:1;min-width:180px;">
+            <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Notas</label>
+            <input type="text" id="ms-vac-notas" style="width:100%;font-size:13px;padding:6px 8px;border:1px solid #d1d5db;border-radius:6px;" placeholder="Opcional" />
+          </div>
+          <button class="btn-primary" onclick="submitVacSolicitud()">Enviar solicitud</button>
+        </div>
+        ${myVacSols.length > 0 ? `
+        <div style="margin-top:14px;">
+          <h4 style="margin-bottom:6px;">Mis solicitudes de vacaciones</h4>
+          <table style="font-size:12px;">
+            <thead><tr><th>Semana</th><th>Días</th><th>Estado</th><th>Notas</th><th>Enviado</th></tr></thead>
+            <tbody>${vacSolRows}</tbody>
+          </table>
+        </div>` : ''}
       </div>
 
-      ${vacInfoHtml}
-
-      <div class="card section" style="margin-bottom:16px;">
-        <h3>Nueva solicitud</h3>
+      <div class="card section" style="margin-bottom:14px;">
+        <h3>Nueva solicitud de permiso</h3>
         <div class="row">
           <div>
             <label>Tipo *</label>
             <select id="ms-type" onchange="onMsSolicitudTypeChange()">
-              <option value="vacacion">Vacación</option>
               <option value="permiso">Permiso</option>
             </select>
           </div>
@@ -1638,21 +1915,21 @@ async function misSolicitudesView() {
         <div id="ms-vac-inline" style="display:none;margin-top:8px;padding:8px 12px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;font-size:13px;"></div>
         <div style="margin-top:10px;">
           <label>Motivo / Notas</label>
-          <textarea id="ms-notes" rows="2" placeholder="Describe el motivo de tu solicitud..."></textarea>
+          <textarea id="ms-notes" rows="2" placeholder="Describe el motivo..."></textarea>
         </div>
         <div id="ms-warn" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#92400e;"></div>
         <div style="margin-top:10px;">
-          <button id="ms-submit-btn" class="btn-primary" onclick="submitMiSolicitud()">Enviar solicitud</button>
+          <button id="ms-submit-btn" class="btn-primary" onclick="submitMiSolicitud()">Enviar permiso</button>
         </div>
       </div>
 
       <div class="card section">
-        <h3>Historial de solicitudes</h3>
+        <h3>Historial de permisos</h3>
         ${myIncidences.length === 0
-          ? '<div class="empty-state"><div class="empty-icon">📝</div><p>No has enviado solicitudes aún</p></div>'
+          ? '<div class="empty-state"><div class="empty-icon">📝</div><p>No has enviado permisos aún</p></div>'
           : `<table>
                <thead><tr><th>Tipo</th><th>Fechas</th><th>Estado</th><th>Notas</th><th>Solicitado</th></tr></thead>
-               <tbody>${rows}</tbody>
+               <tbody>${incRows}</tbody>
              </table>`
         }
       </div>
@@ -1662,6 +1939,21 @@ async function misSolicitudesView() {
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'mis-solicitudes');
   }
+}
+
+async function submitVacSolicitud() {
+  const no_periodo = document.getElementById('ms-vac-periodo')?.value;
+  const dias = document.getElementById('ms-vac-dias')?.value;
+  const notas = document.getElementById('ms-vac-notas')?.value;
+  if (!no_periodo || !dias) { toast('Semana y días son requeridos', 'warning'); return; }
+  try {
+    await api('/api/rhh/nomina/vac-solicitudes', {
+      method: 'POST',
+      body: JSON.stringify({ no_periodo: Number(no_periodo), dias: Number(dias), notas: notas || null })
+    });
+    toast('Solicitud enviada — pendiente de autorización');
+    misSolicitudesView();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // Called when type or dates change to show live vacation balance info
@@ -1869,71 +2161,113 @@ async function postularTE(teAuthId) {
 }
 
 // ── 10. Autorizaciones ────────────────────────────────────────────────────────
+let autTabIdx = 0;
+
 async function autorizacionesView() {
   const el = document.getElementById('app');
-  el.innerHTML = shell('<div class="loading-overlay">Cargando solicitudes pendientes...</div>', 'autorizaciones');
-
+  el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
-    const incidences = await api('/api/rhh/incidences?status=pendiente');
-    if (!incidences) return;
+    const [vacSols, teSols, incidences] = await Promise.all([
+      api('/api/rhh/nomina/vac-solicitudes?estado=pendiente'),
+      api('/api/rhh/nomina/te-solicitudes'),
+      api('/api/rhh/incidences?status=pendiente'),
+    ]);
 
-    const rows = incidences.map(inc => {
-      const isRetardo = inc.type === 'retardo';
-      const retardoNote = isRetardo
-        ? `<br><span style="color:#d97706;font-size:11px;">⚠️ Genera descuento en prenómina</span>`
-        : '';
-      return `
+    const vacRows = (vacSols || []).map(s => `
       <tr>
+        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
+        <td>${s.department?.name || '—'}</td>
+        <td>${s.periodo ? `Semana ${s.periodo.no_periodo} (${s.periodo.fecha_inicio} – ${s.periodo.fecha_fin})` : '—'}</td>
+        <td style="text-align:center;font-weight:700;">${s.dias}</td>
+        <td>${s.notas || '—'}</td>
         <td>
-          <strong>${inc.employee?.full_name || '—'}</strong><br>
-          <span class="small muted">${inc.employee?.employee_number || ''}</span>
+          <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarVacSol(${s.id},'aprobada')">✅ Aprobar</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarVacSol(${s.id},'rechazada')">✗ Rechazar</button>
         </td>
-        <td>${incTypePill(inc.type)}${retardoNote}</td>
-        <td>${fmtDateDisplay(inc.date)}${inc.date_end && inc.date_end !== inc.date ? ` → ${fmtDateDisplay(inc.date_end)}` : ''}</td>
-        <td>${inc.department?.name || '—'}</td>
-        <td>${inc.notes || '—'}</td>
-        <td>${fmtDateDisplay(inc.created_at?.slice(0, 10))}</td>
+      </tr>`).join('');
+
+    const tePend   = (teSols || []).filter(s => s.estado === 'pendiente_supervisor' || s.estado === 'pendiente_rh');
+    const teRows   = tePend.map(s => {
+      const needsRH = s.requiere_auth_rh;
+      const canApprove = !needsRH || ['rh','admin'].includes(state.user?.role);
+      return `<tr>
+        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong></td>
+        <td>${s.periodo ? `Semana ${s.periodo.no_periodo}` : '—'}</td>
+        <td style="text-align:center;font-weight:700;color:#059669;">${s.horas}h</td>
+        <td>${s.razon || '—'} ${s.sub_razon ? `/ ${s.sub_razon}` : ''}</td>
+        <td>${needsRH ? '<span style="background:#fef3c7;color:#92400e;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:600;">⚠ Requiere RHH/Admin</span>' : '<span style="background:#f0fdf4;color:#166534;font-size:11px;padding:2px 6px;border-radius:4px;">OK</span>'}</td>
+        <td>${s.solicita || '—'}</td>
         <td>
-          <button class="btn-primary" style="font-size:11px;padding:5px 10px;" onclick="approveIncidence(${inc.id},'aprobada')">✅ Aprobar</button>
-          <button class="btn-ghost" style="font-size:11px;padding:5px 10px;color:#b91c1c;margin-top:4px;" onclick="approveIncidence(${inc.id},'rechazada')">✗ Rechazar</button>
+          ${canApprove
+            ? `<button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarTESol(${s.id},'aprobada')">✅ Aprobar</button>
+               <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarTESol(${s.id},'rechazada')">✗ Rechazar</button>`
+            : '<span class="small muted">Solo RHH/Admin</span>'}
         </td>
       </tr>`;
     }).join('');
 
-    // Contar por tipo para resumen
-    const retardosPend = incidences.filter(i => i.type === 'retardo').length;
-    const otrosPend    = incidences.length - retardosPend;
+    const incRows = (incidences || []).map(inc => `
+      <tr>
+        <td><strong>${inc.employee?.full_name || '—'}</strong><br><span class="small muted">${inc.employee?.employee_number || ''}</span></td>
+        <td>${incTypePill(inc.type)}</td>
+        <td>${fmtDateDisplay(inc.date)}${inc.date_end && inc.date_end !== inc.date ? ` → ${fmtDateDisplay(inc.date_end)}` : ''}</td>
+        <td>${inc.department?.name || '—'}</td>
+        <td>${inc.notes || '—'}</td>
+        <td>
+          <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="approveIncidence(${inc.id},'aprobada')">✅</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="approveIncidence(${inc.id},'rechazada')">✗</button>
+        </td>
+      </tr>`).join('');
+
+    const tabs = [
+      `Vacaciones <span class="badge" style="background:${(vacSols||[]).length>0?'#dc2626':'#6b7280'};font-size:10px;">${(vacSols||[]).length}</span>`,
+      `Tiempo Extra <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
+      `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
+    ];
+    const tabBar = tabs.map((t, i) =>
+      `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
+    ).join('');
+
+    let tabContent = '';
+    if (autTabIdx === 0) {
+      tabContent = vacRows
+        ? `<table><thead><tr><th>Empleado</th><th>Depto</th><th>Semana</th><th>Días solicitados</th><th>Notas</th><th>Acción</th></tr></thead><tbody>${vacRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de vacaciones pendientes</p></div>';
+    } else if (autTabIdx === 1) {
+      tabContent = teRows
+        ? `<table><thead><tr><th>Empleado</th><th>Semana</th><th>Horas</th><th>Razón</th><th>Nivel auth.</th><th>Solicita</th><th>Acción</th></tr></thead><tbody>${teRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de tiempo extra pendientes</p></div>';
+    } else {
+      tabContent = incRows
+        ? `<table><thead><tr><th>Empleado</th><th>Tipo</th><th>Fecha(s)</th><th>Depto</th><th>Notas</th><th>Acción</th></tr></thead><tbody>${incRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin incidencias pendientes</p></div>';
+    }
 
     const content = `
-      <div class="module-title">
-        <h2>✅ Solicitudes Pendientes</h2>
-        <span class="badge">${incidences.length} pendientes</span>
-      </div>
-
-      ${incidences.length > 0 ? `
-      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;">
-        ${otrosPend > 0 ? `<span style="background:#eff6ff;color:#1e40af;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">${otrosPend} vacaciones / permisos / faltas</span>` : ''}
-        ${retardosPend > 0 ? `<span style="background:#fffbeb;color:#92400e;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600;">${retardosPend} retardos</span>` : ''}
-      </div>` : ''}
-
-      <div class="card section table-wrap">
-        ${incidences.length === 0
-          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>No hay solicitudes pendientes de autorización</p></div>'
-          : `<table>
-               <thead><tr>
-                 <th>Empleado</th><th>Tipo</th><th>Fecha(s)</th>
-                 <th>Departamento</th><th>Notas</th><th>Solicitado</th><th>Acción</th>
-               </tr></thead>
-               <tbody>${rows}</tbody>
-             </table>`
-        }
-      </div>
+      <div class="module-title"><h2>✅ Autorizaciones</h2></div>
+      <div class="tab-bar" style="margin-bottom:14px;">${tabBar}</div>
+      <div class="card section table-wrap">${tabContent}</div>
     `;
-
     el.innerHTML = shell(content, 'autorizaciones');
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'autorizaciones');
   }
+}
+
+async function aprobarVacSol(id, estado) {
+  try {
+    await api(`/api/rhh/nomina/vac-solicitudes/${id}`, { method: 'PATCH', body: JSON.stringify({ estado }) });
+    toast(estado === 'aprobada' ? 'Vacaciones aprobadas y registradas en el período' : 'Solicitud rechazada');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function aprobarTESol(id, estado) {
+  try {
+    await api(`/api/rhh/nomina/te-solicitudes/${id}`, { method: 'PATCH', body: JSON.stringify({ estado }) });
+    toast(estado === 'aprobada' ? 'Tiempo extra aprobado y registrado' : 'Solicitud rechazada');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── 11. Ausencias hoy (supervisor) ────────────────────────────────────────────
@@ -2024,7 +2358,108 @@ async function loadCoverage() {
   }
 }
 
-// ── 12. Prenómina ─────────────────────────────────────────────────────────────
+// ── 12. Lista de Raya (reemplaza Prenómina) ───────────────────────────────────
+let listaRayaPeriodo = 0;
+
+async function listaRayaView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando...</div>', 'lista-raya');
+  try {
+    if (incSemPeriodos.length === 0) {
+      incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
+    }
+    if (!listaRayaPeriodo && incSemPeriodos.length > 0) {
+      listaRayaPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+    }
+    const data = listaRayaPeriodo ? await api(`/api/rhh/nomina/export?no_periodo=${listaRayaPeriodo}`) : null;
+    const periodo = incSemPeriodos.find(p => p.no_periodo === listaRayaPeriodo);
+
+    const periodOpts = incSemPeriodos.map(p =>
+      `<option value="${p.no_periodo}" ${p.no_periodo === listaRayaPeriodo ? 'selected' : ''}>Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
+    ).join('');
+
+    const tableRows = (data?.rows || []).map(r => `
+      <tr>
+        <td>${r.no_empleado}</td>
+        <td>${escHtml(r.nombre)}</td>
+        <td>${escHtml(r.departamento)}</td>
+        <td style="text-align:center;">${r.dias_pagados}</td>
+        <td style="text-align:center;color:#b91c1c;">${r.faltas || '—'}</td>
+        <td style="text-align:center;color:#059669;">${r.horas_extras || '—'}</td>
+        <td style="text-align:center;">${r.despensa}</td>
+        <td style="text-align:center;">${r.bono_puntualidad_dias !== '' ? r.bono_puntualidad_dias : '—'}</td>
+        <td style="text-align:center;">${r.bono_eficiencia_dias !== '' ? r.bono_eficiencia_dias : '—'}</td>
+        <td style="text-align:center;">${r.bono_instructor !== '' ? r.bono_instructor : '—'}</td>
+        <td style="text-align:center;">${r.prima_dominical}</td>
+        <td style="text-align:center;color:#1d4ed8;">${r.vacaciones_dias !== '' ? r.vacaciones_dias : '—'}</td>
+        <td style="text-align:center;">${r.gratificacion !== '' ? r.gratificacion : '—'}</td>
+        <td style="font-size:11px;color:var(--muted);">${r.notas || ''}</td>
+      </tr>`).join('');
+
+    const content = `
+      <div class="module-title"><h2>💰 Lista de Raya — Incidencias</h2></div>
+
+      <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+        <div>
+          <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
+          <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="listaRayaPeriodo=parseInt(this.value);listaRayaView()">
+            ${periodOpts}
+          </select>
+        </div>
+        ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
+        <button class="btn-primary" onclick="exportarListaRaya()">⬇ Exportar CSV</button>
+        <button class="btn-ghost" onclick="location.hash='#incidencias'">✏️ Editar incidencias</button>
+      </div>
+
+      <div class="notice" style="margin-bottom:12px;">
+        <strong>Reporte de incidencias capturadas.</strong> Verifica contra el PDF de Lista de Raya de CONTPAQ i.
+        ${data?.generated_at ? `<span class="muted" style="margin-left:8px;">Generado: ${data.generated_at}</span>` : ''}
+      </div>
+
+      <div class="card section" style="overflow-x:auto;padding:0;">
+        ${(data?.rows || []).length === 0
+          ? '<div class="empty-state" style="padding:32px;"><p>Sin incidencias capturadas para este período</p></div>'
+          : `<table style="min-width:1100px;font-size:12px;border-collapse:collapse;">
+               <thead>
+                 <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                   <th style="padding:6px 8px;">No.</th>
+                   <th style="padding:6px 8px;text-align:left;">Nombre</th>
+                   <th style="padding:6px 8px;text-align:left;">Depto</th>
+                   <th style="padding:6px 4px;text-align:center;">Días</th>
+                   <th style="padding:6px 4px;text-align:center;color:#b91c1c;">Faltas</th>
+                   <th style="padding:6px 4px;text-align:center;color:#059669;">H.Extra</th>
+                   <th style="padding:6px 4px;text-align:center;">Despensa</th>
+                   <th style="padding:6px 4px;text-align:center;">B.Punt.</th>
+                   <th style="padding:6px 4px;text-align:center;">B.Efic.</th>
+                   <th style="padding:6px 4px;text-align:center;">B.Inst.</th>
+                   <th style="padding:6px 4px;text-align:center;">P.Dom.</th>
+                   <th style="padding:6px 4px;text-align:center;color:#1d4ed8;">Vac.</th>
+                   <th style="padding:6px 4px;text-align:center;">Gratif.</th>
+                   <th style="padding:6px 4px;text-align:left;">Notas</th>
+                 </tr>
+               </thead>
+               <tbody>${tableRows}</tbody>
+             </table>`
+        }
+      </div>
+    `;
+    el.innerHTML = shell(content, 'lista-raya');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-raya');
+  }
+}
+
+async function exportarListaRaya() {
+  listaRayaPeriodo = listaRayaPeriodo || incSemPeriodo;
+  if (!listaRayaPeriodo) { toast('Selecciona un período', 'warning'); return; }
+  // Reusar la función de exportación del módulo incidencias
+  const prev = incSemPeriodo;
+  incSemPeriodo = listaRayaPeriodo;
+  await exportarIncidencias();
+  incSemPeriodo = prev;
+}
+
+// ── Prenómina (mantenida para backward-compat, ya no aparece en menú) ─────────
 let prenomYear = new Date().getFullYear();
 let prenomMonth = new Date().getMonth() + 1;
 let prenomWeekStart = null;
@@ -2249,7 +2684,10 @@ async function catalogosView() {
 
       tabContent = `
         <div class="card section">
-          <h3>Puestos</h3>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <h3 style="margin:0;">Puestos</h3>
+            <button class="btn-ghost" style="font-size:12px;color:#7c3aed;" onclick="seedPuestosCatalogo()" title="Resetear catálogo con puestos del sistema_rrhh 2026">🔄 Reset catálogo 2026</button>
+          </div>
           <div class="row" style="margin-bottom:14px;">
             <input id="np-name" placeholder="Nombre del puesto" />
             <select id="np-dept"><option value="">Departamento...</option>${deptsOpts}</select>
@@ -2384,6 +2822,16 @@ async function deletePosition(id) {
   try {
     await api(`/api/rhh/catalogs/positions/${id}`, { method: 'DELETE' });
     toast('Puesto eliminado');
+    await loadCatalogs();
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function seedPuestosCatalogo() {
+  if (!confirm('¿Resetear el catálogo de puestos con los 22 puestos del sistema RRHH 2026?\n\nEsta acción reemplaza todos los puestos actuales.')) return;
+  try {
+    const res = await api('/api/rhh/nomina/seed-puestos', { method: 'POST' });
+    toast(`Catálogo actualizado: ${res.count} puestos`);
     await loadCatalogs();
     catalogosView();
   } catch (err) { toast(err.message, 'error'); }
@@ -6146,6 +6594,7 @@ function render() {
     'mis-solicitudes': misSolicitudesView,
     'mis-incidencias': misIncidenciasView,
     prenomina: prenominaView,
+    'lista-raya': listaRayaView,
     catalogos: catalogosView,
     reportes: reportesView,
     perfil: perfilView,

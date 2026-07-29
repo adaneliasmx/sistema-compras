@@ -54,7 +54,13 @@ const EMPTY_DB = {
   rhh_rol_assignments: [],
   rhh_eval_forms: [],
   rhh_eval_sessions: [],
-  rhh_eval_results: []
+  rhh_eval_results: [],
+  // Módulo Nómina Semanal (2026-07-29)
+  rhh_periodos: [],
+  rhh_incidencias_semanales: [],
+  rhh_he_detalle: [],
+  rhh_vac_solicitudes: [],
+  rhh_te_solicitudes: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)
