@@ -60,7 +60,9 @@ const EMPTY_DB = {
   rhh_incidencias_semanales: [],
   rhh_he_detalle: [],
   rhh_vac_solicitudes: [],
-  rhh_te_solicitudes: []
+  rhh_te_solicitudes: [],
+  // Catálogos editables de razones TE (Fase 5)
+  rhh_te_catalogos: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

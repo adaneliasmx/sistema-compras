@@ -1,12 +1,18 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    RHH — Módulo Nómina Semanal
-   Períodos, incidencias semanales, HE detalle, solicitudes vac/TE
+   Períodos, incidencias semanales, HE detalle, solicitudes vac/TE,
+   comparación PDF Lista de Raya, dashboard KPIs, importación SQLite
    ══════════════════════════════════════════════════════════════════════════════ */
 
-const express = require('express');
+const express  = require('express');
+const multer   = require('multer');
+const pdfParse = require('pdf-parse');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
+
+// Multer — solo memoria (no guarda en disco)
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -542,6 +548,504 @@ router.post('/seed-puestos', rhhAuthRequired, rhhRequireRole('admin'), (req, res
   }));
   write(db);
   res.json({ ok: true, count: db.rhh_positions.length, positions: db.rhh_positions });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FASE 5 — Catálogos editables de Razones TE + Migración incidencias antiguas
+// ══════════════════════════════════════════════════════════════════════════════
+
+/* Seed inicial de clasificaciones TE (se aplica solo si el catálogo está vacío) */
+const TE_CATALOGOS_SEED = [
+  { id: 1, nombre: 'Producción',     motivos: ['Producción urgente','Cambio de formato','Limpieza profunda','Arranque/paro de línea','Auditoría','Otro'] },
+  { id: 2, nombre: 'Mantenimiento',  motivos: ['Correctivo','Preventivo','Predictivo','Instalación de equipo','Otro'] },
+  { id: 3, nombre: 'Calidad',        motivos: ['Auditoría externa','Auditoría interna','Retrabajo','Análisis de muestras','Otro'] },
+  { id: 4, nombre: 'Almacén',        motivos: ['Recepción de material','Embarque','Inventario físico','Otro'] },
+  { id: 5, nombre: 'SKF',            motivos: ['Producción SKF','Mantenimiento SKF','Auditoría SKF','Proyecto especial','Otro'] },
+  { id: 6, nombre: 'AMSTED',         motivos: ['Producción AMSTED','Mantenimiento AMSTED','Proyecto especial','Otro'] },
+  { id: 7, nombre: 'Administración', motivos: ['Cierre de mes','Proyecto especial','Soporte a operaciones','Otro'] },
+];
+
+// GET /api/rhh/nomina/te-catalogos
+router.get('/te-catalogos', rhhAuthRequired, (req, res) => {
+  const db = read();
+  let cats = db.rhh_te_catalogos || [];
+  // Si está vacío, retornar seed (sin persistir) para que el UI lo muestre de inmediato
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED;
+  res.json(cats);
+});
+
+// POST /api/rhh/nomina/te-catalogos  { nombre }  → crea nueva clasificación
+router.post('/te-catalogos', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { nombre } = req.body || {};
+  if (!nombre?.trim()) return res.status(400).json({ error: 'nombre requerido' });
+  const db   = read();
+  let cats   = db.rhh_te_catalogos || [];
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  const newId = cats.length > 0 ? Math.max(...cats.map(c => c.id)) + 1 : 1;
+  const cat  = { id: newId, nombre: nombre.trim(), motivos: [] };
+  cats.push(cat);
+  db.rhh_te_catalogos = cats;
+  write(db);
+  res.status(201).json(cat);
+});
+
+// PATCH /api/rhh/nomina/te-catalogos/:id  { nombre }  → renombra clasificación
+router.patch('/te-catalogos/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { nombre } = req.body || {};
+  if (!nombre?.trim()) return res.status(400).json({ error: 'nombre requerido' });
+  const db   = read();
+  let cats   = db.rhh_te_catalogos || [];
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  const idx  = cats.findIndex(c => c.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Clasificación no encontrada' });
+  cats[idx].nombre = nombre.trim();
+  db.rhh_te_catalogos = cats;
+  write(db);
+  res.json(cats[idx]);
+});
+
+// DELETE /api/rhh/nomina/te-catalogos/:id
+router.delete('/te-catalogos/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db  = read();
+  let cats  = db.rhh_te_catalogos || [];
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  const idx = cats.findIndex(c => c.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Clasificación no encontrada' });
+  cats.splice(idx, 1);
+  db.rhh_te_catalogos = cats;
+  write(db);
+  res.json({ ok: true });
+});
+
+// POST /api/rhh/nomina/te-catalogos/:id/motivos  { motivo: string }  → agrega motivo
+router.post('/te-catalogos/:id/motivos', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { motivo } = req.body || {};
+  if (!motivo?.trim()) return res.status(400).json({ error: 'motivo requerido' });
+  const db   = read();
+  let cats   = db.rhh_te_catalogos || [];
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  const cat  = cats.find(c => c.id === Number(req.params.id));
+  if (!cat) return res.status(404).json({ error: 'Clasificación no encontrada' });
+  if (cat.motivos.includes(motivo.trim())) return res.status(409).json({ error: 'Motivo ya existe' });
+  cat.motivos.push(motivo.trim());
+  db.rhh_te_catalogos = cats;
+  write(db);
+  res.status(201).json(cat);
+});
+
+// DELETE /api/rhh/nomina/te-catalogos/:id/motivos/:midx  (midx = índice del motivo)
+router.delete('/te-catalogos/:id/motivos/:midx', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db   = read();
+  let cats   = db.rhh_te_catalogos || [];
+  if (cats.length === 0) cats = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  const cat  = cats.find(c => c.id === Number(req.params.id));
+  if (!cat) return res.status(404).json({ error: 'Clasificación no encontrada' });
+  const midx = Number(req.params.midx);
+  if (midx < 0 || midx >= cat.motivos.length) return res.status(404).json({ error: 'Motivo no encontrado' });
+  cat.motivos.splice(midx, 1);
+  db.rhh_te_catalogos = cats;
+  write(db);
+  res.json(cat);
+});
+
+// POST /api/rhh/nomina/te-catalogos/seed-default  → restaura el catálogo a los valores predeterminados
+router.post('/te-catalogos/seed-default', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
+  const db = read();
+  db.rhh_te_catalogos = TE_CATALOGOS_SEED.map(c => ({ ...c, motivos: [...c.motivos] }));
+  write(db);
+  res.json({ ok: true, count: db.rhh_te_catalogos.length });
+});
+
+// ── Migración de incidencias antiguas (rhh_incidences → rhh_incidencias_semanales) ──────
+
+const MESES_MX = { 'Ene':1,'Feb':2,'Mar':3,'Abr':4,'May':5,'Jun':6,'Jul':7,'Ago':8,'Sep':9,'Oct':10,'Nov':11,'Dic':12 };
+
+function parsePeriodoDate(str) {
+  // '29/Dic/2025' → Date  (noon para evitar problemas de timezone)
+  const [d, m, y] = str.split('/');
+  return new Date(`${y}-${String(MESES_MX[m]).padStart(2,'0')}-${d.padStart(2,'0')}T12:00:00`);
+}
+
+function findPeriodo(dateStr, periodos) {
+  const dt = new Date(dateStr + 'T12:00:00');
+  return periodos.find(p => {
+    const ini = parsePeriodoDate(p.fecha_inicio);
+    const fin = parsePeriodoDate(p.fecha_fin);
+    return dt >= ini && dt <= fin;
+  }) || null;
+}
+
+function countDaysMx(dateStr, dateEndStr) {
+  const s = new Date(dateStr    + 'T12:00:00');
+  const e = new Date((dateEndStr || dateStr) + 'T12:00:00');
+  return Math.max(1, Math.round((e - s) / 86400000) + 1);
+}
+
+// GET /api/rhh/nomina/migrar-incidencias?dry_run=1  → preview de lo que se migraría
+// POST /api/rhh/nomina/migrar-incidencias           → ejecuta migración (admin)
+router.all('/migrar-incidencias', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
+  const dryRun = req.method === 'GET' || req.query.dry_run === '1';
+  const db = read();
+
+  const incidencias = db.rhh_incidences || [];
+  if (incidencias.length === 0) return res.json({ ok: true, migrated: 0, skipped: 0, preview: [], message: 'No hay incidencias antiguas' });
+
+  const periodos = (db.rhh_periodos || []).length > 0
+    ? db.rhh_periodos
+    : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
+
+  // Map: tipo de incidencia antigua → campo en el nuevo modelo
+  const TYPE_MAP = {
+    'vacacion':     { campo: 'vacaciones_dias',   fn: countDaysMx },
+    'falta':        { campo: 'faltas',             fn: () => 1 },
+    'incapacidad':  { campo: 'faltas',             fn: countDaysMx },
+    'tiempo_extra': { campo: 'horas_extras_total', fn: (d, de) => Number(de) || 1 }, // date_end reused as hours in old model
+    'permiso':      { campo: 'faltas',             fn: () => 0 },  // permisos → no cuentan como falta
+  };
+
+  const preview = [];
+  const upsertMap = {}; // key: `${employee_id}_${no_periodo}`
+
+  for (const inc of incidencias) {
+    const periodo = findPeriodo(inc.date, periodos);
+    if (!periodo) {
+      preview.push({ id: inc.id, employee_id: inc.employee_id, date: inc.date, type: inc.type, result: 'SIN_PERIODO', no_periodo: null });
+      continue;
+    }
+    const mapping = TYPE_MAP[inc.type];
+    if (!mapping) {
+      preview.push({ id: inc.id, employee_id: inc.employee_id, date: inc.date, type: inc.type, result: 'TIPO_DESCONOCIDO', no_periodo: periodo.no_periodo });
+      continue;
+    }
+    const valor = mapping.fn(inc.date, inc.date_end);
+    const key   = `${inc.employee_id}_${periodo.no_periodo}`;
+    if (!upsertMap[key]) upsertMap[key] = { employee_id: inc.employee_id, no_periodo: periodo.no_periodo, campos: {} };
+    upsertMap[key].campos[mapping.campo] = (upsertMap[key].campos[mapping.campo] || 0) + valor;
+    preview.push({ id: inc.id, employee_id: inc.employee_id, date: inc.date, type: inc.type, campo: mapping.campo, valor, no_periodo: periodo.no_periodo, result: 'OK' });
+  }
+
+  const okCount      = preview.filter(p => p.result === 'OK').length;
+  const skippedCount = preview.length - okCount;
+
+  if (dryRun) {
+    return res.json({ ok: true, dry_run: true, total: incidencias.length, migrated: okCount, skipped: skippedCount, preview });
+  }
+
+  // Ejecutar: upsert en rhh_incidencias_semanales
+  const lista = db.rhh_incidencias_semanales || [];
+  let touched = 0;
+
+  for (const { employee_id, no_periodo, campos } of Object.values(upsertMap)) {
+    let rec = lista.find(r => r.employee_id === employee_id && r.no_periodo === no_periodo);
+    if (!rec) {
+      rec = { id: nextId(lista), employee_id, no_periodo, dias_pagados: 7, faltas: 0, horas_extras_total: 0,
+              despensa: false, bono_puntualidad_dias: 0, bono_eficiencia_dias: 0, bono_instructor: false,
+              prima_dominical: false, vacaciones_dias: 0, gratificacion: false, notas: 'Migrado de sistema antiguo' };
+      lista.push(rec);
+    }
+    for (const [campo, valor] of Object.entries(campos)) {
+      rec[campo] = (rec[campo] || 0) + valor;
+    }
+    touched++;
+  }
+
+  db.rhh_incidencias_semanales = lista;
+  write(db);
+  res.json({ ok: true, dry_run: false, total: incidencias.length, migrated: okCount, skipped: skippedCount, records_upserted: touched, preview });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FASE 3 — Comparación PDF Lista de Raya
+// ══════════════════════════════════════════════════════════════════════════════
+
+/* Códigos de conceptos CONTPAQ i relevantes */
+const CONCEPTOS = {
+  4:   'horas_extras',
+  15:  'bono_puntualidad',
+  7:   'bono_eficiencia',
+  139: 'bono_instructor',
+  10:  'prima_dominical',
+  19:  'vacaciones_importe',
+  12:  'gratificacion_importe',
+  32:  'despensa_importe',
+};
+
+/**
+ * Extrae datos de empleados desde texto plano de un PDF Lista de Raya CONTPAQ i.
+ * Retorna array de objetos con campos económicos por empleado.
+ */
+function parsePdfText(text) {
+  const lines   = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const results = [];
+  let current   = null;
+
+  const reEmp      = /^(\d{3,4})\s+([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑa-záéíóúüñ\s,]+)$/;
+  const reDias     = /[Dd][íi]as\s+pagados[:\s]*([\d.]+)/i;
+  const reHrsExt   = /Hrs\s+extras[:\s]*([\d.]+)/i;
+  const rePercep   = /Total\s+Percepciones\s+([\d,]+\.?\d*)/i;
+  const reDeduc    = /Total\s+Deducciones\s+([\d,]+\.?\d*)/i;
+  const reNeto     = /Neto\s+a\s+pagar\s+([\d,]+\.?\d*)/i;
+  const reConcept  = /^(\d{1,3})\s+.+?\s+([\d,]+\.\d{2})\s*$/;
+
+  const pn = s => parseFloat((s || '0').replace(/,/g, '')) || 0;
+
+  for (const line of lines) {
+    // Detectar línea de empleado (clave + nombre)
+    const mEmp = line.match(reEmp);
+    if (mEmp) {
+      if (current) results.push(current);
+      current = {
+        clave:               mEmp[1],
+        nombre:              mEmp[2].trim(),
+        dias_pagados:        0,
+        horas_extras:        0,
+        bono_puntualidad:    0,
+        bono_eficiencia:     0,
+        bono_instructor:     0,
+        prima_dominical:     0,
+        vacaciones_importe:  0,
+        gratificacion_importe: 0,
+        despensa_importe:    0,
+        total_percepciones:  0,
+        total_deducciones:   0,
+        neto_pagar:          0,
+      };
+      continue;
+    }
+    if (!current) continue;
+
+    const mDias   = line.match(reDias);    if (mDias)   { current.dias_pagados       = pn(mDias[1]);   continue; }
+    const mHrs    = line.match(reHrsExt);  if (mHrs)    { current.horas_extras        = pn(mHrs[1]);    continue; }
+    const mPerc   = line.match(rePercep);  if (mPerc)   { current.total_percepciones  = pn(mPerc[1]);   continue; }
+    const mDeduc  = line.match(reDeduc);   if (mDeduc)  { current.total_deducciones   = pn(mDeduc[1]);  continue; }
+    const mNeto   = line.match(reNeto);    if (mNeto)   { current.neto_pagar          = pn(mNeto[1]);   continue; }
+
+    // Líneas de concepto: código  descripción  importe
+    const mConc = line.match(reConcept);
+    if (mConc) {
+      const cod   = Number(mConc[1]);
+      const campo = CONCEPTOS[cod];
+      if (campo) current[campo] = pn(mConc[2]);
+    }
+  }
+  if (current) results.push(current);
+  return results;
+}
+
+// POST /api/rhh/nomina/parse-pdf
+// Sube un PDF de Lista de Raya y retorna los datos extraídos (sin guardar)
+router.post('/parse-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Se requiere el archivo PDF (campo: pdf)' });
+      const data = await pdfParse(req.file.buffer);
+      const empleados = parsePdfText(data.text);
+      res.json({ ok: true, total: empleados.length, empleados });
+    } catch (err) {
+      console.error('[nomina/parse-pdf]', err.message);
+      res.status(500).json({ error: 'Error al procesar el PDF: ' + err.message });
+    }
+  }
+);
+
+// POST /api/rhh/nomina/comparar-pdf
+// Sube PDF + no_periodo → compara vs rhh_incidencias_semanales capturadas
+// Retorna array de diffs por empleado
+router.post('/comparar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Se requiere el archivo PDF (campo: pdf)' });
+      const no_periodo = Number(req.body.no_periodo);
+      if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido en body' });
+
+      const data       = await pdfParse(req.file.buffer);
+      const pdfEmps    = parsePdfText(data.text);
+      const db         = read();
+      const lista      = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
+      const employees  = db.rhh_employees || [];
+
+      const CAMPOS_CMP = [
+        { key: 'dias_pagados',     label: 'Días pagados' },
+        { key: 'horas_extras',     label: 'Hrs extras',       dbKey: 'horas_extras_total' },
+        { key: 'bono_puntualidad', label: 'Bono puntualidad', dbKey: 'bono_puntualidad_dias' },
+        { key: 'bono_eficiencia',  label: 'Bono eficiencia',  dbKey: 'bono_eficiencia_dias' },
+        { key: 'bono_instructor',  label: 'Bono instructor' },
+        { key: 'prima_dominical',  label: 'Prima dominical' },
+        { key: 'neto_pagar',       label: 'Neto a pagar' },
+      ];
+
+      const diffs = pdfEmps.map(pEmp => {
+        // Buscar empleado en la DB por clave (employee_number) o nombre aproximado
+        const emp = employees.find(e =>
+          String(e.employee_number) === String(pEmp.clave) ||
+          (e.full_name || '').toUpperCase().includes(pEmp.nombre.split(' ')[0])
+        );
+        const inc = emp ? lista.find(i => i.employee_id === emp.id) : null;
+
+        const campos = CAMPOS_CMP.map(c => {
+          const pdfVal = pEmp[c.key] ?? null;
+          const dbKey  = c.dbKey || c.key;
+          const dbVal  = inc ? (inc[dbKey] ?? null) : null;
+          const diff   = (pdfVal !== null && dbVal !== null)
+            ? Math.abs(pdfVal - dbVal) > 0.01
+            : (pdfVal !== null || dbVal !== null);
+          return { campo: c.label, pdf: pdfVal, capturado: dbVal, diff };
+        });
+
+        const hasDiff = campos.some(c => c.diff);
+        return {
+          clave:      pEmp.clave,
+          nombre:     pEmp.nombre,
+          emp_id:     emp?.id || null,
+          encontrado: !!emp,
+          hasDiff,
+          campos,
+        };
+      });
+
+      const resumen = {
+        total_pdf:    pdfEmps.length,
+        con_diff:     diffs.filter(d => d.hasDiff).length,
+        sin_diff:     diffs.filter(d => !d.hasDiff && d.encontrado).length,
+        no_encontrado: diffs.filter(d => !d.encontrado).length,
+      };
+
+      res.json({ ok: true, no_periodo, resumen, diffs });
+    } catch (err) {
+      console.error('[nomina/comparar-pdf]', err.message);
+      res.status(500).json({ error: 'Error al comparar PDF: ' + err.message });
+    }
+  }
+);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FASE 4 — Dashboard KPIs Nómina
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/rhh/nomina/kpis?no_periodo=X
+// KPIs agregados de incidencias del período (admin/rh)
+router.get('/kpis', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const no_periodo = Number(req.query.no_periodo);
+  if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
+
+  const lista     = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const totalEmp  = employees.length;
+  const capturados = lista.length;
+
+  const sum = (key, dflt = 0) => lista.reduce((a, i) => a + (Number(i[key]) || dflt), 0);
+
+  const totalFaltas        = sum('faltas');
+  const totalHE            = sum('horas_extras_total');
+  const conDespensa        = lista.filter(i => i.despensa).length;
+  const conPrimaDominical  = lista.filter(i => i.prima_dominical).length;
+  const totalVacDias       = sum('vacaciones_dias');
+  const conBonoPuntual     = lista.filter(i => (i.bono_puntualidad_dias || 0) > 0).length;
+  const conBonoEficiencia  = lista.filter(i => (i.bono_eficiencia_dias  || 0) > 0).length;
+
+  // Distribución de faltas (0, 1, 2, 3+)
+  const distFaltas = { 0: 0, 1: 0, 2: 0, '3+': 0 };
+  lista.forEach(i => {
+    const f = i.faltas || 0;
+    if (f === 0)      distFaltas[0]++;
+    else if (f === 1) distFaltas[1]++;
+    else if (f === 2) distFaltas[2]++;
+    else              distFaltas['3+']++;
+  });
+
+  const periodos = (db.rhh_periodos || []).length > 0
+    ? db.rhh_periodos
+    : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
+  const periodo = periodos.find(p => p.no_periodo === no_periodo) || null;
+
+  res.json({
+    ok: true,
+    periodo,
+    resumen: {
+      total_empleados:       totalEmp,
+      capturados,
+      pendientes_captura:    totalEmp - capturados,
+      total_faltas:          totalFaltas,
+      promedio_faltas:       capturados ? +(totalFaltas / capturados).toFixed(2) : 0,
+      total_horas_extras:    +totalHE.toFixed(2),
+      promedio_he:           capturados ? +(totalHE / capturados).toFixed(2) : 0,
+      con_despensa:          conDespensa,
+      con_prima_dominical:   conPrimaDominical,
+      total_vac_dias:        totalVacDias,
+      con_bono_puntualidad:  conBonoPuntual,
+      con_bono_eficiencia:   conBonoEficiencia,
+    },
+    distribucion_faltas: distFaltas,
+  });
+});
+
+// POST /api/rhh/nomina/import-sqlite  (solo admin, solo local — requiere DB_SISTEMA_RRHH_PATH)
+// Importa tabla consolidado_pdf desde SQLite externo a rhh_consolidado_pdf
+router.post('/import-sqlite', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
+  const sqlitePath = process.env.DB_SISTEMA_RRHH_PATH;
+  if (!sqlitePath) {
+    return res.status(503).json({ error: 'DB_SISTEMA_RRHH_PATH no configurado (solo disponible en entorno local)' });
+  }
+  try {
+    const Database = require('better-sqlite3');
+    const sdb      = new Database(sqlitePath, { readonly: true });
+    const rows     = sdb.prepare('SELECT * FROM consolidado_pdf').all();
+    sdb.close();
+
+    const db = read();
+    db.rhh_consolidado_pdf = rows;
+    write(db);
+    res.json({ ok: true, imported: rows.length });
+  } catch (err) {
+    console.error('[nomina/import-sqlite]', err.message);
+    res.status(500).json({ error: 'Error al importar SQLite: ' + err.message });
+  }
+});
+
+// GET /api/rhh/nomina/consolidado-stats?periodos=1,2,3
+// Estadísticas del consolidado importado desde sistema_rrhh
+router.get('/consolidado-stats', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const consolidado = db.rhh_consolidado_pdf || [];
+  if (consolidado.length === 0) {
+    return res.json({ ok: true, total: 0, stats: null, message: 'Sin datos importados. Use import-sqlite primero.' });
+  }
+
+  // Filtrar por períodos si se especifica
+  let rows = consolidado;
+  if (req.query.periodos) {
+    const pIds = req.query.periodos.split(',').map(Number).filter(Boolean);
+    rows = consolidado.filter(r => pIds.includes(Number(r.no_periodo)));
+  }
+
+  const pn  = v => parseFloat(v) || 0;
+  const sum = key => rows.reduce((a, r) => a + pn(r[key]), 0);
+
+  // Agrupar por período
+  const byPeriodo = {};
+  rows.forEach(r => {
+    const p = r.no_periodo;
+    if (!byPeriodo[p]) byPeriodo[p] = { no_periodo: p, empleados: 0, total_neto: 0, total_he: 0, total_faltas: 0 };
+    byPeriodo[p].empleados++;
+    byPeriodo[p].total_neto    += pn(r.neto_pagar || r.neto);
+    byPeriodo[p].total_he      += pn(r.horas_extras || r.he_importe);
+    byPeriodo[p].total_faltas  += pn(r.faltas || 0);
+  });
+
+  res.json({
+    ok: true,
+    total: rows.length,
+    stats: {
+      total_neto:           +sum('neto_pagar' in (rows[0] || {}) ? 'neto_pagar' : 'neto').toFixed(2),
+      total_percepciones:   +sum('total_percepciones').toFixed(2),
+      total_deducciones:    +sum('total_deducciones').toFixed(2),
+      promedio_neto:        rows.length ? +(sum('neto_pagar' in (rows[0] || {}) ? 'neto_pagar' : 'neto') / rows.length).toFixed(2) : 0,
+    },
+    por_periodo: Object.values(byPeriodo).sort((a, b) => a.no_periodo - b.no_periodo),
+  });
 });
 
 module.exports = router;

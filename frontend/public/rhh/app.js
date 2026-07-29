@@ -383,6 +383,66 @@ async function dashboardView() {
     const birthdays = data.birthdays || [];
     const byShift = data.by_shift || [];
 
+    // Nómina KPIs (solo admin/rh)
+    let nominaKpisHtml = '';
+    const userRole = state.user?.role || '';
+    if (userRole === 'admin' || userRole === 'rh') {
+      try {
+        // Cargar períodos si hace falta
+        if (incSemPeriodos.length === 0) {
+          incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
+        }
+        const ultimoPeriodo = incSemPeriodos.length > 0
+          ? incSemPeriodos[incSemPeriodos.length - 1].no_periodo
+          : 0;
+        if (ultimoPeriodo) {
+          const nk = await api(`/api/rhh/nomina/kpis?no_periodo=${ultimoPeriodo}`);
+          if (nk?.ok) {
+            const s = nk.resumen;
+            const p = nk.periodo;
+            const pct = s.total_empleados > 0
+              ? Math.round((s.capturados / s.total_empleados) * 100) : 0;
+            nominaKpisHtml = `
+              <div class="card section" style="margin-top:20px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+                  <h3 style="margin:0;">💰 Nómina — S${ultimoPeriodo}${p ? ` · ${p.fecha_inicio} al ${p.fecha_fin}` : ''}</h3>
+                  <button class="btn-ghost" onclick="location.hash='#lista-raya'" style="font-size:12px;">Ver lista de raya →</button>
+                </div>
+                <div class="grid grid-4" style="margin-bottom:12px;">
+                  <div class="card kpi" style="background:#f0fdf4;">
+                    <div class="muted small">Capturados</div>
+                    <div class="n" style="color:#15803d;font-size:26px;">${s.capturados}/${s.total_empleados}</div>
+                    <div style="font-size:11px;color:#6b7280;">${pct}%</div>
+                  </div>
+                  <div class="card kpi" style="background:#fef2f2;">
+                    <div class="muted small">Total faltas</div>
+                    <div class="n" style="color:#b91c1c;font-size:26px;">${s.total_faltas}</div>
+                    <div style="font-size:11px;color:#6b7280;">prom. ${s.promedio_faltas}/emp</div>
+                  </div>
+                  <div class="card kpi" style="background:#eff6ff;">
+                    <div class="muted small">Horas extra</div>
+                    <div class="n" style="color:#1d4ed8;font-size:26px;">${s.total_horas_extras}h</div>
+                    <div style="font-size:11px;color:#6b7280;">prom. ${s.promedio_he}h/emp</div>
+                  </div>
+                  <div class="card kpi" style="background:#fffbeb;">
+                    <div class="muted small">Días vacaciones</div>
+                    <div class="n" style="color:#b45309;font-size:26px;">${s.total_vac_dias}</div>
+                    <div style="font-size:11px;color:#6b7280;">&nbsp;</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#374151;">
+                  <span>🎁 Despensa: <strong>${s.con_despensa}</strong></span>
+                  <span>⭐ Bono puntualidad: <strong>${s.con_bono_puntualidad}</strong></span>
+                  <span>🏆 Bono eficiencia: <strong>${s.con_bono_eficiencia}</strong></span>
+                  <span>☀️ Prima dominical: <strong>${s.con_prima_dominical}</strong></span>
+                  <span>📋 Pendientes de captura: <strong style="color:${s.pendientes_captura>0?'#b91c1c':'#15803d'}">${s.pendientes_captura}</strong></span>
+                </div>
+              </div>`;
+          }
+        }
+      } catch (_) { /* silencioso */ }
+    }
+
     const content = `
       <h2>📊 Dashboard RHH</h2>
       <div class="grid grid-4" style="margin-bottom:20px;">
@@ -436,6 +496,7 @@ async function dashboardView() {
             </div>` : ''}
         </div>
       </div>
+      ${nominaKpisHtml}
     `;
 
     el.innerHTML = shell(content, 'dashboard');
@@ -1426,48 +1487,93 @@ async function exportarIncidencias() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
+// Catálogos TE en memoria (cache para cascada)
+let _teCatalogos = null;
+
+async function _loadTeCatalogos() {
+  if (_teCatalogos) return _teCatalogos;
+  _teCatalogos = await api('/api/rhh/nomina/te-catalogos') || [];
+  return _teCatalogos;
+}
+
+// Renderiza el select de motivos según la clasificación elegida
+function _heMotivosOpts(cats, clasificId) {
+  const cat = cats.find(c => c.id === Number(clasificId));
+  if (!cat || !cat.motivos?.length) return '<option value="">— sin motivos —</option>';
+  return '<option value="">Seleccionar motivo...</option>' +
+    cat.motivos.map((m, i) => `<option value="${m}">${m}</option>`).join('');
+}
+
+// Actualiza el select de motivos sin re-renderizar el panel completo
+function _heOnClasifChange(sel) {
+  const cats  = _teCatalogos || [];
+  const mSel  = document.getElementById('he-motivo');
+  if (mSel) mSel.innerHTML = _heMotivosOpts(cats, sel.value);
+}
+
 async function showHEDetalle(empId) {
   _heEmpId = empId;
   const panel = document.getElementById('he-detalle-panel');
   if (!panel) return;
   try {
-    const data = await api(`/api/rhh/nomina/he-detalle?no_periodo=${incSemPeriodo}&employee_id=${empId}`);
+    const [data, cats] = await Promise.all([
+      api(`/api/rhh/nomina/he-detalle?no_periodo=${incSemPeriodo}&employee_id=${empId}`),
+      _loadTeCatalogos(),
+    ]);
     const empRow = incSemRows.find(r => r.employee_id === empId);
-    const HE_RAZONES = ['Producción','Mantenimiento','Calidad','Almacén','Proyecto SKF','Proyecto AMSTED','Administración','Otro'];
 
     const detalleRows = (data || []).map(h => `
       <tr>
         <td>${h.fecha || '—'}</td>
-        <td>${h.total_horas}h</td>
-        <td>${h.razon || '—'}</td>
-        <td>${h.sub_razon || '—'}</td>
-        <td>${h.solicita || '—'}</td>
+        <td style="text-align:center;">${h.total_horas}h</td>
+        <td>${escHtml(h.razon || '—')}</td>
+        <td style="font-size:11px;color:#6b7280;">${escHtml(h.sub_razon || '—')}</td>
+        <td style="font-size:11px;">${escHtml(h.solicita || '—')}</td>
         <td><button class="btn-ghost" style="font-size:10px;color:#b91c1c;" onclick="deleteHEDetalle(${h.id})">✕</button></td>
       </tr>`).join('');
+
+    const clasifOpts = '<option value="">Seleccionar clasificación...</option>' +
+      cats.map(c => `<option value="${c.id}">${escHtml(c.nombre)}</option>`).join('');
+
+    const totalHE = (data || []).reduce((a, h) => a + (h.total_horas || 0), 0);
 
     panel.innerHTML = `
       <div class="card section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-          <h3 style="margin:0;">📋 Detalle HE — ${escHtml(empRow?.employee?.full_name || '')}</h3>
-          <button class="btn-ghost" style="font-size:11px;" onclick="document.getElementById('he-detalle-panel').innerHTML=''">✕ Cerrar</button>
+          <h3 style="margin:0;">⚡ HE — ${escHtml(empRow?.employee?.full_name || 'Empleado')}</h3>
+          <div style="display:flex;align-items:center;gap:12px;">
+            ${(data||[]).length > 0 ? `<span style="font-size:12px;color:#1d4ed8;font-weight:700;">Total: ${totalHE}h</span>` : ''}
+            <button class="btn-ghost" style="font-size:11px;" onclick="document.getElementById('he-detalle-panel').innerHTML=''">✕ Cerrar</button>
+          </div>
         </div>
         ${(data || []).length > 0
-          ? `<table style="font-size:12px;margin-bottom:12px;">
-               <thead><tr><th>Fecha</th><th>Horas</th><th>Razón</th><th>Sub-razón</th><th>Solicita</th><th></th></tr></thead>
+          ? `<table style="font-size:12px;margin-bottom:12px;width:100%;">
+               <thead><tr><th>Fecha</th><th>Horas</th><th>Clasificación</th><th>Motivo</th><th>Registra</th><th></th></tr></thead>
                <tbody>${detalleRows}</tbody>
              </table>`
-          : '<p style="color:var(--muted);font-size:13px;margin-bottom:10px;">Sin detalles registrados</p>'}
-        <h4 style="margin-top:4px;">+ Agregar día de HE</h4>
+          : '<p style="color:var(--muted);font-size:13px;margin-bottom:10px;">Sin registros de HE para este período</p>'}
+        <h4 style="margin-top:4px;margin-bottom:8px;">+ Agregar día de HE</h4>
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
-          <div><label style="font-size:11px;display:block;">Fecha</label><input type="date" id="he-fecha" style="width:140px;font-size:12px;" /></div>
-          <div><label style="font-size:11px;display:block;">Horas</label><input type="number" id="he-horas" min="0.5" max="12" step="0.5" style="width:70px;font-size:12px;" placeholder="hrs" /></div>
-          <div><label style="font-size:11px;display:block;">Razón</label>
-            <select id="he-razon" style="font-size:12px;">
-              <option value="">Seleccionar...</option>
-              ${HE_RAZONES.map(r => `<option value="${r}">${r}</option>`).join('')}
+          <div>
+            <label style="font-size:11px;display:block;margin-bottom:3px;">Fecha</label>
+            <input type="date" id="he-fecha" style="width:140px;font-size:12px;" />
+          </div>
+          <div>
+            <label style="font-size:11px;display:block;margin-bottom:3px;">Horas</label>
+            <input type="number" id="he-horas" min="0.5" max="12" step="0.5" style="width:70px;font-size:12px;" placeholder="hrs" />
+          </div>
+          <div>
+            <label style="font-size:11px;display:block;margin-bottom:3px;">Clasificación</label>
+            <select id="he-clasif" style="font-size:12px;min-width:160px;" onchange="_heOnClasifChange(this)">
+              ${clasifOpts}
             </select>
           </div>
-          <div><label style="font-size:11px;display:block;">Sub-razón</label><input id="he-sub" type="text" style="width:130px;font-size:12px;" placeholder="Opcional" /></div>
+          <div>
+            <label style="font-size:11px;display:block;margin-bottom:3px;">Motivo</label>
+            <select id="he-motivo" style="font-size:12px;min-width:160px;">
+              <option value="">— elige clasificación primero —</option>
+            </select>
+          </div>
           <button class="btn-primary" style="font-size:12px;" onclick="saveHEDetalle(${empId})">Agregar</button>
         </div>
       </div>`;
@@ -1475,15 +1581,30 @@ async function showHEDetalle(empId) {
 }
 
 async function saveHEDetalle(empId) {
-  const fecha = document.getElementById('he-fecha')?.value;
-  const horas = document.getElementById('he-horas')?.value;
-  const razon = document.getElementById('he-razon')?.value;
-  const sub   = document.getElementById('he-sub')?.value;
+  const fecha    = document.getElementById('he-fecha')?.value;
+  const horas    = document.getElementById('he-horas')?.value;
+  const clasifId = document.getElementById('he-clasif')?.value;
+  const motivo   = document.getElementById('he-motivo')?.value;
   if (!fecha || !horas) { toast('Fecha y horas son requeridos', 'warning'); return; }
+  if (!clasifId) { toast('Selecciona una clasificación', 'warning'); return; }
+
+  // Obtener nombre de la clasificación
+  const cats  = _teCatalogos || [];
+  const cat   = cats.find(c => c.id === Number(clasifId));
+  const razon = cat?.nombre || '';
+
   try {
     await api('/api/rhh/nomina/he-detalle', {
       method: 'POST',
-      body: JSON.stringify({ no_periodo: incSemPeriodo, employee_id: empId, fecha, total_horas: Number(horas), razon, sub_razon: sub })
+      body: JSON.stringify({
+        no_periodo:   incSemPeriodo,
+        employee_id:  empId,
+        fecha,
+        total_horas:  Number(horas),
+        razon,
+        sub_razon:    motivo || null,
+        clasificacion_id: Number(clasifId),
+      })
     });
     toast('HE registrada');
     showHEDetalle(empId);
@@ -2360,6 +2481,8 @@ async function loadCoverage() {
 
 // ── 12. Lista de Raya (reemplaza Prenómina) ───────────────────────────────────
 let listaRayaPeriodo = 0;
+let listaRayaTab     = 0;   // 0=lista, 1=comparar PDF
+let _cmpPdfResult    = null; // último resultado de comparación
 
 async function listaRayaView() {
   const el = document.getElementById('app');
@@ -2371,81 +2494,205 @@ async function listaRayaView() {
     if (!listaRayaPeriodo && incSemPeriodos.length > 0) {
       listaRayaPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
     }
-    const data = listaRayaPeriodo ? await api(`/api/rhh/nomina/export?no_periodo=${listaRayaPeriodo}`) : null;
     const periodo = incSemPeriodos.find(p => p.no_periodo === listaRayaPeriodo);
 
     const periodOpts = incSemPeriodos.map(p =>
-      `<option value="${p.no_periodo}" ${p.no_periodo === listaRayaPeriodo ? 'selected' : ''}>Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
+      `<option value="${p.no_periodo}" ${p.no_periodo === listaRayaPeriodo ? 'selected' : ''}>S${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
     ).join('');
 
-    const tableRows = (data?.rows || []).map(r => `
-      <tr>
-        <td>${r.no_empleado}</td>
-        <td>${escHtml(r.nombre)}</td>
-        <td>${escHtml(r.departamento)}</td>
-        <td style="text-align:center;">${r.dias_pagados}</td>
-        <td style="text-align:center;color:#b91c1c;">${r.faltas || '—'}</td>
-        <td style="text-align:center;color:#059669;">${r.horas_extras || '—'}</td>
-        <td style="text-align:center;">${r.despensa}</td>
-        <td style="text-align:center;">${r.bono_puntualidad_dias !== '' ? r.bono_puntualidad_dias : '—'}</td>
-        <td style="text-align:center;">${r.bono_eficiencia_dias !== '' ? r.bono_eficiencia_dias : '—'}</td>
-        <td style="text-align:center;">${r.bono_instructor !== '' ? r.bono_instructor : '—'}</td>
-        <td style="text-align:center;">${r.prima_dominical}</td>
-        <td style="text-align:center;color:#1d4ed8;">${r.vacaciones_dias !== '' ? r.vacaciones_dias : '—'}</td>
-        <td style="text-align:center;">${r.gratificacion !== '' ? r.gratificacion : '—'}</td>
-        <td style="font-size:11px;color:var(--muted);">${r.notas || ''}</td>
-      </tr>`).join('');
+    const tabBar = `
+      <div style="display:flex;gap:0;border-bottom:2px solid #e5e7eb;margin-bottom:16px;">
+        <button onclick="listaRayaTab=0;listaRayaView()" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-weight:600;border-bottom:${listaRayaTab===0?'3px solid #2563eb;color:#2563eb':'3px solid transparent;color:#6b7280'};">📋 Lista de raya</button>
+        <button onclick="listaRayaTab=1;listaRayaView()" style="padding:8px 18px;border:none;background:none;cursor:pointer;font-weight:600;border-bottom:${listaRayaTab===1?'3px solid #2563eb;color:#2563eb':'3px solid transparent;color:#6b7280'};">🔍 Comparar PDF</button>
+      </div>`;
 
-    const content = `
-      <div class="module-title"><h2>💰 Lista de Raya — Incidencias</h2></div>
-
+    const periodBar = `
       <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
         <div>
           <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
-          <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="listaRayaPeriodo=parseInt(this.value);listaRayaView()">
+          <select id="lr-periodo-sel" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="listaRayaPeriodo=parseInt(this.value);_cmpPdfResult=null;listaRayaView()">
             ${periodOpts}
           </select>
         </div>
         ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
-        <button class="btn-primary" onclick="exportarListaRaya()">⬇ Exportar CSV</button>
-        <button class="btn-ghost" onclick="location.hash='#incidencias'">✏️ Editar incidencias</button>
-      </div>
+      </div>`;
 
-      <div class="notice" style="margin-bottom:12px;">
-        <strong>Reporte de incidencias capturadas.</strong> Verifica contra el PDF de Lista de Raya de CONTPAQ i.
-        ${data?.generated_at ? `<span class="muted" style="margin-left:8px;">Generado: ${data.generated_at}</span>` : ''}
-      </div>
+    let tabContent = '';
 
-      <div class="card section" style="overflow-x:auto;padding:0;">
-        ${(data?.rows || []).length === 0
-          ? '<div class="empty-state" style="padding:32px;"><p>Sin incidencias capturadas para este período</p></div>'
-          : `<table style="min-width:1100px;font-size:12px;border-collapse:collapse;">
-               <thead>
-                 <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
-                   <th style="padding:6px 8px;">No.</th>
-                   <th style="padding:6px 8px;text-align:left;">Nombre</th>
-                   <th style="padding:6px 8px;text-align:left;">Depto</th>
-                   <th style="padding:6px 4px;text-align:center;">Días</th>
-                   <th style="padding:6px 4px;text-align:center;color:#b91c1c;">Faltas</th>
-                   <th style="padding:6px 4px;text-align:center;color:#059669;">H.Extra</th>
-                   <th style="padding:6px 4px;text-align:center;">Despensa</th>
-                   <th style="padding:6px 4px;text-align:center;">B.Punt.</th>
-                   <th style="padding:6px 4px;text-align:center;">B.Efic.</th>
-                   <th style="padding:6px 4px;text-align:center;">B.Inst.</th>
-                   <th style="padding:6px 4px;text-align:center;">P.Dom.</th>
-                   <th style="padding:6px 4px;text-align:center;color:#1d4ed8;">Vac.</th>
-                   <th style="padding:6px 4px;text-align:center;">Gratif.</th>
-                   <th style="padding:6px 4px;text-align:left;">Notas</th>
-                 </tr>
-               </thead>
-               <tbody>${tableRows}</tbody>
-             </table>`
-        }
-      </div>
+    if (listaRayaTab === 0) {
+      // ── Tab Lista ────────────────────────────────────────────────────────────
+      const data = listaRayaPeriodo ? await api(`/api/rhh/nomina/export?no_periodo=${listaRayaPeriodo}`) : null;
+
+      const tableRows = (data?.rows || []).map(r => `
+        <tr>
+          <td>${r.no_empleado}</td>
+          <td>${escHtml(r.nombre)}</td>
+          <td>${escHtml(r.departamento)}</td>
+          <td style="text-align:center;">${r.dias_pagados}</td>
+          <td style="text-align:center;color:#b91c1c;">${r.faltas || '—'}</td>
+          <td style="text-align:center;color:#059669;">${r.horas_extras || '—'}</td>
+          <td style="text-align:center;">${r.despensa}</td>
+          <td style="text-align:center;">${r.bono_puntualidad_dias !== '' ? r.bono_puntualidad_dias : '—'}</td>
+          <td style="text-align:center;">${r.bono_eficiencia_dias !== '' ? r.bono_eficiencia_dias : '—'}</td>
+          <td style="text-align:center;">${r.bono_instructor !== '' ? r.bono_instructor : '—'}</td>
+          <td style="text-align:center;">${r.prima_dominical}</td>
+          <td style="text-align:center;color:#1d4ed8;">${r.vacaciones_dias !== '' ? r.vacaciones_dias : '—'}</td>
+          <td style="text-align:center;">${r.gratificacion !== '' ? r.gratificacion : '—'}</td>
+          <td style="font-size:11px;color:var(--muted);">${r.notas || ''}</td>
+        </tr>`).join('');
+
+      tabContent = `
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <button class="btn-primary" onclick="exportarListaRaya()">⬇ Exportar CSV</button>
+          <button class="btn-ghost" onclick="location.hash='#incidencias'">✏️ Editar incidencias</button>
+        </div>
+        <div class="notice" style="margin-bottom:12px;">
+          <strong>Reporte de incidencias capturadas.</strong> Verifica contra el PDF de Lista de Raya de CONTPAQ i.
+          ${data?.generated_at ? `<span class="muted" style="margin-left:8px;">Generado: ${data.generated_at}</span>` : ''}
+        </div>
+        <div class="card section" style="overflow-x:auto;padding:0;">
+          ${(data?.rows || []).length === 0
+            ? '<div class="empty-state" style="padding:32px;"><p>Sin incidencias capturadas para este período</p></div>'
+            : `<table style="min-width:1100px;font-size:12px;border-collapse:collapse;">
+                 <thead>
+                   <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                     <th style="padding:6px 8px;">No.</th>
+                     <th style="padding:6px 8px;text-align:left;">Nombre</th>
+                     <th style="padding:6px 8px;text-align:left;">Depto</th>
+                     <th style="padding:6px 4px;text-align:center;">Días</th>
+                     <th style="padding:6px 4px;text-align:center;color:#b91c1c;">Faltas</th>
+                     <th style="padding:6px 4px;text-align:center;color:#059669;">H.Extra</th>
+                     <th style="padding:6px 4px;text-align:center;">Despensa</th>
+                     <th style="padding:6px 4px;text-align:center;">B.Punt.</th>
+                     <th style="padding:6px 4px;text-align:center;">B.Efic.</th>
+                     <th style="padding:6px 4px;text-align:center;">B.Inst.</th>
+                     <th style="padding:6px 4px;text-align:center;">P.Dom.</th>
+                     <th style="padding:6px 4px;text-align:center;color:#1d4ed8;">Vac.</th>
+                     <th style="padding:6px 4px;text-align:center;">Gratif.</th>
+                     <th style="padding:6px 4px;text-align:left;">Notas</th>
+                   </tr>
+                 </thead>
+                 <tbody>${tableRows}</tbody>
+               </table>`
+          }
+        </div>`;
+    } else {
+      // ── Tab Comparar PDF ─────────────────────────────────────────────────────
+      let cmpResultHtml = '';
+      if (_cmpPdfResult) {
+        const r = _cmpPdfResult;
+        const pillStyle = (ok) => ok
+          ? 'background:#dcfce7;color:#15803d;padding:2px 8px;border-radius:10px;font-size:11px;'
+          : 'background:#fee2e2;color:#b91c1c;padding:2px 8px;border-radius:10px;font-size:11px;';
+        cmpResultHtml = `
+          <div style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
+            <span style="background:#dbeafe;color:#1d4ed8;padding:4px 12px;border-radius:8px;font-size:12px;"><strong>${r.resumen.total_pdf}</strong> en PDF</span>
+            <span style="background:#dcfce7;color:#15803d;padding:4px 12px;border-radius:8px;font-size:12px;"><strong>${r.resumen.sin_diff}</strong> sin diferencia</span>
+            <span style="background:#fee2e2;color:#b91c1c;padding:4px 12px;border-radius:8px;font-size:12px;"><strong>${r.resumen.con_diff}</strong> con diferencia</span>
+            <span style="background:#f3f4f6;color:#6b7280;padding:4px 12px;border-radius:8px;font-size:12px;"><strong>${r.resumen.no_encontrado}</strong> no encontrado</span>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="min-width:820px;font-size:12px;border-collapse:collapse;width:100%;">
+              <thead>
+                <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                  <th style="padding:6px 8px;text-align:left;">Clave</th>
+                  <th style="padding:6px 8px;text-align:left;">Nombre PDF</th>
+                  <th style="padding:6px 8px;">Estado</th>
+                  <th style="padding:6px 8px;">Campo</th>
+                  <th style="padding:6px 8px;text-align:right;">PDF</th>
+                  <th style="padding:6px 8px;text-align:right;">Capturado</th>
+                  <th style="padding:6px 8px;text-align:center;">Diff</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${r.diffs.map(emp => {
+                  if (!emp.encontrado) {
+                    return `<tr style="background:#fef9c3;">
+                      <td style="padding:4px 8px;">${emp.clave}</td>
+                      <td style="padding:4px 8px;">${escHtml(emp.nombre)}</td>
+                      <td colspan="5" style="padding:4px 8px;color:#92400e;font-size:11px;">⚠ No encontrado en DB</td>
+                    </tr>`;
+                  }
+                  return emp.campos.map((c, ci) => `
+                    <tr style="${c.diff ? 'background:#fff7ed;' : ''}${ci===0?'border-top:1px solid #e5e7eb;':''}">
+                      ${ci === 0 ? `<td style="padding:4px 8px;" rowspan="${emp.campos.length}">${emp.clave}</td>
+                        <td style="padding:4px 8px;" rowspan="${emp.campos.length}">${escHtml(emp.nombre)}</td>
+                        <td style="padding:4px 8px;text-align:center;" rowspan="${emp.campos.length}">
+                          <span style="${pillStyle(!emp.hasDiff)}">${emp.hasDiff ? 'DIFF' : 'OK'}</span>
+                        </td>` : ''}
+                      <td style="padding:4px 8px;color:#374151;">${c.campo}</td>
+                      <td style="padding:4px 8px;text-align:right;">${c.pdf ?? '—'}</td>
+                      <td style="padding:4px 8px;text-align:right;">${c.capturado ?? '—'}</td>
+                      <td style="padding:4px 8px;text-align:center;">${c.diff ? '⚠' : '✓'}</td>
+                    </tr>`).join('');
+                }).join('')}
+              </tbody>
+            </table>
+          </div>`;
+      }
+
+      tabContent = `
+        <div class="card section" style="margin-bottom:16px;">
+          <h3 style="margin-top:0;">📄 Comparar PDF de CONTPAQ i</h3>
+          <p style="font-size:13px;color:#6b7280;margin-bottom:12px;">
+            Sube el PDF de Lista de Raya generado por CONTPAQ i para el período seleccionado. El sistema extraerá los datos y los comparará con las incidencias capturadas.
+          </p>
+          <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;">
+            <div>
+              <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Archivo PDF</label>
+              <input type="file" id="cmp-pdf-file" accept=".pdf" style="font-size:13px;">
+            </div>
+            <button class="btn-primary" onclick="compararPDF()">🔍 Comparar</button>
+            ${_cmpPdfResult ? `<button class="btn-ghost" onclick="_cmpPdfResult=null;listaRayaView()">✕ Limpiar</button>` : ''}
+          </div>
+        </div>
+        ${cmpResultHtml
+          ? `<div class="card section">${cmpResultHtml}</div>`
+          : `<div class="empty-state"><div class="empty-icon">📄</div><p>Selecciona un PDF y presiona "Comparar"</p></div>`
+        }`;
+    }
+
+    const content = `
+      <div class="module-title"><h2>💰 Lista de Raya</h2></div>
+      ${tabBar}
+      ${periodBar}
+      ${tabContent}
     `;
     el.innerHTML = shell(content, 'lista-raya');
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'lista-raya');
+  }
+}
+
+async function compararPDF() {
+  const fileInput = document.getElementById('cmp-pdf-file');
+  if (!fileInput?.files?.[0]) { toast('Selecciona un archivo PDF', 'warning'); return; }
+  if (!listaRayaPeriodo) { toast('Selecciona un período', 'warning'); return; }
+
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+
+  try {
+    const form = new FormData();
+    form.append('pdf', fileInput.files[0]);
+    form.append('no_periodo', listaRayaPeriodo);
+
+    const token = localStorage.getItem('rhh_token');
+    const res   = await fetch('/api/rhh/nomina/comparar-pdf', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + token },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error en el servidor');
+
+    _cmpPdfResult = data;
+    listaRayaTab  = 1;
+    await listaRayaView();
+    toast(`Comparación lista: ${data.resumen.con_diff} diferencias encontradas`, data.resumen.con_diff > 0 ? 'warning' : 'success');
+  } catch (err) {
+    toast(err.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Comparar'; }
   }
 }
 
@@ -2744,6 +2991,93 @@ async function catalogosView() {
         </div>`;
     }
 
+    // ── Tab: Razones TE ──────────────────────────────────────────────────────
+    if (catTab === 'te-razones') {
+      const cats = await api('/api/rhh/nomina/te-catalogos') || [];
+      const catsHtml = cats.map(cat => `
+        <div class="card" style="margin-bottom:12px;padding:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <strong style="font-size:14px;">${escHtml(cat.nombre)}</strong>
+            <div style="display:flex;gap:6px;">
+              <button class="btn-ghost" style="font-size:11px;" onclick="renameTeCat(${cat.id},'${escHtml(cat.nombre).replace(/'/g,"\\'")}')">✏️ Renombrar</button>
+              <button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="deleteTeCat(${cat.id})">🗑️</button>
+            </div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;">
+            ${cat.motivos.map((m, i) => `
+              <span style="background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:3px 10px;font-size:12px;display:inline-flex;align-items:center;gap:6px;">
+                ${escHtml(m)}
+                <button onclick="deleteTeCatMotivo(${cat.id},${i})" style="border:none;background:none;cursor:pointer;color:#b91c1c;font-size:10px;padding:0;line-height:1;">✕</button>
+              </span>`).join('')}
+            ${cat.motivos.length === 0 ? '<span style="color:#9ca3af;font-size:12px;">Sin motivos</span>' : ''}
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <input id="nm-${cat.id}" placeholder="Nuevo motivo..." style="font-size:12px;width:200px;padding:5px 8px;" />
+            <button class="btn-ghost" style="font-size:12px;" onclick="addTeCatMotivo(${cat.id})">+ Agregar</button>
+          </div>
+        </div>`).join('');
+
+      tabContent = `
+        <div class="card section" style="margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">⚡ Clasificaciones de Tiempo Extra</h3>
+            <button class="btn-ghost" style="font-size:12px;color:#7c3aed;" onclick="seedDefaultTeCatalogos()">🔄 Restaurar predeterminados</button>
+          </div>
+          <div class="row" style="margin-bottom:10px;">
+            <input id="nte-nombre" placeholder="Nueva clasificación..." style="width:220px;" />
+            <button class="btn-primary" onclick="addTeCat()">+ Agregar clasificación</button>
+          </div>
+        </div>
+        ${catsHtml || '<div class="empty-state"><p>Sin clasificaciones. Usa "+ Agregar" o "Restaurar predeterminados".</p></div>'}`;
+    }
+
+    // ── Tab: Migración ───────────────────────────────────────────────────────
+    if (catTab === 'migracion' && (state.user?.role === 'admin')) {
+      const preview = await api('/api/rhh/nomina/migrar-incidencias?dry_run=1');
+      const rows = (preview?.preview || []).map(p => `
+        <tr style="${p.result!=='OK'?'color:#9ca3af;font-style:italic;':''}">
+          <td>${p.id}</td>
+          <td>${p.employee_id}</td>
+          <td>${p.date}</td>
+          <td>${p.type}</td>
+          <td>S${p.no_periodo || '—'}</td>
+          <td>${p.campo || '—'}</td>
+          <td style="text-align:center;">${p.valor ?? '—'}</td>
+          <td><span style="font-size:11px;${p.result==='OK'?'color:#15803d':'color:#b91c1c'}">${p.result}</span></td>
+        </tr>`).join('');
+
+      tabContent = `
+        <div class="card section">
+          <h3 style="margin-top:0;">🔄 Migración de incidencias antiguas</h3>
+          <p style="font-size:13px;color:#6b7280;">
+            Mapea las incidencias del sistema antiguo (rhh_incidences) al nuevo modelo semanal.
+            Esta acción es segura: <strong>suma</strong> los valores al registro existente del período,
+            no borra nada del sistema antiguo.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:14px;">
+            <div style="background:#f0fdf4;border-radius:8px;padding:8px 16px;font-size:13px;">
+              <strong>${preview?.total || 0}</strong> incidencias antiguas
+            </div>
+            <div style="background:#dcfce7;border-radius:8px;padding:8px 16px;font-size:13px;color:#15803d;">
+              <strong>${preview?.migrated || 0}</strong> a migrar
+            </div>
+            ${preview?.skipped > 0 ? `<div style="background:#fef9c3;border-radius:8px;padding:8px 16px;font-size:13px;color:#92400e;"><strong>${preview.skipped}</strong> sin período (fuera de rango)</div>` : ''}
+          </div>
+          ${preview?.total > 0
+            ? `<button class="btn-primary" style="margin-bottom:14px;" onclick="ejecutarMigracion()">▶ Ejecutar migración</button>`
+            : `<div class="empty-state"><p>No hay incidencias antiguas para migrar</p></div>`}
+          ${rows ? `<div style="overflow-x:auto;">
+            <table style="font-size:12px;border-collapse:collapse;min-width:600px;">
+              <thead><tr style="background:#f3f4f6;">
+                <th style="padding:5px 8px;">ID</th><th>Empleado</th><th>Fecha</th><th>Tipo</th><th>Período</th><th>Campo</th><th>Valor</th><th>Estado</th>
+              </tr></thead>
+              <tbody>${rows}</tbody>
+            </table></div>` : ''}
+        </div>`;
+    }
+
+    const isAdmin = state.user?.role === 'admin';
+
     const content = `
       <div class="module-title">
         <h2>📁 Catálogos</h2>
@@ -2753,6 +3087,8 @@ async function catalogosView() {
         <button class="tab-btn ${catTab==='positions'?'active':''}" onclick="catTab='positions';catalogosView()">💼 Puestos</button>
         <button class="tab-btn ${catTab==='shifts'?'active':''}" onclick="catTab='shifts';catalogosView()">⏰ Turnos</button>
         <button class="tab-btn ${catTab==='vacation-rules'?'active':''}" onclick="catTab='vacation-rules';catalogosView()">🌴 Reglas Vacaciones</button>
+        <button class="tab-btn ${catTab==='te-razones'?'active':''}" onclick="catTab='te-razones';catalogosView()">⚡ Razones TE</button>
+        ${isAdmin ? `<button class="tab-btn ${catTab==='migracion'?'active':''}" onclick="catTab='migracion';catalogosView()">🔄 Migración</button>` : ''}
       </div>
       ${tabContent}
     `;
@@ -2762,6 +3098,83 @@ async function catalogosView() {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'catalogos');
   }
 }
+
+// ── Catálogos TE — funciones CRUD ────────────────────────────────────────────
+
+async function addTeCat() {
+  const nombre = document.getElementById('nte-nombre')?.value?.trim();
+  if (!nombre) { toast('Escribe el nombre de la clasificación', 'warning'); return; }
+  try {
+    await api('/api/rhh/nomina/te-catalogos', { method: 'POST', body: JSON.stringify({ nombre }) });
+    _teCatalogos = null; // limpiar cache
+    toast('Clasificación creada');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function renameTeCat(id, nombreActual) {
+  const nuevo = prompt('Nuevo nombre de la clasificación:', nombreActual);
+  if (!nuevo?.trim() || nuevo.trim() === nombreActual) return;
+  try {
+    await api(`/api/rhh/nomina/te-catalogos/${id}`, { method: 'PATCH', body: JSON.stringify({ nombre: nuevo.trim() }) });
+    _teCatalogos = null;
+    toast('Clasificación renombrada');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deleteTeCat(id) {
+  if (!confirm('¿Eliminar esta clasificación y todos sus motivos?')) return;
+  try {
+    await api(`/api/rhh/nomina/te-catalogos/${id}`, { method: 'DELETE' });
+    _teCatalogos = null;
+    toast('Clasificación eliminada');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function addTeCatMotivo(catId) {
+  const input  = document.getElementById(`nm-${catId}`);
+  const motivo = input?.value?.trim();
+  if (!motivo) { toast('Escribe el motivo', 'warning'); return; }
+  try {
+    await api(`/api/rhh/nomina/te-catalogos/${catId}/motivos`, { method: 'POST', body: JSON.stringify({ motivo }) });
+    _teCatalogos = null;
+    toast('Motivo agregado');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function deleteTeCatMotivo(catId, midx) {
+  if (!confirm('¿Eliminar este motivo?')) return;
+  try {
+    await api(`/api/rhh/nomina/te-catalogos/${catId}/motivos/${midx}`, { method: 'DELETE' });
+    _teCatalogos = null;
+    toast('Motivo eliminado');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function seedDefaultTeCatalogos() {
+  if (!confirm('¿Restaurar clasificaciones TE a los valores predeterminados? (Se sobreescribe el catálogo actual)')) return;
+  try {
+    await api('/api/rhh/nomina/te-catalogos/seed-default', { method: 'POST', body: '{}' });
+    _teCatalogos = null;
+    toast('Catálogo restaurado');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function ejecutarMigracion() {
+  if (!confirm('¿Ejecutar la migración ahora? Los datos se sumarán al modelo semanal.')) return;
+  try {
+    const res = await api('/api/rhh/nomina/migrar-incidencias', { method: 'POST', body: '{}' });
+    toast(`Migración completada: ${res.migrated} incidencias → ${res.records_upserted} registros actualizados`, 'success');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+// ── Departamentos ─────────────────────────────────────────────────────────────
 
 async function addDept() {
   const name = document.getElementById('nd-name')?.value?.trim();
