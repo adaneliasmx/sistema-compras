@@ -1095,4 +1095,298 @@ router.get('/consolidado-stats', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
   });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// SYNC desde sistema_rrhh SQLite
+// ══════════════════════════════════════════════════════════════════════════════
+
+/* Limpia el prefijo numérico de nombres de departamento: "1 Almacen" → "Almacén" */
+const DEPT_MAP = {
+  'almacen':                       'Almacén',
+  'produccion':                    'Producción',
+  'mantenimiento':                 'Mantenimiento',
+  'calidad':                       'Calidad',
+  'limpieza':                      'Limpieza',
+  'proyecto skf':                  'Proyecto SKF',
+  'proyecto amsted':               'Proyecto AMSTED',
+  'ptar':                          'PTAR',
+  'seguridad y medio ambiente':    'Seguridad y Medio Ambiente',
+  'rrhh':                          'RRHH',
+};
+
+function normDeptName(raw) {
+  // Quita prefijo numérico: "1 Almacen" → "Almacen"
+  const clean = (raw || '').replace(/^\d+\s+/, '').trim();
+  return DEPT_MAP[clean.toLowerCase()] || clean;
+}
+
+function parseDateMx(str) {
+  // "11/11/2024" → "2024-11-11"
+  if (!str) return null;
+  const [d, m, y] = str.split('/');
+  if (!d || !m || !y) return null;
+  return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+}
+
+function normalizeEmpNum(n) {
+  // "083" y "83" deben ser iguales → comparar como número
+  return String(parseInt(n, 10) || 0);
+}
+
+// Fija casing de puestos (primera letra mayúscula por palabra)
+function titleCase(str) {
+  if (!str) return str;
+  return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+/**
+ * POST /api/rhh/nomina/sync-from-sqlite
+ * Body (opcional): { sync_incidencias: true }
+ *
+ * Lee empleados, departamentos, puestos e incidencias del SQLite externo
+ * y los sincroniza con el sistema RHH.
+ * Solo disponible cuando DB_SISTEMA_RRHH_PATH está configurado (entorno local).
+ */
+router.post('/sync-from-sqlite', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
+  const sqlitePath = process.env.DB_SISTEMA_RRHH_PATH;
+  if (!sqlitePath) {
+    return res.status(503).json({ error: 'DB_SISTEMA_RRHH_PATH no configurado (solo disponible en entorno local)' });
+  }
+
+  let sdb;
+  try {
+    const Database = require('better-sqlite3');
+    sdb = new Database(sqlitePath, { readonly: true });
+  } catch (err) {
+    return res.status(500).json({ error: 'No se pudo abrir el archivo SQLite: ' + err.message });
+  }
+
+  try {
+    const db = read();
+    const log = { depts: { created: 0, updated: 0 }, positions: { created: 0, updated: 0 }, employees: { created: 0, updated: 0, skipped: 0 }, incidencias: { created: 0, updated: 0 } };
+
+    // ── 1. Departamentos ───────────────────────────────────────────────────────
+    const sqlDepts = sdb.prepare('SELECT DISTINCT departamento FROM empleados ORDER BY departamento').all();
+    let depts = db.rhh_departments || [];
+
+    for (const row of sqlDepts) {
+      const nombre = normDeptName(row.departamento);
+      if (!nombre) continue;
+      const existing = depts.find(d => d.name.toLowerCase() === nombre.toLowerCase());
+      if (!existing) {
+        const newId = depts.length > 0 ? Math.max(...depts.map(d => d.id)) + 1 : 1;
+        depts.push({ id: newId, name: nombre, code: nombre.substring(0, 4).toUpperCase(), manager_id: null });
+        log.depts.created++;
+      }
+      // Si ya existe no sobrescribir (el usuario puede haber editado el nombre)
+    }
+    db.rhh_departments = depts;
+
+    // ── 2. Puestos ─────────────────────────────────────────────────────────────
+    const sqlPuestos = sdb.prepare('SELECT DISTINCT puesto FROM empleados ORDER BY puesto').all();
+    let positions = db.rhh_positions || [];
+
+    for (const row of sqlPuestos) {
+      const nombre = titleCase(row.puesto?.trim() || '');
+      if (!nombre) continue;
+      const existing = positions.find(p => p.name.toLowerCase() === nombre.toLowerCase());
+      if (!existing) {
+        const newId = positions.length > 0 ? Math.max(...positions.map(p => p.id)) + 1 : 1;
+        positions.push({ id: newId, name: nombre, code: null, description: null });
+        log.positions.created++;
+      }
+    }
+    db.rhh_positions = positions;
+
+    // ── 3. Empleados ───────────────────────────────────────────────────────────
+    const sqlEmps = sdb.prepare('SELECT * FROM empleados').all();
+    let employees = db.rhh_employees || [];
+
+    for (const se of sqlEmps) {
+      const empNum = String(se.no_empleado || '').trim();
+      if (!empNum) { log.employees.skipped++; continue; }
+
+      const dept     = depts.find(d => d.name.toLowerCase() === normDeptName(se.departamento).toLowerCase());
+      const puesto   = titleCase((se.puesto || '').trim());
+      const position = positions.find(p => p.name.toLowerCase() === puesto.toLowerCase());
+      const status   = (se.status || '').toLowerCase() === 'activo' ? 'active' : 'inactive';
+      const hireDate = parseDateMx(se.fecha_ingreso);
+
+      // Match por employee_number (comparando como número para tolerar ceros a la izquierda)
+      const existing = employees.find(e =>
+        normalizeEmpNum(e.employee_number) === normalizeEmpNum(empNum)
+      );
+
+      if (existing) {
+        // Actualizar datos del sistema externo
+        existing.full_name      = se.nombre?.trim() || existing.full_name;
+        existing.department_id  = dept?.id    ?? existing.department_id;
+        existing.position_id    = position?.id ?? existing.position_id;
+        existing.rfc            = se.rfc?.trim()  || existing.rfc;
+        existing.curp           = se.curp?.trim() || existing.curp;
+        existing.nss            = se.afiliacion_imss?.trim() || existing.nss;
+        existing.hire_date      = hireDate || existing.hire_date;
+        existing.start_date     = hireDate || existing.start_date;
+        existing.status         = status;
+        existing.updated_at     = nowMxDate();
+        log.employees.updated++;
+      } else {
+        // Crear empleado nuevo
+        const newId = employees.length > 0 ? Math.max(...employees.map(e => Number(e.id) || 0)) + 1 : 1;
+        employees.push({
+          id:              newId,
+          employee_number: empNum,
+          full_name:       se.nombre?.trim() || '',
+          email:           '',
+          phone:           '',
+          department_id:   dept?.id    ?? null,
+          position_id:     position?.id ?? null,
+          shift_id:        null,
+          supervisor_id:   null,
+          start_date:      hireDate,
+          hire_date:       hireDate,
+          birth_date:      null,
+          status,
+          contract_type:   'indefinido',
+          base_salary:     null,
+          daily_salary:    null,
+          rfc:             se.rfc?.trim()  || null,
+          curp:            se.curp?.trim() || null,
+          nss:             se.afiliacion_imss?.trim() || null,
+          checker_number:  null,
+          total_vacation_days: 15,
+          photo:           null,
+          created_at:      nowMxDate(),
+          updated_at:      nowMxDate(),
+        });
+        log.employees.created++;
+      }
+    }
+    db.rhh_employees = employees;
+
+    // ── 4. Incidencias (opcional) ──────────────────────────────────────────────
+    const syncInc = req.body?.sync_incidencias === true || req.body?.sync_incidencias === 'true' || req.query.sync_incidencias === '1';
+    if (syncInc) {
+      const sqlIncs = sdb.prepare('SELECT * FROM incidencias').all();
+      let lista = db.rhh_incidencias_semanales || [];
+
+      // Refresca el array de empleados sincronizado para los lookups
+      const empsSync = db.rhh_employees;
+
+      for (const si of sqlIncs) {
+        const emp = empsSync.find(e => normalizeEmpNum(e.employee_number) === normalizeEmpNum(si.no_empleado));
+        if (!emp) continue;
+
+        const existing = lista.find(r => r.no_periodo === Number(si.no_periodo) && r.employee_id === emp.id);
+        if (existing) {
+          // Solo actualiza si el registro está "vacío" (default values) para no sobreescribir capturas manuales
+          if (existing._from_sqlite) {
+            existing.dias_pagados         = Number(si.dias_pagados)        ?? 7;
+            existing.faltas               = Number(si.faltas)              ?? 0;
+            existing.horas_extras_total   = Number(si.horas_extras_total)  ?? 0;
+            existing.despensa             = si.despensa ? 1 : 0;
+            existing.bono_puntualidad_dias = si.bono_puntualidad_dias != null ? Number(si.bono_puntualidad_dias) : null;
+            existing.bono_eficiencia_dias  = si.bono_eficiencia_dias  != null ? Number(si.bono_eficiencia_dias)  : null;
+            existing.bono_instructor      = si.bono_instructor        != null ? Number(si.bono_instructor)       : null;
+            existing.prima_dominical      = si.prima_dominical ? 1 : 0;
+            existing.vacaciones_dias      = si.vacaciones_dias != null ? Number(si.vacaciones_dias) : null;
+            existing.gratificacion        = si.gratificacion   != null ? Number(si.gratificacion)   : null;
+            existing.notas                = si.notas || null;
+            log.incidencias.updated++;
+          }
+        } else {
+          const newId = lista.length > 0 ? Math.max(...lista.map(r => r.id || 0)) + 1 : 1;
+          lista.push({
+            id:                   newId,
+            no_periodo:           Number(si.no_periodo),
+            employee_id:          emp.id,
+            dias_pagados:         Number(si.dias_pagados)        ?? 7,
+            faltas:               Number(si.faltas)              ?? 0,
+            horas_extras_total:   Number(si.horas_extras_total)  ?? 0,
+            despensa:             si.despensa ? 1 : 0,
+            bono_puntualidad_dias: si.bono_puntualidad_dias != null ? Number(si.bono_puntualidad_dias) : null,
+            bono_eficiencia_dias:  si.bono_eficiencia_dias  != null ? Number(si.bono_eficiencia_dias)  : null,
+            bono_instructor:      si.bono_instructor        != null ? Number(si.bono_instructor)       : null,
+            prima_dominical:      si.prima_dominical ? 1 : 0,
+            vacaciones_dias:      si.vacaciones_dias != null ? Number(si.vacaciones_dias) : null,
+            gratificacion:        si.gratificacion   != null ? Number(si.gratificacion)   : null,
+            notas:                si.notas || null,
+            _from_sqlite:         true,
+          });
+          log.incidencias.created++;
+        }
+      }
+      db.rhh_incidencias_semanales = lista;
+    }
+
+    // ── 5. Persistir ───────────────────────────────────────────────────────────
+    sdb.close();
+    write(db);
+
+    res.json({
+      ok: true,
+      log,
+      totals: {
+        departments: db.rhh_departments.length,
+        positions:   db.rhh_positions.length,
+        employees:   db.rhh_employees.length,
+        incidencias: syncInc ? (db.rhh_incidencias_semanales || []).length : 'no sincronizadas',
+      }
+    });
+
+  } catch (err) {
+    if (sdb) try { sdb.close(); } catch (_) {}
+    console.error('[sync-from-sqlite]', err.message);
+    res.status(500).json({ error: 'Error en sincronización: ' + err.message });
+  }
+});
+
+/**
+ * GET /api/rhh/nomina/sync-from-sqlite  →  preview (dry-run, sin escribir)
+ */
+router.get('/sync-from-sqlite', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
+  const sqlitePath = process.env.DB_SISTEMA_RRHH_PATH;
+  if (!sqlitePath) return res.status(503).json({ error: 'DB_SISTEMA_RRHH_PATH no configurado' });
+
+  let sdb;
+  try {
+    const Database = require('better-sqlite3');
+    sdb = new Database(sqlitePath, { readonly: true });
+    const sqlEmps  = sdb.prepare('SELECT * FROM empleados').all();
+    const sqlDepts = sdb.prepare('SELECT DISTINCT departamento FROM empleados').all();
+    const sqlPuest = sdb.prepare('SELECT DISTINCT puesto FROM empleados').all();
+    const sqlIncs  = sdb.prepare('SELECT COUNT(*) as n FROM incidencias').get();
+    sdb.close();
+
+    const db = read();
+    const existingNums = new Set((db.rhh_employees || []).map(e => normalizeEmpNum(e.employee_number)));
+
+    const toCreate = sqlEmps.filter(e => !existingNums.has(normalizeEmpNum(e.no_empleado)));
+    const toUpdate = sqlEmps.filter(e =>  existingNums.has(normalizeEmpNum(e.no_empleado)));
+    const newDepts = sqlDepts.map(d => normDeptName(d.departamento)).filter(n => n && !(db.rhh_departments||[]).some(d => d.name.toLowerCase() === n.toLowerCase()));
+    const newPuest = sqlPuest.map(p => titleCase(p.puesto?.trim()||'')).filter(n => n && !(db.rhh_positions||[]).some(p => p.name.toLowerCase() === n.toLowerCase()));
+
+    res.json({
+      ok: true,
+      dry_run: true,
+      sqlite_employees: sqlEmps.length,
+      sqlite_incidencias: sqlIncs.n,
+      to_create: toCreate.length,
+      to_update: toUpdate.length,
+      new_departments: newDepts,
+      new_positions:   newPuest,
+      preview_employees: sqlEmps.map(e => ({
+        no_empleado: e.no_empleado,
+        nombre: e.nombre,
+        departamento: normDeptName(e.departamento),
+        puesto: titleCase(e.puesto||''),
+        status: e.status,
+        action: existingNums.has(normalizeEmpNum(e.no_empleado)) ? 'actualizar' : 'crear',
+      })),
+    });
+  } catch (err) {
+    if (sdb) try { sdb.close(); } catch (_) {}
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

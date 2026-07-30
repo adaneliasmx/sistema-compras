@@ -3070,8 +3070,69 @@ async function catalogosView() {
         ${catsHtml || '<div class="empty-state"><p>Sin clasificaciones. Usa "+ Agregar" o "Restaurar predeterminados".</p></div>'}`;
     }
 
-    // ── Tab: Migración ───────────────────────────────────────────────────────
+    // ── Tab: Migración / Sync ────────────────────────────────────────────────
     if (catTab === 'migracion' && (state.user?.role === 'admin')) {
+      // Sync preview desde SQLite externo
+      let syncPreviewHtml = '';
+      try {
+        const sp = await api('/api/rhh/nomina/sync-from-sqlite');
+        if (sp?.ok) {
+          const pRows = (sp.preview_employees || []).slice(0, 20).map(e => `
+            <tr style="${e.action==='crear'?'background:#f0fdf4;':''}">
+              <td style="padding:3px 8px;font-weight:600;">${e.no_empleado}</td>
+              <td style="padding:3px 8px;">${escHtml(e.nombre)}</td>
+              <td style="padding:3px 8px;font-size:11px;">${escHtml(e.departamento)}</td>
+              <td style="padding:3px 8px;font-size:11px;">${escHtml(e.puesto)}</td>
+              <td style="padding:3px 8px;text-align:center;">
+                <span style="font-size:11px;padding:2px 8px;border-radius:8px;${e.action==='crear'?'background:#dcfce7;color:#15803d;':'background:#dbeafe;color:#1d4ed8;'}">${e.action}</span>
+              </td>
+            </tr>`).join('');
+          syncPreviewHtml = `
+            <div class="card section" style="margin-bottom:16px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                <h3 style="margin:0;">🔗 Sincronizar desde sistema_rrhh (SQLite)</h3>
+              </div>
+              <p style="font-size:13px;color:#6b7280;margin-bottom:10px;">
+                Importa empleados, departamentos y puestos del sistema de referencia externo.
+                Los empleados existentes se actualizan; los nuevos se crean automáticamente.
+              </p>
+              <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+                <div style="background:#f0fdf4;border-radius:8px;padding:8px 14px;font-size:13px;">
+                  <strong>${sp.sqlite_employees}</strong> empleados en SQLite
+                </div>
+                <div style="background:#dcfce7;color:#15803d;border-radius:8px;padding:8px 14px;font-size:13px;">
+                  <strong>${sp.to_create}</strong> a crear
+                </div>
+                <div style="background:#dbeafe;color:#1d4ed8;border-radius:8px;padding:8px 14px;font-size:13px;">
+                  <strong>${sp.to_update}</strong> a actualizar
+                </div>
+                <div style="background:#fef9c3;color:#92400e;border-radius:8px;padding:8px 14px;font-size:13px;">
+                  <strong>${sp.sqlite_incidencias}</strong> incidencias disponibles
+                </div>
+              </div>
+              ${sp.new_departments?.length > 0 ? `<p style="font-size:12px;color:#059669;margin-bottom:8px;">✚ Nuevos departamentos: <strong>${sp.new_departments.join(', ')}</strong></p>` : ''}
+              ${sp.new_positions?.length > 0 ? `<p style="font-size:12px;color:#059669;margin-bottom:8px;">✚ Nuevos puestos: <strong>${sp.new_positions.join(', ')}</strong></p>` : ''}
+              <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+                <button class="btn-primary" onclick="ejecutarSyncSqlite(false)">▶ Sincronizar empleados</button>
+                <button class="btn-primary" style="background:#059669;" onclick="ejecutarSyncSqlite(true)">▶ Sincronizar + incidencias históricas</button>
+              </div>
+              ${pRows ? `
+                <details>
+                  <summary style="cursor:pointer;font-size:13px;font-weight:600;margin-bottom:8px;">Ver preview (${sp.preview_employees?.length || 0} empleados, mostrando primeros 20)</summary>
+                  <div style="overflow-x:auto;margin-top:8px;">
+                    <table style="font-size:12px;border-collapse:collapse;min-width:500px;">
+                      <thead><tr style="background:#f3f4f6;"><th style="padding:4px 8px;">No.</th><th>Nombre</th><th>Departamento</th><th>Puesto</th><th style="text-align:center;">Acción</th></tr></thead>
+                      <tbody>${pRows}</tbody>
+                    </table>
+                  </div>
+                </details>` : ''}
+            </div>`;
+        }
+      } catch (_) {
+        syncPreviewHtml = `<div class="notice" style="margin-bottom:16px;"><strong>ℹ️</strong> Sync desde SQLite no disponible en este entorno (requiere <code>DB_SISTEMA_RRHH_PATH</code> configurado localmente).</div>`;
+      }
+
+      // Migración antigua (rhh_incidences → rhh_incidencias_semanales)
       const preview = await api('/api/rhh/nomina/migrar-incidencias?dry_run=1');
       const rows = (preview?.preview || []).map(p => `
         <tr style="${p.result!=='OK'?'color:#9ca3af;font-style:italic;':''}">
@@ -3086,12 +3147,12 @@ async function catalogosView() {
         </tr>`).join('');
 
       tabContent = `
+        ${syncPreviewHtml}
         <div class="card section">
-          <h3 style="margin-top:0;">🔄 Migración de incidencias antiguas</h3>
+          <h3 style="margin-top:0;">🔄 Migración de incidencias antiguas (sistema anterior)</h3>
           <p style="font-size:13px;color:#6b7280;">
             Mapea las incidencias del sistema antiguo (rhh_incidences) al nuevo modelo semanal.
-            Esta acción es segura: <strong>suma</strong> los valores al registro existente del período,
-            no borra nada del sistema antiguo.
+            Esta acción es segura: <strong>suma</strong> los valores al registro existente del período.
           </p>
           <div style="display:flex;gap:8px;margin-bottom:14px;">
             <div style="background:#f0fdf4;border-radius:8px;padding:8px 16px;font-size:13px;">
@@ -3100,7 +3161,7 @@ async function catalogosView() {
             <div style="background:#dcfce7;border-radius:8px;padding:8px 16px;font-size:13px;color:#15803d;">
               <strong>${preview?.migrated || 0}</strong> a migrar
             </div>
-            ${preview?.skipped > 0 ? `<div style="background:#fef9c3;border-radius:8px;padding:8px 16px;font-size:13px;color:#92400e;"><strong>${preview.skipped}</strong> sin período (fuera de rango)</div>` : ''}
+            ${preview?.skipped > 0 ? `<div style="background:#fef9c3;border-radius:8px;padding:8px 16px;font-size:13px;color:#92400e;"><strong>${preview.skipped}</strong> sin período</div>` : ''}
           </div>
           ${preview?.total > 0
             ? `<button class="btn-primary" style="margin-bottom:14px;" onclick="ejecutarMigracion()">▶ Ejecutar migración</button>`
@@ -3200,6 +3261,27 @@ async function seedDefaultTeCatalogos() {
     await api('/api/rhh/nomina/te-catalogos/seed-default', { method: 'POST', body: '{}' });
     _teCatalogos = null;
     toast('Catálogo restaurado');
+    catalogosView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function ejecutarSyncSqlite(incluirIncidencias) {
+  const msg = incluirIncidencias
+    ? '¿Sincronizar empleados + incidencias históricas (1566 registros) desde el SQLite?\nEsta acción puede tardar varios segundos.'
+    : '¿Sincronizar empleados, departamentos y puestos desde el SQLite?';
+  if (!confirm(msg)) return;
+  try {
+    const body = JSON.stringify({ sync_incidencias: incluirIncidencias });
+    const res  = await api('/api/rhh/nomina/sync-from-sqlite', { method: 'POST', body });
+    if (!res?.ok) throw new Error(res?.error || 'Error en sync');
+    const l = res.log;
+    toast(
+      `Sync completado: ${l.employees.created} empleados creados, ${l.employees.updated} actualizados` +
+      (incluirIncidencias ? `, ${l.incidencias.created} incidencias importadas` : ''),
+      'success'
+    );
+    // Recargar catálogos en memoria
+    await loadCatalogs();
     catalogosView();
   } catch (err) { toast(err.message, 'error'); }
 }
