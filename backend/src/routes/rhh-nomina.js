@@ -4,15 +4,20 @@
    comparación PDF Lista de Raya, dashboard KPIs, importación SQLite
    ══════════════════════════════════════════════════════════════════════════════ */
 
-const express  = require('express');
-const multer   = require('multer');
-const pdfParse = require('pdf-parse');
+const express = require('express');
+const multer  = require('multer');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // Multer — solo memoria (no guarda en disco)
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+// pdf-parse se carga dinámicamente solo cuando se usa (evita error si no está instalado)
+function getPdfParse() {
+  try { return require('pdf-parse'); }
+  catch (_) { return null; }
+}
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -839,6 +844,8 @@ router.post('/parse-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
   async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'Se requiere el archivo PDF (campo: pdf)' });
+      const pdfParse = getPdfParse();
+      if (!pdfParse) return res.status(503).json({ error: 'pdf-parse no está instalado en este servidor. Instala con: npm install pdf-parse' });
       const data = await pdfParse(req.file.buffer);
       const empleados = parsePdfText(data.text);
       res.json({ ok: true, total: empleados.length, empleados });
@@ -860,6 +867,8 @@ router.post('/comparar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
       const no_periodo = Number(req.body.no_periodo);
       if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido en body' });
 
+      const pdfParse = getPdfParse();
+      if (!pdfParse) return res.status(503).json({ error: 'pdf-parse no está instalado en este servidor. Instala con: npm install pdf-parse' });
       const data       = await pdfParse(req.file.buffer);
       const pdfEmps    = parsePdfText(data.text);
       const db         = read();
