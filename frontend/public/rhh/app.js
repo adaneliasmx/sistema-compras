@@ -1528,7 +1528,16 @@ function _heMotivosOpts(cats, clasificId) {
 function _heOnClasifChange(sel) {
   const cats  = _teCatalogos || [];
   const mSel  = document.getElementById('he-motivo');
-  if (mSel) mSel.innerHTML = _heMotivosOpts(cats, sel.value);
+  if (mSel) {
+    mSel.innerHTML = _heMotivosOpts(cats, sel.value);
+    document.getElementById('he-otro-wrap')?.style && (document.getElementById('he-otro-wrap').style.display = 'none');
+  }
+}
+
+// Muestra campo de comentario cuando se elige "Otro"
+function _heOnMotivoChange(sel) {
+  const wrap = document.getElementById('he-otro-wrap');
+  if (wrap) wrap.style.display = sel.value === 'Otro' ? 'block' : 'none';
 }
 
 async function showHEDetalle(empId) {
@@ -1590,9 +1599,13 @@ async function showHEDetalle(empId) {
           </div>
           <div>
             <label style="font-size:11px;display:block;margin-bottom:3px;">Motivo</label>
-            <select id="he-motivo" style="font-size:12px;min-width:160px;">
+            <select id="he-motivo" style="font-size:12px;min-width:160px;" onchange="_heOnMotivoChange(this)">
               <option value="">— elige clasificación primero —</option>
             </select>
+          </div>
+          <div id="he-otro-wrap" style="display:none;">
+            <label style="font-size:11px;display:block;margin-bottom:3px;">Comentario <span style="color:#b91c1c;">*</span></label>
+            <input id="he-otro-comentario" type="text" style="width:180px;font-size:12px;" placeholder="Describe el motivo..." />
           </div>
           <button class="btn-primary" style="font-size:12px;" onclick="saveHEDetalle(${empId})">Agregar</button>
         </div>
@@ -1607,22 +1620,28 @@ async function saveHEDetalle(empId) {
   const motivo   = document.getElementById('he-motivo')?.value;
   if (!fecha || !horas) { toast('Fecha y horas son requeridos', 'warning'); return; }
   if (!clasifId) { toast('Selecciona una clasificación', 'warning'); return; }
+  if (!motivo)   { toast('Selecciona un motivo', 'warning'); return; }
+
+  // Si el motivo es "Otro", el comentario es obligatorio
+  let comentario = document.getElementById('he-otro-comentario')?.value?.trim() || '';
+  if (motivo === 'Otro' && !comentario) { toast('El comentario es obligatorio cuando el motivo es "Otro"', 'warning'); return; }
 
   // Obtener nombre de la clasificación
-  const cats  = _teCatalogos || [];
-  const cat   = cats.find(c => c.id === Number(clasifId));
-  const razon = cat?.nombre || '';
+  const cats    = _teCatalogos || [];
+  const cat     = cats.find(c => c.id === Number(clasifId));
+  const razon   = cat?.nombre || '';
+  const subRazon = motivo === 'Otro' ? `Otro: ${comentario}` : motivo;
 
   try {
     await api('/api/rhh/nomina/he-detalle', {
       method: 'POST',
       body: JSON.stringify({
-        no_periodo:   incSemPeriodo,
-        employee_id:  empId,
+        no_periodo:       incSemPeriodo,
+        employee_id:      empId,
         fecha,
-        total_horas:  Number(horas),
+        total_horas:      Number(horas),
         razon,
-        sub_razon:    motivo || null,
+        sub_razon:        subRazon,
         clasificacion_id: Number(clasifId),
       })
     });

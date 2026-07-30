@@ -561,13 +561,51 @@ router.post('/seed-puestos', rhhAuthRequired, rhhRequireRole('admin'), (req, res
 
 /* Seed inicial de clasificaciones TE (se aplica solo si el catálogo está vacío) */
 const TE_CATALOGOS_SEED = [
-  { id: 1, nombre: 'Producción',     motivos: ['Producción urgente','Cambio de formato','Limpieza profunda','Arranque/paro de línea','Auditoría','Otro'] },
-  { id: 2, nombre: 'Mantenimiento',  motivos: ['Correctivo','Preventivo','Predictivo','Instalación de equipo','Otro'] },
-  { id: 3, nombre: 'Calidad',        motivos: ['Auditoría externa','Auditoría interna','Retrabajo','Análisis de muestras','Otro'] },
-  { id: 4, nombre: 'Almacén',        motivos: ['Recepción de material','Embarque','Inventario físico','Otro'] },
-  { id: 5, nombre: 'SKF',            motivos: ['Producción SKF','Mantenimiento SKF','Auditoría SKF','Proyecto especial','Otro'] },
-  { id: 6, nombre: 'AMSTED',         motivos: ['Producción AMSTED','Mantenimiento AMSTED','Proyecto especial','Otro'] },
-  { id: 7, nombre: 'Administración', motivos: ['Cierre de mes','Proyecto especial','Soporte a operaciones','Otro'] },
+  {
+    id: 1,
+    nombre: 'Motivo RHH',
+    motivos: [
+      'Extensión de Jornada Noche',
+      'Cubrir Vacaciones',
+      'Cubrir Ausentismos',
+      'Cubrir Fin de Semana',
+      'Cubrir Incapacidades',
+      'Cubrir Vacante',
+      'Cubre por Capacitación',
+      'Asiste a Curso / Junta',
+    ]
+  },
+  {
+    id: 2,
+    nombre: 'Cliente / Proyecto',
+    motivos: [
+      'Solicita SKF',
+      'Solicita Amsted',
+      'Solicita Tenneco',
+    ]
+  },
+  {
+    id: 3,
+    nombre: 'Producción',
+    motivos: [
+      'Atraso en Entregas',
+      'Apoyo en Limpieza',
+      'Contención Reclamo',
+      'Supervisión a Embarque',
+      'Apoyo en Embarque',
+      'Apoyo en Inspección',
+      'Apoyo a Almacén',
+      'Inventarios Interno',
+    ]
+  },
+  {
+    id: 4,
+    nombre: 'Otros Motivos',
+    motivos: [
+      'Mantenimiento Programado',
+      'Otro',   // al seleccionar este, el formulario pedirá comentario obligatorio
+    ]
+  },
 ];
 
 // GET /api/rhh/nomina/te-catalogos
