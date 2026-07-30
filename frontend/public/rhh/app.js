@@ -25,6 +25,7 @@ const MENU_BY_ROLE = {
     ['aclaracion-nomina', '💬 Aclaración nómina']
   ],
   supervisor: [
+    ['asistencias', '🗓️ Control Asistencias'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['ausencias-hoy', '🚨 Ausencias Hoy'],
     ['mis-evaluaciones', '⭐ Mi Evaluación']
@@ -33,6 +34,7 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
     ['empleados', '👥 Empleados'],
+    ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['lista-raya', '💰 Lista de Raya'],
@@ -46,6 +48,7 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
     ['empleados', '👥 Empleados'],
+    ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
     ['lista-raya', '💰 Lista de Raya'],
@@ -5711,6 +5714,27 @@ let activeRolTab = 0; // 0=ROL, 1=Asistencia, 2=T.E. Cálculo
 let rolWeekStart = null;
 let rolData = null;
 
+// ── Estado Control Asistencias (nuevo módulo /api/rhh/asistencia) ─────────────
+let asisTab  = 0;        // 0=Rol, 1=Capturar, 2=Lista
+let asisWeek = null;     // YYYY-MM-DD (lunes de la semana)
+let asisShiftId = '';    // filtro de turno
+let asisDayIdx  = 0;     // día seleccionado en captura (0=lun…5=sáb)
+let _asisAssignments = []; // asignaciones en edición del rol
+
+const ASIST_INC_TYPES = [
+  { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
+  { v:'falta',        l:'Falta',        bg:'#fee2e2', fg:'#991b1b' },
+  { v:'festivo',      l:'Festivo',      bg:'#fef3c7', fg:'#92400e' },
+  { v:'vacacion',     l:'Vacación',     bg:'#dbeafe', fg:'#1e40af' },
+  { v:'baja',         l:'Baja',         bg:'#f3f4f6', fg:'#374151' },
+  { v:'retardo',      l:'Retardo',      bg:'#fef9c3', fg:'#854d0e' },
+  { v:'incapacidad',  l:'Incapacidad',  bg:'#f5d0fe', fg:'#7e22ce' },
+  { v:'permiso_cg',   l:'Permiso C/G',  bg:'#e0e7ff', fg:'#4338ca' },
+  { v:'permiso_sg',   l:'Permiso S/G',  bg:'#ffe4e6', fg:'#9f1239' },
+  { v:'paro_tecnico', l:'Paro Téc.',    bg:'#fff7ed', fg:'#c2410c' },
+  { v:'descanso',     l:'Descanso',     bg:'#f9fafb', fg:'#9ca3af' },
+];
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function getMonday(date) {
   const d = new Date(date);
@@ -7193,6 +7217,423 @@ async function saveVacRules() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// MÓDULO CONTROL DE ASISTENCIAS
+// ══════════════════════════════════════════════════════════════════════════════
+
+function asisTabs(active) {
+  const tabs = ['📋 Rol Semanal', '✏️ Capturar Asistencia', '📊 Lista de Asistencia'];
+  return `<div class="tab-bar" style="margin-bottom:16px;">
+    ${tabs.map((t,i)=>`<button class="tab-btn ${i===active?'active':''}" onclick="asisTab=${i};asistenciasView()">${t}</button>`).join('')}
+  </div>`;
+}
+
+function asisNavWeek(dir) {
+  const d = new Date(asisWeek + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  asisWeek = d.toISOString().slice(0, 10);
+  asistenciasView();
+}
+
+/* Short day+date label from YYYY-MM-DD */
+function asisDateLabel(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  return `${dias[d.getDay()]} ${d.getDate()}`;
+}
+
+function asistenciasView() {
+  if (!asisWeek) asisWeek = getMonday(new Date());
+  if (asisTab === 0) { asisRolView(); return; }
+  if (asisTab === 1) { asisCaptureView(); return; }
+  asisListaView();
+}
+
+// ── Tab 0: Rol Semanal ────────────────────────────────────────────────────────
+// _asisAssignments: [{ employee_id, shift_id, position_id, project, full_name, pos_name, shift_name }]
+async function asisRolView() {
+  const el = document.getElementById('app');
+  if (!asisWeek) asisWeek = getMonday(new Date());
+  el.innerHTML = shell('<div class="loading-overlay">Cargando rol...</div>', 'asistencias');
+
+  try {
+    const data = await api(`/api/rhh/asistencia/rol?week=${asisWeek}`);
+    if (!data) return;
+
+    const shifts    = data.shifts    || [];
+    const positions = data.positions || [];
+    const proyectos = data.proyectos || ['SKF','AMSTED','TENNECO'];
+    const unassigned = data.unassigned || [];
+
+    // Populate _asisAssignments from backend (reset each load)
+    _asisAssignments = (data.assigned || []).map(emp => ({
+      employee_id: emp.id,
+      shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
+      position_id: emp.assignment?.position_id ?? emp.position_id ?? null,
+      project:     emp.assignment?.project     ?? null,
+      full_name:   emp.full_name,
+      pos_name:    emp.position?.name || '',
+      shift_name:  emp.shift?.name    || '',
+    }));
+
+    const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+    const posOpts   = positions.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
+    const projOpts  = proyectos.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+
+    const unassignedRows = unassigned.length
+      ? unassigned.map(emp => `
+          <div onclick="openAsisAssignModal(${emp.id},'${emp.full_name.replace(/'/g,'&#39;')}')"
+            style="cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;background:#fff;display:flex;justify-content:space-between;align-items:center;"
+            onmouseover="this.style.borderColor='#6366f1'" onmouseout="this.style.borderColor='#e5e7eb'">
+            <span style="font-size:13px;">${escHtml(emp.full_name)}</span>
+            <span style="font-size:11px;color:var(--muted);">${escHtml(emp.shift?.name||'')}</span>
+          </div>`).join('')
+      : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">Todos asignados ✓</div>';
+
+    let shiftsHtml = '';
+    for (const shift of shifts) {
+      const assigned = _asisAssignments.filter(a => a.shift_id === shift.id);
+      const rows = assigned.length
+        ? assigned.map(a => `
+            <div style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid #f3f4f6;">
+              <span style="flex:1;font-size:13px;">${escHtml(a.full_name)}</span>
+              <span style="font-size:11px;color:#6366f1;background:#eef2ff;padding:2px 6px;border-radius:4px;">${escHtml(a.pos_name||'—')}</span>
+              <span style="font-size:11px;color:#0369a1;background:#e0f2fe;padding:2px 6px;border-radius:4px;">${escHtml(a.project||'—')}</span>
+              <button onclick="removeAsisAssignment(${a.employee_id})"
+                style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1;padding:0 2px;" title="Quitar">×</button>
+            </div>`)
+          .join('')
+        : '<div style="font-size:12px;color:var(--muted);padding:10px;text-align:center;">Sin asignados</div>';
+
+      const shiftColor = attShiftColor(shift.code || shift.name || '?');
+      shiftsHtml += `
+        <div class="card section" style="margin-bottom:12px;border-left:4px solid ${shiftColor};">
+          <div style="font-weight:700;color:${shiftColor};margin-bottom:8px;font-size:14px;">
+            ${escHtml(shift.name)}
+            <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:6px;">${assigned.length} empleado${assigned.length!==1?'s':''}</span>
+          </div>
+          ${rows}
+        </div>`;
+    }
+
+    const content = `
+      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
+      ${asisTabs(0)}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
+        <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
+        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
+        <div style="margin-left:auto;display:flex;gap:8px;">
+          <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">🖨️ Imprimir</button>
+          <button class="btn-primary" onclick="saveAsisRol()">💾 Guardar Rol</button>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start;">
+        <div>
+          <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Sin asignar (${unassigned.length})</div>
+          ${unassignedRows}
+        </div>
+        <div>${shiftsHtml || '<div class="notice">No hay turnos configurados</div>'}</div>
+      </div>
+
+      <!-- Modal asignación -->
+      <div id="asis-assign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;">
+        <div style="background:#fff;border-radius:16px;padding:24px;width:min(380px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+          <h3 style="margin:0 0 4px;font-size:15px;">Asignar al Rol</h3>
+          <div id="asis-assign-emp-name" style="color:var(--muted);font-size:13px;margin-bottom:16px;"></div>
+          <input type="hidden" id="asis-assign-emp-id" />
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Turno</label>
+          <select id="asis-assign-shift" style="width:100%;margin-bottom:12px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">${shiftOpts}</select>
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Puesto</label>
+          <select id="asis-assign-puesto" style="width:100%;margin-bottom:12px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">
+            <option value="">— Sin puesto —</option>${posOpts}
+          </select>
+          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Proyecto</label>
+          <select id="asis-assign-proyecto" style="width:100%;margin-bottom:16px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">
+            <option value="">— Sin proyecto —</option>${projOpts}
+          </select>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn-ghost" onclick="document.getElementById('asis-assign-modal').style.display='none'">Cancelar</button>
+            <button class="btn-primary" onclick="confirmAsisAssign()">Asignar</button>
+          </div>
+        </div>
+      </div>`;
+
+    el.innerHTML = shell(content, 'asistencias');
+  } catch(err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'asistencias');
+  }
+}
+
+function openAsisAssignModal(empId, empName) {
+  const m = document.getElementById('asis-assign-modal');
+  if (!m) return;
+  document.getElementById('asis-assign-emp-id').value = empId;
+  document.getElementById('asis-assign-emp-name').textContent = empName;
+  m.style.display = 'grid';
+}
+
+function removeAsisAssignment(empId) {
+  _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
+  asisRolView();
+}
+
+function confirmAsisAssign() {
+  const empId     = Number(document.getElementById('asis-assign-emp-id').value);
+  const shiftId   = Number(document.getElementById('asis-assign-shift').value);
+  const posId     = document.getElementById('asis-assign-puesto').value;
+  const project   = document.getElementById('asis-assign-proyecto').value;
+  const posName   = document.getElementById('asis-assign-puesto').selectedOptions[0]?.text || '';
+  const shiftName = document.getElementById('asis-assign-shift').selectedOptions[0]?.text || '';
+  const emp = state.employees.find(e => e.id === empId);
+  const fullName = emp?.full_name || `Emp. ${empId}`;
+
+  _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
+  _asisAssignments.push({
+    employee_id: empId, shift_id: shiftId,
+    position_id: posId ? Number(posId) : null,
+    project: project || null,
+    full_name: fullName, pos_name: posName, shift_name: shiftName,
+  });
+
+  document.getElementById('asis-assign-modal').style.display = 'none';
+  asisRolView();
+}
+
+async function saveAsisRol() {
+  try {
+    await api('/api/rhh/asistencia/rol', {
+      method: 'POST',
+      body: JSON.stringify({
+        week_start: asisWeek,
+        assignments: _asisAssignments.map(a => ({
+          employee_id: a.employee_id,
+          shift_id:    a.shift_id,
+          position_id: a.position_id || null,
+          project:     a.project     || null,
+        }))
+      })
+    });
+    toast('Rol guardado correctamente');
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Tab 1: Capturar Asistencia ────────────────────────────────────────────────
+async function asisCaptureView() {
+  const el = document.getElementById('app');
+  if (!asisWeek) asisWeek = getMonday(new Date());
+  el.innerHTML = shell('<div class="loading-overlay">Cargando...</div>', 'asistencias');
+
+  try {
+    const url = `/api/rhh/asistencia/diaria?week=${asisWeek}${asisShiftId ? '&shift_id='+asisShiftId : ''}`;
+    const data = await api(url);
+    if (!data) return;
+
+    const shifts    = data.shifts    || [];
+    const dates     = data.dates     || [];   // ['YYYY-MM-DD', ...]
+    const grid      = data.grid      || [];
+    const proyectos = data.proyectos || ['SKF','AMSTED','TENNECO'];
+    const role = state.user?.role;
+    const canParoTecnico = ['rh','admin'].includes(role);
+
+    if (asisDayIdx >= dates.length) asisDayIdx = 0;
+    const selFecha = dates[asisDayIdx] || null;
+
+    const shiftOpts = shifts.map(s =>
+      `<option value="${s.id}" ${asisShiftId==s.id?'selected':''}>${escHtml(s.name)}</option>`
+    ).join('');
+
+    const dayTabsHtml = dates.map((fecha, i) => {
+      const label = asisDateLabel(fecha);
+      return `<button class="tab-btn ${i===asisDayIdx?'active':''}" onclick="asisDayIdx=${i};asisCaptureView()">${label}</button>`;
+    }).join('');
+
+    let rowsHtml = '';
+    if (selFecha) {
+      for (const emp of grid) {
+        const dayData = (emp.days||[]).find(d => d.fecha === selFecha) || {};
+        const inc   = dayData.incidencia_type || 'labora';
+        const auto  = !!dayData.is_auto;
+        const incType = ASIST_INC_TYPES.find(t => t.v === inc) || ASIST_INC_TYPES[0];
+        const selStyle = `background:${incType.bg};color:${incType.fg};`;
+        const incSelOpts = ASIST_INC_TYPES
+          .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
+          .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''}>${t.l}</option>`)
+          .join('');
+        const projOpts = proyectos.map(p =>
+          `<option value="${p}" ${dayData.proyecto===p?'selected':''}>${p}</option>`
+        ).join('');
+
+        rowsHtml += `<tr>
+          <td style="padding:8px 10px;font-size:13px;">${escHtml(emp.full_name)}</td>
+          <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
+          <td style="padding:4px 6px;">
+            <select data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-inc-sel"
+              ${auto?'disabled title="Detectado automáticamente"':''}
+              style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}"
+              onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||ASIST_INC_TYPES[0];this.style.background=t.bg;this.style.color=t.fg;">
+              ${incSelOpts}
+            </select>
+          </td>
+          <td style="padding:4px 6px;">
+            <select data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-proj-sel"
+              style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
+              <option value="" ${!dayData.proyecto?'selected':''}>— Sin proyecto —</option>
+              ${projOpts}
+            </select>
+          </td>
+          <td style="padding:0 6px;font-size:11px;color:var(--muted);">${auto?'auto':''}</td>
+        </tr>`;
+      }
+    }
+
+    const content = `
+      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
+      ${asisTabs(1)}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
+        <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
+        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
+        <select onchange="asisShiftId=this.value;asisCaptureView()"
+          style="margin-left:auto;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;">
+          <option value="">Todos los turnos</option>${shiftOpts}
+        </select>
+      </div>
+      <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin días</span>'}</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:480px;">
+          <thead>
+            <tr style="background:#f9fafb;font-size:12px;color:var(--muted);">
+              <th style="padding:8px 10px;text-align:left;font-weight:600;">Empleado</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;">Puesto</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:140px;">Incidencia</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:130px;">Proyecto</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted);">Sin empleados en este turno</td></tr>`}</tbody>
+        </table>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+        <button class="btn-primary" onclick="saveAsisCaptureDay('${selFecha||''}')">💾 Guardar día</button>
+      </div>`;
+
+    el.innerHTML = shell(content, 'asistencias');
+  } catch(err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'asistencias');
+  }
+}
+
+async function saveAsisCaptureDay(fecha) {
+  if (!fecha) { toast('Selecciona un día válido', 'warning'); return; }
+  const incSels = document.querySelectorAll(`.asis-inc-sel[data-fecha="${fecha}"]`);
+  const records = [];
+  incSels.forEach(sel => {
+    if (sel.disabled) return;
+    const empId = Number(sel.getAttribute('data-emp'));
+    const incidencia_type = sel.value;
+    const projSel = document.querySelector(`.asis-proj-sel[data-emp="${empId}"][data-fecha="${fecha}"]`);
+    const proyecto = projSel ? projSel.value : '';
+    records.push({ employee_id: empId, fecha, incidencia_type, proyecto: proyecto || null });
+  });
+
+  if (!records.length) { toast('Sin cambios manuales que guardar', 'warning'); return; }
+
+  try {
+    await api('/api/rhh/asistencia/diaria/bulk', {
+      method: 'POST',
+      body: JSON.stringify({ records })
+    });
+    toast(`${records.length} registro${records.length!==1?'s':''} guardado${records.length!==1?'s':''}`);
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Tab 2: Lista de Asistencia ────────────────────────────────────────────────
+async function asisListaView() {
+  const el = document.getElementById('app');
+  if (!asisWeek) asisWeek = getMonday(new Date());
+  el.innerHTML = shell('<div class="loading-overlay">Cargando lista...</div>', 'asistencias');
+
+  try {
+    const url = `/api/rhh/asistencia/semana?week=${asisWeek}${asisShiftId ? '&shift_id='+asisShiftId : ''}`;
+    const data = await api(url);
+    if (!data) return;
+
+    const shifts = data.shifts || [];
+    const dates  = data.dates  || [];
+    const grid   = data.grid   || [];
+
+    const dayHeaders = dates.map(fecha => `
+      <th style="text-align:center;min-width:80px;padding:6px 4px;font-size:12px;font-weight:600;">${asisDateLabel(fecha)}</th>
+    `).join('');
+
+    let rowsHtml = '';
+    let lastShift = null;
+    for (const emp of grid) {
+      if (emp.shift_name !== lastShift) {
+        const sc = attShiftColor(emp.shift_name || '?');
+        rowsHtml += `<tr><td colspan="${3+dates.length}" style="background:${sc};color:#fff;font-size:12px;font-weight:800;padding:6px 12px;letter-spacing:.5px;">━━━ ${escHtml(emp.shift_name||'Sin turno')}</td></tr>`;
+        lastShift = emp.shift_name;
+      }
+      const dayCells = dates.map(fecha => {
+        const rec = (emp.days||[]).find(dr => dr.fecha === fecha);
+        const inc = rec?.incidencia_type || 'descanso';
+        const t   = ASIST_INC_TYPES.find(x => x.v === inc) || { l: inc, bg:'#f9fafb', fg:'#9ca3af' };
+        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span></td>`;
+      }).join('');
+
+      rowsHtml += `<tr>
+        <td style="padding:6px 10px;font-size:13px;">${escHtml(emp.full_name)}</td>
+        <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
+        <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.project||'—')}</td>
+        ${dayCells}
+      </tr>`;
+    }
+
+    const shiftOpts = shifts.map(s =>
+      `<option value="${s.id}" ${asisShiftId==s.id?'selected':''}>${escHtml(s.name)}</option>`
+    ).join('');
+
+    const legend = ASIST_INC_TYPES.map(t =>
+      `<span style="background:${t.bg};color:${t.fg};padding:2px 8px;border-radius:6px;font-size:11px;font-weight:600;display:inline-block;">${t.l}</span>`
+    ).join(' ');
+
+    const content = `
+      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
+      ${asisTabs(2)}
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+        <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
+        <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
+        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
+        <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
+        <select onchange="asisShiftId=this.value;asisListaView()"
+          style="margin-left:auto;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;">
+          <option value="">Todos los turnos</option>${shiftOpts}
+        </select>
+      </div>
+      <div style="margin-bottom:12px;display:flex;gap:6px;flex-wrap:wrap;">${legend}</div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;min-width:600px;">
+          <thead>
+            <tr style="background:#f9fafb;font-size:12px;color:var(--muted);">
+              <th style="padding:8px 10px;text-align:left;font-weight:600;">Empleado</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;">Puesto</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;">Proyecto</th>
+              ${dayHeaders}
+            </tr>
+          </thead>
+          <tbody>${rowsHtml || `<tr><td colspan="${3+dates.length}" style="text-align:center;padding:24px;color:var(--muted);">Sin datos para esta semana</td></tr>`}</tbody>
+        </table>
+      </div>`;
+
+    el.innerHTML = shell(content, 'asistencias');
+  } catch(err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'asistencias');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -7242,7 +7683,8 @@ function render() {
     evaluaciones: evaluacionesView,
     'mis-evaluaciones': misEvaluacionesView,
     plantillas: plantillasView,
-    checador: checadorView
+    checador: checadorView,
+    asistencias: asistenciasView
   };
 
   const viewFn = views[hash];
