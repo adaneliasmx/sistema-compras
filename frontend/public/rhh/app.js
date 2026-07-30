@@ -816,6 +816,7 @@ async function submitIncidence() {
 let empTab = 'list';
 let empEditId = null; // ID del empleado actualmente en edición/expediente
 let empFilter = { dept: '', shift: '', status: 'active', search: '' };
+let empSalarioVisible = false; // salario oculto por defecto
 
 async function empleadosView() {
   const el = document.getElementById('app');
@@ -875,8 +876,10 @@ async function empleadosView() {
           ? '<div class="empty-state"><div class="empty-icon">👥</div><p>Sin empleados que coincidan con los filtros</p></div>'
           : `<table>
                <thead><tr>
-                 <th>No. Emp</th><th>Nombre</th><th>Departamento</th>
-                 <th>Puesto</th><th>Turno</th><th>Salario</th><th>Vac.</th><th>Estatus</th><th>Usuario</th><th>Acciones</th>
+                 <th>No. Emp</th><th>Nombre</th>
+                 <th>Puesto</th><th>Turno</th>
+                 <th>Salario <button onclick="empSalarioVisible=!empSalarioVisible;empleadosView()" style="border:none;background:none;cursor:pointer;font-size:11px;padding:0;color:#6b7280;" title="Mostrar/ocultar">${empSalarioVisible?'🙈':'👁'}</button></th>
+                 <th>Vac.</th><th>Estatus</th><th>Usuario</th><th>Acciones</th>
                </tr></thead>
                <tbody>
                  ${employees.map(emp => {
@@ -893,6 +896,9 @@ async function empleadosView() {
                    const comprasLink = emp.compras_email
                      ? `<br><span style="font-size:10px;background:#dbeafe;color:#1e40af;padding:1px 5px;border-radius:6px;" title="Vinculado a Compras: ${emp.compras_email}">🔗 ${emp.compras_email}</span>`
                      : '';
+                   const salarioCell = empSalarioVisible
+                     ? (emp.daily_salary ? `$${Number(emp.daily_salary).toLocaleString()}/día` : (emp.base_salary ? `$${Number(emp.base_salary).toLocaleString()}/mes` : '—'))
+                     : `<span style="filter:blur(5px);user-select:none;">$••••</span>`;
                    return `
                    <tr>
                      <td><span class="small muted">${emp.employee_number}</span>${emp.checker_number ? `<br><span class="small muted">Check: ${emp.checker_number}</span>` : ''}</td>
@@ -901,10 +907,9 @@ async function empleadosView() {
                        <span class="small muted">${emp.email}</span>
                        ${comprasLink}
                      </td>
-                     <td>${emp.department?.name || '—'}</td>
-                     <td>${emp.position?.name || '—'}</td>
+                     <td>${emp.position?.name || '—'}<br><span class="small muted">${emp.department?.name || ''}</span></td>
                      <td>${shiftDot(emp.shift)}</td>
-                     <td style="text-align:right;font-size:12px;">${emp.daily_salary ? `$${Number(emp.daily_salary).toLocaleString()}/día` : (emp.base_salary ? `$${Number(emp.base_salary).toLocaleString()}/mes` : '—')}</td>
+                     <td style="text-align:right;font-size:12px;">${salarioCell}</td>
                      <td style="text-align:center;font-weight:700;color:${vacColor};font-size:12px;" title="${vacRem} días restantes de ${vacTotal}">${vacRem}/${vacTotal}</td>
                      <td>${statusPill(emp.status)}</td>
                      <td style="text-align:center;">${userBadge}</td>
@@ -1413,11 +1418,19 @@ function _renderIncSem() {
                  <th style="text-align:center;padding:6px 4px;" title="Días pagados">Días</th>
                  <th style="text-align:center;padding:6px 4px;color:#b91c1c;" title="Faltas">Faltas</th>
                  <th style="text-align:center;padding:6px 4px;color:#059669;" title="Horas Extra">H.Extra</th>
-                 <th style="text-align:center;padding:6px 4px;" title="Despensa (Sí/No)">Desp.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Despensa (Sí/No)">
+                   Desp.<br>
+                   <button onclick="incSemToggleAll('despensa',true)" style="font-size:9px;border:none;background:#dcfce7;color:#15803d;border-radius:4px;cursor:pointer;padding:1px 4px;" title="Activar todos">✓T</button>
+                   <button onclick="incSemToggleAll('despensa',false)" style="font-size:9px;border:none;background:#fee2e2;color:#b91c1c;border-radius:4px;cursor:pointer;padding:1px 4px;" title="Quitar todos">✗</button>
+                 </th>
                  <th style="text-align:center;padding:6px 4px;" title="Bono Puntualidad (días)">B.Punt.</th>
                  <th style="text-align:center;padding:6px 4px;" title="Bono Eficiencia (días)">B.Efic.</th>
                  <th style="text-align:center;padding:6px 4px;" title="Bono Instructor (días)">B.Inst.</th>
-                 <th style="text-align:center;padding:6px 4px;" title="Prima Dominical">P.Dom.</th>
+                 <th style="text-align:center;padding:6px 4px;" title="Prima Dominical">
+                   P.Dom.<br>
+                   <button onclick="incSemToggleAll('prima_dominical',true)" style="font-size:9px;border:none;background:#dcfce7;color:#15803d;border-radius:4px;cursor:pointer;padding:1px 4px;" title="Activar todos">✓T</button>
+                   <button onclick="incSemToggleAll('prima_dominical',false)" style="font-size:9px;border:none;background:#fee2e2;color:#b91c1c;border-radius:4px;cursor:pointer;padding:1px 4px;" title="Quitar todos">✗</button>
+                 </th>
                  <th style="text-align:center;padding:6px 4px;color:#1d4ed8;" title="Vacaciones (días)">Vac.</th>
                  <th style="text-align:center;padding:6px 4px;" title="Gratificación (días)">Gratif.</th>
                  <th style="text-align:left;padding:6px 4px;">Notas</th>
@@ -1431,6 +1444,13 @@ function _renderIncSem() {
   `;
 
   el.innerHTML = shell(content, 'incidencias');
+}
+
+// Activa/desactiva un campo booleano para todos los empleados en la tabla
+function incSemToggleAll(campo, valor) {
+  incSemRows.forEach(r => { r[campo] = valor ? 1 : 0; });
+  _renderIncSem();
+  toast(`${campo === 'despensa' ? 'Despensa' : 'Prima dominical'}: ${valor ? 'todos activados' : 'todos desactivados'}`);
 }
 
 async function guardarTodasIncidencias() {
@@ -3400,7 +3420,71 @@ async function reportesView() {
       </div>
     `;
 
-    el.innerHTML = shell(content, 'reportes');
+    // ── Sección Nómina (solo admin/rh) ──────────────────────────────────────
+    let nominaSeccion = '';
+    const userRole = state.user?.role || '';
+    if (userRole === 'admin' || userRole === 'rh') {
+      try {
+        if (incSemPeriodos.length === 0) {
+          incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
+        }
+        // Cargar los últimos 4 períodos para comparativa
+        const periodosRecientes = incSemPeriodos.slice(-4).reverse();
+        const kpisArr = await Promise.all(
+          periodosRecientes.map(p => api(`/api/rhh/nomina/kpis?no_periodo=${p.no_periodo}`).catch(() => null))
+        );
+
+        const periodoRows = kpisArr.filter(Boolean).map((nk, i) => {
+          const p = periodosRecientes[i];
+          const s = nk.resumen;
+          const pct = s.total_empleados > 0 ? Math.round((s.capturados / s.total_empleados) * 100) : 0;
+          const pctColor = pct >= 80 ? '#15803d' : pct >= 50 ? '#b45309' : '#b91c1c';
+          return `
+            <tr style="cursor:pointer;" onclick="incSemPeriodo=${p.no_periodo};location.hash='#incidencias'">
+              <td style="font-weight:600;">S${p.no_periodo}</td>
+              <td style="font-size:11px;color:#6b7280;">${p.fecha_inicio} al ${p.fecha_fin}</td>
+              <td style="text-align:center;font-weight:700;color:${pctColor};">${s.capturados}/${s.total_empleados} (${pct}%)</td>
+              <td style="text-align:center;color:#b91c1c;font-weight:600;">${s.total_faltas}</td>
+              <td style="text-align:center;color:#1d4ed8;font-weight:600;">${s.total_horas_extras}h</td>
+              <td style="text-align:center;">${s.con_despensa}</td>
+              <td style="text-align:center;">${s.con_bono_puntualidad}</td>
+              <td style="text-align:center;">${s.con_bono_eficiencia}</td>
+              <td style="text-align:center;color:#b45309;">${s.total_vac_dias > 0 ? s.total_vac_dias + ' días' : '—'}</td>
+              <td style="text-align:center;">${s.pendientes_captura > 0 ? `<span style="color:#b91c1c;font-weight:600;">${s.pendientes_captura}</span>` : '<span style="color:#15803d;">✓</span>'}</td>
+            </tr>`;
+        }).join('');
+
+        nominaSeccion = periodoRows ? `
+          <div class="card section" style="margin-top:20px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <h3 style="margin:0;">💰 KPIs Nómina — Últimos 4 períodos</h3>
+              <button class="btn-ghost" style="font-size:12px;" onclick="location.hash='#lista-raya'">Ver Lista de Raya →</button>
+            </div>
+            <p style="font-size:12px;color:#6b7280;margin-bottom:10px;">Haz clic en un período para ir a captura de incidencias.</p>
+            <div style="overflow-x:auto;">
+              <table style="min-width:750px;font-size:12px;border-collapse:collapse;width:100%;">
+                <thead>
+                  <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+                    <th style="padding:6px 8px;">Período</th>
+                    <th>Fechas</th>
+                    <th style="text-align:center;">Capturado</th>
+                    <th style="text-align:center;color:#b91c1c;">Faltas</th>
+                    <th style="text-align:center;color:#1d4ed8;">H.Extra</th>
+                    <th style="text-align:center;">Despensa</th>
+                    <th style="text-align:center;">B.Punt.</th>
+                    <th style="text-align:center;">B.Efic.</th>
+                    <th style="text-align:center;color:#b45309;">Vacaciones</th>
+                    <th style="text-align:center;">Pendiente</th>
+                  </tr>
+                </thead>
+                <tbody>${periodoRows}</tbody>
+              </table>
+            </div>
+          </div>` : '';
+      } catch (_) { nominaSeccion = ''; }
+    }
+
+    el.innerHTML = shell(content + nominaSeccion, 'reportes');
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'reportes');
   }
@@ -4550,21 +4634,41 @@ async function vacantesView() {
     const shiftOpts = state.shifts.map(s =>
       `<option value="${s.id}">${s.name}</option>`).join('');
 
-    const rows = vacantes.map(v => `
-      <tr>
-        <td>${v.position?.name || '—'}</td>
-        <td>${v.department?.name || '—'}</td>
-        <td>${v.shift?.name || '—'}</td>
-        <td><span class="badge">${REASON_LABEL[v.reason] || v.reason}</span></td>
-        <td><span style="padding:3px 10px;border-radius:20px;font-size:12px;font-weight:700;${PRIORITY_STYLE[v.priority] || ''}">${v.priority || '—'}</span></td>
-        <td>${STATUS_LABEL[v.status] || v.status}</td>
-        <td>${fmtDateDisplay(v.opened_date)}</td>
-        <td>
-          ${v.status === 'open' ? `<button class="btn-ghost" style="font-size:12px;" onclick="updateVacancy(${v.id},'in_process')">▶ En proceso</button>` : ''}
-          ${v.status === 'in_process' ? `<button class="btn-primary" style="font-size:11px;padding:4px 8px;" onclick="updateVacancy(${v.id},'filled')">✅ Cubierta</button>` : ''}
-          ${['open','in_process'].includes(v.status) ? `<button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="updateVacancy(${v.id},'cancelled')">✕ Cancelar</button>` : ''}
-        </td>
-      </tr>`).join('');
+    // Agrupar por estado para el layout en cards
+    const vacByStatus = {
+      open:       vacantes.filter(v => v.status === 'open'),
+      in_process: vacantes.filter(v => v.status === 'in_process'),
+      filled:     vacantes.filter(v => v.status === 'filled'),
+      cancelled:  vacantes.filter(v => v.status === 'cancelled'),
+    };
+
+    function vacCard(v) {
+      const priStyle = PRIORITY_STYLE[v.priority] || 'background:#f3f4f6;color:#374151;';
+      const borderColor = v.priority === 'alta' ? '#b91c1c' : v.priority === 'media' ? '#b45309' : '#3b82f6';
+      return `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid ${borderColor};border-radius:8px;padding:14px;margin-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:14px;">${escHtml(v.position?.name || '—')}</div>
+              <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+                ${escHtml(v.department?.name || '—')}
+                ${v.shift?.name ? ` · ${escHtml(v.shift.name)}` : ''}
+              </div>
+            </div>
+            <span style="flex-shrink:0;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;${priStyle}">${v.priority || '—'}</span>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">
+            <span style="font-size:11px;background:#f3f4f6;padding:2px 8px;border-radius:6px;">${REASON_LABEL[v.reason] || v.reason}</span>
+            <span style="font-size:11px;color:#9ca3af;">📅 ${fmtDateDisplay(v.opened_date)}</span>
+            ${v.notes ? `<span style="font-size:11px;color:#6b7280;font-style:italic;">"${escHtml(v.notes)}"</span>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;margin-top:10px;">
+            ${v.status === 'open' ? `<button class="btn-ghost" style="font-size:11px;" onclick="updateVacancy(${v.id},'in_process')">▶ En proceso</button>` : ''}
+            ${v.status === 'in_process' ? `<button class="btn-primary" style="font-size:11px;padding:4px 10px;" onclick="updateVacancy(${v.id},'filled')">✅ Cubierta</button>` : ''}
+            ${['open','in_process'].includes(v.status) ? `<button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="updateVacancy(${v.id},'cancelled')">✕ Cancelar</button>` : ''}
+          </div>
+        </div>`;
+    }
 
     const formHtml = vacantesShowForm ? `
       <div class="card section" style="margin-bottom:16px;">
@@ -4623,18 +4727,35 @@ async function vacantesView() {
 
       ${formHtml}
 
-      <div class="card section table-wrap">
-        ${vacantes.length === 0
-          ? '<div class="empty-state"><div class="empty-icon">🔍</div><p>No hay vacantes registradas</p></div>'
-          : `<table>
-               <thead><tr>
-                 <th>Puesto</th><th>Depto</th><th>Turno</th><th>Motivo</th>
-                 <th>Prioridad</th><th>Estado</th><th>Apertura</th><th>Acciones</th>
-               </tr></thead>
-               <tbody>${rows}</tbody>
-             </table>`
-        }
-      </div>
+      ${vacantes.length === 0
+        ? '<div class="card section"><div class="empty-state"><div class="empty-icon">🔍</div><p>No hay vacantes registradas</p></div></div>'
+        : `<div class="grid grid-2" style="align-items:start;">
+             <div>
+               ${vacByStatus.open.length > 0 ? `
+                 <div class="card section" style="margin-bottom:16px;">
+                   <h3 style="margin-top:0;color:#b91c1c;">🔴 Abiertas (${vacByStatus.open.length})</h3>
+                   ${vacByStatus.open.map(vacCard).join('')}
+                 </div>` : ''}
+               ${vacByStatus.in_process.length > 0 ? `
+                 <div class="card section">
+                   <h3 style="margin-top:0;color:#b45309;">🟡 En proceso (${vacByStatus.in_process.length})</h3>
+                   ${vacByStatus.in_process.map(vacCard).join('')}
+                 </div>` : ''}
+             </div>
+             <div>
+               ${vacByStatus.filled.length > 0 ? `
+                 <div class="card section" style="margin-bottom:16px;">
+                   <h3 style="margin-top:0;color:#059669;">✅ Cubiertas recientes (${vacByStatus.filled.length})</h3>
+                   ${vacByStatus.filled.slice(0,5).map(vacCard).join('')}
+                 </div>` : ''}
+               ${vacByStatus.cancelled.length > 0 ? `
+                 <div class="card section">
+                   <h3 style="margin-top:0;color:#9ca3af;">✕ Canceladas (${vacByStatus.cancelled.length})</h3>
+                   ${vacByStatus.cancelled.slice(0,5).map(vacCard).join('')}
+                 </div>` : ''}
+             </div>
+           </div>`
+      }
     `;
 
     el.innerHTML = shell(content, 'vacantes');
