@@ -1,0 +1,278 @@
+const express = require('express');
+const { read, write } = require('../db-rhh');
+const { empAuthRequired } = require('../middleware/empleados-auth');
+
+const router = express.Router();
+
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
+// Periodos 2026 (CONTPAQ, lun-dom) — fallback cuando rhh_periodos está vacío
+const PERIODOS_2026 = [
+  { no_periodo:  1, fecha_inicio:'30/Dic/2025', fecha_fin:'05/Ene/2026' },
+  { no_periodo:  2, fecha_inicio:'06/Ene/2026', fecha_fin:'12/Ene/2026' },
+  { no_periodo:  3, fecha_inicio:'13/Ene/2026', fecha_fin:'19/Ene/2026' },
+  { no_periodo:  4, fecha_inicio:'20/Ene/2026', fecha_fin:'26/Ene/2026' },
+  { no_periodo:  5, fecha_inicio:'27/Ene/2026', fecha_fin:'02/Feb/2026' },
+  { no_periodo:  6, fecha_inicio:'03/Feb/2026', fecha_fin:'09/Feb/2026' },
+  { no_periodo:  7, fecha_inicio:'10/Feb/2026', fecha_fin:'16/Feb/2026' },
+  { no_periodo:  8, fecha_inicio:'17/Feb/2026', fecha_fin:'23/Feb/2026' },
+  { no_periodo:  9, fecha_inicio:'24/Feb/2026', fecha_fin:'02/Mar/2026' },
+  { no_periodo: 10, fecha_inicio:'03/Mar/2026', fecha_fin:'09/Mar/2026' },
+  { no_periodo: 11, fecha_inicio:'10/Mar/2026', fecha_fin:'16/Mar/2026' },
+  { no_periodo: 12, fecha_inicio:'17/Mar/2026', fecha_fin:'23/Mar/2026' },
+  { no_periodo: 13, fecha_inicio:'24/Mar/2026', fecha_fin:'30/Mar/2026' },
+  { no_periodo: 14, fecha_inicio:'31/Mar/2026', fecha_fin:'06/Abr/2026' },
+  { no_periodo: 15, fecha_inicio:'07/Abr/2026', fecha_fin:'13/Abr/2026' },
+  { no_periodo: 16, fecha_inicio:'14/Abr/2026', fecha_fin:'20/Abr/2026' },
+  { no_periodo: 17, fecha_inicio:'21/Abr/2026', fecha_fin:'27/Abr/2026' },
+  { no_periodo: 18, fecha_inicio:'28/Abr/2026', fecha_fin:'04/May/2026' },
+  { no_periodo: 19, fecha_inicio:'05/May/2026', fecha_fin:'11/May/2026' },
+  { no_periodo: 20, fecha_inicio:'12/May/2026', fecha_fin:'18/May/2026' },
+  { no_periodo: 21, fecha_inicio:'19/May/2026', fecha_fin:'25/May/2026' },
+  { no_periodo: 22, fecha_inicio:'26/May/2026', fecha_fin:'01/Jun/2026' },
+  { no_periodo: 23, fecha_inicio:'02/Jun/2026', fecha_fin:'08/Jun/2026' },
+  { no_periodo: 24, fecha_inicio:'09/Jun/2026', fecha_fin:'15/Jun/2026' },
+  { no_periodo: 25, fecha_inicio:'16/Jun/2026', fecha_fin:'22/Jun/2026' },
+  { no_periodo: 26, fecha_inicio:'23/Jun/2026', fecha_fin:'29/Jun/2026' },
+  { no_periodo: 27, fecha_inicio:'30/Jun/2026', fecha_fin:'06/Jul/2026' },
+  { no_periodo: 28, fecha_inicio:'07/Jul/2026', fecha_fin:'13/Jul/2026' },
+  { no_periodo: 29, fecha_inicio:'14/Jul/2026', fecha_fin:'20/Jul/2026' },
+  { no_periodo: 30, fecha_inicio:'21/Jul/2026', fecha_fin:'27/Jul/2026' },
+  { no_periodo: 31, fecha_inicio:'28/Jul/2026', fecha_fin:'03/Ago/2026' },
+  { no_periodo: 32, fecha_inicio:'04/Ago/2026', fecha_fin:'10/Ago/2026' },
+  { no_periodo: 33, fecha_inicio:'11/Ago/2026', fecha_fin:'17/Ago/2026' },
+  { no_periodo: 34, fecha_inicio:'18/Ago/2026', fecha_fin:'24/Ago/2026' },
+  { no_periodo: 35, fecha_inicio:'25/Ago/2026', fecha_fin:'31/Ago/2026' },
+  { no_periodo: 36, fecha_inicio:'01/Sep/2026', fecha_fin:'07/Sep/2026' },
+  { no_periodo: 37, fecha_inicio:'08/Sep/2026', fecha_fin:'14/Sep/2026' },
+  { no_periodo: 38, fecha_inicio:'15/Sep/2026', fecha_fin:'21/Sep/2026' },
+  { no_periodo: 39, fecha_inicio:'22/Sep/2026', fecha_fin:'28/Sep/2026' },
+  { no_periodo: 40, fecha_inicio:'29/Sep/2026', fecha_fin:'05/Oct/2026' },
+  { no_periodo: 41, fecha_inicio:'06/Oct/2026', fecha_fin:'12/Oct/2026' },
+  { no_periodo: 42, fecha_inicio:'13/Oct/2026', fecha_fin:'19/Oct/2026' },
+  { no_periodo: 43, fecha_inicio:'20/Oct/2026', fecha_fin:'26/Oct/2026' },
+  { no_periodo: 44, fecha_inicio:'27/Oct/2026', fecha_fin:'02/Nov/2026' },
+  { no_periodo: 45, fecha_inicio:'03/Nov/2026', fecha_fin:'09/Nov/2026' },
+  { no_periodo: 46, fecha_inicio:'10/Nov/2026', fecha_fin:'16/Nov/2026' },
+  { no_periodo: 47, fecha_inicio:'17/Nov/2026', fecha_fin:'23/Nov/2026' },
+  { no_periodo: 48, fecha_inicio:'24/Nov/2026', fecha_fin:'30/Nov/2026' },
+  { no_periodo: 49, fecha_inicio:'01/Dic/2026', fecha_fin:'07/Dic/2026' },
+  { no_periodo: 50, fecha_inicio:'08/Dic/2026', fecha_fin:'14/Dic/2026' },
+  { no_periodo: 51, fecha_inicio:'15/Dic/2026', fecha_fin:'21/Dic/2026' },
+  { no_periodo: 52, fecha_inicio:'22/Dic/2026', fecha_fin:'28/Dic/2026' },
+];
+
+const MESES = { Ene:0,Feb:1,Mar:2,Abr:3,May:4,Jun:5,Jul:6,Ago:7,Sep:8,Oct:9,Nov:10,Dic:11 };
+function periodoToDate(str) {
+  const [d, m, y] = str.split('/');
+  return new Date(Number(y), MESES[m], Number(d));
+}
+
+function currentPeriodo() {
+  const today = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }));
+  for (const p of PERIODOS_2026) {
+    const ini = periodoToDate(p.fecha_inicio);
+    const fin = periodoToDate(p.fecha_fin);
+    if (today >= ini && today <= fin) return p.no_periodo;
+  }
+  return PERIODOS_2026[PERIODOS_2026.length - 1].no_periodo;
+}
+
+function resolveEmpData(emp, db) {
+  const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id);
+  const pos  = (db.rhh_positions  || []).find(p => p.id === emp.position_id);
+  const shift = (db.rhh_shifts    || []).find(s => s.id === emp.shift_id);
+  return {
+    id: emp.id,
+    employee_number: emp.employee_number,
+    full_name: emp.full_name,
+    email: emp.email,
+    phone: emp.phone,
+    department: dept ? dept.name : null,
+    position: pos ? pos.name : null,
+    shift: shift ? shift.name : null,
+    start_date: emp.start_date || emp.hire_date,
+    rfc: emp.rfc,
+    nss: emp.nss,
+    curp: emp.curp,
+    status: emp.status,
+    salary_daily: emp.salary_daily,
+    ultimo_periodo_pagado: emp.ultimo_periodo_pagado,
+  };
+}
+
+// ── GET /api/empleados/perfil ─────────────────────────────────────────────────
+router.get('/perfil', empAuthRequired, (req, res) => {
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  res.json(resolveEmpData(emp, db));
+});
+
+// ── GET /api/empleados/incidencias ────────────────────────────────────────────
+router.get('/incidencias', empAuthRequired, (req, res) => {
+  const db = read();
+  const periodos = db.rhh_periodos && db.rhh_periodos.length ? db.rhh_periodos : PERIODOS_2026;
+  const rows = (db.rhh_incidencias_semanales || [])
+    .filter(r => r.employee_id === req.empPayload.sub)
+    .sort((a, b) => b.no_periodo - a.no_periodo)
+    .slice(0, 52)
+    .map(r => {
+      const p = periodos.find(p => p.no_periodo === r.no_periodo) || {};
+      return { ...r, fecha_inicio: p.fecha_inicio, fecha_fin: p.fecha_fin };
+    });
+  res.json(rows);
+});
+
+// ── GET /api/empleados/evaluaciones ──────────────────────────────────────────
+router.get('/evaluaciones', empAuthRequired, (req, res) => {
+  const db = read();
+  const rows = (db.rhh_evaluations || [])
+    .filter(r => r.employee_id === req.empPayload.sub)
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  res.json(rows);
+});
+
+// ── GET /api/empleados/lista-raya ─────────────────────────────────────────────
+// Retorna el período anterior (o el último pagado) del empleado
+router.get('/lista-raya', empAuthRequired, (req, res) => {
+  const db = read();
+  const periodos = db.rhh_periodos && db.rhh_periodos.length ? db.rhh_periodos : PERIODOS_2026;
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const curP = currentPeriodo();
+  const targetPeriodo = curP > 1 ? curP - 1 : 1;
+
+  // Buscar el registro de ese período; si no, el más reciente
+  let row = (db.rhh_incidencias_semanales || []).find(
+    r => r.employee_id === req.empPayload.sub && r.no_periodo === targetPeriodo
+  );
+  if (!row) {
+    const all = (db.rhh_incidencias_semanales || [])
+      .filter(r => r.employee_id === req.empPayload.sub)
+      .sort((a, b) => b.no_periodo - a.no_periodo);
+    row = all[0] || null;
+  }
+
+  if (!row) return res.json({ periodo: null, datos: null });
+
+  const p = periodos.find(p => p.no_periodo === row.no_periodo) || {};
+
+  // Calcular monto estimado (solo referencia)
+  const salarioDiario = emp.salary_daily || 0;
+  const montoBase = salarioDiario * (row.dias_pagados || 0);
+  const montoHE = row.horas_extras_total ? (salarioDiario / 8 * 1.5 * row.horas_extras_total) : 0;
+
+  // ¿Ya existe aclaración pendiente para este período?
+  const yaAclaracion = (db.rhh_payroll_clarifications || []).some(
+    c => c.employee_id === req.empPayload.sub && c.no_periodo === row.no_periodo && c.status === 'pendiente'
+  );
+
+  res.json({
+    periodo: { no_periodo: row.no_periodo, fecha_inicio: p.fecha_inicio, fecha_fin: p.fecha_fin },
+    datos: row,
+    salario_diario: salarioDiario,
+    monto_base: Math.round(montoBase * 100) / 100,
+    monto_he: Math.round(montoHE * 100) / 100,
+    ya_aclaracion: yaAclaracion,
+  });
+});
+
+// ── POST /api/empleados/aclaracion ────────────────────────────────────────────
+router.post('/aclaracion', empAuthRequired, (req, res) => {
+  const { no_periodo, mensaje } = req.body || {};
+  if (!no_periodo || !mensaje) return res.status(400).json({ error: 'Período y mensaje requeridos' });
+
+  const db = read();
+  if (!Array.isArray(db.rhh_payroll_clarifications)) db.rhh_payroll_clarifications = [];
+
+  const dup = db.rhh_payroll_clarifications.find(
+    c => c.employee_id === req.empPayload.sub && c.no_periodo === Number(no_periodo) && c.status === 'pendiente'
+  );
+  if (dup) return res.status(409).json({ error: 'Ya tienes una aclaración pendiente para este período' });
+
+  const nextId = (db.rhh_payroll_clarifications.reduce((m, c) => Math.max(m, c.id || 0), 0)) + 1;
+  const record = {
+    id: nextId,
+    employee_id: req.empPayload.sub,
+    no_periodo: Number(no_periodo),
+    mensaje: String(mensaje).trim().slice(0, 500),
+    status: 'pendiente',
+    created_at: nowMxDate(),
+    respuesta: null,
+    respondido_at: null,
+  };
+  db.rhh_payroll_clarifications.push(record);
+  write(db);
+  res.json({ ok: true, id: nextId });
+});
+
+// ── POST /api/empleados/queja ─────────────────────────────────────────────────
+router.post('/queja', empAuthRequired, (req, res) => {
+  const { categoria, mensaje } = req.body || {};
+  if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
+
+  const db = read();
+  if (!Array.isArray(db.rhh_anonymous_complaints)) db.rhh_anonymous_complaints = [];
+
+  const nextId = (db.rhh_anonymous_complaints.reduce((m, c) => Math.max(m, c.id || 0), 0)) + 1;
+  const record = {
+    id: nextId,
+    // NO se guarda employee_id — queja anónima
+    categoria: String(categoria || 'general').trim(),
+    mensaje: String(mensaje).trim().slice(0, 1000),
+    status: 'nuevo',
+    created_at: nowMxDate(),
+    leido_at: null,
+  };
+  db.rhh_anonymous_complaints.push(record);
+  write(db);
+  res.json({ ok: true });
+});
+
+// ── GET /api/empleados/vacaciones ─────────────────────────────────────────────
+router.get('/vacaciones', empAuthRequired, (req, res) => {
+  const db = read();
+  const rows = (db.rhh_vacation_requests || [])
+    .filter(r => r.employee_id === req.empPayload.sub)
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  res.json(rows);
+});
+
+// ── POST /api/empleados/vacaciones ────────────────────────────────────────────
+router.post('/vacaciones', empAuthRequired, (req, res) => {
+  const { fecha_inicio, fecha_fin, motivo } = req.body || {};
+  if (!fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'Fechas requeridas' });
+
+  const d1 = new Date(fecha_inicio);
+  const d2 = new Date(fecha_fin);
+  if (isNaN(d1) || isNaN(d2) || d2 < d1) return res.status(400).json({ error: 'Rango de fechas inválido' });
+
+  const dias = Math.round((d2 - d1) / 86400000) + 1;
+
+  const db = read();
+  if (!Array.isArray(db.rhh_vacation_requests)) db.rhh_vacation_requests = [];
+
+  const nextId = (db.rhh_vacation_requests.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1;
+  const record = {
+    id: nextId,
+    employee_id: req.empPayload.sub,
+    fecha_inicio,
+    fecha_fin,
+    dias,
+    motivo: String(motivo || '').trim().slice(0, 300),
+    status: 'pendiente',
+    created_at: nowMxDate(),
+    reviewed_by: null,
+    reviewed_at: null,
+    notas_rh: null,
+  };
+  db.rhh_vacation_requests.push(record);
+  write(db);
+  res.json({ ok: true, id: nextId, dias });
+});
+
+module.exports = router;

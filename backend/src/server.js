@@ -50,6 +50,10 @@ const rhhChecadorRoutes = require('./routes/rhh-checador');
 const rhhNominaRoutes      = require('./routes/rhh-nomina');
 const rhhAsistenciaRoutes  = require('./routes/rhh-asistencia');
 
+// ── Módulo Empleados (autoservicio) ──────────────────────────────────────────
+const empleadosAuthRoutes = require('./routes/empleados-auth');
+const empleadosRoutes     = require('./routes/empleados');
+
 // ── Módulo Producción ─────────────────────────────────────────────────────
 const produccionRoutes = require('./routes/produccion');
 
@@ -185,6 +189,10 @@ app.use('/api/rhh/checador', rhhChecadorRoutes);
 app.use('/api/rhh/nomina',      rhhNominaRoutes);
 app.use('/api/rhh/asistencia', rhhAsistenciaRoutes);
 
+// ── API Empleados (autoservicio) ──────────────────────────────────────────────
+app.use('/api/empleados/auth', empleadosAuthRoutes);
+app.use('/api/empleados',      empleadosRoutes);
+
 // ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
 // Portal principal
 app.get('/', (req, res) => {
@@ -240,6 +248,10 @@ app.get('/mantenimiento/*', (req, res) => res.sendFile(path.resolve(process.cwd(
 // Módulo Validaciones Almacen
 app.get('/validaciones-almacen', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
 app.get('/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+
+// Portal Empleados (autoservicio)
+app.get('/empleados', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
+app.get('/empleados/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
 
 // Vista pública PO (proveedor)
 app.get('/po-view', (req, res) => {

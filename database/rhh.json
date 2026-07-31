@@ -2462,7 +2462,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "JIMH870325",
-        "must_change": true
+        "must_change": true,
+        "password": "CMRM05"
       }
     },
     {
@@ -2496,7 +2497,8 @@
       "baja_motivo": "No aparece en S15 — último pago: 12/Abr/2026",
       "emp_login": {
         "username": "DIVR021007",
-        "must_change": true
+        "must_change": true,
+        "password": "NZGFA0"
       }
     },
     {
@@ -2529,7 +2531,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "COMG740506",
-        "must_change": true
+        "must_change": true,
+        "password": "CRZR09"
       }
     },
     {
@@ -2562,7 +2565,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "VIOM780601",
-        "must_change": true
+        "must_change": true,
+        "password": "CLRG05"
       }
     },
     {
@@ -2596,7 +2600,8 @@
       "baja_motivo": "No aparece en S20 — último pago: 17/May/2026",
       "emp_login": {
         "username": "ROGJ020228",
-        "must_change": true
+        "must_change": true,
+        "password": "CDRSA5"
       }
     },
     {
@@ -2629,7 +2634,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "BEAR940317",
-        "must_change": true
+        "must_change": true,
+        "password": "CLLC04"
       }
     },
     {
@@ -2663,7 +2669,8 @@
       "baja_motivo": "No aparece en S12 — último pago: 22/Mar/2026",
       "emp_login": {
         "username": "ROAA670221",
-        "must_change": true
+        "must_change": true,
+        "password": "CDVR07"
       }
     },
     {
@@ -2696,7 +2703,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MAGM790720",
-        "must_change": true
+        "must_change": true,
+        "password": "CRNN04"
       }
     },
     {
@@ -2729,7 +2737,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "BAER810816",
-        "must_change": true
+        "must_change": true,
+        "password": "CRSD05"
       }
     },
     {
@@ -2762,7 +2771,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "ROGJ721009",
-        "must_change": true
+        "must_change": true,
+        "password": "CDRS08"
       }
     },
     {
@@ -2795,7 +2805,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "CADR811019",
-        "must_change": true
+        "must_change": true,
+        "password": "CSZM02"
       }
     },
     {
@@ -2828,7 +2839,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "ROIA020110",
-        "must_change": true
+        "must_change": true,
+        "password": "CDBNA7"
       }
     },
     {
@@ -2862,7 +2874,8 @@
       "baja_motivo": "No aparece en S29 — último pago: 19/Jul/2026",
       "emp_login": {
         "username": "GAPB000702",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRRA9"
       }
     },
     {
@@ -2895,7 +2908,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "PIGC810503",
-        "must_change": true
+        "must_change": true,
+        "password": "GZMR24"
       }
     },
     {
@@ -2928,7 +2942,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MUCG791104",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRD09"
       }
     },
     {
@@ -2961,7 +2976,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "GUGB820122",
-        "must_change": true
+        "must_change": true,
+        "password": "CTZT02"
       }
     },
     {
@@ -2994,7 +3010,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "GUPS640425",
-        "must_change": true
+        "must_change": true,
+        "password": "FZRL07"
       }
     },
     {
@@ -3027,7 +3044,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "LOEB830806",
-        "must_change": true
+        "must_change": true,
+        "password": "CZSL05"
       }
     },
     {
@@ -3093,7 +3111,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "EIRJ940224",
-        "must_change": true
+        "must_change": true,
+        "password": "CLMS02"
       }
     },
     {
@@ -3126,7 +3145,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MAER990101",
-        "must_change": true
+        "must_change": true,
+        "password": "CRLL09"
       }
     },
     {
@@ -3159,7 +3179,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "RACL951201",
-        "must_change": true
+        "must_change": true,
+        "password": "CMSS01"
       }
     },
     {
@@ -3192,7 +3213,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "IAMV800319",
-        "must_change": true
+        "must_change": true,
+        "password": "CNGC02"
       }
     },
     {
@@ -3226,7 +3248,8 @@
       "baja_motivo": "No aparece en S2 — último pago: 11/Ene/2026",
       "emp_login": {
         "username": "CADC950125",
-        "must_change": true
+        "must_change": true,
+        "password": "CSZR05"
       }
     },
     {
@@ -3259,7 +3282,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "OIOY020429",
-        "must_change": true
+        "must_change": true,
+        "password": "CRCTA9"
       }
     },
     {
@@ -3292,7 +3316,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "JIMR860123",
-        "must_change": true
+        "must_change": true,
+        "password": "CMRM03"
       }
     },
     {
@@ -3325,7 +3350,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "BACF021006",
-        "must_change": true
+        "must_change": true,
+        "password": "CSHRA5"
       }
     },
     {
@@ -3358,7 +3384,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "PAGG011106",
-        "must_change": true
+        "must_change": true,
+        "password": "CDTRA6"
       }
     },
     {
@@ -3392,7 +3419,8 @@
       "baja_motivo": "No aparece en S21 — último pago: 24/May/2026",
       "emp_login": {
         "username": "GAAE020818",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMDA8"
       }
     },
     {
@@ -3425,7 +3453,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "ZAFM020603",
-        "must_change": true
+        "must_change": true,
+        "password": "CMLRA4"
       }
     },
     {
@@ -3459,7 +3488,8 @@
       "baja_motivo": "No aparece en S5 — último pago: 01/Feb/2026",
       "emp_login": {
         "username": "HECM040412",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRGA9"
       }
     },
     {
@@ -3493,7 +3523,8 @@
       "baja_motivo": "No aparece en S2 — último pago: 11/Ene/2026",
       "emp_login": {
         "username": "DUSJ010808",
-        "must_change": true
+        "must_change": true,
+        "password": "CXNNA5"
       }
     },
     {
@@ -3526,7 +3557,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "PERL830309",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMS00"
       }
     },
     {
@@ -3559,7 +3591,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "ROIA030215",
-        "must_change": true
+        "must_change": true,
+        "password": "CDBXA5"
       }
     },
     {
@@ -3622,7 +3655,8 @@
       "baja_motivo": "No aparece en S2 — último pago: 11/Ene/2026",
       "emp_login": {
         "username": "SIAF880523",
-        "must_change": true
+        "must_change": true,
+        "password": "CLGR05"
       }
     },
     {
@@ -3656,7 +3690,8 @@
       "baja_motivo": "No aparece en S3 — último pago: 18/Ene/2026",
       "emp_login": {
         "username": "LEAY890409",
-        "must_change": true
+        "must_change": true,
+        "password": "CDLR01"
       }
     },
     {
@@ -3690,7 +3725,8 @@
       "baja_motivo": "No aparece en S8 — último pago: 22/Feb/2026",
       "emp_login": {
         "username": "BADS890815",
-        "must_change": true
+        "must_change": true,
+        "password": "CRLR08"
       }
     },
     {
@@ -3723,7 +3759,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "GAMJ980420",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRN09"
       }
     },
     {
@@ -3756,7 +3793,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "COAE970708",
-        "must_change": true
+        "must_change": true,
+        "password": "CRGF03"
       }
     },
     {
@@ -3789,7 +3827,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "LANH010618",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRGA7"
       }
     },
     {
@@ -3822,7 +3861,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MOSJ931112",
-        "must_change": true
+        "must_change": true,
+        "password": "ZRNN07"
       }
     },
     {
@@ -3855,7 +3895,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "DOCA991006",
-        "must_change": true
+        "must_change": true,
+        "password": "CMRN08"
       }
     },
     {
@@ -3888,7 +3929,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "TOGA000430",
-        "must_change": true
+        "must_change": true,
+        "password": "CRNNA3"
       }
     },
     {
@@ -3922,7 +3964,8 @@
       "baja_motivo": "No aparece en S17 — último pago: 26/Abr/2026",
       "emp_login": {
         "username": "JIMJ960517",
-        "must_change": true
+        "must_change": true,
+        "password": "CMRS03"
       }
     },
     {
@@ -3955,7 +3998,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "GACA830220",
-        "must_change": true
+        "must_change": true,
+        "password": "ZRLN08"
       }
     },
     {
@@ -3988,7 +4032,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "HEML730327",
-        "must_change": true
+        "must_change": true,
+        "password": "CRNZ05"
       }
     },
     {
@@ -4022,7 +4067,8 @@
       "baja_motivo": "No aparece en S3 — último pago: 18/Ene/2026",
       "emp_login": {
         "username": "DULL000219",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMZA8"
       }
     },
     {
@@ -4056,7 +4102,8 @@
       "baja_motivo": "No aparece en S20 — último pago: 17/May/2026",
       "emp_login": {
         "username": "HECM030720",
-        "must_change": true
+        "must_change": true,
+        "password": "PRHNA6"
       }
     },
     {
@@ -4090,7 +4137,8 @@
       "baja_motivo": "No aparece en S27 — último pago: 05/Jul/2026",
       "emp_login": {
         "username": "OOHG680411",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRL06"
       }
     },
     {
@@ -4124,7 +4172,8 @@
       "baja_motivo": "No aparece en S26 — último pago: 28/Jun/2026",
       "emp_login": {
         "username": "CUMD900216",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRB00"
       }
     },
     {
@@ -4158,7 +4207,8 @@
       "baja_motivo": "No aparece en S25 — último pago: 21/Jun/2026",
       "emp_login": {
         "username": "DIMJ010327",
-        "must_change": true
+        "must_change": true,
+        "password": "CZSNA8"
       }
     },
     {
@@ -4192,7 +4242,8 @@
       "baja_motivo": "No aparece en S28 — último pago: 12/Jul/2026",
       "emp_login": {
         "username": "RANK030803",
-        "must_change": true
+        "must_change": true,
+        "password": "CMVRA1"
       }
     },
     {
@@ -4226,7 +4277,8 @@
       "baja_motivo": "No aparece en S17 — último pago: 26/Abr/2026",
       "emp_login": {
         "username": "FIDY070216",
-        "must_change": true
+        "must_change": true,
+        "password": "CRVSA8"
       }
     },
     {
@@ -4259,7 +4311,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "LOZT800531",
-        "must_change": true
+        "must_change": true,
+        "password": "CRRR08"
       }
     },
     {
@@ -4292,7 +4345,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "AAVA940110",
-        "must_change": true
+        "must_change": true,
+        "password": "CLRN02"
       }
     },
     {
@@ -4326,7 +4380,8 @@
       "baja_motivo": "No aparece en S16 — último pago: 19/Abr/2026",
       "emp_login": {
         "username": "GOHA020503",
-        "must_change": true
+        "must_change": true,
+        "password": "CNRXA7"
       }
     },
     {
@@ -4360,7 +4415,8 @@
       "baja_motivo": "No aparece en S7 — último pago: 15/Feb/2026",
       "emp_login": {
         "username": "ROAB900608",
-        "must_change": true
+        "must_change": true,
+        "password": "CMRR05"
       }
     },
     {
@@ -4394,7 +4450,8 @@
       "baja_motivo": "No aparece en S15 — último pago: 12/Abr/2026",
       "emp_login": {
         "username": "BAOL991001",
-        "must_change": true
+        "must_change": true,
+        "password": "CRLR04"
       }
     },
     {
@@ -4427,7 +4484,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "HECG040613",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMLA6"
       }
     },
     {
@@ -4461,7 +4519,8 @@
       "baja_motivo": "No aparece en S18 — último pago: 03/May/2026",
       "emp_login": {
         "username": "MOGA960920",
-        "must_change": true
+        "must_change": true,
+        "password": "CRNR03"
       }
     },
     {
@@ -4494,7 +4553,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "VEGI901101",
-        "must_change": true
+        "must_change": true,
+        "password": "CLTS09"
       }
     },
     {
@@ -4527,7 +4587,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "CAHC950620",
-        "must_change": true
+        "must_change": true,
+        "password": "CHRL04"
       }
     },
     {
@@ -4561,7 +4622,8 @@
       "baja_motivo": "No aparece en S20 — último pago: 17/May/2026",
       "emp_login": {
         "username": "CACX890803",
-        "must_change": true
+        "must_change": true,
+        "password": "CLLL07"
       }
     },
     {
@@ -4595,7 +4657,8 @@
       "baja_motivo": "No aparece en S24 — último pago: 14/Jun/2026",
       "emp_login": {
         "username": "VIDA970228",
-        "must_change": true
+        "must_change": true,
+        "password": "CLVR01"
       }
     },
     {
@@ -4628,7 +4691,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MALJ800820",
-        "must_change": true
+        "must_change": true,
+        "password": "CGPL05"
       }
     },
     {
@@ -4662,7 +4726,8 @@
       "baja_motivo": "No aparece en S19 — último pago: 10/May/2026",
       "emp_login": {
         "username": "SENI001003",
-        "must_change": true
+        "must_change": true,
+        "password": "CGXSA9"
       }
     },
     {
@@ -4696,7 +4761,8 @@
       "baja_motivo": "No aparece en S19 — último pago: 10/May/2026",
       "emp_login": {
         "username": "OILR860106",
-        "must_change": true
+        "must_change": true,
+        "password": "CRPY03"
       }
     },
     {
@@ -4763,7 +4829,8 @@
       "baja_motivo": "No aparece en S29 — último pago: 19/Jul/2026",
       "emp_login": {
         "username": "MORE050212",
-        "must_change": true
+        "must_change": true,
+        "password": "CRVVA1"
       }
     },
     {
@@ -4797,7 +4864,8 @@
       "baja_motivo": "No aparece en S24 — último pago: 14/Jun/2026",
       "emp_login": {
         "username": "VALM810619",
-        "must_change": true
+        "must_change": true,
+        "password": "CZRR09"
       }
     },
     {
@@ -4831,7 +4899,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "VAPG011010",
-        "must_change": true
+        "must_change": true,
+        "password": "CLCDA0"
       }
     },
     {
@@ -4864,7 +4933,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "GUEA050311",
-        "must_change": true
+        "must_change": true,
+        "password": "CRLNA0"
       }
     },
     {
@@ -4898,7 +4968,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "CEGA981215",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMB09"
       }
     },
     {
@@ -4932,7 +5003,8 @@
       "baja_motivo": "No aparece en S25 — último pago: 21/Jun/2026",
       "emp_login": {
         "username": "TOJK960517",
-        "must_change": true
+        "must_change": true,
+        "password": "CRMR06"
       }
     },
     {
@@ -4965,7 +5037,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "CARS980919",
-        "must_change": true
+        "must_change": true,
+        "password": "CSDF08"
       }
     },
     {
@@ -4999,7 +5072,8 @@
       "baja_motivo": "No aparece en S27 — último pago: 05/Jul/2026",
       "emp_login": {
         "username": "GAAG851123",
-        "must_change": true
+        "must_change": true,
+        "password": "CRVD07"
       }
     },
     {
@@ -5032,7 +5106,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "RUCM010902",
-        "must_change": true
+        "must_change": true,
+        "password": "CZMRA4"
       }
     },
     {
@@ -5065,7 +5140,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "MOAJ871205",
-        "must_change": true
+        "must_change": true,
+        "password": "ZRGS05"
       }
     },
     {
@@ -5098,7 +5174,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "JURV010610",
-        "must_change": true
+        "must_change": true,
+        "password": "NRMLA5"
       }
     },
     {
@@ -5131,7 +5208,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "RARM920604",
-        "must_change": true
+        "must_change": true,
+        "password": "CMMR01"
       }
     },
     {
@@ -5164,7 +5242,8 @@
       "fecha_baja": null,
       "emp_login": {
         "username": "LIFP800827",
-        "must_change": true
+        "must_change": true,
+        "password": "CMLL05"
       }
     }
   ],
