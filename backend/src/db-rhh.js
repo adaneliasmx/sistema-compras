@@ -75,22 +75,27 @@ async function initDb() {
         data JSONB NOT NULL
       )
     `);
-    const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
-    if (rows.length === 0) {
+    // Siempre cargar desde el JSON del repositorio si existe.
+    // Esto garantiza que cada deploy aplique los datos del commit.
+    // Los cambios en memoria se persisten en PostgreSQL durante la sesión.
+    if (fs.existsSync(dbPath)) {
       let seed = { ...EMPTY_DB };
-      if (fs.existsSync(dbPath)) {
-        try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
-        console.log('[db-rhh] Migrando datos de JSON a PostgreSQL...');
-      }
+      try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
       _cache = seed;
       await pool.query(
-        'INSERT INTO rhh_data(id, data) VALUES(1, $1)',
+        'INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1',
         [JSON.stringify(seed)]
       );
-      console.log('[db-rhh] PostgreSQL inicializado con datos seed.');
+      console.log('[db-rhh] PostgreSQL sincronizado desde JSON del repositorio.');
     } else {
-      _cache = rows[0].data;
-      console.log('[db-rhh] Datos cargados desde PostgreSQL.');
+      const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
+      if (rows.length === 0) {
+        _cache = { ...EMPTY_DB };
+        await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(_cache)]);
+      } else {
+        _cache = rows[0].data;
+      }
+      console.log('[db-rhh] Datos cargados desde PostgreSQL (sin JSON seed).');
     }
   } else {
     // ── Modo JSON local ──────────────────────────────────────────────────────
