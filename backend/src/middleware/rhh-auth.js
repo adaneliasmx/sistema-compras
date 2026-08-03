@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { read } = require('../db-rhh');
+const { read: readCompras } = require('../db');
 
 function rhhAuthRequired(req, res, next) {
   const auth = req.headers.authorization || '';
@@ -8,6 +9,17 @@ function rhhAuthRequired(req, res, next) {
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET || 'cambia-esta-clave');
     if (payload.module && payload.module !== 'rhh') return res.status(401).json({ error: 'Token no válido para este módulo' });
+
+    // Tokens emitidos para admins de compras tienen sub con prefijo "compras_"
+    if (typeof payload.sub === 'string' && payload.sub.startsWith('compras_')) {
+      const comprasId = Number(payload.sub.replace('compras_', ''));
+      const comprasDb = readCompras();
+      const cu = (comprasDb.users || []).find(u => u.id === comprasId && u.active !== false);
+      if (!cu) return res.status(401).json({ error: 'Usuario inválido' });
+      req.rhhUser = { id: payload.sub, full_name: cu.full_name, email: cu.email, role: 'admin', employee_id: null };
+      return next();
+    }
+
     const db = read();
     const user = (db.rhh_users || []).find(u => u.id === payload.sub && u.active);
     if (!user) return res.status(401).json({ error: 'Usuario inválido' });

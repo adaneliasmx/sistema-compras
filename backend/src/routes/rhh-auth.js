@@ -2,38 +2,54 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read, write } = require('../db-rhh');
+const { read: readCompras } = require('../db');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // POST /api/rhh/auth/login
+// Busca primero en rhh_users; si no existe, acepta admins del módulo compras.
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
+  const emailLow = String(email).toLowerCase();
   const db = read();
-  const user = (db.rhh_users || []).find(
-    u => u.email?.toLowerCase() === String(email).toLowerCase() && u.active
-  );
-  if (!user) return res.status(401).json({ error: 'Credenciales inválidas' });
 
-  const ok = bcrypt.compareSync(String(password), user.password_hash);
+  // 1. Buscar en rhh_users
+  const rhhUser = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow && u.active);
+  if (rhhUser) {
+    const ok = bcrypt.compareSync(String(password), rhhUser.password_hash);
+    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+    const token = jwt.sign(
+      { sub: rhhUser.id, module: 'rhh', role: rhhUser.role, employee_id: rhhUser.employee_id },
+      process.env.JWT_SECRET || 'cambia-esta-clave',
+      { expiresIn: '8h' }
+    );
+    return res.json({
+      token,
+      user: { id: rhhUser.id, full_name: rhhUser.full_name, email: rhhUser.email, role: rhhUser.role, employee_id: rhhUser.employee_id || null }
+    });
+  }
+
+  // 2. Fallback: admins del módulo compras (role_code admin o super_admin)
+  const comprasDb = readCompras();
+  const comprasUser = (comprasDb.users || []).find(
+    u => u.email?.toLowerCase() === emailLow && u.active !== false &&
+    (u.role_code === 'admin' || u.role_code === 'super_admin')
+  );
+  if (!comprasUser) return res.status(401).json({ error: 'Credenciales inválidas' });
+
+  const ok = bcrypt.compareSync(String(password), comprasUser.password_hash);
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
   const token = jwt.sign(
-    { sub: user.id, module: 'rhh', role: user.role, employee_id: user.employee_id },
+    { sub: `compras_${comprasUser.id}`, module: 'rhh', role: 'admin', employee_id: null },
     process.env.JWT_SECRET || 'cambia-esta-clave',
     { expiresIn: '8h' }
   );
-
-  res.json({
+  return res.json({
     token,
-    user: {
-      id: user.id,
-      full_name: user.full_name,
-      email: user.email,
-      role: user.role,
-      employee_id: user.employee_id || null
-    }
+    user: { id: `compras_${comprasUser.id}`, full_name: comprasUser.full_name, email: comprasUser.email, role: 'admin', employee_id: null }
   });
 });
 
