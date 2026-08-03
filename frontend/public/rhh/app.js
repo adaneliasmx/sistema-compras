@@ -33,7 +33,7 @@ const MENU_BY_ROLE = {
   rh: [
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
-    ['empleados', '👥 Empleados'],
+    ['catalogo-empleados', '👥 Catálogo Empleados'],
     ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
@@ -47,7 +47,7 @@ const MENU_BY_ROLE = {
   admin: [
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
-    ['empleados', '👥 Empleados'],
+    ['catalogo-empleados', '👥 Catálogo Empleados'],
     ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
@@ -7684,7 +7684,8 @@ function render() {
     'mis-evaluaciones': misEvaluacionesView,
     plantillas: plantillasView,
     checador: checadorView,
-    asistencias: asistenciasView
+    asistencias: asistenciasView,
+    'catalogo-empleados': catalogoEmpleadosView
   };
 
   const viewFn = views[hash];
@@ -9468,3 +9469,253 @@ async function checadorCrearTodasFaltas() {
   toast(fail > 0 ? `${ok} faltas creadas, ${fail} errores` : `${ok} faltas creadas`, fail > 0 ? 'warning' : 'success');
   renderChecador();
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CATÁLOGO EMPLEADOS — lee directo del JSON del repositorio
+// ══════════════════════════════════════════════════════════════════════════════
+let _catEmpDetalle = null; // id del empleado actualmente abierto
+
+async function catalogoEmpleadosView() {
+  const el = document.getElementById('main-content');
+  if (!el) return;
+
+  _catEmpDetalle = null;
+  el.innerHTML = shell(`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <h2 style="margin:0">👥 Catálogo Empleados</h2>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <select id="cat-status" class="form-select" style="width:auto">
+        <option value="active">Activos</option>
+        <option value="inactive">Inactivos</option>
+        <option value="all">Todos</option>
+      </select>
+      <input id="cat-search" class="form-input" placeholder="Buscar nombre o #..." style="width:200px"/>
+      <button class="btn-primary" onclick="catCargar()">🔍 Buscar</button>
+    </div>
+  </div>
+  <div id="cat-body"><div class="loading-overlay">Cargando catálogo...</div></div>
+  `, 'catalogo-empleados');
+
+  document.getElementById('cat-status')?.addEventListener('change', catCargar);
+  document.getElementById('cat-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') catCargar(); });
+
+  catCargar();
+}
+
+async function catCargar() {
+  const status = document.getElementById('cat-status')?.value || 'active';
+  const search = document.getElementById('cat-search')?.value?.trim() || '';
+  const body   = document.getElementById('cat-body');
+  if (!body) return;
+  body.innerHTML = '<div class="loading-overlay">Cargando...</div>';
+
+  const params = new URLSearchParams({ status });
+  if (search) params.set('search', search);
+
+  const data = await apiFetch(`/rhh/catalogo?${params}`);
+  if (!data || !data.employees) {
+    body.innerHTML = '<div class="empty-state"><p>Error al cargar catálogo</p></div>';
+    return;
+  }
+
+  const emps = data.employees;
+  if (!emps.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">👥</div><p>Sin empleados con ese filtro</p></div>';
+    return;
+  }
+
+  const rows = emps.map(e => {
+    const statusBadge = e.status === 'active'
+      ? '<span style="background:#dcfce7;color:#16a34a;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Activo</span>'
+      : '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600">Inactivo</span>';
+    const portalBadge = e.has_portal
+      ? `<span style="background:#eff6ff;color:#2563eb;padding:2px 6px;border-radius:20px;font-size:10px">🔑 ${e.portal_username}</span>`
+      : '';
+    return `
+    <tr style="cursor:pointer" onclick="catVerDetalle(${e.id})">
+      <td style="font-weight:600;color:#1e293b">#${e.employee_number}</td>
+      <td>${esc(e.full_name)}</td>
+      <td style="color:#64748b;font-size:13px">${esc(e.department_name || '—')}</td>
+      <td style="color:#64748b;font-size:13px">${esc(e.position_name || '—')}</td>
+      <td>${statusBadge}</td>
+      <td>${portalBadge}</td>
+      <td>
+        <button class="btn-ghost btn-sm" onclick="event.stopPropagation();catVerDetalle(${e.id})">Ver</button>
+        ${e.status === 'active' ? `<a href="/empleados" target="_blank" class="btn-ghost btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">🏭 Portal</a>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+  <div style="font-size:13px;color:#64748b;margin-bottom:10px">${emps.length} empleado${emps.length !== 1 ? 's' : ''}</div>
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <thead><tr><th>#</th><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Estatus</th><th>Portal</th><th></th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  </div>`;
+}
+
+async function catVerDetalle(empId) {
+  _catEmpDetalle = empId;
+  const el = document.getElementById('main-content');
+  if (!el) return;
+
+  el.innerHTML = shell('<div class="loading-overlay">Cargando expediente...</div>', 'catalogo-empleados');
+
+  const data = await apiFetch(`/rhh/catalogo/${empId}`);
+  if (!data || !data.employee) {
+    el.innerHTML = shell('<div class="empty-state"><p>Error cargando empleado</p></div>', 'catalogo-empleados');
+    return;
+  }
+
+  const e   = data.employee;
+  const inc = data.incidencias || [];
+  const acl = data.aclaraciones || [];
+  const vac = data.vacaciones   || [];
+  const ev  = data.evaluaciones || [];
+
+  const statusColor = e.status === 'active' ? '#16a34a' : '#64748b';
+  const statusLabel = e.status === 'active' ? 'Activo' : 'Inactivo';
+
+  const incHtml = inc.length ? inc.slice(0, 20).map(r => `
+  <tr>
+    <td>S${r.no_periodo}</td>
+    <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
+    <td style="text-align:center">${r.dias_pagados ?? '—'}</td>
+    <td style="text-align:center;color:${r.faltas ? '#dc2626' : 'inherit'}">${r.faltas || 0}</td>
+    <td style="text-align:center">${r.horas_extras_total || 0}</td>
+    <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
+  </tr>`).join('')
+  : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
+
+  const aclHtml = acl.length ? acl.map(a => `
+  <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <span style="font-size:13px;font-weight:600">S${a.no_periodo} — ${a.created_at}</span>
+      <span style="background:${a.status==='pendiente'?'#fef3c7':'#dcfce7'};color:${a.status==='pendiente'?'#92400e':'#16a34a'};padding:2px 8px;border-radius:20px;font-size:11px">${a.status}</span>
+    </div>
+    <p style="font-size:13px;color:#475569;margin:0 0 8px">${esc(a.mensaje)}</p>
+    ${a.respuesta ? `<p style="font-size:12px;color:#1e40af;background:#eff6ff;padding:8px;border-radius:6px;margin:0">RH: ${esc(a.respuesta)}</p>` : `
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <input class="form-input" id="resp-${a.id}" placeholder="Escribe respuesta..." style="flex:1;font-size:13px"/>
+      <button class="btn-primary btn-sm" onclick="catResponderAcl(${e.id},${a.id})">Responder</button>
+    </div>`}
+  </div>`).join('')
+  : '<div style="text-align:center;color:#94a3b8;padding:20px">Sin aclaraciones</div>';
+
+  const vacHtml = vac.length ? vac.map(v => `
+  <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+    <div>
+      <div style="font-size:13px;font-weight:600">${v.fecha_inicio} → ${v.fecha_fin} (${v.dias} días)</div>
+      <div style="font-size:12px;color:#64748b">${v.motivo || ''} · ${v.created_at}</div>
+      ${v.notas_rh ? `<div style="font-size:12px;color:#1e40af">${esc(v.notas_rh)}</div>` : ''}
+    </div>
+    <div style="display:flex;gap:6px;align-items:center">
+      <span style="background:${v.status==='aprobado'?'#dcfce7':v.status==='rechazado'?'#fee2e2':'#fef3c7'};color:${v.status==='aprobado'?'#16a34a':v.status==='rechazado'?'#dc2626':'#92400e'};padding:2px 8px;border-radius:20px;font-size:11px">${v.status}</span>
+      ${v.status === 'pendiente' ? `
+        <button class="btn-primary btn-sm" onclick="catAprobarVac(${v.id},'aprobado')">✓</button>
+        <button class="btn-ghost btn-sm" onclick="catAprobarVac(${v.id},'rechazado')">✗</button>
+      ` : ''}
+    </div>
+  </div>`).join('')
+  : '<div style="text-align:center;color:#94a3b8;padding:20px">Sin solicitudes de vacaciones</div>';
+
+  const credHtml = e.has_portal ? `
+  <div style="background:#eff6ff;border-radius:10px;padding:14px;margin-bottom:12px">
+    <div style="font-size:13px;font-weight:600;color:#1e40af;margin-bottom:6px">Acceso al Portal del Empleado</div>
+    <div style="font-size:13px;color:#475569">Usuario: <strong>${esc(e.portal_username)}</strong></div>
+    <div style="font-size:12px;color:#64748b;margin-top:4px">Contraseña: configurada por el empleado</div>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn-ghost btn-sm" onclick="catResetCredencial(${e.id})">🔄 Resetear contraseña</button>
+      <a href="/empleados" target="_blank" class="btn-ghost btn-sm" style="text-decoration:none">🏭 Ir al portal</a>
+    </div>
+  </div>` : `<div style="color:#94a3b8;font-size:13px">Sin acceso al portal configurado</div>`;
+
+  el.innerHTML = shell(`
+  <div style="margin-bottom:16px">
+    <button class="btn-ghost" onclick="catalogoEmpleadosView()">← Volver al catálogo</button>
+  </div>
+
+  <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap">
+    <div style="width:52px;height:52px;background:#eff6ff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">👤</div>
+    <div>
+      <h2 style="margin:0;font-size:20px">${esc(e.full_name)}</h2>
+      <div style="color:#64748b;font-size:14px">#${e.employee_number} · ${esc(e.position_name||'—')} · ${esc(e.department_name||'—')}</div>
+      <div style="margin-top:4px"><span style="background:${statusColor}22;color:${statusColor};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600">${statusLabel}</span></div>
+    </div>
+  </div>
+
+  <div class="tabs" style="margin-bottom:16px">
+    <button class="tab-btn active" id="tab-datos"       onclick="catTab('datos')">📋 Datos</button>
+    <button class="tab-btn"        id="tab-incidencias" onclick="catTab('incidencias')">📊 Incidencias (${inc.length})</button>
+    <button class="tab-btn"        id="tab-aclaraciones" onclick="catTab('aclaraciones')">💬 Aclaraciones (${acl.length})</button>
+    <button class="tab-btn"        id="tab-vacaciones"  onclick="catTab('vacaciones')">🏖️ Vacaciones (${vac.length})</button>
+    <button class="tab-btn"        id="tab-portal"      onclick="catTab('portal')">🔑 Portal</button>
+  </div>
+
+  <!-- Datos -->
+  <div id="tab-content-datos">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label class="form-label">RFC</label><div style="font-size:14px;padding:8px 0">${esc(e.rfc||'—')}</div></div>
+      <div class="form-group"><label class="form-label">CURP</label><div style="font-size:13px;padding:8px 0">${esc(e.curp||'—')}</div></div>
+      <div class="form-group"><label class="form-label">NSS</label><div style="font-size:14px;padding:8px 0">${esc(e.nss||'—')}</div></div>
+      <div class="form-group"><label class="form-label">Fecha Ingreso</label><div style="font-size:14px;padding:8px 0">${esc(e.start_date||'—')}</div></div>
+      <div class="form-group"><label class="form-label">Turno</label><div style="font-size:14px;padding:8px 0">${esc(e.shift_name||'—')}</div></div>
+      <div class="form-group"><label class="form-label">Salario Diario</label><div style="font-size:14px;padding:8px 0">${e.salary_daily ? '$'+Number(e.salary_daily).toFixed(2) : '—'}</div></div>
+      <div class="form-group"><label class="form-label">Teléfono</label><div style="font-size:14px;padding:8px 0">${esc(e.phone||'—')}</div></div>
+      <div class="form-group"><label class="form-label">Correo</label><div style="font-size:14px;padding:8px 0">${esc(e.email||'—')}</div></div>
+    </div>
+    ${e.status === 'inactive' && e.fecha_baja ? `<div style="background:#fef2f2;border-radius:8px;padding:10px 14px;margin-top:8px;font-size:13px;color:#991b1b">Baja: ${e.fecha_baja}${e.baja_motivo ? ' — '+esc(e.baja_motivo) : ''}</div>` : ''}
+  </div>
+
+  <!-- Incidencias -->
+  <div id="tab-content-incidencias" style="display:none">
+    <div style="overflow-x:auto">
+    <table class="data-table">
+      <thead><tr><th>Período</th><th>Fechas</th><th>Días Pag.</th><th>Faltas</th><th>H. Extra</th><th>Despensa</th></tr></thead>
+      <tbody>${incHtml}</tbody>
+    </table>
+    </div>
+  </div>
+
+  <!-- Aclaraciones -->
+  <div id="tab-content-aclaraciones" style="display:none">${aclHtml}</div>
+
+  <!-- Vacaciones -->
+  <div id="tab-content-vacaciones" style="display:none">${vacHtml}</div>
+
+  <!-- Portal -->
+  <div id="tab-content-portal" style="display:none">${credHtml}</div>
+
+  `, 'catalogo-empleados');
+}
+
+function catTab(name) {
+  ['datos','incidencias','aclaraciones','vacaciones','portal'].forEach(t => {
+    document.getElementById(`tab-content-${t}`)?.style.setProperty('display', t === name ? 'block' : 'none');
+    document.getElementById(`tab-${t}`)?.classList.toggle('active', t === name);
+  });
+}
+
+async function catResponderAcl(empId, aclId) {
+  const respuesta = document.getElementById(`resp-${aclId}`)?.value?.trim();
+  if (!respuesta) { toast('Escribe una respuesta', 'warning'); return; }
+  const r = await apiFetch(`/rhh/catalogo/${empId}/aclaracion/${aclId}`, 'PATCH', { respuesta, status: 'respondido' });
+  if (r) { toast('Respuesta guardada'); catVerDetalle(empId); }
+}
+
+async function catAprobarVac(vacId, status) {
+  const r = await apiFetch(`/rhh/catalogo/vacaciones/${vacId}`, 'PATCH', { status });
+  if (r) { toast(status === 'aprobado' ? 'Vacaciones aprobadas' : 'Solicitud rechazada'); catVerDetalle(_catEmpDetalle); }
+}
+
+async function catResetCredencial(empId) {
+  if (!confirm('¿Resetear contraseña del portal? El empleado deberá cambiarla al ingresar.')) return;
+  const r = await apiFetch(`/rhh/catalogo/${empId}/credenciales`, 'PATCH', {});
+  if (r && r.ok) {
+    toast(`Credenciales reseteadas. Usuario: ${r.username} / Pass inicial: ${r.password}`, 'success');
+    catVerDetalle(empId);
+  }
+}
+
