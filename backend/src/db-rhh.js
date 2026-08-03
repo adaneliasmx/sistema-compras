@@ -1,11 +1,13 @@
 const fs = require('fs');
 const path = require('path');
 
-// ── JSON fallback (desarrollo local) ──────────────────────────────────────────
-// Usa __dirname para ruta confiable en cualquier entorno (Render incluido)
+// ── Rutas JSON ─────────────────────────────────────────────────────────────────
+// seedPath: JSON comprometido en git, SIEMPRE disponible en cualquier entorno
+const seedPath = path.resolve(__dirname, '../../database/rhh.json');
+// dbPath: ruta para escritura en disco local (cuando no hay PostgreSQL)
 const dbPath = process.env.DB_RHH_PATH
   ? path.resolve(process.env.DB_RHH_PATH)
-  : path.resolve(__dirname, '../../database/rhh.json');
+  : seedPath;
 
 // ── PostgreSQL (producción en Render) ─────────────────────────────────────────
 let pool = null;
@@ -78,16 +80,15 @@ async function initDb() {
         data JSONB NOT NULL
       )
     `);
-    console.log('[db-rhh] dbPath:', dbPath);
-    console.log('[db-rhh] JSON existe:', fs.existsSync(dbPath));
-    // Siempre cargar desde el JSON del repositorio si existe.
-    if (fs.existsSync(dbPath)) {
+    console.log('[db-rhh] seedPath:', seedPath, '| existe:', fs.existsSync(seedPath));
+    // Siempre cargar desde el JSON del repositorio (seedPath, basado en __dirname)
+    if (fs.existsSync(seedPath)) {
       let seed = { ...EMPTY_DB };
       try {
-        seed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-        console.log('[db-rhh] JSON leído OK:', seed.rhh_employees?.length, 'empleados');
+        seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        console.log('[db-rhh] JSON seed leído OK:', seed.rhh_employees?.length, 'empleados');
       } catch (parseErr) {
-        console.error('[db-rhh] Error parseando JSON:', parseErr.message);
+        console.error('[db-rhh] Error parseando JSON seed:', parseErr.message);
       }
       _cache = seed;
       try {
@@ -100,7 +101,7 @@ async function initDb() {
         console.error('[db-rhh] Error sincronizando PostgreSQL:', pgErr.message);
       }
     } else {
-      console.error('[db-rhh] JSON NO ENCONTRADO en:', dbPath, '— cargando desde PostgreSQL');
+      console.error('[db-rhh] seedPath NO ENCONTRADO:', seedPath, '— cargando desde PostgreSQL');
       const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
       if (rows.length === 0) {
         _cache = { ...EMPTY_DB };
@@ -193,14 +194,14 @@ function calcVacBalance(db, empId, year) {
   };
 }
 
-// Fuerza la carga del JSON seed al PostgreSQL (para sincronizar datos locales al servidor)
+// Fuerza la carga del JSON seed al PostgreSQL (usa seedPath basado en __dirname)
 async function forceSeedFromJson() {
   if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
-  if (!fs.existsSync(dbPath)) throw new Error('Archivo JSON seed no encontrado: ' + dbPath);
-  const seed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  if (!fs.existsSync(seedPath)) throw new Error('Archivo JSON seed no encontrado: ' + seedPath);
+  const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
   _cache = seed;
   await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1', [JSON.stringify(seed)]);
   return seed;
 }
 
-module.exports = { dbPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance };
+module.exports = { dbPath, seedPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance };

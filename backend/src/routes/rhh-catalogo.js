@@ -1,7 +1,7 @@
 const express = require('express');
 const fs   = require('fs');
 const path = require('path');
-const { read, write, dbPath, forceSeedFromJson } = require('../db-rhh');
+const { read, write, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 
 const router = express.Router();
@@ -21,8 +21,9 @@ router.get('/diag', (req, res) => {
     return num.length >= 3 && /^\d+$/.test(num.replace(/^0+/, '') || '0');
   });
   res.json({
+    seedPath,
+    seedExists: fs.existsSync(seedPath),
     dbPath,
-    fileExists: fs.existsSync(dbPath),
     totalEmpleados: emps.length,
     empleadosReales: reales.length,
     activos: reales.filter(e => e.status === 'active').length,
