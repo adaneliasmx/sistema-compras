@@ -9647,11 +9647,11 @@ async function catVerDetalle(empId) {
   </div>
 
   <div class="tabs" style="margin-bottom:16px">
-    <button class="tab-btn active" id="tab-datos"       onclick="catTab('datos')">📋 Datos</button>
-    <button class="tab-btn"        id="tab-incidencias" onclick="catTab('incidencias')">📊 Incidencias (${inc.length})</button>
-    <button class="tab-btn"        id="tab-aclaraciones" onclick="catTab('aclaraciones')">💬 Aclaraciones (${acl.length})</button>
-    <button class="tab-btn"        id="tab-vacaciones"  onclick="catTab('vacaciones')">🏖️ Vacaciones (${vac.length})</button>
-    <button class="tab-btn"        id="tab-portal"      onclick="catTab('portal')">🔑 Portal</button>
+    <button class="tab-btn active" id="tab-datos"       onclick="catEmpTab('datos')">📋 Datos</button>
+    <button class="tab-btn"        id="tab-incidencias" onclick="catEmpTab('incidencias')">📊 Incidencias (${inc.length})</button>
+    <button class="tab-btn"        id="tab-aclaraciones" onclick="catEmpTab('aclaraciones')">💬 Aclaraciones (${acl.length})</button>
+    <button class="tab-btn"        id="tab-vacaciones"  onclick="catEmpTab('vacaciones')">🏖️ Vacaciones (${vac.length})</button>
+    <button class="tab-btn"        id="tab-portal"      onclick="catEmpTab('portal')">🔑 Portal</button>
   </div>
 
   <!-- Datos -->
@@ -9691,7 +9691,7 @@ async function catVerDetalle(empId) {
   `, 'catalogo-empleados');
 }
 
-function catTab(name) {
+function catEmpTab(name) {
   ['datos','incidencias','aclaraciones','vacaciones','portal'].forEach(t => {
     document.getElementById(`tab-content-${t}`)?.style.setProperty('display', t === name ? 'block' : 'none');
     document.getElementById(`tab-${t}`)?.classList.toggle('active', t === name);
