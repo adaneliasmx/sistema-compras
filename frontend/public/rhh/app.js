@@ -9476,7 +9476,7 @@ async function checadorCrearTodasFaltas() {
 let _catEmpDetalle = null; // id del empleado actualmente abierto
 
 async function catalogoEmpleadosView() {
-  const el = document.getElementById('main-content');
+  const el = document.getElementById('app');
   if (!el) return;
 
   _catEmpDetalle = null;
@@ -9512,7 +9512,7 @@ async function catCargar() {
   const params = new URLSearchParams({ status });
   if (search) params.set('search', search);
 
-  const data = await apiFetch(`/rhh/catalogo?${params}`);
+  const data = await api(`/api/rhh/catalogo?${params}`);
   if (!data || !data.employees) {
     body.innerHTML = '<div class="empty-state"><p>Error al cargar catálogo</p></div>';
     return;
@@ -9558,12 +9558,12 @@ async function catCargar() {
 
 async function catVerDetalle(empId) {
   _catEmpDetalle = empId;
-  const el = document.getElementById('main-content');
+  const el = document.getElementById('app');
   if (!el) return;
 
   el.innerHTML = shell('<div class="loading-overlay">Cargando expediente...</div>', 'catalogo-empleados');
 
-  const data = await apiFetch(`/rhh/catalogo/${empId}`);
+  const data = await api(`/api/rhh/catalogo/${empId}`).catch(() => null);
   if (!data || !data.employee) {
     el.innerHTML = shell('<div class="empty-state"><p>Error cargando empleado</p></div>', 'catalogo-empleados');
     return;
@@ -9701,18 +9701,18 @@ function catEmpTab(name) {
 async function catResponderAcl(empId, aclId) {
   const respuesta = document.getElementById(`resp-${aclId}`)?.value?.trim();
   if (!respuesta) { toast('Escribe una respuesta', 'warning'); return; }
-  const r = await apiFetch(`/rhh/catalogo/${empId}/aclaracion/${aclId}`, 'PATCH', { respuesta, status: 'respondido' });
+  const r = await api(`/api/rhh/catalogo/${empId}/aclaracion/${aclId}`, { method:'PATCH', body: JSON.stringify({ respuesta, status: 'respondido' }) }).catch(() => null);
   if (r) { toast('Respuesta guardada'); catVerDetalle(empId); }
 }
 
 async function catAprobarVac(vacId, status) {
-  const r = await apiFetch(`/rhh/catalogo/vacaciones/${vacId}`, 'PATCH', { status });
+  const r = await api(`/api/rhh/catalogo/vacaciones/${vacId}`, { method:'PATCH', body: JSON.stringify({ status }) }).catch(() => null);
   if (r) { toast(status === 'aprobado' ? 'Vacaciones aprobadas' : 'Solicitud rechazada'); catVerDetalle(_catEmpDetalle); }
 }
 
 async function catResetCredencial(empId) {
   if (!confirm('¿Resetear contraseña del portal? El empleado deberá cambiarla al ingresar.')) return;
-  const r = await apiFetch(`/rhh/catalogo/${empId}/credenciales`, 'PATCH', {});
+  const r = await api(`/api/rhh/catalogo/${empId}/credenciales`, { method:'PATCH', body: JSON.stringify({}) }).catch(() => null);
   if (r && r.ok) {
     toast(`Credenciales reseteadas. Usuario: ${r.username} / Pass inicial: ${r.password}`, 'success');
     catVerDetalle(empId);
