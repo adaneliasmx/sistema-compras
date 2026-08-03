@@ -1,5 +1,7 @@
 const express = require('express');
-const { read, write } = require('../db-rhh');
+const fs   = require('fs');
+const path = require('path');
+const { read, write, dbPath, forceSeedFromJson } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 
 const router = express.Router();
@@ -9,6 +11,38 @@ function nowMxDate() {
 }
 
 function readFresh() { return read(); }
+
+// ── GET /api/rhh/catalogo/diag ─── DIAGNÓSTICO PÚBLICO (sin auth) ─────────────
+router.get('/diag', (req, res) => {
+  const db = read();
+  const emps = db.rhh_employees || [];
+  const reales = emps.filter(e => {
+    const num = String(e.employee_number || '').trim();
+    return num.length >= 3 && /^\d+$/.test(num.replace(/^0+/, '') || '0');
+  });
+  res.json({
+    dbPath,
+    fileExists: fs.existsSync(dbPath),
+    totalEmpleados: emps.length,
+    empleadosReales: reales.length,
+    activos: reales.filter(e => e.status === 'active').length,
+    primerEmp: reales[0] ? { id: reales[0].id, num: reales[0].employee_number, name: reales[0].full_name } : null,
+  });
+});
+
+// ── POST /api/rhh/catalogo/force-seed ─── RESEED DESDE JSON (key simple) ──────
+router.post('/force-seed', async (req, res) => {
+  const { key } = req.query;
+  const expectedKey = process.env.RHH_SEED_KEY || 'cuesto2026rhh';
+  if (key !== expectedKey) return res.status(401).json({ error: 'key inválida' });
+  try {
+    const data = await forceSeedFromJson();
+    const emps = data.rhh_employees || [];
+    res.json({ ok: true, empleados: emps.length, activos: emps.filter(e => e.status === 'active').length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Enriquece un empleado con datos de catálogos
 function enrich(emp, db) {

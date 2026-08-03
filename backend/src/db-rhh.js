@@ -2,7 +2,10 @@ const fs = require('fs');
 const path = require('path');
 
 // ── JSON fallback (desarrollo local) ──────────────────────────────────────────
-const dbPath = path.resolve(process.cwd(), process.env.DB_RHH_PATH || './database/rhh.json');
+// Usa __dirname para ruta confiable en cualquier entorno (Render incluido)
+const dbPath = process.env.DB_RHH_PATH
+  ? path.resolve(process.env.DB_RHH_PATH)
+  : path.resolve(__dirname, '../../database/rhh.json');
 
 // ── PostgreSQL (producción en Render) ─────────────────────────────────────────
 let pool = null;
@@ -75,19 +78,29 @@ async function initDb() {
         data JSONB NOT NULL
       )
     `);
+    console.log('[db-rhh] dbPath:', dbPath);
+    console.log('[db-rhh] JSON existe:', fs.existsSync(dbPath));
     // Siempre cargar desde el JSON del repositorio si existe.
-    // Esto garantiza que cada deploy aplique los datos del commit.
-    // Los cambios en memoria se persisten en PostgreSQL durante la sesión.
     if (fs.existsSync(dbPath)) {
       let seed = { ...EMPTY_DB };
-      try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
+      try {
+        seed = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+        console.log('[db-rhh] JSON leído OK:', seed.rhh_employees?.length, 'empleados');
+      } catch (parseErr) {
+        console.error('[db-rhh] Error parseando JSON:', parseErr.message);
+      }
       _cache = seed;
-      await pool.query(
-        'INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1',
-        [JSON.stringify(seed)]
-      );
-      console.log('[db-rhh] PostgreSQL sincronizado desde JSON del repositorio.');
+      try {
+        await pool.query(
+          'INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1',
+          [JSON.stringify(seed)]
+        );
+        console.log('[db-rhh] PostgreSQL sincronizado OK. Empleados:', (seed.rhh_employees || []).length);
+      } catch (pgErr) {
+        console.error('[db-rhh] Error sincronizando PostgreSQL:', pgErr.message);
+      }
     } else {
+      console.error('[db-rhh] JSON NO ENCONTRADO en:', dbPath, '— cargando desde PostgreSQL');
       const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
       if (rows.length === 0) {
         _cache = { ...EMPTY_DB };
@@ -95,7 +108,7 @@ async function initDb() {
       } else {
         _cache = rows[0].data;
       }
-      console.log('[db-rhh] Datos cargados desde PostgreSQL (sin JSON seed).');
+      console.log('[db-rhh] Datos desde PostgreSQL. Empleados:', (_cache.rhh_employees || []).length);
     }
   } else {
     // ── Modo JSON local ──────────────────────────────────────────────────────
