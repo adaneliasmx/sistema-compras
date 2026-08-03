@@ -1,25 +1,14 @@
-/**
- * Catálogo de Empleados — lee siempre del JSON del repositorio
- * (evita el problema de caché PostgreSQL desactualizado)
- */
 const express = require('express');
-const fs      = require('fs');
-const path    = require('path');
+const { read, write } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 
 const router = express.Router();
-
-const dbPath = path.resolve(process.cwd(), process.env.DB_RHH_PATH || './database/rhh.json');
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
 
-// Lee el JSON fresco del disco (no la caché PostgreSQL)
-function readFresh() {
-  try { return JSON.parse(fs.readFileSync(dbPath, 'utf8')); }
-  catch (e) { return null; }
-}
+function readFresh() { return read(); }
 
 // Enriquece un empleado con datos de catálogos
 function enrich(emp, db) {
@@ -193,7 +182,7 @@ router.patch('/:id/credenciales', rhhAuthRequired, rhhRequireRole('admin', 'rh')
   emp.emp_login.must_change = true;
   emp.updated_at = nowMxDate();
 
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+  write(db);
   res.json({ ok: true, username: emp.emp_login.username, password: pass });
 });
 
@@ -213,7 +202,7 @@ router.patch('/:id/aclaracion/:acid', rhhAuthRequired, rhhRequireRole('admin', '
   acl.status       = status || 'respondido';
   acl.respondido_at = nowMxDate();
 
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+  write(db);
   res.json({ ok: true });
 });
 
@@ -231,7 +220,7 @@ router.patch('/vacaciones/:vid', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
   vac.notas_rh    = notas_rh || null;
   vac.reviewed_at = nowMxDate();
 
-  fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+  write(db);
   res.json({ ok: true });
 });
 
