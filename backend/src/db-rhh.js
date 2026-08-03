@@ -81,35 +81,40 @@ async function initDb() {
       )
     `);
     console.log('[db-rhh] seedPath:', seedPath, '| existe:', fs.existsSync(seedPath));
-    // Siempre cargar desde el JSON del repositorio (seedPath, basado en __dirname)
+    // Colecciones estructurales que siempre se sincronizan desde el JSON del repo.
+    // El resto (usuarios, transacciones, solicitudes) se preserva de PostgreSQL.
+    const SYNC_FROM_SEED = [
+      'rhh_employees', 'rhh_departments', 'rhh_positions', 'rhh_shifts',
+      'rhh_holidays', 'rhh_vacation_rules', 'rhh_te_catalogos', 'rhh_doc_templates', 'rhh_eval_forms'
+    ];
+
+    let seed = { ...EMPTY_DB };
     if (fs.existsSync(seedPath)) {
-      let seed = { ...EMPTY_DB };
       try {
         seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
         console.log('[db-rhh] JSON seed leído OK:', seed.rhh_employees?.length, 'empleados');
       } catch (parseErr) {
         console.error('[db-rhh] Error parseando JSON seed:', parseErr.message);
       }
-      _cache = seed;
-      try {
-        await pool.query(
-          'INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1',
-          [JSON.stringify(seed)]
-        );
-        console.log('[db-rhh] PostgreSQL sincronizado OK. Empleados:', (seed.rhh_employees || []).length);
-      } catch (pgErr) {
-        console.error('[db-rhh] Error sincronizando PostgreSQL:', pgErr.message);
-      }
     } else {
-      console.error('[db-rhh] seedPath NO ENCONTRADO:', seedPath, '— cargando desde PostgreSQL');
-      const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
-      if (rows.length === 0) {
-        _cache = { ...EMPTY_DB };
-        await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(_cache)]);
-      } else {
-        _cache = rows[0].data;
+      console.warn('[db-rhh] seedPath NO ENCONTRADO:', seedPath, '— usando EMPTY_DB como seed');
+    }
+
+    const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
+    if (rows.length === 0) {
+      // Primera vez: insertar seed completo
+      _cache = seed;
+      await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
+      console.log('[db-rhh] PostgreSQL inicializado con seed. Empleados:', (seed.rhh_employees || []).length);
+    } else {
+      // Ya existe: actualizar solo colecciones estructurales, preservar datos dinámicos
+      const existing = rows[0].data;
+      for (const key of SYNC_FROM_SEED) {
+        if (seed[key] !== undefined) existing[key] = seed[key];
       }
-      console.log('[db-rhh] Datos desde PostgreSQL. Empleados:', (_cache.rhh_employees || []).length);
+      _cache = existing;
+      await pool.query('UPDATE rhh_data SET data=$1 WHERE id=1', [JSON.stringify(existing)]);
+      console.log('[db-rhh] PostgreSQL actualizado (catálogos+empleados). Empleados:', (existing.rhh_employees || []).length);
     }
   } else {
     // ── Modo JSON local ──────────────────────────────────────────────────────
@@ -194,14 +199,23 @@ function calcVacBalance(db, empId, year) {
   };
 }
 
-// Fuerza la carga del JSON seed al PostgreSQL (usa seedPath basado en __dirname)
+// Fuerza la sincronización de colecciones estructurales desde JSON seed (preserva usuarios y datos dinámicos)
 async function forceSeedFromJson() {
   if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
   if (!fs.existsSync(seedPath)) throw new Error('Archivo JSON seed no encontrado: ' + seedPath);
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  _cache = seed;
-  await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1', [JSON.stringify(seed)]);
-  return seed;
+  const SYNC_FROM_SEED = [
+    'rhh_employees', 'rhh_departments', 'rhh_positions', 'rhh_shifts',
+    'rhh_holidays', 'rhh_vacation_rules', 'rhh_te_catalogos', 'rhh_doc_templates', 'rhh_eval_forms'
+  ];
+  const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
+  const existing = rows.length > 0 ? rows[0].data : { ...EMPTY_DB };
+  for (const key of SYNC_FROM_SEED) {
+    if (seed[key] !== undefined) existing[key] = seed[key];
+  }
+  _cache = existing;
+  await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1', [JSON.stringify(existing)]);
+  return existing;
 }
 
 module.exports = { dbPath, seedPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance };
