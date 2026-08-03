@@ -9512,7 +9512,13 @@ async function catCargar() {
   const params = new URLSearchParams({ status });
   if (search) params.set('search', search);
 
-  const data = await api(`/api/rhh/catalogo?${params}`);
+  let data;
+  try {
+    data = await api(`/api/rhh/catalogo?${params}`);
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state"><p>Error: ${err.message || 'No se pudo cargar el catálogo'}</p></div>`;
+    return;
+  }
   if (!data || !data.employees) {
     body.innerHTML = '<div class="empty-state"><p>Error al cargar catálogo</p></div>';
     return;
