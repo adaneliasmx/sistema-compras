@@ -5085,6 +5085,7 @@ async function evaluacionesView() {
       api('/api/rhh/evaluations/forms')
     ]);
     if (!evalSessionId && sessions.length > 0) evalSessionId = sessions[sessions.length - 1].id;
+    window._evalForms = forms || [];
 
     let tabContent;
     if (evalTab === 'sesion')       tabContent = await buildEvalSessionTab(sessions || [], forms || []);
@@ -5489,36 +5490,125 @@ async function evalSaveForm(formId) {
 function openNuevaSesionModal() {
   var now = new Date();
   var meses = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+  // Construir lista de evaluadores
+  var evaluators = (state.rhhUsers || []).filter(function(u){ return u.active !== false && u.role !== 'empleado'; });
+  var evalOpts = evaluators.map(function(u){
+    return '<option value="' + u.id + '">' + escHtml(u.full_name) + ' — ' + u.role + '</option>';
+  }).join('');
+
+  // Agrupar empleados por grupo de formulario (desde state)
+  var forms = window._evalForms || [];
+  var employees = (state.employees || []).filter(function(e){ return e.active !== false; });
+  var empsByGroup = {};
+  employees.forEach(function(emp) {
+    var form = forms.find(function(f){ return (f.position_ids||[]).includes(emp.position_id) || f.position_id === emp.position_id; });
+    var gName = form ? form.group_name : 'Sin formulario';
+    if (!empsByGroup[gName]) empsByGroup[gName] = [];
+    empsByGroup[gName].push(emp);
+  });
+
+  var groupHtml = Object.entries(empsByGroup).map(function(entry, gIdx) {
+    var gName = entry[0], emps = entry[1];
+    var empItems = emps.map(function(emp) {
+      return '<label class="ns-emp-item ns-g-' + gIdx + '" style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:6px;cursor:pointer;font-size:13px;">' +
+        '<input type="checkbox" class="ns-emp-cb" value="' + emp.id + '" style="cursor:pointer;flex-shrink:0;">' +
+        '<span>' + escHtml(emp.full_name) + '</span>' +
+      '</label>';
+    }).join('');
+    return '<div style="margin-bottom:14px;">' +
+      '<label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;cursor:pointer;padding:4px 0;margin-bottom:4px;">' +
+        '<input type="checkbox" onchange="nsToggleGroup(' + gIdx + ',this.checked)" style="cursor:pointer;">' +
+        escHtml(gName) + ' <span style="font-weight:400;color:#9ca3af;">(' + emps.length + ')</span>' +
+      '</label>' +
+      '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:2px;padding-left:18px;">' +
+        empItems +
+      '</div>' +
+    '</div>';
+  }).join('');
+
   var modal = document.createElement('div');
   modal.className = 'modal-overlay';
-  modal.innerHTML = '<div class="modal" style="max-width:400px;">' +
-    '<div class="modal-header"><h3>Nueva sesión de evaluación</h3></div>' +
-    '<div class="modal-body">' +
-      '<div class="form-group"><label>Nombre *</label><input id="ns-name" value="' + meses[now.getMonth()] + ' ' + now.getFullYear() + '" /></div>' +
-      '<div class="row">' +
-        '<div class="form-group"><label>Mes *</label><input id="ns-month" type="number" min="1" max="12" value="' + (now.getMonth()+1) + '" /></div>' +
-        '<div class="form-group"><label>Año *</label><input id="ns-year" type="number" min="2024" max="2099" value="' + now.getFullYear() + '" /></div>' +
-      '</div>' +
+  modal.id = 'ns-modal';
+  modal.innerHTML =
+    '<div class="modal" style="max-width:900px;width:95vw;max-height:92vh;display:flex;flex-direction:column;">' +
+    '<div class="modal-header" style="flex-shrink:0;">' +
+      '<h3 style="margin:0;">📋 Nueva sesión de evaluación</h3>' +
     '</div>' +
-    '<div class="modal-footer">' +
-      '<button class="btn-ghost" onclick="this.closest(\'.modal-overlay\').remove()">Cancelar</button>' +
-      '<button class="btn-primary" onclick="guardarNuevaSesion()">💾 Crear sesión</button>' +
+    '<div class="modal-body" style="overflow-y:auto;flex:1;padding:20px;">' +
+
+      // Datos de sesión
+      '<div style="display:grid;grid-template-columns:1fr 120px 120px;gap:12px;margin-bottom:20px;">' +
+        '<div class="form-group" style="margin:0;"><label>Nombre de la sesión *</label>' +
+          '<input id="ns-name" value="' + meses[now.getMonth()] + ' ' + now.getFullYear() + '" style="width:100%;"/></div>' +
+        '<div class="form-group" style="margin:0;"><label>Mes *</label>' +
+          '<input id="ns-month" type="number" min="1" max="12" value="' + (now.getMonth()+1) + '" style="width:100%;"/></div>' +
+        '<div class="form-group" style="margin:0;"><label>Año *</label>' +
+          '<input id="ns-year" type="number" min="2024" max="2099" value="' + now.getFullYear() + '" style="width:100%;"/></div>' +
+      '</div>' +
+
+      // Asignación
+      '<div style="border-top:1px solid #e5e7eb;padding-top:16px;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px;">' +
+          '<div style="font-size:14px;font-weight:700;">👥 Asignar evaluador (opcional)</div>' +
+          '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<label style="font-size:13px;">Evaluador:</label>' +
+            '<select id="ns-eval-id" style="padding:6px 10px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;min-width:200px;">' +
+              '<option value="">— Sin asignar aún —</option>' + evalOpts +
+            '</select>' +
+            '<button class="btn-ghost" style="font-size:12px;" onclick="nsSelectAll(true)">✓ Todos</button>' +
+            '<button class="btn-ghost" style="font-size:12px;" onclick="nsSelectAll(false)">✗ Ninguno</button>' +
+          '</div>' +
+        '</div>' +
+        (groupHtml || '<div class="empty-state" style="padding:20px;"><p>Sin empleados activos</p></div>') +
+      '</div>' +
+
+    '</div>' +
+    '<div class="modal-footer" style="flex-shrink:0;">' +
+      '<button class="btn-ghost" onclick="document.getElementById(\'ns-modal\').remove()">Cancelar</button>' +
+      '<button class="btn-primary" onclick="guardarNuevaSesion()">💾 Crear sesión y asignar</button>' +
     '</div></div>';
+
   document.body.appendChild(modal);
-  modal.addEventListener('click', function(e) { if (e.target===modal) modal.remove(); });
+  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+}
+
+function nsToggleGroup(gIdx, checked) {
+  document.querySelectorAll('.ns-g-' + gIdx + ' .ns-emp-cb').forEach(function(cb){ cb.checked = checked; });
+}
+function nsSelectAll(checked) {
+  document.querySelectorAll('.ns-emp-cb').forEach(function(cb){ cb.checked = checked; });
 }
 
 async function guardarNuevaSesion() {
-  var name  = document.getElementById('ns-name') && document.getElementById('ns-name').value.trim();
-  var month = Number(document.getElementById('ns-month') && document.getElementById('ns-month').value);
-  var year  = Number(document.getElementById('ns-year') && document.getElementById('ns-year').value);
-  if (!name||!month||!year) { toast('Completa todos los campos','warning'); return; }
+  var name  = (document.getElementById('ns-name') || {}).value || '';
+  name = name.trim();
+  var month = Number((document.getElementById('ns-month') || {}).value);
+  var year  = Number((document.getElementById('ns-year') || {}).value);
+  if (!name || !month || !year) { toast('Completa nombre, mes y año', 'warning'); return; }
+
   try {
-    var s = await api('/api/rhh/evaluations/sessions',{method:'POST',body:JSON.stringify({name:name,month:month,year:year})});
+    var s = await api('/api/rhh/evaluations/sessions', { method:'POST', body: JSON.stringify({ name, month, year }) });
     evalSessionId = s.id;
-    var ov = document.querySelector('.modal-overlay'); if(ov) ov.remove();
-    toast('Sesión creada'); evaluacionesView();
-  } catch(err) { toast(err.message,'error'); }
+
+    // Asignar si hay evaluador y empleados seleccionados
+    var evalId = (document.getElementById('ns-eval-id') || {}).value;
+    var empIds = Array.from(document.querySelectorAll('.ns-emp-cb:checked')).map(function(cb){ return Number(cb.value); });
+    if (evalId && empIds.length > 0) {
+      await api('/api/rhh/evaluations/sessions/' + s.id + '/assign', {
+        method: 'POST',
+        body: JSON.stringify({ evaluador_id: Number(evalId), employee_ids: empIds })
+      });
+      toast('✅ Sesión creada y ' + empIds.length + ' empleado(s) asignado(s)');
+    } else {
+      toast('Sesión creada');
+    }
+
+    var ov = document.getElementById('ns-modal');
+    if (ov) ov.remove();
+    evalTab = 'asignar';
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 async function evalGuardarFila(sessionId, empId) {
