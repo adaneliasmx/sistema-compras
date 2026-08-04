@@ -81,12 +81,10 @@ async function initDb() {
       )
     `);
     console.log('[db-rhh] seedPath:', seedPath, '| existe:', fs.existsSync(seedPath));
-    // Colecciones estructurales que siempre se sincronizan desde el JSON del repo.
-    // El resto (usuarios, transacciones, solicitudes) se preserva de PostgreSQL.
-    const SYNC_FROM_SEED = [
-      'rhh_employees', 'rhh_departments', 'rhh_positions', 'rhh_shifts',
-      'rhh_holidays', 'rhh_vacation_rules', 'rhh_te_catalogos', 'rhh_doc_templates', 'rhh_eval_forms'
-    ];
+    // Solo rhh_employees se sincroniza desde el JSON en cada deploy.
+    // Los catálogos (departamentos, puestos, turnos, etc.) se preservan de PostgreSQL
+    // para que los cambios hechos en el menú Catálogos persistan entre deploys.
+    const SYNC_FROM_SEED = ['rhh_employees'];
 
     let seed = { ...EMPTY_DB };
     if (fs.existsSync(seedPath)) {
@@ -204,10 +202,7 @@ async function forceSeedFromJson() {
   if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
   if (!fs.existsSync(seedPath)) throw new Error('Archivo JSON seed no encontrado: ' + seedPath);
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  const SYNC_FROM_SEED = [
-    'rhh_employees', 'rhh_departments', 'rhh_positions', 'rhh_shifts',
-    'rhh_holidays', 'rhh_vacation_rules', 'rhh_te_catalogos', 'rhh_doc_templates', 'rhh_eval_forms'
-  ];
+  const SYNC_FROM_SEED = ['rhh_employees'];
   const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
   const existing = rows.length > 0 ? rows[0].data : { ...EMPTY_DB };
   for (const key of SYNC_FROM_SEED) {
