@@ -1,8 +1,12 @@
 const express = require('express');
 const fs   = require('fs');
 const path = require('path');
-const { read, write, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
+const XLSX = require('xlsx');
+const multer = require('multer');
+const { read, write, nextId, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
 const router = express.Router();
 
@@ -189,11 +193,14 @@ router.get('/:id', rhhAuthRequired, (req, res) => {
     .filter(r => r.employee_id === emp.id);
 
   res.json({
-    employee: enriched,
+    employee:    enriched,
     incidencias,
     aclaraciones,
     vacaciones,
     evaluaciones,
+    departments: db.rhh_departments || [],
+    positions:   db.rhh_positions   || [],
+    shifts:      db.rhh_shifts      || [],
   });
 });
 
@@ -258,5 +265,134 @@ router.patch('/vacaciones/:vid', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
   write(db);
   res.json({ ok: true });
 });
+
+// ── PATCH /api/rhh/catalogo/:id/info ──────────────────────────────────────────
+// Actualizar dept/puesto/turno/status de un empleado individual
+router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!db) return res.status(500).json({ error: 'Error leyendo catálogo' });
+
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily } = req.body || {};
+  if (department_id !== undefined) emp.department_id = department_id ? Number(department_id) : null;
+  if (position_id   !== undefined) emp.position_id   = position_id   ? Number(position_id)   : null;
+  if (shift_id      !== undefined) emp.shift_id      = shift_id      ? Number(shift_id)      : null;
+  if (status        !== undefined) emp.status        = status;
+  if (phone         !== undefined) emp.phone         = phone   || null;
+  if (email         !== undefined) emp.email         = email   || null;
+  if (start_date    !== undefined) emp.start_date    = start_date || null;
+  if (salary_daily  !== undefined) emp.salary_daily  = salary_daily ? Number(salary_daily) : null;
+  emp.updated_at = nowMxDate();
+
+  write(db);
+  res.json({ ok: true, employee: enrich(emp, db) });
+});
+
+// ── POST /api/rhh/catalogo/import-contpaq ─────────────────────────────────────
+// Importar Departamento y Puesto desde Excel de lista asistencia CONTPAQ i.
+// Formato esperado (primera hoja): columnas con encabezados o posicional semana 12:
+//   col 0 = No. Empleado  col 2 = Área/Departamento  col 4 = Puesto
+// Devuelve: { updated, created_depts, created_pos, skipped, rows }
+router.post(
+  '/import-contpaq',
+  rhhAuthRequired,
+  rhhRequireRole('admin', 'rh'),
+  upload.single('file'),
+  (req, res) => {
+    if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+
+    let wb;
+    try {
+      wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    } catch (e) {
+      return res.status(400).json({ error: 'Archivo no válido: ' + e.message });
+    }
+
+    // Leer primera hoja
+    const ws  = wb.Sheets[wb.SheetNames[0]];
+    const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+    // Detectar fila de datos: buscar fila con número de empleado numérico en col 0
+    // Soporta formato "lista asistencia semana" (encabezado en fila 3, datos desde fila 4)
+    // Y también formato CSV simple con encabezados: No, Nombre, Departamento, Puesto
+    const norm = v => String(v || '').trim();
+
+    let deptCol = 2, posCol = 4, numCol = 0;
+    // Detectar si hay encabezados explícitos en alguna fila
+    for (let i = 0; i < Math.min(5, all.length); i++) {
+      const row = all[i].map(norm).map(v => v.toLowerCase());
+      const dIdx = row.findIndex(v => v.includes('departamento') || v === 'área' || v === 'area');
+      const pIdx = row.findIndex(v => v.includes('puesto') || v.includes('cargo'));
+      const nIdx = row.findIndex(v => v.includes('no.') || v === 'no' || v === '#' || v.includes('empleado') || v.includes('número'));
+      if (dIdx >= 0 && pIdx >= 0) {
+        deptCol = dIdx; posCol = pIdx;
+        if (nIdx >= 0) numCol = nIdx;
+        break;
+      }
+    }
+
+    const db = readFresh();
+    const emps = db.rhh_employees || [];
+
+    let updated = 0, skipped = 0, created_depts = 0, created_pos = 0;
+    const log = [];
+
+    function findOrCreateDept(name) {
+      if (!name) return null;
+      const n = norm(name);
+      let d = (db.rhh_departments || []).find(x => norm(x.name).toLowerCase() === n.toLowerCase());
+      if (!d) {
+        d = { id: nextId(db.rhh_departments), name: n, description: '', created_at: nowMxDate() };
+        db.rhh_departments = [...(db.rhh_departments || []), d];
+        created_depts++;
+      }
+      return d.id;
+    }
+
+    function findOrCreatePos(name, deptId) {
+      if (!name) return null;
+      const n = norm(name);
+      let p = (db.rhh_positions || []).find(x => norm(x.name).toLowerCase() === n.toLowerCase());
+      if (!p) {
+        p = { id: nextId(db.rhh_positions), name: n, department_id: deptId || null, description: '', created_at: nowMxDate() };
+        db.rhh_positions = [...(db.rhh_positions || []), p];
+        created_pos++;
+      }
+      return p.id;
+    }
+
+    for (const row of all) {
+      const empNum = norm(row[numCol]).replace(/^0+/, '');
+      if (!empNum || !/^\d+$/.test(empNum)) continue;
+      const deptName = norm(row[deptCol]);
+      const posName  = norm(row[posCol]);
+      if (!deptName && !posName) { skipped++; continue; }
+
+      // Buscar empleado por número (con o sin ceros al frente)
+      const emp = emps.find(e => {
+        const en = norm(e.employee_number).replace(/^0+/, '');
+        return en === empNum;
+      });
+      if (!emp) { skipped++; log.push(`#${empNum}: no encontrado`); continue; }
+
+      const deptId = findOrCreateDept(deptName);
+      const posId  = findOrCreatePos(posName, deptId);
+
+      const changed = emp.department_id !== deptId || emp.position_id !== posId;
+      if (changed) {
+        emp.department_id = deptId;
+        emp.position_id   = posId;
+        emp.updated_at    = nowMxDate();
+        updated++;
+        log.push(`#${empNum} ${emp.full_name}: dept="${deptName}" puesto="${posName}"`);
+      }
+    }
+
+    write(db);
+    res.json({ ok: true, updated, created_depts, created_pos, skipped, log });
+  }
+);
 
 module.exports = router;

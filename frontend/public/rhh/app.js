@@ -9852,7 +9852,7 @@ async function catalogoEmpleadosView() {
   el.innerHTML = shell(`
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
     <h2 style="margin:0">👥 Catálogo Empleados</h2>
-    <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
       <select id="cat-status" class="form-select" style="width:auto">
         <option value="active">Activos</option>
         <option value="inactive">Inactivos</option>
@@ -9860,8 +9860,10 @@ async function catalogoEmpleadosView() {
       </select>
       <input id="cat-search" class="form-input" placeholder="Buscar nombre o #..." style="width:200px"/>
       <button class="btn-primary" onclick="catCargar()">🔍 Buscar</button>
+      <button class="btn-ghost" onclick="catImportContpaq()" title="Actualizar Departamento y Puesto desde lista de asistencia CONTPAQ i (Excel .xlsx)">📥 Cargar CONTPAQ i</button>
     </div>
   </div>
+  <div id="cat-import-msg" style="font-size:12px;color:#64748b;margin-bottom:8px"></div>
   <div id="cat-body"><div class="loading-overlay">Cargando catálogo...</div></div>
   `, 'catalogo-empleados');
 
@@ -10014,10 +10016,74 @@ async function catVerDetalle(empId) {
 
   <div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap">
     <div style="width:52px;height:52px;background:#eff6ff;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">👤</div>
-    <div>
+    <div style="flex:1">
       <h2 style="margin:0;font-size:20px">${esc(e.full_name)}</h2>
       <div style="color:#64748b;font-size:14px">#${e.employee_number} · ${esc(e.position_name||'—')} · ${esc(e.department_name||'—')}</div>
-      <div style="margin-top:4px"><span style="background:${statusColor}22;color:${statusColor};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600">${statusLabel}</span></div>
+      <div style="margin-top:4px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span style="background:${statusColor}22;color:${statusColor};padding:2px 10px;border-radius:20px;font-size:12px;font-weight:600">${statusLabel}</span>
+        <button class="btn-ghost btn-sm" onclick="catToggleEditForm(${e.id})">✏️ Editar datos</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Formulario de edición completa (oculto por defecto) -->
+  <div id="cat-edit-form-${e.id}" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px">
+    <div style="font-size:14px;font-weight:600;color:#1e293b;margin-bottom:14px">Editar información del empleado</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group">
+        <label class="form-label">Departamento</label>
+        <select id="edf-dept-${e.id}" class="form-input" style="font-size:13px">
+          <option value="">— Sin asignar —</option>
+          ${(data.departments||[]).sort((a,b)=>a.name.localeCompare(b.name)).map(d =>
+            `<option value="${d.id}" ${d.id===e.department_id?'selected':''}>${esc(d.name)}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Puesto</label>
+        <select id="edf-pos-${e.id}" class="form-input" style="font-size:13px">
+          <option value="">— Sin asignar —</option>
+          ${(data.positions||[]).sort((a,b)=>a.name.localeCompare(b.name)).map(p =>
+            `<option value="${p.id}" ${p.id===e.position_id?'selected':''}>${esc(p.name)}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Turno</label>
+        <select id="edf-shift-${e.id}" class="form-input" style="font-size:13px">
+          <option value="">— Sin asignar —</option>
+          ${(data.shifts||[]).map(s =>
+            `<option value="${s.id}" ${s.id===e.shift_id?'selected':''}>${esc(s.name)}</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Estatus</label>
+        <select id="edf-status-${e.id}" class="form-input" style="font-size:13px">
+          <option value="active"   ${e.status==='active'  ?'selected':''}>Activo</option>
+          <option value="inactive" ${e.status==='inactive'?'selected':''}>Inactivo</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Teléfono</label>
+        <input id="edf-phone-${e.id}" class="form-input" style="font-size:13px" value="${esc(e.phone||'')}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input id="edf-email-${e.id}" class="form-input" style="font-size:13px" type="email" value="${esc(e.email||'')}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Fecha Ingreso</label>
+        <input id="edf-ingreso-${e.id}" class="form-input" style="font-size:13px" type="date" value="${esc(e.start_date||'')}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Salario Diario</label>
+        <input id="edf-salario-${e.id}" class="form-input" style="font-size:13px" type="number" step="0.01" value="${e.salary_daily||''}"/>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button class="btn-primary btn-sm" onclick="catGuardarEmpleado(${e.id})">Guardar cambios</button>
+      <button class="btn-ghost btn-sm" onclick="catToggleEditForm(${e.id})">Cancelar</button>
     </div>
   </div>
 
@@ -10092,5 +10158,85 @@ async function catResetCredencial(empId) {
     toast(`Credenciales reseteadas. Usuario: ${r.username} / Pass inicial: ${r.password}`, 'success');
     catVerDetalle(empId);
   }
+}
+
+// Guardar dept/puesto individual
+async function catGuardarInfo(empId) {
+  const deptId = document.getElementById('edit-dept-' + empId)?.value;
+  const posId  = document.getElementById('edit-pos-'  + empId)?.value;
+  const msgEl  = document.getElementById('cat-info-msg-' + empId);
+  const r = await api(`/api/rhh/catalogo/${empId}/info`, {
+    method: 'PATCH',
+    body: JSON.stringify({ department_id: deptId || null, position_id: posId || null })
+  }).catch(() => null);
+  if (r && r.ok) {
+    if (msgEl) { msgEl.style.display = 'block'; msgEl.textContent = '✓ Guardado correctamente'; setTimeout(()=>{ msgEl.style.display='none'; }, 3000); }
+    toast('Departamento y puesto actualizados', 'success');
+  } else {
+    toast('Error al guardar', 'error');
+  }
+}
+
+// Mostrar/ocultar formulario de edición completa
+function catToggleEditForm(empId) {
+  const f = document.getElementById('cat-edit-form-' + empId);
+  if (!f) return;
+  f.style.display = f.style.display === 'none' ? 'block' : 'none';
+}
+
+// Guardar todos los campos editables del empleado
+async function catGuardarEmpleado(empId) {
+  const g = id => document.getElementById(id)?.value;
+  const payload = {
+    department_id: g('edf-dept-'+empId) || null,
+    position_id:   g('edf-pos-'+empId)  || null,
+    shift_id:      g('edf-shift-'+empId) || null,
+    status:        g('edf-status-'+empId),
+    phone:         g('edf-phone-'+empId),
+    email:         g('edf-email-'+empId),
+    start_date:    g('edf-ingreso-'+empId),
+    salary_daily:  g('edf-salario-'+empId) ? Number(g('edf-salario-'+empId)) : null,
+  };
+  const r = await api(`/api/rhh/catalogo/${empId}/info`, {
+    method: 'PATCH', body: JSON.stringify(payload)
+  }).catch(() => null);
+  if (r && r.ok) {
+    toast('Empleado actualizado', 'success');
+    catVerDetalle(empId);
+  } else {
+    toast('Error al guardar', 'error');
+  }
+}
+
+// Importar Departamento y Puesto desde lista CONTPAQ i (Excel)
+async function catImportContpaq() {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls,.csv';
+  input.onchange = async () => {
+    const file = input.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    const msgEl = document.getElementById('cat-import-msg');
+    if (msgEl) msgEl.textContent = 'Importando...';
+    try {
+      const res = await fetch('/api/rhh/catalogo/import-contpaq', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + state.token },
+        body: fd
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) { toast(d.error || 'Error al importar', 'error'); return; }
+      const msg = `✓ Actualizados: ${d.updated} | Nuevos depts: ${d.created_depts} | Nuevos puestos: ${d.created_pos} | Omitidos: ${d.skipped}`;
+      if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
+      toast(msg, 'success');
+      // Recargar catálogo
+      setTimeout(() => catalogoEmpleadosView(), 1200);
+    } catch (err) {
+      toast('Error de conexión', 'error');
+    }
+  };
+  input.click();
 }
 
