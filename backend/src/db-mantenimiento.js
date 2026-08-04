@@ -13,6 +13,7 @@ if (process.env.DATABASE_URL) {
     idleTimeoutMillis: 30000,
     max: 3
   });
+  pool.on('error', err => console.error('[db-mant] Pool error (idle client):', err.message));
 }
 
 let _cache = null;

@@ -15,6 +15,7 @@ if (process.env.DATABASE_URL) {
     idleTimeoutMillis: 30000,
     max: 3
   });
+  pool.on('error', err => console.error('[db-vales] Pool error (idle client):', err.message));
 }
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
