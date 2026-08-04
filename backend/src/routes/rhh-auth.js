@@ -7,18 +7,31 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
 // POST /api/rhh/auth/login
-// Busca primero en rhh_users; si no existe, acepta admins del módulo compras.
+// Busca primero en rhh_users; si no existe o la contraseña no coincide,
+// verifica credenciales del módulo compras como fallback.
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
-  const emailLow = String(email).toLowerCase();
+  const emailLow = String(email).toLowerCase().trim();
   const db = read();
+  const comprasDb = readCompras();
+
+  // Usuario vinculado de compras (mismo correo)
+  const comprasUser = (comprasDb.users || []).find(
+    u => u.email?.toLowerCase() === emailLow && u.active !== false
+  );
 
   // 1. Buscar en rhh_users
-  const rhhUser = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow.trim() && u.active !== false);
+  const rhhUser = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow && u.active !== false);
   if (rhhUser) {
-    const ok = bcrypt.compareSync(String(password), rhhUser.password_hash);
+    // Verificar con contraseña RHH
+    let ok = bcrypt.compareSync(String(password), rhhUser.password_hash);
+    // Fallback: si el usuario también existe en compras, aceptar esa contraseña
+    // (útil cuando super-admin asigna rol RHH a usuario ya existente en otros módulos)
+    if (!ok && comprasUser) {
+      ok = bcrypt.compareSync(String(password), comprasUser.password_hash);
+    }
     if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
     const token = jwt.sign(
       { sub: rhhUser.id, module: 'rhh', role: rhhUser.role, employee_id: rhhUser.employee_id },
@@ -31,14 +44,11 @@ router.post('/login', (req, res) => {
     });
   }
 
-  // 2. Fallback: admins del módulo compras (role_code admin o super_admin)
-  const comprasDb = readCompras();
-  const comprasUser = (comprasDb.users || []).find(
-    u => u.email?.toLowerCase() === emailLow && u.active !== false &&
-    (u.role_code === 'admin' || u.role_code === 'super_admin')
-  );
+  // 2. Fallback: usuario de compras con rol admin/super_admin (acceso total a RHH)
   if (!comprasUser) return res.status(401).json({ error: 'Credenciales inválidas' });
-
+  if (comprasUser.role_code !== 'admin' && comprasUser.role_code !== 'super_admin') {
+    return res.status(403).json({ error: 'No tienes acceso al módulo RHH. Solicita que te asignen un rol.' });
+  }
   const ok = bcrypt.compareSync(String(password), comprasUser.password_hash);
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
