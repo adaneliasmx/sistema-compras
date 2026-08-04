@@ -221,23 +221,28 @@ router.post('/unified-users', superAdminRequired, (req, res) => {
     if ((db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow)) {
       return res.status(400).json({ error: 'Ya existe un usuario con ese correo en RHH' });
     }
-    const employees = db.rhh_employees || [];
-    const empId = nextIdRhh(employees);
-    const today = new Date().toISOString().slice(0, 10);
-    employees.push({
-      id: empId, employee_number: 'EMP-' + String(empId).padStart(3, '0'),
-      full_name, email: emailLow, phone: null, department_id: null, position_id: null,
-      shift_id: rhh_role === 'empleado' ? 1 : 4, supervisor_id: null,
-      start_date: today, hire_date: today, birth_date: null, status: 'active',
-      contract_type: 'indefinido', base_salary: 0, daily_salary: null,
-      rfc: '', curp: '', nss: '', checker_number: '', primary_position_id: null,
-      enabled_positions: [], project: '', emergency_contact_name: '',
-      emergency_contact_phone: '', total_vacation_days: 15, photo: null,
-      created_at: new Date().toISOString()
-    });
-    db.rhh_employees = employees;
+    // Solo se crea registro de empleado para rol 'empleado'
+    // Admin/RH/Supervisor son usuarios del sistema, no empleados
+    let empId = null;
+    if (rhh_role === 'empleado') {
+      const employees = db.rhh_employees || [];
+      empId = nextIdRhh(employees);
+      const today = new Date().toISOString().slice(0, 10);
+      employees.push({
+        id: empId, employee_number: 'EMP-' + String(empId).padStart(3, '0'),
+        full_name, email: emailLow, phone: null, department_id: null, position_id: null,
+        shift_id: 1, supervisor_id: null,
+        start_date: today, hire_date: today, birth_date: null, status: 'active',
+        contract_type: 'indefinido', base_salary: 0, daily_salary: null,
+        rfc: '', curp: '', nss: '', checker_number: '', primary_position_id: null,
+        enabled_positions: [], project: '', emergency_contact_name: '',
+        emergency_contact_phone: '', total_vacation_days: 15, photo: null,
+        created_at: new Date().toISOString()
+      });
+      db.rhh_employees = employees;
+    }
     const user = {
-      id: nextIdRhh(db.rhh_users), full_name, email: emailLow,
+      id: nextIdRhh(db.rhh_users || []), full_name, email: emailLow,
       password_hash: pwdHash, role: rhh_role, employee_id: empId,
       active: true, created_at: new Date().toISOString()
     };

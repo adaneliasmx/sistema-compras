@@ -1,6 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { read, write, nextId, calcVacBalance } = require('../db-rhh');
+const { read, write, nextId, calcVacBalance, getSystemEmpIds } = require('../db-rhh');
 const { read: readCompras } = require('../db');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
@@ -35,7 +35,9 @@ function enrichEmployee(emp, db) {
 // GET /api/rhh/employees
 router.get('/', rhhAuthRequired, (req, res) => {
   const db = read();
-  let list = db.rhh_employees || [];
+  // Excluir empleados que son usuarios del sistema (admin/rh/supervisor sin nómina)
+  const systemIds = getSystemEmpIds();
+  let list = (db.rhh_employees || []).filter(e => !systemIds.has(Number(e.id)));
 
   const { department_id, shift_id, status, search } = req.query;
 

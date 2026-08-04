@@ -214,4 +214,14 @@ async function forceSeedFromJson() {
   return existing;
 }
 
-module.exports = { dbPath, seedPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance };
+// IDs de empleados que son usuarios del sistema (admin/rh/supervisor): excluir de listas de nómina/asistencia
+function getSystemEmpIds() {
+  const db = read();
+  return new Set(
+    (db.rhh_users || [])
+      .filter(u => u.role !== 'empleado' && u.employee_id != null)
+      .map(u => Number(u.employee_id))
+  );
+}
+
+module.exports = { dbPath, seedPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance, getSystemEmpIds };

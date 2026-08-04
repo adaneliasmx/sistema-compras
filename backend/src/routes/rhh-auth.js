@@ -16,7 +16,7 @@ router.post('/login', (req, res) => {
   const db = read();
 
   // 1. Buscar en rhh_users
-  const rhhUser = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow && u.active);
+  const rhhUser = (db.rhh_users || []).find(u => u.email?.toLowerCase() === emailLow.trim() && u.active !== false);
   if (rhhUser) {
     const ok = bcrypt.compareSync(String(password), rhhUser.password_hash);
     if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });

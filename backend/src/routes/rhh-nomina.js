@@ -6,7 +6,7 @@
 
 const express = require('express');
 const multer  = require('multer');
-const { read, write, nextId } = require('../db-rhh');
+const { read, write, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
@@ -136,7 +136,8 @@ router.get('/incidencias', rhhAuthRequired, (req, res) => {
   if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
 
   const lista     = db.rhh_incidencias_semanales || [];
-  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const _sysIds   = getSystemEmpIds();
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
   const depts     = db.rhh_departments || [];
 
   const result = employees.map(emp => {
@@ -290,7 +291,8 @@ router.get('/vac-solicitudes', rhhAuthRequired, (req, res) => {
   const { estado } = req.query;
   if (estado) lista = lista.filter(s => s.estado === estado);
 
-  const employees = db.rhh_employees  || [];
+  const _sysIds2  = getSystemEmpIds();
+  const employees = (db.rhh_employees || []).filter(e => !_sysIds2.has(Number(e.id)));
   const depts     = db.rhh_departments || [];
   const periodos  = (db.rhh_periodos || []).length > 0
     ? db.rhh_periodos
@@ -402,7 +404,8 @@ router.get('/te-solicitudes', rhhAuthRequired, (req, res) => {
   if (estado)     lista = lista.filter(s => s.estado     === estado);
   if (no_periodo) lista = lista.filter(s => s.no_periodo === Number(no_periodo));
 
-  const employees = db.rhh_employees || [];
+  const _sysIds3  = getSystemEmpIds();
+  const employees = (db.rhh_employees || []).filter(e => !_sysIds3.has(Number(e.id)));
   const periodos  = (db.rhh_periodos || []).length > 0
     ? db.rhh_periodos
     : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
@@ -1001,7 +1004,8 @@ router.get('/kpis', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) =
   if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
 
   const lista     = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
-  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const _sysIds   = getSystemEmpIds();
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
   const totalEmp  = employees.length;
   const capturados = lista.length;
 

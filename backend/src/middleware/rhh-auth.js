@@ -21,8 +21,9 @@ function rhhAuthRequired(req, res, next) {
     }
 
     const db = read();
-    const user = (db.rhh_users || []).find(u => u.id === payload.sub && u.active);
-    if (!user) return res.status(401).json({ error: 'Usuario inválido' });
+    // Comparación numérica explícita (JWT puede devolver sub como string o number)
+    const user = (db.rhh_users || []).find(u => Number(u.id) === Number(payload.sub) && u.active !== false);
+    if (!user) return res.status(401).json({ error: 'Usuario inválido o inactivo' });
     req.rhhUser = {
       id: user.id,
       full_name: user.full_name,

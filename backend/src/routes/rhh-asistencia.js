@@ -4,7 +4,7 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const express = require('express');
-const { read, write, nextId } = require('../db-rhh');
+const { read, write, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
@@ -79,7 +79,8 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id)
     : [];
 
-  const employees  = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const _sysIds    = getSystemEmpIds();
+  const employees  = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
   const assignedIds = new Set(assignments.map(a => a.employee_id));
 
   const enrich = e => {
@@ -286,8 +287,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
   }
 
+  const _sysIds2   = getSystemEmpIds();
   const employees  = (db.rhh_employees  || []).filter(e =>
-    e.status === 'active' && (!empIds || empIds.has(e.id))
+    e.status === 'active' && !_sysIds2.has(Number(e.id)) && (!empIds || empIds.has(e.id))
   );
   const positions  = db.rhh_positions  || [];
   const shifts     = db.rhh_shifts     || [];
