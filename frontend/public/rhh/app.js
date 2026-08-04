@@ -109,6 +109,7 @@ function escHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
+const esc = escHtml;
 
 // ── API helper ────────────────────────────────────────────────────────────────
 async function api(url, opts = {}) {
