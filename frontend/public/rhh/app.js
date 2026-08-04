@@ -151,22 +151,33 @@ function logout() {
 }
 
 async function login(email, password) {
+  const errEl = document.getElementById('login-err');
+  if (errEl) errEl.textContent = '';
   try {
-    const data = await api('/api/rhh/auth/login', {
+    const res = await fetch('/api/rhh/auth/login', {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-    if (!data) return;
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.error || `Error ${res.status}`;
+      if (errEl) errEl.textContent = msg;
+      toast(msg, 'error');
+      return;
+    }
     state.token = data.token;
     state.user = data.user;
     localStorage.setItem('rhh_token', data.token);
     await loadCatalogs();
-    const role = state.user.role;
+    const role = state.user?.role;
     const menu = MENU_BY_ROLE[role] || [];
     location.hash = menu.length ? menu[0][0] : 'dashboard';
     render();
   } catch (err) {
-    toast(err.message, 'error');
+    const msg = 'Error de conexión con el servidor';
+    if (errEl) errEl.textContent = msg;
+    toast(msg, 'error');
   }
 }
 
