@@ -5086,15 +5086,19 @@ async function evaluacionesView() {
     ]);
     if (!evalSessionId && sessions.length > 0) evalSessionId = sessions[sessions.length - 1].id;
 
-    const tabContent = evalTab === 'sesion'
-      ? await buildEvalSessionTab(sessions || [], forms || [])
-      : await buildEvalFormsTab(forms || []);
+    let tabContent;
+    if (evalTab === 'sesion')       tabContent = await buildEvalSessionTab(sessions || [], forms || []);
+    else if (evalTab === 'asignar') tabContent = await buildEvalAsignarTab(sessions || [], forms || []);
+    else if (evalTab === 'progreso') tabContent = await buildEvalProgresoTab(sessions || []);
+    else                             tabContent = await buildEvalFormsTab(forms || []);
 
     const content = `
       <div class="module-title"><h2>⭐ Evaluaciones de Desempeño</h2></div>
       <div class="tabs">
-        <button class="tab-btn ${evalTab==='sesion'?'active':''}" onclick="evalTab='sesion';evaluacionesView()">📋 Sesión</button>
-        <button class="tab-btn ${evalTab==='formularios'?'active':''}" onclick="evalTab='formularios';evaluacionesView()">📄 Formularios por Puesto</button>
+        <button class="tab-btn ${evalTab==='sesion'?'active':''}" onclick="evalTab='sesion';evaluacionesView()">📋 Sesiones</button>
+        <button class="tab-btn ${evalTab==='asignar'?'active':''}" onclick="evalTab='asignar';evaluacionesView()">👥 Asignar</button>
+        <button class="tab-btn ${evalTab==='progreso'?'active':''}" onclick="evalTab='progreso';evaluacionesView()">📊 Progreso</button>
+        <button class="tab-btn ${evalTab==='formularios'?'active':''}" onclick="evalTab='formularios';evaluacionesView()">📄 Formularios</button>
       </div>
       ${tabContent}`;
     el.innerHTML = shell(content, 'evaluaciones');
@@ -5230,6 +5234,200 @@ async function buildEvalFormsTab(forms) {
       </div>
     </div>
     ${formHtml}`;
+}
+
+// ── Tab: Asignar evaluadores ──────────────────────────────────────────────────
+async function buildEvalAsignarTab(sessions, forms) {
+  const selId = evalSessionId;
+  const sessionOpts = sessions.map(s =>
+    `<option value="${s.id}" ${s.id===selId?'selected':''}>${escHtml(s.name)} (${s.status==='open'?'Abierta':'Cerrada'})</option>`
+  ).join('');
+  const sessionSelector = `
+    <div class="card section" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-weight:600;">Sesión:</label>
+        ${sessions.length>0
+          ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="evalSessionId=Number(this.value);evalTab='asignar';evaluacionesView()">
+              <option value="">Seleccionar...</option>${sessionOpts}</select>`
+          : '<span class="small muted">Sin sesiones. Crea una primero en la pestaña Sesiones.</span>'}
+        <button class="btn-primary" style="font-size:13px;" onclick="openNuevaSesionModal()">+ Nueva sesión</button>
+      </div>
+    </div>`;
+
+  if (!selId) return sessionSelector + '<div class="card section"><div class="empty-state"><p>Selecciona una sesión para asignar evaluadores</p></div></div>';
+
+  let session = null;
+  try { session = await api('/api/rhh/evaluations/sessions/' + selId); } catch(e) {}
+
+  const employees = (state.employees || []).filter(e => e.active !== false);
+  const evaluators = (state.rhhUsers || []).filter(u => u.active !== false && u.role !== 'empleado');
+
+  // Agrupar empleados por grupo de formulario
+  const empsByGroup = {};
+  for (const emp of employees) {
+    const form = forms.find(f => (f.position_ids||[]).includes(emp.position_id) || f.position_id === emp.position_id);
+    const gName = form ? form.group_name : 'Sin formulario asignado';
+    if (!empsByGroup[gName]) empsByGroup[gName] = [];
+    empsByGroup[gName].push(emp);
+  }
+
+  const groupEntries = Object.entries(empsByGroup);
+  const groupCheckboxes = groupEntries.map(([gName, emps], gIdx) => {
+    const rows = emps.map(emp => {
+      const entry = session && (session.entries||[]).find(e => e.employee_id === emp.id);
+      const assignedUser = entry && entry.evaluador_id
+        ? evaluators.find(u => u.id === entry.evaluador_id)
+        : null;
+      const assignedLabel = assignedUser ? assignedUser.full_name : (entry && entry.evaluador_id ? `ID ${entry.evaluador_id}` : null);
+      return `<label class="asign-emp-item asign-g-${gIdx}" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border-radius:6px;${assignedLabel?'background:#f0fdf4;':'hover-bg:#f9fafb;'}">
+        <input type="checkbox" class="asign-emp-cb" value="${emp.id}" style="cursor:pointer;flex-shrink:0;">
+        <span style="flex:1">${escHtml(emp.full_name)}</span>
+        ${assignedLabel ? `<span style="font-size:10px;color:#059669;white-space:nowrap;">→ ${escHtml(assignedLabel)}</span>` : ''}
+      </label>`;
+    }).join('');
+    return `
+      <div style="margin-bottom:14px;">
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;cursor:pointer;margin-bottom:6px;">
+          <input type="checkbox" onchange="evalToggleGroup(${gIdx},this.checked)" style="cursor:pointer;">
+          ${escHtml(gName)} <span style="font-weight:400;color:#9ca3af;">(${emps.length})</span>
+        </label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px;padding-left:18px;">
+          ${rows}
+        </div>
+      </div>`;
+  }).join('');
+
+  const evalOpts = evaluators.map(u =>
+    `<option value="${u.id}">${escHtml(u.full_name)} — ${u.role}</option>`
+  ).join('');
+
+  const assignedCount = (session && session.entries || []).filter(e => e.evaluador_id).length;
+
+  return sessionSelector + `
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start;">
+      <div class="card section" style="position:sticky;top:80px;">
+        <h4 style="margin:0 0 12px;">👤 Evaluador a asignar</h4>
+        <select id="asign-eval-id" style="width:100%;padding:8px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;margin-bottom:10px;">
+          <option value="">— Seleccionar —</option>${evalOpts}
+        </select>
+        <button class="btn-primary" style="width:100%;margin-bottom:8px;" onclick="evalAsignar(${selId})">✅ Asignar seleccionados</button>
+        <button class="btn-ghost" style="width:100%;font-size:12px;" onclick="evalSelectAll(true)">Seleccionar todos</button>
+        <button class="btn-ghost" style="width:100%;font-size:12px;" onclick="evalSelectAll(false)">Deseleccionar todos</button>
+        <div style="font-size:12px;color:#6b7280;margin-top:10px;text-align:center;border-top:1px solid #e5e7eb;padding-top:8px;">
+          ${assignedCount} empleado(s) ya asignado(s)
+        </div>
+      </div>
+      <div class="card section">
+        <h4 style="margin:0 0 12px;">👥 Seleccionar empleados</h4>
+        ${employees.length===0
+          ? '<div class="empty-state"><p>Sin empleados activos</p></div>'
+          : groupCheckboxes}
+      </div>
+    </div>`;
+}
+
+// ── Tab: Progreso por evaluador ───────────────────────────────────────────────
+async function buildEvalProgresoTab(sessions) {
+  const selId = evalSessionId;
+  const sessionOpts = sessions.map(s =>
+    `<option value="${s.id}" ${s.id===selId?'selected':''}>${escHtml(s.name)}</option>`
+  ).join('');
+  const sessionSelector = `
+    <div class="card section" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="font-weight:600;">Sesión:</label>
+        ${sessions.length>0
+          ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="evalSessionId=Number(this.value);evalTab='progreso';evaluacionesView()">
+              <option value="">Seleccionar...</option>${sessionOpts}</select>`
+          : '<span class="small muted">Sin sesiones aún</span>'}
+      </div>
+    </div>`;
+
+  if (!selId) return sessionSelector + '<div class="card section"><div class="empty-state"><p>Selecciona una sesión para ver el progreso</p></div></div>';
+
+  try {
+    const progress = await api('/api/rhh/evaluations/sessions/' + selId + '/progress') || [];
+    if (progress.length === 0) {
+      return sessionSelector + '<div class="card section"><div class="empty-state"><p>Sin evaluadores asignados en esta sesión</p></div></div>';
+    }
+    const totalAll = progress.reduce((s,g) => s+g.total, 0);
+    const evalAll  = progress.reduce((s,g) => s+g.evaluated, 0);
+    const pctAll   = totalAll > 0 ? Math.round(evalAll/totalAll*100) : 0;
+    const colAll   = pctAll>=100?'#059669':pctAll>=50?'#f59e0b':'#2563eb';
+
+    const cards = progress.map(g => {
+      const pct   = g.total > 0 ? Math.round(g.evaluated/g.total*100) : 0;
+      const color = pct>=100?'#059669':pct>=50?'#f59e0b':'#2563eb';
+      const empRows = g.employees.map(e =>
+        `<tr>
+          <td style="font-size:12px;">${escHtml(e.employee_name)}</td>
+          <td style="text-align:center;">${e.evaluated
+            ? '<span class="badge" style="background:#059669;font-size:11px;">✓ Evaluado</span>'
+            : '<span style="font-size:11px;color:#9ca3af;">Pendiente</span>'}</td>
+        </tr>`
+      ).join('');
+      return `
+        <div class="card section" style="margin-bottom:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div>
+              <div style="font-size:15px;font-weight:700;">${escHtml(g.evaluador_nombre)}</div>
+              <div style="font-size:12px;color:#6b7280;">${g.evaluated} / ${g.total} evaluado(s)</div>
+            </div>
+            <div style="font-size:24px;font-weight:800;color:${color};">${pct}%</div>
+          </div>
+          <div style="height:6px;background:#e5e7eb;border-radius:3px;margin-bottom:12px;">
+            <div style="height:6px;background:${color};border-radius:3px;width:${pct}%;"></div>
+          </div>
+          <details>
+            <summary style="font-size:12px;color:#6b7280;cursor:pointer;">Ver ${g.total} empleado(s)</summary>
+            <div class="table-wrap" style="margin-top:8px;">
+              <table><thead><tr><th>Empleado</th><th style="text-align:center;">Estado</th></tr></thead>
+              <tbody>${empRows}</tbody></table>
+            </div>
+          </details>
+        </div>`;
+    }).join('');
+
+    return sessionSelector +
+      `<div class="card section" style="margin-bottom:16px;background:#f0f9ff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <div>
+            <div style="font-weight:700;font-size:15px;">Total general</div>
+            <div style="font-size:13px;color:#6b7280;">${progress.length} evaluador(es) · ${evalAll}/${totalAll} completadas</div>
+          </div>
+          <div style="font-size:28px;font-weight:800;color:${colAll};">${pctAll}%</div>
+        </div>
+        <div style="height:8px;background:#dbeafe;border-radius:4px;margin-top:8px;">
+          <div style="height:8px;background:${colAll};border-radius:4px;width:${pctAll}%;"></div>
+        </div>
+      </div>` +
+      cards;
+  } catch(err) {
+    return sessionSelector + `<div class="notice error">${escHtml(err.message)}</div>`;
+  }
+}
+
+function evalToggleGroup(gIdx, checked) {
+  document.querySelectorAll(`.asign-g-${gIdx} .asign-emp-cb`).forEach(cb => { cb.checked = checked; });
+}
+
+function evalSelectAll(checked) {
+  document.querySelectorAll('.asign-emp-cb').forEach(cb => { cb.checked = checked; });
+}
+
+async function evalAsignar(sessionId) {
+  var evalId = document.getElementById('asign-eval-id')?.value;
+  if (!evalId) { toast('Selecciona un evaluador', 'warning'); return; }
+  var empIds = Array.from(document.querySelectorAll('.asign-emp-cb:checked')).map(cb => Number(cb.value));
+  if (!empIds.length) { toast('Selecciona al menos un empleado', 'warning'); return; }
+  try {
+    var r = await api('/api/rhh/evaluations/sessions/'+sessionId+'/assign', {
+      method: 'POST',
+      body: JSON.stringify({ evaluador_id: Number(evalId), employee_ids: empIds })
+    });
+    toast('✅ ' + r.assigned + ' empleado(s) asignado(s)');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 function evalAddItem() {
@@ -5396,44 +5594,82 @@ async function supervisorEvalView() {
   try {
     var pending = await api('/api/rhh/evaluations/sessions/my-pending') || [];
     window._supPending = pending;
+
+    if (pending.length === 0) {
+      el.innerHTML = shell(
+        '<div class="module-title"><h2>⭐ Mis Evaluaciones</h2></div>' +
+        '<div class="card section"><div class="empty-state"><div class="empty-icon">✅</div><p>No tienes evaluaciones asignadas actualmente</p></div></div>',
+        'mis-evaluaciones');
+      return;
+    }
+
+    // Agrupar por sesión
     var grouped = {};
     pending.forEach(function(p) {
       if (!grouped[p.session_id]) grouped[p.session_id] = { name: p.session_name, items: [] };
       grouped[p.session_id].items.push(p);
     });
+
+    var totalDone = pending.filter(function(p){ return p.completed; }).length;
+    var totalAll  = pending.length;
+
     var sectionsHtml = Object.entries(grouped).map(function(entry) {
       var sid = entry[0], group = entry[1];
+      var done  = group.items.filter(function(p){ return p.completed; }).length;
+      var total = group.items.length;
+      var pct   = Math.round(done / total * 100);
+      var color = pct >= 100 ? '#059669' : pct >= 50 ? '#f59e0b' : '#2563eb';
+
       var rows = group.items.map(function(p) {
         var pidx = pending.indexOf(p);
-        return '<tr>' +
-          '<td style="font-size:13px;font-weight:600">' + escHtml(p.employee_name) + '</td>' +
-          '<td style="font-size:12px;color:#6b7280">' + escHtml(p.position_name) + '</td>' +
-          '<td style="text-align:center">' + (p.asistencias!=null?p.asistencias:'—') + '</td>' +
-          '<td style="text-align:center">' + (p.faltas!=null?p.faltas:'—') + '</td>' +
-          '<td style="text-align:center">' + (p.retardos!=null?p.retardos:'—') + '</td>' +
-          '<td style="text-align:center">' + (p.actas!=null?p.actas:'—') + '</td>' +
-          '<td style="text-align:center">' + (p.amonestaciones!=null?p.amonestaciones:'—') + '</td>' +
-          '<td style="text-align:center">' +
-            (p.completed
-              ? '<span class="badge" style="background:#059669;">✓ Completada</span>'
-              : '<button class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="openEvalStarsModal(window._supPending['+pidx+'])">⭐ Evaluar</button>') +
-          '</td></tr>';
+        var formBadge = p.form_group
+          ? '<span style="font-size:10px;background:#dbeafe;color:#1d4ed8;padding:1px 6px;border-radius:8px;margin-left:4px;">' + escHtml(p.form_group) + '</span>'
+          : '';
+        var evalBtn = !p.form_id
+          ? '<span style="font-size:11px;color:#9ca3af;">Sin formulario</span>'
+          : p.completed
+            ? '<span class="badge" style="background:#059669;">✓ Completada</span>'
+            : '<button class="btn-primary" style="font-size:12px;padding:5px 14px;" onclick="openEvalStarsModal(window._supPending[' + pidx + '])">⭐ Evaluar</button>';
+        return '<tr style="' + (p.completed ? 'background:#f0fdf4;' : '') + '">' +
+          '<td style="font-size:13px;font-weight:600;">' + escHtml(p.employee_name) + '</td>' +
+          '<td style="font-size:12px;color:#6b7280;">' + escHtml(p.position_name) + formBadge + '</td>' +
+          '<td style="text-align:center;">' + evalBtn + '</td>' +
+        '</tr>';
       }).join('');
-      return '<div class="module-title"><h3 style="font-size:16px;">📋 ' + escHtml(group.name) + '</h3></div>' +
-        '<div class="card section table-wrap" style="margin-bottom:16px;"><table>' +
-        '<thead><tr><th>Trabajador</th><th>Puesto</th>' +
-        '<th style="text-align:center">Asistencias</th><th style="text-align:center">Faltas</th>' +
-        '<th style="text-align:center">Retardos</th><th style="text-align:center">Actas</th>' +
-        '<th style="text-align:center">Amonest.</th><th style="text-align:center">Evaluación</th>' +
-        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+
+      return '<div style="margin-bottom:20px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+          '<h3 style="font-size:15px;font-weight:700;margin:0;">📋 ' + escHtml(group.name) + '</h3>' +
+          '<span style="font-size:14px;font-weight:700;color:' + color + ';">' + done + ' / ' + total + '</span>' +
+        '</div>' +
+        '<div style="height:4px;background:#e5e7eb;border-radius:2px;margin-bottom:12px;">' +
+          '<div style="height:4px;background:' + color + ';border-radius:2px;width:' + pct + '%;"></div>' +
+        '</div>' +
+        '<div class="card section table-wrap">' +
+          '<table><thead><tr>' +
+            '<th>Trabajador</th><th>Puesto</th><th style="text-align:center;">Evaluación</th>' +
+          '</tr></thead><tbody>' + rows + '</tbody></table>' +
+        '</div></div>';
     }).join('');
+
+    var pctGlobal = Math.round(totalDone / totalAll * 100);
+    var colorGlobal = pctGlobal >= 100 ? '#059669' : pctGlobal >= 50 ? '#f59e0b' : '#2563eb';
+
     el.innerHTML = shell(
-      '<div class="module-title"><h2>⭐ Mis Evaluaciones</h2></div>' +
-      (Object.keys(grouped).length===0
-        ? '<div class="card section"><div class="empty-state"><div class="empty-icon">✅</div><p>No tienes evaluaciones pendientes</p></div></div>'
-        : sectionsHtml),
+      '<div class="module-title">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+          '<h2 style="margin:0;">⭐ Mis Evaluaciones</h2>' +
+          '<span style="font-size:18px;font-weight:800;color:' + colorGlobal + ';">' + totalDone + ' / ' + totalAll + '</span>' +
+        '</div>' +
+        '<div style="height:5px;background:#e5e7eb;border-radius:3px;margin-top:8px;">' +
+          '<div style="height:5px;background:' + colorGlobal + ';border-radius:3px;width:' + pctGlobal + '%;"></div>' +
+        '</div>' +
+      '</div>' +
+      sectionsHtml,
       'mis-evaluaciones');
-  } catch(err) { el.innerHTML = shell('<div class="notice error">' + err.message + '</div>','mis-evaluaciones'); }
+  } catch(err) {
+    el.innerHTML = shell('<div class="notice error">' + err.message + '</div>', 'mis-evaluaciones');
+  }
 }
 
 function openEvalStarsModal(p) {

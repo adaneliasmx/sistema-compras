@@ -496,7 +496,7 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
 
   for (const session of sessions) {
     for (const entry of (session.entries || [])) {
-      if (entry.evaluador_id !== userId || !entry.saved) continue;
+      if (entry.evaluador_id !== userId) continue;
       const alreadyDone = results.some(
         r => r.session_id === session.id && r.employee_id === entry.employee_id
       );
@@ -577,6 +577,75 @@ router.patch('/sessions/:id/entries', rhhAuthRequired, rhhRequireRole('rh', 'adm
   res.json(session);
 });
 
+// POST /api/rhh/evaluations/sessions/:id/assign — asignación masiva de evaluador
+router.post('/sessions/:id/assign', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const { evaluador_id, employee_ids } = req.body || {};
+  if (!evaluador_id || !Array.isArray(employee_ids) || employee_ids.length === 0) {
+    return res.status(400).json({ error: 'evaluador_id y employee_ids requeridos' });
+  }
+  const sessions = db.rhh_eval_sessions || [];
+  const idx = sessions.findIndex(s => s.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
+
+  const session = { ...sessions[idx], entries: [...(sessions[idx].entries || [])] };
+  for (const empId of employee_ids) {
+    const eIdx = session.entries.findIndex(e => e.employee_id === Number(empId));
+    if (eIdx >= 0) {
+      session.entries[eIdx] = { ...session.entries[eIdx], evaluador_id: Number(evaluador_id) };
+    } else {
+      session.entries.push({
+        employee_id: Number(empId),
+        evaluador_id: Number(evaluador_id),
+        asistencias: null, faltas: null, retardos: null, actas: null, amonestaciones: null,
+        saved: false
+      });
+    }
+  }
+  sessions[idx] = session;
+  db.rhh_eval_sessions = sessions;
+  write(db);
+  res.json({ ok: true, assigned: employee_ids.length });
+});
+
+// GET /api/rhh/evaluations/sessions/:id/progress — progreso agrupado por evaluador
+router.get('/sessions/:id/progress', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+
+  const results = db.rhh_eval_results || [];
+  const allUsers = db.rhh_users || [];
+  const allEmployees = db.rhh_employees || [];
+
+  const byEvaluador = {};
+  for (const entry of (session.entries || [])) {
+    if (!entry.evaluador_id) continue;
+    const eid = entry.evaluador_id;
+    if (!byEvaluador[eid]) {
+      const u = allUsers.find(u => u.id === eid);
+      byEvaluador[eid] = {
+        evaluador_id: eid,
+        evaluador_nombre: u?.full_name || `ID ${eid}`,
+        employees: []
+      };
+    }
+    const done = results.some(r => r.session_id === session.id && r.employee_id === entry.employee_id);
+    const emp = allEmployees.find(e => e.id === entry.employee_id);
+    byEvaluador[eid].employees.push({
+      employee_id: entry.employee_id,
+      employee_name: emp?.full_name || '—',
+      evaluated: done
+    });
+  }
+
+  res.json(Object.values(byEvaluador).map(g => ({
+    ...g,
+    total: g.employees.length,
+    evaluated: g.employees.filter(e => e.evaluated).length
+  })));
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // RESULTADOS DE EVALUACIÓN
 // ══════════════════════════════════════════════════════════════════════════════
@@ -639,10 +708,15 @@ router.post('/eval-results', rhhAuthRequired, (req, res) => {
   const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(session_id));
   if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
 
-  const entry = (session.entries || []).find(
-    e => e.employee_id === Number(employee_id) && e.evaluador_id === req.rhhUser.id
-  );
-  if (!entry) return res.status(403).json({ error: 'No tienes asignada esta evaluación' });
+  const isAdminOrRh = ['rh', 'admin'].includes(req.rhhUser.role);
+  if (!isAdminOrRh) {
+    const uid = req.rhhUser.id;
+    const entry = (session.entries || []).find(
+      e => e.employee_id === Number(employee_id) &&
+           (e.evaluador_id === uid || Number(e.evaluador_id) === Number(uid))
+    );
+    if (!entry) return res.status(403).json({ error: 'No tienes asignada esta evaluación' });
+  }
 
   const already = (db.rhh_eval_results || []).find(
     r => r.session_id === Number(session_id) && r.employee_id === Number(employee_id)
