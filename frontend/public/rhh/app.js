@@ -5177,108 +5177,112 @@ async function buildEvalSessionTab(sessions, forms) {
 }
 
 async function buildEvalFormsTab(forms) {
-  if (!window._evalFormPosId && state.positions[0]) window._evalFormPosId = state.positions[0].id;
-  const selectedPosId = window._evalFormPosId;
+  if (!window._evalFormGroupName && forms[0]) window._evalFormGroupName = forms[0].group_name;
+  const selGroup = window._evalFormGroupName;
+  const POND_COLOR = { 3: '#dc2626', 2: '#f59e0b', 1: '#6b7280' };
   let formHtml = '';
-  if (selectedPosId) {
-    const form = forms.find(f => f.position_id === Number(selectedPosId));
+  if (selGroup) {
+    const form = forms.find(f => f.group_name === selGroup);
     window._evalFormItems = (form && form.items || []).map(i => Object.assign({}, i));
     window._evalFormId = form ? form.id : null;
     const items = window._evalFormItems;
-    const VPTS = { alto:5, medio:3, bajo:1 };
-    const totalPts = items.reduce((s,i) => s+(VPTS[i.valor]||0), 0);
+    const totalPts = items.reduce((s, i) => s + (i.ponderacion || 0), 0);
     const itemRows = items.map((it, idx) => `
       <tr>
         <td style="font-size:13px">${escHtml(it.name)}</td>
         <td style="text-align:center">
-          <select onchange="window._evalFormItems[${idx}].valor=this.value" style="font-size:12px;padding:3px;">
-            <option value="alto" ${it.valor==='alto'?'selected':''}>Alto (5pts)</option>
-            <option value="medio" ${it.valor==='medio'?'selected':''}>Medio (3pts)</option>
-            <option value="bajo" ${it.valor==='bajo'?'selected':''}>Bajo (1pt)</option>
+          <select onchange="window._evalFormItems[${idx}].ponderacion=Number(this.value)" style="font-size:12px;padding:3px;">
+            <option value="3" ${it.ponderacion===3?'selected':''}>3 — Muy Alta</option>
+            <option value="2" ${it.ponderacion===2?'selected':''}>2 — Media</option>
+            <option value="1" ${it.ponderacion===1?'selected':''}>1 — Muy Baja</option>
           </select>
         </td>
-        <td style="text-align:center">
-          <select onchange="window._evalFormItems[${idx}].tipo=this.value" style="font-size:12px;padding:3px;">
-            <option value="actividades_area" ${it.tipo==='actividades_area'?'selected':''}>Actividades de Área</option>
-            <option value="5s_seguridad_limpieza" ${it.tipo==='5s_seguridad_limpieza'?'selected':''}>5'S, Seg. y Limpieza</option>
-            <option value="conducta" ${it.tipo==='conducta'?'selected':''}>Conducta</option>
-          </select>
-        </td>
-        <td style="text-align:center;font-weight:700;color:#2563eb">${VPTS[it.valor]||0} pts</td>
+        <td style="text-align:center;font-weight:700;color:${POND_COLOR[it.ponderacion]||'#6b7280'}">${it.ponderacion||0}</td>
         <td><button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="evalDeleteItem(${idx})">✕</button></td>
       </tr>`).join('');
     formHtml = `
       <div class="card section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h4 style="margin:0">Ítems — Total: <strong style="color:#2563eb">${totalPts} pts</strong></h4>
+          <h4 style="margin:0">Ítems — Puntaje máx: <strong style="color:#2563eb">${totalPts} pts</strong></h4>
           <div style="display:flex;gap:8px;">
             <button class="btn-ghost" style="font-size:13px;" onclick="evalAddItem()">+ Agregar ítem</button>
-            <button class="btn-primary" style="font-size:13px;" onclick="evalSaveForm(${form?form.id:0},${selectedPosId})">💾 Guardar formulario</button>
+            <button class="btn-primary" style="font-size:13px;" onclick="evalSaveForm(${form?form.id:0})">💾 Guardar formulario</button>
           </div>
         </div>
         ${items.length===0
-          ? '<div class="empty-state"><p>Sin ítems. Agrega el primero.</p></div>'
-          : `<table><thead><tr><th>Ítem</th><th style="text-align:center">Valor</th><th style="text-align:center">Tipo</th><th style="text-align:center">Pts</th><th></th></tr></thead>
+          ? '<div class="empty-state"><p>Sin ítems. Carga las plantillas 2026 o agrega manualmente.</p></div>'
+          : `<table><thead><tr><th>Ítem</th><th style="text-align:center">Ponderación</th><th style="text-align:center">Pts</th><th></th></tr></thead>
               <tbody id="eval-items-tbody">${itemRows}</tbody>
-              <tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="3">TOTAL</td><td style="text-align:center;color:#2563eb">${totalPts}</td><td></td></tr></tfoot>
+              <tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="2">TOTAL (puntos máximos)</td><td style="text-align:center;color:#2563eb">${totalPts}</td><td></td></tr></tfoot>
              </table>`}
       </div>`;
   }
   return `
     <div class="card section" style="margin-bottom:16px;">
-      <div style="display:flex;align-items:center;gap:12px;">
-        <label style="font-weight:600;">Puesto:</label>
-        <select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="window._evalFormPosId=Number(this.value);evalTab='formularios';evaluacionesView()">
-          <option value="">Seleccionar puesto...</option>
-          ${state.positions.map(p => { const hf=forms.some(f=>f.position_id===p.id); return `<option value="${p.id}" ${p.id===Number(selectedPosId)?'selected':''}>${escHtml(p.name)}${hf?' ✓':''}</option>`; }).join('')}
-        </select>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <label style="font-weight:600;">Grupo / Puesto:</label>
+        ${forms.length>0
+          ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="window._evalFormGroupName=this.value;evalTab='formularios';evaluacionesView()">
+              ${forms.map(f => `<option value="${escHtml(f.group_name)}" ${f.group_name===selGroup?'selected':''}>${escHtml(f.group_name)} (${(f.items||[]).length} ítems)</option>`).join('')}
+             </select>`
+          : '<span class="small muted">Sin formularios. Carga las plantillas primero.</span>'}
+        <button class="btn-ghost" style="font-size:13px;" onclick="evalCargarPlantillas2026()">📋 Cargar Plantillas 2026</button>
       </div>
     </div>
     ${formHtml}`;
 }
 
 function evalAddItem() {
-  if (!window._evalFormPosId) { toast('Selecciona un puesto primero', 'warning'); return; }
+  if (!window._evalFormGroupName) { toast('Selecciona un grupo primero', 'warning'); return; }
   if (!window._evalFormItems) window._evalFormItems = [];
   const tbody = document.getElementById('eval-items-tbody');
   if (!tbody) { evaluacionesView(); return; }
   const idx = window._evalFormItems.length;
-  window._evalFormItems.push({ id: 0, name: '', valor: 'alto', tipo: 'actividades_area' });
+  window._evalFormItems.push({ id: 0, name: '', ponderacion: 2 });
   const row = document.createElement('tr');
   row.innerHTML = `
-    <td><input class="eval-item-name" data-idx="${idx}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;"/></td>
-    <td style="text-align:center"><select class="eval-item-valor" data-idx="${idx}" style="font-size:12px;padding:3px;">
-      <option value="alto">Alto (5pts)</option><option value="medio">Medio (3pts)</option><option value="bajo">Bajo (1pt)</option></select></td>
-    <td style="text-align:center"><select class="eval-item-tipo" data-idx="${idx}" style="font-size:12px;padding:3px;">
-      <option value="actividades_area">Actividades de Área</option>
-      <option value="5s_seguridad_limpieza">5'S, Seg. y Limpieza</option>
-      <option value="conducta">Conducta</option></select></td>
-    <td style="text-align:center;color:#2563eb;font-weight:700" id="eval-new-pts-${idx}">5 pts</td>
+    <td><input class="eval-item-name" data-idx="${idx}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;width:100%;"/></td>
+    <td style="text-align:center"><select class="eval-item-pond" data-idx="${idx}" style="font-size:12px;padding:3px;">
+      <option value="3">3 — Muy Alta</option>
+      <option value="2" selected>2 — Media</option>
+      <option value="1">1 — Muy Baja</option></select></td>
+    <td style="text-align:center;color:#f59e0b;font-weight:700" id="eval-new-pts-${idx}">2</td>
     <td><button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="window._evalFormItems.splice(${idx},1);this.closest('tr').remove()">✕</button></td>`;
   row.querySelector('.eval-item-name').oninput = function(e) { window._evalFormItems[idx].name = e.target.value; };
-  row.querySelector('.eval-item-valor').onchange = function(e) {
-    window._evalFormItems[idx].valor = e.target.value;
+  row.querySelector('.eval-item-pond').onchange = function(e) {
+    window._evalFormItems[idx].ponderacion = Number(e.target.value);
     const el = document.getElementById('eval-new-pts-'+idx);
-    if (el) el.textContent = ({alto:5,medio:3,bajo:1}[e.target.value]||0) + ' pts';
+    if (el) el.textContent = e.target.value;
   };
-  row.querySelector('.eval-item-tipo').onchange = function(e) { window._evalFormItems[idx].tipo = e.target.value; };
   tbody.appendChild(row);
+}
+
+async function evalCargarPlantillas2026() {
+  if (!confirm('¿Cargar las 12 plantillas de evaluación 2026? Esto reemplazará todos los formularios existentes.')) return;
+  try {
+    var r = await api('/api/rhh/evaluations/seed-forms', { method: 'POST' });
+    toast('✅ ' + r.total + ' plantillas cargadas');
+    window._evalFormGroupName = null;
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 function evalDeleteItem(idx) { if (window._evalFormItems) window._evalFormItems.splice(idx, 1); evaluacionesView(); }
 
-async function evalSaveForm(formId, positionId) {
-  if (!positionId) { toast('Selecciona un puesto', 'warning'); return; }
+async function evalSaveForm(formId) {
+  if (!window._evalFormGroupName) { toast('Selecciona un grupo', 'warning'); return; }
   const items = (window._evalFormItems || []).map(function(it, idx) {
     const ne = document.querySelector('.eval-item-name[data-idx="'+idx+'"]');
-    const ve = document.querySelector('.eval-item-valor[data-idx="'+idx+'"]');
-    const te = document.querySelector('.eval-item-tipo[data-idx="'+idx+'"]');
-    return { id: it.id||0, name: ne?ne.value.trim():it.name, valor: ve?ve.value:it.valor, tipo: te?te.value:it.tipo };
+    const pe = document.querySelector('.eval-item-pond[data-idx="'+idx+'"]');
+    return { id: it.id||0, name: ne?ne.value.trim():it.name, ponderacion: pe?Number(pe.value):(it.ponderacion||2) };
   }).filter(function(it) { return it.name; });
   if (!items.length) { toast('Agrega al menos un ítem', 'warning'); return; }
-  for (var i=0;i<items.length;i++) { if (!items[i].name||!items[i].valor||!items[i].tipo) { toast('Todos los ítems deben tener nombre, valor y tipo','warning'); return; } }
+  for (var i=0;i<items.length;i++) {
+    if (!items[i].name) { toast('Todos los ítems deben tener nombre','warning'); return; }
+    if (![1,2,3].includes(items[i].ponderacion)) { toast('Ponderación inválida (1, 2 o 3)','warning'); return; }
+  }
   try {
-    if (!formId) { var nf = await api('/api/rhh/evaluations/forms', { method:'POST', body: JSON.stringify({ position_id: positionId }) }); formId = nf.id; }
+    if (!formId) { var nf = await api('/api/rhh/evaluations/forms', { method:'POST', body: JSON.stringify({ group_name: window._evalFormGroupName }) }); formId = nf.id; }
     await api('/api/rhh/evaluations/forms/'+formId, { method:'PATCH', body: JSON.stringify({ items: items }) });
     toast('Formulario guardado'); evaluacionesView();
   } catch(err) { toast(err.message,'error'); }
@@ -5434,46 +5438,73 @@ async function supervisorEvalView() {
 
 function openEvalStarsModal(p) {
   if (!p) return;
-  var TIPO_LABEL = { actividades_area:'Actividades de Área', '5s_seguridad_limpieza':"5'S, Seg. y Limpieza", conducta:'Conducta' };
-  var VPTS = { alto:5, medio:3, bajo:1 };
-  var byTipo = {};
-  (p.form_items||[]).forEach(function(it) { if (!byTipo[it.tipo]) byTipo[it.tipo]=[]; byTipo[it.tipo].push(it); });
-  var tiposHtml = Object.entries(byTipo).map(function(entry) {
-    var tipo = entry[0], items = entry[1];
-    return '<div style="margin-bottom:20px;">' +
-      '<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#2563eb;border-bottom:2px solid #dbeafe;padding-bottom:6px;margin-bottom:12px;">' + (TIPO_LABEL[tipo]||tipo) + '</div>' +
-      items.map(function(it) {
-        var mp = VPTS[it.valor]||0;
-        return '<div style="margin-bottom:14px;padding:10px;background:#f9fafb;border-radius:8px;">' +
+  var POND_LABEL = { 3: 'Muy Alta', 2: 'Media', 1: 'Muy Baja' };
+  var POND_COLOR = { 3: '#dc2626', 2: '#f59e0b', 1: '#6b7280' };
+  var VALOR_LEGACY = { alto: 5, medio: 3, bajo: 1 };
+  var TIPO_LABEL = { actividades_area: 'Actividades de Área', '5s_seguridad_limpieza': "5'S, Seg. y Limpieza", conducta: 'Conducta' };
+
+  var useNewSystem = (p.form_items || []).some(function(it) { return it.ponderacion; });
+  var itemsHtml;
+
+  if (useNewSystem) {
+    // Sistema nuevo: lista plana con ponderacion 1/2/3
+    itemsHtml = '<div>' +
+      (p.form_items || []).map(function(it) {
+        var mp = it.ponderacion || VALOR_LEGACY[it.valor] || 0;
+        var pondColor = POND_COLOR[it.ponderacion] || '#6b7280';
+        var pondLabel = POND_LABEL[it.ponderacion] || it.valor || '';
+        return '<div style="margin-bottom:12px;padding:10px;background:#f9fafb;border-radius:8px;">' +
           '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
             '<span style="font-size:13px;font-weight:600;">' + escHtml(it.name) + '</span>' +
-            '<span style="font-size:11px;color:#6b7280;background:#e0e7ff;padding:2px 8px;border-radius:10px;">' + it.valor + ' · ' + mp + 'pts</span>' +
+            '<span style="font-size:11px;color:white;background:' + pondColor + ';padding:2px 8px;border-radius:10px;">Pond. ' + mp + ' · ' + pondLabel + '</span>' +
           '</div>' +
-          '<div class="star-rating" data-item-id="' + it.id + '" data-max-pts="' + mp + '" style="display:flex;gap:8px;">' +
-            [1,2,3,4,5].map(function(s){ return '<span class="star" data-val="'+s+'" onclick="setStarRating(this.closest(\'.star-rating\'),'+s+')" style="font-size:28px;cursor:pointer;color:#d1d5db;transition:color .15s;">★</span>'; }).join('') +
+          '<div class="star-rating" data-item-id="' + it.id + '" data-max-pts="' + mp + '" style="display:flex;gap:6px;">' +
+            [1,2,3,4,5].map(function(s){ return '<span class="star" data-val="'+s+'" onclick="setStarRating(this.closest(\'.star-rating\'),'+s+')" style="font-size:26px;cursor:pointer;color:#d1d5db;transition:color .15s;">★</span>'; }).join('') +
           '</div>' +
           '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Puntos: <span id="star-pts-' + it.id + '">0</span> / ' + mp + '</div>' +
         '</div>';
-      }).join('') +
-    '</div>';
-  }).join('');
+      }).join('') + '</div>';
+  } else {
+    // Sistema legacy: agrupado por tipo
+    var byTipo = {};
+    (p.form_items || []).forEach(function(it) { var t = it.tipo || 'otro'; if (!byTipo[t]) byTipo[t] = []; byTipo[t].push(it); });
+    itemsHtml = Object.entries(byTipo).map(function(entry) {
+      var tipo = entry[0], its = entry[1];
+      return '<div style="margin-bottom:20px;">' +
+        '<div style="font-size:12px;font-weight:700;text-transform:uppercase;color:#2563eb;border-bottom:2px solid #dbeafe;padding-bottom:6px;margin-bottom:12px;">' + (TIPO_LABEL[tipo] || tipo) + '</div>' +
+        its.map(function(it) {
+          var mp = VALOR_LEGACY[it.valor] || 0;
+          return '<div style="margin-bottom:14px;padding:10px;background:#f9fafb;border-radius:8px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">' +
+              '<span style="font-size:13px;font-weight:600;">' + escHtml(it.name) + '</span>' +
+              '<span style="font-size:11px;color:#6b7280;background:#e0e7ff;padding:2px 8px;border-radius:10px;">' + it.valor + ' · ' + mp + ' pts</span>' +
+            '</div>' +
+            '<div class="star-rating" data-item-id="' + it.id + '" data-max-pts="' + mp + '" style="display:flex;gap:8px;">' +
+              [1,2,3,4,5].map(function(s){ return '<span class="star" data-val="'+s+'" onclick="setStarRating(this.closest(\'.star-rating\'),'+s+')" style="font-size:28px;cursor:pointer;color:#d1d5db;transition:color .15s;">★</span>'; }).join('') +
+            '</div>' +
+            '<div style="font-size:11px;color:#6b7280;margin-top:4px;">Puntos: <span id="star-pts-' + it.id + '">0</span> / ' + mp + '</div>' +
+          '</div>';
+        }).join('') + '</div>';
+    }).join('');
+  }
+
   var modal = document.createElement('div');
   modal.className = 'modal-overlay';
   modal.innerHTML =
-    '<div class="modal" style="max-width:600px;max-height:90vh;overflow-y:auto;">' +
+    '<div class="modal" style="max-width:620px;max-height:90vh;overflow-y:auto;">' +
     '<div class="modal-header" style="position:sticky;top:0;background:white;z-index:1;padding-bottom:12px;border-bottom:1px solid #e5e7eb;">' +
       '<h3 style="margin:0;">⭐ Evaluación: ' + escHtml(p.employee_name) + '</h3>' +
-      '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + escHtml(p.position_name) + ' · ' + escHtml(p.session_name) + '</div>' +
+      '<div style="font-size:12px;color:#6b7280;margin-top:4px;">' + escHtml(p.position_name) + ' · ' + escHtml(p.session_name) + (p.form_group ? ' · <b>' + escHtml(p.form_group) + '</b>' : '') + '</div>' +
     '</div>' +
     '<div class="modal-body">' +
       '<div style="background:#f0f9ff;border-radius:8px;padding:12px;margin-bottom:16px;font-size:13px;display:flex;gap:16px;flex-wrap:wrap;">' +
-        '<span>✅ Asistencias: <b>' + (p.asistencias!=null?p.asistencias:'—') + '</b></span>' +
-        '<span>❌ Faltas: <b>' + (p.faltas!=null?p.faltas:'—') + '</b></span>' +
-        '<span>⏰ Retardos: <b>' + (p.retardos!=null?p.retardos:'—') + '</b></span>' +
-        '<span>📋 Actas: <b>' + (p.actas!=null?p.actas:'—') + '</b></span>' +
-        '<span>⚠️ Amonest.: <b>' + (p.amonestaciones!=null?p.amonestaciones:'—') + '</b></span>' +
+        '<span>✅ Asistencias: <b>' + (p.asistencias != null ? p.asistencias : '—') + '</b></span>' +
+        '<span>❌ Faltas: <b>' + (p.faltas != null ? p.faltas : '—') + '</b></span>' +
+        '<span>⏰ Retardos: <b>' + (p.retardos != null ? p.retardos : '—') + '</b></span>' +
+        '<span>📋 Actas: <b>' + (p.actas != null ? p.actas : '—') + '</b></span>' +
+        '<span>⚠️ Amonest.: <b>' + (p.amonestaciones != null ? p.amonestaciones : '—') + '</b></span>' +
       '</div>' +
-      (p.form_items && p.form_items.length ? tiposHtml : '<div class="empty-state"><p>Sin ítems de evaluación para este puesto</p></div>') +
+      (p.form_items && p.form_items.length ? itemsHtml : '<div class="empty-state"><p>Sin ítems de evaluación para este puesto</p></div>') +
       '<div style="background:#f0fdf4;border-radius:8px;padding:12px;margin-top:16px;display:flex;justify-content:space-between;align-items:center;">' +
         '<span style="font-weight:600;">Puntos obtenidos:</span>' +
         '<span id="eval-total-pts" style="font-size:18px;font-weight:700;color:#059669;">0 / ' + p.form_total_points + '</span>' +
@@ -5484,7 +5515,7 @@ function openEvalStarsModal(p) {
       '<button class="btn-primary" onclick="submitStarsEvaluation(' + p.session_id + ',' + p.employee_id + ',' + p.form_id + ',' + p.form_total_points + ')">✅ Confirmar evaluación</button>' +
     '</div></div>';
   document.body.appendChild(modal);
-  modal.addEventListener('click', function(e){ if(e.target===modal) modal.remove(); });
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
 }
 
 function setStarRating(container, val) {
