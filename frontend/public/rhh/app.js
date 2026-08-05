@@ -1420,8 +1420,10 @@ function _renderIncSem() {
     <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <button class="btn-primary" onclick="guardarTodasIncidencias()">💾 Guardar período</button>
       <button class="btn-ghost" onclick="exportarIncidencias()">⬇ Exportar CSV</button>
+      <button class="btn-ghost" style="color:#0369a1;" onclick="incImportarPdfClick()">📄 Importar Lista de Raya PDF</button>
       <button class="btn-ghost" style="color:#7c3aed;" onclick="location.hash='#autorizaciones'">✅ Autorizaciones pendientes</button>
     </div>
+    <div id="inc-pdf-msg" style="margin-bottom:8px;"></div>
 
     <div class="card section" style="overflow-x:auto;padding:0;">
       ${incSemRows.length === 0
@@ -1459,6 +1461,130 @@ function _renderIncSem() {
   `;
 
   el.innerHTML = shell(content, 'incidencias');
+}
+
+// ── Importar Lista de Raya PDF ────────────────────────────────────────────────
+
+function incImportarPdfClick() {
+  // Crear input file dinámico y dispararlo
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'application/pdf,.pdf';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.onchange = async () => {
+    const file = input.files[0];
+    document.body.removeChild(input);
+    if (!file) return;
+    await incImportarPdf(file);
+  };
+  input.click();
+}
+
+async function incImportarPdf(file) {
+  const msgEl = document.getElementById('inc-pdf-msg');
+  if (msgEl) msgEl.innerHTML = '<span style="color:#6b7280;font-size:13px;">⏳ Procesando PDF… puede tardar unos segundos.</span>';
+
+  try {
+    const form = new FormData();
+    form.append('pdf', file);
+    if (incSemPeriodo) form.append('no_periodo', String(incSemPeriodo));
+
+    const res = await fetch('/api/rhh/nomina/importar-pdf', {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + state.token },
+      body: form,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const msg = data.error || `Error ${res.status}`;
+      if (msgEl) msgEl.innerHTML = `<span style="color:#b91c1c;font-size:13px;">❌ ${escHtml(msg)}</span>`;
+      toast(msg, 'error');
+      return;
+    }
+
+    _renderPdfResult(data);
+  } catch (err) {
+    const msg = 'Error de conexión: ' + err.message;
+    if (msgEl) msgEl.innerHTML = `<span style="color:#b91c1c;font-size:13px;">❌ ${escHtml(msg)}</span>`;
+    toast(msg, 'error');
+  }
+}
+
+function _renderPdfResult(data) {
+  const msgEl = document.getElementById('inc-pdf-msg');
+  if (!msgEl) return;
+
+  const per = data.header?.no_periodo ? `Período ${data.header.no_periodo} · ${data.header.fecha_inicio || ''} → ${data.header.fecha_fin || ''}` : '';
+
+  if (data.mode === 'import') {
+    // Modo importación exitosa
+    let html = `
+      <div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:14px 16px;font-size:13px;">
+        <div style="font-weight:700;color:#15803d;margin-bottom:6px;">✅ Importación completada — ${per}</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px;">
+          <span>📄 Total PDF: <strong>${data.total_pdf}</strong></span>
+          <span>💾 Importados: <strong>${data.importados}</strong></span>
+          <span style="color:#b45309;">⬆ Altas detectadas: <strong>${data.altas?.length || 0}</strong></span>
+          <span style="color:#b91c1c;">⬇ Posibles bajas: <strong>${data.posibles_bajas?.length || 0}</strong></span>
+        </div>`;
+
+    if (data.altas?.length) {
+      html += `<details style="margin-top:4px;"><summary style="cursor:pointer;color:#b45309;font-weight:600;">▸ Altas detectadas (no están en catálogo)</summary><ul style="margin:6px 0 0 16px;padding:0;">`;
+      data.altas.forEach(a => { html += `<li>${escHtml(a.no)} ${escHtml(a.nombre)} · ${escHtml(a.dept || '')} · ${escHtml(a.puesto || '')}</li>`; });
+      html += '</ul></details>';
+    }
+    if (data.posibles_bajas?.length) {
+      html += `<details style="margin-top:4px;"><summary style="cursor:pointer;color:#b91c1c;font-weight:600;">▸ Posibles bajas (activos en DB, no en PDF)</summary><ul style="margin:6px 0 0 16px;padding:0;">`;
+      data.posibles_bajas.forEach(e => { html += `<li>${escHtml(e.employee_number)} ${escHtml(e.full_name)}</li>`; });
+      html += '</ul></details>';
+    }
+    if (data.log?.length) {
+      html += `<details style="margin-top:4px;"><summary style="cursor:pointer;color:#6b7280;font-size:12px;">▸ Log detallado (${data.log.length})</summary><pre style="font-size:11px;margin:6px 0 0;white-space:pre-wrap;">${escHtml(data.log.join('\n'))}</pre></details>`;
+    }
+    html += `<button class="btn-ghost" style="margin-top:8px;font-size:12px;" onclick="this.closest('div[style]').remove();_loadIncSem()">🔄 Recargar tabla</button>`;
+    html += '</div>';
+    msgEl.innerHTML = html;
+    toast(`Importación S${data.no_periodo}: ${data.importados} registros guardados`, 'success');
+
+  } else if (data.mode === 'compare') {
+    // Modo comparación
+    const conDiff = data.con_diff || 0;
+    const color = conDiff === 0 ? '#15803d' : '#b45309';
+    let html = `
+      <div style="background:#fefce8;border:1px solid #fde68a;border-radius:8px;padding:14px 16px;font-size:13px;">
+        <div style="font-weight:700;color:${color};margin-bottom:6px;">🔍 Comparación — ${per} (período ya existe en DB)</div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:8px;">
+          <span>📄 Total PDF: <strong>${data.total_pdf}</strong></span>
+          <span style="color:${conDiff ? '#b91c1c' : '#15803d'};">⚠ Con diferencias: <strong>${conDiff}</strong></span>
+          <span style="color:#6b7280;">❓ No encontrados: <strong>${data.no_encontrados || 0}</strong></span>
+          <span style="color:#b91c1c;">⬇ Posibles bajas: <strong>${data.posibles_bajas?.length || 0}</strong></span>
+        </div>`;
+
+    const diffsWithDiff = (data.diffs || []).filter(d => d.hasDiff || !d.encontrado);
+    if (diffsWithDiff.length === 0) {
+      html += '<div style="color:#15803d;font-weight:600;">✓ Sin diferencias — el PDF coincide con la base de datos.</div>';
+    } else {
+      html += '<div style="overflow-x:auto;"><table style="font-size:11px;border-collapse:collapse;min-width:500px;">';
+      html += '<thead><tr style="background:#fef3c7;"><th style="padding:4px 8px;text-align:left;">No.</th><th style="padding:4px 8px;text-align:left;">Nombre</th><th style="padding:4px 8px;text-align:left;">Diferencias</th></tr></thead><tbody>';
+      diffsWithDiff.forEach(d => {
+        const diffs = [...d.campos, ...(d.conceptDiffs || [])].filter(c => c.diff);
+        const diffText = diffs.map(c => `${c.campo}: PDF=${c.pdf} / DB=${c.db}`).join('; ') || (d.encontrado ? 'OK' : '❌ No en catálogo');
+        html += `<tr style="border-bottom:1px solid #fde68a;"><td style="padding:3px 8px;">${escHtml(d.no)}</td><td style="padding:3px 8px;">${escHtml(d.nombre)}</td><td style="padding:3px 8px;color:#92400e;">${escHtml(diffText)}</td></tr>`;
+      });
+      html += '</tbody></table></div>';
+    }
+
+    if (data.posibles_bajas?.length) {
+      html += `<details style="margin-top:6px;"><summary style="cursor:pointer;color:#b91c1c;font-weight:600;">▸ Posibles bajas (${data.posibles_bajas.length})</summary><ul style="margin:6px 0 0 16px;padding:0;">`;
+      data.posibles_bajas.forEach(e => { html += `<li>${escHtml(e.employee_number)} ${escHtml(e.full_name)}</li>`; });
+      html += '</ul></details>';
+    }
+    html += `<button class="btn-ghost" style="margin-top:8px;font-size:12px;" onclick="this.closest('div[style]').remove()">✕ Cerrar</button>`;
+    html += '</div>';
+    msgEl.innerHTML = html;
+    toast(`Comparación S${data.no_periodo}: ${conDiff} diferencias encontradas`, conDiff ? 'warning' : 'success');
+  }
 }
 
 // Activa/desactiva un campo booleano para todos los empleados en la tabla

@@ -823,7 +823,302 @@ router.all('/migrar-incidencias', rhhAuthRequired, rhhRequireRole('admin'), (req
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// FASE 3 — Comparación PDF Lista de Raya
+// FASE 3 — Import / Comparación PDF Lista de Raya
+// ══════════════════════════════════════════════════════════════════════════════
+
+// Carga el extractor con coordenadas (pdfjs-dist) de forma diferida
+function getExtractor() {
+  try {
+    return require('../utils/pdf-lista-raya');
+  } catch (e) {
+    return null;
+  }
+}
+
+// Códigos de conceptos CONTPAQ i → campos del modelo interno
+const CODE_TO_FIELD = {
+  '4':   'horas_extras',        // Tiempo Extra
+  '15':  'bono_puntualidad',    // Bono Puntualidad
+  '7':   'bono_eficiencia',     // Bono Eficiencia
+  '139': 'bono_instructor',     // Bono Instructor
+  '10':  'prima_dominical',     // Prima Dominical
+  '19':  'vacaciones_importe',  // Vacaciones
+  '12':  'gratificacion',       // Gratificación
+  '32':  'despensa',            // Despensa (informativa)
+};
+
+function conceptsToFields(percepciones) {
+  const out = {};
+  for (const [col, imp] of Object.entries(percepciones)) {
+    const code = col.split(' ')[0];
+    const field = CODE_TO_FIELD[code];
+    if (field) out[field] = imp;
+  }
+  return out;
+}
+
+// ── POST /api/rhh/nomina/importar-pdf ─────────────────────────────────────────
+// Sube PDF Lista de Raya CONTPAQ i:
+//   - Si el período YA existe en DB → sólo compara, devuelve diffs
+//   - Si es NUEVO → crea rhh_incidencias_semanales, actualiza salario/dept/puesto,
+//     detecta altas y posibles bajas
+router.post('/importar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
+  upload.single('pdf'),
+  async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Se requiere el archivo PDF (campo: pdf)' });
+
+      const extractor = getExtractor();
+      if (!extractor) return res.status(503).json({ error: 'Módulo pdf-lista-raya no disponible' });
+
+      const { extractListaRaya, PERC_INFO, DED_INFO, cleanNum } = extractor;
+
+      // ── Parsear PDF ──
+      let parsed;
+      try {
+        parsed = await extractListaRaya(req.file.buffer);
+      } catch (parseErr) {
+        console.error('[importar-pdf] parse error:', parseErr.message);
+        return res.status(422).json({ error: 'No se pudo leer el PDF: ' + parseErr.message });
+      }
+
+      const { header, employees: pdfEmps } = parsed;
+
+      // Número de período desde el PDF o desde el body como override
+      const noPeriodo = Number(req.body.no_periodo) || Number(header.no_periodo) || null;
+      if (!noPeriodo) {
+        return res.status(400).json({ error: 'No se pudo detectar el número de período. Envíalo como no_periodo en el body.' });
+      }
+
+      const db          = read();
+      const empsCat     = db.rhh_employees  || [];
+      const depts       = db.rhh_departments || [];
+      const positions   = db.rhh_positions   || [];
+      const incList     = db.rhh_incidencias_semanales || [];
+      const sysIds      = getSystemEmpIds();
+
+      const periodoExist = incList.some(i => i.no_periodo === noPeriodo);
+
+      // ── HELPERS ──
+
+      // Busca empleado por employee_number (acepta con/sin ceros a la izquierda)
+      function findEmpByClave(clave) {
+        const stripped = String(clave).replace(/^0+/, '') || '0';
+        return empsCat.find(e =>
+          !sysIds.has(Number(e.id)) &&
+          (String(e.employee_number) === String(clave) ||
+           String(e.employee_number).replace(/^0+/, '') === stripped)
+        ) || null;
+      }
+
+      function findOrCreateDept(name) {
+        if (!name) return null;
+        let d = depts.find(d => d.name.toLowerCase() === name.toLowerCase());
+        if (!d) {
+          d = { id: depts.length ? Math.max(...depts.map(x => x.id)) + 1 : 1, name };
+          depts.push(d);
+        }
+        return d;
+      }
+
+      function findOrCreatePos(name) {
+        if (!name) return null;
+        let p = positions.find(p => p.name.toLowerCase() === name.toLowerCase());
+        if (!p) {
+          p = { id: positions.length ? Math.max(...positions.map(x => x.id)) + 1 : 1, name, code: null, description: null };
+          positions.push(p);
+        }
+        return p;
+      }
+
+      // ── MODO COMPARACIÓN (período ya existe) ──
+      if (periodoExist) {
+        const diffs = [];
+        const CAMPOS = [
+          { pdfKey: 'dias_pag',   dbKey: 'dias_pagados',      label: 'Días pagados' },
+          { pdfKey: 'hrs_extra',  dbKey: 'horas_extras_total', label: 'Hrs extras' },
+          { pdfKey: 'sal_diario', dbKey: 'salary_daily',       label: 'Sal. diario', isEmpField: true },
+        ];
+
+        for (const pEmp of pdfEmps) {
+          const emp = findEmpByClave(pEmp.no);
+          const inc = emp ? incList.find(i => i.no_periodo === noPeriodo && i.employee_id === emp.id) : null;
+
+          const campos = CAMPOS.map(c => {
+            const pdfVal = pEmp[c.pdfKey] ?? null;
+            const dbVal  = c.isEmpField ? (emp ? (emp[c.dbKey] ?? null) : null) : (inc ? (inc[c.dbKey] ?? null) : null);
+            const diff   = pdfVal !== null && dbVal !== null ? Math.abs(pdfVal - dbVal) > 0.01 : (pdfVal !== null || dbVal !== null);
+            return { campo: c.label, pdf: pdfVal, db: dbVal, diff };
+          });
+
+          // Conceptos con diferencia
+          const conceptDiffs = [];
+          const fields = conceptsToFields(pEmp.percepciones);
+          if (inc) {
+            for (const [fld, pdfVal] of Object.entries(fields)) {
+              const dbVal = inc[fld] ?? 0;
+              if (Math.abs((pdfVal || 0) - (dbVal || 0)) > 0.01) {
+                conceptDiffs.push({ campo: fld, pdf: pdfVal, db: dbVal });
+              }
+            }
+          }
+
+          diffs.push({
+            no: pEmp.no,
+            nombre: pEmp.nombre,
+            dept_pdf: pEmp.dept_nm,
+            emp_id: emp?.id || null,
+            encontrado: !!emp,
+            hasDiff: campos.some(c => c.diff) || conceptDiffs.length > 0,
+            campos,
+            conceptDiffs,
+            total_perc_pdf: pEmp.total_perc_pdf,
+            total_ded_pdf: pEmp.total_ded_pdf,
+            neto_pdf: pEmp.neto_pdf,
+          });
+        }
+
+        // Empleados activos en DB que no están en el PDF (posibles bajas)
+        const pdfNos = new Set(pdfEmps.map(e => String(e.no).replace(/^0+/, '') || '0'));
+        const posiblesBajas = empsCat
+          .filter(e => e.status === 'active' && !sysIds.has(Number(e.id)))
+          .filter(e => !pdfNos.has(String(e.employee_number).replace(/^0+/, '') || '0'))
+          .map(e => ({ id: e.id, full_name: e.full_name, employee_number: e.employee_number }));
+
+        return res.json({
+          ok: true,
+          mode: 'compare',
+          no_periodo: noPeriodo,
+          header,
+          total_pdf: pdfEmps.length,
+          con_diff: diffs.filter(d => d.hasDiff).length,
+          no_encontrados: diffs.filter(d => !d.encontrado).length,
+          posibles_bajas: posiblesBajas,
+          diffs,
+        });
+      }
+
+      // ── MODO IMPORTACIÓN (período nuevo) ──
+      const log = [];
+      const newIncs = [];
+      const altas = [];
+      const posiblesBajas = [];
+
+      for (const pEmp of pdfEmps) {
+        const emp = findEmpByClave(pEmp.no);
+
+        if (!emp) {
+          altas.push({ no: pEmp.no, nombre: pEmp.nombre, dept: pEmp.dept_nm, puesto: pEmp.puesto });
+          log.push(`ALTA detectada: ${pEmp.no} ${pEmp.nombre} (no existe en catálogo)`);
+          continue;
+        }
+
+        // Actualizar salario diario si cambió
+        if (pEmp.sal_diario !== null && emp.salary_daily !== null) {
+          const diff = Math.abs(pEmp.sal_diario - (emp.salary_daily || 0));
+          if (diff > 0.01) {
+            log.push(`Salario actualizado ${emp.full_name}: ${emp.salary_daily} → ${pEmp.sal_diario}`);
+            emp.salary_daily = pEmp.sal_diario;
+          }
+        }
+        if (pEmp.sdi !== null) emp.sdi = pEmp.sdi;
+        if (pEmp.sbc !== null) emp.sbc = pEmp.sbc;
+
+        // Actualizar departamento si cambió
+        if (pEmp.dept_nm) {
+          const dept = findOrCreateDept(pEmp.dept_nm);
+          if (dept && emp.department_id !== dept.id) {
+            log.push(`Dept actualizado ${emp.full_name}: dept_id → ${dept.id} (${dept.name})`);
+            emp.department_id = dept.id;
+          }
+        }
+
+        // Actualizar puesto si cambió
+        if (pEmp.puesto) {
+          const pos = findOrCreatePos(pEmp.puesto);
+          if (pos && emp.position_id !== pos.id) {
+            log.push(`Puesto actualizado ${emp.full_name}: pos_id → ${pos.id} (${pos.name})`);
+            emp.position_id = pos.id;
+          }
+        }
+
+        // Actualizar fecha ingreso si llegó con reingreso
+        if (pEmp.fecha_ingr && emp.fecha_ingreso !== pEmp.fecha_ingr) {
+          const oldFi = emp.fecha_ingreso;
+          if (oldFi && oldFi !== pEmp.fecha_ingr) {
+            log.push(`Fecha ingreso cambió ${emp.full_name}: ${oldFi} → ${pEmp.fecha_ingr} (posible reingreso)`);
+          }
+          emp.fecha_ingreso = pEmp.fecha_ingr;
+        }
+
+        emp.updated_at = nowMxDate();
+
+        // Construir registro de incidencias
+        const fields = conceptsToFields(pEmp.percepciones);
+        const rec = {
+          id: nextId([...incList, ...newIncs]),
+          no_periodo: noPeriodo,
+          employee_id: emp.id,
+          dias_pagados: pEmp.dias_pag ?? 7,
+          faltas: 0,
+          horas_extras_total: pEmp.hrs_extra ?? 0,
+          despensa: fields.despensa ? 1 : 0,
+          bono_puntualidad_dias: fields.bono_puntualidad ?? null,
+          bono_eficiencia_dias:  fields.bono_eficiencia  ?? null,
+          bono_instructor:       fields.bono_instructor  ?? null,
+          prima_dominical:       fields.prima_dominical  ? 1 : 0,
+          vacaciones_dias:       fields.vacaciones_importe ? null : null, // importe, no días
+          gratificacion:         fields.gratificacion    ?? null,
+          total_perc_pdf:        pEmp.total_perc_pdf,
+          total_ded_pdf:         pEmp.total_ded_pdf,
+          neto_pdf:              pEmp.neto_pdf,
+          notas:                 pEmp.notas || '',
+          source:                'pdf_import',
+          updated_by:            req.rhhUser.id,
+          updated_at:            nowMxDate(),
+          created_at:            nowMxDate(),
+        };
+        newIncs.push(rec);
+      }
+
+      // Empleados activos que NO están en el PDF → posibles bajas
+      const pdfNos = new Set(pdfEmps.map(e => String(e.no).replace(/^0+/, '') || '0'));
+      for (const e of empsCat) {
+        if (e.status !== 'active' || sysIds.has(Number(e.id))) continue;
+        const stripped = String(e.employee_number).replace(/^0+/, '') || '0';
+        if (!pdfNos.has(stripped)) {
+          posiblesBajas.push({ id: e.id, full_name: e.full_name, employee_number: e.employee_number });
+          log.push(`Posible baja: ${e.employee_number} ${e.full_name} (activo en DB pero no en PDF)`);
+        }
+      }
+
+      // Guardar
+      db.rhh_departments = depts;
+      db.rhh_positions   = positions;
+      db.rhh_incidencias_semanales = [...incList, ...newIncs];
+      write(db);
+
+      return res.json({
+        ok: true,
+        mode: 'import',
+        no_periodo: noPeriodo,
+        header,
+        total_pdf: pdfEmps.length,
+        importados: newIncs.length,
+        altas,
+        posibles_bajas: posiblesBajas,
+        log,
+      });
+
+    } catch (err) {
+      console.error('[nomina/importar-pdf]', err.message, err.stack);
+      res.status(500).json({ error: 'Error al procesar el PDF: ' + err.message });
+    }
+  }
+);
+
+// ══════════════════════════════════════════════════════════════════════════════
+// FASE 3b — Comparación PDF Lista de Raya (método anterior, texto plano)
 // ══════════════════════════════════════════════════════════════════════════════
 
 /* Códigos de conceptos CONTPAQ i relevantes */
