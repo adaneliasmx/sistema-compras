@@ -320,44 +320,57 @@ router.post(
     const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
     const norm = v => String(v || '').trim();
+    const normName = s => s.toLowerCase().replace(/\*/g, '').normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
 
     // Detectar número de período desde el nombre de la hoja (SEMANA 12 → 12)
     // o desde una celda de encabezado ("Semana 12 del...")
-    let noPeriodo = null;
-    const sheetMatch = sheetName.match(/semana\s+(\d+)/i);
-    if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
+    let noPeriodo = Number(req.body?.no_periodo) || null;
     if (!noPeriodo) {
-      // Buscar en las primeras 3 filas
+      const sheetMatch = sheetName.match(/semana\s*(\d+)/i);
+      if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
+    }
+    if (!noPeriodo) {
       for (let i = 0; i < Math.min(3, all.length) && !noPeriodo; i++) {
         for (const cell of all[i]) {
-          const m = String(cell || '').match(/semana\s+(\d+)/i);
+          const m = String(cell || '').match(/semana\s*(\d+)/i);
           if (m) { noPeriodo = Number(m[1]); break; }
         }
       }
     }
 
-    // Detectar columnas de dept/puesto
-    let deptCol = 2, posCol = 4, numCol = 0;
-    for (let i = 0; i < Math.min(5, all.length); i++) {
+    // Detectar columnas de dept/puesto/nombre/número
+    let deptCol = 2, posCol = 4, numCol = 0, nameCol = 1;
+    let headerRow = -1;
+    for (let i = 0; i < Math.min(6, all.length); i++) {
       const row = all[i].map(norm).map(v => v.toLowerCase());
       const dIdx = row.findIndex(v => v.includes('departamento') || v === 'área' || v === 'area');
       const pIdx = row.findIndex(v => v.includes('puesto') || v.includes('cargo'));
-      const nIdx = row.findIndex(v => v.includes('no.') || v === 'no' || v === '#' || v.includes('empleado') || v.includes('número'));
       if (dIdx >= 0 && pIdx >= 0) {
-        deptCol = dIdx; posCol = pIdx;
+        deptCol = dIdx; posCol = pIdx; headerRow = i;
+        const nIdx = row.findIndex(v => v.includes('no.') || v === 'no' || v === '#' || v.includes('empleado') || v.includes('numero'));
+        const nmIdx = row.findIndex(v => v === 'nombre' || v.includes('nombre'));
         if (nIdx >= 0) numCol = nIdx;
+        if (nmIdx >= 0) nameCol = nmIdx;
         break;
       }
     }
 
-    // Columnas de asistencia (lista asistencia semana):
-    // Status: Lun=6, Mar=10, Mié=14, Jue=18, Vie=22, Sab=26, Dom=30
-    // TE hrs: Lun=8, Mar=12, Mié=16, Jue=20, Vie=24, Sab=28, Dom=32
-    const STATUS_COLS = [6, 10, 14, 18, 22, 26, 30];
-    const TE_COLS     = [8, 12, 16, 20, 24, 28, 32];
-    const PAID_STATUS = new Set(['labora','festivo','descanso','retardo','tiempoxt','permiso cg','cumpleanos','cumpleaños','paro tecnico']);
-    const VAC_STATUS  = new Set(['vacaciones','vacacion']);
-    const FALTA_STATUS= new Set(['falta','baja','incapacidad','permiso sg']);
+    // Detectar columnas de asistencia y TE dinámicamente desde la fila de encabezados
+    // Busca "Asistencia" y "T.E." en la fila de cabeceras de días
+    let STATUS_COLS = [6, 10, 14, 18, 22, 26, 30]; // defaults
+    let TE_COLS     = [8, 12, 16, 20, 24, 28, 32];
+    for (let i = 0; i < Math.min(6, all.length); i++) {
+      const row = all[i];
+      const aCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 'asistencia' ? j : -1).filter(j => j >= 0);
+      const tCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 't.e.' ? j : -1).filter(j => j >= 0);
+      if (aCols.length >= 5) { STATUS_COLS = aCols; TE_COLS = tCols; break; }
+    }
+
+    const normStatus = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+    const PAID_STATUS  = new Set(['labora','festivo','descanso','retardo','tiempoxt','permiso cg','cumpleanos','paro tecnico']);
+    const VAC_STATUS   = new Set(['vacaciones','vacacion']);
+    const FALTA_STATUS = new Set(['falta','baja','incapacidad','permiso sg']);
 
     const db = readFresh();
     const emps = db.rhh_employees || [];
@@ -365,6 +378,27 @@ router.post(
 
     let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
     const log = [];
+
+    // Índice de búsqueda por palabras normalizadas para el matching de nombres
+    // El Excel usa "Nombre Apellido", la DB usa "APELLIDO NOMBRE" (CONTPAQ)
+    // Comparamos como conjuntos de palabras normalizadas
+    function findEmpByNameOrNum(excelNum, excelName) {
+      // 1. Por employee_number exacto
+      const byNum = emps.find(e => norm(e.employee_number).replace(/^0+/, '') === excelNum);
+      if (byNum) return byNum;
+      // 2. Por nombre — conjunto de palabras (sin importar orden)
+      const excelWords = new Set(normName(excelName).split(' ').filter(w => w.length > 1));
+      if (excelWords.size < 2) return null;
+      let bestMatch = null, bestScore = 0;
+      for (const e of emps) {
+        const dbWords = normName(e.full_name || '').split(' ').filter(w => w.length > 1);
+        let hits = 0;
+        for (const w of excelWords) { if (dbWords.includes(w)) hits++; }
+        const score = hits / excelWords.size;
+        if (score > bestScore && score >= 0.75) { bestScore = score; bestMatch = e; }
+      }
+      return bestMatch;
+    }
 
     function findOrCreateDept(name) {
       if (!name) return null;
@@ -391,17 +425,17 @@ router.post(
     }
 
     for (const row of all) {
-      const empNum = norm(row[numCol]).replace(/^0+/, '');
-      if (!empNum || !/^\d+$/.test(empNum)) continue;
+      const empNum  = norm(row[numCol]).replace(/^0+/, '');
+      const empName = norm(row[nameCol]).replace(/\*/g, '');
+      // Saltar filas sin nombre o con valores no-numéricos en col número
+      if (!empName || empName.toLowerCase() === 'nombre') continue;
+      if (empNum && !/^\d+$/.test(empNum)) continue;
       const deptName = norm(row[deptCol]);
       const posName  = norm(row[posCol]);
       if (!deptName && !posName) { skipped++; continue; }
 
-      const emp = emps.find(e => {
-        const en = norm(e.employee_number).replace(/^0+/, '');
-        return en === empNum;
-      });
-      if (!emp) { skipped++; log.push(`#${empNum}: no encontrado`); continue; }
+      const emp = findEmpByNameOrNum(empNum, empName);
+      if (!emp) { skipped++; log.push(`"${empName}": no encontrado`); continue; }
 
       // Actualizar dept/puesto
       const deptId = findOrCreateDept(deptName);
@@ -421,7 +455,7 @@ router.post(
         let teTotal = 0;
 
         for (let i = 0; i < STATUS_COLS.length; i++) {
-          const statusRaw = norm(row[STATUS_COLS[i]]).toLowerCase();
+          const statusRaw = normStatus(norm(row[STATUS_COLS[i]]));
           const teHrs     = Number(row[TE_COLS[i]]) || 0;
           teTotal += teHrs;
           if (!statusRaw) continue;
