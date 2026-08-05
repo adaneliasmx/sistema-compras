@@ -5322,9 +5322,9 @@ async function buildEvalSessionTab(sessions, forms) {
   if (evalSessionId) {
     try { session = await api(`/api/rhh/evaluations/sessions/${evalSessionId}`); } catch(e) {}
   }
-  const supervisorUsers = (state.rhhUsers || []).filter(u => u.role === 'supervisor');
+  const supervisorUsers = (state.rhhUsers || []).filter(u => u.active !== false && u.role !== 'empleado');
   const supOptsBase = '<option value="">— Sin asignar —</option>' +
-    supervisorUsers.map(u => `<option value="${u.id}">${escHtml(u.full_name)}</option>`).join('');
+    supervisorUsers.map(u => `<option value="${u.id}">${escHtml(u.full_name)} (${u.role})</option>`).join('');
   let entriesHtml = '<div class="card section"><div class="empty-state"><p>Selecciona o crea una sesión</p></div></div>';
   if (session) {
     // Filtrar empleados: activos Y con fecha ingreso ANTES del primer día del mes a evaluar
