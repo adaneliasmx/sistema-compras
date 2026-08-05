@@ -14,11 +14,26 @@ function maxPtsByItem(it) {
   return it.ponderacion || VALOR_PTS_LEGACY[it.valor] || 0;
 }
 
+// ── Normalización de nombre de puesto (sin acentos, minúsculas, espacios simples) ──
+function normPos(s) {
+  return (s || '').toLowerCase().trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
 // ── Plantillas 2026 (una por grupo de puestos) ────────────────────────────────
+// position_names: lista de nombres de puestos (tal como aparecen en rhh_positions)
+// que usan este formulario. Permite matching por nombre en lugar de solo por ID.
 const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Fosfatador',
     position_ids: [4, 5, 6, 7, 18, 19, 20, 21, 24, 26],
+    position_names: [
+      'Operador de Fosfatado', 'Operador de fosfatado',
+      'Fosfatador',
+      'Operador Lider', 'Operador líder', 'Operador Líder',
+      'Operador Línea 1', 'Operador Linea 1',
+    ],
     items: [
       { name: 'Registros de producción en tiempo y forma (Software)', ponderacion: 3 },
       { name: 'Registros de paros y justificación de los mismos', ponderacion: 3 },
@@ -53,6 +68,9 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Auxiliar de Almacén',
     position_ids: [1, 2, 22, 23, 25, 28],
+    position_names: [
+      'Auxiliar de Almacén', 'Auxiliar de Almacen', 'Auxiliar Almacen', 'Auxiliar almacén',
+    ],
     items: [
       { name: 'Registra el material de ingreso a Cuesto de manera adecuada', ponderacion: 3 },
       { name: 'Validar los datos de material (cliente, componente, #piezas) sean correctos', ponderacion: 1 },
@@ -87,6 +105,11 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Operador de Empaque',
     position_ids: [3, 27],
+    position_names: [
+      'Operador de Empaque', 'Operador de empaque',
+      'Empacador',
+      'Auxiliar de un Empaque', 'Auxiliar de Empaque', 'Auxiliar de empaque',
+    ],
     items: [
       { name: 'No exceder los pesos de báscula ya asignados en sistema', ponderacion: 1 },
       { name: 'Acomodo de material empacado en biblioteca de acuerdo a FIFOs', ponderacion: 3 },
@@ -119,6 +142,7 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Auxiliar de Calidad',
     position_ids: [9],
+    position_names: ['Auxiliar de Calidad', 'Auxiliar de calidad'],
     items: [
       { name: 'El operador realiza inspección apegándose a criterios de calidad', ponderacion: 2 },
       { name: 'El operador realiza acomodo de piezas según instructivo de trabajo', ponderacion: 2 },
@@ -146,6 +170,7 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Inspector de Calidad',
     position_ids: [10],
+    position_names: ['Inspector de Calidad', 'Inspector Calidad', 'Inspector de calidad'],
     items: [
       { name: 'Apoyo en otras áreas', ponderacion: 2 },
       { name: 'Mantener pasillos sin obstruir', ponderacion: 1 },
@@ -173,6 +198,7 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Supervisor de Turno',
     position_ids: [11],
+    position_names: ['Supervisor de Turno', 'Supervisor de turno', 'Supervisor'],
     items: [
       { name: 'Llenado puntual archivos y bases de datos', ponderacion: 3 },
       { name: 'Reportes a tiempo de incidencias en lista de asistencia y con superiores', ponderacion: 2 },
@@ -208,6 +234,11 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Técnico de Mantenimiento',
     position_ids: [13],
+    position_names: [
+      'Técnico de Mantenimiento', 'Tecnico de Mantenimiento', 'Técnico de mantenimiento',
+      'Técnico en Mantenimiento', 'Tecnico en Mantenimiento',
+      'Tecnico en Mantemiento', // typo frecuente en CONTPAQ i
+    ],
     items: [
       { name: 'Realiza el mantenimiento preventivo mensual y entrega órdenes a tiempo', ponderacion: 2 },
       { name: 'Cuidado de herramientas y equipo (Daño o pérdida)', ponderacion: 2 },
@@ -228,6 +259,7 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Equipo Vacío',
     position_ids: [8],
+    position_names: ['Equipo Vacío', 'Equipo Vacio', 'equipo vacio'],
     items: [
       { name: 'Limpieza de equipo vacío (tinas, cajas 05, 07, 09, carros cabina)', ponderacion: 2 },
       { name: 'Asignación de necesidades para el área de fosfatado, carros limpios, cuñetes sin doble identificación', ponderacion: 1 },
@@ -257,6 +289,12 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Intendencia',
     position_ids: [14],
+    position_names: [
+      'Intendencia',
+      'Limpieza',
+      'Auxiliar de Limpieza', 'Auxiliar de limpieza',
+      'Ayudante General', 'Ayudante general',
+    ],
     items: [
       { name: 'Mantener pasillos sin obstruir', ponderacion: 2 },
       { name: 'Mantener pasillos libre de derrames en planta', ponderacion: 3 },
@@ -275,6 +313,7 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Operador PTAR',
     position_ids: [12],
+    position_names: ['Operador PTAR'],
     items: [
       { name: 'Llenado de documentos en área', ponderacion: 2 },
       { name: 'Apoyo a otras áreas', ponderacion: 1 },
@@ -301,6 +340,10 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'Coordinador de Producción',
     position_ids: [17],
+    position_names: [
+      'Coordinador de Producción', 'Coordinador de Produccion', 'Coordinador de producción',
+      'Cordinador de produccion', // typo frecuente
+    ],
     items: [
       { name: 'Llenado puntual archivos y bases de datos', ponderacion: 2 },
       { name: 'Reportes a tiempo de incidencias (4 cuadrantes Semanal y Pareto día anterior)', ponderacion: 3 },
@@ -326,6 +369,17 @@ const EVAL_TEMPLATES_2026 = [
   {
     group_name: 'STAFF',
     position_ids: [15, 16],
+    position_names: [
+      'STAFF',
+      'Administrador SGC', 'Administrador Sgc',
+      'Gerente de operaciones', 'Gerente de Operaciones',
+      'Ingeniero de Procesos', 'Ingeniero de procesos',
+      'Ingeniero de Calidad', 'Ingeniero de calidad',
+      'Ingeniero de Mantenimiento', 'Ingeniero de mantenimiento',
+      'SYMACompras',
+      'Administradora RRHH', 'Administradora Rrhh',
+      'Coordinador de Seguridad y Medio Ambiente',
+    ],
     items: [
       { name: 'Llenado puntual archivos y bases de datos (del líder y del personal a cargo)', ponderacion: 3 },
       { name: 'Reportes a tiempo de incidencias en planta (atención y seguimiento contingencias)', ponderacion: 3 },
@@ -367,13 +421,47 @@ router.post('/seed-forms', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req,
   db.rhh_eval_forms = EVAL_TEMPLATES_2026.map(tpl => ({
     id: id++,
     group_name: tpl.group_name,
-    position_ids: tpl.position_ids,
+    position_ids: tpl.position_ids || [],
+    position_names: tpl.position_names || [],
     items: tpl.items.map((it, i) => ({ id: i + 1, name: it.name, ponderacion: it.ponderacion })),
     created_at: nowMxDate(),
     updated_at: nowMxDate()
   }));
   write(db);
   res.json({ ok: true, total: db.rhh_eval_forms.length });
+});
+
+// POST /api/rhh/evaluations/sync-position-names
+// Lee rhh_positions y actualiza position_ids en los forms según position_names
+router.post('/sync-position-names', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const positions = db.rhh_positions || [];
+  const forms = db.rhh_eval_forms || [];
+  const log = [];
+
+  // Si los forms no tienen position_names, agregarlos desde el template
+  for (const form of forms) {
+    if (!form.position_names || form.position_names.length === 0) {
+      const tpl = EVAL_TEMPLATES_2026.find(t => t.group_name === form.group_name);
+      if (tpl) form.position_names = tpl.position_names || [];
+    }
+  }
+
+  for (const form of forms) {
+    const pnames = form.position_names || [];
+    const matchedIds = positions
+      .filter(p => pnames.some(pn => normPos(pn) === normPos(p.name)))
+      .map(p => p.id);
+    const prev = JSON.stringify(form.position_ids);
+    form.position_ids = matchedIds;
+    if (JSON.stringify(matchedIds) !== prev) {
+      log.push(`${form.group_name}: position_ids → [${matchedIds.join(', ')}]`);
+    }
+  }
+
+  db.rhh_eval_forms = forms;
+  write(db);
+  res.json({ ok: true, log });
 });
 
 // POST /api/rhh/evaluations/forms  — crear form vacío para un grupo
@@ -447,12 +535,26 @@ router.delete('/forms/:form_id/items/:item_id', rhhAuthRequired, rhhRequireRole(
 });
 
 // ── Helper: encontrar formulario para un empleado ─────────────────────────────
-function findFormForEmp(emp, forms) {
+// Matching: primero por position_id, luego por position_name normalizado
+function findFormForEmp(emp, forms, positions) {
   if (!emp) return null;
-  return forms.find(f =>
+  // 1. Por position_id (rápido)
+  const byId = forms.find(f =>
     (f.position_ids || []).includes(emp.position_id) ||
-    f.position_id === emp.position_id          // compat con forms viejos
-  ) || null;
+    f.position_id === emp.position_id
+  );
+  if (byId) return byId;
+  // 2. Por nombre de puesto normalizado
+  if (emp.position_id && positions) {
+    const pos = positions.find(p => p.id === emp.position_id);
+    if (pos) {
+      const normEmpPos = normPos(pos.name);
+      return forms.find(f =>
+        (f.position_names || []).some(pn => normPos(pn) === normEmpPos)
+      ) || null;
+    }
+  }
+  return null;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -502,7 +604,7 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
       );
       const emp = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
       const pos = emp ? (db.rhh_positions || []).find(p => p.id === emp.position_id) : null;
-      const form = findFormForEmp(emp, forms);
+      const form = findFormForEmp(emp, forms, db.rhh_positions);
       pending.push({
         session_id: session.id,
         session_name: session.name,
@@ -542,6 +644,34 @@ router.patch('/sessions/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (r
   const { status } = req.body || {};
   if (status) sessions[idx] = { ...sessions[idx], status };
   db.rhh_eval_sessions = sessions;
+  write(db);
+  res.json(sessions[idx]);
+});
+
+// DELETE /api/rhh/evaluations/sessions/:id — borrar sesión y sus resultados
+router.delete('/sessions/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const sessions = db.rhh_eval_sessions || [];
+  const sid = Number(req.params.id);
+  const idx = sessions.findIndex(s => s.id === sid);
+  if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
+  sessions.splice(idx, 1);
+  db.rhh_eval_sessions = sessions;
+  db.rhh_eval_results = (db.rhh_eval_results || []).filter(r => r.session_id !== sid);
+  write(db);
+  res.json({ ok: true });
+});
+
+// POST /api/rhh/evaluations/sessions/:id/reset — vaciar entries y resultados, reabrir sesión
+router.post('/sessions/:id/reset', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const sessions = db.rhh_eval_sessions || [];
+  const sid = Number(req.params.id);
+  const idx = sessions.findIndex(s => s.id === sid);
+  if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
+  sessions[idx] = { ...sessions[idx], entries: [], status: 'open', updated_at: nowMxDate() };
+  db.rhh_eval_sessions = sessions;
+  db.rhh_eval_results = (db.rhh_eval_results || []).filter(r => r.session_id !== sid);
   write(db);
   res.json(sessions[idx]);
 });

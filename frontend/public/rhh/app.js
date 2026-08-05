@@ -5248,6 +5248,18 @@ async function evaluacionesView() {
   }
 }
 
+// Parsea fecha de ingreso en múltiples formatos → Date o null
+function parseFechaIngreso(s) {
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return new Date(s.slice(0, 10) + 'T12:00:00');
+  if (/^\d{2}\/\d{2}\/\d{4}/.test(s)) {
+    const [d, m, y] = s.split('/');
+    return new Date(`${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}T12:00:00`);
+  }
+  const d = new Date(s);
+  return isNaN(d) ? null : d;
+}
+
 async function buildEvalSessionTab(sessions, forms) {
   const sessionOpts = sessions.map(s =>
     `<option value="${s.id}" ${s.id===evalSessionId?'selected':''}>${escHtml(s.name)} (${s.status==='open'?'Abierta':'Cerrada'})</option>`
@@ -5261,7 +5273,24 @@ async function buildEvalSessionTab(sessions, forms) {
     supervisorUsers.map(u => `<option value="${u.id}">${escHtml(u.full_name)}</option>`).join('');
   let entriesHtml = '<div class="card section"><div class="empty-state"><p>Selecciona o crea una sesión</p></div></div>';
   if (session) {
-    const employees = state.employees;
+    // Filtrar empleados: activos Y con fecha ingreso ANTES del primer día del mes a evaluar
+    const firstDayOfMonth = session.year && session.month
+      ? new Date(session.year, session.month - 1, 1)
+      : null;
+
+    const allActive = state.employees.filter(e => e.status === 'active');
+    const employees = firstDayOfMonth
+      ? allActive.filter(e => {
+          const fi = parseFechaIngreso(e.fecha_ingreso || e.start_date);
+          if (!fi) return true; // sin fecha → incluir
+          return fi < firstDayOfMonth;
+        })
+      : allActive;
+    const excluidos = allActive.length - employees.length;
+    const excluidosMsg = excluidos > 0
+      ? `<div style="font-size:12px;color:#b45309;margin-bottom:8px;">⚠ ${excluidos} empleado${excluidos>1?'s':''} excluido${excluidos>1?'s':''} por ingreso durante el mes (no laboraron mes completo)</div>`
+      : '';
+
     const entryRows = employees.map(emp => {
       const entry = (session.entries || []).find(e => e.employee_id === emp.id);
       const pos = state.positions.find(p => p.id === emp.position_id);
@@ -5291,11 +5320,16 @@ async function buildEvalSessionTab(sessions, forms) {
     }).join('');
     const savedCount = (session.entries || []).filter(e => e.saved).length;
     entriesHtml = `
+      ${excluidosMsg}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
         <div class="small muted">Progreso: <strong>${savedCount}/${employees.length}</strong> empleados guardados</div>
-        ${session.status==='open'
-          ? `<button class="btn-ghost" style="font-size:12px;" onclick="cerrarSesion(${session.id})">🔒 Cerrar sesión</button>`
-          : '<span class="badge" style="background:#059669;">✓ Cerrada</span>'}
+        <div style="display:flex;gap:8px;">
+          ${session.status==='open'
+            ? `<button class="btn-ghost" style="font-size:12px;" onclick="cerrarSesion(${session.id})">🔒 Cerrar sesión</button>`
+            : '<span class="badge" style="background:#059669;">✓ Cerrada</span>'}
+          <button class="btn-ghost" style="font-size:12px;color:#b45309;" onclick="evalResetSesion(${session.id})" title="Vacía los datos capturados y reabre la sesión">🔄 Vaciar y reabrir</button>
+          <button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="evalBorrarSesion(${session.id})" title="Borra esta sesión permanentemente">🗑 Borrar sesión</button>
+        </div>
       </div>
       <div class="card section table-wrap">
         <table><thead><tr>
@@ -5372,6 +5406,7 @@ async function buildEvalFormsTab(forms) {
              </select>`
           : '<span class="small muted">Sin formularios. Carga las plantillas primero.</span>'}
         <button class="btn-ghost" style="font-size:13px;" onclick="evalCargarPlantillas2026()">📋 Cargar Plantillas 2026</button>
+        <button class="btn-ghost" style="font-size:13px;color:#0369a1;" onclick="evalSyncPuestos()" title="Actualiza la asignación de formularios según los puestos del catálogo">🔗 Sincronizar puestos</button>
       </div>
     </div>
     ${formHtml}`;
@@ -5606,6 +5641,15 @@ async function evalCargarPlantillas2026() {
   } catch(err) { toast(err.message, 'error'); }
 }
 
+async function evalSyncPuestos() {
+  try {
+    const r = await api('/api/rhh/evaluations/sync-position-names', { method: 'POST' });
+    const n = (r.log || []).length;
+    toast(n > 0 ? `✅ ${n} formulario${n>1?'s':''} actualizados con puestos del catálogo` : '✅ Todo ya estaba sincronizado', 'success');
+    if (n > 0) evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
 function evalDeleteItem(idx) { if (window._evalFormItems) window._evalFormItems.splice(idx, 1); evaluacionesView(); }
 
 async function evalSaveForm(formId) {
@@ -5807,6 +5851,25 @@ async function cerrarSesion(sessionId) {
     await api('/api/rhh/evaluations/sessions/'+sessionId,{method:'PATCH',body:JSON.stringify({status:'closed'})});
     toast('Sesión cerrada'); evaluacionesView();
   } catch(err) { toast(err.message,'error'); }
+}
+
+async function evalResetSesion(sessionId) {
+  if (!confirm('¿Vaciar todos los datos capturados y reabrir la sesión?\nEsta acción no se puede deshacer.')) return;
+  try {
+    await api('/api/rhh/evaluations/sessions/'+sessionId+'/reset', { method: 'POST' });
+    toast('Sesión vaciada y reabierta');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function evalBorrarSesion(sessionId) {
+  if (!confirm('¿Borrar PERMANENTEMENTE esta sesión y todos sus datos?\nEsta acción no se puede deshacer.')) return;
+  try {
+    await api('/api/rhh/evaluations/sessions/'+sessionId, { method: 'DELETE' });
+    toast('Sesión borrada');
+    evalSessionId = null;
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
