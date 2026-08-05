@@ -1,0 +1,26 @@
+{
+  "name": "Portal del Empleado — Cuesto",
+  "short_name": "Mi Portal",
+  "description": "Consulta tu nómina, incidencias, vacaciones y evaluaciones",
+  "start_url": "/empleados/",
+  "scope": "/empleados/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1e40af",
+  "theme_color": "#2563eb",
+  "lang": "es-MX",
+  "icons": [
+    {
+      "src": "/img/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/img/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

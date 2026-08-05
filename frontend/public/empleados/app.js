@@ -12,6 +12,29 @@ const state = {
   _inactTimer: null,
 };
 
+// ── PWA Install ───────────────────────────────────────────────────────────────
+let _installPrompt = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  _installPrompt = e;
+  // Mostrar banner si ya está en la pantalla de login
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.style.display = 'flex';
+});
+window.addEventListener('appinstalled', () => {
+  _installPrompt = null;
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.remove();
+});
+
+function pwaInstall() {
+  if (!_installPrompt) return;
+  _installPrompt.prompt();
+  _installPrompt.userChoice.then(choice => {
+    if (choice.outcome === 'accepted') _installPrompt = null;
+  });
+}
+
 // ── Navegación ────────────────────────────────────────────────────────────────
 const SECTIONS = [
   { id: 'perfil',       icon: '👤', label: 'Mi Perfil' },
@@ -145,10 +168,24 @@ function loginView() {
         Contraseña inicial: últimas 6 letras de tu CURP
       </p>
     </div>
+  </div>
+  <div id="pwa-install-banner" class="pwa-banner" style="display:none">
+    <div class="pwa-banner-icon">🏭</div>
+    <div class="pwa-banner-text">
+      <strong>Instalar aplicación</strong>
+      <span>Accede más rápido desde tu celular</span>
+    </div>
+    <button class="pwa-banner-btn" onclick="pwaInstall()">Instalar</button>
+    <button class="pwa-banner-close" onclick="this.closest('.pwa-banner').remove()">✕</button>
   </div>`;
 }
 
 function bindLogin() {
+  // Mostrar banner si el prompt ya fue capturado antes del render
+  if (_installPrompt) {
+    const b = document.getElementById('pwa-install-banner');
+    if (b) b.style.display = 'flex';
+  }
   const btn = document.getElementById('btn-login');
   const doLogin = async () => {
     const username = (document.getElementById('l-user').value.trim()).toUpperCase();
@@ -271,6 +308,15 @@ function layoutView() {
 
     <!-- Bottom nav (móvil) -->
     <nav class="emp-bottom-nav">${navItems}</nav>
+  </div>
+  <div id="pwa-install-banner" class="pwa-banner" style="display:none">
+    <div class="pwa-banner-icon">🏭</div>
+    <div class="pwa-banner-text">
+      <strong>Instalar aplicación</strong>
+      <span>Accede más rápido desde tu celular</span>
+    </div>
+    <button class="pwa-banner-btn" onclick="pwaInstall()">Instalar</button>
+    <button class="pwa-banner-close" onclick="this.closest('.pwa-banner').remove()">✕</button>
   </div>`;
 }
 
@@ -280,6 +326,11 @@ function bindLayout() {
   });
   document.getElementById('btn-logout')?.addEventListener('click', logout);
   document.getElementById('btn-logout-d')?.addEventListener('click', logout);
+  // Mostrar banner de instalación si el prompt ya fue capturado
+  if (_installPrompt) {
+    const banner = document.getElementById('pwa-install-banner');
+    if (banner) banner.style.display = 'flex';
+  }
 }
 
 // ── Util ──────────────────────────────────────────────────────────────────────
