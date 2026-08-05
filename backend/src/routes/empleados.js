@@ -135,6 +135,91 @@ router.get('/evaluaciones', empAuthRequired, (req, res) => {
   res.json(rows);
 });
 
+// ── GET /api/empleados/evaluaciones-historial ─────────────────────────────────
+router.get('/evaluaciones-historial', empAuthRequired, (req, res) => {
+  const db    = read();
+  const empId = req.empPayload.sub;
+  const emp   = (db.rhh_employees || []).find(e => e.id === empId);
+  const salDiario = emp ? (emp.salary_daily || emp.sal_diario || 0) : 0;
+
+  const incidencias  = (db.rhh_incidencias_semanales || []).filter(r => r.employee_id === empId);
+  const evalResults  = (db.rhh_eval_results          || []).filter(r => r.employee_id === empId);
+  const sessions     = db.rhh_eval_sessions || [];
+  const periodos     = (db.rhh_periodos && db.rhh_periodos.length > 0)
+    ? db.rhh_periodos
+    : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
+
+  const MES = { Ene:1,Ene:1,Feb:2,Mar:3,Abr:4,May:5,Jun:6,Jul:7,Ago:8,Sep:9,Oct:10,Nov:11,Dic:12 };
+  function periodoToMonthYear(p) {
+    const fi = p.fecha_inicio || '';
+    const m  = fi.match(/\d{2}\/([A-Za-z]+)\/(\d{4})/);
+    if (m) return { month: MES[m[1]] || 0, year: Number(m[2]) };
+    const m2 = fi.match(/(\d{4})-(\d{2})/);
+    if (m2) return { month: Number(m2[2]), year: Number(m2[1]) };
+    return { month: 0, year: 0 };
+  }
+
+  const periodMap = {};
+  for (const p of periodos) periodMap[p.no_periodo] = periodoToMonthYear(p);
+
+  const monthData = {};
+  const key = (y, m) => `${y}-${String(m).padStart(2,'0')}`;
+
+  // Agrupar incidencias por mes — sumar P|7 Bono productividad
+  for (const inc of incidencias) {
+    const pm = periodMap[inc.no_periodo];
+    if (!pm || !pm.month) continue;
+    const k = key(pm.year, pm.month);
+    if (!monthData[k]) monthData[k] = { year: pm.year, month: pm.month, bono_prod_importe: 0, semanas: [], eval: null };
+    monthData[k].semanas.push(inc.no_periodo);
+    const percs = inc.percepciones || {};
+    for (const [label, val] of Object.entries(percs)) {
+      if (/^7\s/.test(label)) monthData[k].bono_prod_importe += Number(val) || 0;
+    }
+  }
+
+  // Agregar resultado de evaluación mensual
+  for (const ev of evalResults) {
+    const session = sessions.find(s => s.id === ev.session_id);
+    if (!session || !session.month || !session.year) continue;
+    const k = key(session.year, session.month);
+    if (!monthData[k]) monthData[k] = { year: session.year, month: session.month, bono_prod_importe: 0, semanas: [], eval: null };
+    const eval_days = ev.total_points > 0
+      ? Math.round((ev.points_obtained / ev.total_points) * 100) / 100
+      : 0;
+    const dias_reclamos = session.dias_reclamos ?? 0;
+    const dias_calidad  = session.dias_calidad  ?? 0;
+    monthData[k].eval = {
+      session_name:     session.name,
+      score_pct:        ev.score_pct,
+      points_obtained:  ev.points_obtained,
+      total_points:     ev.total_points,
+      eval_days,
+      dias_reclamos,
+      dias_calidad,
+      total_bono: Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100),
+      items: (ev.item_scores || []).map(it => ({
+        name:       it.item_name,
+        stars:      it.stars || 0,
+        points:     it.points,
+        max_points: it.max_points || it.ponderacion || 0
+      }))
+    };
+  }
+
+  const MONTH_NAMES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const historial = Object.values(monthData)
+    .map(d => ({
+      ...d,
+      month_name:         MONTH_NAMES[d.month - 1] || '',
+      bono_prod_importe:  Math.round(d.bono_prod_importe * 100) / 100,
+      bono_prod_dias:     salDiario > 0 ? Math.round((d.bono_prod_importe / salDiario) * 100) / 100 : null,
+    }))
+    .sort((a, b) => b.year - a.year || b.month - a.month);
+
+  res.json({ historial, sal_diario: salDiario });
+});
+
 // ── GET /api/empleados/lista-raya ─────────────────────────────────────────────
 // Retorna el período anterior (o el último pagado) del empleado
 router.get('/lista-raya', empAuthRequired, (req, res) => {

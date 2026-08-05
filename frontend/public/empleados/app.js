@@ -649,29 +649,148 @@ async function vacaciones(el) {
 // VISTA: EVALUACIONES
 // ══════════════════════════════════════════════════════════════════════════════
 async function evaluaciones(el) {
-  const r = await api('GET', '/evaluaciones');
-  const rows = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+  el.innerHTML = `<p class="emp-page-title">⭐ Mis Evaluaciones</p><div class="emp-empty"><div class="empty-icon">⏳</div><p>Cargando...</p></div>`;
+  const r = await api('GET', '/evaluaciones-historial');
+  if (!r || !r.ok) {
+    el.innerHTML = `<p class="emp-page-title">⭐ Mis Evaluaciones</p><div class="emp-empty"><p>Error al cargar datos</p></div>`;
+    return;
+  }
+  const { historial = [], sal_diario = 0 } = r.data || {};
 
-  if (!rows.length) {
-    el.innerHTML = `<p class="emp-page-title">Mis Evaluaciones</p><div class="emp-empty"><div class="empty-icon">⭐</div><p>Sin evaluaciones registradas</p></div>`;
+  if (!historial.length) {
+    el.innerHTML = `<p class="emp-page-title">⭐ Mis Evaluaciones</p><div class="emp-empty"><div class="empty-icon">⭐</div><p>Sin historial de evaluaciones</p></div>`;
     return;
   }
 
-  const rowsHtml = rows.map(ev => {
-    const score = Number(ev.score || ev.total_score || 0);
-    const cls   = score >= 80 ? 'high' : score < 50 ? 'low' : '';
+  // Años disponibles para filtro
+  const years = [...new Set(historial.map(d => d.year))].sort((a,b) => b - a);
+  const selYear = window._evalYear || years[0];
+  window._evalYear = selYear;
+  const filtered = historial.filter(d => d.year === selYear);
+
+  // Gráfica de barras (CSS) — días de bono por mes
+  const maxBono = 3;
+  const chartBars = filtered.slice().reverse().map(d => {
+    const dias  = d.eval ? d.eval.total_bono : (d.bono_prod_dias || 0);
+    const pct   = Math.min(100, (dias / maxBono) * 100);
+    const color = dias >= 2.5 ? '#059669' : dias >= 1.5 ? '#f59e0b' : dias > 0 ? '#3b82f6' : '#e5e7eb';
+    const label = d.month_name.slice(0, 3);
     return `
-    <div class="eval-row">
-      <div>
-        <div style="font-size:14px;font-weight:600;color:#1e293b">${esc(ev.period_name || ev.evaluation_period || `Evaluación ${ev.id}`)}</div>
-        <div style="font-size:12px;color:#64748b;margin-top:3px">${fmtDate(ev.created_at)}</div>
-        ${ev.comments ? `<div style="font-size:12px;color:#94a3b8;margin-top:4px">${esc(ev.comments)}</div>` : ''}
-      </div>
-      <div class="eval-score ${cls}">${score > 0 ? score : '—'}</div>
-    </div>`;
+      <div style="display:flex;flex-direction:column;align-items:center;gap:4px;min-width:36px;">
+        <div style="font-size:10px;font-weight:700;color:${dias>0?color:'#9ca3af'};">${dias > 0 ? dias.toFixed(1) : '—'}</div>
+        <div style="width:28px;background:#f1f5f9;border-radius:4px;height:80px;display:flex;align-items:flex-end;overflow:hidden;">
+          <div style="width:100%;height:${pct}%;background:${color};border-radius:4px;transition:height .3s;"></div>
+        </div>
+        <div style="font-size:10px;color:#64748b;">${label}</div>
+      </div>`;
   }).join('');
 
-  el.innerHTML = `<p class="emp-page-title">Mis Evaluaciones</p>${rowsHtml}`;
+  // Cards por mes
+  const cards = filtered.map(d => {
+    const ev = d.eval;
+    const hasEval = !!ev;
+    const bonoProdFmt = d.bono_prod_importe > 0
+      ? `<span style="font-size:11px;color:#6b7280;">Bono pagado: $${d.bono_prod_importe.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>`
+      : '';
+
+    let evalContent;
+    if (!hasEval) {
+      evalContent = `<div style="font-size:12px;color:#9ca3af;font-style:italic;">Sin evaluación este mes</div>`;
+    } else {
+      const pct   = ev.score_pct?.toFixed(1) || '—';
+      const color = ev.score_pct >= 80 ? '#059669' : ev.score_pct >= 60 ? '#f59e0b' : '#dc2626';
+      const diasRows = [
+        ev.dias_reclamos > 0 ? `<div class="eval-dias-row"><span>Días Reclamos</span><span style="font-weight:700;color:#2563eb;">+${ev.dias_reclamos.toFixed(2)} día(s)</span></div>` : '',
+        ev.dias_calidad  > 0 ? `<div class="eval-dias-row"><span>Días Calidad</span><span style="font-weight:700;color:#2563eb;">+${ev.dias_calidad.toFixed(2)} día(s)</span></div>` : '',
+        `<div class="eval-dias-row"><span>Evaluación (${pct}%)</span><span style="font-weight:700;color:${color};">+${ev.eval_days.toFixed(2)} día(s)</span></div>`,
+        `<div class="eval-dias-row" style="border-top:1px solid #e2e8f0;margin-top:4px;padding-top:6px;">
+          <span style="font-weight:700;">Total días bono</span>
+          <span style="font-weight:800;font-size:15px;color:${ev.total_bono>=2?'#059669':'#f59e0b'};">${ev.total_bono.toFixed(2)}</span>
+        </div>`
+      ].filter(Boolean).join('');
+
+      evalContent = `
+        <div style="margin-bottom:8px;">${diasRows}</div>
+        ${bonoProdFmt}
+        <button class="emp-btn" style="margin-top:10px;padding:7px 16px;font-size:12px;"
+          onclick="evalVerDetalle(${JSON.stringify(ev).replace(/"/g,'&quot;')})">
+          🔍 Ver Evaluación
+        </button>`;
+    }
+
+    const monthColor = hasEval ? '#f0fdf4' : '#fafafa';
+    const borderColor = hasEval ? '#bbf7d0' : '#e2e8f0';
+    return `
+      <div class="emp-card" style="background:${monthColor};border:1px solid ${borderColor};margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:15px;font-weight:700;color:#1e293b;">${d.month_name} ${d.year}</div>
+          ${hasEval
+            ? `<span style="background:#059669;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">✓ Evaluado</span>`
+            : `<span style="background:#e5e7eb;color:#9ca3af;border-radius:12px;padding:2px 10px;font-size:11px;">Sin evaluación</span>`}
+        </div>
+        ${evalContent}
+        ${!hasEval && bonoProdFmt ? `<div style="margin-top:4px;">${bonoProdFmt}</div>` : ''}
+      </div>`;
+  }).join('');
+
+  const yearOpts = years.map(y => `<option value="${y}" ${y===selYear?'selected':''}>${y}</option>`).join('');
+
+  el.innerHTML = `
+    <p class="emp-page-title">⭐ Mis Evaluaciones</p>
+
+    <div class="emp-card" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <label style="font-size:13px;font-weight:600;">Año:</label>
+        <select class="emp-select" style="width:auto;padding:6px 12px;" onchange="window._evalYear=Number(this.value);evaluaciones(document.getElementById('emp-main'))">
+          ${yearOpts}
+        </select>
+      </div>
+      <div style="font-size:11px;color:#6b7280;margin-bottom:8px;">Días de bono por mes</div>
+      <div style="display:flex;gap:6px;align-items:flex-end;overflow-x:auto;padding-bottom:4px;">
+        ${chartBars || '<span style="color:#9ca3af;font-size:12px;">Sin datos</span>'}
+      </div>
+      <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap;">
+        <span style="font-size:10px;color:#059669;">■ ≥2.5 días</span>
+        <span style="font-size:10px;color:#f59e0b;">■ 1.5–2.4 días</span>
+        <span style="font-size:10px;color:#3b82f6;">■ &lt;1.5 días</span>
+        <span style="font-size:10px;color:#9ca3af;">■ Sin datos</span>
+      </div>
+    </div>
+
+    ${cards || '<div class="emp-empty"><p>Sin datos para este año</p></div>'}`;
+}
+
+function evalVerDetalle(ev) {
+  const pct   = ev.score_pct?.toFixed(1) || '—';
+  const color = ev.score_pct >= 80 ? '#059669' : ev.score_pct >= 60 ? '#f59e0b' : '#dc2626';
+
+  const stars = n => '★'.repeat(Math.round(n)) + '☆'.repeat(5 - Math.round(n));
+  const itemsHtml = (ev.items || []).map(it => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f1f5f9;gap:8px;">
+      <div style="font-size:12px;color:#334155;flex:1;">${esc(it.name)}</div>
+      <div style="font-size:16px;color:#f59e0b;white-space:nowrap;">${stars(it.stars)}</div>
+    </div>`).join('');
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:20px;width:100%;max-width:440px;max-height:85vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;">Evaluación — ${esc(ev.session_name || '')}</div>
+        <button onclick="this.closest('.eval-modal').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      <div style="background:#f8fafc;border-radius:10px;padding:12px;margin-bottom:16px;">
+        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;">Resultado final</div>
+        <div style="font-size:32px;font-weight:800;color:${color};">${pct}%</div>
+        <div style="font-size:12px;color:#64748b;">${ev.points_obtained?.toFixed(1)} / ${ev.total_points} pts → ${ev.eval_days?.toFixed(2)} días de bono por evaluación</div>
+      </div>
+      <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:8px;">Criterios evaluados</div>
+      ${itemsHtml}
+    </div>`;
+  modal.classList.add('eval-modal');
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  modal.querySelector('button').onclick = () => modal.remove();
+  document.body.appendChild(modal);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
