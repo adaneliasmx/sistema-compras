@@ -542,24 +542,26 @@ router.delete('/forms/:form_id/items/:item_id', rhhAuthRequired, rhhRequireRole(
 function findFormForEmp(emp, forms, positions) {
   if (!emp || !emp.position_id) return null;
 
-  // Resolver nombre de puesto del empleado
   const pos = positions ? positions.find(p => p.id === emp.position_id) : null;
   const normEmpPos = pos ? normPos(pos.name) : null;
 
+  // PRIORIDAD 1: matching por nombre (igual que el frontend)
+  // Esto evita que position_ids legacy (hardcodeados 1-28) den falsos positivos
+  // cuando el import CONTPAQ i creó puestos con IDs distintos al seed.
+  if (normEmpPos) {
+    for (const form of forms) {
+      if ((form.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
+      const tpl = EVAL_TEMPLATES_2026.find(t => t.group_name === form.group_name);
+      if (tpl && (tpl.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
+    }
+  }
+
+  // PRIORIDAD 2: position_ids legacy (solo si el nombre no coincidió)
   for (const form of forms) {
-    // 1. Por position_id
     if ((form.position_ids || []).includes(emp.position_id)) return form;
     if (form.position_id === emp.position_id) return form;
-
-    if (!normEmpPos) continue;
-
-    // 2. Por position_names en el form guardado en DB
-    if ((form.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
-
-    // 3. Fallback: por position_names en el template (si la DB no tiene position_names)
-    const tpl = EVAL_TEMPLATES_2026.find(t => t.group_name === form.group_name);
-    if (tpl && (tpl.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
   }
+
   return null;
 }
 
