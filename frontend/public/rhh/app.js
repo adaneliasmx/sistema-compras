@@ -5500,7 +5500,7 @@ async function buildEvalAsignarTab(sessions, forms) {
   const firstDayOfMonth = session && session.year && session.month
     ? new Date(session.year, session.month - 1, 1)
     : null;
-  const allActive = (state.employees || []).filter(e => e.status === 'active' || e.active !== false);
+  const allActive = (state.employees || []).filter(e => e.status === 'active');
   const employees = firstDayOfMonth
     ? allActive.filter(e => {
         const fi = parseFechaIngreso(e.fecha_ingreso || e.start_date);
