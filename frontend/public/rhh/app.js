@@ -5291,9 +5291,57 @@ async function buildEvalSessionTab(sessions, forms) {
       ? `<div style="font-size:12px;color:#b45309;margin-bottom:8px;">⚠ ${excluidos} empleado${excluidos>1?'s':''} excluido${excluidos>1?'s':''} por ingreso durante el mes (no laboraron mes completo)</div>`
       : '';
 
+    // Mapeo puesto → formulario (refleja lógica de findFormForEmp del backend)
+    // Nombres de puestos por grupo — mirrors EVAL_TEMPLATES_2026.position_names
+    const TPL_NAMES = {
+      'Fosfatador': ['Operador de Fosfatado','Operador de fosfatado','Fosfatador','Operador Lider','Operador líder','Operador Líder','Operador Línea 1','Operador Linea 1'],
+      'Auxiliar de Almacén': ['Auxiliar de Almacén','Auxiliar de Almacen','Auxiliar Almacen','Auxiliar almacén'],
+      'Operador de Empaque': ['Operador de Empaque','Operador de empaque','Empacador','Auxiliar de un Empaque','Auxiliar de Empaque','Auxiliar de empaque'],
+      'Auxiliar de Calidad': ['Auxiliar de Calidad','Auxiliar de calidad'],
+      'Inspector de Calidad': ['Inspector de Calidad','Inspector Calidad','Inspector de calidad'],
+      'Supervisor de Turno': ['Supervisor de Turno','Supervisor de turno','Supervisor'],
+      'Técnico de Mantenimiento': ['Técnico de Mantenimiento','Tecnico de Mantenimiento','Técnico de mantenimiento','Técnico en Mantenimiento','Tecnico en Mantenimiento','Tecnico en Mantemiento'],
+      'Equipo Vacío': ['Equipo Vacío','Equipo Vacio','equipo vacio'],
+      'Intendencia': ['Intendencia','Limpieza','Auxiliar de Limpieza','Auxiliar de limpieza','Ayudante General','Ayudante general'],
+      'Operador PTAR': ['Operador PTAR'],
+      'Coordinador de Producción': ['Coordinador de Producción','Coordinador de Produccion','Coordinador de producción','Cordinador de produccion'],
+      'STAFF': ['STAFF','Administrador SGC','Administrador Sgc','Gerente de operaciones','Gerente de Operaciones','Ingeniero de Procesos','Ingeniero de procesos','Ingeniero de Calidad','Ingeniero de calidad','Ingeniero de Mantenimiento','Ingeniero de mantenimiento','SYMACompras','Administradora RRHH','Administradora Rrhh','Coordinador de Seguridad y Medio Ambiente'],
+    };
+    function normPosKey(s) {
+      return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+    }
+    // Construir mapa norm-key → group_name: primero desde DB forms, luego desde templates
+    const FORM_MAP_NORM = {};
+    for (const f of forms) {
+      for (const pn of (f.position_names || [])) {
+        FORM_MAP_NORM[normPosKey(pn)] = f.group_name;
+      }
+    }
+    // Asegurar que los templates siempre tengan cobertura (fallback)
+    for (const [groupName, names] of Object.entries(TPL_NAMES)) {
+      for (const pn of names) {
+        const k = normPosKey(pn);
+        if (!FORM_MAP_NORM[k]) {
+          // Buscar el form de DB con ese group_name
+          const f = forms.find(f2 => f2.group_name === groupName);
+          if (f) FORM_MAP_NORM[k] = f.group_name;
+        }
+      }
+    }
+    function formForEmp(emp) {
+      const pos = state.positions.find(p => p.id === emp.position_id);
+      if (!pos) return null;
+      const key = normPosKey(pos.name);
+      if (FORM_MAP_NORM[key]) return FORM_MAP_NORM[key];
+      // Último fallback: position_ids legacy
+      const f = forms.find(f2 => (f2.position_ids||[]).includes(emp.position_id));
+      return f ? f.group_name : null;
+    }
+
     const entryRows = employees.map(emp => {
       const entry = (session.entries || []).find(e => e.employee_id === emp.id);
       const pos = state.positions.find(p => p.id === emp.position_id);
+      const formName = formForEmp(emp);
       const isSaved = entry && entry.saved;
       const supOpts = supOptsBase.replace(`value="${entry && entry.evaluador_id}"`, `value="${entry && entry.evaluador_id}" selected`);
       const evalSel = `<select id="ev-eval-${emp.id}" style="font-size:12px;padding:3px 6px;min-width:120px;"${isSaved?' disabled':''}>${supOpts}</select>`;
@@ -5304,6 +5352,7 @@ async function buildEvalSessionTab(sessions, forms) {
       return `<tr id="ev-row-${emp.id}" style="${isSaved?'background:#f0fdf4;':''}">
         <td style="font-size:13px;font-weight:600">${escHtml(emp.full_name)}</td>
         <td style="font-size:12px;color:#6b7280">${escHtml(pos?pos.name:'—')}</td>
+        <td style="font-size:11px;color:${formName?'#0369a1':'#b91c1c'};">${formName ? escHtml(formName) : '⚠ Sin form'}</td>
         <td>${evalSel}</td>
         <td style="text-align:center">${numField('asis', entry?entry.asistencias:undefined)}</td>
         <td style="text-align:center">${numField('falt', entry?entry.faltas:undefined)}</td>
@@ -5329,7 +5378,7 @@ async function buildEvalSessionTab(sessions, forms) {
       </div>
       <div class="card section table-wrap">
         <table><thead><tr>
-          <th>Trabajador</th><th>Puesto</th><th>Evaluador</th>
+          <th>Trabajador</th><th>Puesto</th><th>Formulario</th><th>Evaluador</th>
           <th style="text-align:center">Asistencias</th><th style="text-align:center">Faltas</th>
           <th style="text-align:center">Retardos</th><th style="text-align:center">Actas Adm.</th>
           <th style="text-align:center">Amonest.</th><th>Acciones</th>

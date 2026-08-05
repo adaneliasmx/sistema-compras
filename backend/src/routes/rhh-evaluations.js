@@ -535,24 +535,30 @@ router.delete('/forms/:form_id/items/:item_id', rhhAuthRequired, rhhRequireRole(
 });
 
 // ── Helper: encontrar formulario para un empleado ─────────────────────────────
-// Matching: primero por position_id, luego por position_name normalizado
+// Orden de matching:
+//   1. position_ids en el form de DB (legacy)
+//   2. position_names en el form de DB
+//   3. position_names en el TEMPLATE (fallback cuando DB no fue re-seeded)
 function findFormForEmp(emp, forms, positions) {
-  if (!emp) return null;
-  // 1. Por position_id (rápido)
-  const byId = forms.find(f =>
-    (f.position_ids || []).includes(emp.position_id) ||
-    f.position_id === emp.position_id
-  );
-  if (byId) return byId;
-  // 2. Por nombre de puesto normalizado
-  if (emp.position_id && positions) {
-    const pos = positions.find(p => p.id === emp.position_id);
-    if (pos) {
-      const normEmpPos = normPos(pos.name);
-      return forms.find(f =>
-        (f.position_names || []).some(pn => normPos(pn) === normEmpPos)
-      ) || null;
-    }
+  if (!emp || !emp.position_id) return null;
+
+  // Resolver nombre de puesto del empleado
+  const pos = positions ? positions.find(p => p.id === emp.position_id) : null;
+  const normEmpPos = pos ? normPos(pos.name) : null;
+
+  for (const form of forms) {
+    // 1. Por position_id
+    if ((form.position_ids || []).includes(emp.position_id)) return form;
+    if (form.position_id === emp.position_id) return form;
+
+    if (!normEmpPos) continue;
+
+    // 2. Por position_names en el form guardado en DB
+    if ((form.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
+
+    // 3. Fallback: por position_names en el template (si la DB no tiene position_names)
+    const tpl = EVAL_TEMPLATES_2026.find(t => t.group_name === form.group_name);
+    if (tpl && (tpl.position_names || []).some(pn => normPos(pn) === normEmpPos)) return form;
   }
   return null;
 }
