@@ -375,10 +375,60 @@ async function incidencias(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 // VISTA: LISTA DE RAYA
 // ══════════════════════════════════════════════════════════════════════════════
+// Catálogo de conceptos CONTPAQ i para mostrar en nómina
+const PERC_CATALOG = [
+  ['1',   'Sueldo'],
+  ['3',   '7° Día'],
+  ['4',   'T. Extra'],
+  ['10',  'Prima dominical'],
+  ['32',  'Despensa'],
+  ['131', 'Fondo ahorro empresa'],
+  ['12',  'Gratificación'],
+  ['19',  'Vac. a tiempo'],
+  ['20',  'Prima vacacional'],
+  ['139', 'Bono instructor'],
+  ['7',   'Bono eficiencia'],
+  ['22',  'Prima vac. rep. $'],
+  ['24',  'Aguinaldo'],
+  ['15',  'Bono puntualidad'],
+  ['140', 'Bono entregas'],
+  ['21',  'Vac. rep. $'],
+  ['133', 'Pago Fondo Ahorro'],
+];
+const DED_CATALOG = [
+  ['41',  'ISR antes subs'],
+  ['45',  'ISR (mes)'],
+  ['52',  'IMSS'],
+  ['67',  'Fondo ahorro'],
+  ['99',  'Ajuste neto'],
+  ['175', 'Fondo Ahorro Empresa'],
+  ['14',  'Seg. vivienda Infonavit'],
+  ['16',  'Préstamo Infonavit'],
+  ['181', 'Infonavit CF'],
+  ['64',  'Préstamo empresa'],
+  ['32',  'Subs Empleo acred.'],
+  ['43',  'ISR Art174'],
+  ['55',  'ISR compensar'],
+  ['104', 'ISR ajuste mensual'],
+  ['105', 'ISR ajust. subsidio'],
+  ['107', 'Ajuste Subsidio'],
+];
+
+// Busca el importe de un concepto por código en el objeto percepciones/deducciones
+// Las claves del objeto son como "1 Sueldo", "19 Vacaciones a tiempo", etc.
+function findConcepto(obj, code) {
+  if (!obj) return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (String(k).split(' ')[0] === String(code)) return v;
+  }
+  return null;
+}
+
 async function lista_raya(el) {
   const r = await api('GET', '/lista-raya');
   if (!r || !r.ok) { el.innerHTML = `<div class="emp-empty"><p>Error al cargar lista de raya</p></div>`; return; }
-  const { periodo, datos, salario_diario, monto_base, monto_he, ya_aclaracion } = r.data;
+  const { periodo, datos, salario_diario, monto_base, monto_he,
+          percepciones, deducciones, total_perc, total_ded, neto_pagar, ya_aclaracion } = r.data;
 
   if (!datos) {
     el.innerHTML = `
@@ -390,25 +440,63 @@ async function lista_raya(el) {
     return;
   }
 
-  const montoTotal = (monto_base || 0) + (monto_he || 0);
+  // ── Construir tabla de percepciones/deducciones si hay datos del PDF ──
+  let nominaHtml = '';
+  if (percepciones && Object.keys(percepciones).length > 0) {
+    const percRows = PERC_CATALOG
+      .map(([code, label]) => ({ label, val: findConcepto(percepciones, code) }))
+      .filter(x => x.val != null && x.val !== 0);
 
-  el.innerHTML = `
-  <p class="emp-page-title">Lista de Raya</p>
+    const dedRows = DED_CATALOG
+      .map(([code, label]) => ({ label, val: findConcepto(deducciones, code) }))
+      .filter(x => x.val != null && x.val !== 0);
 
-  <div class="emp-card">
-    <div class="raya-header">
-      <div>
-        <div class="raya-periodo">Período S${periodo.no_periodo}</div>
-        <div class="raya-fechas">${periodo.fecha_inicio||''} – ${periodo.fecha_fin||''}</div>
+    const percHtml = percRows.map(x => `
+      <div class="nomina-row">
+        <span class="nomina-concept">${esc(x.label)}</span>
+        <span class="nomina-amount">${fmtMoney(x.val)}</span>
+      </div>`).join('');
+
+    const dedHtml = dedRows.map(x => `
+      <div class="nomina-row ded">
+        <span class="nomina-concept">${esc(x.label)}</span>
+        <span class="nomina-amount" style="color:#dc2626">- ${fmtMoney(x.val)}</span>
+      </div>`).join('');
+
+    nominaHtml = `
+    <div class="emp-card" style="margin-top:12px;padding:0;overflow:hidden">
+      <div style="background:#f0fdf4;padding:12px 16px;border-bottom:1px solid #bbf7d0">
+        <div style="font-size:12px;font-weight:700;color:#15803d;text-transform:uppercase;letter-spacing:.5px">Percepciones</div>
       </div>
-    </div>
+      <div style="padding:8px 0">${percHtml || '<div style="padding:8px 16px;color:#94a3b8;font-size:13px">Sin percepciones registradas</div>'}</div>
+      <div style="background:#f8f9fa;padding:10px 16px;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;display:flex;justify-content:space-between">
+        <span style="font-weight:700;font-size:13px">Total Percepciones</span>
+        <span style="font-weight:700;font-size:13px;color:#15803d">${fmtMoney(total_perc)}</span>
+      </div>
 
+      <div style="background:#fff5f5;padding:12px 16px;border-bottom:1px solid #fecaca">
+        <div style="font-size:12px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:.5px">Deducciones</div>
+      </div>
+      <div style="padding:8px 0">${dedHtml || '<div style="padding:8px 16px;color:#94a3b8;font-size:13px">Sin deducciones registradas</div>'}</div>
+      <div style="background:#f8f9fa;padding:10px 16px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between">
+        <span style="font-weight:700;font-size:13px">Total Deducciones</span>
+        <span style="font-weight:700;font-size:13px;color:#dc2626">- ${fmtMoney(total_ded)}</span>
+      </div>
+
+      <div style="background:#eff6ff;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+        <span style="font-weight:800;font-size:15px;color:#1d4ed8">Neto a Pagar</span>
+        <span style="font-weight:800;font-size:18px;color:#1d4ed8">${fmtMoney(neto_pagar)}</span>
+      </div>
+    </div>`;
+  } else {
+    // Fallback: vista estimada
+    const montoTotal = (monto_base || 0) + (monto_he || 0);
+    nominaHtml = `
     ${salario_diario ? `
     <div class="raya-monto">
       <div class="monto-val">${fmtMoney(montoTotal)}</div>
       <div class="monto-lbl">Estimado base + horas extra</div>
     </div>` : ''}
-
     <div class="raya-grid">
       <div class="raya-item"><div class="rv">${fmt(datos.dias_pagados)}</div><div class="rl">Días pagados</div></div>
       <div class="raya-item"><div class="rv" style="color:${datos.faltas ? '#dc2626' : '#1e293b'}">${fmt(datos.faltas||0)}</div><div class="rl">Faltas</div></div>
@@ -421,14 +509,24 @@ async function lista_raya(el) {
       ${datos.bono_instructor       ? `<div class="raya-item"><div class="rv">${fmt(datos.bono_instructor)}</div><div class="rl">Bono instructor</div></div>` : ''}
       ${datos.gratificacion         ? `<div class="raya-item"><div class="rv">${fmtMoney(datos.gratificacion)}</div><div class="rl">Gratificación</div></div>` : ''}
     </div>
+    <p class="raya-disclaimer">* El monto mostrado es estimado. Los descuentos IMSS, INFONAVIT y retenciones no están incluidos.</p>`;
+  }
 
-    ${datos.notas ? `<div style="font-size:12px;color:#64748b;margin-bottom:12px">Nota: ${esc(datos.notas)}</div>` : ''}
+  el.innerHTML = `
+  <p class="emp-page-title">Lista de Raya</p>
 
-    <p class="raya-disclaimer">* El monto mostrado es estimado. Los descuentos IMSS, INFONAVIT y retenciones no están incluidos.</p>
-
+  <div class="emp-card">
+    <div class="raya-header">
+      <div>
+        <div class="raya-periodo">Período S${periodo.no_periodo}</div>
+        <div class="raya-fechas">${periodo.fecha_inicio||''} – ${periodo.fecha_fin||''}</div>
+      </div>
+    </div>
+    ${nominaHtml}
+    ${datos.notas ? `<div style="font-size:12px;color:#64748b;margin-top:8px">Nota: ${esc(datos.notas)}</div>` : ''}
     ${ya_aclaracion
-      ? `<div style="background:#fef3c7;border-radius:10px;padding:12px;font-size:13px;color:#92400e">Ya tienes una aclaración pendiente para este período. Te contactaremos pronto.</div>`
-      : `<button class="emp-btn secondary" id="btn-aclaracion" style="margin-top:4px">✋ Solicitar aclaración</button>`
+      ? `<div style="background:#fef3c7;border-radius:10px;padding:12px;font-size:13px;color:#92400e;margin-top:12px">Ya tienes una aclaración pendiente para este período. Te contactaremos pronto.</div>`
+      : `<button class="emp-btn secondary" id="btn-aclaracion" style="margin-top:12px">✋ Solicitar aclaración</button>`
     }
     <div id="aclaracion-form" style="display:none;margin-top:14px">
       <div class="emp-form-group">

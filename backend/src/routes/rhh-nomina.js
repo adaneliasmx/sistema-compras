@@ -1055,6 +1055,11 @@ router.post('/importar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
 
         // Construir registro de incidencias
         const fields = conceptsToFields(pEmp.percepciones);
+        // Calcular días de vacaciones: importe P|19 / salario diario
+        const vacImporte = fields.vacaciones_importe ?? 0;
+        const salDiario  = emp.sal_diario || emp.salary_daily || 0;
+        const vacDias    = (vacImporte && salDiario) ? Math.round(vacImporte / salDiario) : null;
+
         const rec = {
           id: nextId([...incList, ...newIncs]),
           no_periodo: noPeriodo,
@@ -1067,8 +1072,10 @@ router.post('/importar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
           bono_eficiencia_dias:  fields.bono_eficiencia  ?? null,
           bono_instructor:       fields.bono_instructor  ?? null,
           prima_dominical:       fields.prima_dominical  ? 1 : 0,
-          vacaciones_dias:       fields.vacaciones_importe ? null : null, // importe, no días
+          vacaciones_dias:       vacDias,
           gratificacion:         fields.gratificacion    ?? null,
+          percepciones:          pEmp.percepciones || {},
+          deducciones:           pEmp.deducciones  || {},
           total_perc_pdf:        pEmp.total_perc_pdf,
           total_ded_pdf:         pEmp.total_ded_pdf,
           neto_pdf:              pEmp.neto_pdf,

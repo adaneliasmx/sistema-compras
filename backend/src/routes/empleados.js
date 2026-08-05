@@ -162,7 +162,7 @@ router.get('/lista-raya', empAuthRequired, (req, res) => {
   const p = periodos.find(p => p.no_periodo === row.no_periodo) || {};
 
   // Calcular monto estimado (solo referencia)
-  const salarioDiario = emp.salary_daily || 0;
+  const salarioDiario = emp.salary_daily || emp.sal_diario || 0;
   const montoBase = salarioDiario * (row.dias_pagados || 0);
   const montoHE = row.horas_extras_total ? (salarioDiario / 8 * 1.5 * row.horas_extras_total) : 0;
 
@@ -177,6 +177,11 @@ router.get('/lista-raya', empAuthRequired, (req, res) => {
     salario_diario: salarioDiario,
     monto_base: Math.round(montoBase * 100) / 100,
     monto_he: Math.round(montoHE * 100) / 100,
+    percepciones: row.percepciones || null,
+    deducciones: row.deducciones || null,
+    total_perc: row.total_perc_pdf || null,
+    total_ded: row.total_ded_pdf || null,
+    neto_pagar: row.neto_pdf || null,
     ya_aclaracion: yaAclaracion,
   });
 });

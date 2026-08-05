@@ -291,10 +291,14 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
 });
 
 // ── POST /api/rhh/catalogo/import-contpaq ─────────────────────────────────────
-// Importar Departamento y Puesto desde Excel de lista asistencia CONTPAQ i.
-// Formato esperado (primera hoja): columnas con encabezados o posicional semana 12:
-//   col 0 = No. Empleado  col 2 = Área/Departamento  col 4 = Puesto
-// Devuelve: { updated, created_depts, created_pos, skipped, rows }
+// Importar desde Excel de lista asistencia CONTPAQ i:
+//   - Departamento y Puesto del empleado
+//   - Incidencias semanales (dias_pagados, faltas, horas_extra, vacaciones, prima_dominical)
+// Formato esperado (primera hoja): "lista asistencia semana X"
+//   col 0=No, col 1=Nombre, col 2=Área, col 4=Puesto, col 5=Turno
+//   cols 6,10,14,18,22,26,30 = Status día (Labora/Falta/Vacaciones/Descanso/Retardo...)
+//   cols 8,12,16,20,24,28,32 = Horas TE por día
+// Devuelve: { updated, created_depts, created_pos, inc_upserted, skipped, log }
 router.post(
   '/import-contpaq',
   rhhAuthRequired,
@@ -311,16 +315,29 @@ router.post(
     }
 
     // Leer primera hoja
-    const ws  = wb.Sheets[wb.SheetNames[0]];
+    const sheetName = wb.SheetNames[0];
+    const ws  = wb.Sheets[sheetName];
     const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
-    // Detectar fila de datos: buscar fila con número de empleado numérico en col 0
-    // Soporta formato "lista asistencia semana" (encabezado en fila 3, datos desde fila 4)
-    // Y también formato CSV simple con encabezados: No, Nombre, Departamento, Puesto
     const norm = v => String(v || '').trim();
 
+    // Detectar número de período desde el nombre de la hoja (SEMANA 12 → 12)
+    // o desde una celda de encabezado ("Semana 12 del...")
+    let noPeriodo = null;
+    const sheetMatch = sheetName.match(/semana\s+(\d+)/i);
+    if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
+    if (!noPeriodo) {
+      // Buscar en las primeras 3 filas
+      for (let i = 0; i < Math.min(3, all.length) && !noPeriodo; i++) {
+        for (const cell of all[i]) {
+          const m = String(cell || '').match(/semana\s+(\d+)/i);
+          if (m) { noPeriodo = Number(m[1]); break; }
+        }
+      }
+    }
+
+    // Detectar columnas de dept/puesto
     let deptCol = 2, posCol = 4, numCol = 0;
-    // Detectar si hay encabezados explícitos en alguna fila
     for (let i = 0; i < Math.min(5, all.length); i++) {
       const row = all[i].map(norm).map(v => v.toLowerCase());
       const dIdx = row.findIndex(v => v.includes('departamento') || v === 'área' || v === 'area');
@@ -333,10 +350,20 @@ router.post(
       }
     }
 
+    // Columnas de asistencia (lista asistencia semana):
+    // Status: Lun=6, Mar=10, Mié=14, Jue=18, Vie=22, Sab=26, Dom=30
+    // TE hrs: Lun=8, Mar=12, Mié=16, Jue=20, Vie=24, Sab=28, Dom=32
+    const STATUS_COLS = [6, 10, 14, 18, 22, 26, 30];
+    const TE_COLS     = [8, 12, 16, 20, 24, 28, 32];
+    const PAID_STATUS = new Set(['labora','festivo','descanso','retardo','tiempoxt','permiso cg','cumpleanos','cumpleaños','paro tecnico']);
+    const VAC_STATUS  = new Set(['vacaciones','vacacion']);
+    const FALTA_STATUS= new Set(['falta','baja','incapacidad','permiso sg']);
+
     const db = readFresh();
     const emps = db.rhh_employees || [];
+    if (!Array.isArray(db.rhh_incidencias_semanales)) db.rhh_incidencias_semanales = [];
 
-    let updated = 0, skipped = 0, created_depts = 0, created_pos = 0;
+    let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
     const log = [];
 
     function findOrCreateDept(name) {
@@ -370,16 +397,15 @@ router.post(
       const posName  = norm(row[posCol]);
       if (!deptName && !posName) { skipped++; continue; }
 
-      // Buscar empleado por número (con o sin ceros al frente)
       const emp = emps.find(e => {
         const en = norm(e.employee_number).replace(/^0+/, '');
         return en === empNum;
       });
       if (!emp) { skipped++; log.push(`#${empNum}: no encontrado`); continue; }
 
+      // Actualizar dept/puesto
       const deptId = findOrCreateDept(deptName);
       const posId  = findOrCreatePos(posName, deptId);
-
       const changed = emp.department_id !== deptId || emp.position_id !== posId;
       if (changed) {
         emp.department_id = deptId;
@@ -388,10 +414,70 @@ router.post(
         updated++;
         log.push(`#${empNum} ${emp.full_name}: dept="${deptName}" puesto="${posName}"`);
       }
+
+      // Importar incidencias semanales (solo si se detectó período)
+      if (noPeriodo) {
+        let diasPagados = 0, faltas = 0, vacDias = 0, primaDom = 0;
+        let teTotal = 0;
+
+        for (let i = 0; i < STATUS_COLS.length; i++) {
+          const statusRaw = norm(row[STATUS_COLS[i]]).toLowerCase();
+          const teHrs     = Number(row[TE_COLS[i]]) || 0;
+          teTotal += teHrs;
+          if (!statusRaw) continue;
+          if (PAID_STATUS.has(statusRaw)) diasPagados++;
+          else if (VAC_STATUS.has(statusRaw)) vacDias++;
+          else if (FALTA_STATUS.has(statusRaw)) faltas++;
+          // Prima dominical: domingo (índice 6) con status labora/tiempoxt
+          if (i === 6 && (statusRaw === 'labora' || statusRaw === 'tiempoxt')) primaDom = 1;
+        }
+
+        const incList = db.rhh_incidencias_semanales;
+        const existIdx = incList.findIndex(r => r.employee_id === emp.id && r.no_periodo === noPeriodo);
+
+        if (existIdx !== -1) {
+          // No sobreescribir si fue importado desde PDF (más completo)
+          if (incList[existIdx].source !== 'pdf_import') {
+            incList[existIdx] = {
+              ...incList[existIdx],
+              dias_pagados: diasPagados,
+              faltas,
+              horas_extras_total: teTotal,
+              vacaciones_dias: vacDias || incList[existIdx].vacaciones_dias || 0,
+              prima_dominical: primaDom,
+              source: 'excel_import',
+              updated_at: nowMxDate(),
+            };
+            inc_upserted++;
+          }
+        } else {
+          incList.push({
+            id: nextId(incList),
+            no_periodo: noPeriodo,
+            employee_id: emp.id,
+            dias_pagados: diasPagados,
+            faltas,
+            horas_extras_total: teTotal,
+            despensa: 1,
+            bono_puntualidad_dias: null,
+            bono_eficiencia_dias: null,
+            bono_instructor: null,
+            prima_dominical: primaDom,
+            vacaciones_dias: vacDias || 0,
+            gratificacion: null,
+            notas: '',
+            source: 'excel_import',
+            updated_at: nowMxDate(),
+            created_at: nowMxDate(),
+          });
+          inc_upserted++;
+        }
+      }
     }
 
     write(db);
-    res.json({ ok: true, updated, created_depts, created_pos, skipped, log });
+    res.json({ ok: true, updated, created_depts, created_pos, skipped, inc_upserted,
+               no_periodo: noPeriodo || null, log });
   }
 );
 
