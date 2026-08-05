@@ -157,7 +157,7 @@ function read() {
   return _cache;
 }
 
-// Escribe y persiste (actualiza caché + persiste en background)
+// Escribe y persiste en background (fire-and-forget — NO garantiza persistencia antes del response)
 function write(data) {
   _cache = data;
   if (pool) {
@@ -169,6 +169,16 @@ function write(data) {
     } catch (err) {
       console.error('[db-rhh] Error escribiendo JSON:', err.message);
     }
+  }
+}
+
+// Escribe y ESPERA a que la persistencia complete — usar en rutas críticas (imports, ediciones)
+async function writeAsync(data) {
+  _cache = data;
+  if (pool) {
+    await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(data)]);
+  } else {
+    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
   }
 }
 
@@ -246,4 +256,4 @@ function getSystemEmpIds() {
   );
 }
 
-module.exports = { dbPath, seedPath, read, write, nextId, initDb, forceSeedFromJson, calcVacBalance, getSystemEmpIds };
+module.exports = { dbPath, seedPath, read, write, writeAsync, nextId, initDb, forceSeedFromJson, calcVacBalance, getSystemEmpIds };

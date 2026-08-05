@@ -3,7 +3,7 @@ const fs   = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
 const multer = require('multer');
-const { read, write, nextId, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
+const { read, write, writeAsync, nextId, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -308,7 +308,7 @@ router.post(
   rhhAuthRequired,
   rhhRequireRole('admin', 'rh'),
   upload.single('file'),
-  (req, res) => {
+  async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
 
     let wb;
@@ -514,11 +514,13 @@ router.post(
         });
       }
 
-      write(db);
+      try {
+        await writeAsync(db);
+      } catch (e) {
+        console.error('[import-contpaq] Error al persistir en DB:', e.message);
+        return res.status(500).json({ error: 'Datos procesados pero no se pudo guardar en la base de datos: ' + e.message });
+      }
       const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
-      const incMsg = filterSemana
-        ? `S${filterSemana}: ${inc_upserted}`
-        : `S${semanasList[0]}–S${semanasList[semanasList.length-1]}: ${inc_upserted}`;
       return res.json({
         ok: true, formato: 'consolidado',
         updated, created_depts, created_pos, skipped, inc_upserted,
@@ -609,7 +611,12 @@ router.post(
       }
     }
 
-    write(db);
+    try {
+      await writeAsync(db);
+    } catch (e) {
+      console.error('[import-contpaq] Error al persistir en DB:', e.message);
+      return res.status(500).json({ error: 'Datos procesados pero no se pudo guardar en la base de datos: ' + e.message });
+    }
     res.json({ ok: true, formato: 'lista_asistencia',
                updated, created_depts, created_pos, skipped, inc_upserted,
                semanas: noPeriodo ? [noPeriodo] : [], log });
