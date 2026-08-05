@@ -5360,7 +5360,8 @@ async function buildEvalSessionTab(sessions, forms) {
         const hasVal = val !== null && val !== undefined;
         return `<input type="number" id="ev-${field}-${emp.id}" min="0" value="${hasVal?val:''}" placeholder="—" style="width:55px;font-size:12px;padding:3px 5px;text-align:center;${isSaved?'background:#f0fdf4;':''}" ${isSaved?'disabled':''}>`;
       };
-      return `<tr id="ev-row-${emp.id}" style="${isSaved?'background:#f0fdf4;':''}">
+      const isAssigned = !!(entry && entry.evaluador_id);
+      return `<tr id="ev-row-${emp.id}" data-assigned="${isAssigned?'1':'0'}" style="${isSaved?'background:#f0fdf4;':''}">
         <td style="font-size:13px;font-weight:600">${escHtml(emp.full_name)}</td>
         <td style="font-size:12px;color:#6b7280">${escHtml(pos?pos.name:'—')}</td>
         <td style="font-size:11px;color:${formName?'#0369a1':'#b91c1c'};">${formName ? escHtml(formName) : '⚠ Sin form'}</td>
@@ -5388,9 +5389,15 @@ async function buildEvalSessionTab(sessions, forms) {
           : '<span class="badge" style="background:#059669;">✓ Cerrada</span>'}
       </div>
       <div class="card section">
-        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
-          <input id="eval-ses-search" type="text" placeholder="Buscar trabajador o puesto..." oninput="evalSesFilterRows(this.value)"
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+          <input id="eval-ses-search" type="text" placeholder="Buscar trabajador o puesto..." oninput="evalSesFilterRows()"
             style="flex:1;min-width:200px;padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+          <select id="eval-ses-asign-filter" onchange="evalSesFilterRows()"
+            style="padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+            <option value="todos">Todos</option>
+            <option value="asignados">Asignados</option>
+            <option value="sin-asignar">Sin asignar</option>
+          </select>
         </div>
         <div class="table-wrap">
         <table id="eval-ses-table"><thead><tr>
@@ -5536,7 +5543,7 @@ async function buildEvalAsignarTab(sessions, forms) {
         : null;
       const assignedLabel = assignedUser ? assignedUser.full_name : (entry && entry.evaluador_id ? `ID ${entry.evaluador_id}` : null);
       const empPos = pos.find(p => p.id === emp.position_id);
-      return `<label class="asign-emp-item asign-g-${gIdx}" data-name="${escHtml((emp.full_name||'').toLowerCase())}" data-pos="${escHtml((empPos?empPos.name:'').toLowerCase())}" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border-radius:6px;${assignedLabel?'background:#f0fdf4;':''}">
+      return `<label class="asign-emp-item asign-g-${gIdx}" data-name="${escHtml((emp.full_name||'').toLowerCase())}" data-pos="${escHtml((empPos?empPos.name:'').toLowerCase())}" data-assigned="${assignedLabel?'1':'0'}" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border-radius:6px;${assignedLabel?'background:#f0fdf4;':''}">
         <input type="checkbox" class="asign-emp-cb" value="${emp.id}" style="cursor:pointer;flex-shrink:0;">
         <span style="flex:1">${escHtml(emp.full_name)}<span style="color:#9ca3af;font-size:10px;margin-left:4px;">${empPos?escHtml(empPos.name):''}</span></span>
         ${assignedLabel ? `<span style="font-size:10px;color:#059669;white-space:nowrap;">→ ${escHtml(assignedLabel)}</span>` : ''}
@@ -5576,9 +5583,17 @@ async function buildEvalAsignarTab(sessions, forms) {
       </div>
       <div class="card section">
         <h4 style="margin:0 0 10px;">👥 Seleccionar empleados</h4>
-        <input id="asign-search" type="text" placeholder="Buscar nombre o puesto..."
-          oninput="evalAsignFilter(this.value)"
-          style="width:100%;box-sizing:border-box;padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <input id="asign-search" type="text" placeholder="Buscar nombre o puesto..."
+            oninput="evalAsignFilter()"
+            style="flex:1;min-width:160px;padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+          <select id="asign-asign-filter" onchange="evalAsignFilter()"
+            style="padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+            <option value="todos">Todos</option>
+            <option value="asignados">Asignados</option>
+            <option value="sin-asignar">Sin asignar</option>
+          </select>
+        </div>
         ${employees.length===0
           ? '<div class="empty-state"><p>Sin empleados activos</p></div>'
           : `<div id="asign-groups">${groupCheckboxes}</div>`}
@@ -5812,12 +5827,16 @@ function evalSelectAll(checked) {
 }
 
 // Filtro de buscador en tab Asignar
-function evalAsignFilter(q) {
-  const key = q.trim().toLowerCase();
+function evalAsignFilter() {
+  const key   = (document.getElementById('asign-search')?.value || '').trim().toLowerCase();
+  const asign = document.getElementById('asign-asign-filter')?.value || 'todos';
   document.querySelectorAll('.asign-emp-item').forEach(el => {
-    const name = el.dataset.name || '';
-    const pos  = el.dataset.pos  || '';
-    el.style.display = (!key || name.includes(key) || pos.includes(key)) ? '' : 'none';
+    const name     = el.dataset.name     || '';
+    const pos      = el.dataset.pos      || '';
+    const assigned = el.dataset.assigned === '1';
+    const textOk   = !key || name.includes(key) || pos.includes(key);
+    const asignOk  = asign === 'todos' || (asign === 'asignados' && assigned) || (asign === 'sin-asignar' && !assigned);
+    el.style.display = (textOk && asignOk) ? '' : 'none';
   });
   // Ocultar grupos que quedaron completamente vacíos
   document.querySelectorAll('.asign-group').forEach(grp => {
@@ -5827,13 +5846,16 @@ function evalAsignFilter(q) {
 }
 
 // Filtro de buscador en tab Sesiones
-function evalSesFilterRows(q) {
-  const key = q.trim().toLowerCase();
-  const tbody = document.querySelector('#eval-ses-table tbody');
+function evalSesFilterRows() {
+  const key    = (document.getElementById('eval-ses-search')?.value || '').trim().toLowerCase();
+  const asign  = document.getElementById('eval-ses-asign-filter')?.value || 'todos';
+  const tbody  = document.querySelector('#eval-ses-table tbody');
   if (!tbody) return;
   tbody.querySelectorAll('tr').forEach(tr => {
-    const text = tr.textContent.toLowerCase();
-    tr.style.display = (!key || text.includes(key)) ? '' : 'none';
+    const textOk   = !key || tr.textContent.toLowerCase().includes(key);
+    const assigned = tr.dataset.assigned === '1';
+    const asignOk  = asign === 'todos' || (asign === 'asignados' && assigned) || (asign === 'sin-asignar' && !assigned);
+    tr.style.display = (textOk && asignOk) ? '' : 'none';
   });
 }
 
