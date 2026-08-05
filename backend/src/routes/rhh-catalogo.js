@@ -291,14 +291,18 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
 });
 
 // ── POST /api/rhh/catalogo/import-contpaq ─────────────────────────────────────
-// Importar desde Excel de lista asistencia CONTPAQ i:
-//   - Departamento y Puesto del empleado
-//   - Incidencias semanales (dias_pagados, faltas, horas_extra, vacaciones, prima_dominical)
-// Formato esperado (primera hoja): "lista asistencia semana X"
-//   col 0=No, col 1=Nombre, col 2=Área, col 4=Puesto, col 5=Turno
-//   cols 6,10,14,18,22,26,30 = Status día (Labora/Falta/Vacaciones/Descanso/Retardo...)
-//   cols 8,12,16,20,24,28,32 = Horas TE por día
-// Devuelve: { updated, created_depts, created_pos, inc_upserted, skipped, log }
+// Soporta dos formatos:
+//
+// 1. CONSOLIDADO (CONSOLIDADO_Listas_Raya_2026.xlsx — hoja "Consolidado"):
+//    Detección: col 0 = "semana", col 3 = "No. Empleado", cols con "P | " y "D | "
+//    - Una fila por empleado por semana; importa incidencias + percepciones + deducciones
+//    - Actualiza dept, puesto, sal_diario, SDI, SBC, fecha_ingreso del empleado
+//
+// 2. LISTA ASISTENCIA (lista asistencia semana X.xlsx):
+//    Detección: cols con "Asistencia"/"T.E." en encabezados, semana en nombre hoja
+//    - Calcula dias_pagados/faltas/horas_extra desde los status del día
+//
+// Devuelve: { formato, updated, created_depts, created_pos, inc_upserted, semanas, skipped, log }
 router.post(
   '/import-contpaq',
   rhhAuthRequired,
@@ -314,79 +318,37 @@ router.post(
       return res.status(400).json({ error: 'Archivo no válido: ' + e.message });
     }
 
-    // Leer primera hoja
     const sheetName = wb.SheetNames[0];
     const ws  = wb.Sheets[sheetName];
     const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (all.length < 2) return res.status(400).json({ error: 'El archivo no tiene datos' });
 
-    const norm = v => String(v || '').trim();
+    const norm     = v => String(v || '').trim();
     const normName = s => s.toLowerCase().replace(/\*/g, '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+    const toNum    = v => { const n = parseFloat(String(v || '').replace(/,/g, '')); return isNaN(n) ? null : n; };
 
-    // Detectar número de período desde el nombre de la hoja (SEMANA 12 → 12)
-    // o desde una celda de encabezado ("Semana 12 del...")
-    let noPeriodo = Number(req.body?.no_periodo) || null;
-    if (!noPeriodo) {
-      const sheetMatch = sheetName.match(/semana\s*(\d+)/i);
-      if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
-    }
-    if (!noPeriodo) {
-      for (let i = 0; i < Math.min(3, all.length) && !noPeriodo; i++) {
-        for (const cell of all[i]) {
-          const m = String(cell || '').match(/semana\s*(\d+)/i);
-          if (m) { noPeriodo = Number(m[1]); break; }
-        }
-      }
-    }
-
-    // Detectar columnas de dept/puesto/nombre/número
-    let deptCol = 2, posCol = 4, numCol = 0, nameCol = 1;
-    let headerRow = -1;
-    for (let i = 0; i < Math.min(6, all.length); i++) {
-      const row = all[i].map(norm).map(v => v.toLowerCase());
-      const dIdx = row.findIndex(v => v.includes('departamento') || v === 'área' || v === 'area');
-      const pIdx = row.findIndex(v => v.includes('puesto') || v.includes('cargo'));
-      if (dIdx >= 0 && pIdx >= 0) {
-        deptCol = dIdx; posCol = pIdx; headerRow = i;
-        const nIdx = row.findIndex(v => v.includes('no.') || v === 'no' || v === '#' || v.includes('empleado') || v.includes('numero'));
-        const nmIdx = row.findIndex(v => v === 'nombre' || v.includes('nombre'));
-        if (nIdx >= 0) numCol = nIdx;
-        if (nmIdx >= 0) nameCol = nmIdx;
-        break;
-      }
-    }
-
-    // Detectar columnas de asistencia y TE dinámicamente desde la fila de encabezados
-    // Busca "Asistencia" y "T.E." en la fila de cabeceras de días
-    let STATUS_COLS = [6, 10, 14, 18, 22, 26, 30]; // defaults
-    let TE_COLS     = [8, 12, 16, 20, 24, 28, 32];
-    for (let i = 0; i < Math.min(6, all.length); i++) {
-      const row = all[i];
-      const aCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 'asistencia' ? j : -1).filter(j => j >= 0);
-      const tCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 't.e.' ? j : -1).filter(j => j >= 0);
-      if (aCols.length >= 5) { STATUS_COLS = aCols; TE_COLS = tCols; break; }
-    }
-
-    const normStatus = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
-    const PAID_STATUS  = new Set(['labora','festivo','descanso','retardo','tiempoxt','permiso cg','cumpleanos','paro tecnico']);
-    const VAC_STATUS   = new Set(['vacaciones','vacacion']);
-    const FALTA_STATUS = new Set(['falta','baja','incapacidad','permiso sg']);
+    // Detectar formato: CONSOLIDADO vs LISTA ASISTENCIA
+    const hdrs = all[0].map(v => norm(v).toLowerCase());
+    const isConsolidado = hdrs[0] === 'semana' &&
+      all[0].some(v => String(v).startsWith('P | ') || String(v).startsWith('P(info) | '));
 
     const db = readFresh();
     const emps = db.rhh_employees || [];
     if (!Array.isArray(db.rhh_incidencias_semanales)) db.rhh_incidencias_semanales = [];
 
     let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
+    const semanasImportadas = new Set();
     const log = [];
 
-    // Índice de búsqueda por palabras normalizadas para el matching de nombres
-    // El Excel usa "Nombre Apellido", la DB usa "APELLIDO NOMBRE" (CONTPAQ)
-    // Comparamos como conjuntos de palabras normalizadas
+    function findEmpByNum(num) {
+      const n = norm(num).replace(/^0+/, '');
+      return emps.find(e => norm(e.employee_number || '').replace(/^0+/, '') === n) || null;
+    }
+
     function findEmpByNameOrNum(excelNum, excelName) {
-      // 1. Por employee_number exacto
-      const byNum = emps.find(e => norm(e.employee_number).replace(/^0+/, '') === excelNum);
+      const byNum = findEmpByNum(excelNum);
       if (byNum) return byNum;
-      // 2. Por nombre — conjunto de palabras (sin importar orden)
       const excelWords = new Set(normName(excelName).split(' ').filter(w => w.length > 1));
       if (excelWords.size < 2) return null;
       let bestMatch = null, bestScore = 0;
@@ -424,10 +386,193 @@ router.post(
       return p.id;
     }
 
+    function upsertIncidencia(emp, noPeriodo, rec) {
+      const incList = db.rhh_incidencias_semanales;
+      const existIdx = incList.findIndex(r => r.employee_id === emp.id && r.no_periodo === noPeriodo);
+      if (existIdx !== -1) {
+        incList[existIdx] = { ...incList[existIdx], ...rec, updated_at: nowMxDate() };
+      } else {
+        incList.push({ id: nextId(incList), employee_id: emp.id, no_periodo: noPeriodo,
+                       faltas: 0, notas: '', created_at: nowMxDate(), ...rec });
+      }
+      inc_upserted++;
+      semanasImportadas.add(noPeriodo);
+    }
+
+    // ── FORMATO CONSOLIDADO ──────────────────────────────────────────────────
+    if (isConsolidado) {
+      // Mapear índices de columnas desde los encabezados
+      const hdrRaw = all[0];
+      const colIdx = {};
+      hdrRaw.forEach((v, i) => { colIdx[norm(v)] = i; });
+
+      const semanaCol   = colIdx['semana']        ?? 0;
+      const empNumCol   = colIdx['No. Empleado']  ?? 3;
+      const nombreCol   = colIdx['Nombre']        ?? 4;
+      const deptCol     = colIdx['Departamento']  ?? 5;
+      const puestoCol   = colIdx['Puesto']        ?? 6;
+      const salDiarioCol= colIdx['Sal. Diario']   ?? 11;
+      const sdiCol      = colIdx['SDI']           ?? 12;
+      const sbcCol      = colIdx['SBC']           ?? 13;
+      const fechaIngCol = colIdx['Fecha Ingreso'] ?? 10;
+      const diasPagCol  = colIdx['Días Pagados']  ?? 15;
+      const hrsExtCol   = colIdx['Hrs. Extras']   ?? 17;
+      const notasCol    = colIdx['Notas']         ?? 18;
+
+      // Detectar columnas de percepciones (P |) y deducciones (D |)
+      const percCols = []; // { col, label }
+      const dedCols  = [];
+      hdrRaw.forEach((v, i) => {
+        const s = norm(v);
+        if (s.startsWith('P | ') || s.startsWith('P(info) | ')) percCols.push({ col: i, label: s.replace(/^P\(info\) \| /, '').replace(/^P \| /, '') });
+        else if (s.startsWith('D | ') || s.startsWith('D(info) | ')) dedCols.push({ col: i, label: s.replace(/^D\(info\) \| /, '').replace(/^D \| /, '') });
+      });
+      const totalPercCol = hdrRaw.findIndex(v => norm(v).toLowerCase().includes('total percepciones'));
+      const totalDedCol  = hdrRaw.findIndex(v => norm(v).toLowerCase().includes('total deducciones'));
+      const netoCol      = hdrRaw.findIndex(v => norm(v).toLowerCase().includes('neto a pagar'));
+
+      // Opcional: filtrar por semana específica si se pasó en body
+      const filterSemana = Number(req.body?.no_periodo) || null;
+
+      for (const row of all.slice(1)) {
+        const semana = Number(row[semanaCol]);
+        if (!semana) continue;
+        if (filterSemana && semana !== filterSemana) continue;
+
+        const empNumRaw = norm(row[empNumCol]);
+        const empName   = norm(row[nombreCol]);
+        if (!empNumRaw && !empName) { skipped++; continue; }
+
+        const emp = findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName);
+        if (!emp) { skipped++; if (log.length < 20) log.push(`S${semana} #${empNumRaw} "${empName}": no encontrado`); continue; }
+
+        // Actualizar campos del empleado
+        const deptName   = norm(row[deptCol]);
+        const posName    = norm(row[puestoCol]);
+        const salDiario  = toNum(row[salDiarioCol]);
+        const sdi        = toNum(row[sdiCol]);
+        const sbc        = toNum(row[sbcCol]);
+        const fechaIngr  = norm(row[fechaIngCol]);
+        let empChanged = false;
+
+        const deptId = findOrCreateDept(deptName);
+        const posId  = findOrCreatePos(posName, deptId);
+        if (emp.department_id !== deptId) { emp.department_id = deptId; empChanged = true; }
+        if (emp.position_id   !== posId)  { emp.position_id   = posId;  empChanged = true; }
+        if (salDiario && emp.sal_diario !== salDiario) { emp.sal_diario = salDiario; emp.salary_daily = salDiario; empChanged = true; }
+        if (sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
+        if (sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
+        if (fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
+        if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
+
+        // Construir objetos percepciones y deducciones
+        const percepciones = {};
+        for (const { col, label } of percCols) {
+          const v = toNum(row[col]);
+          if (v !== null && v !== 0) percepciones[label] = v;
+        }
+        const deducciones = {};
+        for (const { col, label } of dedCols) {
+          const v = toNum(row[col]);
+          if (v !== null && v !== 0) deducciones[label] = v;
+        }
+
+        const diasPag   = toNum(row[diasPagCol]) ?? 7;
+        const hrsExtra  = toNum(row[hrsExtCol])  ?? 0;
+        const totalPerc = totalPercCol >= 0 ? toNum(row[totalPercCol]) : null;
+        const totalDed  = totalDedCol  >= 0 ? toNum(row[totalDedCol])  : null;
+        const neto      = netoCol      >= 0 ? toNum(row[netoCol])      : null;
+        const notas     = norm(row[notasCol]);
+
+        // Calcular días de vacaciones: importe P|19 / salario diario
+        const vacImporte = toNum(row[hdrRaw.findIndex(v => String(v).includes('19 Vacaciones'))]);
+        const sdLocal    = salDiario || emp.sal_diario || emp.salary_daily || 0;
+        const vacDias    = (vacImporte && sdLocal) ? Math.round(vacImporte / sdLocal) : null;
+
+        // Prima dominical: si P|10 > 0
+        const primaDomCol = hdrRaw.findIndex(v => String(v).includes('10 Prima dominical'));
+        const primaDom = primaDomCol >= 0 && toNum(row[primaDomCol]) > 0 ? 1 : 0;
+
+        // Despensa: si P|32 > 0
+        const despensaCol = hdrRaw.findIndex(v => String(v).includes('32 Despensa'));
+        const despensa = despensaCol >= 0 && toNum(row[despensaCol]) > 0 ? 1 : 0;
+
+        upsertIncidencia(emp, semana, {
+          dias_pagados:        diasPag,
+          faltas:              0,
+          horas_extras_total:  hrsExtra,
+          despensa,
+          prima_dominical:     primaDom,
+          vacaciones_dias:     vacDias,
+          percepciones,
+          deducciones,
+          total_perc_pdf:      totalPerc,
+          total_ded_pdf:       totalDed,
+          neto_pdf:            neto,
+          notas,
+          source: 'consolidado_import',
+        });
+      }
+
+      write(db);
+      const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
+      const incMsg = filterSemana
+        ? `S${filterSemana}: ${inc_upserted}`
+        : `S${semanasList[0]}–S${semanasList[semanasList.length-1]}: ${inc_upserted}`;
+      return res.json({
+        ok: true, formato: 'consolidado',
+        updated, created_depts, created_pos, skipped, inc_upserted,
+        semanas: semanasList, log,
+      });
+    }
+
+    // ── FORMATO LISTA ASISTENCIA (semana X) ──────────────────────────────────
+    let noPeriodo = Number(req.body?.no_periodo) || null;
+    if (!noPeriodo) {
+      const sheetMatch = sheetName.match(/semana\s*(\d+)/i);
+      if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
+    }
+    if (!noPeriodo) {
+      for (let i = 0; i < Math.min(3, all.length) && !noPeriodo; i++) {
+        for (const cell of all[i]) {
+          const m = String(cell || '').match(/semana\s*(\d+)/i);
+          if (m) { noPeriodo = Number(m[1]); break; }
+        }
+      }
+    }
+
+    let deptCol = 2, posCol = 4, numCol = 0, nameCol = 1;
+    for (let i = 0; i < Math.min(6, all.length); i++) {
+      const row = all[i].map(norm).map(v => v.toLowerCase());
+      const dIdx = row.findIndex(v => v.includes('departamento') || v === 'área' || v === 'area');
+      const pIdx = row.findIndex(v => v.includes('puesto') || v.includes('cargo'));
+      if (dIdx >= 0 && pIdx >= 0) {
+        deptCol = dIdx; posCol = pIdx;
+        const nIdx  = row.findIndex(v => v.includes('no.') || v === 'no' || v === '#' || v.includes('empleado') || v.includes('numero'));
+        const nmIdx = row.findIndex(v => v === 'nombre' || v.includes('nombre'));
+        if (nIdx  >= 0) numCol  = nIdx;
+        if (nmIdx >= 0) nameCol = nmIdx;
+        break;
+      }
+    }
+
+    let STATUS_COLS = [6, 10, 14, 18, 22, 26, 30];
+    let TE_COLS     = [8, 12, 16, 20, 24, 28, 32];
+    for (let i = 0; i < Math.min(6, all.length); i++) {
+      const row = all[i];
+      const aCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 'asistencia' ? j : -1).filter(j => j >= 0);
+      const tCols = row.map((v,j) => String(v||'').trim().toLowerCase() === 't.e.' ? j : -1).filter(j => j >= 0);
+      if (aCols.length >= 5) { STATUS_COLS = aCols; TE_COLS = tCols; break; }
+    }
+
+    const normStatus = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+    const PAID_STATUS  = new Set(['labora','festivo','descanso','retardo','tiempoxt','permiso cg','cumpleanos','paro tecnico']);
+    const VAC_STATUS   = new Set(['vacaciones','vacacion']);
+    const FALTA_STATUS = new Set(['falta','baja','incapacidad','permiso sg']);
+
     for (const row of all) {
       const empNum  = norm(row[numCol]).replace(/^0+/, '');
       const empName = norm(row[nameCol]).replace(/\*/g, '');
-      // Saltar filas sin nombre o con valores no-numéricos en col número
       if (!empName || empName.toLowerCase() === 'nombre') continue;
       if (empNum && !/^\d+$/.test(empNum)) continue;
       const deptName = norm(row[deptCol]);
@@ -435,83 +580,39 @@ router.post(
       if (!deptName && !posName) { skipped++; continue; }
 
       const emp = findEmpByNameOrNum(empNum, empName);
-      if (!emp) { skipped++; log.push(`"${empName}": no encontrado`); continue; }
+      if (!emp) { skipped++; if (log.length < 20) log.push(`"${empName}": no encontrado`); continue; }
 
-      // Actualizar dept/puesto
       const deptId = findOrCreateDept(deptName);
       const posId  = findOrCreatePos(posName, deptId);
-      const changed = emp.department_id !== deptId || emp.position_id !== posId;
-      if (changed) {
-        emp.department_id = deptId;
-        emp.position_id   = posId;
-        emp.updated_at    = nowMxDate();
-        updated++;
-        log.push(`#${empNum} ${emp.full_name}: dept="${deptName}" puesto="${posName}"`);
+      if (emp.department_id !== deptId || emp.position_id !== posId) {
+        emp.department_id = deptId; emp.position_id = posId;
+        emp.updated_at = nowMxDate(); updated++;
       }
 
-      // Importar incidencias semanales (solo si se detectó período)
       if (noPeriodo) {
-        let diasPagados = 0, faltas = 0, vacDias = 0, primaDom = 0;
-        let teTotal = 0;
-
+        let diasPagados = 0, faltas = 0, vacDias = 0, primaDom = 0, teTotal = 0;
         for (let i = 0; i < STATUS_COLS.length; i++) {
-          const statusRaw = normStatus(norm(row[STATUS_COLS[i]]));
-          const teHrs     = Number(row[TE_COLS[i]]) || 0;
-          teTotal += teHrs;
-          if (!statusRaw) continue;
-          if (PAID_STATUS.has(statusRaw)) diasPagados++;
-          else if (VAC_STATUS.has(statusRaw)) vacDias++;
-          else if (FALTA_STATUS.has(statusRaw)) faltas++;
-          // Prima dominical: domingo (índice 6) con status labora/tiempoxt
-          if (i === 6 && (statusRaw === 'labora' || statusRaw === 'tiempoxt')) primaDom = 1;
+          const st  = normStatus(norm(row[STATUS_COLS[i]]));
+          const te  = Number(row[TE_COLS[i]]) || 0;
+          teTotal  += te;
+          if (!st) continue;
+          if (PAID_STATUS.has(st)) diasPagados++;
+          else if (VAC_STATUS.has(st)) vacDias++;
+          else if (FALTA_STATUS.has(st)) faltas++;
+          if (i === 6 && (st === 'labora' || st === 'tiempoxt')) primaDom = 1;
         }
-
-        const incList = db.rhh_incidencias_semanales;
-        const existIdx = incList.findIndex(r => r.employee_id === emp.id && r.no_periodo === noPeriodo);
-
-        if (existIdx !== -1) {
-          // No sobreescribir si fue importado desde PDF (más completo)
-          if (incList[existIdx].source !== 'pdf_import') {
-            incList[existIdx] = {
-              ...incList[existIdx],
-              dias_pagados: diasPagados,
-              faltas,
-              horas_extras_total: teTotal,
-              vacaciones_dias: vacDias || incList[existIdx].vacaciones_dias || 0,
-              prima_dominical: primaDom,
-              source: 'excel_import',
-              updated_at: nowMxDate(),
-            };
-            inc_upserted++;
-          }
-        } else {
-          incList.push({
-            id: nextId(incList),
-            no_periodo: noPeriodo,
-            employee_id: emp.id,
-            dias_pagados: diasPagados,
-            faltas,
-            horas_extras_total: teTotal,
-            despensa: 1,
-            bono_puntualidad_dias: null,
-            bono_eficiencia_dias: null,
-            bono_instructor: null,
-            prima_dominical: primaDom,
-            vacaciones_dias: vacDias || 0,
-            gratificacion: null,
-            notas: '',
-            source: 'excel_import',
-            updated_at: nowMxDate(),
-            created_at: nowMxDate(),
-          });
-          inc_upserted++;
-        }
+        upsertIncidencia(emp, noPeriodo, {
+          dias_pagados: diasPagados, faltas, horas_extras_total: teTotal,
+          despensa: 1, prima_dominical: primaDom, vacaciones_dias: vacDias || 0,
+          source: 'excel_import',
+        });
       }
     }
 
     write(db);
-    res.json({ ok: true, updated, created_depts, created_pos, skipped, inc_upserted,
-               no_periodo: noPeriodo || null, log });
+    res.json({ ok: true, formato: 'lista_asistencia',
+               updated, created_depts, created_pos, skipped, inc_upserted,
+               semanas: noPeriodo ? [noPeriodo] : [], log });
   }
 );
 

@@ -10541,8 +10541,12 @@ async function catImportContpaq() {
       });
       const d = await res.json().catch(() => ({}));
       if (!res.ok) { toast(d.error || 'Error al importar', 'error'); return; }
-      const incMsg = d.no_periodo ? ` | Incidencias S${d.no_periodo}: ${d.inc_upserted}` : '';
-      const msg = `✓ Actualizados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}`;
+      const semLbl = (d.semanas||[]).length > 1
+        ? `S${d.semanas[0]}–S${d.semanas[d.semanas.length-1]}`
+        : d.semanas?.[0] ? `S${d.semanas[0]}` : null;
+      const incMsg = semLbl ? ` | Incidencias ${semLbl}: ${d.inc_upserted}` : '';
+      const fmt = d.formato === 'consolidado' ? ' [Consolidado]' : '';
+      const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
       // Refrescar catálogos en memoria para que evaluaciones y otras vistas usen datos actualizados
