@@ -610,7 +610,11 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
       );
       const emp = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
       const pos = emp ? (db.rhh_positions || []).find(p => p.id === emp.position_id) : null;
-      const form = findFormForEmp(emp, forms, db.rhh_positions);
+      // Prioridad: form_id guardado en entry > búsqueda dinámica por position_id
+      const entryFormId = entry.form_id || null;
+      const form = entryFormId
+        ? (forms.find(f => f.id === entryFormId) || findFormForEmp(emp, forms, db.rhh_positions))
+        : findFormForEmp(emp, forms, db.rhh_positions);
       pending.push({
         session_id: session.id,
         session_name: session.name,
@@ -724,15 +728,24 @@ router.post('/sessions/:id/assign', rhhAuthRequired, rhhRequireRole('rh', 'admin
   const idx = sessions.findIndex(s => s.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
 
+  const forms    = db.rhh_eval_forms || [];
   const session = { ...sessions[idx], entries: [...(sessions[idx].entries || [])] };
   for (const empId of employee_ids) {
+    const emp  = (db.rhh_employees || []).find(e => e.id === Number(empId));
+    const form = findFormForEmp(emp, forms, db.rhh_positions);
     const eIdx = session.entries.findIndex(e => e.employee_id === Number(empId));
     if (eIdx >= 0) {
-      session.entries[eIdx] = { ...session.entries[eIdx], evaluador_id: Number(evaluador_id) };
+      session.entries[eIdx] = {
+        ...session.entries[eIdx],
+        evaluador_id: Number(evaluador_id),
+        // Guardar form_id en la entry para que my-pending lo use aunque position_id cambie
+        form_id: form?.id ?? session.entries[eIdx].form_id ?? null,
+      };
     } else {
       session.entries.push({
         employee_id: Number(empId),
         evaluador_id: Number(evaluador_id),
+        form_id: form?.id || null,
         asistencias: null, faltas: null, retardos: null, actas: null, amonestaciones: null,
         saved: false
       });
@@ -742,6 +755,31 @@ router.post('/sessions/:id/assign', rhhAuthRequired, rhhRequireRole('rh', 'admin
   db.rhh_eval_sessions = sessions;
   write(db);
   res.json({ ok: true, assigned: employee_ids.length });
+});
+
+// POST /api/rhh/evaluations/sessions/:id/relink-forms
+// Recalcula y guarda form_id en todas las entries de la sesión (útil tras re-importar CONTPAQ i)
+router.post('/sessions/:id/relink-forms', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const sessions = db.rhh_eval_sessions || [];
+  const idx = sessions.findIndex(s => s.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
+  const forms = db.rhh_eval_forms || [];
+  const session = { ...sessions[idx], entries: [...(sessions[idx].entries || [])] };
+  let linked = 0;
+  for (let i = 0; i < session.entries.length; i++) {
+    const entry = session.entries[i];
+    const emp  = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
+    const form = findFormForEmp(emp, forms, db.rhh_positions);
+    if (form && form.id !== entry.form_id) {
+      session.entries[i] = { ...entry, form_id: form.id };
+      linked++;
+    }
+  }
+  sessions[idx] = session;
+  db.rhh_eval_sessions = sessions;
+  write(db);
+  res.json({ ok: true, linked, total: session.entries.length });
 });
 
 // GET /api/rhh/evaluations/sessions/:id/progress — progreso agrupado por evaluador

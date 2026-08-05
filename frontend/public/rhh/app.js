@@ -5409,6 +5409,7 @@ async function buildEvalSessionTab(sessions, forms) {
           ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="evalSessionId=Number(this.value);evalTab='sesion';evaluacionesView()"><option value="">Seleccionar...</option>${sessionOpts}</select>`
           : '<span class="small muted">Sin sesiones aún</span>'}
         <button class="btn-primary" style="font-size:13px;" onclick="openNuevaSesionModal()">+ Nueva sesión</button>
+        <button class="btn-ghost" style="font-size:12px;color:#0369a1;" onclick="evalRelinkForms()" title="Recalcula el formulario de cada trabajador. Útil tras re-importar CONTPAQ i.">🔗 Vincular formularios</button>
         <button class="btn-ghost" style="font-size:12px;color:#b45309;" onclick="evalResetSesion()">🔄 Vaciar y reabrir</button>
         <button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="evalBorrarSesion()">🗑 Borrar sesión</button>
       </div>
@@ -5958,6 +5959,17 @@ async function cerrarSesion(sessionId) {
     await api('/api/rhh/evaluations/sessions/'+sessionId,{method:'PATCH',body:JSON.stringify({status:'closed'})});
     toast('Sesión cerrada'); evaluacionesView();
   } catch(err) { toast(err.message,'error'); }
+}
+
+async function evalRelinkForms() {
+  if (!evalSessionId) { toast('Selecciona una sesión primero', 'warning'); return; }
+  try {
+    const r = await apiFetch(`/api/rhh/evaluations/sessions/${evalSessionId}/relink-forms`, { method: 'POST' });
+    if (r) {
+      toast(`✅ Formularios vinculados: ${r.linked} de ${r.total} trabajadores`);
+      evaluacionesView();
+    }
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 async function evalResetSesion() {
