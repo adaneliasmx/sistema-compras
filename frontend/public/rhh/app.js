@@ -1347,9 +1347,8 @@ async function incidenciasView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando períodos...</div>', 'incidencias');
   try {
-    if (incSemPeriodos.length === 0) {
-      incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
-    }
+    // Siempre recargar periodos del servidor para que semanas nuevas aparezcan sin hard-refresh
+    incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
     if (!incSemPeriodo && incSemPeriodos.length > 0) {
       incSemPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
     }
