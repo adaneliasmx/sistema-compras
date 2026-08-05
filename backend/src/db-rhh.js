@@ -113,7 +113,7 @@ async function initDb() {
       // (position_id, department_id, shift_id, sal_diario, sdi, sbc, status, fecha_ingreso, etc.)
       const PRESERVED = ['position_id','department_id','shift_id','sal_diario','sdi','sbc',
                          'puesto','turno','status','start_date','fecha_ingreso','active',
-                         'phone','email','address'];
+                         'phone','email','address','emp_login'];
       const existingEmps = existing.rhh_employees || [];
       const seedEmps     = seed.rhh_employees     || [];
       const mergedEmps   = [...existingEmps];
