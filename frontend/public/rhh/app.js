@@ -5217,6 +5217,9 @@ async function evaluacionesView() {
   el.innerHTML = shell('<div class="loading-overlay">Cargando evaluaciones...</div>', 'evaluaciones');
 
   try {
+    // Refrescar empleados y puestos para mostrar datos actualizados
+    await loadCatalogs();
+
     const [sessions, forms] = await Promise.all([
       api('/api/rhh/evaluations/sessions'),
       api('/api/rhh/evaluations/forms')
@@ -10357,7 +10360,8 @@ async function catImportContpaq() {
       const msg = `✓ Actualizados: ${d.updated} | Nuevos depts: ${d.created_depts} | Nuevos puestos: ${d.created_pos} | Omitidos: ${d.skipped}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
-      // Recargar catálogo
+      // Refrescar catálogos en memoria para que evaluaciones y otras vistas usen datos actualizados
+      await loadCatalogs();
       setTimeout(() => catalogoEmpleadosView(), 1200);
     } catch (err) {
       toast('Error de conexión', 'error');
