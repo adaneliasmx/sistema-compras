@@ -106,14 +106,36 @@ async function initDb() {
       await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
       console.log('[db-rhh] PostgreSQL inicializado con seed. Empleados:', (seed.rhh_employees || []).length);
     } else {
-      // Ya existe: actualizar solo colecciones estructurales, preservar datos dinámicos
+      // Ya existe: merge inteligente de empleados; preservar catálogos dinámicos (puestos, depts, etc.)
       const existing = rows[0].data;
-      for (const key of SYNC_FROM_SEED) {
-        if (seed[key] !== undefined) existing[key] = seed[key];
+
+      // Merge rhh_employees: agrega nuevos del seed pero preserva campos gestionados en-app
+      // (position_id, department_id, shift_id, sal_diario, sdi, sbc, status, fecha_ingreso, etc.)
+      const PRESERVED = ['position_id','department_id','shift_id','sal_diario','sdi','sbc',
+                         'puesto','turno','status','start_date','fecha_ingreso','active',
+                         'phone','email','address'];
+      const existingEmps = existing.rhh_employees || [];
+      const seedEmps     = seed.rhh_employees     || [];
+      const mergedEmps   = [...existingEmps];
+      for (const se of seedEmps) {
+        const idx = mergedEmps.findIndex(e => e.id === se.id || (e.no && e.no === se.no));
+        if (idx === -1) {
+          mergedEmps.push(se); // empleado nuevo → agregar
+        } else {
+          // Empleado existente → fusionar: seed aporta datos biográficos, DB preserva datos gestionados
+          const dbEmp = mergedEmps[idx];
+          const merged = { ...se };
+          for (const f of PRESERVED) {
+            if (dbEmp[f] !== undefined && dbEmp[f] !== null) merged[f] = dbEmp[f];
+          }
+          mergedEmps[idx] = merged;
+        }
       }
+      existing.rhh_employees = mergedEmps;
+
       _cache = existing;
       await pool.query('UPDATE rhh_data SET data=$1 WHERE id=1', [JSON.stringify(existing)]);
-      console.log('[db-rhh] PostgreSQL actualizado (catálogos+empleados). Empleados:', (existing.rhh_employees || []).length);
+      console.log('[db-rhh] PostgreSQL actualizado (merge empleados). Total:', mergedEmps.length);
     }
   } else {
     // ── Modo JSON local ──────────────────────────────────────────────────────

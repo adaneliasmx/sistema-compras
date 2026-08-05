@@ -5248,6 +5248,59 @@ async function evaluacionesView() {
   }
 }
 
+// ── Constantes compartidas para evaluaciones ─────────────────────────────────
+
+// Espejo de EVAL_TEMPLATES_2026.position_names del backend
+const EVAL_TPL_NAMES = {
+  'Fosfatador':              ['Operador de Fosfatado','Operador de fosfatado','Fosfatador','Operador Lider','Operador líder','Operador Líder','Operador Línea 1','Operador Linea 1'],
+  'Auxiliar de Almacén':     ['Auxiliar de Almacén','Auxiliar de Almacen','Auxiliar Almacen','Auxiliar almacén'],
+  'Operador de Empaque':     ['Operador de Empaque','Operador de empaque','Empacador','Auxiliar de un Empaque','Auxiliar de Empaque','Auxiliar de empaque'],
+  'Auxiliar de Calidad':     ['Auxiliar de Calidad','Auxiliar de calidad'],
+  'Inspector de Calidad':    ['Inspector de Calidad','Inspector Calidad','Inspector de calidad'],
+  'Supervisor de Turno':     ['Supervisor de Turno','Supervisor de turno','Supervisor'],
+  'Técnico de Mantenimiento':['Técnico de Mantenimiento','Tecnico de Mantenimiento','Técnico de mantenimiento','Técnico en Mantenimiento','Tecnico en Mantenimiento','Tecnico en Mantemiento'],
+  'Equipo Vacío':            ['Equipo Vacío','Equipo Vacio','equipo vacio'],
+  'Intendencia':             ['Intendencia','Limpieza','Auxiliar de Limpieza','Auxiliar de limpieza','Ayudante General','Ayudante general'],
+  'Operador PTAR':           ['Operador PTAR'],
+  'Coordinador de Producción':['Coordinador de Producción','Coordinador de Produccion','Coordinador de producción','Cordinador de produccion'],
+  'STAFF':                   ['STAFF','Administrador SGC','Administrador Sgc','Gerente de operaciones','Gerente de Operaciones','Ingeniero de Procesos','Ingeniero de procesos','Ingeniero de Calidad','Ingeniero de calidad','Ingeniero de Mantenimiento','Ingeniero de mantenimiento','SYMACompras','Administradora RRHH','Administradora Rrhh','Coordinador de Seguridad y Medio Ambiente'],
+};
+
+function normEvalKey(s) {
+  return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+}
+
+// Construye mapa normalizado posName → group_name combinando DB forms + templates
+function buildEvalFormMap(forms) {
+  const map = {};
+  // Primero desde DB forms (position_names guardados)
+  for (const f of forms) {
+    for (const pn of (f.position_names || [])) map[normEvalKey(pn)] = f.group_name;
+  }
+  // Luego templates (fallback para forms viejos sin position_names)
+  for (const [groupName, names] of Object.entries(EVAL_TPL_NAMES)) {
+    const f = forms.find(f2 => f2.group_name === groupName);
+    if (!f) continue;
+    for (const pn of names) {
+      const k = normEvalKey(pn);
+      if (!map[k]) map[k] = groupName;
+    }
+  }
+  return map;
+}
+
+// Retorna group_name del formulario para un empleado
+function findEvalFormName(emp, forms, formMap) {
+  if (!emp || !emp.position_id) return null;
+  const pos = (state.positions || []).find(p => p.id === emp.position_id);
+  if (!pos) return null;
+  const key = normEvalKey(pos.name);
+  if (formMap[key]) return formMap[key];
+  // último fallback: position_ids legacy
+  const f = forms.find(f2 => (f2.position_ids||[]).includes(emp.position_id));
+  return f ? f.group_name : null;
+}
+
 // Parsea fecha de ingreso en múltiples formatos → Date o null
 function parseFechaIngreso(s) {
   if (!s) return null;
@@ -5291,57 +5344,12 @@ async function buildEvalSessionTab(sessions, forms) {
       ? `<div style="font-size:12px;color:#b45309;margin-bottom:8px;">⚠ ${excluidos} empleado${excluidos>1?'s':''} excluido${excluidos>1?'s':''} por ingreso durante el mes (no laboraron mes completo)</div>`
       : '';
 
-    // Mapeo puesto → formulario (refleja lógica de findFormForEmp del backend)
-    // Nombres de puestos por grupo — mirrors EVAL_TEMPLATES_2026.position_names
-    const TPL_NAMES = {
-      'Fosfatador': ['Operador de Fosfatado','Operador de fosfatado','Fosfatador','Operador Lider','Operador líder','Operador Líder','Operador Línea 1','Operador Linea 1'],
-      'Auxiliar de Almacén': ['Auxiliar de Almacén','Auxiliar de Almacen','Auxiliar Almacen','Auxiliar almacén'],
-      'Operador de Empaque': ['Operador de Empaque','Operador de empaque','Empacador','Auxiliar de un Empaque','Auxiliar de Empaque','Auxiliar de empaque'],
-      'Auxiliar de Calidad': ['Auxiliar de Calidad','Auxiliar de calidad'],
-      'Inspector de Calidad': ['Inspector de Calidad','Inspector Calidad','Inspector de calidad'],
-      'Supervisor de Turno': ['Supervisor de Turno','Supervisor de turno','Supervisor'],
-      'Técnico de Mantenimiento': ['Técnico de Mantenimiento','Tecnico de Mantenimiento','Técnico de mantenimiento','Técnico en Mantenimiento','Tecnico en Mantenimiento','Tecnico en Mantemiento'],
-      'Equipo Vacío': ['Equipo Vacío','Equipo Vacio','equipo vacio'],
-      'Intendencia': ['Intendencia','Limpieza','Auxiliar de Limpieza','Auxiliar de limpieza','Ayudante General','Ayudante general'],
-      'Operador PTAR': ['Operador PTAR'],
-      'Coordinador de Producción': ['Coordinador de Producción','Coordinador de Produccion','Coordinador de producción','Cordinador de produccion'],
-      'STAFF': ['STAFF','Administrador SGC','Administrador Sgc','Gerente de operaciones','Gerente de Operaciones','Ingeniero de Procesos','Ingeniero de procesos','Ingeniero de Calidad','Ingeniero de calidad','Ingeniero de Mantenimiento','Ingeniero de mantenimiento','SYMACompras','Administradora RRHH','Administradora Rrhh','Coordinador de Seguridad y Medio Ambiente'],
-    };
-    function normPosKey(s) {
-      return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
-    }
-    // Construir mapa norm-key → group_name: primero desde DB forms, luego desde templates
-    const FORM_MAP_NORM = {};
-    for (const f of forms) {
-      for (const pn of (f.position_names || [])) {
-        FORM_MAP_NORM[normPosKey(pn)] = f.group_name;
-      }
-    }
-    // Asegurar que los templates siempre tengan cobertura (fallback)
-    for (const [groupName, names] of Object.entries(TPL_NAMES)) {
-      for (const pn of names) {
-        const k = normPosKey(pn);
-        if (!FORM_MAP_NORM[k]) {
-          // Buscar el form de DB con ese group_name
-          const f = forms.find(f2 => f2.group_name === groupName);
-          if (f) FORM_MAP_NORM[k] = f.group_name;
-        }
-      }
-    }
-    function formForEmp(emp) {
-      const pos = state.positions.find(p => p.id === emp.position_id);
-      if (!pos) return null;
-      const key = normPosKey(pos.name);
-      if (FORM_MAP_NORM[key]) return FORM_MAP_NORM[key];
-      // Último fallback: position_ids legacy
-      const f = forms.find(f2 => (f2.position_ids||[]).includes(emp.position_id));
-      return f ? f.group_name : null;
-    }
+    const evalFormMap = buildEvalFormMap(forms);
 
     const entryRows = employees.map(emp => {
       const entry = (session.entries || []).find(e => e.employee_id === emp.id);
       const pos = state.positions.find(p => p.id === emp.position_id);
-      const formName = formForEmp(emp);
+      const formName = findEvalFormName(emp, forms, evalFormMap);
       const isSaved = entry && entry.saved;
       const supOpts = supOptsBase.replace(`value="${entry && entry.evaluador_id}"`, `value="${entry && entry.evaluador_id}" selected`);
       const evalSel = `<select id="ev-eval-${emp.id}" style="font-size:12px;padding:3px 6px;min-width:120px;"${isSaved?' disabled':''}>${supOpts}</select>`;
@@ -5376,8 +5384,13 @@ async function buildEvalSessionTab(sessions, forms) {
           ? `<button class="btn-ghost" style="font-size:12px;" onclick="cerrarSesion(${session.id})">🔒 Cerrar sesión</button>`
           : '<span class="badge" style="background:#059669;">✓ Cerrada</span>'}
       </div>
-      <div class="card section table-wrap">
-        <table><thead><tr>
+      <div class="card section">
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+          <input id="eval-ses-search" type="text" placeholder="Buscar trabajador o puesto..." oninput="evalSesFilterRows(this.value)"
+            style="flex:1;min-width:200px;padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;">
+        </div>
+        <div class="table-wrap">
+        <table id="eval-ses-table"><thead><tr>
           <th>Trabajador</th><th>Puesto</th><th>Formulario</th><th>Evaluador</th>
           <th style="text-align:center">Asistencias</th><th style="text-align:center">Faltas</th>
           <th style="text-align:center">Retardos</th><th style="text-align:center">Actas Adm.</th>
@@ -5385,6 +5398,7 @@ async function buildEvalSessionTab(sessions, forms) {
         </tr></thead>
         <tbody>${entryRows}</tbody>
         </table>
+        </div>
       </div>`;
   }
   return `
@@ -5482,39 +5496,55 @@ async function buildEvalAsignarTab(sessions, forms) {
   let session = null;
   try { session = await api('/api/rhh/evaluations/sessions/' + selId); } catch(e) {}
 
-  const employees = (state.employees || []).filter(e => e.active !== false);
-  const evaluators = (state.rhhUsers || []).filter(u => u.active !== false && u.role !== 'empleado');
+  // Mismo filtro que tab Sesiones: activos con ingreso antes del primer día del mes
+  const firstDayOfMonth = session && session.year && session.month
+    ? new Date(session.year, session.month - 1, 1)
+    : null;
+  const allActive = (state.employees || []).filter(e => e.status === 'active' || e.active !== false);
+  const employees = firstDayOfMonth
+    ? allActive.filter(e => {
+        const fi = parseFechaIngreso(e.fecha_ingreso || e.start_date);
+        if (!fi) return true;
+        return fi < firstDayOfMonth;
+      })
+    : allActive;
 
-  // Agrupar empleados por grupo de formulario
+  const evaluators = (state.rhhUsers || []).filter(u => u.active !== false && u.role !== 'empleado');
+  const evalFormMap = buildEvalFormMap(forms);
+
+  // Agrupar por formulario usando la misma lógica que tab Sesiones
   const empsByGroup = {};
   for (const emp of employees) {
-    const form = forms.find(f => (f.position_ids||[]).includes(emp.position_id) || f.position_id === emp.position_id);
-    const gName = form ? form.group_name : 'Sin formulario asignado';
+    const gName = findEvalFormName(emp, forms, evalFormMap) || 'Sin formulario asignado';
     if (!empsByGroup[gName]) empsByGroup[gName] = [];
     empsByGroup[gName].push(emp);
   }
 
-  const groupEntries = Object.entries(empsByGroup);
+  const groupEntries = Object.entries(empsByGroup).sort((a,b) =>
+    a[0] === 'Sin formulario asignado' ? 1 : b[0] === 'Sin formulario asignado' ? -1 : a[0].localeCompare(b[0])
+  );
   const groupCheckboxes = groupEntries.map(([gName, emps], gIdx) => {
+    const pos = (state.positions || []);
     const rows = emps.map(emp => {
       const entry = session && (session.entries||[]).find(e => e.employee_id === emp.id);
       const assignedUser = entry && entry.evaluador_id
         ? evaluators.find(u => u.id === entry.evaluador_id)
         : null;
       const assignedLabel = assignedUser ? assignedUser.full_name : (entry && entry.evaluador_id ? `ID ${entry.evaluador_id}` : null);
-      return `<label class="asign-emp-item asign-g-${gIdx}" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border-radius:6px;${assignedLabel?'background:#f0fdf4;':'hover-bg:#f9fafb;'}">
+      const empPos = pos.find(p => p.id === emp.position_id);
+      return `<label class="asign-emp-item asign-g-${gIdx}" data-name="${escHtml((emp.full_name||'').toLowerCase())}" data-pos="${escHtml((empPos?empPos.name:'').toLowerCase())}" style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;padding:5px 8px;border-radius:6px;${assignedLabel?'background:#f0fdf4;':''}">
         <input type="checkbox" class="asign-emp-cb" value="${emp.id}" style="cursor:pointer;flex-shrink:0;">
-        <span style="flex:1">${escHtml(emp.full_name)}</span>
+        <span style="flex:1">${escHtml(emp.full_name)}<span style="color:#9ca3af;font-size:10px;margin-left:4px;">${empPos?escHtml(empPos.name):''}</span></span>
         ${assignedLabel ? `<span style="font-size:10px;color:#059669;white-space:nowrap;">→ ${escHtml(assignedLabel)}</span>` : ''}
       </label>`;
     }).join('');
     return `
-      <div style="margin-bottom:14px;">
+      <div class="asign-group" style="margin-bottom:14px;">
         <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:#2563eb;cursor:pointer;margin-bottom:6px;">
           <input type="checkbox" onchange="evalToggleGroup(${gIdx},this.checked)" style="cursor:pointer;">
           ${escHtml(gName)} <span style="font-weight:400;color:#9ca3af;">(${emps.length})</span>
         </label>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:2px;padding-left:18px;">
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:2px;padding-left:18px;">
           ${rows}
         </div>
       </div>`;
@@ -5541,10 +5571,13 @@ async function buildEvalAsignarTab(sessions, forms) {
         </div>
       </div>
       <div class="card section">
-        <h4 style="margin:0 0 12px;">👥 Seleccionar empleados</h4>
+        <h4 style="margin:0 0 10px;">👥 Seleccionar empleados</h4>
+        <input id="asign-search" type="text" placeholder="Buscar nombre o puesto..."
+          oninput="evalAsignFilter(this.value)"
+          style="width:100%;box-sizing:border-box;padding:7px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;margin-bottom:10px;">
         ${employees.length===0
           ? '<div class="empty-state"><p>Sin empleados activos</p></div>'
-          : groupCheckboxes}
+          : `<div id="asign-groups">${groupCheckboxes}</div>`}
       </div>
     </div>`;
 }
@@ -5635,7 +5668,34 @@ function evalToggleGroup(gIdx, checked) {
 }
 
 function evalSelectAll(checked) {
-  document.querySelectorAll('.asign-emp-cb').forEach(cb => { cb.checked = checked; });
+  // Solo seleccionar los visibles (no ocultos por filtro)
+  document.querySelectorAll('.asign-emp-item:not([style*="display:none"]) .asign-emp-cb').forEach(cb => { cb.checked = checked; });
+}
+
+// Filtro de buscador en tab Asignar
+function evalAsignFilter(q) {
+  const key = q.trim().toLowerCase();
+  document.querySelectorAll('.asign-emp-item').forEach(el => {
+    const name = el.dataset.name || '';
+    const pos  = el.dataset.pos  || '';
+    el.style.display = (!key || name.includes(key) || pos.includes(key)) ? '' : 'none';
+  });
+  // Ocultar grupos que quedaron completamente vacíos
+  document.querySelectorAll('.asign-group').forEach(grp => {
+    const visible = grp.querySelectorAll('.asign-emp-item:not([style*="display:none"])').length;
+    grp.style.display = visible ? '' : 'none';
+  });
+}
+
+// Filtro de buscador en tab Sesiones
+function evalSesFilterRows(q) {
+  const key = q.trim().toLowerCase();
+  const tbody = document.querySelector('#eval-ses-table tbody');
+  if (!tbody) return;
+  tbody.querySelectorAll('tr').forEach(tr => {
+    const text = tr.textContent.toLowerCase();
+    tr.style.display = (!key || text.includes(key)) ? '' : 'none';
+  });
 }
 
 async function evalAsignar(sessionId) {
