@@ -332,6 +332,7 @@ router.post(
     const hdrs = all[0].map(v => norm(v).toLowerCase());
     const isConsolidado = hdrs[0] === 'semana' &&
       all[0].some(v => String(v).startsWith('P | ') || String(v).startsWith('P(info) | '));
+    console.log('[import-contpaq] hoja:', sheetName, '| filas:', all.length, '| hdr[0]:', JSON.stringify(all[0][0]), '| isConsolidado:', isConsolidado);
 
     const db = readFresh();
     const emps = db.rhh_employees || [];
@@ -514,13 +515,15 @@ router.post(
         });
       }
 
+      const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
+      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped);
       try {
         await writeAsync(db);
+        console.log('[import-contpaq] writeAsync OK — incidencias totales en DB:', db.rhh_incidencias_semanales.length);
       } catch (e) {
         console.error('[import-contpaq] Error al persistir en DB:', e.message);
         return res.status(500).json({ error: 'Datos procesados pero no se pudo guardar en la base de datos: ' + e.message });
       }
-      const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
       return res.json({
         ok: true, formato: 'consolidado',
         updated, created_depts, created_pos, skipped, inc_upserted,
@@ -622,5 +625,20 @@ router.post(
                semanas: noPeriodo ? [noPeriodo] : [], log });
   }
 );
+
+// GET /api/rhh/catalogo/debug-incidencias  — diagnóstico: semanas guardadas en DB
+router.get('/debug-incidencias', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = read();
+  const lista = db.rhh_incidencias_semanales || [];
+  const semanas = {};
+  for (const r of lista) {
+    semanas[r.no_periodo] = (semanas[r.no_periodo] || 0) + 1;
+  }
+  res.json({
+    total: lista.length,
+    semanas_con_datos: Object.keys(semanas).map(Number).sort((a,b)=>a-b),
+    conteo_por_semana: semanas,
+  });
+});
 
 module.exports = router;
