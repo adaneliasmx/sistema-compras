@@ -113,10 +113,20 @@ const HE_LIMIT_SEM = 8;
 // GET /api/rhh/nomina/periodos
 router.get('/periodos', rhhAuthRequired, (req, res) => {
   const db = read();
-  const periodos = (db.rhh_periodos || []).length > 0
-    ? db.rhh_periodos
-    : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
-  res.json(periodos);
+  const dbPeriodos = db.rhh_periodos || [];
+  // Merge: PERIODOS_2026 como base (garantiza todos los periodos disponibles),
+  // DB overrides para cualquier periodo que haya sido personalizado.
+  const base = PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
+  if (dbPeriodos.length === 0) return res.json(base);
+  const dbMap = {};
+  for (const p of dbPeriodos) dbMap[p.no_periodo] = p;
+  const merged = base.map(p => dbMap[p.no_periodo] || p);
+  // Agregar periodos de DB que no existan en la base hardcodeada
+  for (const p of dbPeriodos) {
+    if (!base.find(b => b.no_periodo === p.no_periodo)) merged.push(p);
+  }
+  merged.sort((a, b) => a.no_periodo - b.no_periodo);
+  res.json(merged);
 });
 
 // POST /api/rhh/nomina/periodos/seed  (rh/admin)
