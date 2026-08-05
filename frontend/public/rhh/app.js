@@ -40,6 +40,7 @@ const MENU_BY_ROLE = {
     ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
     ['evaluaciones', '⭐ Evaluaciones'],
+    ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['reportes', '📊 Reportes'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
@@ -54,6 +55,7 @@ const MENU_BY_ROLE = {
     ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
     ['evaluaciones', '⭐ Evaluaciones'],
+    ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
     ['reportes', '📊 Reportes'],
     ['quejas-rh', '📢 Quejas'],
