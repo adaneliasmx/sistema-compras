@@ -5227,9 +5227,10 @@ async function evaluacionesView() {
     window._evalForms = forms || [];
 
     let tabContent;
-    if (evalTab === 'sesion')       tabContent = await buildEvalSessionTab(sessions || [], forms || []);
-    else if (evalTab === 'asignar') tabContent = await buildEvalAsignarTab(sessions || [], forms || []);
+    if (evalTab === 'sesion')        tabContent = await buildEvalSessionTab(sessions || [], forms || []);
+    else if (evalTab === 'asignar')  tabContent = await buildEvalAsignarTab(sessions || [], forms || []);
     else if (evalTab === 'progreso') tabContent = await buildEvalProgresoTab(sessions || []);
+    else if (evalTab === 'vista')    tabContent = await buildEvalVistaTab(sessions || []);
     else                             tabContent = await buildEvalFormsTab(forms || []);
 
     const content = `
@@ -5238,6 +5239,7 @@ async function evaluacionesView() {
         <button class="tab-btn ${evalTab==='sesion'?'active':''}" onclick="evalTab='sesion';evaluacionesView()">📋 Sesiones</button>
         <button class="tab-btn ${evalTab==='asignar'?'active':''}" onclick="evalTab='asignar';evaluacionesView()">👥 Asignar</button>
         <button class="tab-btn ${evalTab==='progreso'?'active':''}" onclick="evalTab='progreso';evaluacionesView()">📊 Progreso</button>
+        <button class="tab-btn ${evalTab==='vista'?'active':''}" onclick="evalTab='vista';evaluacionesView()">🏅 Vista de Evaluaciones</button>
         <button class="tab-btn ${evalTab==='formularios'?'active':''}" onclick="evalTab='formularios';evaluacionesView()">📄 Formularios</button>
       </div>
       ${tabContent}`;
@@ -5661,6 +5663,141 @@ async function buildEvalProgresoTab(sessions) {
   } catch(err) {
     return sessionSelector + `<div class="notice error">${escHtml(err.message)}</div>`;
   }
+}
+
+// ── Tab: Vista de Evaluaciones (calificación en días + bono) ──────────────────
+async function buildEvalVistaTab(sessions) {
+  const selId = evalSessionId;
+  const sessionOpts = sessions.map(s =>
+    `<option value="${s.id}" ${s.id===selId?'selected':''}>${escHtml(s.name)}</option>`
+  ).join('');
+  const sessionSelector = `
+    <div class="card section" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <label style="font-weight:600;">Sesión:</label>
+        ${sessions.length > 0
+          ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;"
+               onchange="evalSessionId=Number(this.value);evalTab='vista';evaluacionesView()">
+               <option value="">Seleccionar...</option>${sessionOpts}</select>`
+          : '<span class="small muted">Sin sesiones aún</span>'}
+      </div>
+    </div>`;
+
+  if (!selId) return sessionSelector + '<div class="card section"><div class="empty-state"><p>Selecciona una sesión</p></div></div>';
+
+  try {
+    const d = await api('/api/rhh/evaluations/sessions/' + selId + '/vista-bono');
+    if (!d || !d.rows) return sessionSelector + '<div class="notice error">Error al cargar datos</div>';
+
+    const formBono = `
+      <div class="card section" style="margin-bottom:16px;">
+        <div style="font-weight:700;font-size:15px;margin-bottom:12px;">Días de bono generales</div>
+        <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
+          <div>
+            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">Días de Reclamos (0.0 – 1.0)</label>
+            <input id="ev-dias-reclamos" type="number" min="0" max="1" step="0.01"
+              value="${d.dias_reclamos}"
+              style="width:120px;padding:7px 10px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;">
+          </div>
+          <div>
+            <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">Días de Calidad (0.0 – 1.0)</label>
+            <input id="ev-dias-calidad" type="number" min="0" max="1" step="0.01"
+              value="${d.dias_calidad}"
+              style="width:120px;padding:7px 10px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;">
+          </div>
+          <button class="btn-primary" onclick="evalVistaSaveBono(${selId})" style="padding:8px 20px;">💾 Guardar</button>
+          <button class="btn-ghost" onclick="evalVistaReporte(${selId})" style="padding:8px 20px;">📊 Generar Reporte Excel</button>
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#6b7280;">
+          Fórmula: <strong>Días bono = Eval (0–1) + Reclamos + Calidad · máximo 3 días por trabajador</strong>
+        </div>
+      </div>`;
+
+    const evaluados  = d.rows.filter(r => r.evaluated).length;
+    const totalEmps  = d.rows.length;
+    const resumen = `
+      <div class="card section" style="margin-bottom:16px;background:#f0fdf4;">
+        <div style="display:flex;gap:24px;flex-wrap:wrap;">
+          <div><div style="font-size:11px;color:#6b7280;">SESIÓN</div><div style="font-weight:700;">${escHtml(d.session_name)}</div></div>
+          <div><div style="font-size:11px;color:#6b7280;">EVALUADOS</div><div style="font-weight:700;color:#059669;">${evaluados} / ${totalEmps}</div></div>
+          <div><div style="font-size:11px;color:#6b7280;">DÍAS RECLAMOS</div><div style="font-weight:700;">${d.dias_reclamos}</div></div>
+          <div><div style="font-size:11px;color:#6b7280;">DÍAS CALIDAD</div><div style="font-weight:700;">${d.dias_calidad}</div></div>
+          <div><div style="font-size:11px;color:#6b7280;">BONO MÁXIMO</div><div style="font-weight:700;color:#2563eb;">3 días</div></div>
+        </div>
+      </div>`;
+
+    const rows = d.rows.map(r => {
+      const calPct   = r.score_pct !== null ? r.score_pct.toFixed(1) + '%' : '—';
+      const evalDays = r.eval_days !== null ? r.eval_days.toFixed(2) : '—';
+      const bono     = r.total_bono !== null ? r.total_bono.toFixed(2) : '—';
+      const bonoColor = r.total_bono >= 2.5 ? '#059669' : r.total_bono >= 1.5 ? '#f59e0b' : '#6b7280';
+      const badge = r.evaluated
+        ? `<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:2px 8px;font-size:11px;">✓</span>`
+        : `<span style="background:#f3f4f6;color:#9ca3af;border-radius:6px;padding:2px 8px;font-size:11px;">Pend.</span>`;
+      return `<tr>
+        <td style="font-size:12px;color:#6b7280;">${escHtml(r.employee_number)}</td>
+        <td style="font-weight:500;">${escHtml(r.full_name)}</td>
+        <td style="font-size:12px;">${escHtml(r.position_name)}</td>
+        <td style="text-align:center;">${badge}</td>
+        <td style="text-align:center;font-weight:600;">${calPct}</td>
+        <td style="text-align:center;">${evalDays}</td>
+        <td style="text-align:center;font-weight:700;color:${r.total_bono !== null ? bonoColor : '#9ca3af'};">${bono}</td>
+      </tr>`;
+    }).join('');
+
+    const table = `
+      <div class="card section">
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>No. Nómina</th><th>Nombre</th><th>Puesto</th><th style="text-align:center;">Estado</th>
+              <th style="text-align:center;">Calificación</th>
+              <th style="text-align:center;">Días Eval</th>
+              <th style="text-align:center;">Días Bono Total</th>
+            </tr></thead>
+            <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">Sin empleados asignados</td></tr>'}</tbody>
+          </table>
+        </div>
+      </div>`;
+
+    return sessionSelector + formBono + resumen + table;
+  } catch(err) {
+    return sessionSelector + `<div class="notice error">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function evalVistaSaveBono(sessionId) {
+  const dias_reclamos = parseFloat(document.getElementById('ev-dias-reclamos')?.value) || 0;
+  const dias_calidad  = parseFloat(document.getElementById('ev-dias-calidad')?.value)  || 0;
+  if (dias_reclamos < 0 || dias_reclamos > 1 || dias_calidad < 0 || dias_calidad > 1) {
+    toast('Los días deben estar entre 0.0 y 1.0', 'warning'); return;
+  }
+  try {
+    await api('/api/rhh/evaluations/sessions/' + sessionId + '/bono', {
+      method: 'PATCH',
+      body: JSON.stringify({ dias_reclamos, dias_calidad })
+    });
+    toast('✅ Días de bono guardados');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+async function evalVistaReporte(sessionId) {
+  try {
+    toast('Generando reporte...', 'info');
+    const resp = await fetch('/api/rhh/evaluations/sessions/' + sessionId + '/reporte-bono', {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('rhh_token') || '') }
+    });
+    if (!resp.ok) { const e = await resp.json().catch(()=>({})); throw new Error(e.error || 'Error al generar reporte'); }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = resp.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || 'reporte_bono.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Reporte descargado');
+  } catch(err) { toast(err.message, 'error'); }
 }
 
 function evalToggleGroup(gIdx, checked) {

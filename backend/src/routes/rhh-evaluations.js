@@ -1,4 +1,5 @@
 const express = require('express');
+const XLSX = require('xlsx');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
@@ -939,6 +940,108 @@ router.post('/eval-results', rhhAuthRequired, (req, res) => {
   write(db);
 
   res.status(201).json(result);
+});
+
+// PATCH /api/rhh/evaluations/sessions/:id/bono — guarda días_reclamos y dias_calidad en la sesión
+router.patch('/sessions/:id/bono', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+  const dias_reclamos = Math.min(1, Math.max(0, parseFloat(req.body.dias_reclamos) || 0));
+  const dias_calidad  = Math.min(1, Math.max(0, parseFloat(req.body.dias_calidad)  || 0));
+  session.dias_reclamos = Math.round(dias_reclamos * 100) / 100;
+  session.dias_calidad  = Math.round(dias_calidad  * 100) / 100;
+  write(db);
+  res.json({ ok: true, dias_reclamos: session.dias_reclamos, dias_calidad: session.dias_calidad });
+});
+
+// GET /api/rhh/evaluations/sessions/:id/vista-bono — resumen de bono por empleado
+router.get('/sessions/:id/vista-bono', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+
+  const results   = db.rhh_eval_results  || [];
+  const employees = db.rhh_employees     || [];
+  const positions = db.rhh_positions     || [];
+  const dias_reclamos = session.dias_reclamos ?? 0;
+  const dias_calidad  = session.dias_calidad  ?? 0;
+
+  const rows = (session.entries || []).map(entry => {
+    const emp = employees.find(e => e.id === entry.employee_id);
+    const pos = emp ? positions.find(p => p.id === emp.position_id) : null;
+    const result = results.find(r => r.session_id === session.id && r.employee_id === entry.employee_id);
+    const eval_days = result && result.total_points > 0
+      ? Math.round((result.points_obtained / result.total_points) * 100) / 100
+      : null;
+    const total_bono = eval_days !== null
+      ? Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100)
+      : null;
+    return {
+      employee_id:      entry.employee_id,
+      employee_number:  emp?.employee_number || '—',
+      full_name:        emp?.full_name       || '—',
+      position_name:    pos?.name            || '—',
+      points_obtained:  result?.points_obtained ?? null,
+      total_points:     result?.total_points    ?? null,
+      score_pct:        result?.score_pct       ?? null,
+      eval_days,
+      dias_reclamos,
+      dias_calidad,
+      total_bono,
+      evaluated:        !!result,
+    };
+  });
+
+  // Ordenar por nombre
+  rows.sort((a, b) => a.full_name.localeCompare(b.full_name));
+  res.json({ session_id: session.id, session_name: session.name, dias_reclamos, dias_calidad, rows });
+});
+
+// GET /api/rhh/evaluations/sessions/:id/reporte-bono — descarga Excel con resumen de bono
+router.get('/sessions/:id/reporte-bono', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+
+  const results   = db.rhh_eval_results  || [];
+  const employees = db.rhh_employees     || [];
+  const positions = db.rhh_positions     || [];
+  const dias_reclamos = session.dias_reclamos ?? 0;
+  const dias_calidad  = session.dias_calidad  ?? 0;
+
+  const data = (session.entries || []).map(entry => {
+    const emp = employees.find(e => e.id === entry.employee_id);
+    const pos = emp ? positions.find(p => p.id === emp.position_id) : null;
+    const result = results.find(r => r.session_id === session.id && r.employee_id === entry.employee_id);
+    const eval_days = result && result.total_points > 0
+      ? Math.round((result.points_obtained / result.total_points) * 100) / 100
+      : null;
+    const total_bono = eval_days !== null
+      ? Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100)
+      : null;
+    return {
+      'No. Nómina':       emp?.employee_number || '—',
+      'Nombre':           emp?.full_name       || '—',
+      'Puesto':           pos?.name            || '—',
+      'Calificación (%)': result?.score_pct    ?? '',
+      'Días Evaluación':  eval_days            ?? '',
+      'Días Reclamos':    dias_reclamos,
+      'Días Calidad':     dias_calidad,
+      'Días Bono Total':  total_bono           ?? '',
+    };
+  });
+  data.sort((a, b) => a['Nombre'].localeCompare(b['Nombre']));
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [12, 30, 25, 18, 16, 14, 14, 16].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws, 'Bono Evaluación');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  const name = `bono_eval_${(session.name || session.id).replace(/\s+/g, '_')}.xlsx`;
+  res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
 });
 
 module.exports = router;
