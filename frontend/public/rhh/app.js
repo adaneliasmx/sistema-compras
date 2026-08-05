@@ -5346,10 +5346,8 @@ async function buildEvalSessionTab(sessions, forms) {
           ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="evalSessionId=Number(this.value);evalTab='sesion';evaluacionesView()"><option value="">Seleccionar...</option>${sessionOpts}</select>`
           : '<span class="small muted">Sin sesiones aún</span>'}
         <button class="btn-primary" style="font-size:13px;" onclick="openNuevaSesionModal()">+ Nueva sesión</button>
-        ${evalSessionId ? `
-          <button class="btn-ghost" style="font-size:12px;color:#b45309;" onclick="evalResetSesion(${evalSessionId})" title="Vacía los datos capturados y reabre la sesión">🔄 Vaciar y reabrir</button>
-          <button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="evalBorrarSesion(${evalSessionId})" title="Borra esta sesión permanentemente">🗑 Borrar sesión</button>
-        ` : ''}
+        <button class="btn-ghost" style="font-size:12px;color:#b45309;" onclick="evalResetSesion()">🔄 Vaciar y reabrir</button>
+        <button class="btn-ghost" style="font-size:12px;color:#b91c1c;" onclick="evalBorrarSesion()">🗑 Borrar sesión</button>
       </div>
     </div>
     ${entriesHtml}`;
@@ -5853,19 +5851,21 @@ async function cerrarSesion(sessionId) {
   } catch(err) { toast(err.message,'error'); }
 }
 
-async function evalResetSesion(sessionId) {
+async function evalResetSesion() {
+  if (!evalSessionId) { toast('Selecciona una sesión primero', 'warning'); return; }
   if (!confirm('¿Vaciar todos los datos capturados y reabrir la sesión?\nEsta acción no se puede deshacer.')) return;
   try {
-    await api('/api/rhh/evaluations/sessions/'+sessionId+'/reset', { method: 'POST' });
+    await api('/api/rhh/evaluations/sessions/'+evalSessionId+'/reset', { method: 'POST' });
     toast('Sesión vaciada y reabierta');
     evaluacionesView();
   } catch(err) { toast(err.message, 'error'); }
 }
 
-async function evalBorrarSesion(sessionId) {
+async function evalBorrarSesion() {
+  if (!evalSessionId) { toast('Selecciona una sesión primero', 'warning'); return; }
   if (!confirm('¿Borrar PERMANENTEMENTE esta sesión y todos sus datos?\nEsta acción no se puede deshacer.')) return;
   try {
-    await api('/api/rhh/evaluations/sessions/'+sessionId, { method: 'DELETE' });
+    await api('/api/rhh/evaluations/sessions/'+evalSessionId, { method: 'DELETE' });
     toast('Sesión borrada');
     evalSessionId = null;
     evaluacionesView();
