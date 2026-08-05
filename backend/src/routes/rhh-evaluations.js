@@ -607,7 +607,7 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
 
   for (const session of sessions) {
     for (const entry of (session.entries || [])) {
-      if (entry.evaluador_id !== userId) continue;
+      if (Number(entry.evaluador_id) !== Number(userId)) continue;
       const alreadyDone = results.some(
         r => r.session_id === session.id && r.employee_id === entry.employee_id
       );

@@ -16,7 +16,19 @@ function rhhAuthRequired(req, res, next) {
       const comprasDb = readCompras();
       const cu = (comprasDb.users || []).find(u => u.id === comprasId && u.active !== false);
       if (!cu) return res.status(401).json({ error: 'Usuario inválido' });
-      req.rhhUser = { id: payload.sub, full_name: cu.full_name, email: cu.email, role: 'admin', employee_id: null };
+      // Si el admin de compras también tiene cuenta en rhh_users (mismo email), usar ese ID
+      // para que sus asignaciones como evaluador sean reconocidas correctamente
+      const db = read();
+      const rhhMatch = cu.email
+        ? (db.rhh_users || []).find(u => u.email === cu.email && u.active !== false)
+        : null;
+      req.rhhUser = {
+        id:          rhhMatch ? rhhMatch.id : payload.sub,
+        full_name:   cu.full_name || rhhMatch?.full_name || cu.username,
+        email:       cu.email,
+        role:        rhhMatch?.role || 'admin',
+        employee_id: rhhMatch?.employee_id || null
+      };
       return next();
     }
 
