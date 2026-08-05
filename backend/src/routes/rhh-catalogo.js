@@ -318,21 +318,22 @@ router.post(
       return res.status(400).json({ error: 'Archivo no válido: ' + e.message });
     }
 
-    const sheetName = wb.SheetNames[0];
-    const ws  = wb.Sheets[sheetName];
-    const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-    if (all.length < 2) return res.status(400).json({ error: 'El archivo no tiene datos' });
-
     const norm     = v => String(v || '').trim();
     const normName = s => s.toLowerCase().replace(/\*/g, '').normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
     const toNum    = v => { const n = parseFloat(String(v || '').replace(/,/g, '')); return isNaN(n) ? null : n; };
 
+    // Buscar la hoja "Consolidado" por nombre; si no existe, usar la primera hoja
+    const sheetName = wb.SheetNames.find(n => n.toLowerCase().includes('consolidado')) || wb.SheetNames[0];
+    const ws  = wb.Sheets[sheetName];
+    const all = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (all.length < 2) return res.status(400).json({ error: 'El archivo no tiene datos' });
+
     // Detectar formato: CONSOLIDADO vs LISTA ASISTENCIA
     const hdrs = all[0].map(v => norm(v).toLowerCase());
     const isConsolidado = hdrs[0] === 'semana' &&
       all[0].some(v => String(v).startsWith('P | ') || String(v).startsWith('P(info) | '));
-    console.log('[import-contpaq] hoja:', sheetName, '| filas:', all.length, '| hdr[0]:', JSON.stringify(all[0][0]), '| isConsolidado:', isConsolidado);
+    console.log('[import-contpaq] hojas disponibles:', wb.SheetNames, '| hoja seleccionada:', sheetName, '| filas:', all.length, '| hdr[0]:', JSON.stringify(all[0][0]), '| isConsolidado:', isConsolidado);
 
     const db = readFresh();
     const emps = db.rhh_employees || [];
