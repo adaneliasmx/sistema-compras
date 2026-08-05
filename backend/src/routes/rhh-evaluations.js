@@ -610,11 +610,13 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
       );
       const emp = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
       const pos = emp ? (db.rhh_positions || []).find(p => p.id === emp.position_id) : null;
-      // Prioridad: form_id guardado en entry > búsqueda dinámica por position_id
+      // Si el empleado tiene position_id, buscar formulario dinámicamente (más preciso).
+      // Solo usar entry.form_id guardado como fallback cuando position_id es null/ausente.
+      const dynamicForm = emp?.position_id ? findFormForEmp(emp, forms, db.rhh_positions) : null;
       const entryFormId = entry.form_id || null;
-      const form = entryFormId
-        ? (forms.find(f => f.id === entryFormId) || findFormForEmp(emp, forms, db.rhh_positions))
-        : findFormForEmp(emp, forms, db.rhh_positions);
+      const form = dynamicForm
+        || (entryFormId ? forms.find(f => f.id === entryFormId) : null)
+        || null;
       pending.push({
         session_id: session.id,
         session_name: session.name,

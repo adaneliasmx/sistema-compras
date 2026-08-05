@@ -443,6 +443,29 @@
 .col-total { min-width:80px; text-align:center; font-size:11px; }
 .col-total.hidden { display:none; }
 
+/* Modal genérico (evaluaciones, confirmaciones, etc.) */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.55);
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  box-sizing: border-box;
+}
+.modal {
+  background: #fff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.3);
+  width: 100%;
+  box-sizing: border-box;
+}
+.modal-header { padding-bottom: 12px; }
+.modal-body   { padding: 16px 0; }
+.modal-footer { display:flex; gap:10px; justify-content:flex-end; padding-top:12px; }
+
 /* Modal TE */
 .te-modal-overlay {
   display:none; position:fixed; inset:0;
