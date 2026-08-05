@@ -14,12 +14,20 @@ const state = {
 
 // ── PWA Install ───────────────────────────────────────────────────────────────
 let _installPrompt = null;
+
+function isStandalone() {
+  return window.matchMedia('(display-mode: standalone)').matches || !!navigator.standalone;
+}
+function showInstallBanner() {
+  if (isStandalone()) return; // ya está instalada, no mostrar
+  const banner = document.getElementById('pwa-install-banner');
+  if (banner) banner.style.display = 'flex';
+}
+
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   _installPrompt = e;
-  // Mostrar banner si ya está en la pantalla de login
-  const banner = document.getElementById('pwa-install-banner');
-  if (banner) banner.style.display = 'flex';
+  showInstallBanner();
 });
 window.addEventListener('appinstalled', () => {
   _installPrompt = null;
@@ -44,6 +52,9 @@ const SECTIONS = [
   { id: 'evaluaciones', icon: '⭐', label: 'Evaluaciones' },
   { id: 'queja',        icon: '📝', label: 'Queja Anónima' },
 ];
+// Secciones en bottom nav (móvil) — máx 4 primarias + botón Más
+const NAV_PRIMARY = ['perfil', 'lista_raya', 'incidencias', 'vacaciones'];
+const NAV_MORE    = ['evaluaciones', 'queja'];
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function tryRestore() {
@@ -104,11 +115,13 @@ async function api(method, path, body) {
 function navigate(section) {
   state.section = section;
   renderMain();
-  // actualizar nav activo sin re-renderizar layout completo
-  document.querySelectorAll('.emp-nav-item').forEach(el => {
+  document.querySelectorAll('.emp-nav-item[data-nav]').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === section);
   });
-  document.querySelectorAll('.emp-sidebar-item').forEach(el => {
+  // Botón "Más" activo si la sección actual está en NAV_MORE
+  const btnMore = document.getElementById('btn-nav-more');
+  if (btnMore) btnMore.classList.toggle('active', NAV_MORE.includes(section));
+  document.querySelectorAll('.emp-sidebar-item, .emp-drawer-item').forEach(el => {
     el.classList.toggle('active', el.dataset.nav === section);
   });
 }
@@ -181,11 +194,7 @@ function loginView() {
 }
 
 function bindLogin() {
-  // Mostrar banner si el prompt ya fue capturado antes del render
-  if (_installPrompt) {
-    const b = document.getElementById('pwa-install-banner');
-    if (b) b.style.display = 'flex';
-  }
+  if (_installPrompt) showInstallBanner();
   const btn = document.getElementById('btn-login');
   const doLogin = async () => {
     const username = (document.getElementById('l-user').value.trim()).toUpperCase();
@@ -260,11 +269,22 @@ function bindChangePwd() {
 // LAYOUT PRINCIPAL
 // ══════════════════════════════════════════════════════════════════════════════
 function layoutView() {
-  const navItems = SECTIONS.map(s => `
-    <button class="emp-nav-item${state.section === s.id ? ' active' : ''}" data-nav="${s.id}">
+  const inMore = NAV_MORE.includes(state.section);
+
+  const primaryItems = NAV_PRIMARY.map(id => {
+    const s = SECTIONS.find(x => x.id === id);
+    return `<button class="emp-nav-item${state.section === id ? ' active' : ''}" data-nav="${id}">
       <span class="nav-icon">${s.icon}</span>
       <span>${s.label}</span>
-    </button>`).join('');
+    </button>`;
+  }).join('');
+
+  const moreItems = NAV_MORE.map(id => {
+    const s = SECTIONS.find(x => x.id === id);
+    return `<button class="emp-drawer-item${state.section === id ? ' active' : ''}" data-nav="${id}">
+      <span class="si-icon">${s.icon}</span>${s.label}
+    </button>`;
+  }).join('');
 
   const sidebarItems = SECTIONS.map(s => `
     <button class="emp-sidebar-item${state.section === s.id ? ' active' : ''}" data-nav="${s.id}">
@@ -277,9 +297,7 @@ function layoutView() {
     <div class="emp-topbar">
       <div class="emp-topbar-brand">
         <div class="brand-icon">🏭</div>
-        <div>
-          <div class="brand-text">Portal del Empleado</div>
-        </div>
+        <div class="brand-text">Portal del Empleado</div>
       </div>
       <div class="emp-topbar-user">
         <span class="user-name">${esc(state.user.full_name.split(' ')[0])}</span>
@@ -306,8 +324,23 @@ function layoutView() {
       <div id="emp-main-content"></div>
     </div>
 
-    <!-- Bottom nav (móvil) -->
-    <nav class="emp-bottom-nav">${navItems}</nav>
+    <!-- Bottom nav (móvil) — 4 primarios + Más -->
+    <nav class="emp-bottom-nav">
+      ${primaryItems}
+      <button class="emp-nav-item${inMore ? ' active' : ''}" id="btn-nav-more">
+        <span class="nav-icon">···</span>
+        <span>Más</span>
+      </button>
+    </nav>
+
+    <!-- Drawer "Más" -->
+    <div class="emp-drawer-overlay" id="drawer-overlay" style="display:none"></div>
+    <div class="emp-drawer" id="nav-drawer" style="display:none">
+      <div class="emp-drawer-handle"></div>
+      <div class="emp-drawer-title">Más opciones</div>
+      ${moreItems}
+      <button class="emp-drawer-logout" id="btn-logout-drawer">Cerrar sesión</button>
+    </div>
   </div>
   <div id="pwa-install-banner" class="pwa-banner" style="display:none">
     <div class="pwa-banner-icon">🏭</div>
@@ -320,17 +353,32 @@ function layoutView() {
   </div>`;
 }
 
+function openDrawer() {
+  document.getElementById('nav-drawer').style.display = 'flex';
+  document.getElementById('drawer-overlay').style.display = 'block';
+  requestAnimationFrame(() => {
+    document.getElementById('nav-drawer').classList.add('open');
+  });
+}
+function closeDrawer() {
+  const d = document.getElementById('nav-drawer');
+  d.classList.remove('open');
+  setTimeout(() => {
+    d.style.display = 'none';
+    document.getElementById('drawer-overlay').style.display = 'none';
+  }, 260);
+}
+
 function bindLayout() {
   document.querySelectorAll('[data-nav]').forEach(el => {
-    el.addEventListener('click', () => navigate(el.dataset.nav));
+    el.addEventListener('click', () => { closeDrawer(); navigate(el.dataset.nav); });
   });
   document.getElementById('btn-logout')?.addEventListener('click', logout);
   document.getElementById('btn-logout-d')?.addEventListener('click', logout);
-  // Mostrar banner de instalación si el prompt ya fue capturado
-  if (_installPrompt) {
-    const banner = document.getElementById('pwa-install-banner');
-    if (banner) banner.style.display = 'flex';
-  }
+  document.getElementById('btn-logout-drawer')?.addEventListener('click', logout);
+  document.getElementById('btn-nav-more')?.addEventListener('click', openDrawer);
+  document.getElementById('drawer-overlay')?.addEventListener('click', closeDrawer);
+  if (_installPrompt) showInstallBanner();
 }
 
 // ── Util ──────────────────────────────────────────────────────────────────────
