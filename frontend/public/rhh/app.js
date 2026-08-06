@@ -6604,8 +6604,10 @@ let asisTab  = 0;          // 0=Rol, 1=Capturar, 2=Lista
 let asisWeek = null;       // YYYY-MM-DD (lunes de la semana)
 let asisShiftId = '';      // filtro de turno
 let asisDayIdx  = 0;       // día seleccionado en captura (0=lun…5=sáb)
-let _asisAssignments = []; // asignaciones en edición del rol
-let _asisRolData = null;   // datos cargados del backend para rol (all_employees, shifts, etc.)
+let _asisAssignments = [];    // asignaciones en edición del rol
+let _asisRolData = null;     // datos cargados del backend para rol (all_employees, shifts, etc.)
+let _asisRolFNombre = '';    // filtro nombre lista sin asignar
+let _asisRolFPuesto = '';    // filtro puesto lista sin asignar
 
 const ASIST_INC_TYPES = [
   { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
@@ -8176,17 +8178,49 @@ function asisRolRender() {
   const { all_employees, shifts, positions, proyectos } = _asisRolData;
 
   const assignedIds = new Set(_asisAssignments.map(a => a.employee_id));
-  const unassigned  = all_employees
+  const allUnassigned = all_employees
     .filter(e => !assignedIds.has(e.id))
     .sort((a, b) => {
       const pa = a.position?.name || '', pb = b.position?.name || '';
       return pa !== pb ? pa.localeCompare(pb) : (a.full_name||'').localeCompare(b.full_name||'');
     });
 
+  // Aplicar filtros
+  const fNombre = (_asisRolFNombre || '').toLowerCase().trim();
+  const fPuesto = _asisRolFPuesto || '';
+  const unassigned = allUnassigned.filter(e => {
+    const matchNombre = !fNombre || (e.full_name||'').toLowerCase().includes(fNombre);
+    const matchPuesto = !fPuesto || (e.position?.name || '') === fPuesto;
+    return matchNombre && matchPuesto;
+  });
+
+  // Opciones de puesto para el filtro (solo los que tienen empleados sin asignar)
+  const puestosDisp = [...new Set(allUnassigned.map(e => e.position?.name || '').filter(Boolean))].sort();
+  const puestoFilterOpts = puestosDisp.map(p =>
+    `<option value="${escHtml(p)}" ${fPuesto===p?'selected':''}>${escHtml(p)}</option>`
+  ).join('');
+
   const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
   const projOpts  = proyectos.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
 
+  // Formulario filtro
+  const filterForm = `
+    <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">
+      <input type="text" placeholder="Buscar nombre..." value="${escHtml(_asisRolFNombre)}"
+        oninput="_asisRolFNombre=this.value;asisRolRender()"
+        style="padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;width:100%;" />
+      <select onchange="_asisRolFPuesto=this.value;asisRolRender()"
+        style="padding:6px 9px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;width:100%;">
+        <option value="" ${!fPuesto?'selected':''}>Todos los puestos</option>
+        ${puestoFilterOpts}
+      </select>
+    </div>`;
+
   // Lista "Sin asignar" — draggable + puesto en azul bajo el nombre
+  const sinLabel = fNombre || fPuesto
+    ? `${unassigned.length} de ${allUnassigned.length} sin asignar`
+    : `Sin asignar (${allUnassigned.length})`;
+
   const unassignedRows = unassigned.length
     ? unassigned.map(emp => {
         const posName = emp.position?.name || '';
@@ -8200,7 +8234,7 @@ function asisRolRender() {
           ${posName ? `<div style="font-size:11px;color:#2563eb;margin-top:1px;">${escHtml(posName)}</div>` : ''}
         </div>`;
       }).join('')
-    : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">Todos asignados ✓</div>';
+    : `<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px;">${fNombre||fPuesto ? 'Sin coincidencias' : 'Todos asignados ✓'}</div>`;
 
   // Turnos con drop zones — empleados ordenados puesto → nombre
   let shiftsHtml = '';
@@ -8252,17 +8286,18 @@ function asisRolRender() {
       <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
       <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
       <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
-      <div style="margin-left:auto;display:flex;gap:8px;">
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+        <span id="asis-rol-save-status" style="font-size:11px;color:#9ca3af;"></span>
         <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
-        <button class="btn-primary" onclick="saveAsisRol()">Guardar Rol</button>
       </div>
     </div>
     <div style="font-size:11px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:6px 12px;margin-bottom:12px;">
-      Arrastra un trabajador al turno o haz clic sobre el para asignarlo. El puesto aparece en azul bajo el nombre.
+      Arrastra un trabajador al turno o haz clic sobre el para asignarlo. Se guarda automaticamente.
     </div>
-    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start;">
+    <div style="display:grid;grid-template-columns:270px 1fr;gap:16px;align-items:start;">
       <div>
-        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Sin asignar (${unassigned.length})</div>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">${sinLabel}</div>
+        ${filterForm}
         ${unassignedRows}
       </div>
       <div>${shiftsHtml || '<div class="notice">No hay turnos configurados</div>'}</div>
@@ -8319,6 +8354,7 @@ function asisOnDrop(event, shiftId) {
     shift_name:  shift?.name || '',
   });
   asisRolRender();
+  saveAsisRolAuto();
 }
 
 function openAsisAssignModal(empId, empName) {
@@ -8332,6 +8368,7 @@ function openAsisAssignModal(empId, empName) {
 function removeAsisAssignment(empId) {
   _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
   asisRolRender();
+  saveAsisRolAuto();
 }
 
 function confirmAsisAssign() {
@@ -8355,6 +8392,7 @@ function confirmAsisAssign() {
   });
   document.getElementById('asis-assign-modal').style.display = 'none';
   asisRolRender();
+  saveAsisRolAuto();
 }
 
 async function saveAsisRol() {
@@ -8373,6 +8411,43 @@ async function saveAsisRol() {
     });
     toast('Rol guardado correctamente');
   } catch(err) { toast(err.message, 'error'); }
+}
+
+/* Auto-guardado silencioso — actualiza el indicador de estado sin toast */
+let _asisAutoSaveTimer = null;
+async function saveAsisRolAuto() {
+  // Indicador "Guardando..."
+  const statusEl = document.getElementById('asis-rol-save-status');
+  if (statusEl) { statusEl.textContent = 'Guardando...'; statusEl.style.color = '#9ca3af'; }
+
+  // Debounce: si llegan muchos eventos seguidos, esperar 400ms antes de guardar
+  clearTimeout(_asisAutoSaveTimer);
+  _asisAutoSaveTimer = setTimeout(async () => {
+    try {
+      await api('/api/rhh/asistencia/rol', {
+        method: 'POST',
+        body: JSON.stringify({
+          week_start:  asisWeek,
+          assignments: _asisAssignments.map(a => ({
+            employee_id: a.employee_id,
+            shift_id:    a.shift_id,
+            position_id: a.position_id || null,
+            project:     a.project     || null,
+          }))
+        })
+      });
+      const st = document.getElementById('asis-rol-save-status');
+      if (st) {
+        st.textContent = 'Guardado ✓';
+        st.style.color = '#16a34a';
+        setTimeout(() => { if (st) { st.textContent = ''; } }, 2500);
+      }
+    } catch(err) {
+      const st = document.getElementById('asis-rol-save-status');
+      if (st) { st.textContent = 'Error al guardar'; st.style.color = '#dc2626'; }
+      toast(err.message, 'error');
+    }
+  }, 400);
 }
 
 // ── Tab 1: Capturar Asistencia ────────────────────────────────────────────────
