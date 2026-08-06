@@ -2469,10 +2469,11 @@ async function autorizacionesView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
-    const [vacSols, teSols, incidences] = await Promise.all([
+    const [vacSols, teSols, incidences, ovVales] = await Promise.all([
       api('/api/rhh/nomina/vac-solicitudes?estado=pendiente'),
       api('/api/rhh/nomina/te-solicitudes'),
       api('/api/rhh/incidences?status=pendiente'),
+      ['rh','admin'].includes(state.user?.role) ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
     ]);
 
     const vacRows = (vacSols || []).map(s => `
@@ -2521,10 +2522,27 @@ async function autorizacionesView() {
         </td>
       </tr>`).join('');
 
+    const ovPend = (ovVales || []);
+    const ovRows = ovPend.map(v => `
+      <tr>
+        <td><strong>${escHtml(v.employee?.full_name||'—')}</strong></td>
+        <td style="text-align:center;">${escHtml(v.fecha||'—')}</td>
+        <td style="text-align:center;font-weight:700;color:#ea580c;">${v.te_horas != null ? v.te_horas + ' hrs' : '—'}</td>
+        <td style="text-align:center;">${escHtml(v.te_hora_entrada||'—')} – ${escHtml(v.te_hora_salida||'—')}</td>
+        <td>${escHtml(v.te_razon||'—')}</td>
+        <td style="text-align:center;">${escHtml(v.te_proyecto||'—')}</td>
+        <td>${escHtml(v.solicitado_por||'—')}</td>
+        <td>
+          <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="autorizarOvVale(${v.id})">Autorizar</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="rechazarOvVale(${v.id})">Rechazar</button>
+        </td>
+      </tr>`).join('');
+
     const tabs = [
       `Vacaciones <span class="badge" style="background:${(vacSols||[]).length>0?'#dc2626':'#6b7280'};font-size:10px;">${(vacSols||[]).length}</span>`,
-      `Tiempo Extra <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
+      `T.Extra (nomina) <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
       `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
+      `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
     ];
     const tabBar = tabs.map((t, i) =>
       `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
@@ -2533,16 +2551,21 @@ async function autorizacionesView() {
     let tabContent = '';
     if (autTabIdx === 0) {
       tabContent = vacRows
-        ? `<table><thead><tr><th>Empleado</th><th>Depto</th><th>Semana</th><th>Días solicitados</th><th>Notas</th><th>Acción</th></tr></thead><tbody>${vacRows}</tbody></table>`
+        ? `<table><thead><tr><th>Empleado</th><th>Depto</th><th>Semana</th><th>Dias solicitados</th><th>Notas</th><th>Accion</th></tr></thead><tbody>${vacRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de vacaciones pendientes</p></div>';
     } else if (autTabIdx === 1) {
       tabContent = teRows
-        ? `<table><thead><tr><th>Empleado</th><th>Semana</th><th>Horas</th><th>Razón</th><th>Nivel auth.</th><th>Solicita</th><th>Acción</th></tr></thead><tbody>${teRows}</tbody></table>`
+        ? `<table><thead><tr><th>Empleado</th><th>Semana</th><th>Horas</th><th>Razon</th><th>Nivel auth.</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${teRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de tiempo extra pendientes</p></div>';
-    } else {
+    } else if (autTabIdx === 2) {
       tabContent = incRows
-        ? `<table><thead><tr><th>Empleado</th><th>Tipo</th><th>Fecha(s)</th><th>Depto</th><th>Notas</th><th>Acción</th></tr></thead><tbody>${incRows}</tbody></table>`
+        ? `<table><thead><tr><th>Empleado</th><th>Tipo</th><th>Fecha(s)</th><th>Depto</th><th>Notas</th><th>Accion</th></tr></thead><tbody>${incRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin incidencias pendientes</p></div>';
+    } else {
+      tabContent = ovRows
+        ? `<div style="font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:12px;">Vales de tiempo extra generados desde Captura de Asistencia — pendientes de autorizacion.</div>
+           <table><thead><tr><th>Empleado</th><th>Fecha</th><th>Horas</th><th>Horario TE</th><th>Razon</th><th>Proyecto</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${ovRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vales de tiempo extra pendientes</p></div>';
     }
 
     const content = `
@@ -2568,6 +2591,26 @@ async function aprobarTESol(id, estado) {
   try {
     await api(`/api/rhh/nomina/te-solicitudes/${id}`, { method: 'PATCH', body: JSON.stringify({ estado }) });
     toast(estado === 'aprobada' ? 'Tiempo extra aprobado y registrado' : 'Solicitud rechazada');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function autorizarOvVale(id) {
+  try {
+    await api(`/api/rhh/asistencia/overtime-vales/${id}/autorizar`, { method: 'POST' });
+    toast('Vale de tiempo extra autorizado');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function rechazarOvVale(id) {
+  const notas = prompt('Motivo del rechazo (opcional):') || '';
+  try {
+    await api(`/api/rhh/asistencia/overtime-vales/${id}/rechazar`, {
+      method: 'POST',
+      body: JSON.stringify({ notas_rechazo: notas })
+    });
+    toast('Vale rechazado');
     autorizacionesView();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -6557,11 +6600,12 @@ let rolWeekStart = null;
 let rolData = null;
 
 // ── Estado Control Asistencias (nuevo módulo /api/rhh/asistencia) ─────────────
-let asisTab  = 0;        // 0=Rol, 1=Capturar, 2=Lista
-let asisWeek = null;     // YYYY-MM-DD (lunes de la semana)
-let asisShiftId = '';    // filtro de turno
-let asisDayIdx  = 0;     // día seleccionado en captura (0=lun…5=sáb)
+let asisTab  = 0;          // 0=Rol, 1=Capturar, 2=Lista
+let asisWeek = null;       // YYYY-MM-DD (lunes de la semana)
+let asisShiftId = '';      // filtro de turno
+let asisDayIdx  = 0;       // día seleccionado en captura (0=lun…5=sáb)
 let _asisAssignments = []; // asignaciones en edición del rol
+let _asisRolData = null;   // datos cargados del backend para rol (all_employees, shifts, etc.)
 
 const ASIST_INC_TYPES = [
   { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
@@ -8092,6 +8136,7 @@ function asistenciasView() {
 
 // ── Tab 0: Rol Semanal ────────────────────────────────────────────────────────
 // _asisAssignments: [{ employee_id, shift_id, position_id, project, full_name, pos_name, shift_name }]
+// _asisRolData: datos del backend guardados para re-renders sin refetch
 async function asisRolView() {
   const el = document.getElementById('app');
   if (!asisWeek) asisWeek = getMonday(new Date());
@@ -8101,12 +8146,13 @@ async function asisRolView() {
     const data = await api(`/api/rhh/asistencia/rol?week=${asisWeek}`);
     if (!data) return;
 
-    const shifts    = data.shifts    || [];
-    const positions = data.positions || [];
-    const proyectos = data.proyectos || ['SKF','AMSTED','TENNECO'];
-    const unassigned = data.unassigned || [];
+    _asisRolData = {
+      all_employees: data.all_employees || [...(data.assigned||[]), ...(data.unassigned||[])],
+      shifts:    data.shifts    || [],
+      positions: data.positions || [],
+      proyectos: data.proyectos || ['SKF','AMSTED','TENNECO'],
+    };
 
-    // Populate _asisAssignments from backend (reset each load)
     _asisAssignments = (data.assigned || []).map(emp => ({
       employee_id: emp.id,
       shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
@@ -8117,94 +8163,162 @@ async function asisRolView() {
       shift_name:  emp.shift?.name    || '',
     }));
 
-    const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
-    const posOpts   = positions.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join('');
-    const projOpts  = proyectos.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
-
-    const unassignedRows = unassigned.length
-      ? unassigned.map(emp => `
-          <div onclick="openAsisAssignModal(${emp.id},'${emp.full_name.replace(/'/g,'&#39;')}')"
-            style="cursor:pointer;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;background:#fff;display:flex;justify-content:space-between;align-items:center;"
-            onmouseover="this.style.borderColor='#6366f1'" onmouseout="this.style.borderColor='#e5e7eb'">
-            <span style="font-size:13px;">${escHtml(emp.full_name)}</span>
-            <span style="font-size:11px;color:var(--muted);">${escHtml(emp.shift?.name||'')}</span>
-          </div>`).join('')
-      : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">Todos asignados ✓</div>';
-
-    let shiftsHtml = '';
-    for (const shift of shifts) {
-      const assigned = _asisAssignments.filter(a => a.shift_id === shift.id);
-      const rows = assigned.length
-        ? assigned.map(a => `
-            <div style="display:flex;align-items:center;gap:6px;padding:7px 10px;border-bottom:1px solid #f3f4f6;">
-              <span style="flex:1;font-size:13px;">${escHtml(a.full_name)}</span>
-              <span style="font-size:11px;color:#6366f1;background:#eef2ff;padding:2px 6px;border-radius:4px;">${escHtml(a.pos_name||'—')}</span>
-              <span style="font-size:11px;color:#0369a1;background:#e0f2fe;padding:2px 6px;border-radius:4px;">${escHtml(a.project||'—')}</span>
-              <button onclick="removeAsisAssignment(${a.employee_id})"
-                style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1;padding:0 2px;" title="Quitar">×</button>
-            </div>`)
-          .join('')
-        : '<div style="font-size:12px;color:var(--muted);padding:10px;text-align:center;">Sin asignados</div>';
-
-      const shiftColor = attShiftColor(shift.code || shift.name || '?');
-      shiftsHtml += `
-        <div class="card section" style="margin-bottom:12px;border-left:4px solid ${shiftColor};">
-          <div style="font-weight:700;color:${shiftColor};margin-bottom:8px;font-size:14px;">
-            ${escHtml(shift.name)}
-            <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:6px;">${assigned.length} empleado${assigned.length!==1?'s':''}</span>
-          </div>
-          ${rows}
-        </div>`;
-    }
-
-    const content = `
-      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
-      ${asisTabs(0)}
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-        <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
-        <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
-        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
-        <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
-        <div style="margin-left:auto;display:flex;gap:8px;">
-          <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">🖨️ Imprimir</button>
-          <button class="btn-primary" onclick="saveAsisRol()">💾 Guardar Rol</button>
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start;">
-        <div>
-          <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Sin asignar (${unassigned.length})</div>
-          ${unassignedRows}
-        </div>
-        <div>${shiftsHtml || '<div class="notice">No hay turnos configurados</div>'}</div>
-      </div>
-
-      <!-- Modal asignación -->
-      <div id="asis-assign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;">
-        <div style="background:#fff;border-radius:16px;padding:24px;width:min(380px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
-          <h3 style="margin:0 0 4px;font-size:15px;">Asignar al Rol</h3>
-          <div id="asis-assign-emp-name" style="color:var(--muted);font-size:13px;margin-bottom:16px;"></div>
-          <input type="hidden" id="asis-assign-emp-id" />
-          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Turno</label>
-          <select id="asis-assign-shift" style="width:100%;margin-bottom:12px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">${shiftOpts}</select>
-          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Puesto</label>
-          <select id="asis-assign-puesto" style="width:100%;margin-bottom:12px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">
-            <option value="">— Sin puesto —</option>${posOpts}
-          </select>
-          <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Proyecto</label>
-          <select id="asis-assign-proyecto" style="width:100%;margin-bottom:16px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">
-            <option value="">— Sin proyecto —</option>${projOpts}
-          </select>
-          <div style="display:flex;gap:8px;justify-content:flex-end;">
-            <button class="btn-ghost" onclick="document.getElementById('asis-assign-modal').style.display='none'">Cancelar</button>
-            <button class="btn-primary" onclick="confirmAsisAssign()">Asignar</button>
-          </div>
-        </div>
-      </div>`;
-
-    el.innerHTML = shell(content, 'asistencias');
+    asisRolRender();
   } catch(err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'asistencias');
   }
+}
+
+/* Renderiza el rol desde estado local sin refetch al backend */
+function asisRolRender() {
+  if (!_asisRolData) { asisRolView(); return; }
+  const el = document.getElementById('app');
+  const { all_employees, shifts, positions, proyectos } = _asisRolData;
+
+  const assignedIds = new Set(_asisAssignments.map(a => a.employee_id));
+  const unassigned  = all_employees
+    .filter(e => !assignedIds.has(e.id))
+    .sort((a, b) => {
+      const pa = a.position?.name || '', pb = b.position?.name || '';
+      return pa !== pb ? pa.localeCompare(pb) : (a.full_name||'').localeCompare(b.full_name||'');
+    });
+
+  const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)}</option>`).join('');
+  const projOpts  = proyectos.map(p => `<option value="${escHtml(p)}">${escHtml(p)}</option>`).join('');
+
+  // Lista "Sin asignar" — draggable + puesto en azul bajo el nombre
+  const unassignedRows = unassigned.length
+    ? unassigned.map(emp => {
+        const posName = emp.position?.name || '';
+        return `<div draggable="true"
+          ondragstart="asisOnDragStart(event,${emp.id})"
+          onclick="openAsisAssignModal(${emp.id},'${escHtml(emp.full_name).replace(/'/g,'&#39;')}')"
+          style="cursor:grab;padding:8px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;background:#fff;user-select:none;"
+          onmouseover="this.style.borderColor='#6366f1';this.style.background='#f5f3ff'"
+          onmouseout="this.style.borderColor='#e5e7eb';this.style.background='#fff'">
+          <div style="font-size:13px;font-weight:600;">${escHtml(emp.full_name)}</div>
+          ${posName ? `<div style="font-size:11px;color:#2563eb;margin-top:1px;">${escHtml(posName)}</div>` : ''}
+        </div>`;
+      }).join('')
+    : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px;">Todos asignados ✓</div>';
+
+  // Turnos con drop zones — empleados ordenados puesto → nombre
+  let shiftsHtml = '';
+  for (const shift of shifts) {
+    const shiftColor = attShiftColor(shift.code || shift.name || '?');
+    const inShift    = _asisAssignments
+      .filter(a => a.shift_id === shift.id)
+      .sort((a, b) => {
+        const pa = a.pos_name || '', pb = b.pos_name || '';
+        return pa !== pb ? pa.localeCompare(pb) : (a.full_name||'').localeCompare(b.full_name||'');
+      });
+
+    let lastPos = null;
+    const rows = inShift.length
+      ? inShift.map(a => {
+          const posHdr = (a.pos_name && a.pos_name !== lastPos)
+            ? (() => { lastPos = a.pos_name; return `<div style="font-size:10px;font-weight:700;color:#2563eb;background:#eff6ff;padding:2px 8px;border-radius:4px;margin-bottom:2px;">${escHtml(a.pos_name)}</div>`; })()
+            : '';
+          return `${posHdr}<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #f3f4f6;">
+            <div style="flex:1;">
+              <div style="font-size:13px;">${escHtml(a.full_name)}</div>
+              ${a.project ? `<div style="font-size:10px;color:#0369a1;">${escHtml(a.project)}</div>` : ''}
+            </div>
+            <button onclick="removeAsisAssignment(${a.employee_id})"
+              style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:18px;line-height:1;padding:0 4px;flex-shrink:0;" title="Quitar">×</button>
+          </div>`;
+        }).join('')
+      : '<div style="font-size:12px;color:var(--muted);padding:12px;text-align:center;">Arrastra aqui o haz clic en un trabajador</div>';
+
+    shiftsHtml += `
+      <div class="card section" id="shift-drop-${shift.id}" style="margin-bottom:12px;border-left:4px solid ${shiftColor};padding:0;overflow:hidden;"
+        ondragover="asisOnDragOver(event)"
+        ondrop="asisOnDrop(event,${shift.id})"
+        ondragenter="this.style.outline='2px dashed ${shiftColor}'"
+        ondragleave="this.style.outline='none'">
+        <div style="font-weight:700;color:${shiftColor};padding:10px 12px 8px;font-size:14px;">
+          ${escHtml(shift.name)}
+          <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:6px;">${inShift.length} empleado${inShift.length!==1?'s':''}</span>
+        </div>
+        <div style="border-top:1px solid #f3f4f6;">${rows}</div>
+      </div>`;
+  }
+
+  const content = `
+    <div class="module-title"><h2>Control de Asistencias</h2></div>
+    ${asisTabs(0)}
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
+      <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
+      <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
+      <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
+      <div style="margin-left:auto;display:flex;gap:8px;">
+        <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
+        <button class="btn-primary" onclick="saveAsisRol()">Guardar Rol</button>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:6px 12px;margin-bottom:12px;">
+      Arrastra un trabajador al turno o haz clic sobre el para asignarlo. El puesto aparece en azul bajo el nombre.
+    </div>
+    <div style="display:grid;grid-template-columns:260px 1fr;gap:16px;align-items:start;">
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Sin asignar (${unassigned.length})</div>
+        ${unassignedRows}
+      </div>
+      <div>${shiftsHtml || '<div class="notice">No hay turnos configurados</div>'}</div>
+    </div>
+
+    <!-- Modal asignacion manual -->
+    <div id="asis-assign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;place-items:center;">
+      <div style="background:#fff;border-radius:16px;padding:24px;width:min(360px,95vw);box-shadow:0 16px 48px rgba(0,0,0,.2);">
+        <h3 style="margin:0 0 4px;font-size:15px;">Asignar al Turno</h3>
+        <div id="asis-assign-emp-name" style="color:var(--muted);font-size:13px;margin-bottom:16px;"></div>
+        <input type="hidden" id="asis-assign-emp-id" />
+        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Turno</label>
+        <select id="asis-assign-shift" style="width:100%;margin-bottom:12px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">${shiftOpts}</select>
+        <label style="font-size:12px;font-weight:700;display:block;margin-bottom:4px;">Proyecto</label>
+        <select id="asis-assign-proyecto" style="width:100%;margin-bottom:16px;padding:7px;border:1px solid #e5e7eb;border-radius:8px;">
+          <option value="">— Sin proyecto —</option>${projOpts}
+        </select>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button class="btn-ghost" onclick="document.getElementById('asis-assign-modal').style.display='none'">Cancelar</button>
+          <button class="btn-primary" onclick="confirmAsisAssign()">Asignar</button>
+        </div>
+      </div>
+    </div>`;
+
+  el.innerHTML = shell(content, 'asistencias');
+}
+
+// Drag & Drop
+function asisOnDragStart(event, empId) {
+  event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer.setData('text/plain', String(empId));
+}
+function asisOnDragOver(event) {
+  event.preventDefault();
+  event.dataTransfer.dropEffect = 'move';
+}
+function asisOnDrop(event, shiftId) {
+  event.preventDefault();
+  const zone = document.getElementById('shift-drop-' + shiftId);
+  if (zone) zone.style.outline = 'none';
+  const empId = Number(event.dataTransfer.getData('text/plain'));
+  if (!empId || !_asisRolData) return;
+  const emp   = _asisRolData.all_employees.find(e => e.id === empId);
+  if (!emp) return;
+  const shift = _asisRolData.shifts.find(s => s.id === shiftId);
+  _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
+  _asisAssignments.push({
+    employee_id: empId,
+    shift_id:    shiftId,
+    position_id: emp.position?.id ?? emp.position_id ?? null,
+    project:     null,
+    full_name:   emp.full_name,
+    pos_name:    emp.position?.name || '',
+    shift_name:  shift?.name || '',
+  });
+  asisRolRender();
 }
 
 function openAsisAssignModal(empId, empName) {
@@ -8217,29 +8331,30 @@ function openAsisAssignModal(empId, empName) {
 
 function removeAsisAssignment(empId) {
   _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
-  asisRolView();
+  asisRolRender();
 }
 
 function confirmAsisAssign() {
   const empId     = Number(document.getElementById('asis-assign-emp-id').value);
   const shiftId   = Number(document.getElementById('asis-assign-shift').value);
-  const posId     = document.getElementById('asis-assign-puesto').value;
   const project   = document.getElementById('asis-assign-proyecto').value;
-  const posName   = document.getElementById('asis-assign-puesto').selectedOptions[0]?.text || '';
   const shiftName = document.getElementById('asis-assign-shift').selectedOptions[0]?.text || '';
-  const emp = state.employees.find(e => e.id === empId);
-  const fullName = emp?.full_name || `Emp. ${empId}`;
+  const emp       = (_asisRolData?.all_employees || []).find(e => e.id === empId);
+  const fullName  = emp?.full_name || `Emp. ${empId}`;
+  const posName   = emp?.position?.name || '';
 
   _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
   _asisAssignments.push({
-    employee_id: empId, shift_id: shiftId,
-    position_id: posId ? Number(posId) : null,
-    project: project || null,
-    full_name: fullName, pos_name: posName, shift_name: shiftName,
+    employee_id: empId,
+    shift_id:    shiftId,
+    position_id: emp?.position?.id ?? emp?.position_id ?? null,
+    project:     project || null,
+    full_name:   fullName,
+    pos_name:    posName,
+    shift_name:  shiftName,
   });
-
   document.getElementById('asis-assign-modal').style.display = 'none';
-  asisRolView();
+  asisRolRender();
 }
 
 async function saveAsisRol() {
@@ -8247,7 +8362,7 @@ async function saveAsisRol() {
     await api('/api/rhh/asistencia/rol', {
       method: 'POST',
       body: JSON.stringify({
-        week_start: asisWeek,
+        week_start:  asisWeek,
         assignments: _asisAssignments.map(a => ({
           employee_id: a.employee_id,
           shift_id:    a.shift_id,
@@ -8271,66 +8386,172 @@ async function asisCaptureView() {
     const data = await api(url);
     if (!data) return;
 
-    const shifts    = data.shifts    || [];
-    const dates     = data.dates     || [];   // ['YYYY-MM-DD', ...]
-    const grid      = data.grid      || [];
-    const proyectos = data.proyectos || ['SKF','AMSTED','TENNECO'];
-    const role = state.user?.role;
-    const canParoTecnico = ['rh','admin'].includes(role);
+    const shifts          = data.shifts          || [];
+    const dates           = data.dates           || [];
+    const grid            = data.grid            || [];
+    const proyectos       = data.proyectos       || ['SKF','AMSTED','TENNECO'];
+    const overtimeRazones = data.overtime_razones || [];
+    const today           = data.today           || '';
+    const role            = state.user?.role;
+    const isRHHAdmin      = ['rh','admin'].includes(role);
+    const canParoTecnico  = isRHHAdmin;
 
     if (asisDayIdx >= dates.length) asisDayIdx = 0;
     const selFecha = dates[asisDayIdx] || null;
+    const isPastDay = selFecha && selFecha < today;
 
     const shiftOpts = shifts.map(s =>
       `<option value="${s.id}" ${asisShiftId==s.id?'selected':''}>${escHtml(s.name)}</option>`
     ).join('');
 
     const dayTabsHtml = dates.map((fecha, i) => {
-      const label = asisDateLabel(fecha);
-      return `<button class="tab-btn ${i===asisDayIdx?'active':''}" onclick="asisDayIdx=${i};asisCaptureView()">${label}</button>`;
+      const label    = asisDateLabel(fecha);
+      const isPast   = fecha < today;
+      const isToday  = fecha === today;
+      const dot      = isPast ? ' &#x1F512;' : (isToday ? ' &#x2022;' : '');
+      return `<button class="tab-btn ${i===asisDayIdx?'active':''}" onclick="asisDayIdx=${i};asisCaptureView()">${label}${dot}</button>`;
     }).join('');
+
+    const razOpts = overtimeRazones.map(r =>
+      `<option value="${escHtml(r)}">${escHtml(r)}</option>`
+    ).join('');
+
+    // Estilos de encabezados TE (naranja)
+    const thTE = 'padding:8px 8px;text-align:center;font-weight:600;background:#fff3e0;color:#c2410c;font-size:11px;border-left:2px solid #fed7aa;';
+    const thTEn = 'padding:8px 8px;text-align:center;font-weight:600;background:#fff3e0;color:#c2410c;font-size:11px;';
 
     let rowsHtml = '';
     if (selFecha) {
       for (const emp of grid) {
-        const dayData = (emp.days||[]).find(d => d.fecha === selFecha) || {};
-        const inc   = dayData.incidencia_type || 'labora';
-        const auto  = !!dayData.is_auto;
-        const incType = ASIST_INC_TYPES.find(t => t.v === inc) || ASIST_INC_TYPES[0];
-        const selStyle = `background:${incType.bg};color:${incType.fg};`;
-        const incSelOpts = ASIST_INC_TYPES
-          .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
-          .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''}>${t.l}</option>`)
-          .join('');
+        const dayData  = (emp.days||[]).find(d => d.fecha === selFecha) || {};
+        const isAuto   = !!dayData.is_auto;
+        const hasRec   = !!dayData.id;
+        const isLocked = !isRHHAdmin && isPastDay && hasRec && !!dayData.incidencia_type;
+        const noRec    = !hasRec || !dayData.incidencia_type; // sin incidencia registrada -> editable siempre
+        const editable = !isAuto && (!isLocked || noRec);
+
+        // Incidencia actual (puede ser null/undefined si no hay registro)
+        const inc      = dayData.incidencia_type || '';
+        const incType  = inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null;
+        const selStyle = incType ? `background:${incType.bg};color:${incType.fg};` : 'background:#f8fafc;color:#9ca3af;';
+
+        const incSelOpts = `<option value="" ${!inc?'selected':''} style="background:#f8fafc;color:#9ca3af;">— Sin asignar —</option>` +
+          ASIST_INC_TYPES
+            .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
+            .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
+            .join('');
+
         const projOpts = proyectos.map(p =>
           `<option value="${p}" ${dayData.proyecto===p?'selected':''}>${p}</option>`
         ).join('');
 
-        rowsHtml += `<tr>
-          <td style="padding:8px 10px;font-size:13px;">${escHtml(emp.full_name)}</td>
-          <td style="padding:8px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
+        // Tiempo extra
+        const teActivo  = !!dayData.te_activo;
+        const teHrEnt   = dayData.te_hora_entrada || '';
+        const teHrSal   = dayData.te_hora_salida  || '';
+        const teRazon   = dayData.te_razon        || '';
+        const teProy    = dayData.te_proyecto      || '';
+        const teValeId  = dayData.te_vale_id      || null;
+        const teStatus  = dayData.te_vale_status  || '';
+        const disTE     = !editable || !teActivo;
+
+        // Audit trail para modal RHH
+        const auditTrail = dayData.audit_trail || [];
+        const auditJson  = escHtml(JSON.stringify(auditTrail));
+
+        // Textos de bloqueo
+        let lockInfo = '';
+        if (isAuto) {
+          lockInfo = `<span style="font-size:10px;color:#9ca3af;background:#f1f5f9;padding:1px 5px;border-radius:4px;">auto</span>`;
+        } else if (isLocked) {
+          const who = dayData.registrado_por ? ` · ${escHtml(dayData.registrado_por)}` : '';
+          const when = dayData.registered_at ? ` ${dayData.registered_at}` : '';
+          lockInfo = `<span style="font-size:10px;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;padding:1px 6px;border-radius:8px;">Reg.${when}${who}</span>`;
+        }
+
+        // Boton por fila
+        let rowBtn = '';
+        if (isAuto) {
+          rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#f1f5f9;color:#9ca3af;font-size:11px;cursor:default;">auto</button>`;
+        } else if (isLocked && !noRec) {
+          if (isRHHAdmin) {
+            rowBtn = `<button onclick="asisOpenAuditModal(${emp.employee_id},'${escHtml(emp.full_name).replace(/'/g,'&#39;')}','${selFecha}',${dayData.id||'null'},'${escHtml(inc)}','${escHtml(dayData.proyecto||'')}','${auditJson}')"
+              style="padding:4px 10px;border:1px solid #ddd6fe;border-radius:6px;background:#f5f3ff;color:#7c3aed;font-size:11px;cursor:pointer;font-weight:600;">Editar</button>`;
+          } else {
+            rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#f1f5f9;color:#9ca3af;font-size:11px;cursor:not-allowed;">Bloqueado</button>`;
+          }
+        } else if (teActivo && teValeId) {
+          rowBtn = `<button onclick="asisOpenValeModal(${teValeId})" style="padding:4px 10px;border:1px solid #fed7aa;border-radius:6px;background:#fff7ed;color:#c2410c;font-size:11px;cursor:pointer;font-weight:600;">Ver vale</button>`;
+        } else {
+          rowBtn = `<button onclick="asisGuardarFila(${emp.employee_id},'${selFecha}')"
+            style="padding:4px 12px;border:none;border-radius:6px;background:#4f46e5;color:#fff;font-size:11px;cursor:pointer;font-weight:700;" id="asis-btn-${emp.employee_id}">Guardar</button>`;
+        }
+
+        const rowStyle = teActivo ? 'background:#fffbf5;' : '';
+        const disabledAttr = (!editable || isLocked && !noRec) ? 'disabled' : '';
+        const onChangeInc = editable ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisMarkDirty(${emp.employee_id})"` : '';
+
+        rowsHtml += `<tr style="${rowStyle}">
+          <td style="padding:7px 10px;font-size:13px;font-weight:600;">${escHtml(emp.full_name)}</td>
+          <td style="padding:7px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
           <td style="padding:4px 6px;">
-            <select data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-inc-sel"
-              ${auto?'disabled title="Detectado automáticamente"':''}
-              style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}"
-              onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||ASIST_INC_TYPES[0];this.style.background=t.bg;this.style.color=t.fg;">
+            <select id="asis-inc-${emp.employee_id}" data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-inc-sel"
+              ${disabledAttr} ${onChangeInc}
+              style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}">
               ${incSelOpts}
             </select>
           </td>
           <td style="padding:4px 6px;">
-            <select data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-proj-sel"
+            <select id="asis-proj-${emp.employee_id}" data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-proj-sel"
+              ${disabledAttr} onchange="asisMarkDirty(${emp.employee_id})"
               style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
               <option value="" ${!dayData.proyecto?'selected':''}>— Sin proyecto —</option>
               ${projOpts}
             </select>
           </td>
-          <td style="padding:0 6px;font-size:11px;color:var(--muted);">${auto?'auto':''}</td>
+          <!-- TE columns -->
+          <td style="padding:4px 6px;text-align:center;border-left:2px solid #fed7aa;">
+            <input type="checkbox" id="asis-te-${emp.employee_id}" ${teActivo?'checked':''}
+              ${(!editable || isLocked && !noRec)?'disabled':''}
+              onchange="asisToggleTE(${emp.employee_id})"
+              style="width:16px;height:16px;accent-color:#ea580c;cursor:pointer;" />
+          </td>
+          <td style="padding:4px 6px;">
+            <input type="time" id="asis-te-ent-${emp.employee_id}" value="${teHrEnt}"
+              ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE?'opacity:.35;':'border-color:#f97316;'}" />
+          </td>
+          <td style="padding:4px 6px;">
+            <input type="time" id="asis-te-sal-${emp.employee_id}" value="${teHrSal}"
+              ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE?'opacity:.35;':'border-color:#f97316;'}" />
+          </td>
+          <td style="padding:4px 6px;">
+            <select id="asis-te-raz-${emp.employee_id}" ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid ${disTE?'#e2e8f0':'#f97316'};border-radius:6px;font-size:11px;${disTE?'opacity:.4;':''}">
+              <option value="" ${!teRazon?'selected':''}>— Seleccionar —</option>
+              ${razOpts.replace(`value="${escHtml(teRazon)}"`,`value="${escHtml(teRazon)}" selected`)}
+            </select>
+          </td>
+          <td style="padding:4px 6px;">
+            <select id="asis-te-proy-${emp.employee_id}" ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid ${disTE?'#e2e8f0':'#f97316'};border-radius:6px;font-size:11px;${disTE?'opacity:.4;':''}">
+              <option value="" ${!teProy?'selected':''}>— Proyecto —</option>
+              ${proyectos.map(p=>`<option value="${p}" ${teProy===p?'selected':''}>${p}</option>`).join('')}
+            </select>
+          </td>
+          <td style="padding:4px 8px;text-align:center;white-space:nowrap;">
+            <div style="display:flex;flex-direction:column;gap:3px;align-items:center;">
+              ${rowBtn}
+              ${lockInfo}
+            </div>
+          </td>
         </tr>`;
       }
     }
 
     const content = `
-      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
+      <div class="module-title"><h2>Control de Asistencias</h2></div>
       ${asisTabs(1)}
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
@@ -8342,23 +8563,56 @@ async function asisCaptureView() {
           <option value="">Todos los turnos</option>${shiftOpts}
         </select>
       </div>
-      <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin días</span>'}</div>
+      ${isPastDay && !isRHHAdmin ? `<div style="font-size:12px;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:10px;">Dia anterior: las incidencias ya registradas estan bloqueadas para supervisores. Solo puedes capturar las que aun no tienen registro.</div>` : ''}
+      <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin dias</span>'}</div>
       <div style="overflow-x:auto;">
-        <table style="width:100%;border-collapse:collapse;min-width:480px;">
+        <table style="width:100%;border-collapse:collapse;min-width:900px;">
           <thead>
-            <tr style="background:#f9fafb;font-size:12px;color:var(--muted);">
-              <th style="padding:8px 10px;text-align:left;font-weight:600;">Empleado</th>
-              <th style="padding:8px 10px;text-align:left;font-weight:600;">Puesto</th>
-              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:140px;">Incidencia</th>
-              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:130px;">Proyecto</th>
-              <th></th>
+            <tr style="background:#f9fafb;font-size:11px;color:var(--muted);">
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:170px;">Empleado</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:120px;">Puesto</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:145px;">Incidencia</th>
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:120px;">Proyecto</th>
+              <th style="${thTE}min-width:55px;">T.Extra</th>
+              <th style="${thTEn}min-width:80px;">Entrada TE</th>
+              <th style="${thTEn}min-width:80px;">Salida TE</th>
+              <th style="${thTEn}min-width:170px;">Razon T. Extra</th>
+              <th style="${thTEn}min-width:100px;">Proy. TE</th>
+              <th style="padding:8px 10px;min-width:95px;text-align:center;">Guardar</th>
             </tr>
           </thead>
-          <tbody>${rowsHtml || `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--muted);">Sin empleados en este turno</td></tr>`}</tbody>
+          <tbody>${rowsHtml || `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted);">Sin empleados en este turno</td></tr>`}</tbody>
         </table>
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px;">
-        <button class="btn-primary" onclick="saveAsisCaptureDay('${selFecha||''}')">💾 Guardar día</button>
+
+      <!-- Modal: Vale TE -->
+      <div id="asis-vale-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;place-items:center;">
+        <div style="background:#fff;border-radius:16px;width:min(480px,96vw);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+          <div style="background:linear-gradient(135deg,#ea580c,#f97316);color:#fff;padding:18px 24px;">
+            <div style="font-size:16px;font-weight:700;">Vale de Tiempo Extra</div>
+            <div id="asis-vale-subtitle" style="font-size:12px;opacity:.85;"></div>
+          </div>
+          <div id="asis-vale-body" style="padding:20px 24px;"></div>
+          <div style="padding:0 24px 20px;display:flex;justify-content:flex-end;">
+            <button class="btn-ghost" onclick="document.getElementById('asis-vale-modal').style.display='none'">Cerrar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modal: Edicion RHH con trazabilidad -->
+      <div id="asis-audit-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;place-items:center;">
+        <div style="background:#fff;border-radius:16px;width:min(460px,96vw);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+          <div style="background:linear-gradient(135deg,#7c3aed,#6d28d9);color:#fff;padding:18px 24px;">
+            <div style="font-size:16px;font-weight:700;">Editar Incidencia — Trazabilidad</div>
+            <div id="asis-audit-subtitle" style="font-size:12px;opacity:.8;"></div>
+          </div>
+          <div id="asis-audit-body" style="padding:20px 24px;max-height:70vh;overflow-y:auto;"></div>
+          <div style="padding:0 24px 20px;display:flex;gap:8px;justify-content:flex-end;">
+            <button class="btn-ghost" onclick="document.getElementById('asis-audit-modal').style.display='none'">Cancelar</button>
+            <button onclick="asisConfirmAuditEdit()"
+              style="padding:7px 18px;border:none;border-radius:8px;background:#7c3aed;color:#fff;font-size:13px;cursor:pointer;font-weight:600;">Guardar cambio</button>
+          </div>
+        </div>
       </div>`;
 
     el.innerHTML = shell(content, 'asistencias');
@@ -8367,27 +8621,203 @@ async function asisCaptureView() {
   }
 }
 
-async function saveAsisCaptureDay(fecha) {
-  if (!fecha) { toast('Selecciona un día válido', 'warning'); return; }
-  const incSels = document.querySelectorAll(`.asis-inc-sel[data-fecha="${fecha}"]`);
-  const records = [];
-  incSels.forEach(sel => {
-    if (sel.disabled) return;
-    const empId = Number(sel.getAttribute('data-emp'));
-    const incidencia_type = sel.value;
-    const projSel = document.querySelector(`.asis-proj-sel[data-emp="${empId}"][data-fecha="${fecha}"]`);
-    const proyecto = projSel ? projSel.value : '';
-    records.push({ employee_id: empId, fecha, incidencia_type, proyecto: proyecto || null });
+/* Toggle campos TE al activar/desactivar checkbox */
+function asisToggleTE(empId) {
+  const chk = document.getElementById('asis-te-' + empId);
+  if (!chk) return;
+  const on  = chk.checked;
+  const ids = ['asis-te-ent-', 'asis-te-sal-', 'asis-te-raz-', 'asis-te-proy-'];
+  ids.forEach(prefix => {
+    const el = document.getElementById(prefix + empId);
+    if (!el) return;
+    el.disabled = !on;
+    el.style.opacity = on ? '1' : '0.35';
+    el.style.borderColor = on ? '#f97316' : '#e2e8f0';
   });
+  asisMarkDirty(empId);
+}
 
-  if (!records.length) { toast('Sin cambios manuales que guardar', 'warning'); return; }
+/* Marcar fila como modificada (btn azul) */
+function asisMarkDirty(empId) {
+  const btn = document.getElementById('asis-btn-' + empId);
+  if (btn) { btn.style.background = '#4f46e5'; btn.textContent = 'Guardar'; }
+}
+
+/* Guardar fila individual */
+async function asisGuardarFila(empId, fecha) {
+  const incSel  = document.getElementById('asis-inc-'    + empId);
+  const projSel = document.getElementById('asis-proj-'   + empId);
+  const teChk   = document.getElementById('asis-te-'     + empId);
+  const teEnt   = document.getElementById('asis-te-ent-' + empId);
+  const teSal   = document.getElementById('asis-te-sal-' + empId);
+  const teRaz   = document.getElementById('asis-te-raz-' + empId);
+  const teProy  = document.getElementById('asis-te-proy-'+ empId);
+  const btn     = document.getElementById('asis-btn-'    + empId);
+
+  const incidencia_type = incSel ? incSel.value : '';
+  if (!incidencia_type) { toast('Selecciona una incidencia antes de guardar', 'warning'); return; }
+
+  const te_activo      = teChk  ? teChk.checked  : false;
+  const te_hora_entrada = teEnt ? teEnt.value    : '';
+  const te_hora_salida  = teSal ? teSal.value    : '';
+  const te_razon        = teRaz ? teRaz.value    : '';
+  const te_proyecto     = teProy? teProy.value   : '';
+
+  if (te_activo && (!te_hora_entrada || !te_hora_salida)) {
+    toast('Ingresa hora de entrada y salida del tiempo extra', 'warning'); return;
+  }
+  if (te_activo && !te_razon) {
+    toast('Selecciona la razon del tiempo extra', 'warning'); return;
+  }
+
+  if (btn) { btn.textContent = '...'; btn.disabled = true; }
+  try {
+    await api('/api/rhh/asistencia/diaria', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: empId, fecha, incidencia_type,
+        proyecto:      projSel ? projSel.value : null,
+        te_activo,
+        te_hora_entrada: te_activo ? te_hora_entrada : null,
+        te_hora_salida:  te_activo ? te_hora_salida  : null,
+        te_razon:        te_activo ? te_razon        : null,
+        te_proyecto:     te_activo ? te_proyecto     : null,
+      })
+    });
+    if (btn) { btn.textContent = 'Guardado'; btn.style.background = '#16a34a'; btn.disabled = false; }
+    if (te_activo) {
+      toast('Registro guardado. Vale de tiempo extra generado — pendiente de aprobacion.');
+      // Refrescar para mostrar el boton "Ver vale"
+      setTimeout(() => asisCaptureView(), 1200);
+    } else {
+      toast('Registro guardado');
+    }
+  } catch(err) {
+    if (btn) { btn.textContent = 'Guardar'; btn.style.background = '#4f46e5'; btn.disabled = false; }
+    toast(err.message || 'Error al guardar', 'error');
+  }
+}
+
+/* Modal ver vale de tiempo extra */
+async function asisOpenValeModal(valeId) {
+  const modal = document.getElementById('asis-vale-modal');
+  const body  = document.getElementById('asis-vale-body');
+  const sub   = document.getElementById('asis-vale-subtitle');
+  if (!modal) return;
+  body.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted);">Cargando...</div>';
+  modal.style.display = 'grid';
 
   try {
-    await api('/api/rhh/asistencia/diaria/bulk', {
-      method: 'POST',
-      body: JSON.stringify({ records })
+    const vales = await api('/api/rhh/asistencia/overtime-vales');
+    const v = (vales||[]).find(x => x.id === valeId);
+    if (!v) { body.innerHTML = '<div class="notice error">Vale no encontrado</div>'; return; }
+
+    sub.textContent = `N° TE-${String(v.id).padStart(4,'0')} · ${v.status === 'pendiente' ? 'Pendiente de aprobacion' : v.status === 'autorizado' ? 'Autorizado' : 'Rechazado'}`;
+
+    const statusBg = v.status === 'autorizado' ? '#f0fdf4' : v.status === 'rechazado' ? '#fee2e2' : '#fef3c7';
+    const statusCl = v.status === 'autorizado' ? '#14532d' : v.status === 'rechazado' ? '#991b1b'  : '#92400e';
+    const statusTx = v.status === 'autorizado' ? 'Autorizado por ' + (v.autorizado_por||'—') : v.status === 'rechazado' ? 'Rechazado por ' + (v.autorizado_por||'—') : 'Pendiente de aprobacion por RHH / Admin';
+
+    const fld = (lbl, val) => `<div style="background:#f8fafc;border-radius:8px;padding:10px 12px;">
+      <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">${lbl}</div>
+      <div style="font-size:13px;font-weight:600;color:#1e293b;">${val}</div>
+    </div>`;
+
+    body.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+        ${fld('Empleado', escHtml(v.employee?.full_name || '—'))}
+        ${fld('Fecha', escHtml(v.fecha||'—'))}
+        ${fld('Hora inicio TE', escHtml(v.te_hora_entrada||'—'))}
+        ${fld('Hora fin TE', escHtml(v.te_hora_salida||'—'))}
+        ${fld('Total horas', `<span style="color:#ea580c;font-size:16px;">${v.te_horas != null ? v.te_horas + ' hrs' : '—'}</span>`)}
+        ${fld('Proyecto TE', escHtml(v.te_proyecto||'—'))}
+      </div>
+      <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin-bottom:12px;">
+        <div style="font-size:10px;font-weight:700;color:#c2410c;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;">Motivo / Razon</div>
+        <div style="font-size:13px;color:#7c2d12;">${escHtml(v.te_razon||'—')}</div>
+      </div>
+      ${fld('Solicitado por', escHtml(v.solicitado_por||'—'))}
+      <div style="margin-top:12px;background:${statusBg};border-radius:8px;padding:10px 12px;font-size:12px;color:${statusCl};font-weight:600;">
+        ${escHtml(statusTx)}
+        ${v.notas_rechazo ? `<div style="margin-top:4px;font-size:11px;font-weight:400;">${escHtml(v.notas_rechazo)}</div>` : ''}
+      </div>`;
+  } catch(err) {
+    body.innerHTML = `<div class="notice error">${err.message}</div>`;
+  }
+}
+
+/* Modal edicion con trazabilidad (RHH/Admin) */
+let _asisAuditCtx = {};
+function asisOpenAuditModal(empId, empName, fecha, recId, currentInc, currentProy, auditJson) {
+  const modal = document.getElementById('asis-audit-modal');
+  const body  = document.getElementById('asis-audit-body');
+  const sub   = document.getElementById('asis-audit-subtitle');
+  if (!modal) return;
+
+  let auditTrail = [];
+  try { auditTrail = JSON.parse(auditJson); } catch(_) {}
+
+  _asisAuditCtx = { recId, empId, fecha };
+  sub.textContent = `${empName} · ${fecha}`;
+
+  const incOpts = ASIST_INC_TYPES.map(t =>
+    `<option value="${t.v}" ${t.v===currentInc?'selected':''}>${t.l}</option>`
+  ).join('');
+
+  const auditRows = auditTrail.length
+    ? auditTrail.map(a => `<div style="font-size:12px;color:#4c1d95;padding:4px 8px;border-left:2px solid #c4b5fd;margin-bottom:4px;">
+        <strong>${escHtml(a.campo)}</strong>: "${escHtml(a.de||'—')}" → "${escHtml(a.a||'—')}"<br>
+        <span style="font-size:10px;color:#7c3aed;">${escHtml(a.cambiado_por)} · ${escHtml(a.cambiado_at)} · Motivo: ${escHtml(a.motivo||'')}</span>
+      </div>`).join('')
+    : '<div style="font-size:12px;color:#9ca3af;padding:4px 8px;">Sin cambios previos</div>';
+
+  body.innerHTML = `
+    <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:12px;margin-bottom:16px;">
+      <div style="font-size:10px;font-weight:700;color:#5b21b6;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;">Historial de cambios</div>
+      ${auditRows}
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">Nueva incidencia</label>
+      <select id="asis-audit-inc" style="width:100%;padding:7px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;">
+        ${incOpts}
+      </select>
+    </div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:11px;font-weight:700;color:#64748b;display:block;margin-bottom:4px;">Proyecto</label>
+      <input id="asis-audit-proy" type="text" value="${escHtml(currentProy)}"
+        style="width:100%;padding:7px;border:1px solid #e2e8f0;border-radius:8px;font-size:13px;" />
+    </div>
+    <div style="margin-bottom:4px;">
+      <label style="font-size:11px;font-weight:700;color:#7c3aed;display:block;margin-bottom:4px;">Motivo del cambio <span style="color:#dc2626;">*obligatorio</span></label>
+      <textarea id="asis-audit-motivo" rows="2"
+        style="width:100%;padding:7px;border:1px solid #ddd6fe;border-radius:8px;font-size:13px;resize:none;"
+        placeholder="Ej: Error de captura, el empleado presento permiso..."></textarea>
+    </div>
+    <div style="font-size:11px;color:#7c3aed;background:#f5f3ff;border-radius:8px;padding:6px 10px;margin-top:8px;">
+      Este cambio quedara registrado en la trazabilidad con tu nombre y la fecha/hora actual.
+    </div>`;
+
+  modal.style.display = 'grid';
+}
+
+async function asisConfirmAuditEdit() {
+  const { recId } = _asisAuditCtx;
+  if (!recId) { toast('Sin registro para editar', 'error'); return; }
+
+  const incidencia_type = document.getElementById('asis-audit-inc')?.value;
+  const proyecto        = document.getElementById('asis-audit-proy')?.value || '';
+  const motivo          = document.getElementById('asis-audit-motivo')?.value?.trim();
+
+  if (!motivo) { toast('El motivo del cambio es obligatorio', 'warning'); return; }
+
+  try {
+    await api(`/api/rhh/asistencia/diaria/${recId}/rh-editar`, {
+      method: 'PUT',
+      body: JSON.stringify({ incidencia_type, proyecto, motivo })
     });
-    toast(`${records.length} registro${records.length!==1?'s':''} guardado${records.length!==1?'s':''}`);
+    document.getElementById('asis-audit-modal').style.display = 'none';
+    toast('Incidencia actualizada con trazabilidad');
+    asisCaptureView();
   } catch(err) { toast(err.message, 'error'); }
 }
 

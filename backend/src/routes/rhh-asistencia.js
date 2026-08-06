@@ -1,6 +1,6 @@
 /* ══════════════════════════════════════════════════════════════════════════════
    RHH — Control de Asistencias
-   Rol semanal, captura diaria, vista grid semanal
+   Rol semanal, captura diaria, vista grid semanal, vales de tiempo extra
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const express = require('express');
@@ -10,6 +10,12 @@ const router = express.Router();
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+function nowMxTime() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+}
+function nowMxDateTime() {
+  return `${nowMxDate()} ${nowMxTime()}`;
 }
 
 const PROYECTOS = ['SKF', 'AMSTED', 'TENNECO'];
@@ -34,6 +40,19 @@ const INCIDENCIA_LABELS = {
   descanso:    'Descanso',
 };
 
+const OVERTIME_RAZONES = [
+  'Producción urgente / pedido cliente',
+  'Mantenimiento preventivo',
+  'Mantenimiento correctivo',
+  'Limpieza y orden de área',
+  'Capacitación',
+  'Inventario',
+  'Paro técnico recuperación',
+  'Apoyo a otro turno',
+  'Auditoría / visita cliente',
+  'Otro',
+];
+
 /* Lunes de la semana que contiene dateStr (YYYY-MM-DD) */
 function weekMonday(dateStr) {
   const d   = new Date((dateStr || nowMxDate()) + 'T12:00:00');
@@ -54,6 +73,24 @@ function weekDates(monday) {
   return out;
 }
 
+/* Calcular horas entre dos strings HH:MM */
+function calcHoras(entrada, salida) {
+  if (!entrada || !salida) return null;
+  const [h1, m1] = entrada.split(':').map(Number);
+  const [h2, m2] = salida.split(':').map(Number);
+  const mins = (h2 * 60 + m2) - (h1 * 60 + m1);
+  if (mins <= 0) return null;
+  return Math.round(mins / 6) / 10; // redondeo a 1 decimal
+}
+
+/* ¿Registro bloqueado para supervisor? */
+function isLockedForSupervisor(rec, fecha, role) {
+  if (role === 'rh' || role === 'admin') return false;
+  if (!rec) return false;  // sin registro = no bloqueado
+  if (!rec.incidencia_type) return false; // sin incidencia registrada = no bloqueado
+  return fecha < nowMxDate();
+}
+
 /* Enriquece un empleado con dept/position/shift */
 function enrichEmp(emp, db) {
   if (!emp) return null;
@@ -63,6 +100,46 @@ function enrichEmp(emp, db) {
     position:   (db.rhh_positions   || []).find(p => p.id === emp.position_id)   || null,
     shift:      (db.rhh_shifts      || []).find(s => s.id === emp.shift_id)       || null,
   };
+}
+
+/* Crear o actualizar vale de tiempo extra para un registro de asistencia */
+function upsertOvertimeVale(db, attRec, solicitado_por) {
+  if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
+  const vales = db.rhh_overtime_vales;
+
+  // Si ya existe un vale para este attendance id, actualizar (si sigue pendiente)
+  const existing = vales.find(v => v.attendance_id === attRec.id);
+  if (existing) {
+    if (existing.status === 'pendiente') {
+      existing.te_hora_entrada = attRec.te_hora_entrada;
+      existing.te_hora_salida  = attRec.te_hora_salida;
+      existing.te_horas        = attRec.te_horas;
+      existing.te_razon        = attRec.te_razon;
+      existing.te_proyecto     = attRec.te_proyecto;
+      existing.updated_at      = nowMxDateTime();
+    }
+    return existing.id;
+  }
+
+  const vale = {
+    id:              nextId(vales),
+    attendance_id:   attRec.id,
+    employee_id:     attRec.employee_id,
+    fecha:           attRec.fecha,
+    te_hora_entrada: attRec.te_hora_entrada,
+    te_hora_salida:  attRec.te_hora_salida,
+    te_horas:        attRec.te_horas,
+    te_razon:        attRec.te_razon,
+    te_proyecto:     attRec.te_proyecto,
+    status:          'pendiente',
+    solicitado_por,
+    creado_at:       nowMxDateTime(),
+    autorizado_por:  null,
+    autorizado_at:   null,
+    notas_rechazo:   null,
+  };
+  vales.push(vale);
+  return vale.id;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -115,6 +192,7 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     by_shift:   byShift,
     assigned,
     unassigned,
+    all_employees: [...assigned, ...unassigned],
     shifts:     db.rhh_shifts || [],
     positions:  db.rhh_positions || [],
     proyectos:  PROYECTOS,
@@ -122,7 +200,6 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 });
 
 // POST /api/rhh/asistencia/rol
-// Body: { week_start, no_periodo, assignments: [{employee_id, shift_id, position_id, project}] }
 router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
   const { week_start, no_periodo, assignments = [] } = req.body || {};
   if (!week_start) return res.status(400).json({ error: 'week_start requerido' });
@@ -147,7 +224,6 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
     rol.status     = 'published';
   }
 
-  // Reemplaza todas las asignaciones de este rol
   asigs = asigs.filter(a => a.rol_id !== rol.id);
   for (const a of assignments) {
     if (!a.employee_id || !a.shift_id) continue;
@@ -162,7 +238,7 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
     });
   }
 
-  db.rhh_weekly_rol    = roles;
+  db.rhh_weekly_rol      = roles;
   db.rhh_rol_assignments = asigs;
   write(db);
   res.json({ ok: true, rol, saved: assignments.length });
@@ -182,7 +258,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const positions   = db.rhh_positions  || [];
   const shifts      = db.rhh_shifts     || [];
 
-  // Filas enriquecidas y ordenadas turno → puesto → nombre
   const rows = assignments
     .map(a => {
       const emp   = employees.find(e => e.id === a.employee_id);
@@ -197,7 +272,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
       return (a.emp?.full_name || '').localeCompare(b.emp?.full_name || '');
     });
 
-  // Agrupar por turno
   const byShift = {};
   rows.forEach(r => {
     const sn = r.shift?.name || 'Sin turno';
@@ -211,10 +285,10 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 
   let tableBody = '';
   for (const [shiftName, { shift, rows: sRows }] of Object.entries(byShift)) {
-    const workDays   = shift?.work_days || [1,2,3,4,5];
-    const diasStr    = DIAS.filter((_, i) => workDays.includes(i + 1)).join(', ');
-    const entry      = shift?.start_time || '—';
-    const exitTime   = shift?.end_time   || '—';
+    const workDays = shift?.work_days || [1,2,3,4,5];
+    const diasStr  = DIAS.filter((_, i) => workDays.includes(i + 1)).join(', ');
+    const entry    = shift?.start_time || '—';
+    const exitTime = shift?.end_time   || '—';
     tableBody += `
       <tr style="background:#1e3a5f;color:#fff;">
         <td colspan="5" style="padding:6px 12px;font-weight:700;">
@@ -256,7 +330,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 </head><body>
 <h2>ROL SEMANAL DE TRABAJO</h2>
 <div class="sub">Semana: ${semLbl}</div>
-<button onclick="window.print()" style="margin-bottom:12px;padding:6px 16px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">🖨️ Imprimir / Guardar PDF</button>
+<button onclick="window.print()" style="margin-bottom:12px;padding:6px 16px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">Imprimir / Guardar PDF</button>
 <table>
   <thead><tr><th>No.</th><th>Nombre</th><th>Puesto</th><th>Horario</th><th>Proyecto</th></tr></thead>
   <tbody>${tableBody}</tbody>
@@ -271,24 +345,25 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 // ASISTENCIA DIARIA
 // ══════════════════════════════════════════════════════════════════════════════
 
-// GET /api/rhh/asistencia/diaria?week=YYYY-MM-DD&shift_id=X&fecha=YYYY-MM-DD
+// GET /api/rhh/asistencia/diaria?week=YYYY-MM-DD&shift_id=X
 router.get('/diaria', rhhAuthRequired, (req, res) => {
   const week  = weekMonday(req.query.week);
   const dates = weekDates(week);
+  const today = nowMxDate();
   const db    = read();
+  const role  = req.rhhUser.role;
 
   const rol         = (db.rhh_weekly_rol    || []).find(r => r.week_start === week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
 
-  // Empleados del turno solicitado (o todos si no se filtra)
   let empIds = null;
   if (req.query.shift_id) {
     const sid = Number(req.query.shift_id);
     empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
   }
 
-  const _sysIds2   = getSystemEmpIds();
-  const employees  = (db.rhh_employees  || []).filter(e =>
+  const _sysIds2  = getSystemEmpIds();
+  const employees = (db.rhh_employees  || []).filter(e =>
     e.status === 'active' && !_sysIds2.has(Number(e.id)) && (!empIds || empIds.has(e.id))
   );
   const positions  = db.rhh_positions  || [];
@@ -298,8 +373,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
   const records    = (db.rhh_attendance || []).filter(r =>
     r.fecha >= dates[0] && r.fecha <= dates[5]
   );
+  const audits     = db.rhh_attendance_audit || [];
+  const ovVales    = db.rhh_overtime_vales   || [];
 
-  // Construir grid: empleado × 6 días
   const grid = employees
     .map(emp => {
       const ra       = assignments.find(a => a.employee_id === emp.id);
@@ -308,7 +384,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
 
       const days = dates.map((fecha, di) => {
         const rec     = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
-        const dow     = di + 1; // 1=Lun...6=Sáb
+        const dow     = di + 1;
         const worksDay = shift?.work_days ? shift.work_days.includes(dow) : dow <= 5;
         const isFest   = holidays.includes(fecha);
         const isVac    = vacSols.some(v =>
@@ -316,19 +392,45 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         );
 
         let autoType = null;
-        if (!worksDay)  autoType = 'descanso';
-        if (isFest)     autoType = 'festivo';
-        if (isVac)      autoType = 'vacacion';
+        if (!worksDay) autoType = 'descanso';
+        if (isFest)    autoType = 'festivo';
+        if (isVac)     autoType = 'vacacion';
+
+        const locked    = isLockedForSupervisor(rec, fecha, role);
+        const vale      = rec ? ovVales.find(v => v.attendance_id === rec.id) : null;
+        const recAudit  = rec ? audits.filter(a => a.attendance_id === rec.id)
+          .sort((a, b) => a.id - b.id) : [];
 
         return {
           fecha,
-          id:                  rec?.id               ?? null,
-          incidencia_type:     rec?.incidencia_type  ?? autoType,
-          tiempo_retardo_min:  rec?.tiempo_retardo_min ?? null,
-          proyecto:            rec?.proyecto          ?? ra?.project ?? null,
-          notas:               rec?.notas             ?? null,
-          is_auto:             !rec && !!autoType,
-          registrado_por:      rec?.registrado_por    ?? null,
+          id:                 rec?.id               ?? null,
+          incidencia_type:    rec?.incidencia_type  ?? autoType,
+          tiempo_retardo_min: rec?.tiempo_retardo_min ?? null,
+          proyecto:           rec?.proyecto          ?? ra?.project ?? null,
+          notas:              rec?.notas             ?? null,
+          is_auto:            !rec && !!autoType,
+          registrado_por:     rec?.registrado_por    ?? null,
+          registered_at:      rec?.updated_at        ?? rec?.created_at ?? null,
+          // Tiempo extra
+          te_activo:          rec?.te_activo          ?? false,
+          te_hora_entrada:    rec?.te_hora_entrada    ?? null,
+          te_hora_salida:     rec?.te_hora_salida     ?? null,
+          te_horas:           rec?.te_horas           ?? null,
+          te_razon:           rec?.te_razon           ?? null,
+          te_proyecto:        rec?.te_proyecto        ?? null,
+          te_vale_id:         vale?.id                ?? null,
+          te_vale_status:     vale?.status            ?? null,
+          // Lock
+          is_locked:          locked,
+          // Audit trail (para modal RHH/Admin)
+          audit_trail:        recAudit.map(a => ({
+            cambiado_por: a.cambiado_por,
+            cambiado_at:  a.cambiado_at,
+            campo:        a.campo,
+            de:           a.valor_anterior,
+            a:            a.valor_nuevo,
+            motivo:       a.motivo,
+          })),
         };
       });
 
@@ -350,46 +452,58 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     });
 
   res.json({
-    week_start: week,
+    week_start:      week,
+    today,
     dates,
-    shifts:     shifts,
-    proyectos:  PROYECTOS,
+    shifts,
+    proyectos:       PROYECTOS,
+    overtime_razones: OVERTIME_RAZONES,
     incidencia_types: INCIDENCIA_LABELS,
     grid,
+    user_role:       role,
   });
 });
 
-// POST /api/rhh/asistencia/diaria  — crear/actualizar un registro individual
-router.post('/diaria', rhhAuthRequired, (req, res) => {
-  const { employee_id, fecha, incidencia_type, tiempo_retardo_min, proyecto, shift_id, notas } = req.body || {};
-  if (!employee_id || !fecha || !incidencia_type) {
-    return res.status(400).json({ error: 'employee_id, fecha e incidencia_type son requeridos' });
-  }
-  if (!INCIDENCIA_TYPES.includes(incidencia_type)) {
-    return res.status(400).json({ error: 'incidencia_type inválido: ' + incidencia_type });
-  }
-  if (incidencia_type === 'paro_tecnico' && !['rh', 'admin'].includes(req.rhhUser.role)) {
-    return res.status(403).json({ error: 'Paro técnico solo puede registrarlo RHH o Admin' });
+// ── Función interna de upsert para bulk y single ──────────────────────────────
+function upsertAttendance(att, item, userLabel, role, skipLockCheck) {
+  const {
+    employee_id, fecha, incidencia_type, tiempo_retardo_min,
+    proyecto, shift_id, notas,
+    te_activo, te_hora_entrada, te_hora_salida, te_razon, te_proyecto,
+  } = item;
+
+  if (!employee_id || !fecha || !incidencia_type) return { error: 'Campos requeridos faltantes', skip: true };
+  if (!INCIDENCIA_TYPES.includes(incidencia_type)) return { error: `incidencia_type inválido: ${incidencia_type}`, skip: true };
+  if (incidencia_type === 'paro_tecnico' && !['rh','admin'].includes(role)) return { error: 'Paro técnico solo RHH/Admin', skip: true };
+
+  const today = nowMxDate();
+  const idx   = att.findIndex(r => r.employee_id === Number(employee_id) && r.fecha === fecha);
+
+  // Lock check para supervisores
+  if (!skipLockCheck && role === 'supervisor' && fecha < today && idx !== -1 && att[idx].incidencia_type) {
+    return { error: 'Incidencia bloqueada para supervisor', locked: true, skip: true };
   }
 
-  const db  = read();
-  const att = db.rhh_attendance || [];
-  const idx = att.findIndex(r => r.employee_id === Number(employee_id) && r.fecha === fecha);
+  const teHoras = te_activo ? calcHoras(te_hora_entrada, te_hora_salida) : null;
 
   if (idx !== -1) {
     att[idx] = {
       ...att[idx],
       incidencia_type,
-      tiempo_retardo_min:  tiempo_retardo_min != null ? Number(tiempo_retardo_min) : null,
-      proyecto:            proyecto    ?? att[idx].proyecto,
-      shift_id:            shift_id    ? Number(shift_id) : att[idx].shift_id,
-      notas:               notas       ?? att[idx].notas,
-      registrado_por:      req.rhhUser.email || req.rhhUser.full_name,
-      updated_at:          nowMxDate(),
+      tiempo_retardo_min: tiempo_retardo_min != null ? Number(tiempo_retardo_min) : att[idx].tiempo_retardo_min,
+      proyecto:           proyecto    ?? att[idx].proyecto,
+      shift_id:           shift_id    ? Number(shift_id) : att[idx].shift_id,
+      notas:              notas       ?? att[idx].notas,
+      te_activo:          !!te_activo,
+      te_hora_entrada:    te_activo ? (te_hora_entrada || null) : null,
+      te_hora_salida:     te_activo ? (te_hora_salida  || null) : null,
+      te_horas:           teHoras,
+      te_razon:           te_activo ? (te_razon    || null) : null,
+      te_proyecto:        te_activo ? (te_proyecto || null) : null,
+      registrado_por:     userLabel,
+      updated_at:         nowMxDateTime(),
     };
-    db.rhh_attendance = att;
-    write(db);
-    return res.json(att[idx]);
+    return { rec: att[idx], isNew: false };
   }
 
   const rec = {
@@ -401,48 +515,131 @@ router.post('/diaria', rhhAuthRequired, (req, res) => {
     proyecto:           proyecto   || null,
     shift_id:           shift_id   ? Number(shift_id) : null,
     notas:              notas      || null,
-    registrado_por:     req.rhhUser.email || req.rhhUser.full_name,
-    created_at:         nowMxDate(),
+    te_activo:          !!te_activo,
+    te_hora_entrada:    te_activo ? (te_hora_entrada || null) : null,
+    te_hora_salida:     te_activo ? (te_hora_salida  || null) : null,
+    te_horas:           teHoras,
+    te_razon:           te_activo ? (te_razon    || null) : null,
+    te_proyecto:        te_activo ? (te_proyecto || null) : null,
+    registrado_por:     userLabel,
+    created_at:         nowMxDateTime(),
   };
   att.push(rec);
+  return { rec, isNew: true };
+}
+
+// POST /api/rhh/asistencia/diaria — guardar un registro individual (per-row)
+router.post('/diaria', rhhAuthRequired, (req, res) => {
+  const db      = read();
+  const att     = db.rhh_attendance || [];
+  const role    = req.rhhUser.role;
+  const userLbl = req.rhhUser.full_name || req.rhhUser.email;
+
+  const result = upsertAttendance(att, req.body || {}, userLbl, role, false);
+
+  if (result.skip) {
+    const code = result.locked ? 403 : 400;
+    return res.status(code).json({ error: result.error });
+  }
+
+  // Generar/actualizar vale de tiempo extra si aplica
+  if (result.rec.te_activo) {
+    const valeId = upsertOvertimeVale(db, result.rec, userLbl);
+    result.rec.te_vale_id = valeId;
+  }
+
   db.rhh_attendance = att;
   write(db);
-  res.status(201).json(rec);
+  res.status(result.isNew ? 201 : 200).json(result.rec);
 });
 
-// POST /api/rhh/asistencia/diaria/bulk — guardar múltiples registros de un día
+// POST /api/rhh/asistencia/diaria/bulk — guardar múltiples registros (compatibilidad)
 router.post('/diaria/bulk', rhhAuthRequired, (req, res) => {
   const { records = [] } = req.body || {};
   if (!records.length) return res.json({ ok: true, saved: 0 });
 
-  const db  = read();
-  const att = db.rhh_attendance || [];
-  let saved = 0;
+  const db      = read();
+  const att     = db.rhh_attendance || [];
+  const role    = req.rhhUser.role;
+  const userLbl = req.rhhUser.full_name || req.rhhUser.email;
+  let saved = 0, locked = 0;
 
   for (const item of records) {
-    const { employee_id, fecha, incidencia_type, tiempo_retardo_min, proyecto, shift_id, notas } = item;
-    if (!employee_id || !fecha || !incidencia_type) continue;
-    if (!INCIDENCIA_TYPES.includes(incidencia_type)) continue;
-    if (incidencia_type === 'paro_tecnico' && !['rh','admin'].includes(req.rhhUser.role)) continue;
-
-    const idx = att.findIndex(r => r.employee_id === Number(employee_id) && r.fecha === fecha);
-    if (idx !== -1) {
-      att[idx] = { ...att[idx], incidencia_type,
-        tiempo_retardo_min: tiempo_retardo_min != null ? Number(tiempo_retardo_min) : null,
-        proyecto: proyecto ?? att[idx].proyecto, shift_id: shift_id ? Number(shift_id) : att[idx].shift_id,
-        notas: notas ?? att[idx].notas, registrado_por: req.rhhUser.email || req.rhhUser.full_name, updated_at: nowMxDate() };
-    } else {
-      att.push({ id: nextId(att), employee_id: Number(employee_id), fecha, incidencia_type,
-        tiempo_retardo_min: tiempo_retardo_min != null ? Number(tiempo_retardo_min) : null,
-        proyecto: proyecto || null, shift_id: shift_id ? Number(shift_id) : null,
-        notas: notas || null, registrado_por: req.rhhUser.email || req.rhhUser.full_name, created_at: nowMxDate() });
+    const result = upsertAttendance(att, item, userLbl, role, false);
+    if (result.skip) {
+      if (result.locked) locked++;
+      continue;
+    }
+    if (result.rec.te_activo) {
+      upsertOvertimeVale(db, result.rec, userLbl);
     }
     saved++;
   }
 
   db.rhh_attendance = att;
   write(db);
-  res.json({ ok: true, saved });
+  res.json({ ok: true, saved, locked });
+});
+
+// PUT /api/rhh/asistencia/diaria/:id/rh-editar — RHH/Admin override con trazabilidad
+router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const id      = Number(req.params.id);
+  const { incidencia_type, proyecto, notas, motivo } = req.body || {};
+
+  if (!motivo) return res.status(400).json({ error: 'El motivo del cambio es obligatorio' });
+  if (incidencia_type && !INCIDENCIA_TYPES.includes(incidencia_type)) {
+    return res.status(400).json({ error: 'incidencia_type inválido' });
+  }
+
+  const db  = read();
+  const att = db.rhh_attendance || [];
+  const idx = att.findIndex(r => r.id === id);
+  if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
+
+  const old = { ...att[idx] };
+  const userLbl = req.rhhUser.full_name || req.rhhUser.email;
+
+  // Registrar en audit trail
+  if (!db.rhh_attendance_audit) db.rhh_attendance_audit = [];
+  const audits = db.rhh_attendance_audit;
+
+  const fields = [];
+  if (incidencia_type && incidencia_type !== old.incidencia_type) {
+    fields.push({ campo: 'incidencia_type', valor_anterior: old.incidencia_type, valor_nuevo: incidencia_type });
+  }
+  if (proyecto !== undefined && proyecto !== old.proyecto) {
+    fields.push({ campo: 'proyecto', valor_anterior: old.proyecto, valor_nuevo: proyecto });
+  }
+  if (notas !== undefined && notas !== old.notas) {
+    fields.push({ campo: 'notas', valor_anterior: old.notas, valor_nuevo: notas });
+  }
+
+  for (const f of fields) {
+    audits.push({
+      id:             nextId(audits),
+      attendance_id:  id,
+      employee_id:    old.employee_id,
+      fecha:          old.fecha,
+      campo:          f.campo,
+      valor_anterior: f.valor_anterior,
+      valor_nuevo:    f.valor_nuevo,
+      cambiado_por:   userLbl,
+      cambiado_at:    nowMxDateTime(),
+      motivo,
+    });
+  }
+
+  // Aplicar cambios
+  if (incidencia_type) att[idx].incidencia_type = incidencia_type;
+  if (proyecto !== undefined) att[idx].proyecto = proyecto || null;
+  if (notas !== undefined) att[idx].notas = notas || null;
+  att[idx].editado_por_rh = userLbl;
+  att[idx].editado_at_rh  = nowMxDateTime();
+
+  db.rhh_attendance       = att;
+  db.rhh_attendance_audit = audits;
+  write(db);
+  res.json({ ok: true, rec: att[idx], audit_entries: fields.length });
 });
 
 // DELETE /api/rhh/asistencia/diaria/:id
@@ -453,6 +650,69 @@ router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh',
   db.rhh_attendance.splice(idx, 1);
   write(db);
   res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VALES DE TIEMPO EXTRA
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/rhh/asistencia/overtime-vales?status=pendiente&week=YYYY-MM-DD
+router.get('/overtime-vales', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db     = read();
+  const vales  = db.rhh_overtime_vales || [];
+  const emps   = db.rhh_employees || [];
+  let list     = [...vales];
+
+  if (req.query.status) {
+    list = list.filter(v => v.status === req.query.status);
+  }
+  if (req.query.week) {
+    const dates = weekDates(weekMonday(req.query.week));
+    list = list.filter(v => v.fecha >= dates[0] && v.fecha <= dates[5]);
+  }
+
+  const enriched = list.map(v => {
+    const emp = emps.find(e => e.id === v.employee_id);
+    return { ...v, employee: emp ? { id: emp.id, full_name: emp.full_name, employee_number: emp.employee_number } : null };
+  }).sort((a, b) => (b.creado_at || '').localeCompare(a.creado_at || ''));
+
+  res.json(enriched);
+});
+
+// POST /api/rhh/asistencia/overtime-vales/:id/autorizar
+router.post('/overtime-vales/:id/autorizar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const id  = Number(req.params.id);
+  const db  = read();
+  if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
+  const vale = db.rhh_overtime_vales.find(v => v.id === id);
+  if (!vale) return res.status(404).json({ error: 'Vale no encontrado' });
+  if (vale.status !== 'pendiente') return res.status(400).json({ error: 'El vale ya fue procesado' });
+
+  vale.status        = 'autorizado';
+  vale.autorizado_por = req.rhhUser.full_name || req.rhhUser.email;
+  vale.autorizado_at  = nowMxDateTime();
+
+  write(db);
+  res.json({ ok: true, vale });
+});
+
+// POST /api/rhh/asistencia/overtime-vales/:id/rechazar
+router.post('/overtime-vales/:id/rechazar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const id    = Number(req.params.id);
+  const { notas_rechazo } = req.body || {};
+  const db    = read();
+  if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
+  const vale  = db.rhh_overtime_vales.find(v => v.id === id);
+  if (!vale) return res.status(404).json({ error: 'Vale no encontrado' });
+  if (vale.status !== 'pendiente') return res.status(400).json({ error: 'El vale ya fue procesado' });
+
+  vale.status         = 'rechazado';
+  vale.autorizado_por = req.rhhUser.full_name || req.rhhUser.email;
+  vale.autorizado_at  = nowMxDateTime();
+  vale.notas_rechazo  = notas_rechazo || null;
+
+  write(db);
+  res.json({ ok: true, vale });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -473,13 +733,13 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
 
   let employees = (db.rhh_employees || []).filter(e => e.status === 'active');
   if (req.query.shift_id) {
-    const sid      = Number(req.query.shift_id);
-    const empIds   = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
-    employees = employees.filter(e => empIds.has(e.id) || e.shift_id === sid);
+    const sid    = Number(req.query.shift_id);
+    const empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
+    employees    = employees.filter(e => empIds.has(e.id) || e.shift_id === sid);
   }
 
-  const positions = db.rhh_positions  || [];
-  const shifts    = db.rhh_shifts     || [];
+  const positions = db.rhh_positions || [];
+  const shifts    = db.rhh_shifts    || [];
 
   const grid = employees.map(emp => {
     const ra       = assignments.find(a => a.employee_id === emp.id);
@@ -487,12 +747,12 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
     const position = positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
     const days = dates.map((fecha, di) => {
-      const rec     = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
-      const dow     = di + 1;
-      const works   = shift?.work_days ? shift.work_days.includes(dow) : dow <= 5;
-      const isFest  = holidays.includes(fecha);
-      const isVac   = vacSols.some(v => v.employee_id === emp.id && fecha >= v.fecha_inicio && fecha <= v.fecha_fin);
-      let autoType  = works ? null : 'descanso';
+      const rec    = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
+      const dow    = di + 1;
+      const works  = shift?.work_days ? shift.work_days.includes(dow) : dow <= 5;
+      const isFest = holidays.includes(fecha);
+      const isVac  = vacSols.some(v => v.employee_id === emp.id && fecha >= v.fecha_inicio && fecha <= v.fecha_fin);
+      let autoType = works ? null : 'descanso';
       if (isFest) autoType = 'festivo';
       if (isVac)  autoType = 'vacacion';
 
@@ -504,6 +764,8 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
         proyecto:           rec?.proyecto        ?? ra?.project ?? null,
         notas:              rec?.notas           ?? null,
         is_auto:            !rec && !!autoType,
+        te_activo:          rec?.te_activo       ?? false,
+        te_horas:           rec?.te_horas        ?? null,
       };
     });
 
@@ -527,13 +789,16 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
     week_start: week,
     dates,
     grid,
-    shifts:    shifts,
-    proyectos: PROYECTOS,
+    shifts,
+    proyectos:         PROYECTOS,
     incidencia_labels: INCIDENCIA_LABELS,
   });
 });
 
 // GET /api/rhh/asistencia/proyectos
 router.get('/proyectos', rhhAuthRequired, (req, res) => res.json(PROYECTOS));
+
+// GET /api/rhh/asistencia/overtime-razones
+router.get('/overtime-razones', rhhAuthRequired, (req, res) => res.json(OVERTIME_RAZONES));
 
 module.exports = router;
