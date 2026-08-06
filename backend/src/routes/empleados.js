@@ -20,7 +20,13 @@ function calcVacInfo(emp, db, today) {
   let elegible = false, ciclos = 0, lft_dias = 0;
 
   if (startDate) {
-    const start = new Date(startDate + 'T12:00:00');
+    let start;
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(startDate)) {
+      const [d, m, y] = startDate.split('/');
+      start = new Date(`${y}-${m}-${d}T12:00:00`);
+    } else {
+      start = new Date(startDate + 'T12:00:00');
+    }
     if (!isNaN(start.getTime())) {
       const startYear      = start.getFullYear();
       const eligDeadline   = new Date(currentYear - 1, 10, 1); // Nov 1 año anterior

@@ -1387,10 +1387,18 @@ function _renderIncSem() {
         <strong style="font-size:12px;">${escHtml(r.employee?.full_name || '—')}</strong><br>
         <span class="small muted">${escHtml(r.department?.name || '—')}</span>
       </td>
-      <td style="padding:3px;" id="td-dias-${idx}">
-        <input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${r.dias_pagados ?? 7}" readonly
-          style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />
-      </td>
+      <td style="padding:3px;" id="td-dias-${idx}">${(() => {
+        const f = r.faltas || 0;
+        let dispDias;
+        if (f > 0) {
+          const dl = Math.max(0, 6 - f);
+          const sep = Math.round((dl / 6) * 100) / 100;
+          dispDias = Math.round((dl + sep) * 100) / 100;
+        } else {
+          dispDias = r.dias_pagados ?? 7;
+        }
+        return `<input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${dispDias}" readonly style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />`;
+      })()}</td>
       <td style="padding:3px;"><input type="number" min="0" max="6" step="1" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;"
         onchange="incSemRows[${idx}].faltas=parseFloat(this.value)||0;incAutoCalcDias(${idx})" /></td>
       <td style="padding:3px;">
