@@ -446,7 +446,9 @@ async function perfil(el) {
 async function incidencias(el) {
   const r = await api('GET', '/incidencias');
   if (!r || !r.ok) { el.innerHTML = `<div class="emp-empty"><p>Error al cargar incidencias</p></div>`; return; }
-  const rows = r.data;
+  // El endpoint ahora retorna { rows, vac_info } en lugar del array directo
+  const rows   = Array.isArray(r.data) ? r.data : (r.data?.rows || []);
+  const vacInfo = Array.isArray(r.data) ? null : (r.data?.vac_info || null);
   if (!rows.length) {
     el.innerHTML = `<p class="emp-page-title">Mis Incidencias</p><div class="emp-empty"><div class="empty-icon">📋</div><p>Sin registros de incidencias aún</p></div>`;
     return;
@@ -670,11 +672,42 @@ async function lista_raya(el) {
 // VISTA: VACACIONES
 // ══════════════════════════════════════════════════════════════════════════════
 async function vacaciones(el) {
-  const r = await api('GET', '/vacaciones');
-  const lista = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+  const [rVac, rInc] = await Promise.all([
+    api('GET', '/vacaciones'),
+    api('GET', '/incidencias'),
+  ]);
+  const lista   = (rVac && rVac.ok && Array.isArray(rVac.data)) ? rVac.data : [];
+  const vacInfo = (!Array.isArray(rInc?.data) ? rInc?.data?.vac_info : null) || {};
 
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }).slice(0, 10);
   const minDate = today;
+
+  const vi = vacInfo;
+  const dispColor  = (vi.dias_restantes ?? 0) === 0 ? '#dc2626' : '#0369a1';
+  const vacResumen = vi && vi.dias_disponibles != null ? `
+  <div class="emp-card" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border:1px solid #bae6fd;padding:14px 16px;margin-bottom:14px;">
+    <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:10px;">Días de vacaciones ${new Date().getFullYear()}</div>
+    ${!vi.elegible ? `<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:8px;">⚠️ Aún no tienes días de vacaciones disponibles para este año. Necesitas haber laborado al menos 2 meses del año anterior.</div>` : ''}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+        <div style="font-size:20px;font-weight:700;color:#0369a1;">${vi.dias_disponibles ?? 0}</div>
+        <div style="font-size:10px;color:#64748b;">Disponibles</div>
+      </div>
+      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+        <div style="font-size:20px;font-weight:700;color:#16a34a;">${vi.dias_tomados ?? 0}</div>
+        <div style="font-size:10px;color:#64748b;">Tomados</div>
+      </div>
+      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+        <div style="font-size:20px;font-weight:700;color:#ea580c;">${vi.dias_programados ?? 0}</div>
+        <div style="font-size:10px;color:#64748b;">Programados</div>
+      </div>
+      <div style="text-align:center;background:${(vi.dias_restantes??0)===0?'#fef2f2':'#f0fdf4'};border-radius:8px;padding:10px;border:1px solid ${(vi.dias_restantes??0)===0?'#fecaca':'#bbf7d0'};">
+        <div style="font-size:20px;font-weight:700;color:${dispColor};">${vi.dias_restantes ?? 0}</div>
+        <div style="font-size:10px;color:#64748b;">Restantes</div>
+      </div>
+    </div>
+    ${(vi.dias_restantes ?? 0) === 0 && vi.elegible ? `<div style="margin-top:10px;font-size:11px;color:#dc2626;background:#fef2f2;border-radius:6px;padding:6px 10px;">Sin días disponibles. Si ya tomaste o programaste todos tus días, deberás cancelar alguna solicitud para reagendar.</div>` : ''}
+  </div>` : '';
 
   const listaHtml = lista.length ? lista.map(v => `
   <div class="emp-card" style="padding:14px 16px;margin-bottom:10px">
@@ -689,6 +722,8 @@ async function vacaciones(el) {
 
   el.innerHTML = `
   <p class="emp-page-title">Vacaciones</p>
+
+  ${vacResumen}
 
   <div class="emp-card" id="vac-form-card">
     <div class="emp-card-title">Nueva solicitud</div>

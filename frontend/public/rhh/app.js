@@ -1387,8 +1387,12 @@ function _renderIncSem() {
         <strong style="font-size:12px;">${escHtml(r.employee?.full_name || '—')}</strong><br>
         <span class="small muted">${escHtml(r.department?.name || '—')}</span>
       </td>
-      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" value="${r.dias_pagados ?? 7}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].dias_pagados=parseFloat(this.value)||0" /></td>
-      <td style="padding:3px;"><input type="number" min="0" max="7" step="0.5" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;" onchange="incSemRows[${idx}].faltas=parseFloat(this.value)||0" /></td>
+      <td style="padding:3px;" id="td-dias-${idx}">
+        <input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${r.dias_pagados ?? 7}" readonly
+          style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />
+      </td>
+      <td style="padding:3px;"><input type="number" min="0" max="6" step="1" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;"
+        onchange="incSemRows[${idx}].faltas=parseFloat(this.value)||0;incAutoCalcDias(${idx})" /></td>
       <td style="padding:3px;">
         <input type="number" min="0" max="80" step="0.5" value="${r.horas_extras_total ?? 0}" style="width:56px;font-size:12px;" onchange="incSemRows[${idx}].horas_extras_total=parseFloat(this.value)||0" />${heBtn}
       </td>
@@ -1680,6 +1684,22 @@ function _heOnClasifChange(sel) {
 function _heOnMotivoChange(sel) {
   const wrap = document.getElementById('he-otro-wrap');
   if (wrap) wrap.style.display = sel.value === 'Otro' ? 'block' : 'none';
+}
+
+/* Auto-calcula días pagados según la fórmula del 7mo día cuando cambian las faltas */
+function incAutoCalcDias(idx) {
+  const faltas = incSemRows[idx]?.faltas ?? 0;
+  let diasPag;
+  if (faltas > 0) {
+    const diasLab = Math.max(0, 6 - faltas);
+    const septimo = Math.round((diasLab / 6) * 100) / 100;
+    diasPag = Math.round((diasLab + septimo) * 100) / 100;
+  } else {
+    diasPag = 7;
+  }
+  incSemRows[idx].dias_pagados = diasPag;
+  const el = document.getElementById(`inc-dias-${idx}`);
+  if (el) el.value = diasPag;
 }
 
 async function showHEDetalle(empId) {
@@ -11094,25 +11114,31 @@ async function catVerDetalle(empId) {
     return;
   }
 
-  const e   = data.employee;
-  const inc = data.incidencias || [];
-  const acl = data.aclaraciones || [];
-  const vac = data.vacaciones   || [];
-  const ev  = data.evaluaciones || [];
+  const e    = data.employee;
+  const inc  = data.incidencias || [];
+  const acl  = data.aclaraciones || [];
+  const vac  = data.vacaciones   || [];
+  const ev   = data.evaluaciones || [];
+  const vi   = data.vac_info     || {};
 
   const statusColor = e.status === 'active' ? '#16a34a' : '#64748b';
   const statusLabel = e.status === 'active' ? 'Activo' : 'Inactivo';
 
-  const incHtml = inc.length ? inc.slice(0, 20).map(r => `
-  <tr>
+  const incHtml = inc.length ? inc.slice(0, 20).map(r => {
+    const faltas   = r.faltas || 0;
+    const diasLab  = faltas > 0 ? Math.max(0, 6 - faltas) : 6;
+    const septimo  = faltas > 0 ? Math.round((diasLab / 6) * 100) / 100 : 1;
+    const diasCalc = faltas > 0 ? Math.round((diasLab + septimo) * 100) / 100 : 7;
+    return `<tr>
     <td>S${r.no_periodo}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
-    <td style="text-align:center">${r.dias_pagados ?? '—'}</td>
-    <td style="text-align:center;color:${r.faltas ? '#dc2626' : 'inherit'}">${r.faltas || 0}</td>
+    <td style="text-align:center;color:${faltas ? '#dc2626' : 'inherit'}">${faltas}</td>
+    <td style="text-align:center;color:#0369a1;font-size:12px;">${faltas > 0 ? septimo.toFixed(2) : '1.00'}</td>
+    <td style="text-align:center;font-weight:600;">${diasCalc.toFixed(2)}</td>
     <td style="text-align:center">${r.horas_extras_total || 0}</td>
     <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
-  </tr>`).join('')
-  : '<tr><td colspan="6" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
+  </tr>`;}).join('')
+  : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
 
   const aclHtml = acl.length ? acl.map(a => `
   <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px">
@@ -11262,7 +11288,7 @@ async function catVerDetalle(empId) {
   <div id="tab-content-incidencias" style="display:none">
     <div style="overflow-x:auto">
     <table class="data-table">
-      <thead><tr><th>Período</th><th>Fechas</th><th>Días Pag.</th><th>Faltas</th><th>H. Extra</th><th>Despensa</th></tr></thead>
+      <thead><tr><th>Período</th><th>Fechas</th><th>Faltas</th><th style="color:#0369a1;">7mo Día</th><th>Días Pag.</th><th>H. Extra</th><th>Despensa</th></tr></thead>
       <tbody>${incHtml}</tbody>
     </table>
     </div>
@@ -11272,7 +11298,49 @@ async function catVerDetalle(empId) {
   <div id="tab-content-aclaraciones" style="display:none">${aclHtml}</div>
 
   <!-- Vacaciones -->
-  <div id="tab-content-vacaciones" style="display:none">${vacHtml}</div>
+  <div id="tab-content-vacaciones" style="display:none">
+    <!-- Resumen de días -->
+    <div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:12px;padding:14px 18px;margin-bottom:16px;">
+      <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:10px;">
+        Resumen vacaciones ${new Date().getFullYear()}
+        ${vi.elegible===false ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:11px;margin-left:8px;">Sin derecho este año</span>' : ''}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:12px;">
+        <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+          <div style="font-size:22px;font-weight:700;color:#0369a1;">${vi.dias_disponibles ?? 0}</div>
+          <div style="font-size:11px;color:#64748b;">Días disponibles</div>
+          ${vi.override_dias != null ? '<div style="font-size:10px;color:#7c3aed;">Editado por RHH</div>' : `<div style="font-size:10px;color:#64748b;">LFT (ciclo ${vi.ciclos || 0})</div>`}
+        </div>
+        <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+          <div style="font-size:22px;font-weight:700;color:#16a34a;">${vi.dias_tomados ?? 0}</div>
+          <div style="font-size:11px;color:#64748b;">Días tomados</div>
+        </div>
+        <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+          <div style="font-size:22px;font-weight:700;color:#ea580c;">${vi.dias_programados ?? 0}</div>
+          <div style="font-size:11px;color:#64748b;">Comprometidos</div>
+          <div style="font-size:10px;color:#64748b;">(pend.+aprobados)</div>
+        </div>
+        <div style="text-align:center;background:${(vi.dias_restantes??0)===0?'#fef2f2':'#f0fdf4'};border-radius:8px;padding:10px;border:1px solid ${(vi.dias_restantes??0)===0?'#fecaca':'#bbf7d0'};">
+          <div style="font-size:22px;font-weight:700;color:${(vi.dias_restantes??0)===0?'#dc2626':'#15803d'};">${vi.dias_restantes ?? 0}</div>
+          <div style="font-size:11px;color:#64748b;">Restantes</div>
+        </div>
+      </div>
+      <!-- Override manual RHH -->
+      <div style="border-top:1px solid #bae6fd;padding-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <label style="font-size:12px;font-weight:600;color:#0369a1;">Editar días disponibles (RHH):</label>
+        <input type="number" id="cat-vac-override-${e.id}" min="0" max="60" step="1"
+          value="${vi.override_dias ?? ''}" placeholder="Auto (LFT)"
+          style="width:90px;padding:5px 8px;border:1px solid #bae6fd;border-radius:7px;font-size:13px;" />
+        <button onclick="catGuardarVacDias(${e.id})"
+          style="padding:5px 14px;border:none;border-radius:7px;background:#0369a1;color:#fff;font-size:12px;cursor:pointer;font-weight:600;">Guardar</button>
+        ${vi.override_dias != null ? `<button onclick="catBorrarVacOverride(${e.id})"
+          style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:7px;background:#f9fafb;font-size:11px;cursor:pointer;color:#64748b;">Restablecer LFT</button>` : ''}
+        <span style="font-size:11px;color:#64748b;">Vaciar = usar cálculo automático LFT · ${vi.lft_dias} días para ciclo ${vi.ciclos || '—'}</span>
+      </div>
+    </div>
+    <!-- Solicitudes -->
+    ${vacHtml}
+  </div>
 
   <!-- Portal -->
   <div id="tab-content-portal" style="display:none">${credHtml}</div>
@@ -11297,6 +11365,26 @@ async function catResponderAcl(empId, aclId) {
 async function catAprobarVac(vacId, status) {
   const r = await api(`/api/rhh/catalogo/vacaciones/${vacId}`, { method:'PATCH', body: JSON.stringify({ status }) }).catch(() => null);
   if (r) { toast(status === 'aprobado' ? 'Vacaciones aprobadas' : 'Solicitud rechazada'); catVerDetalle(_catEmpDetalle); }
+}
+
+async function catGuardarVacDias(empId) {
+  const val = document.getElementById(`cat-vac-override-${empId}`)?.value;
+  const vac_dias_disponibles = val !== '' && val !== null ? Number(val) : null;
+  const r = await api(`/api/rhh/catalogo/${empId}/info`, {
+    method: 'PATCH',
+    body: JSON.stringify({ vac_dias_disponibles })
+  }).catch(() => null);
+  if (r && r.ok) { toast('Días de vacaciones actualizados'); catVerDetalle(empId); }
+  else toast('Error al guardar', 'error');
+}
+
+async function catBorrarVacOverride(empId) {
+  const r = await api(`/api/rhh/catalogo/${empId}/info`, {
+    method: 'PATCH',
+    body: JSON.stringify({ vac_dias_disponibles: null })
+  }).catch(() => null);
+  if (r && r.ok) { toast('Días restablecidos al cálculo LFT'); catVerDetalle(empId); }
+  else toast('Error al guardar', 'error');
 }
 
 async function catResetCredencial(empId) {

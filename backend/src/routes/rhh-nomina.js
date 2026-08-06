@@ -198,11 +198,22 @@ router.post('/incidencias/bulk', rhhAuthRequired, rhhRequireRole('rh', 'admin', 
     if (!empId) continue;
     const idx = lista.findIndex(i => i.no_periodo === Number(no_periodo) && i.employee_id === empId);
 
+    // Auto-cálculo días pagados según fórmula del 7mo día (solo aplica para faltas)
+    const faltas = row.faltas !== undefined ? Number(row.faltas) : 0;
+    let dias_pagados;
+    if (faltas > 0) {
+      const diasLab  = Math.max(0, 6 - faltas);
+      const septimo  = Math.round((diasLab / 6) * 100) / 100;
+      dias_pagados   = Math.round((diasLab + septimo) * 100) / 100;
+    } else {
+      dias_pagados = 7;
+    }
+
     const record = {
       no_periodo:            Number(no_periodo),
       employee_id:           empId,
-      dias_pagados:          row.dias_pagados          !== undefined ? Number(row.dias_pagados)          : 7,
-      faltas:                row.faltas                !== undefined ? Number(row.faltas)                : 0,
+      dias_pagados,
+      faltas,
       horas_extras_total:    row.horas_extras_total    !== undefined ? Number(row.horas_extras_total)    : 0,
       despensa:              row.despensa              !== undefined ? (row.despensa ? 1 : 0)            : 1,
       bono_puntualidad_dias: row.bono_puntualidad_dias != null ? Number(row.bono_puntualidad_dias) : null,

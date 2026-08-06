@@ -8,6 +8,50 @@ function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
 
+const DEFAULT_LFT_RULES = [
+  { years: 1,  dias: 12 }, { years: 2,  dias: 14 }, { years: 3,  dias: 16 },
+  { years: 4,  dias: 18 }, { years: 5,  dias: 20 }, { years: 6,  dias: 22 },
+  { years: 11, dias: 24 },
+];
+
+function calcVacInfo(emp, db, today) {
+  const currentYear = new Date(today).getFullYear();
+  const startDate   = emp.start_date || emp.fecha_ingreso || null;
+  let elegible = false, ciclos = 0, lft_dias = 0;
+
+  if (startDate) {
+    const start = new Date(startDate + 'T12:00:00');
+    if (!isNaN(start.getTime())) {
+      const startYear      = start.getFullYear();
+      const eligDeadline   = new Date(currentYear - 1, 10, 1); // Nov 1 año anterior
+      if (startYear < currentYear && start < eligDeadline) {
+        elegible = true;
+        ciclos   = currentYear - startYear;
+        const rules = (db.rhh_lft_rules && db.rhh_lft_rules.length)
+          ? [...db.rhh_lft_rules].sort((a, b) => a.years - b.years)
+          : DEFAULT_LFT_RULES;
+        for (const r of rules) { if (ciclos >= r.years) lft_dias = r.dias; }
+      }
+    }
+  }
+
+  const override_dias    = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
+  const dias_disponibles = override_dias !== null ? override_dias : lft_dias;
+  const yearStr          = String(currentYear);
+  const requests         = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
+
+  const dias_tomados = requests
+    .filter(r => r.status === 'aprobado' && (r.fecha_inicio || '').startsWith(yearStr))
+    .reduce((s, r) => s + (r.dias || 0), 0);
+
+  const dias_programados = requests
+    .filter(r => ['pendiente', 'aprobado'].includes(r.status) && (r.fecha_inicio || '').startsWith(yearStr))
+    .reduce((s, r) => s + (r.dias || 0), 0);
+
+  const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
+  return { elegible, ciclos, lft_dias, override_dias, dias_disponibles, dias_tomados, dias_programados, dias_restantes };
+}
+
 // Periodos 2026 (CONTPAQ, lun-dom) — fallback cuando rhh_periodos está vacío
 const PERIODOS_2026 = [
   { no_periodo:  1, fecha_inicio:'30/Dic/2025', fecha_fin:'05/Ene/2026' },
@@ -113,17 +157,20 @@ router.get('/perfil', empAuthRequired, (req, res) => {
 
 // ── GET /api/empleados/incidencias ────────────────────────────────────────────
 router.get('/incidencias', empAuthRequired, (req, res) => {
-  const db = read();
+  const db      = read();
+  const empId   = req.empPayload.sub;
+  const emp     = (db.rhh_employees || []).find(e => e.id === empId);
   const periodos = db.rhh_periodos && db.rhh_periodos.length ? db.rhh_periodos : PERIODOS_2026;
   const rows = (db.rhh_incidencias_semanales || [])
-    .filter(r => r.employee_id === req.empPayload.sub)
+    .filter(r => r.employee_id === empId)
     .sort((a, b) => b.no_periodo - a.no_periodo)
     .slice(0, 52)
     .map(r => {
       const p = periodos.find(p => p.no_periodo === r.no_periodo) || {};
       return { ...r, fecha_inicio: p.fecha_inicio, fecha_fin: p.fecha_fin };
     });
-  res.json(rows);
+  const vac_info = emp ? calcVacInfo(emp, db, nowMxDate()) : null;
+  res.json({ rows, vac_info });
 });
 
 // ── GET /api/empleados/evaluaciones ──────────────────────────────────────────
@@ -343,8 +390,22 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
 
   const dias = Math.round((d2 - d1) / 86400000) + 1;
 
-  const db = read();
+  const db  = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
   if (!Array.isArray(db.rhh_vacation_requests)) db.rhh_vacation_requests = [];
+
+  // Validar días disponibles (no debe superar días_restantes incluyendo ya programados)
+  if (emp) {
+    const vacInfo = calcVacInfo(emp, db, nowMxDate());
+    if (!vacInfo.elegible) {
+      return res.status(400).json({ error: 'Aún no tienes días de vacaciones disponibles para este año. Debes haber laborado al menos 2 meses del año anterior.' });
+    }
+    if (dias > vacInfo.dias_restantes) {
+      return res.status(400).json({
+        error: `No tienes suficientes días disponibles. Disponibles: ${vacInfo.dias_disponibles}, ya comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${dias} días.${vacInfo.dias_programados > 0 ? ' Si quieres cambiar fechas, cancela primero los días ya programados.' : ''}`
+      });
+    }
+  }
 
   const nextId = (db.rhh_vacation_requests.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1;
   const record = {

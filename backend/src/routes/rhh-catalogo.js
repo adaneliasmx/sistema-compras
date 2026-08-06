@@ -16,6 +16,85 @@ function nowMxDate() {
 
 function readFresh() { return read(); }
 
+// ── Tabla LFT por defecto (si la BD no tiene reglas configuradas) ─────────────
+const DEFAULT_LFT_RULES = [
+  { years: 1,  dias: 12 },
+  { years: 2,  dias: 14 },
+  { years: 3,  dias: 16 },
+  { years: 4,  dias: 18 },
+  { years: 5,  dias: 20 },
+  { years: 6,  dias: 22 },
+  { years: 11, dias: 24 },
+];
+
+/**
+ * Calcula información de vacaciones para un empleado.
+ * @param {object} emp   - objeto empleado (con start_date, vac_dias_disponibles)
+ * @param {object} db    - base de datos completa
+ * @param {string} today - fecha actual 'YYYY-MM-DD'
+ * @returns {{ elegible, ciclos, lft_dias, override_dias, dias_disponibles,
+ *             dias_tomados, dias_programados, dias_restantes }}
+ */
+function calcVacInfo(emp, db, today) {
+  const currentYear = new Date(today).getFullYear();
+  const startDate   = emp.start_date || emp.fecha_ingreso || null;
+
+  // Elegibilidad: ingresó antes del 1 de noviembre del año anterior
+  let elegible = false;
+  let ciclos   = 0;
+  let lft_dias = 0;
+
+  if (startDate) {
+    const start = new Date(startDate + 'T12:00:00');
+    if (!isNaN(start.getTime())) {
+      const startYear = start.getFullYear();
+      const eligDeadline = new Date(currentYear - 1, 10, 1); // Nov 1 año anterior
+      if (startYear < currentYear && start < eligDeadline) {
+        elegible = true;
+        ciclos   = currentYear - startYear;
+
+        const rules = (db.rhh_lft_rules && db.rhh_lft_rules.length)
+          ? [...db.rhh_lft_rules].sort((a, b) => a.years - b.years)
+          : DEFAULT_LFT_RULES;
+
+        for (const r of rules) {
+          if (ciclos >= r.years) lft_dias = r.dias;
+        }
+      }
+    }
+  }
+
+  // Override manual de RHH
+  const override_dias     = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
+  const dias_disponibles  = override_dias !== null ? override_dias : lft_dias;
+
+  // Días tomados (vacaciones aprobadas en el año actual, colección rhh_vacation_requests)
+  const yearStr  = String(currentYear);
+  const requests = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
+
+  const dias_tomados = requests
+    .filter(r => r.status === 'aprobado' && (r.fecha_inicio || '').startsWith(yearStr))
+    .reduce((s, r) => s + (r.dias || 0), 0);
+
+  // Días programados = pendientes + aprobados (comprometidos pero aún no tomados)
+  const dias_programados = requests
+    .filter(r => ['pendiente', 'aprobado'].includes(r.status) && (r.fecha_inicio || '').startsWith(yearStr))
+    .reduce((s, r) => s + (r.dias || 0), 0);
+
+  const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
+
+  return {
+    elegible,
+    ciclos,
+    lft_dias,
+    override_dias,
+    dias_disponibles,
+    dias_tomados,
+    dias_programados,
+    dias_restantes,
+  };
+}
+
 // ── GET /api/rhh/catalogo/diag ─── DIAGNÓSTICO PÚBLICO (sin auth) ─────────────
 router.get('/diag', (req, res) => {
   const db = read();
@@ -192,12 +271,15 @@ router.get('/:id', rhhAuthRequired, (req, res) => {
   const evaluaciones = (db.rhh_evaluations || [])
     .filter(r => r.employee_id === emp.id);
 
+  const vac_info = calcVacInfo(emp, db, nowMxDate());
+
   res.json({
     employee:    enriched,
     incidencias,
     aclaraciones,
     vacaciones,
     evaluaciones,
+    vac_info,
     departments: db.rhh_departments || [],
     positions:   db.rhh_positions   || [],
     shifts:      db.rhh_shifts      || [],
@@ -275,19 +357,39 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
   const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily } = req.body || {};
-  if (department_id !== undefined) emp.department_id = department_id ? Number(department_id) : null;
-  if (position_id   !== undefined) emp.position_id   = position_id   ? Number(position_id)   : null;
-  if (shift_id      !== undefined) emp.shift_id      = shift_id      ? Number(shift_id)      : null;
-  if (status        !== undefined) emp.status        = status;
-  if (phone         !== undefined) emp.phone         = phone   || null;
-  if (email         !== undefined) emp.email         = email   || null;
-  if (start_date    !== undefined) emp.start_date    = start_date || null;
-  if (salary_daily  !== undefined) emp.salary_daily  = salary_daily ? Number(salary_daily) : null;
+  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily, vac_dias_disponibles } = req.body || {};
+  if (department_id          !== undefined) emp.department_id          = department_id ? Number(department_id) : null;
+  if (position_id            !== undefined) emp.position_id            = position_id   ? Number(position_id)   : null;
+  if (shift_id               !== undefined) emp.shift_id               = shift_id      ? Number(shift_id)      : null;
+  if (status                 !== undefined) emp.status                 = status;
+  if (phone                  !== undefined) emp.phone                  = phone   || null;
+  if (email                  !== undefined) emp.email                  = email   || null;
+  if (start_date             !== undefined) emp.start_date             = start_date || null;
+  if (salary_daily           !== undefined) emp.salary_daily           = salary_daily ? Number(salary_daily) : null;
+  if (vac_dias_disponibles   !== undefined) emp.vac_dias_disponibles   = vac_dias_disponibles !== null && vac_dias_disponibles !== '' ? Number(vac_dias_disponibles) : null;
   emp.updated_at = nowMxDate();
 
   write(db);
   res.json({ ok: true, employee: enrich(emp, db) });
+});
+
+// ── GET /api/rhh/catalogo/lft-rules ──────────────────────────────────────────
+router.get('/lft-rules', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const rules = (db.rhh_lft_rules && db.rhh_lft_rules.length) ? db.rhh_lft_rules : DEFAULT_LFT_RULES;
+  res.json(rules);
+});
+
+// ── PATCH /api/rhh/catalogo/lft-rules — reemplaza toda la tabla ──────────────
+router.patch('/lft-rules', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const { rules } = req.body || {};
+  if (!Array.isArray(rules)) return res.status(400).json({ error: 'rules[] requerido' });
+  const db = read();
+  db.rhh_lft_rules = rules.map(r => ({ years: Number(r.years), dias: Number(r.dias) }))
+    .filter(r => r.years > 0 && r.dias > 0)
+    .sort((a, b) => a.years - b.years);
+  write(db);
+  res.json(db.rhh_lft_rules);
 });
 
 // ── POST /api/rhh/catalogo/import-contpaq ─────────────────────────────────────
