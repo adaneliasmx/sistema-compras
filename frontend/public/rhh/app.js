@@ -6609,6 +6609,7 @@ let _asisRolData = null;      // datos cargados del backend para rol (all_employ
 let _asisRolFNombre = '';     // filtro nombre lista sin asignar
 let _asisRolFPuesto = '';     // filtro puesto lista sin asignar
 let _asisRolUnlocked = false; // bandera de contraseña para acceder al Rol Semanal
+let _asisLastWeek   = null;  // semana que ya fue inicializada en captura (para auto-saltar a hoy)
 
 const ASIST_INC_TYPES = [
   { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
@@ -8608,6 +8609,12 @@ async function asisCaptureView() {
     const isRHHAdmin      = ['rh','admin'].includes(role);
     const canParoTecnico  = isRHHAdmin;
 
+    // Al cambiar de semana (o abrir por primera vez), auto-saltar al día de hoy si aplica
+    if (_asisLastWeek !== asisWeek) {
+      _asisLastWeek = asisWeek;
+      const todayIdx = dates.indexOf(today);
+      asisDayIdx = todayIdx !== -1 ? todayIdx : 0;
+    }
     if (asisDayIdx >= dates.length) asisDayIdx = 0;
     const selFecha = dates[asisDayIdx] || null;
     const isPastDay = selFecha && selFecha < today;
