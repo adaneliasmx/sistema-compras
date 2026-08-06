@@ -74,18 +74,30 @@ function calcVacInfo(emp, db, today) {
   const override_dias     = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
   const dias_disponibles  = override_dias !== null ? override_dias : lft_dias;
 
-  // Días tomados (vacaciones aprobadas en el año actual, colección rhh_vacation_requests)
+  // Días tomados — fuente 1: nómina (Consolidado), campo vacaciones_dias en incidencias
   const yearStr  = String(currentYear);
-  const requests = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
+  const periodos = db.rhh_periodos || [];
+  const incidencias = (db.rhh_incidencias_semanales || []).filter(i => i.employee_id === emp.id);
+  const diasNomina = incidencias.reduce((sum, inc) => {
+    if (!inc.vacaciones_dias) return sum;
+    const per = periodos.find(p => p.no_periodo === inc.no_periodo);
+    const yr  = per ? new Date((per.fecha_inicio || '') + 'T12:00:00').getFullYear() : currentYear;
+    return yr === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+  }, 0);
 
-  const dias_tomados = requests
+  // Fuente 2: solicitudes aprobadas en el portal (fallback si no hay nómina)
+  const requests = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
+  const diasRequests = requests
     .filter(r => r.status === 'aprobado' && (r.fecha_inicio || '').startsWith(yearStr))
     .reduce((s, r) => s + (r.dias || 0), 0);
 
-  // Días programados = pendientes + aprobados (comprometidos pero aún no tomados)
-  const dias_programados = requests
-    .filter(r => ['pendiente', 'aprobado'].includes(r.status) && (r.fecha_inicio || '').startsWith(yearStr))
+  const dias_tomados = diasNomina > 0 ? diasNomina : diasRequests;
+
+  // Días programados = tomados + pendientes de aprobación
+  const diasPendientes = requests
+    .filter(r => r.status === 'pendiente' && (r.fecha_inicio || '').startsWith(yearStr))
     .reduce((s, r) => s + (r.dias || 0), 0);
+  const dias_programados = dias_tomados + diasPendientes;
 
   const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
 
