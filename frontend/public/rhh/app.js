@@ -1387,12 +1387,10 @@ function _renderIncSem() {
         <strong style="font-size:12px;">${escHtml(r.employee?.full_name || '—')}</strong><br>
         <span class="small muted">${escHtml(r.department?.name || '—')}</span>
       </td>
-      <td style="padding:3px;" id="td-dias-${idx}">${(() => {
-        const asist = Math.max(0, 6 - (r.faltas || 0));
-        const sep = Math.round((asist / 6) * 100) / 100;
-        const dispDias = asist + sep;
-        return `<input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${dispDias}" readonly style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />`;
-      })()}</td>
+      <td style="padding:3px;" id="td-dias-${idx}">
+        <input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${r.dias_pagados ?? 7}" readonly
+          style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />
+      </td>
       <td style="padding:3px;"><input type="number" min="0" max="6" step="1" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;"
         onchange="incSemRows[${idx}].faltas=parseFloat(this.value)||0;incAutoCalcDias(${idx})" /></td>
       <td style="padding:3px;">
@@ -11180,17 +11178,17 @@ async function catVerDetalle(empId) {
   const statusLabel = e.status === 'active' ? 'Activo' : 'Inactivo';
 
   const incHtml = inc.length ? inc.slice(0, 20).map(r => {
-    const faltas  = r.faltas || 0;
-    const asist   = Math.max(0, 6 - faltas);
-    const septimo = Math.round((asist / 6) * 100) / 100;
-    const diasCalc = asist + septimo;
-    const vacDias = r.vacaciones_dias != null ? r.vacaciones_dias : '—';
+    const diasPag = r.dias_pagados ?? 7;
+    // Deriva asist y séptimo desde dias_pagados (fuente real del Consolidado)
+    const asistCalc = Math.round(diasPag * 6 / 7);
+    const sepCalc   = Math.round((diasPag - asistCalc) * 100) / 100;
+    const vacDias   = r.vacaciones_dias != null ? r.vacaciones_dias : '—';
     return `<tr>
     <td>S${r.no_periodo}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
-    <td style="text-align:center;color:${faltas ? '#dc2626' : 'inherit'}">${faltas}</td>
-    <td style="text-align:center;color:#0369a1;font-size:12px;">${septimo.toFixed(2)}</td>
-    <td style="text-align:center;font-weight:600;">${diasCalc.toFixed(2)}</td>
+    <td style="text-align:center;color:${r.faltas ? '#dc2626' : 'inherit'}">${r.faltas || 0}</td>
+    <td style="text-align:center;color:#0369a1;font-size:12px;">${sepCalc.toFixed(2)}</td>
+    <td style="text-align:center;font-weight:600;">${Number(diasPag).toFixed(2)}</td>
     <td style="text-align:center">${r.horas_extras_total || 0}</td>
     <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
     <td style="text-align:center;color:#1d4ed8;font-weight:${r.vacaciones_dias > 0 ? '600' : '400'}">${vacDias}</td>
