@@ -6600,14 +6600,15 @@ let rolWeekStart = null;
 let rolData = null;
 
 // ── Estado Control Asistencias (nuevo módulo /api/rhh/asistencia) ─────────────
-let asisTab  = 0;          // 0=Rol, 1=Capturar, 2=Lista
-let asisWeek = null;       // YYYY-MM-DD (lunes de la semana)
-let asisShiftId = '';      // filtro de turno
-let asisDayIdx  = 0;       // día seleccionado en captura (0=lun…5=sáb)
+let asisTab  = 0;             // 0=Capturar, 1=Lista, 2=Rol Semanal
+let asisWeek = null;          // YYYY-MM-DD (lunes de la semana)
+let asisShiftId = '';         // filtro de turno
+let asisDayIdx  = 0;          // día seleccionado en captura (0=lun…5=sáb)
 let _asisAssignments = [];    // asignaciones en edición del rol
-let _asisRolData = null;     // datos cargados del backend para rol (all_employees, shifts, etc.)
-let _asisRolFNombre = '';    // filtro nombre lista sin asignar
-let _asisRolFPuesto = '';    // filtro puesto lista sin asignar
+let _asisRolData = null;      // datos cargados del backend para rol (all_employees, shifts, etc.)
+let _asisRolFNombre = '';     // filtro nombre lista sin asignar
+let _asisRolFPuesto = '';     // filtro puesto lista sin asignar
+let _asisRolUnlocked = false; // bandera de contraseña para acceder al Rol Semanal
 
 const ASIST_INC_TYPES = [
   { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
@@ -8109,10 +8110,32 @@ async function saveVacRules() {
 // ══════════════════════════════════════════════════════════════════════════════
 
 function asisTabs(active) {
-  const tabs = ['📋 Rol Semanal', '✏️ Capturar Asistencia', '📊 Lista de Asistencia'];
+  const tabs = ['✏️ Capturar Asistencia', '📊 Lista de Asistencia', '📋 Rol Semanal'];
   return `<div class="tab-bar" style="margin-bottom:16px;">
-    ${tabs.map((t,i)=>`<button class="tab-btn ${i===active?'active':''}" onclick="asisTab=${i};asistenciasView()">${t}</button>`).join('')}
+    ${tabs.map((t,i) => {
+      const click = i === 2
+        ? `onclick="asisGoRolTab()"`
+        : `onclick="asisTab=${i};asistenciasView()"`;
+      return `<button class="tab-btn ${i===active?'active':''}" ${click}>${t}</button>`;
+    }).join('')}
   </div>`;
+}
+
+function asisGoRolTab() {
+  if (_asisRolUnlocked) { asisTab = 2; asistenciasView(); return; }
+  const pwd = prompt('Contraseña para Rol Semanal:');
+  if (pwd === null) return;
+  if (pwd === 'koka') { _asisRolUnlocked = true; asisTab = 2; asistenciasView(); }
+  else toast('Contraseña incorrecta', 'error');
+}
+
+// Formatea "HH:MM" → "H:MM am/pm"
+function fmtTimeAmPm(t) {
+  if (!t) return '';
+  const [h, m] = t.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const hr = h % 12 || 12;
+  return `${hr}:${String(m).padStart(2, '0')} ${ampm}`;
 }
 
 function asisNavWeek(dir) {
@@ -8131,9 +8154,9 @@ function asisDateLabel(dateStr) {
 
 function asistenciasView() {
   if (!asisWeek) asisWeek = getMonday(new Date());
-  if (asisTab === 0) { asisRolView(); return; }
-  if (asisTab === 1) { asisCaptureView(); return; }
-  asisListaView();
+  if (asisTab === 0) { asisCaptureView(); return; }
+  if (asisTab === 1) { asisListaView(); return; }
+  asisRolView();
 }
 
 // ── Tab 0: Rol Semanal ────────────────────────────────────────────────────────
@@ -8264,6 +8287,8 @@ function asisRolRender() {
         }).join('')
       : '<div style="font-size:12px;color:var(--muted);padding:12px;text-align:center;">Arrastra aqui o haz clic en un trabajador</div>';
 
+    const schedule = (shift.start_time && shift.end_time)
+      ? ` (${fmtTimeAmPm(shift.start_time)} - ${fmtTimeAmPm(shift.end_time)})` : '';
     shiftsHtml += `
       <div class="card section" id="shift-drop-${shift.id}" style="margin-bottom:12px;border-left:4px solid ${shiftColor};padding:0;overflow:hidden;"
         ondragover="asisOnDragOver(event)"
@@ -8271,7 +8296,7 @@ function asisRolRender() {
         ondragenter="this.style.outline='2px dashed ${shiftColor}'"
         ondragleave="this.style.outline='none'">
         <div style="font-weight:700;color:${shiftColor};padding:10px 12px 8px;font-size:14px;">
-          ${escHtml(shift.name)}
+          ${escHtml(shift.name)}${escHtml(schedule)}
           <span style="font-weight:400;font-size:12px;color:var(--muted);margin-left:6px;">${inShift.length} empleado${inShift.length!==1?'s':''}</span>
         </div>
         <div style="border-top:1px solid #f3f4f6;">${rows}</div>
@@ -8280,7 +8305,7 @@ function asisRolRender() {
 
   const content = `
     <div class="module-title"><h2>Control de Asistencias</h2></div>
-    ${asisTabs(0)}
+    ${asisTabs(2)}
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
       <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
       <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
@@ -8288,6 +8313,7 @@ function asisRolRender() {
       <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
         <span id="asis-rol-save-status" style="font-size:11px;color:#9ca3af;"></span>
+        <button class="btn-ghost" onclick="asisShiftMgmtModal()">＋ Agregar turno</button>
         <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
       </div>
     </div>
@@ -8450,7 +8476,118 @@ async function saveAsisRolAuto() {
   }, 400);
 }
 
-// ── Tab 1: Capturar Asistencia ────────────────────────────────────────────────
+// ── Modal: Gestión de turnos (Agregar / Editar) ───────────────────────────────
+async function asisShiftMgmtModal() {
+  const shifts = await api('/api/rhh/catalogs/shifts');
+  if (!shifts) return;
+  const shiftRows = shifts.map(s => {
+    const sched = (s.start_time && s.end_time) ? `${fmtTimeAmPm(s.start_time)} – ${fmtTimeAmPm(s.end_time)}` : '—';
+    return `<tr>
+      <td style="padding:6px 10px;font-weight:600;">${escHtml(s.name)}</td>
+      <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(s.code||'')}</td>
+      <td style="padding:6px 10px;font-size:12px;">${sched}</td>
+      <td style="padding:6px 8px;text-align:center;">
+        <button onclick="asisShiftEditLoad(${s.id},'${escHtml(s.name).replace(/'/g,"&#39;")}','${escHtml(s.code||'')}','${s.start_time||''}','${s.end_time||''}','${s.color||'#1d4ed8'}')"
+          style="font-size:11px;padding:3px 9px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;background:#f8fafc;">Editar</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const existente = document.getElementById('asis-shift-mgmt-modal');
+  if (existente) existente.remove();
+
+  const div = document.createElement('div');
+  div.id = 'asis-shift-mgmt-modal';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:grid;place-items:center;';
+  div.innerHTML = `
+    <div style="background:#fff;border-radius:16px;width:min(540px,96vw);max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="background:linear-gradient(135deg,#4f46e5,#6366f1);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:15px;font-weight:700;">Gestión de Turnos</div>
+        <button onclick="document.getElementById('asis-shift-mgmt-modal').remove()"
+          style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;line-height:1;">×</button>
+      </div>
+      <div style="padding:16px 20px;">
+        <table style="width:100%;border-collapse:collapse;margin-bottom:16px;font-size:13px;">
+          <thead><tr style="background:#f9fafb;font-size:11px;color:var(--muted);">
+            <th style="padding:6px 10px;text-align:left;">Nombre</th>
+            <th style="padding:6px 10px;text-align:left;">Código</th>
+            <th style="padding:6px 10px;text-align:left;">Horario</th>
+            <th style="padding:6px 10px;"></th>
+          </tr></thead>
+          <tbody>${shiftRows || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--muted);">Sin turnos</td></tr>'}</tbody>
+        </table>
+        <div style="border-top:1px solid #e5e7eb;padding-top:14px;">
+          <div id="asis-shift-form-title" style="font-size:13px;font-weight:700;margin-bottom:10px;color:#374151;">Nuevo turno</div>
+          <input type="hidden" id="asis-sf-id" value="" />
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Nombre</label>
+              <input id="asis-sf-name" type="text" placeholder="Turno 1" style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;" />
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Código</label>
+              <input id="asis-sf-code" type="text" placeholder="T1" style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;" />
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Hora inicio</label>
+              <input id="asis-sf-start" type="time" style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;" />
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Hora fin</label>
+              <input id="asis-sf-end" type="time" style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;" />
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;">
+            <button id="asis-sf-cancel" onclick="asisShiftFormReset()" style="display:none;padding:7px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-size:13px;cursor:pointer;">Cancelar</button>
+            <button onclick="asisShiftSave()" style="padding:7px 18px;border:none;border-radius:8px;background:#4f46e5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;">Guardar turno</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+}
+
+function asisShiftFormReset() {
+  document.getElementById('asis-sf-id').value   = '';
+  document.getElementById('asis-sf-name').value = '';
+  document.getElementById('asis-sf-code').value = '';
+  document.getElementById('asis-sf-start').value = '';
+  document.getElementById('asis-sf-end').value   = '';
+  document.getElementById('asis-shift-form-title').textContent = 'Nuevo turno';
+  const btn = document.getElementById('asis-sf-cancel');
+  if (btn) btn.style.display = 'none';
+}
+
+function asisShiftEditLoad(id, name, code, start, end, color) {
+  document.getElementById('asis-sf-id').value    = id;
+  document.getElementById('asis-sf-name').value  = name;
+  document.getElementById('asis-sf-code').value  = code;
+  document.getElementById('asis-sf-start').value = start;
+  document.getElementById('asis-sf-end').value   = end;
+  document.getElementById('asis-shift-form-title').textContent = 'Editar turno';
+  const btn = document.getElementById('asis-sf-cancel');
+  if (btn) btn.style.display = '';
+}
+
+async function asisShiftSave() {
+  const id    = document.getElementById('asis-sf-id').value;
+  const name  = document.getElementById('asis-sf-name').value.trim();
+  const code  = document.getElementById('asis-sf-code').value.trim();
+  const start = document.getElementById('asis-sf-start').value;
+  const end   = document.getElementById('asis-sf-end').value;
+  if (!name || !code || !start || !end) { toast('Completa nombre, código, hora inicio y fin', 'error'); return; }
+  const body = JSON.stringify({ name, code, start_time: start, end_time: end });
+  if (id) {
+    await api(`/api/rhh/catalogs/shifts/${id}`, { method: 'PATCH', body });
+  } else {
+    await api('/api/rhh/catalogs/shifts', { method: 'POST', body });
+  }
+  toast(id ? 'Turno actualizado' : 'Turno creado');
+  document.getElementById('asis-shift-mgmt-modal')?.remove();
+  if (_asisRolData) { _asisRolData = null; asisRolView(); }  // refrescar rol
+}
+
+// ── Tab 0 (antes Tab 1): Capturar Asistencia ──────────────────────────────────
 async function asisCaptureView() {
   const el = document.getElementById('app');
   if (!asisWeek) asisWeek = getMonday(new Date());
@@ -8497,7 +8634,32 @@ async function asisCaptureView() {
 
     let rowsHtml = '';
     if (selFecha) {
+      // Agrupar empleados por turno para mostrar cabecera de turno
+      const shiftGroups = [];
+      const seenShifts  = new Map();
       for (const emp of grid) {
+        const key = emp.shift_id ?? '__sin_turno__';
+        if (!seenShifts.has(key)) {
+          const sd = shifts.find(s => s.id === emp.shift_id);
+          const g  = { shift_name: emp.shift_name || 'Sin turno', shiftData: sd, emps: [] };
+          seenShifts.set(key, g);
+          shiftGroups.push(g);
+        }
+        seenShifts.get(key).emps.push(emp);
+      }
+
+      for (const group of shiftGroups) {
+        const { shift_name, shiftData, emps } = group;
+        const gc = attShiftColor(shiftData?.code || shift_name || '?');
+        const sched = (shiftData?.start_time && shiftData?.end_time)
+          ? ` (${fmtTimeAmPm(shiftData.start_time)} - ${fmtTimeAmPm(shiftData.end_time)})` : '';
+        rowsHtml += `<tr>
+          <td colspan="10" style="padding:5px 10px;background:${gc}15;border-left:3px solid ${gc};font-size:12px;font-weight:700;color:${gc};">
+            ${escHtml(shift_name)}${escHtml(sched)} &mdash; ${emps.length} empleado${emps.length!==1?'s':''}
+          </td>
+        </tr>`;
+
+        for (const emp of emps) {
         const dayData  = (emp.days||[]).find(d => d.fecha === selFecha) || {};
         const isAuto   = !!dayData.is_auto;
         const hasRec   = !!dayData.id;
@@ -8622,12 +8784,13 @@ async function asisCaptureView() {
             </div>
           </td>
         </tr>`;
-      }
+        }   // end for emp
+      }     // end for group
     }
 
     const content = `
       <div class="module-title"><h2>Control de Asistencias</h2></div>
-      ${asisTabs(1)}
+      ${asisTabs(0)}
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
         <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
@@ -8948,7 +9111,7 @@ async function asisListaView() {
 
     const content = `
       <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
-      ${asisTabs(2)}
+      ${asisTabs(1)}
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
         <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
         <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
