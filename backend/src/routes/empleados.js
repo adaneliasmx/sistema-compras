@@ -51,8 +51,11 @@ function calcVacInfo(emp, db, today) {
   const diasNomina  = incidencias.reduce((sum, inc) => {
     if (!inc.vacaciones_dias) return sum;
     const per = periodos.find(p => p.no_periodo === inc.no_periodo);
-    const yr  = per ? new Date((per.fecha_inicio || '') + 'T12:00:00').getFullYear() : currentYear;
-    return yr === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+    if (per) {
+      const yr = new Date((per.fecha_inicio || '') + 'T12:00:00').getFullYear();
+      return yr === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+    }
+    return (inc.no_periodo >= 1 && inc.no_periodo <= 53) ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
   }, 0);
 
   // Fuente 2: solicitudes aprobadas del portal (fallback)

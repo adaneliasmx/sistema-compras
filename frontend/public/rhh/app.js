@@ -2487,7 +2487,7 @@ async function autorizacionesView() {
     const [vacSols, teSols, incidences, ovVales] = await Promise.all([
       api('/api/rhh/nomina/vac-solicitudes?estado=pendiente'),
       api('/api/rhh/nomina/te-solicitudes'),
-      api('/api/rhh/incidences?status=pendiente'),
+      api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
       ['rh','admin'].includes(state.user?.role) ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
     ]);
 
