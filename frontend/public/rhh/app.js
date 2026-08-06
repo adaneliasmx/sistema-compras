@@ -11186,7 +11186,7 @@ async function catVerDetalle(empId) {
     return `<tr>
     <td>S${r.no_periodo}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
-    <td style="text-align:center;color:${r.faltas ? '#dc2626' : 'inherit'}">${r.faltas || 0}</td>
+    <td style="text-align:center;color:${asistCalc < 6 ? '#dc2626' : 'inherit'}">${6 - asistCalc}</td>
     <td style="text-align:center;color:#0369a1;font-size:12px;">${sepCalc.toFixed(2)}</td>
     <td style="text-align:center;font-weight:600;">${Number(diasPag).toFixed(2)}</td>
     <td style="text-align:center">${r.horas_extras_total || 0}</td>
