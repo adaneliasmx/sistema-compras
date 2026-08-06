@@ -1388,15 +1388,9 @@ function _renderIncSem() {
         <span class="small muted">${escHtml(r.department?.name || '—')}</span>
       </td>
       <td style="padding:3px;" id="td-dias-${idx}">${(() => {
-        const f = r.faltas || 0;
-        let dispDias;
-        if (f > 0) {
-          const dl = Math.max(0, 6 - f);
-          const sep = Math.round((dl / 6) * 100) / 100;
-          dispDias = Math.round((dl + sep) * 100) / 100;
-        } else {
-          dispDias = r.dias_pagados ?? 7;
-        }
+        const asist = Math.max(0, 6 - (r.faltas || 0));
+        const sep = Math.round((asist / 6) * 100) / 100;
+        const dispDias = asist + sep;
         return `<input type="number" id="inc-dias-${idx}" min="0" max="7" step="0.01" value="${dispDias}" readonly style="width:56px;font-size:12px;background:#f8fafc;color:#374151;border:1px solid #e5e7eb;border-radius:4px;padding:3px;text-align:center;cursor:default;" />`;
       })()}</td>
       <td style="padding:3px;"><input type="number" min="0" max="6" step="1" value="${r.faltas ?? 0}" style="width:52px;font-size:12px;"
@@ -1697,14 +1691,9 @@ function _heOnMotivoChange(sel) {
 /* Auto-calcula días pagados según la fórmula del 7mo día cuando cambian las faltas */
 function incAutoCalcDias(idx) {
   const faltas = incSemRows[idx]?.faltas ?? 0;
-  let diasPag;
-  if (faltas > 0) {
-    const diasLab = Math.max(0, 6 - faltas);
-    const septimo = Math.round((diasLab / 6) * 100) / 100;
-    diasPag = Math.round((diasLab + septimo) * 100) / 100;
-  } else {
-    diasPag = 7;
-  }
+  const asist  = Math.max(0, 6 - faltas);
+  const sep    = Math.round((asist / 6) * 100) / 100;
+  const diasPag = asist + sep;
   incSemRows[idx].dias_pagados = diasPag;
   const el = document.getElementById(`inc-dias-${idx}`);
   if (el) el.value = diasPag;
@@ -11192,18 +11181,21 @@ async function catVerDetalle(empId) {
 
   const incHtml = inc.length ? inc.slice(0, 20).map(r => {
     const faltas  = r.faltas || 0;
-    const diasLab = faltas > 0 ? Math.max(0, 6 - faltas) : 6;
-    const septimo = faltas > 0 ? Math.round((diasLab / 6) * 100) / 100 : 1;
+    const asist   = Math.max(0, 6 - faltas);
+    const septimo = Math.round((asist / 6) * 100) / 100;
+    const diasCalc = asist + septimo;
+    const vacDias = r.vacaciones_dias != null ? r.vacaciones_dias : '—';
     return `<tr>
     <td>S${r.no_periodo}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
     <td style="text-align:center;color:${faltas ? '#dc2626' : 'inherit'}">${faltas}</td>
-    <td style="text-align:center;color:#0369a1;font-size:12px;">${faltas > 0 ? septimo.toFixed(2) : '1.00'}</td>
-    <td style="text-align:center;font-weight:600;">${r.dias_pagados ?? '—'}</td>
+    <td style="text-align:center;color:#0369a1;font-size:12px;">${septimo.toFixed(2)}</td>
+    <td style="text-align:center;font-weight:600;">${diasCalc.toFixed(2)}</td>
     <td style="text-align:center">${r.horas_extras_total || 0}</td>
     <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
+    <td style="text-align:center;color:#1d4ed8;font-weight:${r.vacaciones_dias > 0 ? '600' : '400'}">${vacDias}</td>
   </tr>`;}).join('')
-  : '<tr><td colspan="7" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
+  : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
 
   const aclHtml = acl.length ? acl.map(a => `
   <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px">
@@ -11353,7 +11345,7 @@ async function catVerDetalle(empId) {
   <div id="tab-content-incidencias" style="display:none">
     <div style="overflow-x:auto">
     <table class="data-table">
-      <thead><tr><th>Período</th><th>Fechas</th><th>Faltas</th><th style="color:#0369a1;">7mo Día</th><th>Días Pag.</th><th>H. Extra</th><th>Despensa</th></tr></thead>
+      <thead><tr><th>Período</th><th>Fechas</th><th>Faltas</th><th style="color:#0369a1;">7mo Día</th><th>Días Pag.</th><th>H. Extra</th><th>Despensa</th><th style="color:#1d4ed8;">Vac. (días)</th></tr></thead>
       <tbody>${incHtml}</tbody>
     </table>
     </div>
