@@ -74,37 +74,24 @@ function calcVacInfo(emp, db, today) {
   const override_dias     = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
   const dias_disponibles  = override_dias !== null ? override_dias : lft_dias;
 
-  // Días tomados — fuente 1: nómina (Consolidado), campo vacaciones_dias en incidencias
-  const yearStr  = String(currentYear);
-  const periodos = db.rhh_periodos || [];
+  // Días tomados — única fuente: Consolidado CONTPAQ (vacaciones_dias en incidencias)
+  // Usa fecha_inicio del propio registro para validar año, sin depender de rhh_periodos
   const incidencias = (db.rhh_incidencias_semanales || []).filter(i => i.employee_id === emp.id);
-  const diasNomina = incidencias.reduce((sum, inc) => {
+  const dias_tomados = incidencias.reduce((sum, inc) => {
     if (!inc.vacaciones_dias) return sum;
-    const per = periodos.find(p => p.no_periodo === inc.no_periodo);
-    if (per) {
-      // Solo contar si el periodo pertenece al año actual
-      const yr = new Date((per.fecha_inicio || '') + 'T12:00:00').getFullYear();
+    const fechaRef = inc.fecha_inicio || null;
+    if (fechaRef) {
+      const yr = new Date(fechaRef + 'T12:00:00').getFullYear();
       return yr === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
     }
-    // Sin periodo registrado: solo contar si no_periodo es del año en curso (1-52)
-    return (inc.no_periodo >= 1 && inc.no_periodo <= 53) ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+    // Sin fecha: incluir si no_periodo es válido (datos del año activo)
+    return (inc.no_periodo >= 1 && inc.no_periodo <= 53)
+      ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
   }, 0);
 
-  // Fuente 2: solicitudes aprobadas en el portal (fallback si no hay nómina)
-  const requests = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
-  const diasRequests = requests
-    .filter(r => r.status === 'aprobado' && (r.fecha_inicio || '').startsWith(yearStr))
-    .reduce((s, r) => s + (r.dias || 0), 0);
-
-  const dias_tomados = diasNomina > 0 ? diasNomina : diasRequests;
-
-  // Días programados = tomados + pendientes de aprobación
-  const diasPendientes = requests
-    .filter(r => r.status === 'pendiente' && (r.fecha_inicio || '').startsWith(yearStr))
-    .reduce((s, r) => s + (r.dias || 0), 0);
-  const dias_programados = dias_tomados + diasPendientes;
-
-  const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
+  // Sin solicitudes pendientes — comprometido = tomado
+  const dias_programados = dias_tomados;
+  const dias_restantes   = Math.max(0, dias_disponibles - dias_tomados);
 
   return {
     elegible,

@@ -43,35 +43,23 @@ function calcVacInfo(emp, db, today) {
 
   const override_dias    = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
   const dias_disponibles = override_dias !== null ? override_dias : lft_dias;
-  const yearStr          = String(currentYear);
 
-  // Días tomados — fuente 1: nómina (Consolidado), campo vacaciones_dias en incidencias
-  const periodos    = db.rhh_periodos || [];
+  // Días tomados — única fuente: Consolidado CONTPAQ (vacaciones_dias en incidencias)
   const incidencias = (db.rhh_incidencias_semanales || []).filter(i => i.employee_id === emp.id);
-  const diasNomina  = incidencias.reduce((sum, inc) => {
+  const dias_tomados = incidencias.reduce((sum, inc) => {
     if (!inc.vacaciones_dias) return sum;
-    const per = periodos.find(p => p.no_periodo === inc.no_periodo);
-    if (per) {
-      const yr = new Date((per.fecha_inicio || '') + 'T12:00:00').getFullYear();
+    const fechaRef = inc.fecha_inicio || null;
+    if (fechaRef) {
+      const yr = new Date(fechaRef + 'T12:00:00').getFullYear();
       return yr === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
     }
-    return (inc.no_periodo >= 1 && inc.no_periodo <= 53) ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+    return (inc.no_periodo >= 1 && inc.no_periodo <= 53)
+      ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
   }, 0);
 
-  // Fuente 2: solicitudes aprobadas del portal (fallback)
-  const requests     = (db.rhh_vacation_requests || []).filter(r => r.employee_id === emp.id);
-  const diasRequests = requests
-    .filter(r => r.status === 'aprobado' && (r.fecha_inicio || '').startsWith(yearStr))
-    .reduce((s, r) => s + (r.dias || 0), 0);
-
-  const dias_tomados = diasNomina > 0 ? diasNomina : diasRequests;
-
-  const diasPendientes   = requests
-    .filter(r => r.status === 'pendiente' && (r.fecha_inicio || '').startsWith(yearStr))
-    .reduce((s, r) => s + (r.dias || 0), 0);
-  const dias_programados = dias_tomados + diasPendientes;
-
-  const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
+  // Sin solicitudes pendientes — comprometido = tomado
+  const dias_programados = dias_tomados;
+  const dias_restantes   = Math.max(0, dias_disponibles - dias_tomados);
   return { elegible, ciclos, lft_dias, override_dias, dias_disponibles, dias_tomados, dias_programados, dias_restantes };
 }
 
