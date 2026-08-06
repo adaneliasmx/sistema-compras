@@ -5288,7 +5288,11 @@ async function evaluacionesView() {
       api('/api/rhh/evaluations/sessions'),
       api('/api/rhh/evaluations/forms')
     ]);
-    if (!evalSessionId && sessions.length > 0) evalSessionId = sessions[sessions.length - 1].id;
+    // Solo auto-seleccionar si hay una sesión abierta; las cerradas requieren selección manual
+    if (!evalSessionId) {
+      const openSession = sessions.find(s => s.status === 'open');
+      if (openSession) evalSessionId = openSession.id;
+    }
     window._evalForms = forms || [];
 
     let tabContent;
