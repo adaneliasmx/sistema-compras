@@ -5392,6 +5392,23 @@ async function buildEvalSessionTab(sessions, forms) {
     supervisorUsers.map(u => `<option value="${u.id}">${escHtml(u.full_name)} (${u.role})</option>`).join('');
   let entriesHtml = '<div class="card section"><div class="empty-state"><p>Selecciona o crea una sesión</p></div></div>';
   if (session) {
+    if (session.status === 'closed') {
+      // ── Sesión cerrada: mostrar resumen, NO la tabla editable ──────────────
+      const savedCount = (session.entries || []).filter(e => e.saved).length;
+      const totalCount = (session.entries || []).length;
+      entriesHtml = `
+        <div class="card section" style="text-align:center;padding:36px 20px;">
+          <div style="font-size:44px;margin-bottom:10px;">✅</div>
+          <div style="font-size:17px;font-weight:700;color:#059669;margin-bottom:8px;">Sesión cerrada correctamente</div>
+          <div style="font-size:14px;color:#374151;margin-bottom:8px;">
+            <strong>${savedCount}</strong> empleado${savedCount!==1?'s':''} evaluado${savedCount!==1?'s':''} y guardados en el sistema.
+          </div>
+          <div style="font-size:12px;color:#64748b;max-width:520px;margin:0 auto;line-height:1.7;">
+            Los datos quedan registrados permanentemente y <strong>no se verán afectados</strong> por cambios en la lista de empleados ni por la carga de nuevas semanas o períodos.<br>
+            Para consultar los resultados usa los tabs <strong>Progreso</strong> o <strong>Vista Evaluaciones</strong>.
+          </div>
+        </div>`;
+    } else {
     // Filtrar empleados: activos Y con fecha ingreso ANTES del primer día del mes a evaluar
     const firstDayOfMonth = session.year && session.month
       ? new Date(session.year, session.month - 1, 1)
@@ -5473,6 +5490,7 @@ async function buildEvalSessionTab(sessions, forms) {
         </table>
         </div>
       </div>`;
+    } // end else (sesión abierta)
   }
   return `
     <div class="card section" style="margin-bottom:16px;">
@@ -6177,10 +6195,46 @@ async function evalRellenar(sessionId, empId) {
 }
 
 async function cerrarSesion(sessionId) {
-  if (!confirm('¿Cerrar esta sesión de evaluación?')) return;
+  // Detectar filas con datos ingresados pero sin guardar (campos habilitados con valor)
+  const pendientes = [];
+  document.querySelectorAll('#eval-ses-table tbody tr').forEach(row => {
+    const empId = row.id?.replace('ev-row-', '');
+    if (!empId) return;
+    const asisEl = document.getElementById('ev-asis-'+empId);
+    if (asisEl && !asisEl.disabled && asisEl.value !== '') {
+      pendientes.push(Number(empId));
+    }
+  });
+
+  if (pendientes.length > 0) {
+    if (!confirm(`Hay ${pendientes.length} trabajador(es) con datos capturados sin guardar.\n¿Guardar automáticamente y cerrar la sesión?`)) return;
+    // Auto-guardar cada fila pendiente en silencio
+    for (const empId of pendientes) {
+      const evaluador_id   = document.getElementById('ev-eval-'+empId)?.value || null;
+      const asistencias    = document.getElementById('ev-asis-'+empId)?.value;
+      const faltas         = document.getElementById('ev-falt-'+empId)?.value;
+      const retardos       = document.getElementById('ev-ret-'+empId)?.value;
+      const actas          = document.getElementById('ev-acta-'+empId)?.value;
+      const amonestaciones = document.getElementById('ev-amon-'+empId)?.value;
+      if ([asistencias,faltas,retardos,actas,amonestaciones].some(v => v === '' || v == null)) continue;
+      await api('/api/rhh/evaluations/sessions/'+sessionId+'/entries', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          employee_id: empId,
+          evaluador_id: evaluador_id ? Number(evaluador_id) : null,
+          asistencias: Number(asistencias), faltas: Number(faltas),
+          retardos: Number(retardos), actas: Number(actas), amonestaciones: Number(amonestaciones)
+        })
+      });
+    }
+  } else {
+    if (!confirm('¿Cerrar esta sesión de evaluación? Ya no se mostrarán los datos de empleados evaluados.')) return;
+  }
+
   try {
-    await api('/api/rhh/evaluations/sessions/'+sessionId,{method:'PATCH',body:JSON.stringify({status:'closed'})});
-    toast('Sesión cerrada'); evaluacionesView();
+    await api('/api/rhh/evaluations/sessions/'+sessionId, { method:'PATCH', body:JSON.stringify({status:'closed'}) });
+    toast('Sesión cerrada y guardada correctamente', 'success');
+    evaluacionesView();
   } catch(err) { toast(err.message,'error'); }
 }
 
