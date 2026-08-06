@@ -2485,7 +2485,7 @@ async function autorizacionesView() {
   el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
     const [vacSols, teSols, incidences, ovVales] = await Promise.all([
-      api('/api/rhh/nomina/vac-solicitudes?estado=pendiente'),
+      api('/api/rhh/nomina/vac-solicitudes?estado=pendiente&created_from=2026-08-11'),
       api('/api/rhh/nomina/te-solicitudes'),
       api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
       ['rh','admin'].includes(state.user?.role) ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
@@ -11370,6 +11370,11 @@ async function catVerDetalle(empId) {
           <div style="font-size:22px;font-weight:700;color:#16a34a;">${vi.dias_tomados ?? 0}</div>
           <div style="font-size:11px;color:#64748b;">Días tomados</div>
           <div style="font-size:10px;color:#64748b;">Fuente: nómina CONTPAQ</div>
+        </div>
+        <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
+          <div style="font-size:22px;font-weight:700;color:#ea580c;">${(vi.dias_programados ?? 0) - (vi.dias_tomados ?? 0)}</div>
+          <div style="font-size:11px;color:#64748b;">Comprometidos</div>
+          <div style="font-size:10px;color:#64748b;">(solicitudes pend.)</div>
         </div>
         <div style="text-align:center;background:${(vi.dias_restantes??0)===0?'#fef2f2':'#f0fdf4'};border-radius:8px;padding:10px;border:1px solid ${(vi.dias_restantes??0)===0?'#fecaca':'#bbf7d0'};">
           <div style="font-size:22px;font-weight:700;color:${(vi.dias_restantes??0)===0?'#dc2626':'#15803d'};">${vi.dias_restantes ?? 0}</div>

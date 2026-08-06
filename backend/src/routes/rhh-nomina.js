@@ -304,8 +304,9 @@ router.get('/vac-solicitudes', rhhAuthRequired, (req, res) => {
     lista = lista.filter(s => myIds.includes(s.employee_id));
   }
 
-  const { estado } = req.query;
+  const { estado, created_from } = req.query;
   if (estado) lista = lista.filter(s => s.estado === estado);
+  if (created_from) lista = lista.filter(s => (s.created_at || '') >= created_from);
 
   const _sysIds2  = getSystemEmpIds();
   const employees = (db.rhh_employees || []).filter(e => !_sysIds2.has(Number(e.id)));

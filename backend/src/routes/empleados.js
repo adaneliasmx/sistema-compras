@@ -57,9 +57,14 @@ function calcVacInfo(emp, db, today) {
       ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
   }, 0);
 
-  // Sin solicitudes pendientes — comprometido = tomado
-  const dias_programados = dias_tomados;
-  const dias_restantes   = Math.max(0, dias_disponibles - dias_tomados);
+  // Solicitudes pendientes del nuevo sistema (a partir de 2026-08-11)
+  const CUTOFF = '2026-08-11';
+  const requests = (db.rhh_vac_solicitudes || []).filter(r =>
+    r.employee_id === emp.id && r.estado === 'pendiente' && (r.created_at || '') >= CUTOFF
+  );
+  const diasPendientes   = requests.reduce((s, r) => s + (r.dias || 0), 0);
+  const dias_programados = dias_tomados + diasPendientes;
+  const dias_restantes   = Math.max(0, dias_disponibles - dias_programados);
   return { elegible, ciclos, lft_dias, override_dias, dias_disponibles, dias_tomados, dias_programados, dias_restantes };
 }
 
