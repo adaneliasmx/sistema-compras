@@ -11183,16 +11183,15 @@ async function catVerDetalle(empId) {
   const statusLabel = e.status === 'active' ? 'Activo' : 'Inactivo';
 
   const incHtml = inc.length ? inc.slice(0, 20).map(r => {
-    const faltas   = r.faltas || 0;
-    const diasLab  = faltas > 0 ? Math.max(0, 6 - faltas) : 6;
-    const septimo  = faltas > 0 ? Math.round((diasLab / 6) * 100) / 100 : 1;
-    const diasCalc = faltas > 0 ? Math.round((diasLab + septimo) * 100) / 100 : 7;
+    const faltas  = r.faltas || 0;
+    const diasLab = faltas > 0 ? Math.max(0, 6 - faltas) : 6;
+    const septimo = faltas > 0 ? Math.round((diasLab / 6) * 100) / 100 : 1;
     return `<tr>
     <td>S${r.no_periodo}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
     <td style="text-align:center;color:${faltas ? '#dc2626' : 'inherit'}">${faltas}</td>
     <td style="text-align:center;color:#0369a1;font-size:12px;">${faltas > 0 ? septimo.toFixed(2) : '1.00'}</td>
-    <td style="text-align:center;font-weight:600;">${diasCalc.toFixed(2)}</td>
+    <td style="text-align:center;font-weight:600;">${r.dias_pagados ?? '—'}</td>
     <td style="text-align:center">${r.horas_extras_total || 0}</td>
     <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
   </tr>`;}).join('')
