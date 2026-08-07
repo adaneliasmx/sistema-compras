@@ -4268,7 +4268,7 @@ async function purchasesView() {
               </div>
             </div>
             <p class="small muted" style="margin:0 0 12px">
-              ${kpiPeriod==='week' ? 'Últimas 8 semanas' : 'Últimos 6 meses'} · ítems activos con costo · clic en CC para ver SCC
+              ${kpiPeriod==='week' ? `Semanas 1–${(kpi.weeks_labels||[]).length} del año` : 'Últimos 6 meses'} · ítems activos con costo · clic en CC para ver SCC
               ${kpi.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(kpi.usd_rate).toFixed(2)}</span>` : ''}
             </p>
             <div class="table-wrap">
@@ -9302,7 +9302,7 @@ async function kpiView() {
           </div>
         </div>
         <p class="small muted" style="margin:0 0 12px">
-          ${cosPeriod==='week'?'Últimas 8 semanas':'Últimos 6 meses'} · clic en CC para ver sub-centros
+          ${cosPeriod==='week'?`Semanas 1–${(cosData.weeks_labels||[]).length} del año`:'Últimos 6 meses'} · clic en CC para ver sub-centros
           ${cosData.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(cosData.usd_rate).toFixed(2)}</span>` : ''}
         </p>
         <div id="kpi-cos-body"></div>

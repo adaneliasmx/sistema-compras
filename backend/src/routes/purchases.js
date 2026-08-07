@@ -1036,18 +1036,17 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     return mon;
   }
 
-  // Últimas 8 semanas ISO
+  // Todas las semanas del año actual (semana 1 → semana actual)
   const curWk = isoWeekNum(now);
   const curWkYear = isoWeekYearOf(now);
-  const weeks = Array.from({ length: 8 }, (_, i) => {
-    let wk = curWk - i, yr = curWkYear;
-    if (wk <= 0) { yr--; wk += isoWeekNum(new Date(yr, 11, 28)); } // últimas semanas del año anterior
-    const from = isoWeekMonday(yr, wk);
+  const weeks = Array.from({ length: curWk }, (_, i) => {
+    const wk = i + 1;
+    const from = isoWeekMonday(curWkYear, wk);
     const to = new Date(from); to.setDate(to.getDate() + 6); to.setHours(23,59,59,999);
     return { label: `Sem ${wk}`, from, to };
-  }).reverse();
+  });
 
-  // Últimos 6 meses
+  // Todos los meses del año actual (enero → mes actual)
   const months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
     return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
@@ -1127,13 +1126,12 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
 
   const curWk = isoWeekNum(now);
   const curWkYear = isoWeekYearOf(now);
-  const weeks = Array.from({ length: 8 }, (_, i) => {
-    let wk = curWk - i, yr = curWkYear;
-    if (wk <= 0) { yr--; wk += isoWeekNum(new Date(yr, 11, 28)); }
-    const from = isoWeekMonday(yr, wk);
+  const weeks = Array.from({ length: curWk }, (_, i) => {
+    const wk = i + 1;
+    const from = isoWeekMonday(curWkYear, wk);
     const to = new Date(from); to.setDate(to.getDate() + 6); to.setHours(23,59,59,999);
     return { label: `Sem ${wk}`, from, to };
-  }).reverse();
+  });
 
   const months = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
