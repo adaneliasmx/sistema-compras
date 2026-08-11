@@ -7393,49 +7393,26 @@ function rolNavWeek(dir) {
   listaAsistenciaView();
 }
 
-// ── Plantilla ROL: ver altas/bajas recientes ───────────────────────────────────
-// ctx: 'asis' = Control Asistencias, 'lista' = lista-asistencia
-async function rolVerCambiosPlantilla(ctx) {
-  // 1. Detectar contexto automáticamente si no se pasa
-  if (!ctx) ctx = 'asis';
-
-  if (ctx === 'lista') {
-    await listaAsistenciaView();
-    return;
-  }
-
-  // 2. Limpiar filtros activos para que nuevos empleados sean visibles
-  _asisRolFNombre = '';
-  _asisRolFPuesto = '';
-
-  // 3. Fetch paralelo: ROL (asignaciones + turnos) + Catálogo (lista real de empleados)
-  //    El catálogo es la fuente confiable de empleados. El ROL solo da las asignaciones de la semana.
+// ── Actualiza datos del ROL y catálogos desde el servidor ─────────────────────
+// Usado por "Actualizar Plantilla" y por el import de CONTPAQ i.
+// Re-renderiza el ROL si el usuario está actualmente en esa vista.
+async function _refreshRolFromCatalog() {
+  const week = asisWeek || getMonday(new Date());
   let rolData, catData;
   try {
     [rolData, catData] = await Promise.all([
-      api(`/api/rhh/asistencia/rol?week=${asisWeek || getMonday(new Date())}`),
+      api(`/api/rhh/asistencia/rol?week=${week}`),
       api('/api/rhh/catalogo?status=all')
     ]);
-    if (!rolData || !catData) return;
-  } catch(e) {
-    toast('Error al cargar plantilla: ' + e.message, 'error');
-    return;
-  }
+  } catch(_) { return null; }
+  if (!rolData || !catData) return null;
 
-  // Empleados del catálogo que NO sean inactivos — fuente de verdad para "Sin asignar"
-  // Mapear position_name → position.name para que asisRolRender() muestre el puesto
   const catEmps = (catData.employees || [])
     .filter(e => e.status !== 'inactive')
     .map(e => ({ ...e, position: e.position_name ? { name: e.position_name } : (e.position || null) }));
 
-  // IDs ya asignados esta semana (del ROL)
-  const assignedIds = new Set((rolData.assigned || []).map(a => a.id));
-
-  // "Sin asignar" = empleados del catálogo que no tienen asignación esta semana
-  const sinAsignarEmps = catEmps.filter(e => !assignedIds.has(e.id));
-
   _asisRolData = {
-    all_employees: catEmps,       // catálogo como fuente de empleados
+    all_employees: catEmps,
     shifts:    rolData.shifts    || [],
     positions: rolData.positions || [],
     proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
@@ -7449,12 +7426,40 @@ async function rolVerCambiosPlantilla(ctx) {
     pos_name:    emp.position?.name || '',
     shift_name:  emp.shift?.name    || '',
   }));
-  asisRolRender();
 
-  const n = sinAsignarEmps.length;
+  // Si el usuario está actualmente en la vista ROL Semanal, re-renderizar en sitio
+  if (document.querySelector('[id^="shift-drop-"]')) {
+    _asisRolFNombre = '';
+    _asisRolFPuesto = '';
+    asisRolRender();
+  }
+  return catData;
+}
+
+// ── Plantilla ROL: ver altas/bajas recientes ───────────────────────────────────
+// ctx: 'asis' = Control Asistencias, 'lista' = lista-asistencia
+async function rolVerCambiosPlantilla(ctx) {
+  // 1. Detectar contexto automáticamente si no se pasa
+  if (!ctx) ctx = 'asis';
+
+  if (ctx === 'lista') {
+    await listaAsistenciaView();
+    return;
+  }
+
+  // 2. Limpiar filtros y refrescar ROL + catálogo usando helper compartido
+  _asisRolFNombre = '';
+  _asisRolFPuesto = '';
+
+  const catData = await _refreshRolFromCatalog();
+  if (!catData) { toast('Error al cargar plantilla', 'error'); return; }
+
+  const catEmps = (catData.employees || []).filter(e => e.status !== 'inactive');
+  const assignedIds = new Set((_asisAssignments || []).map(a => a.employee_id));
+  const n = catEmps.filter(e => !assignedIds.has(e.id)).length;
   toast(`Plantilla actualizada — ${n} empleado${n!==1?'s':''} sin asignar`, 'success');
 
-  // 4. Altas/bajas recientes para modal informativo
+  // 3. Altas/bajas recientes para modal informativo
   const emps = catData.employees || [];
   const hace30 = new Date();
   hace30.setDate(hace30.getDate() - 30);
@@ -11761,8 +11766,10 @@ async function catImportContpaq() {
       const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
-      // Refrescar catálogos en memoria para que evaluaciones y otras vistas usen datos actualizados
+      // Refrescar catálogos + ROL + invalidar caché de períodos (Incidencias/Lista de Raya)
       await loadCatalogs();
+      _refreshRolFromCatalog();   // actualiza Sin asignar en ROL (fire-and-forget)
+      incSemPeriodos = [];        // fuerza re-fetch en próxima visita a Incidencias/Lista de Raya
       // Si hay cambios en plantilla (altas/bajas detectadas), mostrar modal de confirmación
       if (d.posibles_bajas?.length || d.nuevos?.length || d.aguinaldo_no_dic?.length) {
         setTimeout(() => mostrarModalCambiosPlantilla(d), 1300);
