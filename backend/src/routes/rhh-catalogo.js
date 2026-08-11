@@ -696,6 +696,8 @@ router.post(
       const ultimaSemana = semanasList.length > 0 ? semanasList[semanasList.length - 1] : null;
 
       // Posibles bajas: empleados activos que NO aparecen en la última semana importada
+      // Excluir empleados recién creados en este mismo import (no son bajas)
+      const nuevosIds = new Set(nuevos.map(n => n.id));
       const posibles_bajas = [];
       if (ultimaSemana) {
         const enUltima = empEncontradosPorSemana.get(ultimaSemana) || new Set();
@@ -703,6 +705,7 @@ router.post(
         for (const e of db.rhh_employees) {
           if (e.status !== 'active') continue;
           if (sysIds.has(Number(e.id))) continue;
+          if (nuevosIds.has(e.id)) continue; // recién creado en este import → no es baja
           const num = String(e.employee_number || '').trim();
           if (num.length < 3 || !/^\d+$/.test(num.replace(/^0+/, '') || '0')) continue;
           if (!enUltima.has(e.id)) {

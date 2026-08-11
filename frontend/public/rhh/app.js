@@ -7397,16 +7397,50 @@ function rolNavWeek(dir) {
 // ctx: 'asis' = Control Asistencias, 'lista' = lista-asistencia
 async function rolVerCambiosPlantilla(ctx) {
   // 1. Detectar contexto automáticamente si no se pasa
-  if (!ctx) ctx = (typeof asisTab !== 'undefined' && asisTab === 2) ? 'asis' : 'lista';
+  if (!ctx) ctx = 'asis';
 
-  // 2. Refrescar el ROL para que nuevos empleados aparezcan en "Sin asignar"
-  _asisRolData = null;
-  if (ctx === 'asis') await asisRolView();
-  else await listaAsistenciaView();
+  if (ctx === 'lista') {
+    await listaAsistenciaView();
+    return;
+  }
 
-  // 3. Cargar catálogo completo para detectar altas/bajas recientes
+  // 2. Limpiar filtros activos para que nuevos empleados sean visibles
+  _asisRolFNombre = '';
+  _asisRolFPuesto = '';
+
+  // 3. Fetch fresco del ROL sin re-renderizar la vista completa
+  let rolData;
+  try {
+    rolData = await api(`/api/rhh/asistencia/rol?week=${asisWeek || getMonday(new Date())}`);
+    if (!rolData) return;
+  } catch(e) {
+    toast('Error al cargar plantilla: ' + e.message, 'error');
+    return;
+  }
+
+  _asisRolData = {
+    all_employees: rolData.all_employees || [...(rolData.assigned||[]), ...(rolData.unassigned||[])],
+    shifts:    rolData.shifts    || [],
+    positions: rolData.positions || [],
+    proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
+  };
+  _asisAssignments = (rolData.assigned || []).map(emp => ({
+    employee_id: emp.id,
+    shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
+    position_id: emp.assignment?.position_id ?? emp.position_id ?? null,
+    project:     emp.assignment?.project     ?? null,
+    full_name:   emp.full_name,
+    pos_name:    emp.position?.name || '',
+    shift_name:  emp.shift?.name    || '',
+  }));
+  asisRolRender();
+
+  const sinAsignar = rolData.unassigned?.length || 0;
+  toast(`Plantilla actualizada — ${sinAsignar} empleado${sinAsignar!==1?'s':''} sin asignar`, 'success');
+
+  // 4. Cargar catálogo para detectar altas/bajas recientes (modal informativo)
   let resp;
-  try { resp = await api('/api/rhh/catalogo?status=all'); } catch(e) { toast('Error al cargar catálogo', 'error'); return; }
+  try { resp = await api('/api/rhh/catalogo?status=all'); } catch(e) { return; }
   const emps = resp?.employees || [];
 
   const hace30 = new Date();
