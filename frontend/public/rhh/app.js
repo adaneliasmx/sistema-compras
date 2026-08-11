@@ -8479,6 +8479,7 @@ function asisRolRender() {
       <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
         <span id="asis-rol-save-status" style="font-size:11px;color:#9ca3af;"></span>
+        <button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;" onclick="rolVerCambiosPlantilla()">📋 Actualizar Plantilla</button>
         <button class="btn-ghost" onclick="asisShiftMgmtModal()">＋ Agregar turno</button>
         <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
       </div>
