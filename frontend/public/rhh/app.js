@@ -7408,18 +7408,31 @@ async function rolVerCambiosPlantilla(ctx) {
   _asisRolFNombre = '';
   _asisRolFPuesto = '';
 
-  // 3. Fetch fresco del ROL sin re-renderizar la vista completa
-  let rolData;
+  // 3. Fetch paralelo: ROL (asignaciones + turnos) + Catálogo (lista real de empleados)
+  //    El catálogo es la fuente confiable de empleados. El ROL solo da las asignaciones de la semana.
+  let rolData, catData;
   try {
-    rolData = await api(`/api/rhh/asistencia/rol?week=${asisWeek || getMonday(new Date())}`);
-    if (!rolData) return;
+    [rolData, catData] = await Promise.all([
+      api(`/api/rhh/asistencia/rol?week=${asisWeek || getMonday(new Date())}`),
+      api('/api/rhh/catalogo?status=all')
+    ]);
+    if (!rolData || !catData) return;
   } catch(e) {
     toast('Error al cargar plantilla: ' + e.message, 'error');
     return;
   }
 
+  // Empleados del catálogo que NO sean inactivos — fuente de verdad para "Sin asignar"
+  const catEmps = (catData.employees || []).filter(e => e.status !== 'inactive');
+
+  // IDs ya asignados esta semana (del ROL)
+  const assignedIds = new Set((rolData.assigned || []).map(a => a.id));
+
+  // "Sin asignar" = empleados del catálogo que no tienen asignación esta semana
+  const sinAsignarEmps = catEmps.filter(e => !assignedIds.has(e.id));
+
   _asisRolData = {
-    all_employees: rolData.all_employees || [...(rolData.assigned||[]), ...(rolData.unassigned||[])],
+    all_employees: catEmps,       // catálogo como fuente de empleados
     shifts:    rolData.shifts    || [],
     positions: rolData.positions || [],
     proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
@@ -7435,19 +7448,16 @@ async function rolVerCambiosPlantilla(ctx) {
   }));
   asisRolRender();
 
-  const sinAsignar = rolData.unassigned?.length || 0;
-  toast(`Plantilla actualizada — ${sinAsignar} empleado${sinAsignar!==1?'s':''} sin asignar`, 'success');
+  const n = sinAsignarEmps.length;
+  toast(`Plantilla actualizada — ${n} empleado${n!==1?'s':''} sin asignar`, 'success');
 
-  // 4. Cargar catálogo para detectar altas/bajas recientes (modal informativo)
-  let resp;
-  try { resp = await api('/api/rhh/catalogo?status=all'); } catch(e) { return; }
-  const emps = resp?.employees || [];
-
+  // 4. Altas/bajas recientes para modal informativo
+  const emps = catData.employees || [];
   const hace30 = new Date();
   hace30.setDate(hace30.getDate() - 30);
   const hace30Str = hace30.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-  const activos = emps.filter(e => e.status === 'active');
+  const activos = catEmps;
   const altas   = emps.filter(e => e.fecha_alta && e.fecha_alta >= hace30Str);
   const bajas   = emps.filter(e => e.fecha_baja && e.fecha_baja >= hace30Str);
 
