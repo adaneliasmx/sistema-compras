@@ -11652,11 +11652,11 @@ function mostrarModalCambiosPlantilla(d) {
     <div style="background:#fff;border-radius:16px;padding:24px;width:min(620px,95vw);max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
         <h3 style="margin:0;font-size:16px;">📋 Cambios en Plantilla detectados</h3>
-        <button onclick="document.getElementById('modal-cambios-plantilla').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+        <button onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
       </div>
       ${nuevosSec}${bajasSec}${aguinaldoSec}
       <div style="text-align:right;margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px;">
-        <button class="btn-primary" onclick="document.getElementById('modal-cambios-plantilla').remove();loadCatalogs().then(()=>catalogoEmpleadosView())">Cerrar y actualizar catálogo</button>
+        <button class="btn-primary" onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();">Cerrar y actualizar catálogo</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -11679,6 +11679,7 @@ async function confirmarBajaPlantilla(empId, nombre, btnId, fecha) {
       btn.style.cursor = 'default';
     }
     toast(`Baja registrada: ${nombre}`, 'success');
+    if (typeof catCargar === 'function') catCargar();
   } catch (err) {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar baja'; }
     toast('Error al registrar baja: ' + err.message, 'error');
