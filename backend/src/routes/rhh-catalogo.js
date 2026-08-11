@@ -3,7 +3,7 @@ const fs   = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
 const multer = require('multer');
-const { read, write, writeAsync, nextId, dbPath, seedPath, forceSeedFromJson } = require('../db-rhh');
+const { read, write, writeAsync, nextId, dbPath, seedPath, forceSeedFromJson, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
@@ -372,7 +372,7 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
   const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily, vac_dias_disponibles } = req.body || {};
+  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja } = req.body || {};
   if (department_id          !== undefined) emp.department_id          = department_id ? Number(department_id) : null;
   if (position_id            !== undefined) emp.position_id            = position_id   ? Number(position_id)   : null;
   if (shift_id               !== undefined) emp.shift_id               = shift_id      ? Number(shift_id)      : null;
@@ -382,6 +382,9 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
   if (start_date             !== undefined) emp.start_date             = start_date || null;
   if (salary_daily           !== undefined) emp.salary_daily           = salary_daily ? Number(salary_daily) : null;
   if (vac_dias_disponibles   !== undefined) emp.vac_dias_disponibles   = vac_dias_disponibles !== null && vac_dias_disponibles !== '' ? Number(vac_dias_disponibles) : null;
+  if (fecha_baja             !== undefined) emp.fecha_baja             = fecha_baja  || null;
+  if (fecha_alta             !== undefined) emp.fecha_alta             = fecha_alta  || null;
+  if (motivo_baja            !== undefined) emp.motivo_baja            = motivo_baja || null;
   emp.updated_at = nowMxDate();
 
   write(db);
@@ -459,6 +462,10 @@ router.post(
     let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
     const semanasImportadas = new Set();
     const log = [];
+    const nuevos = [];
+    const aguinaldo_no_dic = [];
+    const empEncontradosPorSemana = new Map(); // semana → Set<empId>
+    const MES_MESES = { Ene:1, Feb:2, Mar:3, Abr:4, May:5, Jun:6, Jul:7, Ago:8, Sep:9, Oct:10, Nov:11, Dic:12 };
 
     function findEmpByNum(num) {
       const n = norm(num).replace(/^0+/, '');
@@ -562,8 +569,42 @@ router.post(
         const empName   = norm(row[nombreCol]);
         if (!empNumRaw && !empName) { skipped++; continue; }
 
-        const emp = findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName);
-        if (!emp) { skipped++; if (log.length < 20) log.push(`S${semana} #${empNumRaw} "${empName}": no encontrado`); continue; }
+        let emp = findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName);
+        if (!emp && empNumRaw) {
+          // Nuevo empleado — crear registro mínimo y agregarlo al catálogo
+          const dNom = norm(row[deptCol]);
+          const pNom = norm(row[puestoCol]);
+          const dId2 = findOrCreateDept(dNom);
+          const pId2 = findOrCreatePos(pNom, dId2);
+          emp = {
+            id: nextId(db.rhh_employees),
+            employee_number: empNumRaw,
+            full_name: empName,
+            status: 'active',
+            department_id: dId2,
+            position_id: pId2,
+            sal_diario: toNum(row[salDiarioCol]),
+            salary_daily: toNum(row[salDiarioCol]),
+            sdi: toNum(row[sdiCol]),
+            sbc: toNum(row[sbcCol]),
+            fecha_ingreso: norm(row[fechaIngCol]),
+            fecha_alta: nowMxDate(),
+            created_at: nowMxDate(),
+            updated_at: nowMxDate(),
+          };
+          db.rhh_employees.push(emp);
+          nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
+          updated++;
+          if (log.length < 20) log.push(`S${semana} #${empNumRaw} "${empName}": nuevo empleado creado`);
+        } else if (!emp) {
+          skipped++;
+          if (log.length < 20) log.push(`S${semana} #${empNumRaw} "${empName}": no encontrado`);
+          continue;
+        }
+
+        // Registrar presencia en esta semana
+        if (!empEncontradosPorSemana.has(semana)) empEncontradosPorSemana.set(semana, new Set());
+        empEncontradosPorSemana.get(semana).add(emp.id);
 
         // Actualizar campos del empleado
         const deptName   = norm(row[deptCol]);
@@ -616,6 +657,24 @@ router.post(
         const despensaCol = hdrRaw.findIndex(v => String(v).includes('32 Despensa'));
         const despensa = despensaCol >= 0 && toNum(row[despensaCol]) > 0 ? 1 : 0;
 
+        // Detectar aguinaldo (P|24) fuera de diciembre → posible baja por liquidación
+        const aguinaldoColIdx = hdrRaw.findIndex(v => String(v).includes('24 Aguinaldo'));
+        if (aguinaldoColIdx >= 0) {
+          const aguinaldoImp = toNum(row[aguinaldoColIdx]);
+          if (aguinaldoImp && aguinaldoImp > 0) {
+            const periodos = db.rhh_periodos || [];
+            const pInfo = periodos.find(x => x.no_periodo === semana);
+            let isDecember = semana >= 49; // fallback
+            if (pInfo) {
+              const mMatch = String(pInfo.fecha_inicio || '').match(/(\w{3})\/\d{4}$/);
+              if (mMatch) isDecember = (MES_MESES[mMatch[1]] || 0) === 12;
+            }
+            if (!isDecember && !aguinaldo_no_dic.find(x => x.id === emp.id)) {
+              aguinaldo_no_dic.push({ id: emp.id, employee_number: emp.employee_number, full_name: emp.full_name, semana, importe: aguinaldoImp });
+            }
+          }
+        }
+
         upsertIncidencia(emp, semana, {
           dias_pagados:        diasPag,
           faltas:              0,
@@ -634,7 +693,25 @@ router.post(
       }
 
       const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
-      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped);
+      const ultimaSemana = semanasList.length > 0 ? semanasList[semanasList.length - 1] : null;
+
+      // Posibles bajas: empleados activos que NO aparecen en la última semana importada
+      const posibles_bajas = [];
+      if (ultimaSemana) {
+        const enUltima = empEncontradosPorSemana.get(ultimaSemana) || new Set();
+        const sysIds   = getSystemEmpIds();
+        for (const e of db.rhh_employees) {
+          if (e.status !== 'active') continue;
+          if (sysIds.has(Number(e.id))) continue;
+          const num = String(e.employee_number || '').trim();
+          if (num.length < 3 || !/^\d+$/.test(num.replace(/^0+/, '') || '0')) continue;
+          if (!enUltima.has(e.id)) {
+            posibles_bajas.push({ id: e.id, employee_number: e.employee_number, full_name: e.full_name });
+          }
+        }
+      }
+
+      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| posibles_bajas:', posibles_bajas.length, '| aguinaldo_no_dic:', aguinaldo_no_dic.length);
       try {
         await writeAsync(db);
         console.log('[import-contpaq] writeAsync OK — incidencias totales en DB:', db.rhh_incidencias_semanales.length);
@@ -646,6 +723,7 @@ router.post(
         ok: true, formato: 'consolidado',
         updated, created_depts, created_pos, skipped, inc_upserted,
         semanas: semanasList, log,
+        nuevos, posibles_bajas, aguinaldo_no_dic, ultima_semana: ultimaSemana,
       });
     }
 

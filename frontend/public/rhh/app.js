@@ -1352,7 +1352,12 @@ async function incidenciasView() {
     // Siempre recargar periodos del servidor para que semanas nuevas aparezcan sin hard-refresh
     incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
     if (!incSemPeriodo && incSemPeriodos.length > 0) {
-      incSemPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+      // Intentar seleccionar el período que contiene la fecha de hoy
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      const _MES = { Ene:'01',Feb:'02',Mar:'03',Abr:'04',May:'05',Jun:'06',Jul:'07',Ago:'08',Sep:'09',Oct:'10',Nov:'11',Dic:'12' };
+      const toIso = s => { const p=s.split('/'); return `${p[2]}-${_MES[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
+      const actual = incSemPeriodos.find(p => hoy >= toIso(p.fecha_inicio) && hoy <= toIso(p.fecha_fin));
+      incSemPeriodo = actual?.no_periodo || incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
     }
     await _loadIncSem();
   } catch (err) {
@@ -2731,7 +2736,12 @@ async function listaRayaView() {
       incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
     }
     if (!listaRayaPeriodo && incSemPeriodos.length > 0) {
-      listaRayaPeriodo = incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+      // Seleccionar período que contiene la fecha de hoy
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      const _MES2 = { Ene:'01',Feb:'02',Mar:'03',Abr:'04',May:'05',Jun:'06',Jul:'07',Ago:'08',Sep:'09',Oct:'10',Nov:'11',Dic:'12' };
+      const toIso2 = s => { const p=s.split('/'); return `${p[2]}-${_MES2[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
+      const actual2 = incSemPeriodos.find(p => hoy >= toIso2(p.fecha_inicio) && hoy <= toIso2(p.fecha_fin));
+      listaRayaPeriodo = actual2?.no_periodo || incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
     }
     const periodo = incSemPeriodos.find(p => p.no_periodo === listaRayaPeriodo);
 
@@ -7323,6 +7333,7 @@ async function listaRolView(el) {
         <span style="font-weight:700;font-size:14px;">${weekLabel}</span>
         <button class="btn-ghost" onclick="rolNavWeek(1)">Semana siguiente ›</button>
         <button class="btn-ghost" style="font-size:12px;" onclick="rolWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
+        ${canEdit ? `<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;margin-left:auto;" onclick="rolVerCambiosPlantilla()">📋 Actualizar Plantilla</button>` : ''}
       </div>
       ${shiftsHtml}
 
@@ -7380,6 +7391,87 @@ function rolNavWeek(dir) {
   rolWeekStart = d.toISOString().slice(0, 10);
   attendanceWeekStart = rolWeekStart; // mantener sincronizados
   listaAsistenciaView();
+}
+
+// ── Plantilla ROL: ver altas/bajas recientes ───────────────────────────────────
+async function rolVerCambiosPlantilla() {
+  let resp;
+  try { resp = await api('/api/rhh/catalogo?status=all'); } catch(e) { toast('Error al cargar catálogo', 'error'); return; }
+  const emps = resp?.employees || [];
+
+  const hace30 = new Date();
+  hace30.setDate(hace30.getDate() - 30);
+  const hace30Str = hace30.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+  const altas = emps.filter(e => e.fecha_alta && e.fecha_alta >= hace30Str);
+  const bajas = emps.filter(e => e.fecha_baja && e.fecha_baja >= hace30Str);
+
+  if (!altas.length && !bajas.length) {
+    toast('Sin cambios en plantilla en los últimos 30 días', 'info');
+    return;
+  }
+
+  document.getElementById('modal-plantilla-rol')?.remove();
+
+  const altaRows = altas.length
+    ? altas.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
+          <span style="flex:1;">${escHtml(e.full_name)}</span>
+          <span style="color:#059669;font-size:11px;">Alta: ${e.fecha_alta}</span>
+        </div>`).join('')
+    : '';
+
+  const bajaRows = bajas.length
+    ? bajas.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
+          <span style="flex:1;">${escHtml(e.full_name)}</span>
+          <span style="color:#dc2626;font-size:11px;">Baja: ${e.fecha_baja}</span>
+          <button class="btn-ghost" style="font-size:11px;padding:2px 8px;color:#6b7280;"
+            onclick="revertirBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}',this)">
+            Revertir
+          </button>
+        </div>`).join('')
+    : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-plantilla-rol';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(580px,95vw);max-height:80vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3 style="margin:0;font-size:16px;">📋 Plantilla — cambios últimos 30 días</h3>
+        <button onclick="document.getElementById('modal-plantilla-rol').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Altas (${altas.length})</h4>${altaRows}</div>` : ''}
+      ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">🚫 Bajas (${bajas.length})</h4>${bajaRows}</div>` : ''}
+      <div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border-radius:8px;font-size:11px;color:#6b7280;line-height:1.5;">
+        <strong>Nota:</strong> Los empleados con baja ya no aparecen en Incidencias, Lista de Raya ni Rol Semanal.
+        Los empleados con alta ya están disponibles automáticamente en la plantilla activa.
+        Solo los empleados con cambios (altas/bajas) son afectados — el resto no se modifica.
+      </div>
+      <div style="text-align:right;margin-top:16px;">
+        <button class="btn-primary" onclick="document.getElementById('modal-plantilla-rol').remove();listaAsistenciaView()">Cerrar y actualizar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function revertirBajaPlantilla(empId, nombre, btnEl) {
+  if (!confirm(`¿Revertir la baja de ${nombre}?\n\nEl empleado volverá a aparecer en Incidencias, Lista de Raya y Rol Semanal.`)) return;
+  try {
+    await api(`/api/rhh/catalogo/${empId}/info`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'active', fecha_baja: null })
+    });
+    btnEl.textContent = '✓ Revertida';
+    btnEl.disabled = true;
+    btnEl.style.color = '#059669';
+    toast(`Baja revertida: ${nombre}`, 'success');
+  } catch (err) {
+    toast('Error: ' + err.message, 'error');
+  }
 }
 
 function attNavWeek(dir) {
@@ -11500,6 +11592,93 @@ async function catGuardarEmpleado(empId) {
   }
 }
 
+// ── Modal cambios en plantilla (altas/bajas detectadas al cargar CONTPAQ i) ────
+function mostrarModalCambiosPlantilla(d) {
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  document.getElementById('modal-cambios-plantilla')?.remove();
+
+  const nuevosSec = d.nuevos?.length ? `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Nuevos empleados agregados — ALTAS (${d.nuevos.length})</h4>
+      ${d.nuevos.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${e.employee_number}</span>
+          <span style="flex:1;">${escHtml(e.full_name)}</span>
+          <span style="color:#059669;font-size:11px;font-weight:700;">ALTA AUTOMÁTICA ✓</span>
+        </div>`).join('')}
+    </div>` : '';
+
+  const bajasSec = d.posibles_bajas?.length ? `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 4px;color:#dc2626;font-size:13px;">⚠️ No aparecen en semana ${d.ultima_semana} — posibles bajas (${d.posibles_bajas.length})</h4>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Activos en catálogo pero ausentes del Excel de la última semana importada. Confirma si corresponde a baja.</p>
+      ${d.posibles_bajas.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
+          <span style="flex:1;">${escHtml(e.full_name)}</span>
+          <button id="btn-baja-${e.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
+            onclick="confirmarBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}','btn-baja-${e.id}','${hoy}')">
+            Confirmar baja
+          </button>
+        </div>`).join('')}
+    </div>` : '';
+
+  const aguinaldoSec = d.aguinaldo_no_dic?.length ? `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 4px;color:#d97706;font-size:13px;">💰 Aguinaldo (P|24) detectado fuera de diciembre — posibles liquidaciones (${d.aguinaldo_no_dic.length})</h4>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Se detectó pago de aguinaldo en semana(s) ${[...new Set(d.aguinaldo_no_dic.map(x=>x.semana))].join(', ')}. Puede indicar liquidación por baja.</p>
+      ${d.aguinaldo_no_dic.map(e => `
+        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fffbeb;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
+          <span style="flex:1;">${escHtml(e.full_name)}</span>
+          <span style="font-size:11px;color:#d97706;">S${e.semana} · $${Number(e.importe||0).toFixed(2)}</span>
+          <button id="btn-agn-${e.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
+            onclick="confirmarBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}','btn-agn-${e.id}','${hoy}')">
+            Confirmar baja
+          </button>
+        </div>`).join('')}
+    </div>` : '';
+
+  const modal = document.createElement('div');
+  modal.id = 'modal-cambios-plantilla';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(620px,95vw);max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <h3 style="margin:0;font-size:16px;">📋 Cambios en Plantilla detectados</h3>
+        <button onclick="document.getElementById('modal-cambios-plantilla').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      ${nuevosSec}${bajasSec}${aguinaldoSec}
+      <div style="text-align:right;margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px;">
+        <button class="btn-primary" onclick="document.getElementById('modal-cambios-plantilla').remove();loadCatalogs().then(()=>catalogoEmpleadosView())">Cerrar y actualizar catálogo</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+
+async function confirmarBajaPlantilla(empId, nombre, btnId, fecha) {
+  if (!confirm(`¿Confirmar baja de ${nombre}?\n\nFecha de baja: ${fecha}\n\nEl empleado quedará inactivo y no aparecerá en Incidencias, Lista de Raya ni Rol Semanal.`)) return;
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+  try {
+    await api(`/api/rhh/catalogo/${empId}/info`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'inactive', fecha_baja: fecha })
+    });
+    if (btn) {
+      btn.textContent = '✓ Baja registrada';
+      btn.style.background = '#fee2e2';
+      btn.style.color = '#991b1b';
+      btn.style.borderColor = '#fca5a5';
+      btn.style.cursor = 'default';
+    }
+    toast(`Baja registrada: ${nombre}`, 'success');
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar baja'; }
+    toast('Error al registrar baja: ' + err.message, 'error');
+  }
+}
+
 // Importar Departamento y Puesto desde lista CONTPAQ i (Excel)
 async function catImportContpaq() {
   const input = document.createElement('input');
@@ -11530,7 +11709,12 @@ async function catImportContpaq() {
       toast(msg, 'success');
       // Refrescar catálogos en memoria para que evaluaciones y otras vistas usen datos actualizados
       await loadCatalogs();
-      setTimeout(() => catalogoEmpleadosView(), 1200);
+      // Si hay cambios en plantilla (altas/bajas detectadas), mostrar modal de confirmación
+      if (d.posibles_bajas?.length || d.nuevos?.length || d.aguinaldo_no_dic?.length) {
+        setTimeout(() => mostrarModalCambiosPlantilla(d), 1300);
+      } else {
+        setTimeout(() => catalogoEmpleadosView(), 1200);
+      }
     } catch (err) {
       toast('Error de conexión', 'error');
     }
