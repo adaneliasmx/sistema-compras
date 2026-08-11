@@ -157,7 +157,8 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     : [];
 
   const _sysIds    = getSystemEmpIds();
-  const employees  = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
+  // Incluir empleados sin status explícito (importados antes del campo status) salvo los marcados inactive
+  const employees  = (db.rhh_employees || []).filter(e => e.status !== 'inactive' && !_sysIds.has(Number(e.id)));
   const assignedIds = new Set(assignments.map(a => a.employee_id));
 
   const enrich = e => {

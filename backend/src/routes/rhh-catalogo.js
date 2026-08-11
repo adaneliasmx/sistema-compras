@@ -623,6 +623,8 @@ router.post(
         if (sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
         if (sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
         if (fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
+        // Garantizar status activo: si aparece en CONTPAQ debe estar activo en el sistema
+        if (emp.status !== 'active') { emp.status = 'active'; empChanged = true; }
         if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
 
         // Construir objetos percepciones y deducciones
@@ -703,7 +705,7 @@ router.post(
         const enUltima = empEncontradosPorSemana.get(ultimaSemana) || new Set();
         const sysIds   = getSystemEmpIds();
         for (const e of db.rhh_employees) {
-          if (e.status !== 'active') continue;
+          if (e.status === 'inactive') continue;
           if (sysIds.has(Number(e.id))) continue;
           if (nuevosIds.has(e.id)) continue; // recién creado en este import → no es baja
           const num = String(e.employee_number || '').trim();
