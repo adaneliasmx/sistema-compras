@@ -7423,7 +7423,10 @@ async function rolVerCambiosPlantilla(ctx) {
   }
 
   // Empleados del catálogo que NO sean inactivos — fuente de verdad para "Sin asignar"
-  const catEmps = (catData.employees || []).filter(e => e.status !== 'inactive');
+  // Mapear position_name → position.name para que asisRolRender() muestre el puesto
+  const catEmps = (catData.employees || [])
+    .filter(e => e.status !== 'inactive')
+    .map(e => ({ ...e, position: e.position_name ? { name: e.position_name } : (e.position || null) }));
 
   // IDs ya asignados esta semana (del ROL)
   const assignedIds = new Set((rolData.assigned || []).map(a => a.id));
