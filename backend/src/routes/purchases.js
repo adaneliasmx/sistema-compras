@@ -1013,11 +1013,14 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     unitCostOf(ri) > 0
   );
 
-  // Fecha de la requisición (inmutable) como ancla de período — nunca updated_at
+  // Fecha: históricos usan ri.created_at (ya parcheado por PO real); normales usan req.created_at
   const reqDateMap = new Map((db.requisitions || []).map(r => [r.id, r.created_at]));
+  const itemDate = ri => ri.notes && ri.notes.includes('HISTORICO')
+    ? (ri.created_at || 0)
+    : (reqDateMap.get(ri.requisition_id) || ri.created_at || 0);
   const sumSpend = (items, from, to) =>
     items
-      .filter(ri => { const d = new Date(reqDateMap.get(ri.requisition_id) || ri.created_at || 0); return d >= from && d < to; })
+      .filter(ri => { const d = new Date(itemDate(ri)); return d >= from && d < to; })
       .reduce((s, ri) => s + toMxn(ri), 0);
 
   // ISO week helpers
@@ -1106,8 +1109,11 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
     unitCostOf(ri) > 0 && ri.supplier_id
   );
   const reqDateMap = new Map((db.requisitions || []).map(r => [r.id, r.created_at]));
+  const itemDate = ri => ri.notes && ri.notes.includes('HISTORICO')
+    ? (ri.created_at || 0)
+    : (reqDateMap.get(ri.requisition_id) || ri.created_at || 0);
   const sumSpend = (items, from, to) =>
-    items.filter(ri => { const d = new Date(reqDateMap.get(ri.requisition_id) || ri.created_at || 0); return d >= from && d < to; })
+    items.filter(ri => { const d = new Date(itemDate(ri)); return d >= from && d < to; })
          .reduce((s, ri) => s + toMxn(ri), 0);
 
   function isoWeekNum(date) {
