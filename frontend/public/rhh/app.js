@@ -7407,6 +7407,13 @@ async function _refreshRolFromCatalog() {
   } catch(_) { return null; }
   if (!rolData || !catData) return null;
 
+  // Mapa catálogo para lookup rápido de posición actualizada y status
+  const catMap = new Map((catData.employees || []).map(e => [e.id, e]));
+  const inactiveIds = new Set(
+    (catData.employees || []).filter(e => e.status === 'inactive').map(e => e.id)
+  );
+
+  // Empleados activos del catálogo como fuente de Sin asignar
   const catEmps = (catData.employees || [])
     .filter(e => e.status !== 'inactive')
     .map(e => ({ ...e, position: e.position_name ? { name: e.position_name } : (e.position || null) }));
@@ -7417,15 +7424,22 @@ async function _refreshRolFromCatalog() {
     positions: rolData.positions || [],
     proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
   };
-  _asisAssignments = (rolData.assigned || []).map(emp => ({
-    employee_id: emp.id,
-    shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
-    position_id: emp.assignment?.position_id ?? emp.position_id ?? null,
-    project:     emp.assignment?.project     ?? null,
-    full_name:   emp.full_name,
-    pos_name:    emp.position?.name || '',
-    shift_name:  emp.shift?.name    || '',
-  }));
+
+  // Asignaciones: excluir bajas + usar posición actualizada del catálogo
+  _asisAssignments = (rolData.assigned || [])
+    .filter(emp => !inactiveIds.has(emp.id))
+    .map(emp => {
+      const cat = catMap.get(emp.id);
+      return {
+        employee_id: emp.id,
+        shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
+        position_id: emp.assignment?.position_id ?? emp.position_id ?? null,
+        project:     emp.assignment?.project     ?? null,
+        full_name:   emp.full_name,
+        pos_name:    cat?.position_name || emp.position?.name || '',
+        shift_name:  emp.shift?.name    || '',
+      };
+    });
 
   // Si el usuario está actualmente en la vista ROL Semanal, re-renderizar en sitio
   if (document.querySelector('[id^="shift-drop-"]')) {
@@ -11766,10 +11780,10 @@ async function catImportContpaq() {
       const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
-      // Refrescar catálogos + ROL + invalidar caché de períodos (Incidencias/Lista de Raya)
+      // Refrescar catálogos e invalidar cachés para que próxima navegación cargue datos frescos
       await loadCatalogs();
-      _refreshRolFromCatalog();   // actualiza Sin asignar en ROL (fire-and-forget)
-      incSemPeriodos = [];        // fuerza re-fetch en próxima visita a Incidencias/Lista de Raya
+      _asisRolData = null;   // ROL: fuerza re-fetch en próxima visita (preserva semana/asignaciones actuales)
+      incSemPeriodos = [];   // Incidencias / Lista de Raya: fuerza re-fetch de períodos
       // Si hay cambios en plantilla (altas/bajas detectadas), mostrar modal de confirmación
       if (d.posibles_bajas?.length || d.nuevos?.length || d.aguinaldo_no_dic?.length) {
         setTimeout(() => mostrarModalCambiosPlantilla(d), 1300);
