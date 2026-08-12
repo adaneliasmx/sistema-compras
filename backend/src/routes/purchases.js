@@ -1004,11 +1004,13 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
   const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const usdRate = await getUsdToMxn();
 
-  const toMxn = ri => Number(ri.quantity || 0) * Number(ri.unit_cost || 0) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
+  // unit_cost (flujo normal) o unit_price (registros históricos importados)
+  const unitCostOf = ri => Number(ri.unit_cost || ri.unit_price || 0);
+  const toMxn = ri => Number(ri.quantity || 0) * unitCostOf(ri) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
 
   const activeItems = (db.requisition_items || []).filter(ri =>
     !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
-    Number(ri.unit_cost || 0) > 0
+    unitCostOf(ri) > 0
   );
 
   // Fecha de la requisición (inmutable) como ancla de período — nunca updated_at
@@ -1046,11 +1048,11 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
     return { label: `Sem ${wk}`, from, to };
   });
 
-  // Todos los meses del año actual (enero → mes actual)
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  // Todos los meses del año actual (enero → mes actual) para incluir históricos
+  const months = Array.from({ length: now.getMonth() + 1 }, (_, i) => {
+    const d = new Date(now.getFullYear(), i, 1);
     return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
-  }).reverse();
+  });
 
   const costCenters = (db.cost_centers || []).filter(cc => cc.active !== false);
   const subCostCenters = (db.sub_cost_centers || []).filter(scc => scc.active !== false);
@@ -1072,7 +1074,7 @@ router.get('/kpi-costs', allowRoles('comprador', 'autorizador', 'pagos', 'admin'
           by_month: months.map(p => ({ label: p.label, amount: sumSpend(sccItems, p.from, p.to) })),
           items: sccItems.map(ri => ({
             id: ri.id,
-            name: (db.catalog_items.find(c => c.id === ri.catalog_item_id) || {}).name || ri.manual_item_name || '-',
+            name: (db.catalog_items.find(c => c.id === ri.catalog_item_id) || {}).name || ri.manual_item_name || ri.description || '-',
             quantity: ri.quantity, unit: ri.unit, unit_cost: ri.unit_cost,
             currency: ri.currency || 'MXN', status: ri.status,
             total: toMxn(ri)
@@ -1097,10 +1099,11 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
   const MONTHS = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const usdRate = await getUsdToMxn();
 
-  const toMxn = ri => Number(ri.quantity || 0) * Number(ri.unit_cost || 0) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
+  const unitCostOf = ri => Number(ri.unit_cost || ri.unit_price || 0);
+  const toMxn = ri => Number(ri.quantity || 0) * unitCostOf(ri) * ((ri.currency || 'MXN') === 'USD' ? usdRate : 1);
   const activeItems = (db.requisition_items || []).filter(ri =>
     !['Cancelado', 'Rechazado', 'Borrador', 'En cotización'].includes(ri.status) &&
-    Number(ri.unit_cost || 0) > 0 && ri.supplier_id
+    unitCostOf(ri) > 0 && ri.supplier_id
   );
   const reqDateMap = new Map((db.requisitions || []).map(r => [r.id, r.created_at]));
   const sumSpend = (items, from, to) =>
@@ -1133,10 +1136,10 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
     return { label: `Sem ${wk}`, from, to };
   });
 
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+  const months = Array.from({ length: now.getMonth() + 1 }, (_, i) => {
+    const d = new Date(now.getFullYear(), i, 1);
     return { label: `${MONTHS[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`, from: new Date(d.getFullYear(), d.getMonth(), 1), to: new Date(d.getFullYear(), d.getMonth() + 1, 1) };
-  }).reverse();
+  });
 
   const result = (db.suppliers || [])
     .filter(s => s.active !== false)
@@ -1146,7 +1149,7 @@ router.get('/kpi-costs-supplier', allowRoles('comprador', 'autorizador', 'pagos'
       const itemMap = {};
       supItems.forEach(ri => {
         const ci = db.catalog_items.find(c => c.id === ri.catalog_item_id);
-        const name = ci ? ci.name : (ri.manual_item_name || 'Sin nombre');
+        const name = ci ? ci.name : (ri.manual_item_name || ri.description || 'Sin nombre');
         if (!itemMap[name]) itemMap[name] = [];
         itemMap[name].push(ri);
       });

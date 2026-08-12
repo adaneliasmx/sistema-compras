@@ -4268,14 +4268,14 @@ async function purchasesView() {
               </div>
             </div>
             <p class="small muted" style="margin:0 0 12px">
-              ${kpiPeriod==='week' ? `Semanas 1–${(kpi.weeks_labels||[]).length} del año` : 'Últimos 6 meses'} · ítems activos con costo · clic en CC para ver SCC
+              ${kpiPeriod==='week' ? `Semanas 1–${(kpi.weeks_labels||[]).length} del año` : 'Meses del año'} · ítems activos con costo · clic en CC para ver SCC
               ${kpi.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(kpi.usd_rate).toFixed(2)}</span>` : ''}
             </p>
-            <div class="table-wrap">
-              <table style="font-size:12px">
+            <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+              <table style="font-size:12px;min-width:max-content;width:100%">
                 <thead><tr style="background:#f1f5f9">
-                  <th style="text-align:left;padding:6px 10px">Centro de Costo</th>
-                  <th style="text-align:right;padding:6px 8px">Total</th>
+                  <th style="text-align:left;padding:6px 10px;position:sticky;left:0;background:#f1f5f9;z-index:1">Centro de Costo</th>
+                  <th style="text-align:right;padding:6px 8px;position:sticky;left:160px;background:#f1f5f9;z-index:1">Total</th>
                   ${periods.map(p => `<th style="text-align:right;padding:6px 8px;white-space:nowrap">${escapeHtml(p)}</th>`).join('')}
                 </tr></thead>
                 <tbody>
@@ -9107,11 +9107,11 @@ async function kpiView() {
     }
 
     return `
-      <div class="table-wrap">
-        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
           <thead>
             <tr>
-              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px">Indicador</th>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:1">Indicador</th>
               ${thCols}
               ${thTotal}
             </tr>
@@ -9146,12 +9146,12 @@ async function kpiView() {
     );
     const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
     return `
-      <div class="table-wrap">
-        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
           <thead>
             <tr>
-              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:200px">Centro de Costo</th>
-              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total período</th>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:200px;position:sticky;left:0;z-index:1">Centro de Costo</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111;position:sticky;left:200px;z-index:1">Total período</th>
               ${thCols}
             </tr>
           </thead>
@@ -9200,12 +9200,12 @@ async function kpiView() {
     const periodTotals = periods.map((_, i) => rows.reduce((sum, s) => sum + (((s[byKey]||[])[i])?.amount || 0), 0));
     const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
     return `
-      <div class="table-wrap">
-        <table style="font-size:12px;border-collapse:collapse;min-width:100%">
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
           <thead>
             <tr>
-              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px">Proveedor / Ítem</th>
-              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111">Total período</th>
+              <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:1">Proveedor / Ítem</th>
+              <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111;position:sticky;left:220px;z-index:1">Total período</th>
               ${thCols}
             </tr>
           </thead>
@@ -9302,7 +9302,7 @@ async function kpiView() {
           </div>
         </div>
         <p class="small muted" style="margin:0 0 12px">
-          ${cosPeriod==='week'?`Semanas 1–${(cosData.weeks_labels||[]).length} del año`:'Últimos 6 meses'} · clic en CC para ver sub-centros
+          ${cosPeriod==='week'?`Semanas 1–${(cosData.weeks_labels||[]).length} del año`:'Meses del año'} · clic en CC para ver sub-centros
           ${cosData.usd_rate ? `· <span style="color:#059669;font-weight:600">USD→MXN @ $${Number(cosData.usd_rate).toFixed(2)}</span>` : ''}
         </p>
         <div id="kpi-cos-body"></div>
