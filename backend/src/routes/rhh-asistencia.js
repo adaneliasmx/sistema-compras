@@ -4,7 +4,7 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 const express = require('express');
-const { read, write, nextId, getSystemEmpIds } = require('../db-rhh');
+const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
 
@@ -201,7 +201,7 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 });
 
 // POST /api/rhh/asistencia/rol
-router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
   const { week_start, no_periodo, assignments = [] } = req.body || {};
   if (!week_start) return res.status(400).json({ error: 'week_start requerido' });
 
@@ -241,7 +241,8 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
 
   db.rhh_weekly_rol      = roles;
   db.rhh_rol_assignments = asigs;
-  write(db);
+  // writeAsync garantiza persistencia en PostgreSQL antes de responder
+  try { await writeAsync(db); } catch(e) { return res.status(500).json({ error: 'Error al guardar ROL: ' + e.message }); }
   res.json({ ok: true, rol, saved: assignments.length });
 });
 
@@ -359,13 +360,18 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
 
   let empIds = null;
   if (req.query.shift_id) {
+    // Filtrar por turno específico
     const sid = Number(req.query.shift_id);
     empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
+  } else if (rol && assignments.length > 0) {
+    // Si existe ROL para la semana, mostrar solo los empleados asignados al ROL
+    empIds = new Set(assignments.map(a => a.employee_id));
   }
+  // Sin ROL o ROL vacío → mostrar todos los activos (comportamiento original)
 
   const _sysIds2  = getSystemEmpIds();
   const employees = (db.rhh_employees  || []).filter(e =>
-    e.status === 'active' && !_sysIds2.has(Number(e.id)) && (!empIds || empIds.has(e.id))
+    e.status !== 'inactive' && !_sysIds2.has(Number(e.id)) && (!empIds || empIds.has(e.id))
   );
   const positions  = db.rhh_positions  || [];
   const shifts     = db.rhh_shifts     || [];
