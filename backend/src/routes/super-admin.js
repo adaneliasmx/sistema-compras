@@ -1119,7 +1119,7 @@ router.post('/rhh-reseed', superAdminRequired, async (req, res) => {
   try {
     const data = await forceSeedFromJson();
     const counts = Object.fromEntries(Object.entries(data).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]));
-    res.json({ ok: true, message: 'Base de datos RHH sincronizada desde JSON seed', counts });
+    res.json({ ok: true, message: 'Empleados RHH faltantes sincronizados sin reemplazar datos productivos', counts });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

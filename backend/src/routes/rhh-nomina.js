@@ -6,8 +6,16 @@
 
 const express = require('express');
 const multer  = require('multer');
-const { read, write, nextId, getSystemEmpIds } = require('../db-rhh');
+const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+const { mergeWeeklyIncident } = require('../utils/rhh-data-integrity');
+const {
+  canonicalPeriod,
+  comparePeriods,
+  periodKey,
+  resolveRequestedYear,
+  samePeriod,
+} = require('../utils/rhh-periods');
 const router = express.Router();
 
 // Multer — solo memoria (no guarda en disco)
@@ -114,25 +122,33 @@ const HE_LIMIT_SEM = 8;
 router.get('/periodos', rhhAuthRequired, (req, res) => {
   const db = read();
   const dbPeriodos = db.rhh_periodos || [];
+  const requestedYear = Number(req.query.year) || null;
   // Merge: PERIODOS_2026 como base (garantiza todos los periodos disponibles),
   // DB overrides para cualquier periodo que haya sido personalizado.
-  const base = PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
-  if (dbPeriodos.length === 0) return res.json(base);
+  const base = PERIODOS_2026.map((p, i) => canonicalPeriod({ id: i + 1, ...p, year: 2026 }));
+  if (dbPeriodos.length === 0) return res.json(
+    requestedYear && requestedYear !== 2026 ? [] : base
+  );
   const dbMap = {};
-  for (const p of dbPeriodos) dbMap[p.no_periodo] = p;
-  const merged = base.map(p => dbMap[p.no_periodo] || p);
+  for (const raw of dbPeriodos) {
+    const p = canonicalPeriod(raw);
+    if (p) dbMap[p.period_key] = p;
+  }
+  const merged = base.map(p => dbMap[p.period_key] || p);
   // Agregar periodos de DB que no existan en la base hardcodeada
   for (const p of dbPeriodos) {
-    if (!base.find(b => b.no_periodo === p.no_periodo)) merged.push(p);
+    const canonical = canonicalPeriod(p);
+    if (canonical && !base.find(b => b.period_key === canonical.period_key)) merged.push(canonical);
   }
-  merged.sort((a, b) => a.no_periodo - b.no_periodo);
-  res.json(merged);
+  const filtered = requestedYear ? merged.filter(p => p.year === requestedYear) : merged;
+  filtered.sort(comparePeriods);
+  res.json(filtered);
 });
 
 // POST /api/rhh/nomina/periodos/seed  (rh/admin)
 router.post('/periodos/seed', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
-  db.rhh_periodos = PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
+  db.rhh_periodos = PERIODOS_2026.map((p, i) => canonicalPeriod({ id: i + 1, ...p, year: 2026 }));
   write(db);
   res.json({ ok: true, count: db.rhh_periodos.length });
 });
@@ -144,18 +160,34 @@ router.get('/incidencias', rhhAuthRequired, (req, res) => {
   const db = read();
   const no_periodo = Number(req.query.no_periodo);
   if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
+  const year = resolveRequestedYear(db, no_periodo, req.query.year);
 
   const lista     = db.rhh_incidencias_semanales || [];
   const _sysIds   = getSystemEmpIds();
-  const employees = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
+  const snapshots = (db.rhh_employee_period_snapshots || []).filter(s =>
+    samePeriod(s, no_periodo, year) && !_sysIds.has(Number(s.employee_id))
+  );
+  const employees = snapshots.length > 0
+    ? snapshots.map(s => ({
+        ...(db.rhh_employees || []).find(e => e.id === Number(s.employee_id)),
+        id: Number(s.employee_id),
+        full_name: s.full_name,
+        employee_number: s.employee_number,
+        department_id: s.department_id,
+        position_id: s.position_id,
+        _snapshot: s,
+      }))
+    : (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
   const depts     = db.rhh_departments || [];
 
   const result = employees.map(emp => {
-    const inc = lista.find(i => i.no_periodo === no_periodo && i.employee_id === emp.id) || {};
+    const inc = lista.find(i => samePeriod(i, no_periodo, year) && i.employee_id === emp.id) || {};
     const dept = depts.find(d => d.id === emp.department_id);
     return {
       id:                  inc.id || null,
       no_periodo,
+      year,
+      period_key: periodKey(year, no_periodo),
       employee_id:         emp.id,
       dias_pagados:        inc.dias_pagados        ?? 7,
       faltas:              inc.faltas              ?? 0,
@@ -183,60 +215,48 @@ router.get('/incidencias', rhhAuthRequired, (req, res) => {
 });
 
 // POST /api/rhh/nomina/incidencias/bulk  — guarda múltiples filas de un período
-router.post('/incidencias/bulk', rhhAuthRequired, rhhRequireRole('rh', 'admin', 'supervisor'), (req, res) => {
-  const db = read();
+router.post('/incidencias/bulk', rhhAuthRequired, rhhRequireRole('rh', 'admin', 'supervisor'), async (req, res) => {
+  const db = structuredClone(read());
   const { no_periodo, rows } = req.body || {};
   if (!no_periodo || !Array.isArray(rows)) {
     return res.status(400).json({ error: 'no_periodo y rows[] requeridos' });
   }
 
   const lista = db.rhh_incidencias_semanales || [];
+  const year = resolveRequestedYear(db, no_periodo, req.body?.year);
   let saved = 0;
+  const now = new Date().toISOString();
 
   for (const row of rows) {
     const empId = Number(row.employee_id);
     if (!empId) continue;
-    const idx = lista.findIndex(i => i.no_periodo === Number(no_periodo) && i.employee_id === empId);
+    const idx = lista.findIndex(i => samePeriod(i, Number(no_periodo), year) && i.employee_id === empId);
 
-    // Auto-cálculo días pagados: asist + séptimo día
-    const faltas  = row.faltas !== undefined ? Number(row.faltas) : 0;
-    const asist   = Math.max(0, 6 - faltas);
-    const septimo = Math.round((asist / 6) * 100) / 100;
-    const dias_pagados = asist + septimo;
-
-    const record = {
-      no_periodo:            Number(no_periodo),
-      employee_id:           empId,
-      dias_pagados,
-      faltas,
-      horas_extras_total:    row.horas_extras_total    !== undefined ? Number(row.horas_extras_total)    : 0,
-      despensa:              row.despensa              !== undefined ? (row.despensa ? 1 : 0)            : 1,
-      bono_puntualidad_dias: row.bono_puntualidad_dias != null ? Number(row.bono_puntualidad_dias) : null,
-      bono_eficiencia_dias:  row.bono_eficiencia_dias  != null ? Number(row.bono_eficiencia_dias)  : null,
-      bono_instructor:       row.bono_instructor       != null ? Number(row.bono_instructor)       : null,
-      prima_dominical:       row.prima_dominical       !== undefined ? (row.prima_dominical ? 1 : 0) : 0,
-      vacaciones_dias:       row.vacaciones_dias       != null ? Number(row.vacaciones_dias)       : null,
-      gratificacion:         row.gratificacion         != null ? Number(row.gratificacion)         : null,
-      notas:                 row.notas || '',
-      updated_by:            req.rhhUser.id,
-      updated_at:            new Date().toISOString(),
-    };
+    const existing = idx !== -1 ? lista[idx] : null;
+    const record = mergeWeeklyIncident(existing, row, {
+      no_periodo: Number(no_periodo),
+      year,
+      period_key: periodKey(year, no_periodo),
+      updated_by: req.rhhUser.id,
+      now,
+      id: existing?.id ?? nextId(lista),
+    });
 
     if (idx !== -1) {
-      record.id = lista[idx].id;
-      record.created_at = lista[idx].created_at;
       lista[idx] = record;
     } else {
-      record.id = nextId(lista);
-      record.created_at = new Date().toISOString();
       lista.push(record);
     }
     saved++;
   }
 
   db.rhh_incidencias_semanales = lista;
-  write(db);
-  res.json({ ok: true, saved });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, saved });
+  } catch (error) {
+    res.status(500).json({ error: 'No se pudieron guardar las incidencias: ' + error.message });
+  }
 });
 
 // ── HE Detalle ────────────────────────────────────────────────────────────────
@@ -539,13 +559,25 @@ router.get('/export', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
   const db = read();
   const no_periodo = Number(req.query.no_periodo);
   if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
+  const year = resolveRequestedYear(db, no_periodo, req.query.year);
 
   const periodos   = (db.rhh_periodos || []).length > 0
     ? db.rhh_periodos
-    : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
-  const periodo    = periodos.find(p => p.no_periodo === no_periodo);
-  const lista      = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
-  const employees  = (db.rhh_employees || []).filter(e => e.status === 'active');
+    : PERIODOS_2026.map((p, i) => canonicalPeriod({ id: i + 1, ...p, year: 2026 }));
+  const periodo    = periodos.find(p => samePeriod(p, no_periodo, year));
+  const lista      = (db.rhh_incidencias_semanales || []).filter(i => samePeriod(i, no_periodo, year));
+  const snapshots  = (db.rhh_employee_period_snapshots || []).filter(s => samePeriod(s, no_periodo, year));
+  const employees  = snapshots.length > 0
+    ? snapshots.map(s => ({
+        ...(db.rhh_employees || []).find(e => e.id === Number(s.employee_id)),
+        id: Number(s.employee_id),
+        full_name: s.full_name,
+        employee_number: s.employee_number,
+        department_id: s.department_id,
+        position_id: s.position_id,
+        _snapshot: s,
+      }))
+    : (db.rhh_employees || []).filter(e => e.status === 'active');
   const depts      = db.rhh_departments || [];
   const positions  = db.rhh_positions   || [];
 
@@ -563,8 +595,8 @@ router.get('/export', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
       return {
         no_empleado:          emp.employee_number || emp.id,
         nombre:               emp.full_name,
-        departamento:         dept?.name || '',
-        puesto:               pos?.name  || '',
+        departamento:         emp._snapshot?.department_name || dept?.name || '',
+        puesto:               emp._snapshot?.position_name || pos?.name  || '',
         dias_pagados:         inc?.dias_pagados        ?? 7,
         faltas:               inc?.faltas              ?? 0,
         horas_extras:         inc?.horas_extras_total  ?? 0,
@@ -579,7 +611,11 @@ router.get('/export', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
       };
     });
 
-  res.json({ periodo, rows, generated_at: nowMxDate() });
+  res.json({
+    periodo: periodo || { no_periodo, year, period_key: periodKey(year, no_periodo) },
+    rows,
+    generated_at: nowMxDate(),
+  });
 });
 
 // ── Seed catálogo de puestos ──────────────────────────────────────────────────
@@ -1254,7 +1290,8 @@ router.post('/comparar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
       const data       = await pdfParse(req.file.buffer);
       const pdfEmps    = parsePdfText(data.text);
       const db         = read();
-      const lista      = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
+      const year       = resolveRequestedYear(db, no_periodo, req.body.year);
+      const lista      = (db.rhh_incidencias_semanales || []).filter(i => samePeriod(i, no_periodo, year));
       const employees  = db.rhh_employees || [];
 
       const CAMPOS_CMP = [
@@ -1303,7 +1340,7 @@ router.post('/comparar-pdf', rhhAuthRequired, rhhRequireRole('rh', 'admin'),
         no_encontrado: diffs.filter(d => !d.encontrado).length,
       };
 
-      res.json({ ok: true, no_periodo, resumen, diffs });
+      res.json({ ok: true, no_periodo, year, period_key: periodKey(year, no_periodo), resumen, diffs });
     } catch (err) {
       console.error('[nomina/comparar-pdf]', err.message);
       res.status(500).json({ error: 'Error al comparar PDF: ' + err.message });
@@ -1321,8 +1358,9 @@ router.get('/kpis', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) =
   const db = read();
   const no_periodo = Number(req.query.no_periodo);
   if (!no_periodo) return res.status(400).json({ error: 'no_periodo requerido' });
+  const year = resolveRequestedYear(db, no_periodo, req.query.year);
 
-  const lista     = (db.rhh_incidencias_semanales || []).filter(i => i.no_periodo === no_periodo);
+  const lista     = (db.rhh_incidencias_semanales || []).filter(i => samePeriod(i, no_periodo, year));
   const _sysIds   = getSystemEmpIds();
   const employees = (db.rhh_employees || []).filter(e => e.status === 'active' && !_sysIds.has(Number(e.id)));
   const totalEmp  = employees.length;
@@ -1351,11 +1389,13 @@ router.get('/kpis', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) =
   const periodos = (db.rhh_periodos || []).length > 0
     ? db.rhh_periodos
     : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
-  const periodo = periodos.find(p => p.no_periodo === no_periodo) || null;
+  const periodo = periodos.find(p => samePeriod(p, no_periodo, year)) || null;
 
   res.json({
     ok: true,
     periodo,
+    year,
+    period_key: periodKey(year, no_periodo),
     resumen: {
       total_empleados:       totalEmp,
       capturados,

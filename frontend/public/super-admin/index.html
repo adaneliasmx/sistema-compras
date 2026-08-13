@@ -1140,7 +1140,7 @@ function renderModulePanel(m) {
 }
 
 async function rhhReseed() {
-  if (!confirm('⚠️ Esto reemplazará la base de datos RHH online con el JSON seed del repositorio.\n\n¿Continuar?')) return;
+  if (!confirm('Esto agregará empleados faltantes desde el JSON seed. Los datos productivos, locks, bajas y empleados importados se conservarán.\n\n¿Continuar?')) return;
   try {
     const r = await api('/api/super-admin/rhh-reseed', { method: 'POST' });
     alert('✅ Sincronización completada');

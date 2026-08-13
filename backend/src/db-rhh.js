@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { mergeEmployeesFromSeed } = require('./utils/rhh-data-integrity');
 
 // ── Rutas JSON ─────────────────────────────────────────────────────────────────
 // seedPath: JSON comprometido en git, SIEMPRE disponible en cualquier entorno
@@ -25,6 +26,7 @@ if (process.env.DATABASE_URL) {
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;
+let _writeQueue = Promise.resolve();
 
 const EMPTY_DB = {
   rhh_users: [],
@@ -65,6 +67,11 @@ const EMPTY_DB = {
   // Módulo Nómina Semanal (2026-07-29)
   rhh_periodos: [],
   rhh_incidencias_semanales: [],
+  // Datos laborales tal como eran en cada semana importada de CONTPAQ.
+  rhh_employee_period_snapshots: [],
+  // Trazabilidad de archivos importados (se completa en la Entrega C).
+  rhh_import_batches: [],
+  rhh_status_events: [],
   rhh_he_detalle: [],
   rhh_vac_solicitudes: [],
   rhh_te_solicitudes: [],
@@ -88,12 +95,10 @@ async function initDb() {
     // Solo rhh_employees se sincroniza desde el JSON en cada deploy.
     // Los catálogos (departamentos, puestos, turnos, etc.) se preservan de PostgreSQL
     // para que los cambios hechos en el menú Catálogos persistan entre deploys.
-    const SYNC_FROM_SEED = ['rhh_employees'];
-
-    let seed = { ...EMPTY_DB };
+    let seed = structuredClone(EMPTY_DB);
     if (fs.existsSync(seedPath)) {
       try {
-        seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+        seed = { ...structuredClone(EMPTY_DB), ...JSON.parse(fs.readFileSync(seedPath, 'utf8')) };
         console.log('[db-rhh] JSON seed leído OK:', seed.rhh_employees?.length, 'empleados');
       } catch (parseErr) {
         console.error('[db-rhh] Error parseando JSON seed:', parseErr.message);
@@ -109,31 +114,13 @@ async function initDb() {
       await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
       console.log('[db-rhh] PostgreSQL inicializado con seed. Empleados:', (seed.rhh_employees || []).length);
     } else {
-      // Ya existe: merge inteligente de empleados; preservar catálogos dinámicos (puestos, depts, etc.)
-      const existing = rows[0].data;
-
-      // Merge rhh_employees: agrega nuevos del seed pero preserva campos gestionados en-app
-      // (position_id, department_id, shift_id, sal_diario, sdi, sbc, status, fecha_ingreso, etc.)
-      const PRESERVED = ['position_id','department_id','shift_id','sal_diario','sdi','sbc',
-                         'puesto','turno','status','start_date','fecha_ingreso','active',
-                         'phone','email','address','emp_login'];
-      const existingEmps = existing.rhh_employees || [];
-      const seedEmps     = seed.rhh_employees     || [];
-      const mergedEmps   = [...existingEmps];
-      for (const se of seedEmps) {
-        const idx = mergedEmps.findIndex(e => e.id === se.id || (e.no && e.no === se.no));
-        if (idx === -1) {
-          mergedEmps.push(se); // empleado nuevo → agregar
-        } else {
-          // Empleado existente → fusionar: seed aporta datos biográficos, DB preserva datos gestionados
-          const dbEmp = mergedEmps[idx];
-          const merged = { ...se };
-          for (const f of PRESERVED) {
-            if (dbEmp[f] !== undefined && dbEmp[f] !== null) merged[f] = dbEmp[f];
-          }
-          mergedEmps[idx] = merged;
-        }
-      }
+      // Producción es la fuente de verdad. El seed únicamente aporta empleados
+      // o campos faltantes y nunca elimina locks, bajas o metadatos futuros.
+      const existing = { ...structuredClone(EMPTY_DB), ...(rows[0].data || {}) };
+      const mergedEmps = mergeEmployeesFromSeed(
+        existing.rhh_employees || [],
+        seed.rhh_employees || []
+      );
       existing.rhh_employees = mergedEmps;
 
       _cache = existing;
@@ -146,7 +133,10 @@ async function initDb() {
       fs.mkdirSync(path.dirname(dbPath), { recursive: true });
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
-    _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    _cache = {
+      ...structuredClone(EMPTY_DB),
+      ...JSON.parse(fs.readFileSync(dbPath, 'utf8')),
+    };
     console.log('[db-rhh] Datos cargados desde JSON local:', dbPath);
   }
 }
@@ -154,36 +144,43 @@ async function initDb() {
 // Lee el estado actual (síncrono, usa caché)
 function read() {
   if (!_cache) {
-    if (!fs.existsSync(dbPath)) return { ...EMPTY_DB };
-    _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    if (!fs.existsSync(dbPath)) return structuredClone(EMPTY_DB);
+    _cache = {
+      ...structuredClone(EMPTY_DB),
+      ...JSON.parse(fs.readFileSync(dbPath, 'utf8')),
+    };
   }
   return _cache;
 }
 
-// Escribe y persiste en background (fire-and-forget — NO garantiza persistencia antes del response)
-function write(data) {
-  _cache = data;
+async function persistSnapshot(snapshot) {
   if (pool) {
-    pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(data)])
-      .catch(err => console.error('[db-rhh] Error persistiendo en PostgreSQL:', err.message));
+    await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(snapshot)]);
   } else {
-    try {
-      fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-    } catch (err) {
-      console.error('[db-rhh] Error escribiendo JSON:', err.message);
-    }
+    fs.writeFileSync(dbPath, JSON.stringify(snapshot, null, 2));
   }
 }
 
-// Escribe y ESPERA a que la persistencia complete — usar en rutas críticas (imports, ediciones)
+function enqueueWrite(data) {
+  // El snapshot evita que una ruta continúe mutando el objeto mientras espera.
+  // La cola conserva el orden de persistencia y elimina escrituras fuera de orden.
+  const snapshot = structuredClone(data);
+  _cache = snapshot;
+  const operation = _writeQueue.then(() => persistSnapshot(snapshot));
+  _writeQueue = operation.catch(() => {});
+  return operation;
+}
+
+// Mantiene compatibilidad con rutas existentes, pero serializa la persistencia.
+function write(data) {
+  enqueueWrite(data).catch(err => {
+    console.error('[db-rhh] Error persistiendo datos:', err.message);
+  });
+}
+
+// Escribe respetando la cola y espera antes de responder.
 async function writeAsync(data) {
-  if (pool) {
-    await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(data)]);
-  } else {
-    fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
-  }
-  // Publicar en cache solo cuando la persistencia terminó correctamente.
-  _cache = data;
+  await enqueueWrite(data);
 }
 
 function nextId(rows) {
@@ -234,19 +231,21 @@ function calcVacBalance(db, empId, year) {
   };
 }
 
-// Fuerza la sincronización de colecciones estructurales desde JSON seed (preserva usuarios y datos dinámicos)
+// Sincroniza empleados faltantes desde el seed sin reemplazar datos productivos.
 async function forceSeedFromJson() {
   if (!pool) throw new Error('Solo disponible en modo PostgreSQL');
   if (!fs.existsSync(seedPath)) throw new Error('Archivo JSON seed no encontrado: ' + seedPath);
-  const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  const SYNC_FROM_SEED = ['rhh_employees'];
+  const seed = { ...structuredClone(EMPTY_DB), ...JSON.parse(fs.readFileSync(seedPath, 'utf8')) };
   const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
-  const existing = rows.length > 0 ? rows[0].data : { ...EMPTY_DB };
-  for (const key of SYNC_FROM_SEED) {
-    if (seed[key] !== undefined) existing[key] = seed[key];
-  }
-  _cache = existing;
-  await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1) ON CONFLICT(id) DO UPDATE SET data=$1', [JSON.stringify(existing)]);
+  const existing = {
+    ...structuredClone(EMPTY_DB),
+    ...(rows.length > 0 ? rows[0].data : {}),
+  };
+  existing.rhh_employees = mergeEmployeesFromSeed(
+    existing.rhh_employees || [],
+    seed.rhh_employees || []
+  );
+  await writeAsync(existing);
   return existing;
 }
 

@@ -1341,6 +1341,7 @@ let incFilter = { employee_id: '', type: '', status: '', date_from: '', date_to:
 
 // Estado módulo semanal
 let incSemPeriodo  = 0;
+let incSemYear     = 0;
 let incSemRows     = [];
 let incSemPeriodos = [];
 let _heEmpId       = null;
@@ -1355,9 +1356,11 @@ async function incidenciasView() {
       // Intentar seleccionar el período que contiene la fecha de hoy
       const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
       const _MES = { Ene:'01',Feb:'02',Mar:'03',Abr:'04',May:'05',Jun:'06',Jul:'07',Ago:'08',Sep:'09',Oct:'10',Nov:'11',Dic:'12' };
-      const toIso = s => { const p=s.split('/'); return `${p[2]}-${_MES[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
+      const toIso = s => { if (/^\d{4}-\d{2}-\d{2}/.test(s || '')) return s.slice(0,10); const p=s.split('/'); return `${p[2]}-${_MES[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
       const actual = incSemPeriodos.find(p => hoy >= toIso(p.fecha_inicio) && hoy <= toIso(p.fecha_fin));
-      incSemPeriodo = actual?.no_periodo || incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+      const selected = actual || incSemPeriodos[incSemPeriodos.length - 1];
+      incSemPeriodo = selected.no_periodo;
+      incSemYear = selected.year || 2026;
     }
     await _loadIncSem();
   } catch (err) {
@@ -1368,7 +1371,7 @@ async function incidenciasView() {
 async function _loadIncSem() {
   try {
     if (incSemPeriodo) {
-      incSemRows = await api(`/api/rhh/nomina/incidencias?no_periodo=${incSemPeriodo}`) || [];
+      incSemRows = await api(`/api/rhh/nomina/incidencias?no_periodo=${incSemPeriodo}&year=${incSemYear || 2026}`) || [];
     }
     _renderIncSem();
   } catch (err) { toast(err.message, 'error'); }
@@ -1376,9 +1379,10 @@ async function _loadIncSem() {
 
 function _renderIncSem() {
   const el = document.getElementById('app');
-  const periodo = incSemPeriodos.find(p => p.no_periodo === incSemPeriodo);
+  const periodo = incSemPeriodos.find(p => p.no_periodo === incSemPeriodo && (p.year || 2026) === (incSemYear || 2026));
 
-  const periodOpts = incSemPeriodos.map(p =>
+  /* Opciones antiguas conservadas temporalmente solo como referencia interna. */
+  const _legacyPeriodOpts = incSemPeriodos.map(p =>
     `<option value="${p.no_periodo}" ${p.no_periodo === incSemPeriodo ? 'selected' : ''}>Semana ${p.no_periodo} &nbsp;·&nbsp; ${p.fecha_inicio} al ${p.fecha_fin}</option>`
   ).join('');
 
@@ -1420,8 +1424,8 @@ function _renderIncSem() {
     <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
-        <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="incSemPeriodo=parseInt(this.value);_loadIncSem()">
-          ${periodOpts}
+        <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="{const [y,w]=this.value.split('-S');incSemYear=Number(y);incSemPeriodo=Number(w);_loadIncSem()}">
+    ${incSemPeriodos.map(p => `<option value="${p.period_key || `${p.year || 2026}-S${String(p.no_periodo).padStart(2,'0')}`}" ${p.no_periodo === incSemPeriodo && (p.year || 2026) === (incSemYear || 2026) ? 'selected' : ''}>${p.year || 2026} · Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`).join('')}
         </select>
       </div>
       ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
@@ -1499,6 +1503,7 @@ async function incImportarPdf(file) {
     const form = new FormData();
     form.append('pdf', file);
     if (incSemPeriodo) form.append('no_periodo', String(incSemPeriodo));
+    if (incSemYear) form.append('year', String(incSemYear));
 
     const res = await fetch('/api/rhh/nomina/importar-pdf', {
       method: 'POST',
@@ -1611,6 +1616,7 @@ async function guardarTodasIncidencias() {
       method: 'POST',
       body: JSON.stringify({
         no_periodo: incSemPeriodo,
+        year: incSemYear || 2026,
         rows: incSemRows.map(r => ({
           employee_id:         r.employee_id,
           dias_pagados:        r.dias_pagados,
@@ -1634,7 +1640,7 @@ async function guardarTodasIncidencias() {
 async function exportarIncidencias() {
   if (!incSemPeriodo) { toast('Selecciona un período', 'warning'); return; }
   try {
-    const data = await api(`/api/rhh/nomina/export?no_periodo=${incSemPeriodo}`);
+    const data = await api(`/api/rhh/nomina/export?no_periodo=${incSemPeriodo}&year=${incSemYear || 2026}`);
     if (!data) return;
     const headers = ['No.Empleado','Nombre','Departamento','Puesto','Días Pagados','Faltas','Horas Extra','Despensa','B.Puntualidad (días)','B.Eficiencia (días)','B.Instructor (días)','Prima Dominical','Vacaciones (días)','Gratificación (días)','Notas'];
     const csvRows = [headers.join(',')];
@@ -2725,6 +2731,7 @@ async function loadCoverage() {
 
 // ── 12. Lista de Raya (reemplaza Prenómina) ───────────────────────────────────
 let listaRayaPeriodo = 0;
+let listaRayaYear    = 0;
 let listaRayaTab     = 0;   // 0=lista, 1=comparar PDF
 let _cmpPdfResult    = null; // último resultado de comparación
 
@@ -2739,11 +2746,13 @@ async function listaRayaView() {
       // Seleccionar período que contiene la fecha de hoy
       const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
       const _MES2 = { Ene:'01',Feb:'02',Mar:'03',Abr:'04',May:'05',Jun:'06',Jul:'07',Ago:'08',Sep:'09',Oct:'10',Nov:'11',Dic:'12' };
-      const toIso2 = s => { const p=s.split('/'); return `${p[2]}-${_MES2[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
+      const toIso2 = s => { if (/^\d{4}-\d{2}-\d{2}/.test(s || '')) return s.slice(0,10); const p=s.split('/'); return `${p[2]}-${_MES2[p[1]]||'01'}-${p[0].padStart(2,'0')}`; };
       const actual2 = incSemPeriodos.find(p => hoy >= toIso2(p.fecha_inicio) && hoy <= toIso2(p.fecha_fin));
-      listaRayaPeriodo = actual2?.no_periodo || incSemPeriodos[incSemPeriodos.length - 1].no_periodo;
+      const selected2 = actual2 || incSemPeriodos[incSemPeriodos.length - 1];
+      listaRayaPeriodo = selected2.no_periodo;
+      listaRayaYear = selected2.year || 2026;
     }
-    const periodo = incSemPeriodos.find(p => p.no_periodo === listaRayaPeriodo);
+    const periodo = incSemPeriodos.find(p => p.no_periodo === listaRayaPeriodo && (p.year || 2026) === (listaRayaYear || 2026));
 
     const periodOpts = incSemPeriodos.map(p =>
       `<option value="${p.no_periodo}" ${p.no_periodo === listaRayaPeriodo ? 'selected' : ''}>S${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
@@ -2759,8 +2768,8 @@ async function listaRayaView() {
       <div style="display:flex;align-items:flex-end;gap:12px;margin-bottom:14px;flex-wrap:wrap;">
         <div>
           <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
-          <select id="lr-periodo-sel" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="listaRayaPeriodo=parseInt(this.value);_cmpPdfResult=null;listaRayaView()">
-            ${periodOpts}
+          <select id="lr-periodo-sel" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="{const [y,w]=this.value.split('-S');listaRayaYear=Number(y);listaRayaPeriodo=Number(w);_cmpPdfResult=null;listaRayaView()}">
+            ${incSemPeriodos.map(p => `<option value="${p.period_key || `${p.year || 2026}-S${String(p.no_periodo).padStart(2,'0')}`}" ${p.no_periodo === listaRayaPeriodo && (p.year || 2026) === (listaRayaYear || 2026) ? 'selected' : ''}>${p.year || 2026} · S${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`).join('')}
           </select>
         </div>
         ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
@@ -2770,7 +2779,7 @@ async function listaRayaView() {
 
     if (listaRayaTab === 0) {
       // ── Tab Lista ────────────────────────────────────────────────────────────
-      const data = listaRayaPeriodo ? await api(`/api/rhh/nomina/export?no_periodo=${listaRayaPeriodo}`) : null;
+      const data = listaRayaPeriodo ? await api(`/api/rhh/nomina/export?no_periodo=${listaRayaPeriodo}&year=${listaRayaYear || 2026}`) : null;
 
       const tableRows = (data?.rows || []).map(r => `
         <tr>
@@ -2925,6 +2934,7 @@ async function compararPDF() {
     const form = new FormData();
     form.append('pdf', fileInput.files[0]);
     form.append('no_periodo', listaRayaPeriodo);
+    form.append('year', listaRayaYear || 2026);
 
     const token = localStorage.getItem('rhh_token');
     const res   = await fetch('/api/rhh/nomina/comparar-pdf', {
@@ -2950,9 +2960,12 @@ async function exportarListaRaya() {
   if (!listaRayaPeriodo) { toast('Selecciona un período', 'warning'); return; }
   // Reusar la función de exportación del módulo incidencias
   const prev = incSemPeriodo;
+  const prevYear = incSemYear;
   incSemPeriodo = listaRayaPeriodo;
+  incSemYear = listaRayaYear || 2026;
   await exportarIncidencias();
   incSemPeriodo = prev;
+  incSemYear = prevYear;
 }
 
 // ── Prenómina (mantenida para backward-compat, ya no aparece en menú) ─────────
