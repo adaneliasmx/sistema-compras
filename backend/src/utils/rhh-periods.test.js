@@ -3,7 +3,9 @@ const assert = require('node:assert/strict');
 
 const {
   canonicalPeriod,
+  backfillCanonicalPeriodFields,
   comparePeriods,
+  getEmployeeTemplateForWeek,
   parsePeriodDate,
   resolveRequestedYear,
   samePeriod,
@@ -80,4 +82,39 @@ test('requests without year select newest available year while legacy data remai
       { no_periodo: 1, year: 2027 },
     ],
   }, 1), 2027);
+});
+
+test('weekly template uses exact snapshot and only inherits one following week', () => {
+  const db = {
+    rhh_employees: [{ id: 1, status: 'active', full_name: 'Catalog current' }],
+    rhh_periodos: [{
+      no_periodo: 31, year: 2026, fecha_inicio: '2026-07-27', fecha_fin: '2026-08-02',
+    }],
+    rhh_employee_period_snapshots: [{
+      employee_id: 1, no_periodo: 31, year: 2026,
+      fecha_inicio: '2026-07-27', fecha_fin: '2026-08-02', full_name: 'Snapshot S31',
+    }],
+  };
+  assert.equal(getEmployeeTemplateForWeek(db, '2026-07-27').source, 'snapshot_exact');
+  assert.equal(getEmployeeTemplateForWeek(db, '2026-08-03').source, 'snapshot_previous_week');
+  assert.equal(getEmployeeTemplateForWeek(db, '2026-08-10').source, 'snapshot_missing');
+});
+
+test('backfill adds canonical fields without changing legacy business values', () => {
+  const original = {
+    rhh_employees: [{ id: 2, employee_number: '100', full_name: 'Empleado', department_id: 4, position_id: 5 }],
+    rhh_incidencias_semanales: [{ id: 1, employee_id: 2, no_periodo: 31, dias_pagados: 5.83 }],
+    rhh_te_solicitudes: [{ id: 2, no_periodo: 31, horas: 3 }],
+    rhh_baja_candidatos: [{ id: 3, detected_week: 31 }],
+  };
+  const result = backfillCanonicalPeriodFields(original);
+  assert.equal(original.rhh_incidencias_semanales[0].year, undefined);
+  assert.equal(result.db.rhh_incidencias_semanales[0].period_key, '2026-S31');
+  assert.equal(result.db.rhh_incidencias_semanales[0].dias_pagados, 5.83);
+  assert.equal(result.db.rhh_te_solicitudes[0].period_key, '2026-S31');
+  assert.equal(result.db.rhh_baja_candidatos[0].period_key, '2026-S31');
+  assert.equal(result.stats.updated, 3);
+  assert.equal(result.stats.snapshots_created, 1);
+  assert.equal(result.db.rhh_employee_period_snapshots[0].backfill_quality, 'approximate_current_catalog');
+  assert.equal(result.stats.ambiguous_rows.length, 3);
 });

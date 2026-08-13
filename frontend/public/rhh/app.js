@@ -409,11 +409,10 @@ async function dashboardView() {
         if (incSemPeriodos.length === 0) {
           incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
         }
-        const ultimoPeriodo = incSemPeriodos.length > 0
-          ? incSemPeriodos[incSemPeriodos.length - 1].no_periodo
-          : 0;
+        const latestPeriodObj = incSemPeriodos.length > 0 ? incSemPeriodos[incSemPeriodos.length - 1] : null;
+        const ultimoPeriodo = latestPeriodObj?.no_periodo || 0;
         if (ultimoPeriodo) {
-          const nk = await api(`/api/rhh/nomina/kpis?no_periodo=${ultimoPeriodo}`);
+          const nk = await api(`/api/rhh/nomina/kpis?no_periodo=${ultimoPeriodo}&year=${latestPeriodObj?.year || 2026}`);
           if (nk?.ok) {
             const s = nk.resumen;
             const p = nk.periodo;
@@ -1425,7 +1424,7 @@ function _renderIncSem() {
       <div>
         <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px;">Período (semana)</label>
         <select style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" onchange="{const [y,w]=this.value.split('-S');incSemYear=Number(y);incSemPeriodo=Number(w);_loadIncSem()}">
-    ${incSemPeriodos.map(p => `<option value="${p.period_key || `${p.year || 2026}-S${String(p.no_periodo).padStart(2,'0')}`}" ${p.no_periodo === incSemPeriodo && (p.year || 2026) === (incSemYear || 2026) ? 'selected' : ''}>${p.year || 2026} · Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`).join('')}
+    ${incSemPeriodos.map(p => `<option value="${p.period_key || `${p.year || 2026}-S${String(p.no_periodo).padStart(2,'0')}`}" ${p.no_periodo === incSemPeriodo && (p.year || 2026) === (incSemYear || 2026) ? 'selected' : ''}>${p.year || 2026} · Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}${p.incidence_editable ? '' : ' · solo consulta'}</option>`).join('')}
         </select>
       </div>
       ${periodo ? `<span style="font-size:13px;color:#374151;padding:6px 12px;background:#f3f4f6;border-radius:6px;">📅 ${periodo.fecha_inicio} al ${periodo.fecha_fin}</span>` : ''}
@@ -1611,6 +1610,11 @@ function incSemToggleAll(campo, valor) {
 
 async function guardarTodasIncidencias() {
   if (!incSemPeriodo || incSemRows.length === 0) { toast('Selecciona un período', 'warning'); return; }
+  const selectedPeriod = incSemPeriodos.find(p => p.no_periodo === incSemPeriodo && (p.year || 2026) === (incSemYear || 2026));
+  if (selectedPeriod && selectedPeriod.incidence_editable === false) {
+    toast('Sólo se puede editar la última semana con plantilla y la semana inmediata siguiente', 'warning');
+    return;
+  }
   try {
     const res = await api('/api/rhh/nomina/incidencias/bulk', {
       method: 'POST',
@@ -1714,7 +1718,7 @@ async function showHEDetalle(empId) {
   if (!panel) return;
   try {
     const [data, cats] = await Promise.all([
-      api(`/api/rhh/nomina/he-detalle?no_periodo=${incSemPeriodo}&employee_id=${empId}`),
+      api(`/api/rhh/nomina/he-detalle?no_periodo=${incSemPeriodo}&year=${incSemYear || 2026}&employee_id=${empId}`),
       _loadTeCatalogos(),
     ]);
     const empRow = incSemRows.find(r => r.employee_id === empId);
@@ -1805,6 +1809,7 @@ async function saveHEDetalle(empId) {
       method: 'POST',
       body: JSON.stringify({
         no_periodo:       incSemPeriodo,
+        year:              incSemYear || 2026,
         employee_id:      empId,
         fecha,
         total_horas:      Number(horas),
@@ -2165,7 +2170,7 @@ async function misSolicitudesView() {
     const myVacSols = (vacSols || []);
 
     const periodOpts = incSemPeriodos.map(p =>
-      `<option value="${p.no_periodo}">Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
+      `<option value="${p.period_key || `${p.year || 2026}-S${String(p.no_periodo).padStart(2,'0')}`}">${p.year || 2026} · Semana ${p.no_periodo} · ${p.fecha_inicio} al ${p.fecha_fin}</option>`
     ).join('');
 
     const incRows = myIncidences.map(inc => `
@@ -2270,14 +2275,16 @@ async function misSolicitudesView() {
 }
 
 async function submitVacSolicitud() {
-  const no_periodo = document.getElementById('ms-vac-periodo')?.value;
+  const periodKeyValue = document.getElementById('ms-vac-periodo')?.value;
   const dias = document.getElementById('ms-vac-dias')?.value;
   const notas = document.getElementById('ms-vac-notas')?.value;
-  if (!no_periodo || !dias) { toast('Semana y días son requeridos', 'warning'); return; }
+  if (!periodKeyValue || !dias) { toast('Semana y días son requeridos', 'warning'); return; }
+  const periodMatch = periodKeyValue.match(/^(\d{4})-S(\d{1,2})$/);
+  if (!periodMatch) { toast('Período inválido', 'warning'); return; }
   try {
     await api('/api/rhh/nomina/vac-solicitudes', {
       method: 'POST',
-      body: JSON.stringify({ no_periodo: Number(no_periodo), dias: Number(dias), notas: notas || null })
+      body: JSON.stringify({ no_periodo: Number(periodMatch[2]), year: Number(periodMatch[1]), dias: Number(dias), notas: notas || null })
     });
     toast('Solicitud enviada — pendiente de autorización');
     misSolicitudesView();
@@ -3755,7 +3762,7 @@ async function reportesView() {
         // Cargar los últimos 4 períodos para comparativa
         const periodosRecientes = incSemPeriodos.slice(-4).reverse();
         const kpisArr = await Promise.all(
-          periodosRecientes.map(p => api(`/api/rhh/nomina/kpis?no_periodo=${p.no_periodo}`).catch(() => null))
+          periodosRecientes.map(p => api(`/api/rhh/nomina/kpis?no_periodo=${p.no_periodo}&year=${p.year || 2026}`).catch(() => null))
         );
 
         const periodoRows = kpisArr.filter(Boolean).map((nk, i) => {
@@ -3764,8 +3771,8 @@ async function reportesView() {
           const pct = s.total_empleados > 0 ? Math.round((s.capturados / s.total_empleados) * 100) : 0;
           const pctColor = pct >= 80 ? '#15803d' : pct >= 50 ? '#b45309' : '#b91c1c';
           return `
-            <tr style="cursor:pointer;" onclick="incSemPeriodo=${p.no_periodo};location.hash='#incidencias'">
-              <td style="font-weight:600;">S${p.no_periodo}</td>
+            <tr style="cursor:pointer;" onclick="incSemPeriodo=${p.no_periodo};incSemYear=${p.year || 2026};location.hash='#incidencias'">
+              <td style="font-weight:600;">${p.year || 2026} · S${p.no_periodo}</td>
               <td style="font-size:11px;color:#6b7280;">${p.fecha_inicio} al ${p.fecha_fin}</td>
               <td style="text-align:center;font-weight:700;color:${pctColor};">${s.capturados}/${s.total_empleados} (${pct}%)</td>
               <td style="text-align:center;color:#b91c1c;font-weight:600;">${s.total_faltas}</td>
@@ -7412,27 +7419,22 @@ function rolNavWeek(dir) {
 // Re-renderiza el ROL si el usuario está actualmente en esa vista.
 async function _refreshRolFromCatalog() {
   const week = asisWeek || getMonday(new Date());
-  let rolData, catData;
+  let rolData;
   try {
-    [rolData, catData] = await Promise.all([
-      api(`/api/rhh/asistencia/rol?week=${week}`),
-      api('/api/rhh/catalogo?status=all')
-    ]);
+    rolData = await api(`/api/rhh/asistencia/rol?week=${week}`);
   } catch(_) { return null; }
-  if (!rolData || !catData) return null;
+  if (!rolData) return null;
 
-  // Mapa catálogo para lookup rápido de posición actualizada y status
-  const catMap = new Map((catData.employees || []).map(e => [e.id, e]));
-  // Empleados activos del catálogo como fuente de Sin asignar
-  const catEmps = (catData.employees || [])
-    .filter(e => e.status !== 'inactive')
-    .map(e => ({ ...e, position: e.position_name ? { name: e.position_name } : (e.position || null) }));
+  const weeklyEmployees = rolData.all_employees || [];
 
   _asisRolData = {
-    all_employees: catEmps,
+    all_employees: weeklyEmployees,
     shifts:    rolData.shifts    || [],
     positions: rolData.positions || [],
     proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
+    template_source: rolData.template_source,
+    template_period: rolData.template_period,
+    template_missing: rolData.template_missing,
   };
 
   _asisRolVersion = Number(rolData.version || rolData.rol?.version || 0);
@@ -7441,16 +7443,15 @@ async function _refreshRolFromCatalog() {
   // Se marcan visualmente y RHH decide cuándo retirarlas del ROL.
   _asisAssignments = (rolData.assigned || [])
     .map(emp => {
-      const cat = catMap.get(emp.id);
       return {
         employee_id: emp.id,
         shift_id:    emp.assignment?.shift_id   ?? emp.shift_id,
         position_id: emp.assignment?.position_id ?? emp.position_id ?? null,
         project:     emp.assignment?.project     ?? null,
         full_name:   emp.full_name,
-        pos_name:    cat?.position_name || emp.position?.name || '',
+        pos_name:    emp.position?.name || emp.position_name || '',
         shift_name:  emp.shift?.name    || '',
-        inactive:    cat?.status === 'inactive' || emp.status === 'inactive',
+        inactive:    emp.template_status === 'absent',
       };
     });
 
@@ -7460,7 +7461,12 @@ async function _refreshRolFromCatalog() {
     _asisRolFPuesto = '';
     asisRolRender();
   }
-  return catData;
+  return {
+    employees: weeklyEmployees,
+    template_source: rolData.template_source,
+    template_period: rolData.template_period,
+    template_missing: rolData.template_missing,
+  };
 }
 
 // ── Plantilla ROL: ver altas/bajas recientes ───────────────────────────────────
@@ -7470,6 +7476,18 @@ async function rolVerCambiosPlantilla(ctx) {
   if (!ctx) ctx = 'asis';
 
   if (ctx === 'lista') {
+    try {
+      const data = await api(`/api/rhh/schedule/weekly-rol?week_start=${rolWeekStart || attendanceWeekStart || getMonday(new Date())}`);
+      const assignedIds = new Set((data?.shifts || []).flatMap(group =>
+        (group.slots || []).flatMap(slot => (slot.assigned || []).map(a => Number(a.employee_id)))
+      ));
+      const pending = (data?.template_employees || []).filter(emp => !assignedIds.has(Number(emp.id)));
+      const missing = (data?.shifts || []).flatMap(group =>
+        (group.slots || []).flatMap(slot => (slot.assigned || []).filter(a => a.template_status === 'absent'))
+      );
+      if (data?.template_missing) toast('No existe plantilla para esta semana ni para la inmediata anterior', 'warning');
+      else toast(`Plantilla semanal: ${pending.length} sin asignar · ${missing.length} asignados ausentes`, missing.length ? 'warning' : 'success');
+    } catch (err) { toast(err.message, 'error'); }
     await listaAsistenciaView();
     return;
   }
@@ -7481,20 +7499,20 @@ async function rolVerCambiosPlantilla(ctx) {
   const catData = await _refreshRolFromCatalog();
   if (!catData) { toast('Error al cargar plantilla', 'error'); return; }
 
-  const catEmps = (catData.employees || []).filter(e => e.status !== 'inactive');
+  const catEmps = (catData.employees || []).filter(e => e.template_status !== 'absent');
   const assignedIds = new Set((_asisAssignments || []).map(a => a.employee_id));
   const n = catEmps.filter(e => !assignedIds.has(e.id)).length;
-  toast(`Plantilla actualizada — ${n} empleado${n!==1?'s':''} sin asignar`, 'success');
+  if (catData.template_missing) {
+    toast('No existe plantilla para esta semana ni para la semana inmediata anterior', 'warning');
+  } else {
+    toast(`Plantilla semanal actualizada — ${n} empleado${n!==1?'s':''} sin asignar`, 'success');
+  }
 
   // 3. Altas/bajas recientes para modal informativo
   const emps = catData.employees || [];
-  const hace30 = new Date();
-  hace30.setDate(hace30.getDate() - 30);
-  const hace30Str = hace30.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-
   const activos = catEmps;
-  const altas   = emps.filter(e => e.fecha_alta && e.fecha_alta >= hace30Str);
-  const bajas   = emps.filter(e => e.fecha_baja && e.fecha_baja >= hace30Str);
+  const altas   = catEmps.filter(e => !assignedIds.has(e.id));
+  const bajas   = emps.filter(e => e.template_status === 'absent');
 
   document.getElementById('modal-plantilla-rol')?.remove();
 
@@ -7502,18 +7520,14 @@ async function rolVerCambiosPlantilla(ctx) {
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px;font-size:13px;">
       <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
       <span style="flex:1;">${escHtml(e.full_name)}</span>
-      <span style="color:#059669;font-size:11px;">Alta: ${e.fecha_alta}</span>
+      <span style="color:#059669;font-size:11px;">Pendiente de asignar</span>
     </div>`).join('');
 
   const bajaRows = bajas.map(e => `
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
       <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
       <span style="flex:1;">${escHtml(e.full_name)}</span>
-      <span style="color:#dc2626;font-size:11px;">Baja: ${e.fecha_baja}</span>
-      <button class="btn-ghost" style="font-size:11px;padding:2px 8px;color:#6b7280;"
-        onclick="revertirBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}',this)">
-        Revertir
-      </button>
+      <span style="color:#dc2626;font-size:11px;">No aparece en esta plantilla</span>
     </div>`).join('');
 
   const modal = document.createElement('div');
@@ -7526,14 +7540,14 @@ async function rolVerCambiosPlantilla(ctx) {
         <button onclick="document.getElementById('modal-plantilla-rol').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
       </div>
       <div style="padding:10px 12px;background:#f0fdf4;border-radius:8px;margin-bottom:16px;font-size:13px;color:#166534;">
-        ✅ <strong>${activos.length} empleados activos</strong> cargados en el ROL. Los nuevos ya aparecen en la lista "Sin asignar".
+        ✅ <strong>${activos.length} empleados</strong> en la plantilla de esta semana. Los no asignados aparecen en "Sin asignar".
       </div>
-      ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Altas recientes — últimos 30 días (${altas.length})</h4>${altaRows}</div>` : ''}
-      ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">🚫 Bajas recientes — últimos 30 días (${bajas.length})</h4>${bajaRows}</div>` : ''}
-      ${!altas.length && !bajas.length ? `<p style="color:#6b7280;font-size:13px;margin:0 0 12px;">Sin altas ni bajas registradas en los últimos 30 días.</p>` : ''}
+      ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Pendientes de asignar (${altas.length})</h4>${altaRows}</div>` : ''}
+      ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">🚫 Asignados que faltan en la plantilla (${bajas.length})</h4>${bajaRows}</div>` : ''}
+      ${!altas.length && !bajas.length ? `<p style="color:#6b7280;font-size:13px;margin:0 0 12px;">La plantilla y las asignaciones del ROL están sincronizadas.</p>` : ''}
       <div style="padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:11px;color:#6b7280;line-height:1.5;">
-        <strong>Nota:</strong> Solo se afectan los empleados con altas/bajas. El resto del ROL no se modifica.
-        Las bajas no aparecen en Incidencias, Lista de Raya ni ROL.
+        <strong>Nota:</strong> Actualizar la plantilla no reemplaza ni elimina asignaciones existentes.
+        Una ausencia se muestra para revisión; la baja del catálogo requiere confirmación de RHH.
       </div>
       <div style="text-align:right;margin-top:16px;">
         <button class="btn-primary" onclick="document.getElementById('modal-plantilla-rol').remove()">Cerrar</button>
@@ -7590,7 +7604,7 @@ async function saveRolSlot() {
   const days = Array.from(document.querySelectorAll('#slot-days-check input:checked')).map(cb => Number(cb.value));
   try {
     await api(`/api/rhh/schedule/weekly-rol/${rolId}/slots`, {
-      method: 'POST', body: JSON.stringify({ position_id: positionId, required_count: reqCount, days })
+      method: 'POST', body: JSON.stringify({ position_id: positionId, required_count: reqCount, days, version: getWeeklyRolVersion(rolId) })
     });
     closeSlotModal();
     toast('Puesto agregado al ROL');
@@ -7601,7 +7615,7 @@ async function saveRolSlot() {
 async function removeRolSlot(rolId, slotId) {
   if (!confirm('¿Quitar este puesto del ROL? Se eliminarán las asignaciones.')) return;
   try {
-    await api(`/api/rhh/schedule/weekly-rol/${rolId}/slots/${slotId}`, { method: 'DELETE' });
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/slots/${slotId}?version=${getWeeklyRolVersion(rolId)}`, { method: 'DELETE' });
     toast('Puesto eliminado');
     listaAsistenciaView();
   } catch(err) { toast(err.message, 'error'); }
@@ -7613,9 +7627,9 @@ function openAssignEmpModal(rolId, slotId, posName, shiftId) {
   document.getElementById('assign-shift-id').value = shiftId;
   document.getElementById('assign-emp-puesto').textContent = posName;
 
-  // Solo empleados activos del mismo turno (o todos si no hay turno)
-  const employees = state.employees.filter(e =>
-    e.status === 'active' &&
+  // La fuente es la plantilla de la semana seleccionada, no el catálogo actual.
+  const employees = (rolData?.template_employees || []).filter(e =>
+    e.template_status !== 'absent' &&
     (!shiftId || e.shift_id === Number(shiftId))
   ).sort((a, b) => a.full_name.localeCompare(b.full_name));
   const sel = document.getElementById('assign-emp-select');
@@ -7629,6 +7643,13 @@ function openAssignEmpModal(rolId, slotId, posName, shiftId) {
   document.getElementById('assign-emp-modal').style.display = 'grid';
 }
 
+function getWeeklyRolVersion(rolId) {
+  for (const group of (rolData?.shifts || [])) {
+    if (Number(group.rol?.id) === Number(rolId)) return Number(group.rol.version || 1);
+  }
+  return 1;
+}
+
 function closeAssignModal() {
   document.getElementById('assign-emp-modal').style.display = 'none';
 }
@@ -7639,7 +7660,7 @@ async function saveRolAssignment() {
   const empId = Number(document.getElementById('assign-emp-select').value);
   try {
     await api(`/api/rhh/schedule/weekly-rol/${rolId}/assign`, {
-      method: 'POST', body: JSON.stringify({ slot_id: slotId, employee_id: empId })
+      method: 'POST', body: JSON.stringify({ slot_id: slotId, employee_id: empId, version: getWeeklyRolVersion(rolId) })
     });
     closeAssignModal();
     toast('Empleado asignado al ROL');
@@ -7649,7 +7670,7 @@ async function saveRolAssignment() {
 
 async function removeRolAssignment(rolId, assignId) {
   try {
-    await api(`/api/rhh/schedule/weekly-rol/${rolId}/assign/${assignId}`, { method: 'DELETE' });
+    await api(`/api/rhh/schedule/weekly-rol/${rolId}/assign/${assignId}?version=${getWeeklyRolVersion(rolId)}`, { method: 'DELETE' });
     toast('Asignación eliminada');
     listaAsistenciaView();
   } catch(err) { toast(err.message, 'error'); }
@@ -7658,7 +7679,7 @@ async function removeRolAssignment(rolId, assignId) {
 async function publishRol(rolId) {
   if (!confirm('¿Publicar ROL? Los empleados recibirán una notificación.')) return;
   try {
-    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/publish`, { method: 'POST', body: '{}' });
+    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/publish`, { method: 'POST', body: JSON.stringify({ version: getWeeklyRolVersion(rolId) }) });
     toast(`ROL publicado · ${result.notified} empleado${result.notified!==1?'s':''} notificado${result.notified!==1?'s':''}`);
     listaAsistenciaView();
   } catch(err) { toast(err.message, 'error'); }
@@ -7666,7 +7687,7 @@ async function publishRol(rolId) {
 
 async function copyPreviousRol(rolId) {
   try {
-    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/copy-previous`, { method: 'POST', body: '{}' });
+    const result = await api(`/api/rhh/schedule/weekly-rol/${rolId}/copy-previous`, { method: 'POST', body: JSON.stringify({ version: getWeeklyRolVersion(rolId) }) });
     toast(`${result.slots_copied} puesto${result.slots_copied!==1?'s':''} copiado${result.slots_copied!==1?'s':''} de la semana anterior`);
     listaAsistenciaView();
   } catch(err) { toast(err.message, 'error'); }
@@ -8426,6 +8447,9 @@ async function asisRolView() {
       shifts:    data.shifts    || [],
       positions: data.positions || [],
       proyectos: data.proyectos || ['SKF','AMSTED','TENNECO'],
+      template_source: data.template_source,
+      template_period: data.template_period,
+      template_missing: data.template_missing,
     };
     _asisRolVersion = Number(data.version || data.rol?.version || 0);
 
@@ -8437,7 +8461,7 @@ async function asisRolView() {
       full_name:   emp.full_name,
       pos_name:    emp.position?.name || '',
       shift_name:  emp.shift?.name    || '',
-      inactive:    emp.status === 'inactive',
+      inactive:    emp.template_status === 'absent',
     }));
 
     asisRolRender();
@@ -11482,6 +11506,10 @@ async function catVerDetalle(empId) {
         </select>
       </div>
       <div class="form-group">
+        <label class="form-label">Proyecto</label>
+        <input id="edf-project-${e.id}" class="form-input" style="font-size:13px" value="${esc(e.project||'')}" placeholder="Proyecto / centro de costo"/>
+      </div>
+      <div class="form-group">
         <label class="form-label">Estatus</label>
         <select id="edf-status-${e.id}" class="form-input" style="font-size:13px">
           <option value="active"   ${e.status==='active'  ?'selected':''}>Activo</option>
@@ -11505,6 +11533,27 @@ async function catVerDetalle(empId) {
         <input id="edf-salario-${e.id}" class="form-input" style="font-size:13px" type="number" step="0.01" value="${e.salary_daily||''}"/>
       </div>
     </div>
+    ${[
+      ['department','Departamento',e.manual_department_locked],
+      ['position','Puesto',e.manual_position_locked],
+      ['shift','Turno',e.manual_shift_locked],
+      ['project','Proyecto',e.manual_project_locked],
+      ['salary','Salario',e.manual_salary_locked],
+      ['start_date','Fecha ingreso',e.manual_start_date_locked],
+      ['baja','Baja manual',e.manual_baja_locked],
+    ].some(x=>x[2]) ? `<div style="margin-top:12px;padding:10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;font-size:12px;">
+      <strong>Campos protegidos contra importación:</strong>
+      ${[
+        ['department','Departamento',e.manual_department_locked],
+        ['position','Puesto',e.manual_position_locked],
+        ['shift','Turno',e.manual_shift_locked],
+        ['project','Proyecto',e.manual_project_locked],
+        ['salary','Salario',e.manual_salary_locked],
+        ['start_date','Fecha ingreso',e.manual_start_date_locked],
+        ['baja','Baja manual',e.manual_baja_locked],
+      ].filter(x=>x[2]).map(([key,label]) => `<button class="btn-ghost btn-sm" style="margin:4px 2px 0;font-size:10px;" onclick="catUnlockField(${e.id},'${key}','${label}')">🔒 ${label} · liberar</button>`).join('')}
+      <div style="color:#9a3412;margin-top:5px;">Liberar permite que una importación futura actualice el campo; no cambia el valor ahora.</div>
+    </div>` : ''}
     <div style="display:flex;gap:8px;margin-top:12px">
       <button class="btn-primary btn-sm" onclick="catGuardarEmpleado(${e.id})">Guardar cambios</button>
       <button class="btn-ghost btn-sm" onclick="catToggleEditForm(${e.id})">Cancelar</button>
@@ -11678,6 +11727,7 @@ async function catGuardarEmpleado(empId) {
     department_id: g('edf-dept-'+empId) || null,
     position_id:   g('edf-pos-'+empId)  || null,
     shift_id:      g('edf-shift-'+empId) || null,
+    project:       g('edf-project-'+empId),
     status:        g('edf-status-'+empId),
     phone:         g('edf-phone-'+empId),
     email:         g('edf-email-'+empId),
@@ -11693,6 +11743,17 @@ async function catGuardarEmpleado(empId) {
   } else {
     toast('Error al guardar', 'error');
   }
+}
+
+async function catUnlockField(empId, field, label) {
+  if (!confirm(`¿Liberar el campo ${label}?\n\nEl valor actual se conserva, pero una importación futura podrá actualizarlo.`)) return;
+  try {
+    await api(`/api/rhh/catalogo/employees/${empId}/unlock-fields`, {
+      method: 'POST', body: JSON.stringify({ fields: [field] })
+    });
+    toast(`${label} liberado para futuras importaciones`, 'success');
+    catVerDetalle(empId);
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 // ── Modal cambios en plantilla (altas/bajas detectadas al cargar CONTPAQ i) ────
@@ -11871,24 +11932,55 @@ async function catImportContpaq() {
   input.onchange = async () => {
     const file = input.files[0];
     if (!file) return;
-    const fd = new FormData();
-    fd.append('file', file);
     const msgEl = document.getElementById('cat-import-msg');
-    if (msgEl) msgEl.textContent = 'Importando...';
-    try {
-      const res = await fetch('/api/rhh/catalogo/import-contpaq', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + state.token },
-        body: fd
+    const sendFile = async extra => {
+      const fd = new FormData();
+      fd.append('file', file);
+      for (const [key, value] of Object.entries(extra)) fd.append(key, value);
+      const response = await fetch('/api/rhh/catalogo/import-contpaq', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + state.token }, body: fd
       });
-      const d = await res.json().catch(() => ({}));
+      const body = await response.json().catch(() => ({}));
+      return { response, body };
+    };
+    if (msgEl) msgEl.textContent = 'Analizando archivo (sin guardar)...';
+    try {
+      const preview = await sendFile({ preview: '1' });
+      if (!preview.response.ok) { toast(preview.body.error || 'Error al analizar', 'error'); return; }
+      const p = preview.body;
+      const periodos = (p.periodos || []).map(x => x.period_key || `S${x.no_periodo}`).join(', ') || 'sin período identificado';
+      const summary = [
+        `Formato: ${p.formato}`,
+        `Períodos: ${periodos}`,
+        `Empleados nuevos: ${(p.nuevos || []).length}`,
+        `Históricos nuevos (inactivos): ${(p.nuevos_historicos || []).length}`,
+        `Incidencias a actualizar: ${p.inc_upserted || 0}`,
+        `Candidatos pendientes: ${(p.candidatos_pendientes || []).length}`,
+        `Omitidos: ${p.skipped || 0}`,
+        `Filas duplicadas: ${(p.duplicate_rows || []).length}`,
+      ].join('\n');
+      if (!confirm(`Análisis terminado; todavía no se ha guardado nada.\n\n${summary}\n\n¿Confirmar importación?`)) {
+        if (msgEl) msgEl.textContent = 'Análisis cancelado; no se aplicaron cambios.';
+        return;
+      }
+
+      if (msgEl) msgEl.textContent = 'Guardando importación confirmada...';
+      let committed = await sendFile({ confirm: '1' });
+      if (committed.response.status === 409 && committed.body.code === 'DUPLICATE_IMPORT') {
+        const previous = committed.body.previous_batch;
+        if (!confirm(`Este archivo ya fue importado${previous?.imported_at ? ` el ${previous.imported_at}` : ''}.\n\n¿Reprocesarlo de forma controlada?`)) return;
+        committed = await sendFile({ confirm: '1', force: '1' });
+      }
+      const res = committed.response;
+      const d = committed.body;
       if (!res.ok) { toast(d.error || 'Error al importar', 'error'); return; }
       const semLbl = (d.semanas||[]).length > 1
         ? `S${d.semanas[0]}–S${d.semanas[d.semanas.length-1]}`
         : d.semanas?.[0] ? `S${d.semanas[0]}` : null;
       const incMsg = semLbl ? ` | Incidencias ${semLbl}: ${d.inc_upserted}` : '';
       const fmt = d.formato === 'consolidado' ? ' [Consolidado]' : '';
-      const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}`;
+      const batchMsg = d.import_batch?.id ? ` | Lote #${d.import_batch.id}` : '';
+      const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}${batchMsg}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
       // Refrescar catálogos e invalidar cachés para que próxima navegación cargue datos frescos

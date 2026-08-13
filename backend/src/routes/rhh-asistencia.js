@@ -6,6 +6,7 @@
 const express = require('express');
 const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+const { getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
 const router = express.Router();
 
 function nowMxDate() {
@@ -102,6 +103,66 @@ function enrichEmp(emp, db) {
   };
 }
 
+/*
+ * Materializa la plantilla correspondiente a la semana seleccionada. Los datos
+ * laborales salen del snapshot semanal; el catálogo maestro sólo aporta la
+ * identidad y campos que no forman parte del snapshot. Un empleado que ya está
+ * asignado al ROL nunca se elimina silenciosamente: si ya no aparece en la
+ * plantilla se conserva marcado como ausente/baja para decisión de RHH.
+ */
+function employeesForWeek(db, week, assignments = []) {
+  const template = getEmployeeTemplateForWeek(db, week);
+  const systemIds = getSystemEmpIds();
+  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
+  const rows = [];
+  const included = new Set();
+
+  for (const snapshot of template.employees || []) {
+    const employeeId = Number(snapshot.employee_id ?? snapshot.id);
+    if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
+    const master = masters.get(employeeId) || {};
+    rows.push({
+      ...master,
+      id: employeeId,
+      employee_number: snapshot.employee_number ?? master.employee_number,
+      full_name: snapshot.full_name || master.full_name || `Empleado ${employeeId}`,
+      department_id: snapshot.department_id ?? master.department_id ?? null,
+      position_id: snapshot.position_id ?? master.position_id ?? null,
+      shift_id: snapshot.shift_id ?? master.shift_id ?? null,
+      project: snapshot.project ?? master.project ?? null,
+      salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
+      status: snapshot.status_at_period || 'active',
+      current_status: master.status || null,
+      template_status: 'included',
+      template_period_key: snapshot.period_key || template.period?.period_key || null,
+    });
+    included.add(employeeId);
+  }
+
+  for (const assignment of assignments) {
+    const employeeId = Number(assignment.employee_id);
+    if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
+    const master = masters.get(employeeId);
+    if (!master) continue;
+    rows.push({
+      ...master,
+      current_status: master.status || null,
+      template_status: 'absent',
+      template_period_key: template.period?.period_key || null,
+    });
+    included.add(employeeId);
+  }
+
+  return { ...template, employees: rows };
+}
+
+// Esta pantalla comparte colecciones históricas con el ROL por puestos. Se
+// distingue por no tener shift_id para evitar que un guardado replace-all de
+// Control de Asistencias borre asignaciones del otro flujo.
+function findAttendanceRol(db, week) {
+  return (db.rhh_weekly_rol || []).find(r => r.week_start === week && r.shift_id == null);
+}
+
 /* Crear o actualizar vale de tiempo extra para un registro de asistencia */
 function upsertOvertimeVale(db, attRec, solicitado_por) {
   if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
@@ -151,20 +212,15 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
   const week = weekMonday(req.query.week);
   const db   = read();
 
-  const rol         = (db.rhh_weekly_rol    || []).find(r => r.week_start === week);
+  const rol         = findAttendanceRol(db, week);
   const assignments = rol
     ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id)
     : [];
 
-  const _sysIds    = getSystemEmpIds();
-  // Activos para la plantilla nueva; asignados inactivos se conservan para no
-  // destruir el historial del ROL al refrescar o guardar desde otra pantalla.
-  const activeEmployees = (db.rhh_employees || []).filter(e => e.status !== 'inactive' && !_sysIds.has(Number(e.id)));
+  const template = employeesForWeek(db, week, assignments);
+  const templateEmployees = template.employees.filter(e => e.template_status === 'included');
   const assignedIds = new Set(assignments.map(a => a.employee_id));
-  const assignedInactive = (db.rhh_employees || []).filter(e =>
-    e.status === 'inactive' && assignedIds.has(e.id) && !_sysIds.has(Number(e.id))
-  );
-  const employees = [...activeEmployees, ...assignedInactive];
+  const employees = template.employees;
 
   const enrich = e => {
     const a        = assignments.find(x => x.employee_id === e.id);
@@ -182,7 +238,7 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
   });
 
   const assigned   = sortEmps(employees.filter(e =>  assignedIds.has(e.id)));
-  const unassigned = sortEmps(activeEmployees.filter(e => !assignedIds.has(e.id)));
+  const unassigned = sortEmps(templateEmployees.filter(e => !assignedIds.has(e.id)));
 
   // Agrupar asignados por turno
   const byShift = {};
@@ -203,6 +259,9 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     shifts:     db.rhh_shifts || [],
     positions:  db.rhh_positions || [],
     proyectos:  PROYECTOS,
+    template_source: template.source,
+    template_period: template.period,
+    template_missing: template.source === 'snapshot_missing',
   });
 });
 
@@ -215,7 +274,7 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
   let   roles = db.rhh_weekly_rol    || [];
   let   asigs = db.rhh_rol_assignments || [];
 
-  let rol = roles.find(r => r.week_start === week_start);
+  let rol = roles.find(r => r.week_start === week_start && r.shift_id == null);
   const currentVersion = rol?.version || (rol ? 1 : 0);
   if (Number(version) !== currentVersion) {
     return res.status(409).json({
@@ -223,11 +282,25 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
       current_version: currentVersion,
     });
   }
+
+  const originalAssignments = rol
+    ? asigs.filter(a => a.rol_id === rol.id)
+      .map(a => ({ employee_id: Number(a.employee_id), shift_id: Number(a.shift_id), position_id: a.position_id ? Number(a.position_id) : null, project: a.project || null }))
+      .sort((a, b) => a.employee_id - b.employee_id)
+    : [];
+  const requestedAssignments = assignments
+    .filter(a => a.employee_id && a.shift_id)
+    .map(a => ({ employee_id: Number(a.employee_id), shift_id: Number(a.shift_id), position_id: a.position_id ? Number(a.position_id) : null, project: a.project || null }))
+    .sort((a, b) => a.employee_id - b.employee_id);
+  if (rol && JSON.stringify(originalAssignments) === JSON.stringify(requestedAssignments)) {
+    return res.json({ ok: true, rol, version: currentVersion, saved: requestedAssignments.length, unchanged: true });
+  }
   if (!rol) {
     rol = {
       id:         nextId(roles),
       week_start,
       no_periodo: no_periodo || null,
+      scope:      'attendance_control',
       status:     'published',
       created_by: req.rhhUser.email || req.rhhUser.full_name,
       created_at: nowMxDate(),
@@ -269,7 +342,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const MES   = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const db    = read();
 
-  const rol         = (db.rhh_weekly_rol    || []).find(r => r.week_start === week);
+  const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
   const employees   = db.rhh_employees  || [];
   const positions   = db.rhh_positions  || [];
@@ -370,24 +443,24 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
   const db    = read();
   const role  = req.rhhUser.role;
 
-  const rol         = (db.rhh_weekly_rol    || []).find(r => r.week_start === week);
+  const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
 
-  let empIds = null;
-  if (req.query.shift_id) {
-    // Filtrar por turno específico
-    const sid = Number(req.query.shift_id);
-    empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
-  } else if (rol && assignments.length > 0) {
-    // Si existe ROL para la semana, mostrar solo los empleados asignados al ROL
-    empIds = new Set(assignments.map(a => a.employee_id));
+  const template = employeesForWeek(db, week, assignments);
+  let employees;
+  if (assignments.length > 0) {
+    const assignedIds = new Set(assignments.map(a => Number(a.employee_id)));
+    employees = template.employees.filter(e => assignedIds.has(Number(e.id)));
+  } else {
+    employees = template.employees.filter(e => e.template_status === 'included');
   }
-  // Sin ROL o ROL vacío → mostrar todos los activos (comportamiento original)
-
-  const _sysIds2  = getSystemEmpIds();
-  const employees = (db.rhh_employees  || []).filter(e =>
-    e.status !== 'inactive' && !_sysIds2.has(Number(e.id)) && (!empIds || empIds.has(e.id))
-  );
+  if (req.query.shift_id) {
+    const sid = Number(req.query.shift_id);
+    employees = employees.filter(emp => {
+      const assignment = assignments.find(a => Number(a.employee_id) === Number(emp.id));
+      return Number(assignment?.shift_id ?? emp.shift_id) === sid;
+    });
+  }
   const positions  = db.rhh_positions  || [];
   const shifts     = db.rhh_shifts     || [];
   const holidays   = (db.rhh_holidays  || []).map(h => h.date);
@@ -428,7 +501,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
           id:                 rec?.id               ?? null,
           incidencia_type:    rec?.incidencia_type  ?? autoType,
           tiempo_retardo_min: rec?.tiempo_retardo_min ?? null,
-          proyecto:           rec?.proyecto          ?? ra?.project ?? null,
+          proyecto:           rec?.proyecto          ?? ra?.project ?? emp.project ?? null,
           notas:              rec?.notas             ?? null,
           is_auto:            !rec && !!autoType,
           registrado_por:     rec?.registrado_por    ?? null,
@@ -463,7 +536,8 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         position:        position?.name || '',
         shift_name:      shift?.name    || '',
         shift_id:        ra?.shift_id   ?? emp.shift_id,
-        project_default: ra?.project    ?? null,
+        project_default: ra?.project    ?? emp.project ?? null,
+        template_status: emp.template_status,
         days,
       };
     })
@@ -483,6 +557,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     incidencia_types: INCIDENCIA_LABELS,
     grid,
     user_role:       role,
+    template_source: template.source,
+    template_period: template.period,
+    template_missing: template.source === 'snapshot_missing',
   });
 });
 
@@ -747,17 +824,26 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
   const dates = weekDates(week);
   const db    = read();
 
-  const rol         = (db.rhh_weekly_rol    || []).find(r => r.week_start === week);
+  const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
   const records     = (db.rhh_attendance    || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[5]);
   const holidays    = (db.rhh_holidays      || []).map(h => h.date);
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
 
-  let employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const template = employeesForWeek(db, week, assignments);
+  let employees;
+  if (assignments.length > 0) {
+    const assignedIds = new Set(assignments.map(a => Number(a.employee_id)));
+    employees = template.employees.filter(e => assignedIds.has(Number(e.id)));
+  } else {
+    employees = template.employees.filter(e => e.template_status === 'included');
+  }
   if (req.query.shift_id) {
-    const sid    = Number(req.query.shift_id);
-    const empIds = new Set(assignments.filter(a => a.shift_id === sid).map(a => a.employee_id));
-    employees    = employees.filter(e => empIds.has(e.id) || e.shift_id === sid);
+    const sid = Number(req.query.shift_id);
+    employees = employees.filter(emp => {
+      const assignment = assignments.find(a => Number(a.employee_id) === Number(emp.id));
+      return Number(assignment?.shift_id ?? emp.shift_id) === sid;
+    });
   }
 
   const positions = db.rhh_positions || [];
@@ -783,7 +869,7 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
         id:                 rec?.id             ?? null,
         incidencia_type:    rec?.incidencia_type ?? autoType,
         tiempo_retardo_min: rec?.tiempo_retardo_min ?? null,
-        proyecto:           rec?.proyecto        ?? ra?.project ?? null,
+        proyecto:           rec?.proyecto        ?? ra?.project ?? emp.project ?? null,
         notas:              rec?.notas           ?? null,
         is_auto:            !rec && !!autoType,
         te_activo:          rec?.te_activo       ?? false,
@@ -798,7 +884,8 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
       position:        position?.name || '',
       shift_name:      shift?.name    || '',
       shift_sort:      shift?.name    || 'ZZZZ',
-      project:         ra?.project    ?? null,
+      project:         ra?.project    ?? emp.project ?? null,
+      template_status: emp.template_status,
       days,
     };
   }).sort((a, b) => {
@@ -814,6 +901,9 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
     shifts,
     proyectos:         PROYECTOS,
     incidencia_labels: INCIDENCIA_LABELS,
+    template_source: template.source,
+    template_period: template.period,
+    template_missing: template.source === 'snapshot_missing',
   });
 });
 

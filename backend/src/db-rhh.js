@@ -165,8 +165,15 @@ function enqueueWrite(data) {
   // El snapshot evita que una ruta continúe mutando el objeto mientras espera.
   // La cola conserva el orden de persistencia y elimina escrituras fuera de orden.
   const snapshot = structuredClone(data);
+  const previousCache = _cache;
+  // Se publica de inmediato para conservar la semántica de las rutas síncronas,
+  // pero se revierte si esta sigue siendo la versión más reciente y falla la
+  // persistencia. Una escritura posterior en cola ya contiene su propio snapshot.
   _cache = snapshot;
-  const operation = _writeQueue.then(() => persistSnapshot(snapshot));
+  const operation = _writeQueue.then(() => persistSnapshot(snapshot)).catch(error => {
+    if (_cache === snapshot) _cache = previousCache;
+    throw error;
+  });
   _writeQueue = operation.catch(() => {});
   return operation;
 }

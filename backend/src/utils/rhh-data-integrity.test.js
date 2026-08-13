@@ -160,3 +160,36 @@ test('persistence queue flushes background writes in their original order', () =
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('failed persistence rolls cache back when no newer write supersedes it', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rhh-write-rollback-'));
+  const tempDb = path.join(tempDir, 'rhh.json');
+  const dbModule = path.resolve(__dirname, '../db-rhh.js');
+  const script = `
+    const fs = require('node:fs');
+    const db = require(${JSON.stringify(dbModule)});
+    (async () => {
+      await db.initDb();
+      await db.writeAsync({ ...db.read(), stable_value: 'persisted' });
+      fs.rmSync(process.env.DB_RHH_PATH, { force: true });
+      fs.mkdirSync(process.env.DB_RHH_PATH);
+      let failed = false;
+      try { await db.writeAsync({ ...db.read(), stable_value: 'not-persisted' }); }
+      catch (_) { failed = true; }
+      process.stdout.write('RESULT:' + JSON.stringify({ failed, cached: db.read().stable_value }));
+    })().catch(error => { console.error(error); process.exit(1); });
+  `;
+  try {
+    const child = spawnSync(process.execPath, ['-e', script], {
+      cwd: path.resolve(__dirname, '../../..'),
+      env: { ...process.env, DATABASE_URL: '', DB_RHH_PATH: tempDb },
+      encoding: 'utf8',
+    });
+    assert.equal(child.status, 0, child.stderr);
+    const marker = child.stdout.lastIndexOf('RESULT:');
+    const result = JSON.parse(child.stdout.slice(marker + 7));
+    assert.deepEqual(result, { failed: true, cached: 'persisted' });
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

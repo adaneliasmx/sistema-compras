@@ -1,7 +1,66 @@
 const express = require('express');
 const { read, write, nextId, calcVacBalance } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+const { getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
 const router = express.Router();
+
+function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
+  const template = getEmployeeTemplateForWeek(db, weekStart);
+  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
+  const rows = [];
+  const included = new Set();
+
+  for (const snapshot of template.employees || []) {
+    const employeeId = Number(snapshot.employee_id ?? snapshot.id);
+    if (!employeeId || included.has(employeeId)) continue;
+    const master = masters.get(employeeId) || {};
+    rows.push({
+      ...master,
+      id: employeeId,
+      employee_number: snapshot.employee_number ?? master.employee_number,
+      full_name: snapshot.full_name || master.full_name || `Empleado ${employeeId}`,
+      department_id: snapshot.department_id ?? master.department_id ?? null,
+      position_id: snapshot.position_id ?? master.position_id ?? null,
+      shift_id: snapshot.shift_id ?? master.shift_id ?? null,
+      project: snapshot.project ?? master.project ?? null,
+      salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
+      status: snapshot.status_at_period || 'active',
+      current_status: master.status || null,
+      template_status: 'included',
+      template_period_key: snapshot.period_key || template.period?.period_key || null,
+    });
+    included.add(employeeId);
+  }
+
+  for (const rawId of extraEmployeeIds) {
+    const employeeId = Number(rawId);
+    if (!employeeId || included.has(employeeId)) continue;
+    const master = masters.get(employeeId);
+    if (!master) continue;
+    rows.push({ ...master, current_status: master.status || null, template_status: 'absent' });
+    included.add(employeeId);
+  }
+  return { ...template, employees: rows };
+}
+
+function requireRolVersion(req, res, rol) {
+  const currentVersion = Number(rol.version || 1);
+  const rawExpected = req.body?.version ?? req.query?.version;
+  if (rawExpected === undefined || rawExpected === null || rawExpected === '') {
+    res.status(428).json({ error: 'version requerida; recarga el ROL antes de guardar', current_version: currentVersion });
+    return false;
+  }
+  if (Number(rawExpected) !== currentVersion) {
+    res.status(409).json({ error: 'El ROL fue actualizado desde otra sesión. Recarga antes de guardar.', current_version: currentVersion });
+    return false;
+  }
+  return true;
+}
+
+function touchRolVersion(rol) {
+  rol.version = Number(rol.version || 1) + 1;
+  rol.updated_at = new Date().toISOString();
+}
 
 // ── Utilidades de fecha ────────────────────────────────────────────────────────
 function getWeekDates(weekStr) {
@@ -60,7 +119,11 @@ router.get('/', rhhAuthRequired, (req, res) => {
 
   const [startDate, endDate] = [dates[0], dates[dates.length - 1]];
 
-  let employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const existingWeekEmployeeIds = (db.rhh_schedule || [])
+    .filter(entry => entry.date >= startDate && entry.date <= endDate)
+    .map(entry => entry.employee_id);
+  const weekTemplate = weeklyEmployees(db, startDate, existingWeekEmployeeIds);
+  let employees = weekTemplate.employees;
   if (deptId) employees = employees.filter(e => e.department_id === deptId);
   if (shiftId) employees = employees.filter(e => e.shift_id === shiftId);
 
@@ -149,7 +212,7 @@ router.post('/assign', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admi
 
   if (!employee_id || !date) return res.status(400).json({ error: 'employee_id y date son requeridos' });
 
-  const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id) && e.status === 'active');
+  const emp = weeklyEmployees(db, date).employees.find(e => e.id === Number(employee_id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado o inactivo' });
 
   // Verificar conflicto con incidencias aprobadas (vacaciones, incapacidad, permisos)
@@ -551,46 +614,26 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
   const weekEndDate = days[6].date;
   const weekNum = getISOWeekNumber(weekStart);
 
-  // Empleados activos
-  let employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const weekRols = (db.rhh_weekly_rol || []).filter(r => r.week_start === weekStart && r.shift_id != null);
+  const weekRolIds = new Set(weekRols.map(r => r.id));
+  const assignedForWeek = (db.rhh_rol_assignments || [])
+    .filter(a => weekRolIds.has(a.rol_id))
+    .map(a => a.employee_id);
+  const template = weeklyEmployees(db, weekStart, assignedForWeek);
+  let employees = template.employees;
   if (req.rhhUser.role === 'supervisor' && req.rhhUser.employee_id) {
     employees = employees.filter(e =>
       e.supervisor_id === req.rhhUser.employee_id || e.id === req.rhhUser.employee_id
     );
   }
 
-  // ── Filtrar empleados según contexto de semana ─────────────────────────────
+  // La plantilla semanal define el personal histórico. Ya no se filtra por la
+  // actividad actual, porque hacerlo ocultaba empleados válidos de semanas
+  // pasadas y hacía depender la lista del catálogo maestro más reciente.
   const todayStr = localToday();
   const isPastWeek    = weekEndDate < todayStr;
   const isFutureWeek  = weekStart > todayStr;
   const isCurrentWeek = !isPastWeek && !isFutureWeek;
-
-  if (!isCurrentWeek) {
-    const allAttendance = db.rhh_attendance || [];
-    const allIncidences = db.rhh_incidences || [];
-    const empWithActivity = new Set();
-
-    // Empleados con registros de asistencia en la semana
-    for (const a of allAttendance) {
-      if (a.date >= weekStart && a.date <= weekEndDate) empWithActivity.add(a.employee_id);
-    }
-    // Empleados con incidencias no rechazadas que cubren la semana
-    for (const inc of allIncidences) {
-      if (inc.status === 'rechazada') continue;
-      const iStart = inc.date;
-      const iEnd   = inc.date_end || inc.date;
-      if (iStart <= weekEndDate && iEnd >= weekStart) empWithActivity.add(inc.employee_id);
-    }
-    // Empleados en el ROL publicado para esta semana
-    const weekRol = (db.rhh_weekly_rol || []).find(r => r.week_start === weekStart && r.status === 'publicado');
-    if (weekRol) {
-      const slotIds = new Set((db.rhh_rol_slots || []).filter(s => s.rol_id === weekRol.id).map(s => s.id));
-      for (const a of (db.rhh_rol_assignments || [])) {
-        if (slotIds.has(a.slot_id)) empWithActivity.add(a.employee_id);
-      }
-    }
-    employees = employees.filter(e => empWithActivity.has(e.id));
-  }
 
   const shifts = db.rhh_shifts || [];
   const departments = db.rhh_departments || [];
@@ -756,7 +799,10 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
     week_end: weekEndDate,
     week_number: weekNum,
     days,
-    shifts: shiftsResult
+    shifts: shiftsResult,
+    template_source: template.source,
+    template_period: template.period,
+    template_missing: template.source === 'snapshot_missing'
   });
 });
 
@@ -953,10 +999,13 @@ router.get('/weekly-rol', rhhAuthRequired, (req, res) => {
 
   const shifts = db.rhh_shifts || [];
   const positions = db.rhh_positions || [];
-  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
   const weeklyRols = db.rhh_weekly_rol || [];
   const rolSlots = db.rhh_rol_slots || [];
   const rolAssignments = db.rhh_rol_assignments || [];
+  const rolIdsForWeek = new Set(weeklyRols.filter(r => r.week_start === weekStart && r.shift_id != null).map(r => r.id));
+  const assignedIdsForWeek = rolAssignments.filter(a => rolIdsForWeek.has(a.rol_id)).map(a => a.employee_id);
+  const template = weeklyEmployees(db, weekStart, assignedIdsForWeek);
+  const employees = template.employees;
 
   const result = shifts.map(shift => {
     const rol = weeklyRols.find(r => r.week_start === weekStart && r.shift_id === shift.id) || null;
@@ -972,7 +1021,8 @@ router.get('/weekly-rol', rhhAuthRequired, (req, res) => {
           employee_id: a.employee_id,
           full_name: emp?.full_name || 'Desconocido',
           employee_number: emp?.employee_number || '',
-          shift_id: emp?.shift_id || null
+          shift_id: emp?.shift_id || null,
+          template_status: emp?.template_status || 'absent'
         };
       });
       return {
@@ -987,7 +1037,14 @@ router.get('/weekly-rol', rhhAuthRequired, (req, res) => {
     return { rol, shift, slots: slotsWithAssignments, total_missing: totalMissing };
   });
 
-  res.json({ week_start: weekStart, shifts: result });
+  res.json({
+    week_start: weekStart,
+    shifts: result,
+    template_employees: employees.filter(emp => emp.template_status === 'included'),
+    template_source: template.source,
+    template_period: template.period,
+    template_missing: template.source === 'snapshot_missing'
+  });
 });
 
 // POST /api/rhh/schedule/weekly-rol — crear ROL para semana/turno
@@ -1009,7 +1066,8 @@ router.post('/weekly-rol', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req,
     published_by: null,
     notes: null,
     created_at: new Date().toISOString(),
-    created_by: req.rhhUser.id
+    created_by: req.rhhUser.id,
+    version: 1
   };
   weeklyRols.push(rol);
   db.rhh_weekly_rol = weeklyRols;
@@ -1027,6 +1085,7 @@ router.post('/weekly-rol/:id/slots', rhhAuthRequired, rhhRequireRole('rh', 'admi
   const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
   if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
   if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+  if (!requireRolVersion(req, res, rol)) return;
 
   const slots = db.rhh_rol_slots || [];
   const slot = {
@@ -1038,9 +1097,10 @@ router.post('/weekly-rol/:id/slots', rhhAuthRequired, rhhRequireRole('rh', 'admi
     notes: notes || null
   };
   slots.push(slot);
+  touchRolVersion(rol);
   db.rhh_rol_slots = slots;
   write(db);
-  res.status(201).json(slot);
+  res.status(201).json({ ...slot, rol_version: rol.version });
 });
 
 // DELETE /api/rhh/schedule/weekly-rol/:id/slots/:slotId
@@ -1052,6 +1112,7 @@ router.delete('/weekly-rol/:id/slots/:slotId', rhhAuthRequired, rhhRequireRole('
   const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
   if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
   if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+  if (!requireRolVersion(req, res, rol)) return;
 
   const slots = db.rhh_rol_slots || [];
   const idx = slots.findIndex(s => s.id === slotId && s.rol_id === rolId);
@@ -1062,8 +1123,9 @@ router.delete('/weekly-rol/:id/slots/:slotId', rhhAuthRequired, rhhRequireRole('
   db.rhh_rol_assignments = (db.rhh_rol_assignments || []).filter(
     a => !(a.rol_id === rolId && a.slot_id === slotId)
   );
+  touchRolVersion(rol);
   write(db);
-  res.json({ ok: true });
+  res.json({ ok: true, rol_version: rol.version });
 });
 
 // POST /api/rhh/schedule/weekly-rol/:id/assign — asignar empleado a puesto
@@ -1076,11 +1138,13 @@ router.post('/weekly-rol/:id/assign', rhhAuthRequired, rhhRequireRole('superviso
   const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
   if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
   if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+  if (!requireRolVersion(req, res, rol)) return;
 
   const slot = (db.rhh_rol_slots || []).find(s => s.id === Number(slot_id) && s.rol_id === rolId);
   if (!slot) return res.status(404).json({ error: 'Puesto no encontrado en ROL' });
 
-  const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id) && e.status === 'active');
+  const template = weeklyEmployees(db, rol.week_start);
+  const emp = template.employees.find(e => e.id === Number(employee_id) && e.template_status === 'included');
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
   // Supervisor solo puede asignar sus reportes directos
@@ -1105,9 +1169,10 @@ router.post('/weekly-rol/:id/assign', rhhAuthRequired, rhhRequireRole('superviso
     created_at: new Date().toISOString()
   };
   assignments.push(assignment);
+  touchRolVersion(rol);
   db.rhh_rol_assignments = assignments;
   write(db);
-  res.status(201).json(assignment);
+  res.status(201).json({ ...assignment, rol_version: rol.version });
 });
 
 // DELETE /api/rhh/schedule/weekly-rol/:id/assign/:assignId
@@ -1116,12 +1181,16 @@ router.delete('/weekly-rol/:id/assign/:assignId', rhhAuthRequired, rhhRequireRol
   const rolId = Number(req.params.id);
   const assignId = Number(req.params.assignId);
   const assignments = db.rhh_rol_assignments || [];
+  const rol = (db.rhh_weekly_rol || []).find(r => r.id === rolId);
+  if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
+  if (!requireRolVersion(req, res, rol)) return;
   const idx = assignments.findIndex(a => a.id === assignId && a.rol_id === rolId);
   if (idx === -1) return res.status(404).json({ error: 'Asignación no encontrada' });
   assignments.splice(idx, 1);
+  touchRolVersion(rol);
   db.rhh_rol_assignments = assignments;
   write(db);
-  res.json({ ok: true });
+  res.json({ ok: true, rol_version: rol.version });
 });
 
 // POST /api/rhh/schedule/weekly-rol/:id/publish — publicar ROL
@@ -1134,6 +1203,7 @@ router.post('/weekly-rol/:id/publish', rhhAuthRequired, rhhRequireRole('rh', 'ad
 
   const rol = weeklyRols[idx];
   if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+  if (!requireRolVersion(req, res, rol)) return;
 
   weeklyRols[idx] = {
     ...rol,
@@ -1141,6 +1211,7 @@ router.post('/weekly-rol/:id/publish', rhhAuthRequired, rhhRequireRole('rh', 'ad
     published_at: new Date().toISOString(),
     published_by: req.rhhUser.id
   };
+  touchRolVersion(weeklyRols[idx]);
   db.rhh_weekly_rol = weeklyRols;
 
   // Notificar empleados asignados
@@ -1178,6 +1249,7 @@ router.post('/weekly-rol/:id/copy-previous', rhhAuthRequired, rhhRequireRole('rh
   const rol = weeklyRols.find(r => r.id === rolId);
   if (!rol) return res.status(404).json({ error: 'ROL no encontrado' });
   if (rol.status === 'published') return res.status(409).json({ error: 'El ROL ya está publicado' });
+  if (!requireRolVersion(req, res, rol)) return;
 
   const prevDate = new Date(rol.week_start + 'T12:00:00');
   prevDate.setDate(prevDate.getDate() - 7);
@@ -1197,6 +1269,7 @@ router.post('/weekly-rol/:id/copy-previous', rhhAuthRequired, rhhRequireRole('rh
       newSlots.push(ns);
     }
   }
+  touchRolVersion(rol);
   db.rhh_rol_slots = slots;
   write(db);
   res.json({ ok: true, slots_copied: newSlots.length, slots: newSlots });

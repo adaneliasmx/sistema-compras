@@ -1,5 +1,6 @@
 const express = require('express');
 const fs   = require('fs');
+const crypto = require('crypto');
 const XLSX = require('xlsx');
 const multer = require('multer');
 const { read, write, writeAsync, nextId, seedPath, forceSeedFromJson, getSystemEmpIds } = require('../db-rhh');
@@ -27,6 +28,24 @@ function nowMxTs() {
 // Las rutas de este archivo realizan cambios de varias entidades a la vez.
 // Trabajar sobre una copia evita contaminar la cache si PostgreSQL rechaza writeAsync().
 function readFresh() { return structuredClone(read()); }
+
+function recordStatusEvent(db, employee, event) {
+  if (!Array.isArray(db.rhh_status_events)) db.rhh_status_events = [];
+  db.rhh_status_events.push({
+    id: nextId(db.rhh_status_events),
+    employee_id: employee.id,
+    employee_number: employee.employee_number,
+    from_status: event.from_status ?? null,
+    to_status: event.to_status ?? employee.status ?? null,
+    event_type: event.event_type,
+    source: event.source || 'manual',
+    period_key: event.period_key || null,
+    import_batch_id: event.import_batch_id || null,
+    performed_by: event.performed_by || null,
+    notes: event.notes || null,
+    created_at: nowMxTs(),
+  });
+}
 
 // ── Tabla LFT por defecto (si la BD no tiene reglas configuradas) ─────────────
 const DEFAULT_LFT_RULES = [
@@ -129,7 +148,7 @@ function calcVacInfo(emp, db, today) {
  *         no crea candidato si emp.status === 'inactive' (excepto possible_rehire);
  *         si ya existe pending con misma llave, solo agrega el reason (sin duplicados).
  */
-function upsertBajaCandidato(db, emp, detectedPeriod, reason, nowDate, nowTs) {
+function upsertBajaCandidato(db, emp, detectedPeriod, reason, nowDate, nowTs, importBatchId = null) {
   if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
   const period = canonicalPeriod(
     typeof detectedPeriod === 'object' ? detectedPeriod : { no_periodo: detectedPeriod }
@@ -150,6 +169,7 @@ function upsertBajaCandidato(db, emp, detectedPeriod, reason, nowDate, nowTs) {
   );
   if (existing) {
     if (!existing.reasons.some(r => r.type === reason.type)) existing.reasons.push(reason);
+    if (importBatchId) existing.last_import_batch_id = importBatchId;
   } else {
     // Una decision previa para el mismo motivo y semana se respeta. Una evidencia
     // diferente o una semana nueva si puede abrir una revision nueva.
@@ -173,6 +193,7 @@ function upsertBajaCandidato(db, emp, detectedPeriod, reason, nowDate, nowTs) {
       period_key:      period.period_key,
       detected_at:     nowTs,
       detected_by_import: true,
+      import_batch_id: importBatchId,
       kind:            candidateKind,
       reasons:         [reason],
       state:           'pending',
@@ -284,6 +305,16 @@ router.get('/baja-candidatos', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (
   res.json({ candidatos: list, total: list.length });
 });
 
+router.get('/import-batches', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+  const batches = (db.rhh_import_batches || [])
+    .slice()
+    .sort((a, b) => String(b.imported_at || '').localeCompare(String(a.imported_at || '')))
+    .slice(0, limit);
+  res.json({ batches, total: (db.rhh_import_batches || []).length });
+});
+
 // ── POST /api/rhh/catalogo/baja-candidatos/:id/confirm ────────────────────────
 router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = readFresh();
@@ -304,6 +335,7 @@ router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('adm
   const nowTs = nowMxTs();
 
   // Actualizar empleado
+  const previousStatus = emp.status || null;
   emp.status                = 'inactive';
   emp.manual_baja_locked    = true;
   emp.status_source         = 'confirmed';
@@ -313,6 +345,11 @@ router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('adm
   emp.baja_confirmada_por   = user;
   emp.baja_confirmada_at    = nowTs;
   emp.updated_at            = nowD;
+  recordStatusEvent(db, emp, {
+    from_status: previousStatus,
+    to_status: 'inactive', event_type: 'termination_confirmed', source: 'candidate',
+    period_key: cand.period_key, performed_by: user, notes: emp.baja_motivo,
+  });
 
   // Actualizar candidato (misma escritura)
   cand.state        = 'confirmed';
@@ -373,6 +410,10 @@ router.post('/employees/:id/reactivate', rhhAuthRequired, rhhRequireRole('admin'
   emp.fecha_reingreso      = nowD;
   emp.reingreso_por        = user;
   emp.updated_at           = nowD;
+  recordStatusEvent(db, emp, {
+    from_status: 'inactive', to_status: 'active', event_type: 'rehire',
+    source: 'manual', performed_by: user,
+  });
 
   // Cerrar candidatos pending/superseded de este empleado
   if (Array.isArray(db.rhh_baja_candidatos)) {
@@ -418,6 +459,10 @@ router.post('/baja-candidatos/:id/reactivate', rhhAuthRequired, rhhRequireRole('
   emp.reingreso_por = user;
   emp.reingreso_at = nowTs;
   emp.updated_at = nowD;
+  recordStatusEvent(db, emp, {
+    from_status: 'inactive', to_status: 'active', event_type: 'rehire',
+    source: 'candidate', period_key: cand.period_key, performed_by: user,
+  });
   cand.state = 'confirmed';
   cand.confirmed_by = user;
   cand.confirmed_at = nowTs;
@@ -428,6 +473,37 @@ router.post('/baja-candidatos/:id/reactivate', rhhAuthRequired, rhhRequireRole('
   } catch (e) {
     res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
   }
+});
+
+// Libera únicamente los campos indicados para que una importación futura pueda
+// volver a actualizarlos. La liberación nunca cambia el dato actual por sí sola.
+router.post('/employees/:id/unlock-fields', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = readFresh();
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const allowed = new Set(['department', 'position', 'shift', 'project', 'salary', 'start_date', 'baja']);
+  const fields = Array.isArray(req.body?.fields) ? req.body.fields.filter(f => allowed.has(f)) : [];
+  if (!fields.length) return res.status(400).json({ error: 'fields[] requerido' });
+  for (const field of fields) emp[`manual_${field}_locked`] = false;
+  emp.updated_at = nowMxDate();
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, employee: enrich(emp, db), unlocked_fields: fields });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
+  }
+});
+
+router.get('/employees/:id/status-events', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const employeeId = Number(req.params.id);
+  const db = readFresh();
+  if (!(db.rhh_employees || []).some(emp => emp.id === employeeId)) {
+    return res.status(404).json({ error: 'Empleado no encontrado' });
+  }
+  const events = (db.rhh_status_events || [])
+    .filter(event => Number(event.employee_id) === employeeId)
+    .sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+  res.json({ employee_id: employeeId, events });
 });
 
 // ── GET /api/rhh/catalogo/:id ─────────────────────────────────────────────────
@@ -610,11 +686,25 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async 
   const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja } = req.body || {};
-  if (department_id          !== undefined) { emp.department_id = department_id ? Number(department_id) : null; emp.manual_department_locked = true; }
-  if (position_id            !== undefined) { emp.position_id   = position_id   ? Number(position_id)   : null; emp.manual_position_locked   = true; }
-  if (shift_id               !== undefined) emp.shift_id               = shift_id      ? Number(shift_id)      : null;
+  const { department_id, position_id, shift_id, project, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja } = req.body || {};
+  if (department_id !== undefined) {
+    const value = department_id ? Number(department_id) : null;
+    if (emp.department_id !== value) { emp.department_id = value; emp.manual_department_locked = true; }
+  }
+  if (position_id !== undefined) {
+    const value = position_id ? Number(position_id) : null;
+    if (emp.position_id !== value) { emp.position_id = value; emp.manual_position_locked = true; }
+  }
+  if (shift_id !== undefined) {
+    const value = shift_id ? Number(shift_id) : null;
+    if (emp.shift_id !== value) { emp.shift_id = value; emp.manual_shift_locked = true; }
+  }
+  if (project !== undefined) {
+    const value = project || null;
+    if (emp.project !== value) { emp.project = value; emp.manual_project_locked = true; }
+  }
   if (status                 !== undefined) {
+    const previousStatus = emp.status || null;
     emp.status = status;
     if (status === 'inactive') {
       emp.manual_baja_locked = true;
@@ -632,11 +722,28 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async 
       emp.baja_confirmada_por = null;
       emp.baja_confirmada_at = null;
     }
+    if (previousStatus !== status) {
+      recordStatusEvent(db, emp, {
+        from_status: previousStatus, to_status: status,
+        event_type: status === 'inactive' ? 'manual_termination' : 'manual_reactivation',
+        source: 'catalog', performed_by: req.rhhUser?.email || req.rhhUser?.username || 'rh',
+      });
+    }
   }
   if (phone                  !== undefined) emp.phone                  = phone   || null;
   if (email                  !== undefined) emp.email                  = email   || null;
-  if (start_date             !== undefined) emp.start_date             = start_date || null;
-  if (salary_daily           !== undefined) emp.salary_daily           = salary_daily ? Number(salary_daily) : null;
+  if (start_date !== undefined) {
+    const value = start_date || null;
+    if ((emp.start_date || emp.fecha_ingreso || null) !== value) {
+      emp.start_date = value; emp.fecha_ingreso = value; emp.manual_start_date_locked = true;
+    }
+  }
+  if (salary_daily           !== undefined) {
+    const value = salary_daily !== null && salary_daily !== '' ? Number(salary_daily) : null;
+    if ((emp.salary_daily ?? emp.sal_diario ?? null) !== value) {
+      emp.salary_daily = value; emp.sal_diario = value; emp.manual_salary_locked = true;
+    }
+  }
   if (vac_dias_disponibles   !== undefined) emp.vac_dias_disponibles   = vac_dias_disponibles !== null && vac_dias_disponibles !== '' ? Number(vac_dias_disponibles) : null;
   if (fecha_baja             !== undefined) emp.fecha_baja             = fecha_baja  || null;
   if (fecha_alta             !== undefined) emp.fecha_alta             = fecha_alta  || null;
@@ -690,6 +797,16 @@ router.post(
   upload.single('file'),
   async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No se recibió archivo' });
+    const previewOnly = String(req.body?.preview || '') === '1';
+    const confirmed = String(req.body?.confirm || '') === '1';
+    const forceReprocess = String(req.body?.force || '') === '1';
+    if (!previewOnly && !confirmed) {
+      return res.status(400).json({
+        error: 'Primero analiza el archivo con preview=1 y después confirma con confirm=1',
+        code: 'IMPORT_CONFIRMATION_REQUIRED',
+      });
+    }
+    const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
 
     let wb;
     try {
@@ -721,14 +838,74 @@ router.post(
     if (!Array.isArray(db.rhh_baja_candidatos))       db.rhh_baja_candidatos = [];
     if (!Array.isArray(db.rhh_periodos))              db.rhh_periodos = [];
     if (!Array.isArray(db.rhh_employee_period_snapshots)) db.rhh_employee_period_snapshots = [];
+    if (!Array.isArray(db.rhh_import_batches)) db.rhh_import_batches = [];
+    if (!Array.isArray(db.rhh_status_events)) db.rhh_status_events = [];
+
+    const previousBatch = db.rhh_import_batches.find(batch =>
+      batch.file_hash === fileHash && batch.status === 'completed'
+    );
+    if (confirmed && previousBatch && !forceReprocess) {
+      return res.status(409).json({
+        error: 'Este mismo archivo ya fue importado. Confirma el reproceso explícitamente.',
+        code: 'DUPLICATE_IMPORT',
+        previous_batch: previousBatch,
+      });
+    }
+    const importBatchId = confirmed ? nextId(db.rhh_import_batches) : null;
 
     let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
     const semanasImportadas = new Set();
     const periodosImportados = new Map();
     const log = [];
     const nuevos = [];
+    const nuevos_historicos = [];
     const aguinaldo_no_dic = [];
+    const duplicate_rows = [];
     const empEncontradosPorPeriodo = new Map(); // period_key -> Set<empId>
+
+    async function finishImport(result) {
+      const response = {
+        ...result,
+        preview: previewOnly,
+        requires_confirmation: previewOnly,
+        file_hash: fileHash,
+        duplicate_rows,
+        nuevos_historicos,
+      };
+      if (previewOnly) return res.json(response);
+
+      const batch = {
+        id: importBatchId,
+        file_hash: fileHash,
+        file_name: req.file.originalname || null,
+        file_size: req.file.size || req.file.buffer.length,
+        sheet_name: sheetName,
+        formato: result.formato,
+        status: 'completed',
+        forced_reprocess_of: previousBatch?.id || null,
+        imported_by: req.rhhUser?.email || req.rhhUser?.username || req.rhhUser?.id || 'rh',
+        imported_at: nowMxTs(),
+        periods: result.periodos || (result.semanas || []).map(no_periodo => ({ no_periodo })),
+        counts: {
+          updated: result.updated || 0,
+          new_employees: (result.nuevos || []).length,
+          new_historical_employees: nuevos_historicos.length,
+          incidents_upserted: result.inc_upserted || 0,
+          snapshots_upserted: result.snapshots_upserted || 0,
+          candidates_pending: (result.candidatos_pendientes || []).length,
+          skipped: result.skipped || 0,
+          duplicate_rows: duplicate_rows.length,
+        },
+      };
+      db.rhh_import_batches.push(batch);
+      try {
+        await writeAsync(db);
+      } catch (e) {
+        console.error('[import-contpaq] Error al persistir en DB:', e.message);
+        return res.status(500).json({ error: 'La importación no fue aplicada: ' + e.message });
+      }
+      return res.json({ ...response, import_batch: batch });
+    }
 
     function excelMonth(value) {
       if (value instanceof Date && !isNaN(value)) return value.getMonth() + 1;
@@ -753,6 +930,9 @@ router.post(
     function findEmpByNameOrNum(excelNum, excelName) {
       const byNum = findEmpByNum(excelNum);
       if (byNum) return byNum;
+      // Si CONTPAQ aporta número, éste es la identidad canónica. No intentar
+      // unir por nombre porque dos personas pueden compartir nombres similares.
+      if (norm(excelNum)) return null;
       const excelWords = new Set(normName(excelName).split(' ').filter(w => w.length > 1));
       if (excelWords.size < 2) return null;
       let bestMatch = null, bestScore = 0;
@@ -807,6 +987,7 @@ router.post(
         period_key: period.period_key,
         fecha_inicio: period.fecha_inicio,
         fecha_fin: period.fecha_fin,
+        import_batch_id: importBatchId,
       };
       if (existIdx !== -1) {
         incList[existIdx] = { ...incList[existIdx], ...rec, ...canonicalFields, updated_at: nowMxTs() };
@@ -825,6 +1006,16 @@ router.post(
       const hdrRaw = all[0];
       const colIdx = {};
       hdrRaw.forEach((v, i) => { colIdx[norm(v)] = i; });
+
+      const requiredHeaders = ['semana', 'Fecha Inicio', 'Fecha Fin', 'No. Empleado', 'Nombre'];
+      const missingHeaders = requiredHeaders.filter(header => colIdx[header] === undefined);
+      if (missingHeaders.length) {
+        return res.status(422).json({
+          error: `Faltan encabezados requeridos: ${missingHeaders.join(', ')}`,
+          code: 'INVALID_HEADERS',
+          missing_headers: missingHeaders,
+        });
+      }
 
       const semanaCol   = colIdx['semana']        ?? 0;
       const fechaIniCol = colIdx['Fecha Inicio']  ?? 1;
@@ -895,10 +1086,52 @@ router.post(
         };
         db.rhh_employees.push(emp);
         nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
+        recordStatusEvent(db, emp, {
+          from_status: null, to_status: 'active', event_type: 'hire', source: 'contpaq_import',
+          period_key: latestPeriodArchivo.period_key, import_batch_id: importBatchId,
+          performed_by: req.rhhUser?.email || req.rhhUser?.username || 'rh',
+        });
         updated++;
         if (log.length < 20) log.push(`${latestPeriodArchivo.period_key} #${empNumRaw} "${empName}": nuevo empleado creado`);
       }
 
+      // Identidades que sólo existen en semanas históricas también se conservan.
+      // Nacen inactivas y nunca contaminan la plantilla de la última semana.
+      const historicalUnknown = new Map();
+      for (const row of all.slice(1)) {
+        const period = canonicalPeriod({
+          no_periodo: Number(row[semanaCol]), year: req.body?.year,
+          fecha_inicio: row[fechaIniCol], fecha_fin: row[fechaFinCol],
+        });
+        const empNumRaw = norm(row[empNumCol]);
+        const empName = norm(row[nombreCol]);
+        if (!period || !empNumRaw || findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName)) continue;
+        const key = empNumRaw.replace(/^0+/, '');
+        const previous = historicalUnknown.get(key);
+        if (!previous || comparePeriods(previous.period, period) < 0) historicalUnknown.set(key, { row, period, empNumRaw, empName });
+      }
+      for (const item of historicalUnknown.values()) {
+        const row = item.row;
+        const dId = findOrCreateDept(norm(row[deptCol]));
+        const pId = findOrCreatePos(norm(row[puestoCol]), dId);
+        const emp = {
+          id: nextId(db.rhh_employees), employee_number: item.empNumRaw, full_name: item.empName,
+          status: 'inactive', status_source: 'historical_import', historical_only: true,
+          department_id: dId, position_id: pId,
+          sal_diario: toNum(row[salDiarioCol]), salary_daily: toNum(row[salDiarioCol]),
+          sdi: toNum(row[sdiCol]), sbc: toNum(row[sbcCol]), fecha_ingreso: norm(row[fechaIngCol]),
+          created_at: nowMxDate(), updated_at: nowMxDate(),
+        };
+        db.rhh_employees.push(emp);
+        nuevos_historicos.push({ id: emp.id, employee_number: emp.employee_number, full_name: emp.full_name, period_key: item.period.period_key });
+        recordStatusEvent(db, emp, {
+          from_status: null, to_status: 'inactive', event_type: 'historical_identity_created',
+          source: 'contpaq_import', period_key: item.period.period_key,
+          import_batch_id: importBatchId, performed_by: req.rhhUser?.email || req.rhhUser?.username || 'rh',
+        });
+      }
+
+      const seenEmployeePeriods = new Set();
       for (const row of all.slice(1)) {
         const semana = Number(row[semanaCol]);
         const rowPeriod = canonicalPeriod({
@@ -913,6 +1146,9 @@ router.post(
         const empNumRaw = norm(row[empNumCol]);
         const empName   = norm(row[nombreCol]);
         if (!empNumRaw && !empName) { skipped++; continue; }
+        const duplicateKey = `${empNumRaw.replace(/^0+/, '')}|${rowPeriod.period_key}`;
+        if (seenEmployeePeriods.has(duplicateKey)) duplicate_rows.push({ employee_number: empNumRaw, employee_name: empName, period_key: rowPeriod.period_key });
+        seenEmployeePeriods.add(duplicateKey);
 
         let emp = findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName);
         if (!emp && empNumRaw && rowPeriod.period_key === latestPeriodArchivo.period_key) {
@@ -939,6 +1175,11 @@ router.post(
           };
           db.rhh_employees.push(emp);
           nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
+          recordStatusEvent(db, emp, {
+            from_status: null, to_status: 'active', event_type: 'hire', source: 'contpaq_import',
+            period_key: rowPeriod.period_key, import_batch_id: importBatchId,
+            performed_by: req.rhhUser?.email || req.rhhUser?.username || 'rh',
+          });
           updated++;
           if (log.length < 20) log.push(`S${semana} #${empNumRaw} "${empName}": nuevo empleado creado`);
         } else if (!emp) {
@@ -968,10 +1209,10 @@ router.post(
         if (isLatestRow && !emp.manual_department_locked && emp.department_id !== deptId) { emp.department_id = deptId; empChanged = true; }
         if (isLatestRow && !emp.manual_position_locked   && emp.position_id   !== posId)  { emp.position_id   = posId;  empChanged = true; }
         if (isLatestRow && project && !emp.manual_project_locked && emp.project !== project) { emp.project = project; empChanged = true; }
-        if (isLatestRow && salDiario && emp.sal_diario !== salDiario) { emp.sal_diario = salDiario; emp.salary_daily = salDiario; empChanged = true; }
+        if (isLatestRow && salDiario && !emp.manual_salary_locked && emp.sal_diario !== salDiario) { emp.sal_diario = salDiario; emp.salary_daily = salDiario; empChanged = true; }
         if (isLatestRow && sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
         if (isLatestRow && sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
-        if (isLatestRow && fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
+        if (isLatestRow && fechaIngr && !emp.manual_start_date_locked && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; emp.start_date = fechaIngr; empChanged = true; }
         // NO reactivar empleados inactivos: si tiene manual_baja_locked se detecta como possible_rehire
         if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
 
@@ -1042,6 +1283,7 @@ router.post(
           sbc,
           fecha_ingreso: fechaIngr || null,
           source: 'consolidado_import',
+          import_batch_id: importBatchId,
           updated_at: nowMxTs(),
           created_at: nowMxTs(),
         });
@@ -1116,7 +1358,7 @@ router.post(
           upsertBajaCandidato(db, e, ultimaPeriod, {
             type:     'possible_rehire',
             evidence: `Empleado con baja confirmada reaparece en semana ${ultimaSemana}`,
-          }, nowDate, nowTs);
+          }, nowDate, nowTs, importBatchId);
         }
 
         // 3. Ausencia en ultimaSemana → posible baja
@@ -1126,7 +1368,7 @@ router.post(
           upsertBajaCandidato(db, e, ultimaPeriod, {
             type:     'ausencia_ultima_semana',
             evidence: `No aparece en semana ${ultimaSemana} del Consolidado`,
-          }, nowDate, nowTs);
+          }, nowDate, nowTs, importBatchId);
         }
 
         // 4. Aguinaldo fuera de diciembre → posible liquidación
@@ -1140,21 +1382,14 @@ router.post(
           }, {
             type:     'aguinaldo_no_diciembre',
             evidence: `Aguinaldo de $${ag.importe} en semana ${ag.semana} (fuera de diciembre)`,
-          }, nowDate, nowTs);
+          }, nowDate, nowTs, importBatchId);
         }
       }
 
       const candidatos_pendientes = db.rhh_baja_candidatos.filter(c => c.state === 'pending');
 
       console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| candidatos_pendientes:', candidatos_pendientes.length);
-      try {
-        await writeAsync(db);
-        console.log('[import-contpaq] writeAsync OK — incidencias totales en DB:', db.rhh_incidencias_semanales.length);
-      } catch (e) {
-        console.error('[import-contpaq] Error al persistir en DB:', e.message);
-        return res.status(500).json({ error: 'Datos procesados pero no se pudo guardar en la base de datos: ' + e.message });
-      }
-      return res.json({
+      return finishImport({
         ok: true, formato: 'consolidado',
         updated, created_depts, created_pos, skipped, inc_upserted,
         semanas: semanasList, periodos: periodosList, log,
@@ -1171,6 +1406,11 @@ router.post(
       const sheetMatch = sheetName.match(/semana\s*(\d+)/i);
       if (sheetMatch) noPeriodo = Number(sheetMatch[1]);
     }
+
+    const fileYearMatch = `${req.file.originalname || ''} ${sheetName}`.match(/\b(20\d{2})\b/);
+    const listaYear = Number(req.body?.year) || Number(fileYearMatch?.[1]) || new Date().getFullYear();
+    const listaPeriod = noPeriodo ? canonicalPeriod({ no_periodo: noPeriodo, year: listaYear }) : null;
+    if (listaPeriod) upsertCanonicalPeriod(db.rhh_periodos, listaPeriod);
     if (!noPeriodo) {
       for (let i = 0; i < Math.min(3, all.length) && !noPeriodo; i++) {
         for (const cell of all[i]) {
@@ -1223,8 +1463,9 @@ router.post(
 
       const deptId = findOrCreateDept(deptName);
       const posId  = findOrCreatePos(posName, deptId);
-      if (emp.department_id !== deptId || emp.position_id !== posId) {
-        emp.department_id = deptId; emp.position_id = posId;
+      if ((!emp.manual_department_locked && emp.department_id !== deptId) || (!emp.manual_position_locked && emp.position_id !== posId)) {
+        if (!emp.manual_department_locked) emp.department_id = deptId;
+        if (!emp.manual_position_locked) emp.position_id = posId;
         emp.updated_at = nowMxDate(); updated++;
       }
 
@@ -1242,24 +1483,46 @@ router.post(
         }
         upsertIncidencia(emp, {
           no_periodo: noPeriodo,
-          year: Number(req.body?.year) || 2026,
+          year: listaYear,
         }, {
           dias_pagados: diasPagados, faltas, horas_extras_total: teTotal,
           despensa: 1, prima_dominical: primaDom, vacaciones_dias: vacDias || 0,
           source: 'excel_import',
         });
+        upsertEmployeePeriodSnapshot(db.rhh_employee_period_snapshots, {
+          employee_id: emp.id,
+          employee_number: emp.employee_number,
+          full_name: emp.full_name,
+          ...listaPeriod,
+          present_in_payroll: true,
+          status_at_period: 'active',
+          department_id: deptId,
+          department_name: deptName || null,
+          position_id: posId,
+          position_name: posName || null,
+          project: emp.project || null,
+          sal_diario: emp.sal_diario ?? emp.salary_daily ?? null,
+          salary_daily: emp.salary_daily ?? emp.sal_diario ?? null,
+          sdi: emp.sdi ?? null,
+          sbc: emp.sbc ?? null,
+          fecha_ingreso: emp.fecha_ingreso || emp.start_date || null,
+          source: 'lista_asistencia_import',
+          import_batch_id: importBatchId,
+          updated_at: nowMxTs(),
+          created_at: nowMxTs(),
+        });
       }
     }
 
-    try {
-      await writeAsync(db);
-    } catch (e) {
-      console.error('[import-contpaq] Error al persistir en DB:', e.message);
-      return res.status(500).json({ error: 'Datos procesados pero no se pudo guardar en la base de datos: ' + e.message });
-    }
-    res.json({ ok: true, formato: 'lista_asistencia',
-               updated, created_depts, created_pos, skipped, inc_upserted,
-               semanas: noPeriodo ? [noPeriodo] : [], log });
+    return finishImport({ ok: true, formato: 'lista_asistencia',
+      updated, created_depts, created_pos, skipped, inc_upserted,
+      semanas: noPeriodo ? [noPeriodo] : [],
+      periodos: listaPeriod ? [listaPeriod] : [],
+      snapshots_upserted: listaPeriod
+        ? db.rhh_employee_period_snapshots.filter(s => s.period_key === listaPeriod.period_key).length
+        : 0,
+      log,
+    });
   }
 );
 

@@ -219,6 +219,24 @@ router.patch('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) 
   if (req.body.start_date && !req.body.hire_date) emp.hire_date = req.body.start_date;
   if (req.body.hire_date && !req.body.start_date) emp.start_date = req.body.hire_date;
 
+  // Este endpoint también edita el catálogo maestro: aplicar los mismos locks
+  // que Catálogo Empleados para que CONTPAQ no revierta cambios manuales.
+  if (req.body.department_id !== undefined && emp.department_id !== db.rhh_employees[idx].department_id) emp.manual_department_locked = true;
+  if (req.body.position_id !== undefined && emp.position_id !== db.rhh_employees[idx].position_id) emp.manual_position_locked = true;
+  if (req.body.shift_id !== undefined && emp.shift_id !== db.rhh_employees[idx].shift_id) emp.manual_shift_locked = true;
+  if (req.body.project !== undefined && emp.project !== db.rhh_employees[idx].project) emp.manual_project_locked = true;
+  if ((req.body.start_date !== undefined || req.body.hire_date !== undefined) && emp.start_date !== db.rhh_employees[idx].start_date) emp.manual_start_date_locked = true;
+  if (req.body.daily_salary !== undefined && emp.daily_salary !== db.rhh_employees[idx].daily_salary) emp.manual_salary_locked = true;
+  if (req.body.status === 'inactive') {
+    emp.manual_baja_locked = true;
+    emp.status_source = 'manual';
+    emp.fecha_baja = emp.fecha_baja || nowMxDate();
+  } else if (req.body.status === 'active' && !wasActive) {
+    emp.manual_baja_locked = false;
+    emp.status_source = 'manual';
+    emp.fecha_baja = null;
+  }
+
   emp.updated_at = new Date().toISOString();
   db.rhh_employees[idx] = emp;
 

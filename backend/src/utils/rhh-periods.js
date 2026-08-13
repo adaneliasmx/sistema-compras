@@ -193,16 +193,222 @@ function resolveRequestedYear(db, noPeriodo, requestedYear) {
   return Math.max(...candidates.map(record => effectivePeriodYear(record)));
 }
 
+function periodContainsRange(period, startDate, endDate = startDate) {
+  const canonical = canonicalPeriod(period);
+  const start = parsePeriodDate(startDate);
+  const end = parsePeriodDate(endDate);
+  const periodStart = parsePeriodDate(canonical?.fecha_inicio);
+  const periodEnd = parsePeriodDate(canonical?.fecha_fin);
+  if (!canonical || !start || !end || !periodStart || !periodEnd) return false;
+  return start <= periodEnd && end >= periodStart;
+}
+
+function addDays(iso, days) {
+  const date = new Date(`${iso}T12:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+function resolvePeriodForDate(db, startDate, endDate = startDate) {
+  const start = parsePeriodDate(startDate);
+  const end = parsePeriodDate(endDate);
+  if (!start || !end) return null;
+  const periods = (db?.rhh_periodos || []).map(period => canonicalPeriod(period)).filter(Boolean);
+  const exact = periods.filter(period => periodContainsRange(period, start, end)).sort(comparePeriods).at(-1);
+  if (exact) return exact;
+
+  const snapshots = db?.rhh_employee_period_snapshots || [];
+  const snapshotPeriods = new Map();
+  for (const raw of snapshots) {
+    const period = canonicalPeriod(raw);
+    if (period) snapshotPeriods.set(period.period_key, period);
+  }
+  return [...snapshotPeriods.values()]
+    .filter(period => periodContainsRange(period, start, end))
+    .sort(comparePeriods)
+    .at(-1) || null;
+}
+
+/**
+ * Returns the employee template for an attendance week. Exact snapshots are
+ * preferred. Only the immediately following week may inherit the last known
+ * snapshot; older/far-future weeks do not silently use today's catalog.
+ */
+function getEmployeeTemplateForWeek(db, weekStart, options = {}) {
+  const start = parsePeriodDate(weekStart);
+  if (!start) return { employees: [], source: 'invalid_date', period: null };
+  const end = addDays(start, 6);
+  const snapshots = db?.rhh_employee_period_snapshots || [];
+  const periods = new Map();
+  for (const raw of [...(db?.rhh_periodos || []), ...snapshots]) {
+    const period = canonicalPeriod(raw);
+    if (period) periods.set(period.period_key, period);
+  }
+  const snapshotPeriodKeys = new Set(
+    snapshots.map(snapshot => canonicalPeriod(snapshot)?.period_key).filter(Boolean)
+  );
+
+  let selected = [...periods.values()]
+    .filter(period => snapshotPeriodKeys.has(period.period_key) && periodContainsRange(period, start, end))
+    .sort(comparePeriods)
+    .at(-1) || null;
+  let source = selected ? 'snapshot_exact' : null;
+
+  if (!selected && options.allowNextWeek !== false) {
+    const previous = [...periods.values()]
+      .filter(period => snapshotPeriodKeys.has(period.period_key) && parsePeriodDate(period.fecha_fin) && parsePeriodDate(period.fecha_fin) < start)
+      .sort(comparePeriods)
+      .at(-1);
+    if (previous) {
+      const expectedNextStart = addDays(parsePeriodDate(previous.fecha_fin), 1);
+      const maxInheritedStart = addDays(expectedNextStart, 6);
+      if (start >= expectedNextStart && start <= maxInheritedStart) {
+        selected = previous;
+        source = 'snapshot_previous_week';
+      }
+    }
+  }
+
+  if (selected) {
+    const rows = snapshots.filter(snapshot => samePeriod(snapshot, selected.no_periodo, selected.year));
+    if (rows.length > 0) {
+      return { employees: rows.map(row => ({ ...row })), source, period: selected };
+    }
+  }
+
+  if (snapshots.length === 0 && options.catalogFallback !== false) {
+    return {
+      employees: (db?.rhh_employees || []).filter(employee => employee.status !== 'inactive'),
+      source: 'catalog_fallback',
+      period: null,
+    };
+  }
+
+  return { employees: [], source: 'snapshot_missing', period: selected };
+}
+
+function backfillCanonicalPeriodFields(db, options = {}) {
+  const mutate = options.mutate === true;
+  const target = mutate ? db : structuredClone(db);
+  const stats = { updated: 0, ambiguous_legacy_2026: 0, ambiguous_rows: [], snapshots_created: 0, by_collection: {} };
+  const collections = [
+    'rhh_periodos',
+    'rhh_incidencias_semanales',
+    'rhh_he_detalle',
+    'rhh_vac_solicitudes',
+    'rhh_te_solicitudes',
+    'rhh_employee_period_snapshots',
+  ];
+
+  for (const name of collections) {
+    const rows = target[name] || [];
+    let changed = 0;
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+      const period = canonicalPeriod(row);
+      if (!period) continue;
+      if (!row.year && !row.period_key && !row.fecha_inicio && !row.fecha_fin) {
+        stats.ambiguous_legacy_2026++;
+        stats.ambiguous_rows.push({ collection: name, id: row.id ?? null, no_periodo: row.no_periodo ?? null, assumed_year: LEGACY_PERIOD_YEAR });
+      }
+      if (row.year !== period.year || row.period_key !== period.period_key ||
+          row.fecha_inicio !== period.fecha_inicio || row.fecha_fin !== period.fecha_fin) {
+        rows[index] = { ...row, year: period.year, period_key: period.period_key };
+        if (period.fecha_inicio) rows[index].fecha_inicio = period.fecha_inicio;
+        if (period.fecha_fin) rows[index].fecha_fin = period.fecha_fin;
+        changed++;
+      }
+    }
+    stats.by_collection[name] = changed;
+    stats.updated += changed;
+  }
+
+  const candidates = target.rhh_baja_candidatos || [];
+  let candidateChanges = 0;
+  for (const candidate of candidates) {
+    const period = canonicalPeriod({
+      no_periodo: candidate.detected_week,
+      year: candidate.detected_year,
+      period_key: candidate.period_key,
+    });
+    if (!period) continue;
+    if (!candidate.detected_year && !candidate.period_key) {
+      stats.ambiguous_legacy_2026++;
+      stats.ambiguous_rows.push({ collection: 'rhh_baja_candidatos', id: candidate.id ?? null, no_periodo: candidate.detected_week ?? null, assumed_year: LEGACY_PERIOD_YEAR });
+    }
+    if (candidate.detected_year !== period.year || candidate.period_key !== period.period_key) {
+      candidate.detected_year = period.year;
+      candidate.period_key = period.period_key;
+      candidateChanges++;
+    }
+  }
+  stats.by_collection.rhh_baja_candidatos = candidateChanges;
+  stats.updated += candidateChanges;
+
+  if (!Array.isArray(target.rhh_employee_period_snapshots)) target.rhh_employee_period_snapshots = [];
+  const employees = new Map((target.rhh_employees || []).map(employee => [Number(employee.id), employee]));
+  const periods = target.rhh_periodos || [];
+  const createApproximateSnapshot = (employeeId, period, sourceRecord) => {
+    const employee = employees.get(Number(employeeId));
+    const canonical = canonicalPeriod(period);
+    if (!employee || !canonical) return;
+    if (target.rhh_employee_period_snapshots.some(snapshot =>
+      Number(snapshot.employee_id) === Number(employeeId) && samePeriod(snapshot, canonical.no_periodo, canonical.year)
+    )) return;
+    upsertEmployeePeriodSnapshot(target.rhh_employee_period_snapshots, {
+      employee_id: Number(employeeId),
+      employee_number: employee.employee_number,
+      full_name: employee.full_name,
+      ...canonical,
+      present_in_payroll: true,
+      status_at_period: 'active',
+      department_id: employee.department_id ?? null,
+      position_id: employee.position_id ?? null,
+      shift_id: employee.shift_id ?? null,
+      project: employee.project ?? null,
+      sal_diario: employee.sal_diario ?? employee.salary_daily ?? null,
+      salary_daily: employee.salary_daily ?? employee.sal_diario ?? null,
+      sdi: employee.sdi ?? null,
+      sbc: employee.sbc ?? null,
+      fecha_ingreso: employee.fecha_ingreso || employee.start_date || null,
+      source: 'legacy_backfill',
+      backfill_quality: 'approximate_current_catalog',
+      backfill_source_collection: sourceRecord,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    stats.snapshots_created++;
+  };
+
+  for (const incidence of target.rhh_incidencias_semanales || []) {
+    createApproximateSnapshot(incidence.employee_id, incidence, 'rhh_incidencias_semanales');
+  }
+  for (const rol of target.rhh_weekly_rol || []) {
+    const period = resolvePeriodForDate(target, rol.week_start);
+    if (!period) continue;
+    for (const assignment of (target.rhh_rol_assignments || []).filter(item => item.rol_id === rol.id)) {
+      createApproximateSnapshot(assignment.employee_id, period, 'rhh_rol_assignments');
+    }
+  }
+  stats.by_collection.rhh_employee_period_snapshots_created = stats.snapshots_created;
+
+  return { db: target, stats };
+}
+
 module.exports = {
   LEGACY_PERIOD_YEAR,
   canonicalPeriod,
+  backfillCanonicalPeriodFields,
   comparePeriods,
   derivePeriodYear,
   effectivePeriodYear,
   parsePeriodDate,
+  periodContainsRange,
   periodKey,
   resolveRequestedYear,
+  resolvePeriodForDate,
   samePeriod,
+  getEmployeeTemplateForWeek,
   upsertCanonicalPeriod,
   upsertEmployeePeriodSnapshot,
   validWeek,
