@@ -177,12 +177,13 @@ function write(data) {
 
 // Escribe y ESPERA a que la persistencia complete — usar en rutas críticas (imports, ediciones)
 async function writeAsync(data) {
-  _cache = data;
   if (pool) {
     await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(data)]);
   } else {
     fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
   }
+  // Publicar en cache solo cuando la persistencia terminó correctamente.
+  _cache = data;
 }
 
 function nextId(rows) {

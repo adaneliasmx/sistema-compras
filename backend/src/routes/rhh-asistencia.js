@@ -157,9 +157,14 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     : [];
 
   const _sysIds    = getSystemEmpIds();
-  // Incluir empleados sin status explícito (importados antes del campo status) salvo los marcados inactive
-  const employees  = (db.rhh_employees || []).filter(e => e.status !== 'inactive' && !_sysIds.has(Number(e.id)));
+  // Activos para la plantilla nueva; asignados inactivos se conservan para no
+  // destruir el historial del ROL al refrescar o guardar desde otra pantalla.
+  const activeEmployees = (db.rhh_employees || []).filter(e => e.status !== 'inactive' && !_sysIds.has(Number(e.id)));
   const assignedIds = new Set(assignments.map(a => a.employee_id));
+  const assignedInactive = (db.rhh_employees || []).filter(e =>
+    e.status === 'inactive' && assignedIds.has(e.id) && !_sysIds.has(Number(e.id))
+  );
+  const employees = [...activeEmployees, ...assignedInactive];
 
   const enrich = e => {
     const a        = assignments.find(x => x.employee_id === e.id);
@@ -177,7 +182,7 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
   });
 
   const assigned   = sortEmps(employees.filter(e =>  assignedIds.has(e.id)));
-  const unassigned = sortEmps(employees.filter(e => !assignedIds.has(e.id)));
+  const unassigned = sortEmps(activeEmployees.filter(e => !assignedIds.has(e.id)));
 
   // Agrupar asignados por turno
   const byShift = {};
@@ -189,7 +194,8 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 
   res.json({
     week_start: week,
-    rol:        rol || null,
+    rol:        rol ? { ...rol, version: rol.version || 1 } : null,
+    version:    rol?.version || 0,
     by_shift:   byShift,
     assigned,
     unassigned,
@@ -202,14 +208,21 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 
 // POST /api/rhh/asistencia/rol
 router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
-  const { week_start, no_periodo, assignments = [] } = req.body || {};
+  const { week_start, no_periodo, assignments = [], version = 0 } = req.body || {};
   if (!week_start) return res.status(400).json({ error: 'week_start requerido' });
 
-  const db    = read();
+  const db    = structuredClone(read());
   let   roles = db.rhh_weekly_rol    || [];
   let   asigs = db.rhh_rol_assignments || [];
 
   let rol = roles.find(r => r.week_start === week_start);
+  const currentVersion = rol?.version || (rol ? 1 : 0);
+  if (Number(version) !== currentVersion) {
+    return res.status(409).json({
+      error: 'El ROL fue actualizado desde otra sesión. Recarga antes de guardar.',
+      current_version: currentVersion,
+    });
+  }
   if (!rol) {
     rol = {
       id:         nextId(roles),
@@ -218,11 +231,13 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
       status:     'published',
       created_by: req.rhhUser.email || req.rhhUser.full_name,
       created_at: nowMxDate(),
+      version:    1,
     };
     roles.push(rol);
   } else {
     rol.updated_at = nowMxDate();
     rol.status     = 'published';
+    rol.version    = currentVersion + 1;
   }
 
   asigs = asigs.filter(a => a.rol_id !== rol.id);
@@ -243,7 +258,7 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
   db.rhh_rol_assignments = asigs;
   // writeAsync garantiza persistencia en PostgreSQL antes de responder
   try { await writeAsync(db); } catch(e) { return res.status(500).json({ error: 'Error al guardar ROL: ' + e.message }); }
-  res.json({ ok: true, rol, saved: assignments.length });
+  res.json({ ok: true, rol, version: rol.version, saved: assignments.length });
 });
 
 // GET /api/rhh/asistencia/rol/html?week=YYYY-MM-DD — HTML para imprimir/PDF

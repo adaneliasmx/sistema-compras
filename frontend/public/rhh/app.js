@@ -6689,6 +6689,7 @@ let asisShiftId = '';         // filtro de turno
 let asisDayIdx  = 0;          // día seleccionado en captura (0=lun…5=sáb)
 let _asisAssignments = [];    // asignaciones en edición del rol
 let _asisRolData = null;      // datos cargados del backend para rol (all_employees, shifts, etc.)
+let _asisRolVersion = 0;      // control optimista: evita reemplazar un ROL editado en otra sesión
 let _asisRolFNombre = '';     // filtro nombre lista sin asignar
 let _asisRolFPuesto = '';     // filtro puesto lista sin asignar
 let _asisRolUnlocked = false; // bandera de contraseña para acceder al Rol Semanal
@@ -7409,10 +7410,6 @@ async function _refreshRolFromCatalog() {
 
   // Mapa catálogo para lookup rápido de posición actualizada y status
   const catMap = new Map((catData.employees || []).map(e => [e.id, e]));
-  const inactiveIds = new Set(
-    (catData.employees || []).filter(e => e.status === 'inactive').map(e => e.id)
-  );
-
   // Empleados activos del catálogo como fuente de Sin asignar
   const catEmps = (catData.employees || [])
     .filter(e => e.status !== 'inactive')
@@ -7425,9 +7422,11 @@ async function _refreshRolFromCatalog() {
     proyectos: rolData.proyectos || ['SKF','AMSTED','TENNECO'],
   };
 
-  // Asignaciones: excluir bajas + usar posición actualizada del catálogo
+  _asisRolVersion = Number(rolData.version || rolData.rol?.version || 0);
+
+  // Conservar bajas ya asignadas para no borrarlas mediante un guardado replace-all.
+  // Se marcan visualmente y RHH decide cuándo retirarlas del ROL.
   _asisAssignments = (rolData.assigned || [])
-    .filter(emp => !inactiveIds.has(emp.id))
     .map(emp => {
       const cat = catMap.get(emp.id);
       return {
@@ -7438,6 +7437,7 @@ async function _refreshRolFromCatalog() {
         full_name:   emp.full_name,
         pos_name:    cat?.position_name || emp.position?.name || '',
         shift_name:  emp.shift?.name    || '',
+        inactive:    cat?.status === 'inactive' || emp.status === 'inactive',
       };
     });
 
@@ -8414,6 +8414,7 @@ async function asisRolView() {
       positions: data.positions || [],
       proyectos: data.proyectos || ['SKF','AMSTED','TENNECO'],
     };
+    _asisRolVersion = Number(data.version || data.rol?.version || 0);
 
     _asisAssignments = (data.assigned || []).map(emp => ({
       employee_id: emp.id,
@@ -8423,6 +8424,7 @@ async function asisRolView() {
       full_name:   emp.full_name,
       pos_name:    emp.position?.name || '',
       shift_name:  emp.shift?.name    || '',
+      inactive:    emp.status === 'inactive',
     }));
 
     asisRolRender();
@@ -8513,9 +8515,10 @@ function asisRolRender() {
           const posHdr = (a.pos_name && a.pos_name !== lastPos)
             ? (() => { lastPos = a.pos_name; return `<div style="font-size:10px;font-weight:700;color:#2563eb;background:#eff6ff;padding:2px 8px;border-radius:4px;margin-bottom:2px;">${escHtml(a.pos_name)}</div>`; })()
             : '';
-          return `${posHdr}<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #f3f4f6;">
+          const bajaBadge = a.inactive ? '<span style="font-size:10px;color:#991b1b;background:#fee2e2;padding:1px 6px;border-radius:8px;">BAJA</span>' : '';
+          return `${posHdr}<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #f3f4f6;${a.inactive?'background:#fff7f7;':''}">
             <div style="flex:1;">
-              <div style="font-size:13px;">${escHtml(a.full_name)}</div>
+              <div style="font-size:13px;">${escHtml(a.full_name)} ${bajaBadge}</div>
               ${a.project ? `<div style="font-size:10px;color:#0369a1;">${escHtml(a.project)}</div>` : ''}
             </div>
             <button onclick="removeAsisAssignment(${a.employee_id})"
@@ -8661,10 +8664,11 @@ function confirmAsisAssign() {
 
 async function saveAsisRol() {
   try {
-    await api('/api/rhh/asistencia/rol', {
+    const out = await api('/api/rhh/asistencia/rol', {
       method: 'POST',
       body: JSON.stringify({
         week_start:  asisWeek,
+        version:     _asisRolVersion,
         assignments: _asisAssignments.map(a => ({
           employee_id: a.employee_id,
           shift_id:    a.shift_id,
@@ -8673,8 +8677,15 @@ async function saveAsisRol() {
         }))
       })
     });
+    _asisRolVersion = Number(out?.version ?? _asisRolVersion);
     toast('Rol guardado correctamente');
-  } catch(err) { toast(err.message, 'error'); }
+  } catch(err) {
+    toast(err.message, 'error');
+    if ((err.message || '').includes('otra sesión')) {
+      _asisRolData = null;
+      setTimeout(() => asisRolView(), 500);
+    }
+  }
 }
 
 /* Auto-guardado silencioso — actualiza el indicador de estado sin toast */
@@ -8688,10 +8699,11 @@ async function saveAsisRolAuto() {
   clearTimeout(_asisAutoSaveTimer);
   _asisAutoSaveTimer = setTimeout(async () => {
     try {
-      await api('/api/rhh/asistencia/rol', {
+      const out = await api('/api/rhh/asistencia/rol', {
         method: 'POST',
         body: JSON.stringify({
           week_start:  asisWeek,
+          version:     _asisRolVersion,
           assignments: _asisAssignments.map(a => ({
             employee_id: a.employee_id,
             shift_id:    a.shift_id,
@@ -8700,6 +8712,7 @@ async function saveAsisRolAuto() {
           }))
         })
       });
+      _asisRolVersion = Number(out?.version ?? _asisRolVersion);
       const st = document.getElementById('asis-rol-save-status');
       if (st) {
         st.textContent = 'Guardado ✓';
@@ -8710,6 +8723,10 @@ async function saveAsisRolAuto() {
       const st = document.getElementById('asis-rol-save-status');
       if (st) { st.textContent = 'Error al guardar'; st.style.color = '#dc2626'; }
       toast(err.message, 'error');
+      if ((err.message || '').includes('otra sesión')) {
+        _asisRolData = null;
+        setTimeout(() => asisRolView(), 500);
+      }
     }
   }, 400);
 }
@@ -11246,6 +11263,7 @@ async function catalogoEmpleadosView() {
       <input id="cat-search" class="form-input" placeholder="Buscar nombre o #..." style="width:200px"/>
       <button class="btn-primary" onclick="catCargar()">🔍 Buscar</button>
       <button class="btn-ghost" onclick="catImportContpaq()" title="Actualizar Departamento y Puesto desde lista de asistencia CONTPAQ i (Excel .xlsx)">📥 Cargar CONTPAQ i</button>
+      <button class="btn-ghost" onclick="abrirCandidatosPendientes()" title="Revisar bajas y reingresos pendientes">⚠ Bajas pendientes</button>
     </div>
   </div>
   <div id="cat-import-msg" style="font-size:12px;color:#64748b;margin-bottom:8px"></div>
@@ -11665,17 +11683,35 @@ async function catGuardarEmpleado(empId) {
 }
 
 // ── Modal cambios en plantilla (altas/bajas detectadas al cargar CONTPAQ i) ────
+async function abrirCandidatosPendientes() {
+  try {
+    const data = await api('/api/rhh/catalogo/baja-candidatos?state=pending');
+    const candidatos = data?.candidatos || [];
+    if (!candidatos.length) {
+      toast('No hay bajas ni reingresos pendientes', 'success');
+      return;
+    }
+    const ultima = Math.max(...candidatos.map(c => Number(c.detected_week) || 0));
+    mostrarModalCambiosPlantilla({ candidatos_pendientes: candidatos, nuevos: [], ultima_semana: ultima || null });
+  } catch (err) {
+    toast('Error al cargar candidatos: ' + err.message, 'error');
+  }
+}
+
 function mostrarModalCambiosPlantilla(d) {
   document.getElementById('modal-cambios-plantilla')?.remove();
 
   // Candidatos del backend (tienen ID propio)
   const candidatos = d.candidatos_pendientes || [];
-  const bajaCands    = candidatos.filter(c => c.reasons.some(r => r.type === 'ausencia_ultima_semana'));
+  const rehireCands  = candidatos.filter(c => c.reasons.some(r => r.type === 'possible_rehire'));
+  const bajaCands    = candidatos.filter(c =>
+    !rehireCands.some(r => r.id === c.id) && c.reasons.some(r => r.type === 'ausencia_ultima_semana')
+  );
   const aguinaldoCands = candidatos.filter(c =>
+    !rehireCands.some(r => r.id === c.id) &&
     c.reasons.some(r => r.type === 'aguinaldo_no_diciembre') &&
     !bajaCands.some(b => b.id === c.id)
   );
-  const rehireCands  = candidatos.filter(c => c.reasons.some(r => r.type === 'possible_rehire'));
 
   const nuevosSec = d.nuevos?.length ? `
     <div style="margin-bottom:16px;">
@@ -11688,8 +11724,8 @@ function mostrarModalCambiosPlantilla(d) {
         </div>`).join('')}
     </div>` : '';
 
-  const fmtReasons = reasons => reasons.map(r => {
-    if (r.type === 'ausencia_ultima_semana') return `<span style="color:#dc2626;">Ausencia semana ${d.ultima_semana}</span>`;
+  const fmtReasons = (reasons, detectedWeek) => reasons.map(r => {
+    if (r.type === 'ausencia_ultima_semana') return `<span style="color:#dc2626;">Ausencia semana ${detectedWeek}</span>`;
     if (r.type === 'aguinaldo_no_diciembre') return `<span style="color:#d97706;">${escHtml(r.evidence)}</span>`;
     return escHtml(r.evidence);
   }).join(' &nbsp;·&nbsp; ');
@@ -11697,7 +11733,7 @@ function mostrarModalCambiosPlantilla(d) {
   const bajasRows = cands => cands.map(c => `
     <div id="cand-row-${c.id}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
       <span style="font-weight:600;color:#6b7280;">#${c.employee_number||'—'}</span>
-      <span style="flex:1;">${escHtml(c.employee_name)} <span style="font-size:11px;color:#6b7280;">${fmtReasons(c.reasons)}</span></span>
+      <span style="flex:1;">${escHtml(c.employee_name)} <span style="font-size:11px;color:#6b7280;">${fmtReasons(c.reasons, c.detected_week)}</span></span>
       <button id="btn-conf-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
         onclick="confirmarBajaCandidato(${c.id},'${escHtml(c.employee_name).replace(/'/g,'\\&#39;')}','btn-conf-${c.id}')">Confirmar baja</button>
       <button id="btn-disc-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#6b7280;"
@@ -11727,7 +11763,7 @@ function mostrarModalCambiosPlantilla(d) {
           <span style="font-weight:600;color:#6b7280;">#${c.employee_number||'—'}</span>
           <span style="flex:1;">${escHtml(c.employee_name)}</span>
           <button id="btn-rei-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#7c3aed;border-color:#c4b5fd;"
-            onclick="confirmarReingreso(${c.employee_id},'${escHtml(c.employee_name).replace(/'/g,'\\&#39;')}','btn-rei-${c.id}')">Confirmar reingreso</button>
+            onclick="confirmarReingreso(${c.id},'${escHtml(c.employee_name).replace(/'/g,'\\&#39;')}','btn-rei-${c.id}')">Confirmar reingreso</button>
           <button id="btn-disc-r-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#6b7280;"
             onclick="descartarBajaCandidato(${c.id},'btn-disc-r-${c.id}')">Descartar</button>
         </div>`).join('')}
@@ -11793,12 +11829,12 @@ async function descartarBajaCandidato(candId, btnId) {
   }
 }
 
-async function confirmarReingreso(empId, nombre, btnId) {
+async function confirmarReingreso(candId, nombre, btnId) {
   if (!confirm(`Confirmar reingreso de ${nombre}?\n\nEl empleado volvera a estar activo en el catalogo.`)) return;
   const btn = document.getElementById(btnId);
   if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
   try {
-    const r = await api(`/api/rhh/catalogo/employees/${empId}/reactivate`, { method: 'POST' });
+    const r = await api(`/api/rhh/catalogo/baja-candidatos/${candId}/reactivate`, { method: 'POST' });
     if (!r) throw new Error('Sin respuesta del servidor');
     const row = btn?.closest('[id^="cand-row-"]');
     if (row) {
@@ -11858,4 +11894,3 @@ async function catImportContpaq() {
   };
   input.click();
 }
-

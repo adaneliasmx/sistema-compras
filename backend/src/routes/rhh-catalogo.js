@@ -17,7 +17,9 @@ function nowMxTs() {
   return new Date().toLocaleString('sv-SE', { timeZone: 'America/Mexico_City' }).replace(' ', 'T');
 }
 
-function readFresh() { return read(); }
+// Las rutas de este archivo realizan cambios de varias entidades a la vez.
+// Trabajar sobre una copia evita contaminar la cache si PostgreSQL rechaza writeAsync().
+function readFresh() { return structuredClone(read()); }
 
 // ── Tabla LFT por defecto (si la BD no tiene reglas configuradas) ─────────────
 const DEFAULT_LFT_RULES = [
@@ -123,15 +125,25 @@ function calcVacInfo(emp, db, today) {
 function upsertBajaCandidato(db, emp, detectedWeek, reason, nowDate, nowTs) {
   if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
   const isPossibleRehire = reason.type === 'possible_rehire';
+  const candidateKind = isPossibleRehire ? 'rehire' : 'termination';
   if (!isPossibleRehire && emp.manual_baja_locked) return;
   if (!isPossibleRehire && emp.status === 'inactive') return;
 
   const existing = db.rhh_baja_candidatos.find(c =>
-    c.employee_id === emp.id && c.detected_week === detectedWeek && c.state === 'pending'
+    c.employee_id === emp.id && c.detected_week === detectedWeek && c.state === 'pending' &&
+    (c.kind || ((c.reasons || []).some(r => r.type === 'possible_rehire') ? 'rehire' : 'termination')) === candidateKind
   );
   if (existing) {
     if (!existing.reasons.some(r => r.type === reason.type)) existing.reasons.push(reason);
   } else {
+    // Una decision previa para el mismo motivo y semana se respeta. Una evidencia
+    // diferente o una semana nueva si puede abrir una revision nueva.
+    const alreadyResolved = db.rhh_baja_candidatos.some(c =>
+      c.employee_id === emp.id && c.detected_week === detectedWeek &&
+      ['dismissed', 'confirmed'].includes(c.state) &&
+      (c.reasons || []).some(r => r.type === reason.type)
+    );
+    if (alreadyResolved) return;
     db.rhh_baja_candidatos.push({
       id: nextId(db.rhh_baja_candidatos),
       employee_id:     emp.id,
@@ -140,6 +152,7 @@ function upsertBajaCandidato(db, emp, detectedWeek, reason, nowDate, nowTs) {
       detected_week:   detectedWeek,
       detected_at:     nowTs,
       detected_by_import: true,
+      kind:            candidateKind,
       reasons:         [reason],
       state:           'pending',
       confirmed_by:    null, confirmed_at:   null,
@@ -257,6 +270,9 @@ router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('adm
   const cand = db.rhh_baja_candidatos.find(c => c.id === Number(req.params.id));
   if (!cand) return res.status(404).json({ error: 'Candidato no encontrado' });
   if (cand.state !== 'pending') return res.status(400).json({ error: `Candidato ya en estado: ${cand.state}` });
+  if ((cand.reasons || []).every(r => r.type === 'possible_rehire')) {
+    return res.status(400).json({ error: 'Este candidato corresponde a un posible reingreso, no a una baja' });
+  }
 
   const emp = (db.rhh_employees || []).find(e => e.id === cand.employee_id);
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
@@ -269,8 +285,8 @@ router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('adm
   emp.status                = 'inactive';
   emp.manual_baja_locked    = true;
   emp.status_source         = 'confirmed';
-  emp.fecha_baja            = nowD;
-  emp.baja_semana_efectiva  = String(cand.detected_week);
+  emp.fecha_baja            = req.body?.fecha_baja || nowD;
+  emp.baja_semana_efectiva  = String(req.body?.semana_efectiva || cand.detected_week);
   emp.baja_motivo           = req.body?.motivo || null;
   emp.baja_confirmada_por   = user;
   emp.baja_confirmada_at    = nowTs;
@@ -351,6 +367,42 @@ router.post('/employees/:id/reactivate', rhhAuthRequired, rhhRequireRole('admin'
   try {
     await writeAsync(db);
     res.json({ ok: true, employee: enrich(emp, db) });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
+  }
+});
+
+// Reactivar desde una evidencia concreta conserva trazabilidad y no resuelve
+// candidatos no relacionados del mismo empleado.
+router.post('/baja-candidatos/:id/reactivate', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = readFresh();
+  if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
+  const cand = db.rhh_baja_candidatos.find(c => c.id === Number(req.params.id));
+  if (!cand) return res.status(404).json({ error: 'Candidato no encontrado' });
+  if (cand.state !== 'pending') return res.status(400).json({ error: `Candidato ya en estado: ${cand.state}` });
+  if (!(cand.reasons || []).some(r => r.type === 'possible_rehire')) {
+    return res.status(400).json({ error: 'El candidato no contiene evidencia de reingreso' });
+  }
+  const emp = (db.rhh_employees || []).find(e => e.id === cand.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const user = req.rhhUser?.email || req.rhhUser?.username || 'rh';
+  const nowD = nowMxDate();
+  const nowTs = nowMxTs();
+  emp.status = 'active';
+  emp.manual_baja_locked = false;
+  emp.status_source = 'manual_rehire';
+  emp.fecha_reingreso = req.body?.fecha_reingreso || nowD;
+  emp.reingreso_semana_efectiva = String(req.body?.semana_efectiva || cand.detected_week);
+  emp.reingreso_por = user;
+  emp.reingreso_at = nowTs;
+  emp.updated_at = nowD;
+  cand.state = 'confirmed';
+  cand.confirmed_by = user;
+  cand.confirmed_at = nowTs;
+  cand.confirmed_action = 'reactivate';
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, candidato: cand, employee: enrich(emp, db) });
   } catch (e) {
     res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
   }
@@ -538,9 +590,17 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async 
       emp.manual_baja_locked = true;
       emp.status_source      = 'manual';
       if (!emp.fecha_baja) emp.fecha_baja = nowMxDate();
+      emp.baja_confirmada_por = req.rhhUser?.email || req.rhhUser?.username || 'rh';
+      emp.baja_confirmada_at  = nowMxTs();
+      if (!emp.baja_semana_efectiva && req.body?.baja_semana_efectiva) emp.baja_semana_efectiva = String(req.body.baja_semana_efectiva);
     } else if (status === 'active') {
       emp.manual_baja_locked = false;
       emp.status_source      = 'manual';
+      emp.fecha_baja = null;
+      emp.baja_semana_efectiva = null;
+      emp.baja_motivo = null;
+      emp.baja_confirmada_por = null;
+      emp.baja_confirmada_at = null;
     }
   }
   if (phone                  !== undefined) emp.phone                  = phone   || null;
@@ -636,7 +696,23 @@ router.post(
     const nuevos = [];
     const aguinaldo_no_dic = [];
     const empEncontradosPorSemana = new Map(); // semana → Set<empId>
-    const MES_MESES = { Ene:1, Feb:2, Mar:3, Abr:4, May:5, Jun:6, Jul:7, Ago:8, Sep:9, Oct:10, Nov:11, Dic:12 };
+    const semanasArchivo = all.slice(1).map(r => Number(r[0])).filter(Boolean);
+    const ultimaSemanaArchivo = semanasArchivo.length ? Math.max(...semanasArchivo) : null;
+
+    function excelMonth(value) {
+      if (value instanceof Date && !isNaN(value)) return value.getMonth() + 1;
+      if (typeof value === 'number') {
+        const parsed = XLSX.SSF.parse_date_code(value);
+        return parsed?.m || null;
+      }
+      const s = norm(value).toLowerCase();
+      const names = { ene:1, jan:1, feb:2, mar:3, abr:4, apr:4, may:5, jun:6,
+        jul:7, ago:8, aug:8, sep:9, oct:10, nov:11, dic:12, dec:12 };
+      const named = Object.keys(names).find(k => s.includes(k));
+      if (named) return names[named];
+      const parts = s.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/);
+      return parts ? Number(parts[2]) : null;
+    }
 
     function findEmpByNum(num) {
       const n = norm(num).replace(/^0+/, '');
@@ -704,6 +780,8 @@ router.post(
       hdrRaw.forEach((v, i) => { colIdx[norm(v)] = i; });
 
       const semanaCol   = colIdx['semana']        ?? 0;
+      const fechaIniCol = colIdx['Fecha Inicio']  ?? 1;
+      const fechaFinCol = colIdx['Fecha Fin']     ?? 2;
       const empNumCol   = colIdx['No. Empleado']  ?? 3;
       const nombreCol   = colIdx['Nombre']        ?? 4;
       const deptCol     = colIdx['Departamento']  ?? 5;
@@ -731,6 +809,32 @@ router.post(
       // Opcional: filtrar por semana específica si se pasó en body
       const filterSemana = Number(req.body?.no_periodo) || null;
 
+      // Primera pasada: crear identidades nuevas desde la ultima semana antes de
+      // procesar el historial. Asi sus filas de semanas anteriores también pueden
+      // vincularse a incidencias sin convertir empleados solo historicos en activos.
+      for (const row of all.slice(1)) {
+        if (Number(row[semanaCol]) !== ultimaSemanaArchivo) continue;
+        const empNumRaw = norm(row[empNumCol]);
+        const empName = norm(row[nombreCol]);
+        if (!empNumRaw || findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName)) continue;
+        const dNom = norm(row[deptCol]);
+        const pNom = norm(row[puestoCol]);
+        const dId = findOrCreateDept(dNom);
+        const pId = findOrCreatePos(pNom, dId);
+        const emp = {
+          id: nextId(db.rhh_employees), employee_number: empNumRaw, full_name: empName,
+          status: 'active', department_id: dId, position_id: pId,
+          sal_diario: toNum(row[salDiarioCol]), salary_daily: toNum(row[salDiarioCol]),
+          sdi: toNum(row[sdiCol]), sbc: toNum(row[sbcCol]),
+          fecha_ingreso: norm(row[fechaIngCol]), fecha_alta: nowMxDate(),
+          created_at: nowMxDate(), updated_at: nowMxDate(),
+        };
+        db.rhh_employees.push(emp);
+        nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
+        updated++;
+        if (log.length < 20) log.push(`S${ultimaSemanaArchivo} #${empNumRaw} "${empName}": nuevo empleado creado`);
+      }
+
       for (const row of all.slice(1)) {
         const semana = Number(row[semanaCol]);
         if (!semana) continue;
@@ -741,7 +845,7 @@ router.post(
         if (!empNumRaw && !empName) { skipped++; continue; }
 
         let emp = findEmpByNum(empNumRaw) || findEmpByNameOrNum(empNumRaw, empName);
-        if (!emp && empNumRaw) {
+        if (!emp && empNumRaw && semana === ultimaSemanaArchivo) {
           // Nuevo empleado — crear registro mínimo y agregarlo al catálogo
           const dNom = norm(row[deptCol]);
           const pNom = norm(row[puestoCol]);
@@ -777,7 +881,8 @@ router.post(
         if (!empEncontradosPorSemana.has(semana)) empEncontradosPorSemana.set(semana, new Set());
         empEncontradosPorSemana.get(semana).add(emp.id);
 
-        // Actualizar campos del empleado
+        // Actualizar el catalogo maestro exclusivamente con la ultima semana.
+        // Las incidencias se conservan para todas las semanas.
         const deptName   = norm(row[deptCol]);
         const posName    = norm(row[puestoCol]);
         const salDiario  = toNum(row[salDiarioCol]);
@@ -786,14 +891,15 @@ router.post(
         const fechaIngr  = norm(row[fechaIngCol]);
         let empChanged = false;
 
-        const deptId = findOrCreateDept(deptName);
-        const posId  = findOrCreatePos(posName, deptId);
-        if (emp.department_id !== deptId) { emp.department_id = deptId; empChanged = true; }
-        if (emp.position_id   !== posId)  { emp.position_id   = posId;  empChanged = true; }
-        if (salDiario && emp.sal_diario !== salDiario) { emp.sal_diario = salDiario; emp.salary_daily = salDiario; empChanged = true; }
-        if (sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
-        if (sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
-        if (fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
+        const isLatestRow = semana === ultimaSemanaArchivo;
+        const deptId = isLatestRow ? findOrCreateDept(deptName) : emp.department_id;
+        const posId  = isLatestRow ? findOrCreatePos(posName, deptId) : emp.position_id;
+        if (isLatestRow && !emp.manual_department_locked && emp.department_id !== deptId) { emp.department_id = deptId; empChanged = true; }
+        if (isLatestRow && !emp.manual_position_locked   && emp.position_id   !== posId)  { emp.position_id   = posId;  empChanged = true; }
+        if (isLatestRow && salDiario && emp.sal_diario !== salDiario) { emp.sal_diario = salDiario; emp.salary_daily = salDiario; empChanged = true; }
+        if (isLatestRow && sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
+        if (isLatestRow && sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
+        if (isLatestRow && fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
         // NO reactivar empleados inactivos: si tiene manual_baja_locked se detecta como possible_rehire
         if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
 
@@ -834,14 +940,10 @@ router.post(
         if (aguinaldoColIdx >= 0) {
           const aguinaldoImp = toNum(row[aguinaldoColIdx]);
           if (aguinaldoImp && aguinaldoImp > 0) {
-            const periodos = db.rhh_periodos || [];
-            const pInfo = periodos.find(x => x.no_periodo === semana);
-            let isDecember = semana >= 49; // fallback
-            if (pInfo) {
-              const mMatch = String(pInfo.fecha_inicio || '').match(/(\w{3})\/\d{4}$/);
-              if (mMatch) isDecember = (MES_MESES[mMatch[1]] || 0) === 12;
-            }
-            if (!isDecember && !aguinaldo_no_dic.find(x => x.id === emp.id)) {
+            const month = excelMonth(row[fechaIniCol]) || excelMonth(row[fechaFinCol]);
+            const isDecember = month === 12;
+            // Si no hay fecha interpretable, no inferir una baja por calendario.
+            if (month && !isDecember && !aguinaldo_no_dic.find(x => x.id === emp.id && x.semana === semana)) {
               aguinaldo_no_dic.push({ id: emp.id, employee_number: emp.employee_number, full_name: emp.full_name, semana, importe: aguinaldoImp });
             }
           }
@@ -860,12 +962,14 @@ router.post(
           total_ded_pdf:       totalDed,
           neto_pdf:            neto,
           notas,
+          fecha_inicio:       norm(row[fechaIniCol]) || null,
+          fecha_fin:          norm(row[fechaFinCol]) || null,
           source: 'consolidado_import',
         });
       }
 
       const semanasList = [...semanasImportadas].sort((a,b)=>a-b);
-      const ultimaSemana = semanasList.length > 0 ? semanasList[semanasList.length - 1] : null;
+      const ultimaSemana = ultimaSemanaArchivo || (semanasList.length > 0 ? semanasList[semanasList.length - 1] : null);
 
       // Posibles bajas: empleados activos que NO aparecen en la última semana importada
       // Excluir empleados recién creados en este mismo import (no son bajas)
@@ -892,20 +996,25 @@ router.post(
       if (ultimaSemana) {
         const enUltima = empEncontradosPorSemana.get(ultimaSemana) || new Set();
 
-        // 1. Supersede: candidatos pendientes cuyo empleado reapareció en ultimaSemana
+        // 1. Reaparicion: solo invalida el motivo de ausencia. Evidencias como
+        // aguinaldo fuera de diciembre siguen requiriendo decision de RHH.
         for (const c of db.rhh_baja_candidatos) {
           if (c.state !== 'pending') continue;
           if (!enUltima.has(c.employee_id)) continue;
           const empC = (db.rhh_employees || []).find(e => e.id === c.employee_id);
           if (empC?.manual_baja_locked) continue; // reingreso: se maneja abajo
-          c.state            = 'superseded';
-          c.superseded_at    = nowTs;
-          c.superseded_reason = `Empleado reaparece en semana ${ultimaSemana}`;
+          const before = c.reasons || [];
+          c.reasons = before.filter(r => r.type !== 'ausencia_ultima_semana');
+          if (c.reasons.length === 0) {
+            c.state             = 'superseded';
+            c.superseded_at     = nowTs;
+            c.superseded_reason = `Empleado reaparece en semana ${ultimaSemana}`;
+          }
         }
 
         // 2. Possible rehire: empleados con manual_baja_locked que aparecen en ultimaSemana
         for (const e of db.rhh_employees) {
-          if (!e.manual_baja_locked) continue;
+          if (!e.manual_baja_locked && e.status !== 'inactive') continue;
           if (!enUltima.has(e.id)) continue;
           upsertBajaCandidato(db, e, ultimaSemana, {
             type:     'possible_rehire',
@@ -927,7 +1036,7 @@ router.post(
         for (const ag of aguinaldo_no_dic) {
           const e = (db.rhh_employees || []).find(x => x.id === ag.id);
           if (!e) continue;
-          upsertBajaCandidato(db, e, ultimaSemana, {
+          upsertBajaCandidato(db, e, ag.semana, {
             type:     'aguinaldo_no_diciembre',
             evidence: `Aguinaldo de $${ag.importe} en semana ${ag.semana} (fuera de diciembre)`,
           }, nowDate, nowTs);
