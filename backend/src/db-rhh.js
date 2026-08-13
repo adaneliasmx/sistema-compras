@@ -69,7 +69,9 @@ const EMPTY_DB = {
   rhh_vac_solicitudes: [],
   rhh_te_solicitudes: [],
   // Catálogos editables de razones TE (Fase 5)
-  rhh_te_catalogos: []
+  rhh_te_catalogos: [],
+  // Candidatos a baja detectados por import CONTPAQ (Fase 1D — 2026-08-13)
+  rhh_baja_candidatos: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

@@ -13,6 +13,9 @@ const router = express.Router();
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
+function nowMxTs() {
+  return new Date().toLocaleString('sv-SE', { timeZone: 'America/Mexico_City' }).replace(' ', 'T');
+}
 
 function readFresh() { return read(); }
 
@@ -110,6 +113,42 @@ function calcVacInfo(emp, db, today) {
   };
 }
 
+/**
+ * Inserta o acumula un candidato a baja en rhh_baja_candidatos.
+ * Llave única: employee_id + detected_week + state='pending'.
+ * Reglas: no crea candidato si emp es manual_baja_locked (excepto possible_rehire);
+ *         no crea candidato si emp.status === 'inactive' (excepto possible_rehire);
+ *         si ya existe pending con misma llave, solo agrega el reason (sin duplicados).
+ */
+function upsertBajaCandidato(db, emp, detectedWeek, reason, nowDate, nowTs) {
+  if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
+  const isPossibleRehire = reason.type === 'possible_rehire';
+  if (!isPossibleRehire && emp.manual_baja_locked) return;
+  if (!isPossibleRehire && emp.status === 'inactive') return;
+
+  const existing = db.rhh_baja_candidatos.find(c =>
+    c.employee_id === emp.id && c.detected_week === detectedWeek && c.state === 'pending'
+  );
+  if (existing) {
+    if (!existing.reasons.some(r => r.type === reason.type)) existing.reasons.push(reason);
+  } else {
+    db.rhh_baja_candidatos.push({
+      id: nextId(db.rhh_baja_candidatos),
+      employee_id:     emp.id,
+      employee_name:   emp.full_name,
+      employee_number: emp.employee_number,
+      detected_week:   detectedWeek,
+      detected_at:     nowTs,
+      detected_by_import: true,
+      reasons:         [reason],
+      state:           'pending',
+      confirmed_by:    null, confirmed_at:   null,
+      dismissed_by:    null, dismissed_at:   null,
+      superseded_at:   null, superseded_reason: null,
+    });
+  }
+}
+
 // ── GET /api/rhh/catalogo/diag ─── DIAGNÓSTICO PÚBLICO (sin auth) ─────────────
 router.get('/diag', (req, res) => {
   const db = read();
@@ -198,6 +237,123 @@ router.get('/', rhhAuthRequired, (req, res) => {
     positions:   db.rhh_positions   || [],
     shifts:      db.rhh_shifts      || [],
   });
+});
+
+// ── GET /api/rhh/catalogo/baja-candidatos ─────────────────────────────────────
+router.get('/baja-candidatos', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
+  const { state } = req.query;
+  let list = db.rhh_baja_candidatos;
+  if (state) list = list.filter(c => c.state === state);
+  res.json({ candidatos: list, total: list.length });
+});
+
+// ── POST /api/rhh/catalogo/baja-candidatos/:id/confirm ────────────────────────
+router.post('/baja-candidatos/:id/confirm', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = readFresh();
+  if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
+
+  const cand = db.rhh_baja_candidatos.find(c => c.id === Number(req.params.id));
+  if (!cand) return res.status(404).json({ error: 'Candidato no encontrado' });
+  if (cand.state !== 'pending') return res.status(400).json({ error: `Candidato ya en estado: ${cand.state}` });
+
+  const emp = (db.rhh_employees || []).find(e => e.id === cand.employee_id);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const user  = req.rhhUser?.email || req.rhhUser?.username || 'rh';
+  const nowD  = nowMxDate();
+  const nowTs = nowMxTs();
+
+  // Actualizar empleado
+  emp.status                = 'inactive';
+  emp.manual_baja_locked    = true;
+  emp.status_source         = 'confirmed';
+  emp.fecha_baja            = nowD;
+  emp.baja_semana_efectiva  = String(cand.detected_week);
+  emp.baja_motivo           = req.body?.motivo || null;
+  emp.baja_confirmada_por   = user;
+  emp.baja_confirmada_at    = nowTs;
+  emp.updated_at            = nowD;
+
+  // Actualizar candidato (misma escritura)
+  cand.state        = 'confirmed';
+  cand.confirmed_by = user;
+  cand.confirmed_at = nowTs;
+
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, candidato: cand, employee: enrich(emp, db) });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
+  }
+});
+
+// ── POST /api/rhh/catalogo/baja-candidatos/:id/dismiss ────────────────────────
+router.post('/baja-candidatos/:id/dismiss', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = readFresh();
+  if (!Array.isArray(db.rhh_baja_candidatos)) db.rhh_baja_candidatos = [];
+
+  const cand = db.rhh_baja_candidatos.find(c => c.id === Number(req.params.id));
+  if (!cand) return res.status(404).json({ error: 'Candidato no encontrado' });
+  if (cand.state !== 'pending') return res.status(400).json({ error: `Candidato ya en estado: ${cand.state}` });
+
+  const user  = req.rhhUser?.email || req.rhhUser?.username || 'rh';
+  const nowTs = nowMxTs();
+
+  cand.state         = 'dismissed';
+  cand.dismissed_by  = user;
+  cand.dismissed_at  = nowTs;
+  cand.dismiss_motivo = req.body?.motivo || null;
+
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, candidato: cand });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
+  }
+});
+
+// ── POST /api/rhh/catalogo/employees/:id/reactivate ──────────────────────────
+router.post('/employees/:id/reactivate', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = readFresh();
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const user  = req.rhhUser?.email || req.rhhUser?.username || 'rh';
+  const nowD  = nowMxDate();
+  const nowTs = nowMxTs();
+
+  emp.status               = 'active';
+  emp.manual_baja_locked   = false;
+  emp.status_source        = 'manual';
+  emp.fecha_baja           = null;
+  emp.baja_semana_efectiva = null;
+  emp.baja_motivo          = null;
+  emp.baja_confirmada_por  = null;
+  emp.baja_confirmada_at   = null;
+  emp.fecha_reingreso      = nowD;
+  emp.reingreso_por        = user;
+  emp.updated_at           = nowD;
+
+  // Cerrar candidatos pending/superseded de este empleado
+  if (Array.isArray(db.rhh_baja_candidatos)) {
+    for (const c of db.rhh_baja_candidatos) {
+      if (c.employee_id === emp.id && (c.state === 'pending' || c.state === 'superseded')) {
+        c.state         = 'dismissed';
+        c.dismissed_by  = user;
+        c.dismissed_at  = nowTs;
+        c.dismiss_motivo = 'reingreso confirmado';
+      }
+    }
+  }
+
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, employee: enrich(emp, db) });
+  } catch (e) {
+    res.status(500).json({ error: 'No se pudo guardar: ' + e.message });
+  }
 });
 
 // ── GET /api/rhh/catalogo/:id ─────────────────────────────────────────────────
@@ -365,7 +521,7 @@ router.patch('/vacaciones/:vid', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
 
 // ── PATCH /api/rhh/catalogo/:id/info ──────────────────────────────────────────
 // Actualizar dept/puesto/turno/status de un empleado individual
-router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = readFresh();
   if (!db) return res.status(500).json({ error: 'Error leyendo catálogo' });
 
@@ -373,10 +529,20 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
   const { department_id, position_id, shift_id, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja } = req.body || {};
-  if (department_id          !== undefined) emp.department_id          = department_id ? Number(department_id) : null;
-  if (position_id            !== undefined) emp.position_id            = position_id   ? Number(position_id)   : null;
+  if (department_id          !== undefined) { emp.department_id = department_id ? Number(department_id) : null; emp.manual_department_locked = true; }
+  if (position_id            !== undefined) { emp.position_id   = position_id   ? Number(position_id)   : null; emp.manual_position_locked   = true; }
   if (shift_id               !== undefined) emp.shift_id               = shift_id      ? Number(shift_id)      : null;
-  if (status                 !== undefined) emp.status                 = status;
+  if (status                 !== undefined) {
+    emp.status = status;
+    if (status === 'inactive') {
+      emp.manual_baja_locked = true;
+      emp.status_source      = 'manual';
+      if (!emp.fecha_baja) emp.fecha_baja = nowMxDate();
+    } else if (status === 'active') {
+      emp.manual_baja_locked = false;
+      emp.status_source      = 'manual';
+    }
+  }
   if (phone                  !== undefined) emp.phone                  = phone   || null;
   if (email                  !== undefined) emp.email                  = email   || null;
   if (start_date             !== undefined) emp.start_date             = start_date || null;
@@ -387,8 +553,12 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, 
   if (motivo_baja            !== undefined) emp.motivo_baja            = motivo_baja || null;
   emp.updated_at = nowMxDate();
 
-  write(db);
-  res.json({ ok: true, employee: enrich(emp, db) });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, employee: enrich(emp, db) });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al guardar: ' + e.message });
+  }
 });
 
 // ── GET /api/rhh/catalogo/lft-rules ──────────────────────────────────────────
@@ -458,6 +628,7 @@ router.post(
     const db = readFresh();
     const emps = db.rhh_employees || [];
     if (!Array.isArray(db.rhh_incidencias_semanales)) db.rhh_incidencias_semanales = [];
+    if (!Array.isArray(db.rhh_baja_candidatos))       db.rhh_baja_candidatos = [];
 
     let updated = 0, skipped = 0, created_depts = 0, created_pos = 0, inc_upserted = 0;
     const semanasImportadas = new Set();
@@ -623,8 +794,7 @@ router.post(
         if (sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
         if (sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
         if (fechaIngr && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; empChanged = true; }
-        // Garantizar status activo: si aparece en CONTPAQ debe estar activo en el sistema
-        if (emp.status !== 'active') { emp.status = 'active'; empChanged = true; }
+        // NO reactivar empleados inactivos: si tiene manual_baja_locked se detecta como possible_rehire
         if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
 
         // Construir objetos percepciones y deducciones
@@ -716,7 +886,57 @@ router.post(
         }
       }
 
-      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| posibles_bajas:', posibles_bajas.length, '| aguinaldo_no_dic:', aguinaldo_no_dic.length);
+      // ── Candidatos a baja / posibles reingresos ─────────────────────────────
+      const nowDate = nowMxDate();
+      const nowTs   = nowMxTs();
+      if (ultimaSemana) {
+        const enUltima = empEncontradosPorSemana.get(ultimaSemana) || new Set();
+
+        // 1. Supersede: candidatos pendientes cuyo empleado reapareció en ultimaSemana
+        for (const c of db.rhh_baja_candidatos) {
+          if (c.state !== 'pending') continue;
+          if (!enUltima.has(c.employee_id)) continue;
+          const empC = (db.rhh_employees || []).find(e => e.id === c.employee_id);
+          if (empC?.manual_baja_locked) continue; // reingreso: se maneja abajo
+          c.state            = 'superseded';
+          c.superseded_at    = nowTs;
+          c.superseded_reason = `Empleado reaparece en semana ${ultimaSemana}`;
+        }
+
+        // 2. Possible rehire: empleados con manual_baja_locked que aparecen en ultimaSemana
+        for (const e of db.rhh_employees) {
+          if (!e.manual_baja_locked) continue;
+          if (!enUltima.has(e.id)) continue;
+          upsertBajaCandidato(db, e, ultimaSemana, {
+            type:     'possible_rehire',
+            evidence: `Empleado con baja confirmada reaparece en semana ${ultimaSemana}`,
+          }, nowDate, nowTs);
+        }
+
+        // 3. Ausencia en ultimaSemana → posible baja
+        for (const baja of posibles_bajas) {
+          const e = (db.rhh_employees || []).find(x => x.id === baja.id);
+          if (!e) continue;
+          upsertBajaCandidato(db, e, ultimaSemana, {
+            type:     'ausencia_ultima_semana',
+            evidence: `No aparece en semana ${ultimaSemana} del Consolidado`,
+          }, nowDate, nowTs);
+        }
+
+        // 4. Aguinaldo fuera de diciembre → posible liquidación
+        for (const ag of aguinaldo_no_dic) {
+          const e = (db.rhh_employees || []).find(x => x.id === ag.id);
+          if (!e) continue;
+          upsertBajaCandidato(db, e, ultimaSemana, {
+            type:     'aguinaldo_no_diciembre',
+            evidence: `Aguinaldo de $${ag.importe} en semana ${ag.semana} (fuera de diciembre)`,
+          }, nowDate, nowTs);
+        }
+      }
+
+      const candidatos_pendientes = db.rhh_baja_candidatos.filter(c => c.state === 'pending');
+
+      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| candidatos_pendientes:', candidatos_pendientes.length);
       try {
         await writeAsync(db);
         console.log('[import-contpaq] writeAsync OK — incidencias totales en DB:', db.rhh_incidencias_semanales.length);
@@ -729,6 +949,7 @@ router.post(
         updated, created_depts, created_pos, skipped, inc_upserted,
         semanas: semanasList, log,
         nuevos, posibles_bajas, aguinaldo_no_dic, ultima_semana: ultimaSemana,
+        candidatos_pendientes,
       });
     }
 

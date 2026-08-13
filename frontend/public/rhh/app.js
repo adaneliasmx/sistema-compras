@@ -11666,89 +11666,151 @@ async function catGuardarEmpleado(empId) {
 
 // ── Modal cambios en plantilla (altas/bajas detectadas al cargar CONTPAQ i) ────
 function mostrarModalCambiosPlantilla(d) {
-  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   document.getElementById('modal-cambios-plantilla')?.remove();
+
+  // Candidatos del backend (tienen ID propio)
+  const candidatos = d.candidatos_pendientes || [];
+  const bajaCands    = candidatos.filter(c => c.reasons.some(r => r.type === 'ausencia_ultima_semana'));
+  const aguinaldoCands = candidatos.filter(c =>
+    c.reasons.some(r => r.type === 'aguinaldo_no_diciembre') &&
+    !bajaCands.some(b => b.id === c.id)
+  );
+  const rehireCands  = candidatos.filter(c => c.reasons.some(r => r.type === 'possible_rehire'));
 
   const nuevosSec = d.nuevos?.length ? `
     <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Nuevos empleados agregados — ALTAS (${d.nuevos.length})</h4>
+      <h4 style="margin:0 0 8px;color:#059669;font-size:13px;">Nuevos empleados agregados — ALTAS (${d.nuevos.length})</h4>
       ${d.nuevos.map(e => `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f0fdf4;border-radius:8px;margin-bottom:4px;font-size:13px;">
           <span style="font-weight:600;color:#6b7280;">#${e.employee_number}</span>
           <span style="flex:1;">${escHtml(e.full_name)}</span>
-          <span style="color:#059669;font-size:11px;font-weight:700;">ALTA AUTOMÁTICA ✓</span>
+          <span style="color:#059669;font-size:11px;font-weight:700;">ALTA AUTOMATICA</span>
         </div>`).join('')}
     </div>` : '';
 
-  const bajasSec = d.posibles_bajas?.length ? `
+  const fmtReasons = reasons => reasons.map(r => {
+    if (r.type === 'ausencia_ultima_semana') return `<span style="color:#dc2626;">Ausencia semana ${d.ultima_semana}</span>`;
+    if (r.type === 'aguinaldo_no_diciembre') return `<span style="color:#d97706;">${escHtml(r.evidence)}</span>`;
+    return escHtml(r.evidence);
+  }).join(' &nbsp;·&nbsp; ');
+
+  const bajasRows = cands => cands.map(c => `
+    <div id="cand-row-${c.id}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
+      <span style="font-weight:600;color:#6b7280;">#${c.employee_number||'—'}</span>
+      <span style="flex:1;">${escHtml(c.employee_name)} <span style="font-size:11px;color:#6b7280;">${fmtReasons(c.reasons)}</span></span>
+      <button id="btn-conf-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
+        onclick="confirmarBajaCandidato(${c.id},'${escHtml(c.employee_name).replace(/'/g,'\\&#39;')}','btn-conf-${c.id}')">Confirmar baja</button>
+      <button id="btn-disc-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#6b7280;"
+        onclick="descartarBajaCandidato(${c.id},'btn-disc-${c.id}')">Descartar</button>
+    </div>`).join('');
+
+  const bajasSec = bajaCands.length ? `
     <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 4px;color:#dc2626;font-size:13px;">⚠️ No aparecen en semana ${d.ultima_semana} — posibles bajas (${d.posibles_bajas.length})</h4>
-      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Activos en catálogo pero ausentes del Excel de la última semana importada. Confirma si corresponde a baja.</p>
-      ${d.posibles_bajas.map(e => `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
-          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
-          <span style="flex:1;">${escHtml(e.full_name)}</span>
-          <button id="btn-baja-${e.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
-            onclick="confirmarBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}','btn-baja-${e.id}','${hoy}')">
-            Confirmar baja
-          </button>
+      <h4 style="margin:0 0 4px;color:#dc2626;font-size:13px;">No aparecen en semana ${d.ultima_semana} — posibles bajas (${bajaCands.length})</h4>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Activos en catalogo pero ausentes del Excel de la ultima semana importada.</p>
+      ${bajasRows(bajaCands)}
+    </div>` : '';
+
+  const aguinaldoSec = aguinaldoCands.length ? `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 4px;color:#d97706;font-size:13px;">Aguinaldo fuera de diciembre — posibles liquidaciones (${aguinaldoCands.length})</h4>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Puede indicar liquidacion por baja.</p>
+      ${bajasRows(aguinaldoCands)}
+    </div>` : '';
+
+  const rehireSec = rehireCands.length ? `
+    <div style="margin-bottom:16px;">
+      <h4 style="margin:0 0 4px;color:#7c3aed;font-size:13px;">Posibles reingresos (${rehireCands.length})</h4>
+      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Empleados con baja confirmada que reaparecen en el Consolidado.</p>
+      ${rehireCands.map(c => `
+        <div id="cand-row-${c.id}" style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#f5f3ff;border-radius:8px;margin-bottom:4px;font-size:13px;">
+          <span style="font-weight:600;color:#6b7280;">#${c.employee_number||'—'}</span>
+          <span style="flex:1;">${escHtml(c.employee_name)}</span>
+          <button id="btn-rei-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#7c3aed;border-color:#c4b5fd;"
+            onclick="confirmarReingreso(${c.employee_id},'${escHtml(c.employee_name).replace(/'/g,'\\&#39;')}','btn-rei-${c.id}')">Confirmar reingreso</button>
+          <button id="btn-disc-r-${c.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#6b7280;"
+            onclick="descartarBajaCandidato(${c.id},'btn-disc-r-${c.id}')">Descartar</button>
         </div>`).join('')}
     </div>` : '';
 
-  const aguinaldoSec = d.aguinaldo_no_dic?.length ? `
-    <div style="margin-bottom:16px;">
-      <h4 style="margin:0 0 4px;color:#d97706;font-size:13px;">💰 Aguinaldo (P|24) detectado fuera de diciembre — posibles liquidaciones (${d.aguinaldo_no_dic.length})</h4>
-      <p style="font-size:11px;color:#6b7280;margin:0 0 8px;">Se detectó pago de aguinaldo en semana(s) ${[...new Set(d.aguinaldo_no_dic.map(x=>x.semana))].join(', ')}. Puede indicar liquidación por baja.</p>
-      ${d.aguinaldo_no_dic.map(e => `
-        <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fffbeb;border-radius:8px;margin-bottom:4px;font-size:13px;">
-          <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
-          <span style="flex:1;">${escHtml(e.full_name)}</span>
-          <span style="font-size:11px;color:#d97706;">S${e.semana} · $${Number(e.importe||0).toFixed(2)}</span>
-          <button id="btn-agn-${e.id}" class="btn-ghost" style="font-size:11px;padding:3px 10px;color:#dc2626;border-color:#fca5a5;"
-            onclick="confirmarBajaPlantilla(${e.id},'${escHtml(e.full_name).replace(/'/g,'\\&#39;')}','btn-agn-${e.id}','${hoy}')">
-            Confirmar baja
-          </button>
-        </div>`).join('')}
-    </div>` : '';
+  const sinCandidatos = !bajaCands.length && !aguinaldoCands.length && !rehireCands.length && !d.nuevos?.length;
 
   const modal = document.createElement('div');
   modal.id = 'modal-cambios-plantilla';
   modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:16px;padding:24px;width:min(620px,95vw);max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="background:#fff;border-radius:16px;padding:24px;width:min(640px,95vw);max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-        <h3 style="margin:0;font-size:16px;">📋 Cambios en Plantilla detectados</h3>
-        <button onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+        <h3 style="margin:0;font-size:16px;">Cambios en Plantilla detectados</h3>
+        <button onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">x</button>
       </div>
-      ${nuevosSec}${bajasSec}${aguinaldoSec}
+      ${sinCandidatos ? '<p style="color:#6b7280;font-size:13px;">Sin cambios detectados en esta importacion.</p>' : ''}
+      ${nuevosSec}${bajasSec}${aguinaldoSec}${rehireSec}
       <div style="text-align:right;margin-top:16px;border-top:1px solid #e5e7eb;padding-top:12px;">
-        <button class="btn-primary" onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();">Cerrar y actualizar catálogo</button>
+        <button class="btn-primary" onclick="document.getElementById('modal-cambios-plantilla').remove();if(typeof catCargar==='function')catCargar();">Cerrar y actualizar catalogo</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
 }
 
-async function confirmarBajaPlantilla(empId, nombre, btnId, fecha) {
-  if (!confirm(`¿Confirmar baja de ${nombre}?\n\nFecha de baja: ${fecha}\n\nEl empleado quedará inactivo y no aparecerá en Incidencias, Lista de Raya ni Rol Semanal.`)) return;
+async function confirmarBajaCandidato(candId, nombre, btnId) {
+  if (!confirm(`Confirmar baja de ${nombre}?\n\nEl empleado quedara inactivo y no aparecera en Incidencias, Lista de Raya ni Rol Semanal.`)) return;
   const btn = document.getElementById(btnId);
   if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
   try {
-    await api(`/api/rhh/catalogo/${empId}/info`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: 'inactive', fecha_baja: fecha })
-    });
-    if (btn) {
-      btn.textContent = '✓ Baja registrada';
-      btn.style.background = '#fee2e2';
-      btn.style.color = '#991b1b';
-      btn.style.borderColor = '#fca5a5';
-      btn.style.cursor = 'default';
+    const r = await api(`/api/rhh/catalogo/baja-candidatos/${candId}/confirm`, { method: 'POST' });
+    if (!r) throw new Error('Sin respuesta del servidor');
+    const row = document.getElementById(`cand-row-${candId}`);
+    if (row) {
+      row.style.opacity = '0.5';
+      row.innerHTML = row.innerHTML.replace(/<button[^>]*>.*?<\/button>/gs, '');
+      row.insertAdjacentHTML('beforeend', '<span style="font-size:11px;color:#991b1b;font-weight:700;">BAJA CONFIRMADA</span>');
     }
-    toast(`Baja registrada: ${nombre}`, 'success');
+    toast(`Baja confirmada: ${nombre}`, 'success');
     if (typeof catCargar === 'function') catCargar();
   } catch (err) {
     if (btn) { btn.disabled = false; btn.textContent = 'Confirmar baja'; }
-    toast('Error al registrar baja: ' + err.message, 'error');
+    toast('Error al confirmar baja: ' + err.message, 'error');
+  }
+}
+
+async function descartarBajaCandidato(candId, btnId) {
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Descartando...'; }
+  try {
+    const r = await api(`/api/rhh/catalogo/baja-candidatos/${candId}/dismiss`, { method: 'POST' });
+    if (!r) throw new Error('Sin respuesta del servidor');
+    const row = document.getElementById(`cand-row-${candId}`);
+    if (row) {
+      row.style.opacity = '0.4';
+      row.innerHTML = row.innerHTML.replace(/<button[^>]*>.*?<\/button>/gs, '');
+      row.insertAdjacentHTML('beforeend', '<span style="font-size:11px;color:#6b7280;">descartado</span>');
+    }
+    toast('Candidato descartado', 'success');
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Descartar'; }
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function confirmarReingreso(empId, nombre, btnId) {
+  if (!confirm(`Confirmar reingreso de ${nombre}?\n\nEl empleado volvera a estar activo en el catalogo.`)) return;
+  const btn = document.getElementById(btnId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Procesando...'; }
+  try {
+    const r = await api(`/api/rhh/catalogo/employees/${empId}/reactivate`, { method: 'POST' });
+    if (!r) throw new Error('Sin respuesta del servidor');
+    const row = btn?.closest('[id^="cand-row-"]');
+    if (row) {
+      row.style.opacity = '0.5';
+      row.innerHTML = row.innerHTML.replace(/<button[^>]*>.*?<\/button>/gs, '');
+      row.insertAdjacentHTML('beforeend', '<span style="font-size:11px;color:#7c3aed;font-weight:700;">REINGRESO CONFIRMADO</span>');
+    }
+    toast(`Reingreso confirmado: ${nombre}`, 'success');
+    if (typeof catCargar === 'function') catCargar();
+  } catch (err) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Confirmar reingreso'; }
+    toast('Error: ' + err.message, 'error');
   }
 }
 
@@ -11785,7 +11847,7 @@ async function catImportContpaq() {
       _asisRolData = null;   // ROL: fuerza re-fetch en próxima visita (preserva semana/asignaciones actuales)
       incSemPeriodos = [];   // Incidencias / Lista de Raya: fuerza re-fetch de períodos
       // Si hay cambios en plantilla (altas/bajas detectadas), mostrar modal de confirmación
-      if (d.posibles_bajas?.length || d.nuevos?.length || d.aguinaldo_no_dic?.length) {
+      if (d.candidatos_pendientes?.length || d.nuevos?.length) {
         setTimeout(() => mostrarModalCambiosPlantilla(d), 1300);
       } else {
         setTimeout(() => catalogoEmpleadosView(), 1200);
