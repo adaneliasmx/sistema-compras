@@ -200,11 +200,12 @@
                 <th style="min-width:170px;">🏭 Producción</th>
                 <th style="min-width:170px;">🔧 Mantenimiento</th>
                 <th style="min-width:190px;">📦 Inventarios</th>
+                <th style="min-width:180px;">🚛 Validaciones</th>
                 <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="8" class="empty">Cargando...</td></tr>
+              <tr><td colspan="9" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -368,6 +369,17 @@
           <option value="superadmin_mant">⭐ Super Admin (puede borrar)</option>
         </select>
       </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-val-chk" onchange="document.getElementById('cm-val-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          🚛 Validaciones Almacen
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Modulo independiente (SKF/Cuesto)</small>
+        <select class="modal-input" id="cm-val-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="viewer">Viewer (solo lectura)</option>
+          <option value="admin">Admin (acceso total)</option>
+        </select>
+      </div>
     </div>
     <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
@@ -461,6 +473,7 @@ const INV_TYPES_LIST = [
 const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', produccion:'#b45309', mantenimiento:'#92400e' };
 
 let _invUsers = []; // cache de usuarios_inv
+let _valUsers = []; // cache de usuarios_val
 
 let _unifiedData = { internal: [], external: [] };
 let _currentPageTab = 'users';
@@ -515,14 +528,15 @@ function switchPageTab(tab) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    [_unifiedData, _invUsers] = await Promise.all([
+    [_unifiedData, _invUsers, _valUsers] = await Promise.all([
       api('/api/super-admin/unified-users'),
-      api('/api/super-admin/inv-users').catch(() => [])
+      api('/api/super-admin/inv-users').catch(() => []),
+      api('/api/super-admin/val-users').catch(() => [])
     ]);
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="8" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -535,7 +549,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="8" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="9" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -619,6 +633,18 @@ function renderUsersTable() {
            ${ir === 'inventarios' ? `<button class="btn-add-mod" style="font-size:10px;padding:2px 6px;" onclick="openInvPermisosModal('${esc(u.email)}','${esc(u.full_name)}',${invUser?.id||'null'})">Permisos</button>` : ''}
          </div>`;
 
+    const valUser = _valUsers.find(vu => vu.email === (u.email||'').toLowerCase() && vu.activo);
+    const valR = valUser?.role || null;
+    const valCell = `<div class="mod-cell">
+           <span class="dot ${valR ? 'dot-on' : 'dot-off'}" id="dot-val-${uidKey}"></span>
+           <select class="role-sel" style="color:${valR ? '#0e7490' : '#9ca3af'}"
+             onchange="changeValRole('${esc(u.email)}', this.value, this, '${uidKey}')">
+             <option value="">— Sin acceso —</option>
+             <option value="admin"  ${valR==='admin' ?'selected':''}>Admin</option>
+             <option value="viewer" ${valR==='viewer'?'selected':''}>Viewer</option>
+           </select>
+         </div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
         <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'},'${esc(u.email)}')">🔑 Reset</button>
@@ -637,6 +663,7 @@ function renderUsersTable() {
       <td>${produccionCell}</td>
       <td>${mantCell}</td>
       <td>${invCell}</td>
+      <td>${valCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -747,6 +774,22 @@ async function changeInvRole(email, invRole, sel, dotKey) {
   }
 }
 
+async function changeValRole(email, valRole, sel, dotKey) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/val-role', { method:'PATCH', body: JSON.stringify({ email, val_role: valRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = valRole ? '#0e7490' : '#9ca3af';
+    const dot = document.getElementById('dot-val-' + dotKey);
+    if (dot) dot.className = 'dot ' + (valRole ? 'dot-on' : 'dot-off');
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
 let _invPermisosData = {};
 function openInvPermisosModal(email, name, invUserId) {
   _invPermisosData = { email, name, invUserId };
@@ -840,11 +883,13 @@ function openCreateModal(forceRole) {
   document.getElementById('cm-calidad-chk').checked = false;
   document.getElementById('cm-produccion-chk').checked = false;
   document.getElementById('cm-mant-chk').checked = false;
+  document.getElementById('cm-val-chk').checked = false;
   document.getElementById('cm-compras-role').disabled = true;
   document.getElementById('cm-rhh-role').disabled = true;
   document.getElementById('cm-calidad-role').disabled = true;
   document.getElementById('cm-produccion-role').disabled = true;
   document.getElementById('cm-mant-role').disabled = true;
+  document.getElementById('cm-val-role').disabled = true;
   if (forceRole === 'proveedor') {
     document.getElementById('cm-compras-chk').checked = true;
     document.getElementById('cm-compras-role').disabled = false;
@@ -863,25 +908,34 @@ async function saveCreateUser() {
   const calidadChk = document.getElementById('cm-calidad-chk').checked;
   const produccionChk = document.getElementById('cm-produccion-chk').checked;
   const mantChk = document.getElementById('cm-mant-chk').checked;
+  const valChk = document.getElementById('cm-val-chk').checked;
   const errEl = document.getElementById('cmErr');
   errEl.textContent = '';
   if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
-  if (!comprasChk && !rhhChk) { errEl.textContent = 'Selecciona al menos un módulo (Compras o RHH)'; return; }
+  if (!comprasChk && !rhhChk && !valChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
   if (calidadChk && !comprasChk) { errEl.textContent = 'Registros de Calidad requiere activar también Compras'; return; }
   if (produccionChk && !comprasChk) { errEl.textContent = 'Registros de Producción requiere activar también Compras'; return; }
   if (mantChk && !comprasChk) { errEl.textContent = 'Órdenes de Mantenimiento requiere activar también Compras'; return; }
   try {
-    await api('/api/super-admin/unified-users', {
-      method: 'POST',
-      body: JSON.stringify({
-        full_name: name, email, password: pass,
-        compras_role: comprasChk ? document.getElementById('cm-compras-role').value : null,
-        rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null,
-        vales_role: (calidadChk && comprasChk) ? document.getElementById('cm-calidad-role').value : null,
-        produccion_role: (produccionChk && comprasChk) ? document.getElementById('cm-produccion-role').value : null,
-        mant_role: (mantChk && comprasChk) ? document.getElementById('cm-mant-role').value : null
-      })
-    });
+    if (comprasChk || rhhChk) {
+      await api('/api/super-admin/unified-users', {
+        method: 'POST',
+        body: JSON.stringify({
+          full_name: name, email, password: pass,
+          compras_role: comprasChk ? document.getElementById('cm-compras-role').value : null,
+          rhh_role: rhhChk ? document.getElementById('cm-rhh-role').value : null,
+          vales_role: (calidadChk && comprasChk) ? document.getElementById('cm-calidad-role').value : null,
+          produccion_role: (produccionChk && comprasChk) ? document.getElementById('cm-produccion-role').value : null,
+          mant_role: (mantChk && comprasChk) ? document.getElementById('cm-mant-role').value : null
+        })
+      });
+    }
+    if (valChk) {
+      await api('/api/super-admin/unified-users/val-role', {
+        method: 'PATCH',
+        body: JSON.stringify({ email, val_role: document.getElementById('cm-val-role').value })
+      });
+    }
     closeCreateModal();
     await loadData();
   } catch(e) { errEl.textContent = e.message; }
