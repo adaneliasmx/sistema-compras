@@ -84,8 +84,9 @@ test('refreshing attendance template adds latest employees and shares them acros
       { id: 11, employee_number: '101', full_name: 'BAJA CONFIRMADA', status: 'inactive', manual_baja_locked: true, position_id: 1 },
       { id: 12, employee_number: '102', full_name: 'ALTA SEMANA 33', status: 'active', position_id: 1 },
       { id: 13, employee_number: '103', full_name: 'AUSENTE NO CONFIRMADO', status: 'active', position_id: 1 },
+      { id: 14, employee_number: '104', full_name: 'ACTIVO LEGACY SIN PORTAL', status: 'active', position_id: 1 },
     ],
-    rhh_positions: [{ id: 1, name: 'Operador' }],
+    rhh_positions: [{ id: 1, name: 'Operador' }, { id: 2, name: 'Técnico' }],
     rhh_shifts: [{ id: 1, name: 'Turno 1', work_days: [1,2,3,4,5] }],
     rhh_periodos: [
       { id: 1, no_periodo: 32, year: 2026, period_key: '2026-S32', fecha_inicio: '2026-08-03', fecha_fin: '2026-08-09' },
@@ -127,12 +128,22 @@ test('refreshing attendance template adds latest employees and shares them acros
         const rol = await request('/rol?week=2026-08-10');
         const save = await request('/rol', { method: 'POST', body: JSON.stringify({
           week_start: '2026-08-10', version: rol.body.version,
-          assignments: [10,11,12,13].map(employee_id => ({ employee_id, shift_id: 1, position_id: 1 }))
+          assignments: [10,11,12,13,14].map(employee_id => ({ employee_id, shift_id: 1, position_id: 1 }))
         }) });
         const refreshAgain = await request('/plantilla/refresh', { method: 'POST', body: JSON.stringify({ week: '2026-08-10' }) });
         const daily = await request('/diaria?week=2026-08-10');
         const weekly = await request('/semana?week=2026-08-10');
-        process.stdout.write('RESULT:' + JSON.stringify({ refresh, rol, save, refreshAgain, daily, weekly, state: db.read() }));
+        const changed = structuredClone(db.read());
+        const changedBase = changed.rhh_employees.find(employee => employee.id === 10);
+        changedBase.status = 'inactive'; changedBase.manual_baja_locked = true;
+        const changedNew = changed.rhh_employees.find(employee => employee.id === 12);
+        changedNew.position_id = 2; changedNew.manual_position_locked = true;
+        await db.writeAsync(changed);
+        const frozenWeek33 = await request('/rol?week=2026-08-10');
+        const refreshWeek34 = await request('/plantilla/refresh', { method: 'POST', body: JSON.stringify({ week: '2026-08-17' }) });
+        const week34 = await request('/rol?week=2026-08-17');
+        const lockedWeek32 = await request('/plantilla/refresh', { method: 'POST', body: JSON.stringify({ week: '2026-08-03' }) });
+        process.stdout.write('RESULT:' + JSON.stringify({ refresh, rol, save, refreshAgain, daily, weekly, frozenWeek33, refreshWeek34, week34, lockedWeek32, state: db.read() }));
       } finally { await new Promise(resolve => server.close(resolve)); }
     })().catch(error => { console.error(error); process.exit(1); });
   `;
@@ -143,20 +154,35 @@ test('refreshing attendance template adds latest employees and shares them acros
     const result = JSON.parse(child.stdout.slice(child.stdout.lastIndexOf('RESULT:') + 7));
     assert.equal(result.refresh.status, 200);
     assert.equal(result.refresh.body.template.source_period_key, '2026-S33');
-    assert.equal(result.refresh.body.added, 1);
-    assert.deepEqual(result.refresh.body.new_employees.map(employee => employee.id), [12]);
-    assert.deepEqual(result.rol.body.unassigned.map(employee => employee.id), [12]);
+    assert.equal(result.refresh.body.added, 2);
+    assert.equal(result.refresh.body.legacy_recovered, 1);
+    assert.deepEqual(result.refresh.body.legacy_employees.map(employee => employee.id), [14]);
+    assert.deepEqual(result.refresh.body.new_employees.map(employee => employee.id), [12,14]);
+    assert.deepEqual(result.rol.body.unassigned.map(employee => employee.id).sort((a, b) => a - b), [12,14]);
     assert.equal(result.rol.body.assigned.find(employee => employee.id === 11).template_status, 'baja');
     assert.equal(result.rol.body.assigned.find(employee => employee.id === 11).position.name, 'BAJA');
     assert.equal(result.rol.body.assigned.find(employee => employee.id === 13).template_status, 'absent');
     assert.equal(result.save.status, 200);
     assert.equal(result.refreshAgain.status, 200);
-    assert.deepEqual(result.daily.body.grid.map(employee => employee.employee_id).sort((a, b) => a - b), [10,11,12,13]);
-    assert.deepEqual(result.weekly.body.grid.map(employee => employee.employee_id).sort((a, b) => a - b), [10,11,12,13]);
+    assert.deepEqual(result.daily.body.grid.map(employee => employee.employee_id).sort((a, b) => a - b), [10,11,12,13,14]);
+    assert.deepEqual(result.weekly.body.grid.map(employee => employee.employee_id).sort((a, b) => a - b), [10,11,12,13,14]);
     assert.equal(result.daily.body.grid.find(employee => employee.employee_id === 11).position, 'BAJA');
     assert.equal(result.weekly.body.grid.find(employee => employee.employee_id === 11).position, 'BAJA');
-    assert.equal(result.state.rhh_attendance_week_templates.length, 1);
-    assert.equal(result.state.rhh_rol_assignments.length, 4);
+    assert.equal(result.frozenWeek33.body.assigned.find(employee => employee.id === 10).template_status, 'included');
+    assert.equal(result.frozenWeek33.body.assigned.find(employee => employee.id === 12).position.id, 1);
+    assert.equal(result.refreshWeek34.status, 200);
+    assert.equal(result.week34.body.bajas.find(employee => employee.id === 10).position.name, 'BAJA');
+    assert.equal(result.week34.body.unassigned.find(employee => employee.id === 12).position.id, 2);
+    assert.equal(result.week34.body.unassigned.some(employee => employee.id === 14), true);
+    assert.equal(result.lockedWeek32.status, 409);
+    assert.equal(result.lockedWeek32.body.code, 'HISTORICAL_TEMPLATE_LOCKED');
+    assert.equal(result.state.rhh_attendance_week_templates.length, 2);
+    const storedWeek33 = result.state.rhh_attendance_week_templates.find(template => template.week_start === '2026-08-10');
+    const storedWeek34 = result.state.rhh_attendance_week_templates.find(template => template.week_start === '2026-08-17');
+    assert.equal(storedWeek33.employees.find(employee => employee.employee_id === 10).template_status, 'included');
+    assert.equal(storedWeek34.employees.find(employee => employee.employee_id === 10).template_status, 'baja');
+    assert.equal(storedWeek34.employees.find(employee => employee.employee_id === 12).position_id, 2);
+    assert.equal(result.state.rhh_rol_assignments.length, 5);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

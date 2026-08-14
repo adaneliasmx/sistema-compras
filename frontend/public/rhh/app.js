@@ -7354,7 +7354,7 @@ async function listaRolView(el) {
         <span style="font-weight:700;font-size:14px;">${weekLabel}</span>
         <button class="btn-ghost" onclick="rolNavWeek(1)">Semana siguiente ›</button>
         <button class="btn-ghost" style="font-size:12px;" onclick="rolWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
-        ${canEdit ? `<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;margin-left:auto;" onclick="rolVerCambiosPlantilla('lista')">📋 Actualizar Plantilla</button>` : ''}
+        ${canEdit && rolWeekStart >= getMonday(new Date()) ? `<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;margin-left:auto;" onclick="rolVerCambiosPlantilla('lista')">📋 Actualizar Plantilla</button>` : (canEdit ? '<span style="font-size:11px;color:#64748b;margin-left:auto;">🔒 Plantilla histórica protegida</span>' : '')}
       </div>
       ${shiftsHtml}
 
@@ -7493,7 +7493,7 @@ async function rolVerCambiosPlantilla(ctx) {
         (group.slots || []).flatMap(slot => (slot.assigned || []).filter(a => a.template_status === 'absent'))
       );
       if (data?.template_missing) toast('No existe plantilla para esta semana ni para la inmediata anterior', 'warning');
-      else toast(`Plantilla guardada: ${refreshed?.added || 0} altas · ${pending.length} sin asignar · ${missing.length} ausentes`, missing.length ? 'warning' : 'success');
+      else toast(`Plantilla guardada: ${refreshed?.added || 0} agregados · ${refreshed?.legacy_recovered || 0} legacy recuperados · ${pending.length} sin asignar · ${missing.length} ausentes`, missing.length ? 'warning' : 'success');
     } catch (err) { toast(err.message, 'error'); }
     await listaAsistenciaView();
     return;
@@ -7523,7 +7523,7 @@ async function rolVerCambiosPlantilla(ctx) {
   if (catData.template_missing) {
     toast('No existe plantilla para esta semana ni para la semana inmediata anterior', 'warning');
   } else {
-    toast(`Plantilla semanal guardada — ${refreshed?.added || 0} alta${refreshed?.added===1?'':'s'} · ${n} sin asignar`, 'success');
+    toast(`Plantilla semanal guardada — ${refreshed?.added || 0} agregado${refreshed?.added===1?'':'s'} · ${refreshed?.legacy_recovered || 0} legacy recuperado${refreshed?.legacy_recovered===1?'':'s'} · ${n} sin asignar`, 'success');
   }
 
   // 3. Altas/bajas recientes para modal informativo
@@ -7568,6 +7568,7 @@ async function rolVerCambiosPlantilla(ctx) {
       <div style="padding:10px 12px;background:#f0fdf4;border-radius:8px;margin-bottom:16px;font-size:13px;color:#166534;">
         ✅ <strong>${activos.length} empleados</strong> en la plantilla de esta semana. Los no asignados aparecen en "Sin asignar".
       </div>
+      ${refreshed?.legacy_recovered ? `<div style="padding:9px 12px;background:#eff6ff;border-radius:8px;margin-bottom:14px;font-size:12px;color:#1d4ed8;">Se recuperaron <strong>${refreshed.legacy_recovered}</strong> empleados activos creados antes del historial semanal.</div>` : ''}
       ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Pendientes de asignar (${altas.length})</h4>${altaRows}</div>` : ''}
       ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">Bajas confirmadas (${bajas.length})</h4>${bajaRows}</div>` : ''}
       ${ausentes.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#c2410c;font-size:13px;">Asignados ausentes de la nómina (${ausentes.length})</h4>${ausenteRows}</div>` : ''}
@@ -8504,6 +8505,7 @@ function asisRolRender() {
   if (!_asisRolData) { asisRolView(); return; }
   const el = document.getElementById('app');
   const { all_employees, shifts, positions, proyectos } = _asisRolData;
+  const historicalLocked = asisWeek < getMonday(new Date());
 
   const assignedIds = new Set(_asisAssignments.map(a => a.employee_id));
   const confirmedBajas = all_employees
@@ -8630,7 +8632,9 @@ function asisRolRender() {
       <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
       <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
         <span id="asis-rol-save-status" style="font-size:11px;color:#9ca3af;"></span>
-        <button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;" onclick="rolVerCambiosPlantilla('asis')">📋 Actualizar Plantilla</button>
+        ${historicalLocked
+          ? '<span style="font-size:11px;color:#64748b;">🔒 Plantilla histórica protegida</span>'
+          : '<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;" onclick="rolVerCambiosPlantilla(\'asis\')">📋 Actualizar Plantilla</button>'}
         <button class="btn-ghost" onclick="asisShiftMgmtModal()">＋ Agregar turno</button>
         <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
       </div>

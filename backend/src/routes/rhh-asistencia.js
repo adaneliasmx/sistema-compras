@@ -107,6 +107,48 @@ function isConfirmedInactive(emp) {
   return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
 }
 
+function isHistoricalWeek(week) {
+  return weekMonday(week) < weekMonday(nowMxDate());
+}
+
+function hasValidPayrollNumber(emp) {
+  const value = String(emp?.employee_number || '').trim();
+  return value.length >= 3 && /^\d+$/.test(value.replace(/^0+/, '') || '0');
+}
+
+function weeklyEmployeeSeed(emp) {
+  const seed = {
+    employee_id: Number(emp?.employee_id ?? emp?.id) || undefined,
+    employee_number: emp?.employee_number,
+    full_name: emp?.full_name,
+    no_periodo: emp?.no_periodo,
+    year: emp?.year,
+    period_key: emp?.period_key,
+    fecha_inicio: emp?.fecha_inicio,
+    fecha_fin: emp?.fecha_fin,
+    present_in_payroll: emp?.present_in_payroll,
+    status_at_period: emp?.status_at_period,
+    department_id: emp?.department_id,
+    department_name: emp?.department_name,
+    position_id: emp?.position_id,
+    position_name: emp?.position_name,
+    shift_id: emp?.shift_id,
+    project: emp?.project,
+    sal_diario: emp?.sal_diario,
+    salary_daily: emp?.salary_daily,
+    sdi: emp?.sdi,
+    sbc: emp?.sbc,
+    fecha_ingreso: emp?.fecha_ingreso ?? emp?.start_date,
+    source: emp?.source,
+    import_batch_id: emp?.import_batch_id,
+    template_status: emp?.template_status,
+    template_period_key: emp?.template_period_key,
+    legacy_catalog_reconciliation: emp?.legacy_catalog_reconciliation,
+    legacy_reconciled_at: emp?.legacy_reconciled_at,
+  };
+  return Object.fromEntries(Object.entries(seed).filter(([, value]) => value !== undefined));
+}
+
 /*
  * Materializa la plantilla correspondiente a la semana seleccionada. Los datos
  * laborales salen del snapshot semanal; el catálogo maestro sólo aporta la
@@ -116,6 +158,7 @@ function isConfirmedInactive(emp) {
  */
 function employeesForWeek(db, week, assignments = []) {
   const template = getEmployeeTemplateForWeek(db, week);
+  const useCurrentMasterStatus = template.source !== 'attendance_week_template' && !isHistoricalWeek(week);
   const systemIds = getSystemEmpIds();
   const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
   const rows = [];
@@ -125,10 +168,12 @@ function employeesForWeek(db, week, assignments = []) {
     const employeeId = Number(snapshot.employee_id ?? snapshot.id);
     if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
     const master = masters.get(employeeId) || {};
-    const confirmedInactive = isConfirmedInactive(master);
-    const templateStatus = confirmedInactive
+    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
+    const templateStatus = snapshot.template_status === 'baja'
       ? 'baja'
-      : (snapshot.template_status === 'absent' ? 'absent' : 'included');
+      : (snapshot.template_status === 'absent'
+          ? 'absent'
+          : (confirmedInactive ? 'baja' : 'included'));
     rows.push({
       ...master,
       id: employeeId,
@@ -152,7 +197,7 @@ function employeesForWeek(db, week, assignments = []) {
     if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
     const master = masters.get(employeeId);
     if (!master) continue;
-    const confirmedInactive = isConfirmedInactive(master);
+    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
     rows.push({
       ...master,
       current_status: master.status || null,
@@ -284,6 +329,15 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 // asignaciones existentes; únicamente sincroniza membresía y bajas confirmadas.
 router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
   const week = weekMonday(req.body?.week || req.body?.week_start);
+  const currentWeek = weekMonday(nowMxDate());
+  if (week < currentWeek) {
+    return res.status(409).json({
+      error: 'La plantilla histórica está protegida y no puede actualizarse con datos posteriores',
+      code: 'HISTORICAL_TEMPLATE_LOCKED',
+      week_start: week,
+      current_week_start: currentWeek,
+    });
+  }
   const db = structuredClone(read());
   if (!Array.isArray(db.rhh_attendance_week_templates)) db.rhh_attendance_week_templates = [];
 
@@ -291,15 +345,24 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     ignoreMaterialized: true,
     allowLatestLoaded: true,
   });
-  if (!source.employees?.length) {
+  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
+  const systemIds = getSystemEmpIds();
+  const employeesWithSnapshots = new Set((db.rhh_employee_period_snapshots || [])
+    .map(snapshot => Number(snapshot.employee_id))
+    .filter(Boolean));
+  const legacyCandidates = [...masters.values()].filter(emp =>
+    emp.status === 'active'
+    && !isConfirmedInactive(emp)
+    && !systemIds.has(Number(emp.id))
+    && hasValidPayrollNumber(emp)
+    && !employeesWithSnapshots.has(Number(emp.id))
+  );
+  if (!source.employees?.length && legacyCandidates.length === 0) {
     return res.status(409).json({
-      error: 'No hay una semana importada con empleados para actualizar esta plantilla',
+      error: 'No hay una semana importada ni empleados legacy activos para actualizar esta plantilla',
       template_source: source.source,
     });
   }
-
-  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
-  const systemIds = getSystemEmpIds();
   const weekRoleIds = new Set((db.rhh_weekly_rol || [])
     .filter(rol => rol.week_start === week)
     .map(rol => Number(rol.id)));
@@ -344,23 +407,53 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     const employeeId = Number(raw?.employee_id ?? raw?.id);
     if (!employeeId || systemIds.has(employeeId)) return;
     const master = masters.get(employeeId) || {};
+    const seed = weeklyEmployeeSeed(raw);
     const templateStatus = forcedStatus || (isConfirmedInactive(master) ? 'baja' : 'included');
     rows.set(employeeId, {
-      ...raw,
+      ...seed,
       employee_id: employeeId,
-      employee_number: raw?.employee_number ?? master.employee_number ?? null,
-      full_name: raw?.full_name || master.full_name || `Empleado ${employeeId}`,
-      department_id: raw?.department_id ?? master.department_id ?? null,
-      position_id: raw?.position_id ?? master.position_id ?? null,
-      shift_id: raw?.shift_id ?? master.shift_id ?? null,
-      project: raw?.project ?? master.project ?? null,
-      status_at_period: templateStatus === 'baja' ? 'inactive' : (raw?.status_at_period || 'active'),
+      employee_number: seed.employee_number ?? master.employee_number ?? null,
+      full_name: seed.full_name || master.full_name || `Empleado ${employeeId}`,
+      department_id: master.manual_department_locked
+        ? (master.department_id ?? null)
+        : (seed.department_id ?? master.department_id ?? null),
+      position_id: master.manual_position_locked
+        ? (master.position_id ?? null)
+        : (seed.position_id ?? master.position_id ?? null),
+      shift_id: master.manual_shift_locked
+        ? (master.shift_id ?? null)
+        : (seed.shift_id ?? master.shift_id ?? null),
+      project: master.manual_project_locked
+        ? (master.project ?? null)
+        : (seed.project ?? master.project ?? null),
+      sal_diario: master.manual_salary_locked
+        ? (master.sal_diario ?? master.salary_daily ?? null)
+        : (seed.sal_diario ?? master.sal_diario ?? master.salary_daily ?? null),
+      salary_daily: master.manual_salary_locked
+        ? (master.salary_daily ?? master.sal_diario ?? null)
+        : (seed.salary_daily ?? seed.sal_diario ?? master.salary_daily ?? master.sal_diario ?? null),
+      fecha_ingreso: master.manual_start_date_locked
+        ? (master.fecha_ingreso ?? master.start_date ?? null)
+        : (seed.fecha_ingreso ?? master.fecha_ingreso ?? master.start_date ?? null),
+      status_at_period: templateStatus === 'baja' ? 'inactive' : (seed.status_at_period || 'active'),
       template_status: templateStatus,
-      template_period_key: source.period?.period_key || raw?.period_key || null,
+      template_period_key: source.period?.period_key || seed.period_key || null,
     });
   };
 
   for (const snapshot of source.employees) materialize(snapshot);
+
+  const legacyRecovered = [];
+  for (const emp of legacyCandidates) {
+    if (rows.has(Number(emp.id))) continue;
+    materialize({
+      ...weeklyEmployeeSeed(emp),
+      source: 'legacy_catalog_reconciliation',
+      legacy_catalog_reconciliation: true,
+      legacy_reconciled_at: nowMxDateTime(),
+    }, 'included');
+    legacyRecovered.push(emp);
+  }
 
   // Una asignación nunca desaparece por actualizar la plantilla. Si falta en la
   // última nómina queda como ausente; sólo una baja confirmada recibe "BAJA".
@@ -368,7 +461,7 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     if (rows.has(employeeId)) continue;
     const master = masters.get(employeeId);
     if (!master) continue;
-    materialize(master, isConfirmedInactive(master) ? 'baja' : 'absent');
+    materialize(weeklyEmployeeSeed(master), isConfirmedInactive(master) ? 'baja' : 'absent');
   }
 
   // Conserva bajas confirmadas que ya pertenecían a esta plantilla aunque no
@@ -376,7 +469,7 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
   for (const [employeeId, previous] of previousRows) {
     if (rows.has(employeeId)) continue;
     const master = masters.get(employeeId);
-    if (isConfirmedInactive(master)) materialize({ ...previous, ...master }, 'baja');
+    if (isConfirmedInactive(master)) materialize({ ...previous, ...weeklyEmployeeSeed(master) }, 'baja');
   }
 
   const employees = [...rows.values()];
@@ -418,6 +511,12 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     active: included.length,
     confirmed_inactive: employees.filter(employee => employee.template_status === 'baja').length,
     assigned_preserved: assignedIds.size,
+    legacy_recovered: legacyRecovered.length,
+    legacy_employees: legacyRecovered.map(employee => ({
+      id: employee.id,
+      employee_number: employee.employee_number,
+      full_name: employee.full_name,
+    })),
   });
 });
 
@@ -500,7 +599,8 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 
   const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
-  const employees   = db.rhh_employees  || [];
+  const weeklyTemplate = employeesForWeek(db, week, assignments);
+  const employees   = weeklyTemplate.employees;
   const positions   = db.rhh_positions  || [];
   const shifts      = db.rhh_shifts     || [];
 
@@ -508,7 +608,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
     .map(a => {
       const emp   = employees.find(e => e.id === a.employee_id);
       const shift = shifts.find(s => s.id === a.shift_id);
-      const pos   = isConfirmedInactive(emp)
+      const pos   = emp?.template_status === 'baja'
         ? { id: null, name: 'BAJA' }
         : positions.find(p => p.id === (a.position_id ?? emp?.position_id));
       return { ...a, emp, shift, pos };

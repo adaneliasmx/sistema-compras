@@ -8,8 +8,17 @@ function isConfirmedInactive(emp) {
   return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
 }
 
+function currentWeekStart() {
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const date = new Date(`${today}T12:00:00Z`);
+  const day = date.getUTCDay();
+  date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return date.toISOString().slice(0, 10);
+}
+
 function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
   const template = getEmployeeTemplateForWeek(db, weekStart);
+  const useCurrentMasterStatus = template.source !== 'attendance_week_template' && weekStart >= currentWeekStart();
   const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
   const rows = [];
   const included = new Set();
@@ -18,7 +27,7 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
     const employeeId = Number(snapshot.employee_id ?? snapshot.id);
     if (!employeeId || included.has(employeeId)) continue;
     const master = masters.get(employeeId) || {};
-    const confirmedInactive = isConfirmedInactive(master);
+    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
     rows.push({
       ...master,
       id: employeeId,
@@ -31,9 +40,11 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
       salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
       status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
       current_status: master.status || null,
-      template_status: confirmedInactive
+      template_status: snapshot.template_status === 'baja'
         ? 'baja'
-        : (snapshot.template_status === 'absent' ? 'absent' : 'included'),
+        : (snapshot.template_status === 'absent'
+            ? 'absent'
+            : (confirmedInactive ? 'baja' : 'included')),
       template_period_key: snapshot.period_key || template.period?.period_key || null,
     });
     included.add(employeeId);
@@ -47,7 +58,7 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
     rows.push({
       ...master,
       current_status: master.status || null,
-      template_status: isConfirmedInactive(master) ? 'baja' : 'absent',
+      template_status: useCurrentMasterStatus && isConfirmedInactive(master) ? 'baja' : 'absent',
     });
     included.add(employeeId);
   }
