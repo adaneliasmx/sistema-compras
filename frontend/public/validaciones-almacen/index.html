@@ -134,7 +134,8 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
 
   <nav>
     <button class="active" onclick="switchTab('resumen')">Dashboard</button>
-    <button onclick="switchTab('embarques')">Embarques</button>
+    <button onclick="switchTab('trazabilidad')">Trazabilidad Online</button>
+    <button onclick="switchTab('embarques')">Embarques (Sync)</button>
     <button onclick="switchTab('pendientes')">Pendientes</button>
     <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
   </nav>
@@ -238,24 +239,30 @@ function switchTab(tab) {
   });
   const m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
-  if (tab === 'resumen')    renderResumen();
-  if (tab === 'embarques')  renderEmbarques();
-  if (tab === 'pendientes') renderPendientes();
-  if (tab === 'syncstatus') renderSyncStatus();
+  if (tab === 'resumen')       renderResumen();
+  if (tab === 'trazabilidad')  renderTrazabilidad();
+  if (tab === 'embarques')     renderEmbarques();
+  if (tab === 'pendientes')    renderPendientes();
+  if (tab === 'syncstatus')    renderSyncStatus();
 }
 
 // ── DASHBOARD / RESUMEN ────────────────────────────────────────────────────────
 async function renderResumen() {
   const m = document.getElementById('mainContent');
-  const d = await apiFetch('/resumen');
+  const [d, embOnline] = await Promise.all([
+    apiFetch('/resumen'),
+    apiFetch('/embarques-online').catch(() => [])
+  ]);
   if (!d) return;
 
   const skf = d.skf || {};
   const cu  = d.cuesto || {};
   const totalPend = (skf.pendientes_faltante||0)+(skf.pendientes_sin_qry||0)+(cu.pendientes_faltante||0)+(cu.pendientes_sin_qry||0);
+  const embEnviados = (embOnline||[]).filter(e => e.estado === 'ENVIADO').length;
+  const embValidados = (embOnline||[]).filter(e => e.estado === 'VALIDADO').length;
 
   m.innerHTML = `
-    <div class="alert info">Datos sincronizados periodicamente desde las apps de escritorio. Ultima actualizacion al cargar la pagina.</div>
+    <div class="alert info">Datos sincronizados desde las apps de escritorio + embarques registrados en tiempo real.</div>
 
     <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Vista General</h3>
     <div class="kpi-grid">
@@ -301,6 +308,13 @@ async function renderResumen() {
       </div>
     </div>
 
+    <h3 style="margin:20px 0 14px;color:#1a3a5c;font-size:1rem">Embarques Online (Trazabilidad)</h3>
+    <div class="kpi-grid">
+      <div class="kpi"><label>Total registrados</label><div class="val">${(embOnline||[]).length}</div><div class="sub">Embarques con UUID</div></div>
+      <div class="kpi ${embEnviados > 0 ? 'orange' : 'green'}"><label>En transito</label><div class="val">${embEnviados}</div><div class="sub">Pendientes de validar</div></div>
+      <div class="kpi green"><label>Validados</label><div class="val">${embValidados}</div><div class="sub">Recibidos y confirmados</div></div>
+    </div>
+
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
       <div class="tabla-wrap">
         <div class="tabla-header">
@@ -329,6 +343,119 @@ async function renderResumen() {
         </table>
       </div>
     </div>`;
+}
+
+// ── TRAZABILIDAD ONLINE ─────────────────────────────────────────────────────────
+async function renderTrazabilidad() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div class="filtros">
+      <div><label>Flujo</label>
+        <select id="tFlujo"><option value="">Todos</option><option value="cuesto_a_skf">Cuesto → SKF</option><option value="skf_a_cuesto">SKF → Cuesto</option></select>
+      </div>
+      <div><label>Estado</label>
+        <select id="tEstado"><option value="">Todos</option><option value="ENVIADO">Enviado (pendiente)</option><option value="VALIDADO">Validado</option></select>
+      </div>
+      <button class="btn-buscar" onclick="cargarTrazabilidad()">Buscar</button>
+    </div>
+    <div id="trazTabla"><div class="spinner"></div></div>`;
+  cargarTrazabilidad();
+}
+
+async function cargarTrazabilidad() {
+  const params = new URLSearchParams();
+  const flujo  = document.getElementById('tFlujo')?.value;
+  const estado = document.getElementById('tEstado')?.value;
+  if (flujo)  params.set('flujo', flujo);
+  if (estado) params.set('estado', estado);
+
+  const tablaEl = document.getElementById('trazTabla');
+  tablaEl.innerHTML = '<div class="spinner"></div>';
+
+  const rows = await apiFetch('/embarques-online?' + params.toString());
+  if (!rows) return;
+
+  const enviados  = rows.filter(r => r.estado === 'ENVIADO').length;
+  const validados = rows.filter(r => r.estado === 'VALIDADO').length;
+
+  tablaEl.innerHTML = `
+    <div class="kpi-grid" style="margin-bottom:16px">
+      <div class="kpi"><label>Total embarques online</label><div class="val">${rows.length}</div></div>
+      <div class="kpi orange"><label>En transito (ENVIADO)</label><div class="val">${enviados}</div></div>
+      <div class="kpi green"><label>Validados</label><div class="val">${validados}</div></div>
+    </div>
+    <div class="tabla-wrap">
+      <div class="tabla-header">
+        <h3>Embarques con trazabilidad online</h3>
+        <span class="tabla-count">${rows.length} registros</span>
+      </div>
+      <div style="overflow-x:auto"><table>
+        <thead>
+          <tr><th>UUID</th><th>Flujo</th><th>No. Embarque</th><th>Operador Envio</th>
+          <th>Fecha Envio</th><th>Piezas</th><th>Items</th><th>Estado</th>
+          <th>Recepcion</th><th>Anomalias</th><th></th></tr>
+        </thead>
+        <tbody>
+          ${rows.length === 0 ? '<tr><td colspan="11" class="empty">Sin embarques online registrados</td></tr>' :
+            rows.map(r => {
+              const flujoLabel = r.flujo === 'cuesto_a_skf' ? 'CUE → SKF' : 'SKF → CUE';
+              const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
+              return `<tr>
+                <td style="font-size:.75rem;font-family:monospace;color:#1a5276;font-weight:600">${r.uuid}</td>
+                <td><span class="badge ${r.side_origen}">${flujoLabel}</span></td>
+                <td><b>${r.numero_embarque}</b></td>
+                <td>${r.operador_envio}</td>
+                <td>${r.fecha_envio || '-'} ${r.hora_envio || ''}</td>
+                <td style="text-align:right;font-weight:600">${r.total_piezas}</td>
+                <td style="text-align:right">${r.total_items}</td>
+                <td><span class="badge ${estadoBadge}">${r.estado}</span></td>
+                <td>${r.estado === 'VALIDADO' ? (r.operador_recepcion || '-') + '<br><small>' + (r.fecha_recepcion || '') + '</small>' : '<span style="color:#aaa">—</span>'}</td>
+                <td>${r.anomalias_count > 0 ? '<span class="badge faltante">' + r.anomalias_count + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
+                <td><button style="background:#e8f4fd;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.78rem" onclick="verEmbarqueOnline('${r.uuid}')">Detalle</button></td>
+              </tr>`;
+            }).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+async function verEmbarqueOnline(uuid) {
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="spinner"></div>';
+  document.getElementById('modalOverlay').classList.add('open');
+
+  const e = await apiFetch('/embarques-online/' + encodeURIComponent(uuid));
+  if (!e) return;
+
+  const flujoLabel = e.flujo === 'cuesto_a_skf' ? 'CUESTO → SKF' : 'SKF → CUESTO';
+  const items = e.items || [];
+
+  body.innerHTML = `
+    <h2>Embarque <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
+      <div class="detail-item"><label>No. Embarque</label><span>${e.numero_embarque}</span></div>
+      <div class="detail-item"><label>Operador Envio</label><span>${e.operador_envio}</span></div>
+      <div class="detail-item"><label>Fecha Envio</label><span>${e.fecha_envio} ${e.hora_envio||''}</span></div>
+      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem">${e.total_piezas}</span></div>
+      <div class="detail-item"><label>Estado</label><span class="badge ${e.estado==='VALIDADO'?'conforme':'pendiente'}">${e.estado}</span></div>
+      ${e.operador_recepcion ? `<div class="detail-item"><label>Operador Recepcion</label><span>${e.operador_recepcion}</span></div>` : ''}
+      ${e.fecha_recepcion ? `<div class="detail-item"><label>Fecha Recepcion</label><span>${e.fecha_recepcion}</span></div>` : ''}
+      ${e.resultado_validacion ? `<div class="detail-item"><label>Resultado</label><span class="badge ${e.resultado_validacion==='CONFORME'?'conforme':'faltante'}">${e.resultado_validacion}</span></div>` : ''}
+    </div>
+
+    <div class="section-title">Items del embarque (${items.length})</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr>${Object.keys(items[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
+      <tbody>${items.map(it => '<tr>' + Object.values(it).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
+    </table></div>
+
+    ${(e.anomalias||[]).length > 0 ? `
+      <div class="section-title" style="color:#c0392b">Anomalias (${e.anomalias.length})</div>
+      <div style="overflow-x:auto"><table>
+        <thead><tr>${Object.keys(e.anomalias[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
+        <tbody>${e.anomalias.map(a => '<tr>' + Object.values(a).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
+      </table></div>` : ''}`;
 }
 
 // ── EMBARQUES ──────────────────────────────────────────────────────────────────

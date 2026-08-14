@@ -435,6 +435,34 @@ router.post('/embarque/:uuid/validar', syncKeyRequired, (req, res) => {
   res.json({ ok: true, estado: 'VALIDADO' });
 });
 
+// ── Embarques online — vista web (JWT auth) ─────────────────────────────────
+router.get('/embarques-online', valAuthRequired, (req, res) => {
+  const db = read();
+  const embarques = (db.val_embarques || []).slice().reverse(); // mas recientes primero
+  const { flujo, estado } = req.query;
+  let filtered = embarques;
+  if (flujo)  filtered = filtered.filter(e => e.flujo === flujo);
+  if (estado) filtered = filtered.filter(e => e.estado === estado);
+  res.json(filtered.map(e => ({
+    uuid: e.uuid, flujo: e.flujo, side_origen: e.side_origen, side_destino: e.side_destino,
+    numero_embarque: e.numero_embarque, operador_envio: e.operador_envio,
+    fecha_envio: e.fecha_envio, hora_envio: e.hora_envio,
+    total_piezas: e.total_piezas, total_items: e.total_items || (e.items||[]).length,
+    estado: e.estado,
+    operador_recepcion: e.operador_recepcion || null,
+    fecha_recepcion: e.fecha_recepcion || null,
+    resultado_validacion: e.resultado_validacion || null,
+    anomalias_count: (e.anomalias || []).length
+  })));
+});
+
+router.get('/embarques-online/:uuid', valAuthRequired, (req, res) => {
+  const db = read();
+  const emb = (db.val_embarques || []).find(e => e.uuid === req.params.uuid);
+  if (!emb) return res.status(404).json({ error: 'Embarque no encontrado' });
+  res.json(emb);
+});
+
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
