@@ -304,4 +304,145 @@ router.get('/reporte/embarque/:numero', valAuthRequired, (req, res) => {
   });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// EMBARQUES ONLINE — registro bidireccional con UUID de trazabilidad
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function generarUUID(side, db) {
+  const prefix = side === 'cuesto' ? 'EMB-CUE' : 'EMB-SKF';
+  const hoy = nowMxDate().replace(/-/g, '');
+  const embarques = db.val_embarques || [];
+  const hoyPrefix = `${prefix}-${hoy}-`;
+  const existentes = embarques.filter(e => e.uuid && e.uuid.startsWith(hoyPrefix));
+  const consecutivo = existentes.length + 1;
+  return `${hoyPrefix}${String(consecutivo).padStart(3, '0')}`;
+}
+
+// Registrar un nuevo embarque (desde app Python al enviar)
+router.post('/embarque/registrar', syncKeyRequired, (req, res) => {
+  const { side_origen, side_destino, flujo, numero_embarque, operador_envio, items, total_piezas } = req.body;
+  if (!side_origen || !side_destino || !numero_embarque || !operador_envio || !Array.isArray(items)) {
+    return res.status(400).json({ error: 'Campos requeridos: side_origen, side_destino, numero_embarque, operador_envio, items[]' });
+  }
+
+  const db = read();
+  db.val_embarques = db.val_embarques || [];
+  const id = nextId(db.val_embarques);
+  const uuid = generarUUID(side_origen, db);
+  const now = new Date().toLocaleString('en-CA', { timeZone: 'America/Mexico_City', hour12: false });
+  const [fecha, hora] = now.split(', ');
+
+  const embarque = {
+    id,
+    uuid,
+    side_origen,
+    side_destino,
+    flujo: flujo || `${side_origen}_a_${side_destino}`,
+    numero_embarque,
+    operador_envio,
+    fecha_envio: fecha,
+    hora_envio: hora,
+    items,
+    total_piezas: total_piezas || items.length,
+    total_items: items.length,
+    estado: 'ENVIADO',
+    fecha_recepcion: null,
+    operador_recepcion: null,
+    resultado_validacion: null,
+    anomalias: [],
+    created_at: `${fecha}T${hora}`
+  };
+
+  db.val_embarques.push(embarque);
+  write(db);
+  res.json({ ok: true, uuid, id });
+});
+
+// Listar embarques pendientes de recibir (filtrado por side_destino)
+router.get('/embarque/pendientes', syncKeyRequired, (req, res) => {
+  const { side_destino } = req.query;
+  if (!side_destino) return res.status(400).json({ error: 'side_destino requerido (skf|cuesto)' });
+
+  const db = read();
+  const pendientes = (db.val_embarques || [])
+    .filter(e => e.side_destino === side_destino && e.estado === 'ENVIADO')
+    .map(e => ({
+      uuid: e.uuid,
+      numero_embarque: e.numero_embarque,
+      operador_envio: e.operador_envio,
+      fecha_envio: e.fecha_envio,
+      hora_envio: e.hora_envio,
+      total_piezas: e.total_piezas,
+      total_items: e.total_items,
+      side_origen: e.side_origen
+    }))
+    .sort((a, b) => (b.fecha_envio || '').localeCompare(a.fecha_envio || ''));
+
+  res.json(pendientes);
+});
+
+// Detalle completo de un embarque por UUID
+router.get('/embarque/:uuid', syncKeyRequired, (req, res) => {
+  const db = read();
+  const emb = (db.val_embarques || []).find(e => e.uuid === req.params.uuid);
+  if (!emb) return res.status(404).json({ error: 'Embarque no encontrado' });
+  res.json(emb);
+});
+
+// Consulta rapida de estado (para polling desde el lado emisor)
+router.get('/embarque/:uuid/estado', syncKeyRequired, (req, res) => {
+  const db = read();
+  const emb = (db.val_embarques || []).find(e => e.uuid === req.params.uuid);
+  if (!emb) return res.status(404).json({ error: 'Embarque no encontrado' });
+  res.json({
+    uuid: emb.uuid,
+    estado: emb.estado,
+    fecha_recepcion: emb.fecha_recepcion,
+    operador_recepcion: emb.operador_recepcion,
+    resultado_validacion: emb.resultado_validacion,
+    anomalias: emb.anomalias || []
+  });
+});
+
+// Validar/confirmar recepcion de un embarque
+router.post('/embarque/:uuid/validar', syncKeyRequired, (req, res) => {
+  const { operador_recepcion, resultado, coinciden, faltantes, sobrantes, resueltos_historicos } = req.body;
+  if (!operador_recepcion || !resultado) {
+    return res.status(400).json({ error: 'operador_recepcion y resultado son requeridos' });
+  }
+
+  const db = read();
+  const emb = (db.val_embarques || []).find(e => e.uuid === req.params.uuid);
+  if (!emb) return res.status(404).json({ error: 'Embarque no encontrado' });
+
+  const now = new Date().toLocaleString('en-CA', { timeZone: 'America/Mexico_City', hour12: false });
+  const [fecha, hora] = now.split(', ');
+
+  emb.estado = 'VALIDADO';
+  emb.fecha_recepcion = fecha;
+  emb.hora_recepcion = hora;
+  emb.operador_recepcion = operador_recepcion;
+  emb.resultado_validacion = resultado;
+  emb.validacion_detalle = {
+    coinciden: coinciden || [],
+    faltantes: faltantes || [],
+    sobrantes: sobrantes || [],
+    resueltos_historicos: resueltos_historicos || []
+  };
+  emb.anomalias = (faltantes || []).concat(sobrantes || []);
+
+  write(db);
+  res.json({ ok: true, estado: 'VALIDADO' });
+});
+
+// Version de la app (para auto-update)
+router.get('/app/version', (req, res) => {
+  res.json({
+    version: '4.3.0',
+    min_version: '4.2.0',
+    url: '',
+    changelog: 'Embarques online bidireccionales, auto-deteccion de embarques pendientes.'
+  });
+});
+
 module.exports = router;

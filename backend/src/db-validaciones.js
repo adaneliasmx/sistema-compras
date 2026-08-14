@@ -28,7 +28,9 @@ const EMPTY_DB = {
   // Registros sincronizados desde la app Python (lado CUESTO)
   val_cuesto_envios: [],     // envios PT CUESTO → SKF
   val_cuesto_ingresos: [],   // ingreso SKF en CUESTO
-  val_cuesto_pendientes: []  // pendientes lado CUESTO
+  val_cuesto_pendientes: [], // pendientes lado CUESTO
+  // Embarques online (bidireccional)
+  val_embarques: []          // embarques registrados con UUID de trazabilidad
 };
 
 async function initDb() {
