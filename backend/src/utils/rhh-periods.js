@@ -480,6 +480,7 @@ module.exports = {
   resolvePeriodForDate,
   samePeriod,
   getEmployeeTemplateForWeek,
+  isoWeekPeriod,
   upsertCanonicalPeriod,
   upsertEmployeePeriodSnapshot,
   validWeek,

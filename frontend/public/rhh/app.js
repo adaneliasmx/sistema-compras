@@ -7492,8 +7492,9 @@ async function rolVerCambiosPlantilla(ctx) {
       const missing = (data?.shifts || []).flatMap(group =>
         (group.slots || []).flatMap(slot => (slot.assigned || []).filter(a => a.template_status === 'absent'))
       );
+      const recovered = Number(refreshed?.catalog_recovered ?? refreshed?.legacy_recovered ?? 0);
       if (data?.template_missing) toast('No existe plantilla para esta semana ni para la inmediata anterior', 'warning');
-      else toast(`Plantilla guardada: ${refreshed?.added || 0} agregados · ${refreshed?.legacy_recovered || 0} legacy recuperados · ${pending.length} sin asignar · ${missing.length} ausentes`, missing.length ? 'warning' : 'success');
+      else toast(`Plantilla guardada: ${refreshed?.added || 0} agregados · ${recovered} activos recuperados · ${pending.length} sin asignar · ${missing.length} ausentes`, missing.length ? 'warning' : 'success');
     } catch (err) { toast(err.message, 'error'); }
     await listaAsistenciaView();
     return;
@@ -7520,10 +7521,11 @@ async function rolVerCambiosPlantilla(ctx) {
   const catEmps = (catData.employees || []).filter(e => e.template_status === 'included');
   const assignedIds = new Set((_asisAssignments || []).map(a => a.employee_id));
   const n = catEmps.filter(e => !assignedIds.has(e.id)).length;
+  const recovered = Number(refreshed?.catalog_recovered ?? refreshed?.legacy_recovered ?? 0);
   if (catData.template_missing) {
     toast('No existe plantilla para esta semana ni para la semana inmediata anterior', 'warning');
   } else {
-    toast(`Plantilla semanal guardada — ${refreshed?.added || 0} agregado${refreshed?.added===1?'':'s'} · ${refreshed?.legacy_recovered || 0} legacy recuperado${refreshed?.legacy_recovered===1?'':'s'} · ${n} sin asignar`, 'success');
+    toast(`Plantilla semanal guardada — ${refreshed?.added || 0} agregado${refreshed?.added===1?'':'s'} · ${recovered} activo${recovered===1?'':'s'} recuperado${recovered===1?'':'s'} · ${n} sin asignar`, 'success');
   }
 
   // 3. Altas/bajas recientes para modal informativo
@@ -7568,7 +7570,7 @@ async function rolVerCambiosPlantilla(ctx) {
       <div style="padding:10px 12px;background:#f0fdf4;border-radius:8px;margin-bottom:16px;font-size:13px;color:#166534;">
         ✅ <strong>${activos.length} empleados</strong> en la plantilla de esta semana. Los no asignados aparecen en "Sin asignar".
       </div>
-      ${refreshed?.legacy_recovered ? `<div style="padding:9px 12px;background:#eff6ff;border-radius:8px;margin-bottom:14px;font-size:12px;color:#1d4ed8;">Se recuperaron <strong>${refreshed.legacy_recovered}</strong> empleados activos creados antes del historial semanal.</div>` : ''}
+      ${recovered ? `<div style="padding:9px 12px;background:#eff6ff;border-radius:8px;margin-bottom:14px;font-size:12px;color:#1d4ed8;">Se recuperaron <strong>${recovered}</strong> empleados activos del catálogo que no estaban en la plantilla de esta semana.</div>` : ''}
       ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Pendientes de asignar (${altas.length})</h4>${altaRows}</div>` : ''}
       ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">Bajas confirmadas (${bajas.length})</h4>${bajaRows}</div>` : ''}
       ${ausentes.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#c2410c;font-size:13px;">Asignados ausentes de la nómina (${ausentes.length})</h4>${ausenteRows}</div>` : ''}

@@ -38,6 +38,11 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
       shift_id: snapshot.shift_id ?? master.shift_id ?? null,
       project: snapshot.project ?? master.project ?? null,
       salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
+      present_in_payroll: snapshot.present_in_payroll ?? null,
+      source: snapshot.source || template.source,
+      catalog_active_reconciliation: snapshot.catalog_active_reconciliation === true,
+      reconciliation_snapshot_period_key: snapshot.reconciliation_snapshot_period_key || null,
+      reconciled_at: snapshot.reconciled_at || null,
       status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
       current_status: master.status || null,
       template_status: snapshot.template_status === 'baja'

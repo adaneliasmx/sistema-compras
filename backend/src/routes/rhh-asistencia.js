@@ -6,7 +6,7 @@
 const express = require('express');
 const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
-const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
+const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek, isoWeekPeriod } = require('../utils/rhh-periods');
 const router = express.Router();
 
 function nowMxDate() {
@@ -145,6 +145,9 @@ function weeklyEmployeeSeed(emp) {
     template_period_key: emp?.template_period_key,
     legacy_catalog_reconciliation: emp?.legacy_catalog_reconciliation,
     legacy_reconciled_at: emp?.legacy_reconciled_at,
+    catalog_active_reconciliation: emp?.catalog_active_reconciliation,
+    reconciliation_snapshot_period_key: emp?.reconciliation_snapshot_period_key,
+    reconciled_at: emp?.reconciled_at,
   };
   return Object.fromEntries(Object.entries(seed).filter(([, value]) => value !== undefined));
 }
@@ -184,6 +187,11 @@ function employeesForWeek(db, week, assignments = []) {
       shift_id: snapshot.shift_id ?? master.shift_id ?? null,
       project: snapshot.project ?? master.project ?? null,
       salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
+      present_in_payroll: snapshot.present_in_payroll ?? null,
+      source: snapshot.source || template.source,
+      catalog_active_reconciliation: snapshot.catalog_active_reconciliation === true,
+      reconciliation_snapshot_period_key: snapshot.reconciliation_snapshot_period_key || null,
+      reconciled_at: snapshot.reconciled_at || null,
       status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
       current_status: master.status || null,
       template_status: templateStatus,
@@ -347,19 +355,30 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
   });
   const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
   const systemIds = getSystemEmpIds();
-  const employeesWithSnapshots = new Set((db.rhh_employee_period_snapshots || [])
-    .map(snapshot => Number(snapshot.employee_id))
-    .filter(Boolean));
-  const legacyCandidates = [...masters.values()].filter(emp =>
+  const targetPeriod = canonicalPeriod(source.period) || isoWeekPeriod(week);
+  const latestSnapshotByEmployee = new Map();
+  for (const snapshot of db.rhh_employee_period_snapshots || []) {
+    const employeeId = Number(snapshot.employee_id);
+    const period = canonicalPeriod(snapshot);
+    if (!employeeId || !period) continue;
+    if (targetPeriod && comparePeriods(period, targetPeriod) > 0) continue;
+    const previous = latestSnapshotByEmployee.get(employeeId);
+    if (!previous || comparePeriods(period, previous.period) > 0) {
+      latestSnapshotByEmployee.set(employeeId, { snapshot, period });
+    }
+  }
+  // Mientras RHH no confirme una baja, el catálogo maestro mantiene al
+  // empleado disponible para la plantilla actual/futura. Tener un snapshot
+  // histórico no debe excluirlo: ese era el hueco que omitía altas legacy.
+  const activeCatalogCandidates = [...masters.values()].filter(emp =>
     emp.status === 'active'
     && !isConfirmedInactive(emp)
     && !systemIds.has(Number(emp.id))
     && hasValidPayrollNumber(emp)
-    && !employeesWithSnapshots.has(Number(emp.id))
   );
-  if (!source.employees?.length && legacyCandidates.length === 0) {
+  if (!source.employees?.length && activeCatalogCandidates.length === 0) {
     return res.status(409).json({
-      error: 'No hay una semana importada ni empleados legacy activos para actualizar esta plantilla',
+      error: 'No hay una semana importada ni empleados activos para actualizar esta plantilla',
       template_source: source.source,
     });
   }
@@ -443,16 +462,36 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
 
   for (const snapshot of source.employees) materialize(snapshot);
 
+  const catalogRecovered = [];
   const legacyRecovered = [];
-  for (const emp of legacyCandidates) {
+  for (const emp of activeCatalogCandidates) {
     if (rows.has(Number(emp.id))) continue;
+    const latest = latestSnapshotByEmployee.get(Number(emp.id));
+    const period = targetPeriod || latest?.period || null;
     materialize({
-      ...weeklyEmployeeSeed(emp),
-      source: 'legacy_catalog_reconciliation',
-      legacy_catalog_reconciliation: true,
-      legacy_reconciled_at: nowMxDateTime(),
+      ...weeklyEmployeeSeed(latest?.snapshot || emp),
+      employee_id: Number(emp.id),
+      employee_number: emp.employee_number,
+      full_name: emp.full_name,
+      no_periodo: period?.no_periodo,
+      year: period?.year,
+      period_key: period?.period_key,
+      fecha_inicio: source.period?.fecha_inicio || null,
+      fecha_fin: source.period?.fecha_fin || null,
+      present_in_payroll: false,
+      source: 'catalog_active_reconciliation',
+      catalog_active_reconciliation: true,
+      reconciliation_snapshot_period_key: latest?.period?.period_key || null,
+      reconciled_at: nowMxDateTime(),
     }, 'included');
-    legacyRecovered.push(emp);
+    const recovered = {
+      id: emp.id,
+      employee_number: emp.employee_number,
+      full_name: emp.full_name,
+      last_snapshot_period_key: latest?.period?.period_key || null,
+    };
+    catalogRecovered.push(recovered);
+    if (!latest) legacyRecovered.push(recovered);
   }
 
   // Una asignación nunca desaparece por actualizar la plantilla. Si falta en la
@@ -511,12 +550,10 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     active: included.length,
     confirmed_inactive: employees.filter(employee => employee.template_status === 'baja').length,
     assigned_preserved: assignedIds.size,
+    catalog_recovered: catalogRecovered.length,
+    catalog_employees: catalogRecovered,
     legacy_recovered: legacyRecovered.length,
-    legacy_employees: legacyRecovered.map(employee => ({
-      id: employee.id,
-      employee_number: employee.employee_number,
-      full_name: employee.full_name,
-    })),
+    legacy_employees: legacyRecovered,
   });
 });
 
