@@ -7451,7 +7451,9 @@ async function _refreshRolFromCatalog() {
         full_name:   emp.full_name,
         pos_name:    emp.position?.name || emp.position_name || '',
         shift_name:  emp.shift?.name    || '',
-        inactive:    emp.template_status === 'absent',
+        inactive:    emp.template_status === 'baja',
+        absent:      emp.template_status === 'absent',
+        template_status: emp.template_status || 'included',
       };
     });
 
@@ -7477,7 +7479,12 @@ async function rolVerCambiosPlantilla(ctx) {
 
   if (ctx === 'lista') {
     try {
-      const data = await api(`/api/rhh/schedule/weekly-rol?week_start=${rolWeekStart || attendanceWeekStart || getMonday(new Date())}`);
+      const week = rolWeekStart || attendanceWeekStart || getMonday(new Date());
+      const refreshed = await api('/api/rhh/asistencia/plantilla/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ week }),
+      });
+      const data = await api(`/api/rhh/schedule/weekly-rol?week_start=${week}`);
       const assignedIds = new Set((data?.shifts || []).flatMap(group =>
         (group.slots || []).flatMap(slot => (slot.assigned || []).map(a => Number(a.employee_id)))
       ));
@@ -7486,7 +7493,7 @@ async function rolVerCambiosPlantilla(ctx) {
         (group.slots || []).flatMap(slot => (slot.assigned || []).filter(a => a.template_status === 'absent'))
       );
       if (data?.template_missing) toast('No existe plantilla para esta semana ni para la inmediata anterior', 'warning');
-      else toast(`Plantilla semanal: ${pending.length} sin asignar · ${missing.length} asignados ausentes`, missing.length ? 'warning' : 'success');
+      else toast(`Plantilla guardada: ${refreshed?.added || 0} altas · ${pending.length} sin asignar · ${missing.length} ausentes`, missing.length ? 'warning' : 'success');
     } catch (err) { toast(err.message, 'error'); }
     await listaAsistenciaView();
     return;
@@ -7496,23 +7503,35 @@ async function rolVerCambiosPlantilla(ctx) {
   _asisRolFNombre = '';
   _asisRolFPuesto = '';
 
+  let refreshed;
+  try {
+    refreshed = await api('/api/rhh/asistencia/plantilla/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ week: asisWeek || getMonday(new Date()) }),
+    });
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+
   const catData = await _refreshRolFromCatalog();
   if (!catData) { toast('Error al cargar plantilla', 'error'); return; }
 
-  const catEmps = (catData.employees || []).filter(e => e.template_status !== 'absent');
+  const catEmps = (catData.employees || []).filter(e => e.template_status === 'included');
   const assignedIds = new Set((_asisAssignments || []).map(a => a.employee_id));
   const n = catEmps.filter(e => !assignedIds.has(e.id)).length;
   if (catData.template_missing) {
     toast('No existe plantilla para esta semana ni para la semana inmediata anterior', 'warning');
   } else {
-    toast(`Plantilla semanal actualizada — ${n} empleado${n!==1?'s':''} sin asignar`, 'success');
+    toast(`Plantilla semanal guardada — ${refreshed?.added || 0} alta${refreshed?.added===1?'':'s'} · ${n} sin asignar`, 'success');
   }
 
   // 3. Altas/bajas recientes para modal informativo
   const emps = catData.employees || [];
   const activos = catEmps;
   const altas   = catEmps.filter(e => !assignedIds.has(e.id));
-  const bajas   = emps.filter(e => e.template_status === 'absent');
+  const bajas   = emps.filter(e => e.template_status === 'baja');
+  const ausentes = emps.filter(e => e.template_status === 'absent');
 
   document.getElementById('modal-plantilla-rol')?.remove();
 
@@ -7527,7 +7546,14 @@ async function rolVerCambiosPlantilla(ctx) {
     <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fef2f2;border-radius:8px;margin-bottom:4px;font-size:13px;">
       <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
       <span style="flex:1;">${escHtml(e.full_name)}</span>
-      <span style="color:#dc2626;font-size:11px;">No aparece en esta plantilla</span>
+      <span style="color:#dc2626;font-size:11px;">BAJA confirmada</span>
+    </div>`).join('');
+
+  const ausenteRows = ausentes.map(e => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fff7ed;border-radius:8px;margin-bottom:4px;font-size:13px;">
+      <span style="font-weight:600;color:#6b7280;">#${e.employee_number||'—'}</span>
+      <span style="flex:1;">${escHtml(e.full_name)}</span>
+      <span style="color:#c2410c;font-size:11px;">Asignado, no aparece en la última nómina</span>
     </div>`).join('');
 
   const modal = document.createElement('div');
@@ -7543,8 +7569,9 @@ async function rolVerCambiosPlantilla(ctx) {
         ✅ <strong>${activos.length} empleados</strong> en la plantilla de esta semana. Los no asignados aparecen en "Sin asignar".
       </div>
       ${altas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#059669;font-size:13px;">✅ Pendientes de asignar (${altas.length})</h4>${altaRows}</div>` : ''}
-      ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">🚫 Asignados que faltan en la plantilla (${bajas.length})</h4>${bajaRows}</div>` : ''}
-      ${!altas.length && !bajas.length ? `<p style="color:#6b7280;font-size:13px;margin:0 0 12px;">La plantilla y las asignaciones del ROL están sincronizadas.</p>` : ''}
+      ${bajas.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#dc2626;font-size:13px;">Bajas confirmadas (${bajas.length})</h4>${bajaRows}</div>` : ''}
+      ${ausentes.length ? `<div style="margin-bottom:14px;"><h4 style="margin:0 0 8px;color:#c2410c;font-size:13px;">Asignados ausentes de la nómina (${ausentes.length})</h4>${ausenteRows}</div>` : ''}
+      ${!altas.length && !bajas.length && !ausentes.length ? `<p style="color:#6b7280;font-size:13px;margin:0 0 12px;">La plantilla y las asignaciones del ROL están sincronizadas.</p>` : ''}
       <div style="padding:8px 12px;background:#f8fafc;border-radius:8px;font-size:11px;color:#6b7280;line-height:1.5;">
         <strong>Nota:</strong> Actualizar la plantilla no reemplaza ni elimina asignaciones existentes.
         Una ausencia se muestra para revisión; la baja del catálogo requiere confirmación de RHH.
@@ -8461,7 +8488,9 @@ async function asisRolView() {
       full_name:   emp.full_name,
       pos_name:    emp.position?.name || '',
       shift_name:  emp.shift?.name    || '',
-      inactive:    emp.template_status === 'absent',
+      inactive:    emp.template_status === 'baja',
+      absent:      emp.template_status === 'absent',
+      template_status: emp.template_status || 'included',
     }));
 
     asisRolRender();
@@ -8477,8 +8506,11 @@ function asisRolRender() {
   const { all_employees, shifts, positions, proyectos } = _asisRolData;
 
   const assignedIds = new Set(_asisAssignments.map(a => a.employee_id));
+  const confirmedBajas = all_employees
+    .filter(e => !assignedIds.has(e.id) && e.template_status === 'baja')
+    .sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
   const allUnassigned = all_employees
-    .filter(e => !assignedIds.has(e.id))
+    .filter(e => !assignedIds.has(e.id) && e.template_status !== 'baja')
     .sort((a, b) => {
       const pa = a.position?.name || '', pb = b.position?.name || '';
       return pa !== pb ? pa.localeCompare(pb) : (a.full_name||'').localeCompare(b.full_name||'');
@@ -8535,6 +8567,12 @@ function asisRolRender() {
       }).join('')
     : `<div style="color:var(--muted);font-size:13px;text-align:center;padding:16px;">${fNombre||fPuesto ? 'Sin coincidencias' : 'Todos asignados ✓'}</div>`;
 
+  const confirmedBajaRows = confirmedBajas.map(emp => `
+    <div style="padding:8px 10px;border:1px solid #fecaca;border-radius:8px;margin-bottom:6px;background:#fef2f2;">
+      <div style="font-size:13px;font-weight:600;color:#991b1b;">${escHtml(emp.full_name)}</div>
+      <div style="font-size:11px;color:#dc2626;margin-top:1px;">BAJA</div>
+    </div>`).join('');
+
   // Turnos con drop zones — empleados ordenados puesto → nombre
   let shiftsHtml = '';
   for (const shift of shifts) {
@@ -8552,10 +8590,12 @@ function asisRolRender() {
           const posHdr = (a.pos_name && a.pos_name !== lastPos)
             ? (() => { lastPos = a.pos_name; return `<div style="font-size:10px;font-weight:700;color:#2563eb;background:#eff6ff;padding:2px 8px;border-radius:4px;margin-bottom:2px;">${escHtml(a.pos_name)}</div>`; })()
             : '';
-          const bajaBadge = a.inactive ? '<span style="font-size:10px;color:#991b1b;background:#fee2e2;padding:1px 6px;border-radius:8px;">BAJA</span>' : '';
+          const statusBadge = a.inactive
+            ? '<span style="font-size:10px;color:#991b1b;background:#fee2e2;padding:1px 6px;border-radius:8px;">BAJA</span>'
+            : (a.absent ? '<span style="font-size:10px;color:#9a3412;background:#ffedd5;padding:1px 6px;border-radius:8px;">FUERA DE PLANTILLA</span>' : '');
           return `${posHdr}<div style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-bottom:1px solid #f3f4f6;${a.inactive?'background:#fff7f7;':''}">
             <div style="flex:1;">
-              <div style="font-size:13px;">${escHtml(a.full_name)} ${bajaBadge}</div>
+              <div style="font-size:13px;">${escHtml(a.full_name)} ${statusBadge}</div>
               ${a.project ? `<div style="font-size:10px;color:#0369a1;">${escHtml(a.project)}</div>` : ''}
             </div>
             <button onclick="removeAsisAssignment(${a.employee_id})"
@@ -8603,6 +8643,7 @@ function asisRolRender() {
         <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">${sinLabel}</div>
         ${filterForm}
         ${unassignedRows}
+        ${confirmedBajaRows ? `<div style="font-size:12px;font-weight:700;color:#b91c1c;margin:16px 0 8px;text-transform:uppercase;letter-spacing:.5px;">Bajas confirmadas (${confirmedBajas.length})</div>${confirmedBajaRows}` : ''}
       </div>
       <div>${shiftsHtml || '<div class="notice">No hay turnos configurados</div>'}</div>
     </div>
@@ -8646,6 +8687,10 @@ function asisOnDrop(event, shiftId) {
   if (!empId || !_asisRolData) return;
   const emp   = _asisRolData.all_employees.find(e => e.id === empId);
   if (!emp) return;
+  if (emp.template_status === 'baja') {
+    toast('Una baja confirmada no puede asignarse a un turno', 'warning');
+    return;
+  }
   const shift = _asisRolData.shifts.find(s => s.id === shiftId);
   _asisAssignments = _asisAssignments.filter(a => a.employee_id !== empId);
   _asisAssignments.push({
@@ -8656,12 +8701,20 @@ function asisOnDrop(event, shiftId) {
     full_name:   emp.full_name,
     pos_name:    emp.position?.name || '',
     shift_name:  shift?.name || '',
+    inactive:    false,
+    absent:      false,
+    template_status: 'included',
   });
   asisRolRender();
   saveAsisRolAuto();
 }
 
 function openAsisAssignModal(empId, empName) {
+  const emp = (_asisRolData?.all_employees || []).find(e => e.id === empId);
+  if (emp?.template_status === 'baja') {
+    toast('Una baja confirmada no puede asignarse a un turno', 'warning');
+    return;
+  }
   const m = document.getElementById('asis-assign-modal');
   if (!m) return;
   document.getElementById('asis-assign-emp-id').value = empId;
@@ -8681,6 +8734,10 @@ function confirmAsisAssign() {
   const project   = document.getElementById('asis-assign-proyecto').value;
   const shiftName = document.getElementById('asis-assign-shift').selectedOptions[0]?.text || '';
   const emp       = (_asisRolData?.all_employees || []).find(e => e.id === empId);
+  if (emp?.template_status === 'baja') {
+    toast('Una baja confirmada no puede asignarse a un turno', 'warning');
+    return;
+  }
   const fullName  = emp?.full_name || `Emp. ${empId}`;
   const posName   = emp?.position?.name || '';
 
@@ -8693,6 +8750,9 @@ function confirmAsisAssign() {
     full_name:   fullName,
     pos_name:    posName,
     shift_name:  shiftName,
+    inactive:    false,
+    absent:      false,
+    template_status: 'included',
   });
   document.getElementById('asis-assign-modal').style.display = 'none';
   asisRolRender();

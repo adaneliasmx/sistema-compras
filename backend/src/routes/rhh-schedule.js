@@ -4,6 +4,10 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
 const router = express.Router();
 
+function isConfirmedInactive(emp) {
+  return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
+}
+
 function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
   const template = getEmployeeTemplateForWeek(db, weekStart);
   const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
@@ -14,6 +18,7 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
     const employeeId = Number(snapshot.employee_id ?? snapshot.id);
     if (!employeeId || included.has(employeeId)) continue;
     const master = masters.get(employeeId) || {};
+    const confirmedInactive = isConfirmedInactive(master);
     rows.push({
       ...master,
       id: employeeId,
@@ -24,9 +29,11 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
       shift_id: snapshot.shift_id ?? master.shift_id ?? null,
       project: snapshot.project ?? master.project ?? null,
       salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
-      status: snapshot.status_at_period || 'active',
+      status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
       current_status: master.status || null,
-      template_status: 'included',
+      template_status: confirmedInactive
+        ? 'baja'
+        : (snapshot.template_status === 'absent' ? 'absent' : 'included'),
       template_period_key: snapshot.period_key || template.period?.period_key || null,
     });
     included.add(employeeId);
@@ -37,7 +44,11 @@ function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
     if (!employeeId || included.has(employeeId)) continue;
     const master = masters.get(employeeId);
     if (!master) continue;
-    rows.push({ ...master, current_status: master.status || null, template_status: 'absent' });
+    rows.push({
+      ...master,
+      current_status: master.status || null,
+      template_status: isConfirmedInactive(master) ? 'baja' : 'absent',
+    });
     included.add(employeeId);
   }
   return { ...template, employees: rows };

@@ -209,6 +209,29 @@ function addDays(iso, days) {
   return date.toISOString().slice(0, 10);
 }
 
+function isoWeekStart(year, noPeriodo) {
+  const safeYear = validYear(year);
+  const safeWeek = validWeek(noPeriodo);
+  if (!safeYear || !safeWeek) return null;
+  const januaryFourth = new Date(Date.UTC(safeYear, 0, 4));
+  const januaryFourthDay = januaryFourth.getUTCDay() || 7;
+  const monday = new Date(januaryFourth);
+  monday.setUTCDate(januaryFourth.getUTCDate() - januaryFourthDay + 1 + ((safeWeek - 1) * 7));
+  return monday.toISOString().slice(0, 10);
+}
+
+function isoWeekPeriod(iso) {
+  const parsed = parsePeriodDate(iso);
+  if (!parsed) return null;
+  const date = new Date(`${parsed}T00:00:00Z`);
+  const day = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - day);
+  const isoYear = date.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const noPeriodo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+  return canonicalPeriod({ no_periodo: noPeriodo, year: isoYear });
+}
+
 function resolvePeriodForDate(db, startDate, endDate = startDate) {
   const start = parsePeriodDate(startDate);
   const end = parsePeriodDate(endDate);
@@ -238,6 +261,27 @@ function getEmployeeTemplateForWeek(db, weekStart, options = {}) {
   const start = parsePeriodDate(weekStart);
   if (!start) return { employees: [], source: 'invalid_date', period: null };
   const end = addDays(start, 6);
+  const requestedPeriod = isoWeekPeriod(start);
+
+  if (options.ignoreMaterialized !== true) {
+    const materialized = (db?.rhh_attendance_week_templates || [])
+      .find(template => parsePeriodDate(template.week_start) === start);
+    if (materialized) {
+      return {
+        employees: (materialized.employees || []).map(employee => ({ ...employee })),
+        source: 'attendance_week_template',
+        period: materialized.source_period || null,
+        materialized: {
+          id: materialized.id,
+          week_start: materialized.week_start,
+          version: Number(materialized.version || 1),
+          updated_at: materialized.updated_at || null,
+          updated_by: materialized.updated_by || null,
+        },
+      };
+    }
+  }
+
   const snapshots = db?.rhh_employee_period_snapshots || [];
   const periods = new Map();
   for (const raw of [...(db?.rhh_periodos || []), ...snapshots]) {
@@ -249,7 +293,10 @@ function getEmployeeTemplateForWeek(db, weekStart, options = {}) {
   );
 
   let selected = [...periods.values()]
-    .filter(period => snapshotPeriodKeys.has(period.period_key) && periodContainsRange(period, start, end))
+    .filter(period => snapshotPeriodKeys.has(period.period_key) && (
+      periodContainsRange(period, start, end)
+      || (requestedPeriod && samePeriod(period, requestedPeriod.no_periodo, requestedPeriod.year))
+    ))
     .sort(comparePeriods)
     .at(-1) || null;
   let source = selected ? 'snapshot_exact' : null;
@@ -267,6 +314,30 @@ function getEmployeeTemplateForWeek(db, weekStart, options = {}) {
         source = 'snapshot_previous_week';
       }
     }
+
+    if (!selected && requestedPeriod) {
+      const previousNumeric = [...periods.values()]
+        .filter(period => snapshotPeriodKeys.has(period.period_key) && comparePeriods(period, requestedPeriod) < 0)
+        .sort(comparePeriods)
+        .at(-1);
+      if (previousNumeric) {
+        const previousMonday = isoWeekStart(previousNumeric.year, previousNumeric.no_periodo);
+        if (previousMonday && addDays(previousMonday, 7) === start) {
+          selected = previousNumeric;
+          source = 'snapshot_previous_week';
+        }
+      }
+    }
+  }
+
+  // Sólo una acción explícita de "Actualizar plantilla" puede usar la última
+  // nómina cargada aunque no corresponda a la semana inmediata anterior.
+  if (!selected && options.allowLatestLoaded === true && requestedPeriod) {
+    selected = [...periods.values()]
+      .filter(period => snapshotPeriodKeys.has(period.period_key) && comparePeriods(period, requestedPeriod) <= 0)
+      .sort(comparePeriods)
+      .at(-1) || null;
+    if (selected) source = 'snapshot_latest_loaded';
   }
 
   if (selected) {

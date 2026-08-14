@@ -6,7 +6,7 @@
 const express = require('express');
 const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
-const { getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
+const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
 const router = express.Router();
 
 function nowMxDate() {
@@ -103,6 +103,10 @@ function enrichEmp(emp, db) {
   };
 }
 
+function isConfirmedInactive(emp) {
+  return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
+}
+
 /*
  * Materializa la plantilla correspondiente a la semana seleccionada. Los datos
  * laborales salen del snapshot semanal; el catálogo maestro sólo aporta la
@@ -121,6 +125,10 @@ function employeesForWeek(db, week, assignments = []) {
     const employeeId = Number(snapshot.employee_id ?? snapshot.id);
     if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
     const master = masters.get(employeeId) || {};
+    const confirmedInactive = isConfirmedInactive(master);
+    const templateStatus = confirmedInactive
+      ? 'baja'
+      : (snapshot.template_status === 'absent' ? 'absent' : 'included');
     rows.push({
       ...master,
       id: employeeId,
@@ -131,9 +139,9 @@ function employeesForWeek(db, week, assignments = []) {
       shift_id: snapshot.shift_id ?? master.shift_id ?? null,
       project: snapshot.project ?? master.project ?? null,
       salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
-      status: snapshot.status_at_period || 'active',
+      status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
       current_status: master.status || null,
-      template_status: 'included',
+      template_status: templateStatus,
       template_period_key: snapshot.period_key || template.period?.period_key || null,
     });
     included.add(employeeId);
@@ -144,10 +152,11 @@ function employeesForWeek(db, week, assignments = []) {
     if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
     const master = masters.get(employeeId);
     if (!master) continue;
+    const confirmedInactive = isConfirmedInactive(master);
     rows.push({
       ...master,
       current_status: master.status || null,
-      template_status: 'absent',
+      template_status: confirmedInactive ? 'baja' : 'absent',
       template_period_key: template.period?.period_key || null,
     });
     included.add(employeeId);
@@ -225,7 +234,9 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
   const enrich = e => {
     const a        = assignments.find(x => x.employee_id === e.id);
     const shift    = (db.rhh_shifts    || []).find(s => s.id === (a?.shift_id ?? e.shift_id));
-    const position = (db.rhh_positions || []).find(p => p.id === (a?.position_id ?? e.position_id));
+    const position = e.template_status === 'baja'
+      ? { id: null, name: 'BAJA' }
+      : (db.rhh_positions || []).find(p => p.id === (a?.position_id ?? e.position_id));
     const dept     = (db.rhh_departments || []).find(d => d.id === e.department_id);
     return { ...e, department: dept, position, shift, assignment: a || null };
   };
@@ -239,6 +250,7 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
 
   const assigned   = sortEmps(employees.filter(e =>  assignedIds.has(e.id)));
   const unassigned = sortEmps(templateEmployees.filter(e => !assignedIds.has(e.id)));
+  const bajas      = sortEmps(employees.filter(e => e.template_status === 'baja' && !assignedIds.has(e.id)));
 
   // Agrupar asignados por turno
   const byShift = {};
@@ -255,13 +267,157 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     by_shift:   byShift,
     assigned,
     unassigned,
-    all_employees: [...assigned, ...unassigned],
+    bajas,
+    all_employees: [...assigned, ...unassigned, ...bajas],
     shifts:     db.rhh_shifts || [],
     positions:  db.rhh_positions || [],
     proyectos:  PROYECTOS,
     template_source: template.source,
     template_period: template.period,
     template_missing: template.source === 'snapshot_missing',
+    template_materialized: template.materialized || null,
+  });
+});
+
+// POST /api/rhh/asistencia/plantilla/refresh
+// Materializa una sola plantilla compartida para los tres submenús. No modifica
+// asignaciones existentes; únicamente sincroniza membresía y bajas confirmadas.
+router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
+  const week = weekMonday(req.body?.week || req.body?.week_start);
+  const db = structuredClone(read());
+  if (!Array.isArray(db.rhh_attendance_week_templates)) db.rhh_attendance_week_templates = [];
+
+  const source = getEmployeeTemplateForWeek(db, week, {
+    ignoreMaterialized: true,
+    allowLatestLoaded: true,
+  });
+  if (!source.employees?.length) {
+    return res.status(409).json({
+      error: 'No hay una semana importada con empleados para actualizar esta plantilla',
+      template_source: source.source,
+    });
+  }
+
+  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
+  const systemIds = getSystemEmpIds();
+  const weekRoleIds = new Set((db.rhh_weekly_rol || [])
+    .filter(rol => rol.week_start === week)
+    .map(rol => Number(rol.id)));
+  const assignedIds = new Set((db.rhh_rol_assignments || [])
+    .filter(assignment => weekRoleIds.has(Number(assignment.rol_id)))
+    .map(assignment => Number(assignment.employee_id)));
+
+  const templates = db.rhh_attendance_week_templates;
+  const existingIndex = templates.findIndex(template => template.week_start === week);
+  const existing = existingIndex >= 0 ? templates[existingIndex] : null;
+  let comparisonEmployees = existing?.employees || null;
+  if (!comparisonEmployees) {
+    comparisonEmployees = templates
+      .filter(template => template.week_start < week)
+      .sort((left, right) => left.week_start.localeCompare(right.week_start))
+      .at(-1)?.employees || null;
+  }
+  if (!comparisonEmployees && source.period) {
+    const sourcePeriod = canonicalPeriod(source.period);
+    const periodMap = new Map();
+    for (const snapshot of db.rhh_employee_period_snapshots || []) {
+      const period = canonicalPeriod(snapshot);
+      if (period) periodMap.set(period.period_key, period);
+    }
+    const previousPeriod = [...periodMap.values()]
+      .filter(period => sourcePeriod && comparePeriods(period, sourcePeriod) < 0)
+      .sort(comparePeriods)
+      .at(-1);
+    if (previousPeriod) {
+      comparisonEmployees = (db.rhh_employee_period_snapshots || [])
+        .filter(snapshot => canonicalPeriod(snapshot)?.period_key === previousPeriod.period_key);
+    }
+  }
+  const previousIncludedIds = new Set((comparisonEmployees || [])
+    .filter(employee => employee.template_status === undefined || employee.template_status === 'included')
+    .map(employee => Number(employee.employee_id ?? employee.id)));
+  const previousRows = new Map((existing?.employees || [])
+    .map(employee => [Number(employee.employee_id ?? employee.id), employee]));
+  const rows = new Map();
+
+  const materialize = (raw, forcedStatus = null) => {
+    const employeeId = Number(raw?.employee_id ?? raw?.id);
+    if (!employeeId || systemIds.has(employeeId)) return;
+    const master = masters.get(employeeId) || {};
+    const templateStatus = forcedStatus || (isConfirmedInactive(master) ? 'baja' : 'included');
+    rows.set(employeeId, {
+      ...raw,
+      employee_id: employeeId,
+      employee_number: raw?.employee_number ?? master.employee_number ?? null,
+      full_name: raw?.full_name || master.full_name || `Empleado ${employeeId}`,
+      department_id: raw?.department_id ?? master.department_id ?? null,
+      position_id: raw?.position_id ?? master.position_id ?? null,
+      shift_id: raw?.shift_id ?? master.shift_id ?? null,
+      project: raw?.project ?? master.project ?? null,
+      status_at_period: templateStatus === 'baja' ? 'inactive' : (raw?.status_at_period || 'active'),
+      template_status: templateStatus,
+      template_period_key: source.period?.period_key || raw?.period_key || null,
+    });
+  };
+
+  for (const snapshot of source.employees) materialize(snapshot);
+
+  // Una asignación nunca desaparece por actualizar la plantilla. Si falta en la
+  // última nómina queda como ausente; sólo una baja confirmada recibe "BAJA".
+  for (const employeeId of assignedIds) {
+    if (rows.has(employeeId)) continue;
+    const master = masters.get(employeeId);
+    if (!master) continue;
+    materialize(master, isConfirmedInactive(master) ? 'baja' : 'absent');
+  }
+
+  // Conserva bajas confirmadas que ya pertenecían a esta plantilla aunque no
+  // estén asignadas, para que los tres submenús reflejen la misma decisión.
+  for (const [employeeId, previous] of previousRows) {
+    if (rows.has(employeeId)) continue;
+    const master = masters.get(employeeId);
+    if (isConfirmedInactive(master)) materialize({ ...previous, ...master }, 'baja');
+  }
+
+  const employees = [...rows.values()];
+  const included = employees.filter(employee => employee.template_status === 'included');
+  const newEmployees = included.filter(employee => !previousIncludedIds.has(Number(employee.employee_id)));
+  const now = nowMxDateTime();
+  const templateRecord = {
+    ...(existing || {}),
+    id: existing?.id ?? nextId(templates),
+    week_start: week,
+    source: source.source,
+    source_period: source.period || null,
+    source_period_key: source.period?.period_key || null,
+    employees,
+    version: Number(existing?.version || 0) + 1,
+    created_at: existing?.created_at || now,
+    updated_at: now,
+    updated_by: req.rhhUser.email || req.rhhUser.full_name || 'rhh',
+  };
+  if (existingIndex >= 0) templates[existingIndex] = templateRecord;
+  else templates.push(templateRecord);
+
+  try {
+    await writeAsync(db);
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo guardar la plantilla: ' + error.message });
+  }
+
+  res.json({
+    ok: true,
+    week_start: week,
+    template: templateRecord,
+    added: newEmployees.length,
+    new_employees: newEmployees.map(employee => ({
+      id: employee.employee_id,
+      employee_number: employee.employee_number,
+      full_name: employee.full_name,
+    })),
+    active: included.length,
+    confirmed_inactive: employees.filter(employee => employee.template_status === 'baja').length,
+    assigned_preserved: assignedIds.size,
   });
 });
 
@@ -352,7 +508,9 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
     .map(a => {
       const emp   = employees.find(e => e.id === a.employee_id);
       const shift = shifts.find(s => s.id === a.shift_id);
-      const pos   = positions.find(p => p.id === (a.position_id ?? emp?.position_id));
+      const pos   = isConfirmedInactive(emp)
+        ? { id: null, name: 'BAJA' }
+        : positions.find(p => p.id === (a.position_id ?? emp?.position_id));
       return { ...a, emp, shift, pos };
     })
     .filter(r => r.emp)
@@ -447,13 +605,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
 
   const template = employeesForWeek(db, week, assignments);
-  let employees;
-  if (assignments.length > 0) {
-    const assignedIds = new Set(assignments.map(a => Number(a.employee_id)));
-    employees = template.employees.filter(e => assignedIds.has(Number(e.id)));
-  } else {
-    employees = template.employees.filter(e => e.template_status === 'included');
-  }
+  // Los tres submenús consumen la misma plantilla. Quien aún no tiene turno se
+  // muestra como "Sin turno" en vez de desaparecer de Capturar/Lista.
+  let employees = template.employees;
   if (req.query.shift_id) {
     const sid = Number(req.query.shift_id);
     employees = employees.filter(emp => {
@@ -475,7 +629,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     .map(emp => {
       const ra       = assignments.find(a => a.employee_id === emp.id);
       const shift    = shifts.find(s => s.id === (ra?.shift_id ?? emp.shift_id));
-      const position = positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
+      const position = emp.template_status === 'baja'
+        ? { id: null, name: 'BAJA' }
+        : positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
       const days = dates.map((fecha, di) => {
         const rec     = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
@@ -490,6 +646,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         if (!worksDay) autoType = 'descanso';
         if (isFest)    autoType = 'festivo';
         if (isVac)     autoType = 'vacacion';
+        if (emp.template_status === 'baja') autoType = 'baja';
 
         const locked    = isLockedForSupervisor(rec, fecha, role);
         const vale      = rec ? ovVales.find(v => v.attendance_id === rec.id) : null;
@@ -831,13 +988,7 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
 
   const template = employeesForWeek(db, week, assignments);
-  let employees;
-  if (assignments.length > 0) {
-    const assignedIds = new Set(assignments.map(a => Number(a.employee_id)));
-    employees = template.employees.filter(e => assignedIds.has(Number(e.id)));
-  } else {
-    employees = template.employees.filter(e => e.template_status === 'included');
-  }
+  let employees = template.employees;
   if (req.query.shift_id) {
     const sid = Number(req.query.shift_id);
     employees = employees.filter(emp => {
@@ -852,7 +1003,9 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
   const grid = employees.map(emp => {
     const ra       = assignments.find(a => a.employee_id === emp.id);
     const shift    = shifts.find(s => s.id === (ra?.shift_id ?? emp.shift_id));
-    const position = positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
+    const position = emp.template_status === 'baja'
+      ? { id: null, name: 'BAJA' }
+      : positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
     const days = dates.map((fecha, di) => {
       const rec    = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
@@ -863,6 +1016,7 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
       let autoType = works ? null : 'descanso';
       if (isFest) autoType = 'festivo';
       if (isVac)  autoType = 'vacacion';
+      if (emp.template_status === 'baja') autoType = 'baja';
 
       return {
         fecha,

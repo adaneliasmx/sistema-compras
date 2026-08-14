@@ -61,6 +61,9 @@ const EMPTY_DB = {
   rhh_weekly_rol: [],
   rhh_rol_slots: [],
   rhh_rol_assignments: [],
+  // Plantilla compartida por Capturar Asistencia, Lista de Asistencia y Rol Semanal.
+  // Se materializa manualmente por semana para que altas/bajas sobrevivan deploys.
+  rhh_attendance_week_templates: [],
   rhh_eval_forms: [],
   rhh_eval_sessions: [],
   rhh_eval_results: [],
