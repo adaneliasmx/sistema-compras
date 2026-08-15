@@ -7,10 +7,11 @@ const express = require('express');
 const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek, isoWeekPeriod } = require('../utils/rhh-periods');
+const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
 const router = express.Router();
 
 // ── Diagnóstico temporal (eliminar después) ──────────────────────────────────
-router.get('/plantilla/diag', (req, res) => {
+router.get('/plantilla/diag', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
   if (req.query.key !== 'diag2026') return res.status(404).json({ error: 'not found' });
   const db = read();
   const emps = db.rhh_employees || [];
@@ -203,10 +204,6 @@ function isConfirmedInactive(emp) {
   return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
 }
 
-function isHistoricalWeek(week) {
-  return weekMonday(week) < weekMonday(nowMxDate());
-}
-
 function hasValidPayrollNumber(emp) {
   const value = String(emp?.employee_number || '').trim();
   return value.length >= 3 && /^\d+$/.test(value.replace(/^0+/, '') || '0');
@@ -256,62 +253,9 @@ function weeklyEmployeeSeed(emp) {
  * plantilla se conserva marcado como ausente/baja para decisión de RHH.
  */
 function employeesForWeek(db, week, assignments = []) {
-  const template = getEmployeeTemplateForWeek(db, week);
-  const useCurrentMasterStatus = template.source !== 'attendance_week_template' && !isHistoricalWeek(week);
-  const systemIds = getSystemEmpIds();
-  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
-  const rows = [];
-  const included = new Set();
-
-  for (const snapshot of template.employees || []) {
-    const employeeId = Number(snapshot.employee_id ?? snapshot.id);
-    if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
-    const master = masters.get(employeeId) || {};
-    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
-    const templateStatus = snapshot.template_status === 'baja'
-      ? 'baja'
-      : (snapshot.template_status === 'absent'
-          ? 'absent'
-          : (confirmedInactive ? 'baja' : 'included'));
-    rows.push({
-      ...master,
-      id: employeeId,
-      employee_number: snapshot.employee_number ?? master.employee_number,
-      full_name: snapshot.full_name || master.full_name || `Empleado ${employeeId}`,
-      department_id: snapshot.department_id ?? master.department_id ?? null,
-      position_id: snapshot.position_id ?? master.position_id ?? null,
-      shift_id: snapshot.shift_id ?? master.shift_id ?? null,
-      project: snapshot.project ?? master.project ?? null,
-      salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
-      present_in_payroll: snapshot.present_in_payroll ?? null,
-      source: snapshot.source || template.source,
-      catalog_active_reconciliation: snapshot.catalog_active_reconciliation === true,
-      reconciliation_snapshot_period_key: snapshot.reconciliation_snapshot_period_key || null,
-      reconciled_at: snapshot.reconciled_at || null,
-      status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
-      current_status: master.status || null,
-      template_status: templateStatus,
-      template_period_key: snapshot.period_key || template.period?.period_key || null,
-    });
-    included.add(employeeId);
-  }
-
-  for (const assignment of assignments) {
-    const employeeId = Number(assignment.employee_id);
-    if (!employeeId || systemIds.has(employeeId) || included.has(employeeId)) continue;
-    const master = masters.get(employeeId);
-    if (!master) continue;
-    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
-    rows.push({
-      ...master,
-      current_status: master.status || null,
-      template_status: confirmedInactive ? 'baja' : 'absent',
-      template_period_key: template.period?.period_key || null,
-    });
-    included.add(employeeId);
-  }
-
-  return { ...template, employees: rows };
+  return buildAttendanceEmployeesForWeek(db, week, assignments, {
+    excludedEmployeeIds: getSystemEmpIds(db),
+  });
 }
 
 // Esta pantalla comparte colecciones históricas con el ROL por puestos. Se
@@ -423,7 +367,8 @@ router.get('/rol', rhhAuthRequired, (req, res) => {
     proyectos:  PROYECTOS,
     template_source: template.source,
     template_period: template.period,
-    template_missing: template.source === 'snapshot_missing',
+    template_missing: template.employees.length === 0,
+    catalog_reconciled_count: template.catalog_reconciled_count || 0,
     template_materialized: template.materialized || null,
   });
 });
@@ -450,7 +395,7 @@ router.post('/plantilla/refresh', rhhAuthRequired, rhhRequireRole('supervisor', 
     allowLatestLoaded: true,
   });
   const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
-  const systemIds = getSystemEmpIds();
+  const systemIds = getSystemEmpIds(db);
   const targetPeriod = canonicalPeriod(source.period) || isoWeekPeriod(week);
   const latestSnapshotByEmployee = new Map();
   for (const snapshot of db.rhh_employee_period_snapshots || []) {
@@ -949,7 +894,8 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     user_role:       role,
     template_source: template.source,
     template_period: template.period,
-    template_missing: template.source === 'snapshot_missing',
+    template_missing: template.employees.length === 0,
+    catalog_reconciled_count: template.catalog_reconciled_count || 0,
   });
 });
 
@@ -1290,7 +1236,8 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
     incidencia_labels: INCIDENCIA_LABELS,
     template_source: template.source,
     template_period: template.period,
-    template_missing: template.source === 'snapshot_missing',
+    template_missing: template.employees.length === 0,
+    catalog_reconciled_count: template.catalog_reconciled_count || 0,
   });
 });
 

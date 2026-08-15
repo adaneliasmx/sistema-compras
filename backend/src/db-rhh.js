@@ -62,7 +62,8 @@ const EMPTY_DB = {
   rhh_rol_slots: [],
   rhh_rol_assignments: [],
   // Plantilla compartida por Capturar Asistencia, Lista de Asistencia y Rol Semanal.
-  // Se materializa manualmente por semana para que altas/bajas sobrevivan deploys.
+  // Se materializa al importar CONTPAQ o al actualizarla manualmente para que
+  // altas/bajas sobrevivan deploys.
   rhh_attendance_week_templates: [],
   rhh_eval_forms: [],
   rhh_eval_sessions: [],
@@ -263,8 +264,8 @@ async function forceSeedFromJson() {
 // quienes NO tengan número de empleado numérico real (ej. rh@empresa.com,
 // supervisor@empresa.com). Un supervisor/rh/admin con número de nómina real
 // (importado de CONTPAQ) sí necesita control de asistencia.
-function getSystemEmpIds() {
-  const db = read();
+function getSystemEmpIds(database = null) {
+  const db = database || read();
   const empMap = new Map((db.rhh_employees || []).map(e => [Number(e.id), e]));
   return new Set(
     (db.rhh_users || [])

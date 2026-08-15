@@ -174,3 +174,124 @@ test('CONTPAQ import creates year-aware incidents and weekly employee snapshots'
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('confirmed CONTPAQ import persists the current attendance template automatically', () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'rhh-contpaq-attendance-'));
+  const tempDb = path.join(tempDir, 'rhh.json');
+  const repoRoot = path.resolve(__dirname, '../../..');
+  const dbModule = path.resolve(__dirname, '../db-rhh.js');
+  const routerModule = path.resolve(__dirname, '../routes/rhh-catalogo.js');
+  const attendanceTemplateModule = path.resolve(__dirname, './rhh-attendance-template.js');
+  const periodsModule = path.resolve(__dirname, './rhh-periods.js');
+
+  fs.writeFileSync(tempDb, JSON.stringify({
+    rhh_users: [{ id: 1, email: 'admin@test.local', full_name: 'Admin', role: 'admin', active: true }],
+    rhh_employees: [{ id: 10, employee_number: '100', full_name: 'EMPLEADO BASE', status: 'active' }],
+    rhh_departments: [],
+    rhh_positions: [],
+  }));
+
+  const script = `
+    const express = require('express');
+    const jwt = require('jsonwebtoken');
+    const XLSX = require('xlsx');
+    const db = require(${JSON.stringify(dbModule)});
+    const router = require(${JSON.stringify(routerModule)});
+    const { mondayOfWeek } = require(${JSON.stringify(attendanceTemplateModule)});
+    const { isoWeekPeriod } = require(${JSON.stringify(periodsModule)});
+
+    (async () => {
+      await db.initDb();
+      const monday = mondayOfWeek();
+      const addDays = (iso, days) => {
+        const date = new Date(iso + 'T12:00:00Z');
+        date.setUTCDate(date.getUTCDate() + days);
+        return date.toISOString().slice(0, 10);
+      };
+      const excelDate = iso => {
+        const [year, month, day] = iso.split('-');
+        return day + '/' + month + '/' + year;
+      };
+      const period = isoWeekPeriod(monday);
+      const initial = structuredClone(db.read());
+      initial.rhh_attendance_week_templates = [{
+        id: 1, week_start: monday, source_period: period, source_period_key: period.period_key,
+        version: 3, employees: [{ employee_id: 10, employee_number: '100', full_name: 'EMPLEADO BASE', template_status: 'included' }],
+      }];
+      await db.writeAsync(initial);
+
+      const headers = Array(20).fill('');
+      Object.assign(headers, {
+        0: 'semana', 1: 'Fecha Inicio', 2: 'Fecha Fin', 3: 'No. Empleado',
+        4: 'Nombre', 5: 'Departamento', 6: 'Puesto', 10: 'Fecha Ingreso',
+        11: 'Sal. Diario', 12: 'SDI', 13: 'SBC', 15: 'Días Pagados',
+        17: 'Hrs. Extras', 18: 'Notas', 19: 'P | 1 Sueldo',
+      });
+      const makeRow = (number, name) => {
+        const row = Array(20).fill('');
+        Object.assign(row, {
+          0: period.no_periodo, 1: excelDate(monday), 2: excelDate(addDays(monday, 6)),
+          3: number, 4: name, 5: 'Producción', 6: 'Operador',
+          10: '01/01/2026', 11: 300, 12: 320, 13: 330, 15: 7, 17: 0, 19: 2100,
+        });
+        return row;
+      };
+      const sheet = XLSX.utils.aoa_to_sheet([
+        headers,
+        makeRow('100', 'EMPLEADO BASE'),
+        makeRow('101', 'EMPLEADO NUEVO'),
+      ]);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, 'Consolidado');
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      const app = express();
+      app.use(express.json());
+      app.use('/api/rhh/catalogo', router);
+      const server = await new Promise(resolve => {
+        const instance = app.listen(0, '127.0.0.1', () => resolve(instance));
+      });
+      try {
+        const token = jwt.sign({ sub: 1, module: 'rhh', role: 'admin' }, process.env.JWT_SECRET || 'cambia-esta-clave');
+        const form = new FormData();
+        form.append('file', new Blob([buffer]), 'consolidado-actual.xlsx');
+        form.append('confirm', '1');
+        const response = await fetch('http://127.0.0.1:' + server.address().port + '/api/rhh/catalogo/import-contpaq', {
+          method: 'POST', headers: { authorization: 'Bearer ' + token }, body: form,
+        });
+        const body = await response.json();
+        const state = db.read();
+        process.stdout.write('RESULT:' + JSON.stringify({
+          status: response.status,
+          body,
+          template: state.rhh_attendance_week_templates.find(item => item.week_start === monday),
+          employees: state.rhh_employees,
+        }));
+      } finally {
+        await new Promise(resolve => server.close(resolve));
+      }
+    })().catch(error => { console.error(error); process.exit(1); });
+  `;
+
+  try {
+    const child = spawnSync(process.execPath, ['-e', script], {
+      cwd: repoRoot,
+      env: { ...process.env, DATABASE_URL: '', DB_RHH_PATH: tempDb },
+      encoding: 'utf8',
+      maxBuffer: 5 * 1024 * 1024,
+    });
+    assert.equal(child.status, 0, child.stderr);
+    const marker = child.stdout.lastIndexOf('RESULT:');
+    assert.notEqual(marker, -1, child.stdout);
+    const result = JSON.parse(child.stdout.slice(marker + 7));
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.attendance_template.changed, true);
+    assert.equal(result.body.attendance_template.added, 1);
+    assert.equal(result.body.attendance_template.employees, 2);
+    assert.equal(result.template.version, 4);
+    assert.deepEqual(result.template.employees.map(employee => employee.employee_number).sort(), ['100', '101']);
+    assert.ok(result.employees.some(employee => employee.employee_number === '101'));
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});

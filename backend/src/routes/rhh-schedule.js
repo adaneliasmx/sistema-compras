@@ -1,73 +1,13 @@
 const express = require('express');
-const { read, write, nextId, calcVacBalance } = require('../db-rhh');
+const { read, write, nextId, calcVacBalance, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
-const { getEmployeeTemplateForWeek } = require('../utils/rhh-periods');
+const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
 const router = express.Router();
 
-function isConfirmedInactive(emp) {
-  return emp?.status === 'inactive' && emp?.manual_baja_locked === true;
-}
-
-function currentWeekStart() {
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-  const date = new Date(`${today}T12:00:00Z`);
-  const day = date.getUTCDay();
-  date.setUTCDate(date.getUTCDate() - (day === 0 ? 6 : day - 1));
-  return date.toISOString().slice(0, 10);
-}
-
 function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
-  const template = getEmployeeTemplateForWeek(db, weekStart);
-  const useCurrentMasterStatus = template.source !== 'attendance_week_template' && weekStart >= currentWeekStart();
-  const masters = new Map((db.rhh_employees || []).map(emp => [Number(emp.id), emp]));
-  const rows = [];
-  const included = new Set();
-
-  for (const snapshot of template.employees || []) {
-    const employeeId = Number(snapshot.employee_id ?? snapshot.id);
-    if (!employeeId || included.has(employeeId)) continue;
-    const master = masters.get(employeeId) || {};
-    const confirmedInactive = useCurrentMasterStatus && isConfirmedInactive(master);
-    rows.push({
-      ...master,
-      id: employeeId,
-      employee_number: snapshot.employee_number ?? master.employee_number,
-      full_name: snapshot.full_name || master.full_name || `Empleado ${employeeId}`,
-      department_id: snapshot.department_id ?? master.department_id ?? null,
-      position_id: snapshot.position_id ?? master.position_id ?? null,
-      shift_id: snapshot.shift_id ?? master.shift_id ?? null,
-      project: snapshot.project ?? master.project ?? null,
-      salary_daily: snapshot.salary_daily ?? master.salary_daily ?? null,
-      present_in_payroll: snapshot.present_in_payroll ?? null,
-      source: snapshot.source || template.source,
-      catalog_active_reconciliation: snapshot.catalog_active_reconciliation === true,
-      reconciliation_snapshot_period_key: snapshot.reconciliation_snapshot_period_key || null,
-      reconciled_at: snapshot.reconciled_at || null,
-      status: confirmedInactive ? 'inactive' : (snapshot.status_at_period || 'active'),
-      current_status: master.status || null,
-      template_status: snapshot.template_status === 'baja'
-        ? 'baja'
-        : (snapshot.template_status === 'absent'
-            ? 'absent'
-            : (confirmedInactive ? 'baja' : 'included')),
-      template_period_key: snapshot.period_key || template.period?.period_key || null,
-    });
-    included.add(employeeId);
-  }
-
-  for (const rawId of extraEmployeeIds) {
-    const employeeId = Number(rawId);
-    if (!employeeId || included.has(employeeId)) continue;
-    const master = masters.get(employeeId);
-    if (!master) continue;
-    rows.push({
-      ...master,
-      current_status: master.status || null,
-      template_status: useCurrentMasterStatus && isConfirmedInactive(master) ? 'baja' : 'absent',
-    });
-    included.add(employeeId);
-  }
-  return { ...template, employees: rows };
+  return buildAttendanceEmployeesForWeek(db, weekStart, extraEmployeeIds, {
+    excludedEmployeeIds: getSystemEmpIds(db),
+  });
 }
 
 function requireRolVersion(req, res, rol) {
@@ -829,7 +769,8 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
     shifts: shiftsResult,
     template_source: template.source,
     template_period: template.period,
-    template_missing: template.source === 'snapshot_missing'
+    template_missing: template.employees.length === 0,
+    catalog_reconciled_count: template.catalog_reconciled_count || 0
   });
 });
 
@@ -1070,7 +1011,8 @@ router.get('/weekly-rol', rhhAuthRequired, (req, res) => {
     template_employees: employees.filter(emp => emp.template_status === 'included'),
     template_source: template.source,
     template_period: template.period,
-    template_missing: template.source === 'snapshot_missing'
+    template_missing: template.employees.length === 0,
+    catalog_reconciled_count: template.catalog_reconciled_count || 0
   });
 });
 

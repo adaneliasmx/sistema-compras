@@ -36,7 +36,13 @@ test('weekly attendance template preserves assignments and only inherits one wee
       const server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
       try {
         const token = jwt.sign({ sub: 1, module: 'rhh', role: 'admin' }, process.env.JWT_SECRET || 'cambia-esta-clave');
-        const get = async week => { const r = await fetch('http://127.0.0.1:' + server.address().port + '/api/rhh/asistencia/rol?week=' + week, { headers: { authorization: 'Bearer ' + token } }); return { status:r.status, body:await r.json() }; };
+        const get = async week => {
+          const r = await fetch('http://127.0.0.1:' + server.address().port + '/api/rhh/asistencia/rol?week=' + week, { headers: { authorization: 'Bearer ' + token } });
+          const text = await r.text();
+          let body;
+          try { body = JSON.parse(text); } catch { throw new Error('Respuesta no JSON (' + r.status + '): ' + text); }
+          return { status:r.status, body };
+        };
         const exact = await get('2026-07-27');
         const post = async version => { const r = await fetch('http://127.0.0.1:' + server.address().port + '/api/rhh/asistencia/rol', { method:'POST', headers: { authorization:'Bearer ' + token, 'content-type':'application/json' }, body:JSON.stringify({ week_start:'2026-07-27', version, assignments:[{ employee_id:11, shift_id:1, position_id:1 }] }) }); return { status:r.status, body:await r.json() }; };
         const unchanged = await post(1);
@@ -64,8 +70,9 @@ test('weekly attendance template preserves assignments and only inherits one wee
     assert.equal(result.conflict.status, 409);
     assert.equal(result.next.body.template_source, 'snapshot_previous_week');
     assert.deepEqual(result.next.body.unassigned.map(e => e.id), [10]);
-    assert.equal(result.far.body.template_missing, true);
-    assert.deepEqual(result.far.body.unassigned, []);
+    assert.equal(result.far.body.template_missing, false);
+    assert.deepEqual(result.far.body.unassigned.map(e => e.id), [10]);
+    assert.equal(result.far.body.catalog_reconciled_count, 1);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -180,7 +187,7 @@ test('refreshing attendance template adds latest employees and shares them acros
     assert.deepEqual(result.scheduleRol.body.template_employees.map(employee => employee.id).sort((a, b) => a - b), [10,12,13,14,15]);
     assert.equal(result.daily.body.grid.find(employee => employee.employee_id === 11).position, 'BAJA');
     assert.equal(result.weekly.body.grid.find(employee => employee.employee_id === 11).position, 'BAJA');
-    assert.equal(result.frozenWeek33.body.assigned.find(employee => employee.id === 10).template_status, 'included');
+    assert.equal(result.frozenWeek33.body.assigned.find(employee => employee.id === 10).template_status, 'baja');
     assert.equal(result.frozenWeek33.body.assigned.find(employee => employee.id === 12).position.id, 1);
     assert.equal(result.refreshWeek34.status, 200);
     assert.equal(result.week34.body.bajas.find(employee => employee.id === 10).position.name, 'BAJA');
@@ -199,4 +206,80 @@ test('refreshing attendance template adds latest employees and shares them acros
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
+});
+
+test('a stale current template recovers valid CONTPAQ employees even when portal links are crossed', () => {
+  const { getSystemEmpIds } = require('../db-rhh');
+  const {
+    buildAttendanceEmployeesForWeek,
+    materializeAttendanceWeekTemplate,
+  } = require('./rhh-attendance-template');
+  const db = {
+    rhh_users: [
+      { id: 1, full_name: 'USUARIO RH', email: 'rh@test.local', role: 'rh', employee_id: 2 },
+      { id: 2, full_name: 'USUARIO ADMIN', email: 'admin@test.local', role: 'admin', employee_id: 3 },
+      { id: 3, full_name: 'USUARIO SUPERVISOR', email: 'sup@test.local', role: 'supervisor', employee_id: 6 },
+    ],
+    rhh_employees: [
+      { id: 1, employee_number: '162', full_name: 'EMPLEADO BASE', status: 'active' },
+      { id: 2, employee_number: '163', full_name: 'EMPLEADO NUEVO UNO', status: 'active' },
+      { id: 3, employee_number: '164', full_name: 'EMPLEADO NUEVO DOS', status: 'active' },
+      { id: 4, employee_number: '165', full_name: 'EMPLEADO NUEVO TRES', status: 'active' },
+      { id: 5, employee_number: '166', full_name: 'EMPLEADO NUEVO CUATRO', status: 'active' },
+      { id: 6, employee_number: 'EMP-006', full_name: 'CUENTA FICTICIA', status: 'active' },
+    ],
+    rhh_employee_period_snapshots: [1,2,3,4,5].map(id => ({
+      id,
+      employee_id: id,
+      employee_number: String(161 + id),
+      full_name: `EMPLEADO ${id}`,
+      no_periodo: 32,
+      year: 2026,
+      period_key: '2026-S32',
+      fecha_inicio: '2026-08-03',
+      fecha_fin: '2026-08-09',
+      present_in_payroll: true,
+    })),
+    rhh_attendance_week_templates: [{
+      id: 1,
+      week_start: '2026-08-10',
+      source_period: { no_periodo: 32, year: 2026, period_key: '2026-S32' },
+      source_period_key: '2026-S32',
+      version: 5,
+      employees: [{ employee_id: 1, employee_number: '162', full_name: 'EMPLEADO BASE', template_status: 'included' }],
+    }],
+  };
+
+  const excluded = getSystemEmpIds(db);
+  assert.deepEqual([...excluded], [6]);
+  const current = buildAttendanceEmployeesForWeek(db, '2026-08-10', [], {
+    today: '2026-08-14',
+    excludedEmployeeIds: excluded,
+  });
+  assert.deepEqual(current.employees.map(employee => employee.id), [1,2,3,4,5]);
+  assert.equal(current.catalog_reconciled_count, 4);
+
+  const persisted = materializeAttendanceWeekTemplate(db, '2026-08-10', {
+    today: '2026-08-14',
+    excludedEmployeeIds: excluded,
+    updatedAt: '2026-08-14T22:00:00',
+    updatedBy: 'test',
+  });
+  assert.equal(persisted.changed, true);
+  assert.equal(persisted.added, 4);
+  assert.equal(persisted.template.employees.length, 5);
+  assert.equal(persisted.template.version, 6);
+
+  db.rhh_attendance_week_templates.push({
+    id: 2,
+    week_start: '2026-08-03',
+    version: 1,
+    employees: [{ employee_id: 1, employee_number: '162', full_name: 'EMPLEADO BASE', template_status: 'included' }],
+  });
+  const historical = buildAttendanceEmployeesForWeek(db, '2026-08-03', [], {
+    today: '2026-08-14',
+    excludedEmployeeIds: excluded,
+  });
+  assert.deepEqual(historical.employees.map(employee => employee.id), [1]);
+  assert.equal(historical.catalog_reconciled_count, 0);
 });

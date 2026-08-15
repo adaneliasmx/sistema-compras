@@ -13,6 +13,7 @@ const {
   upsertCanonicalPeriod,
   upsertEmployeePeriodSnapshot,
 } = require('../utils/rhh-periods');
+const { materializeAttendanceWeekTemplate, mondayOfWeek } = require('../utils/rhh-attendance-template');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
@@ -874,6 +875,29 @@ router.post(
       };
       if (previewOnly) return res.json(response);
 
+      const attendanceWeek = mondayOfWeek();
+      const attendanceRolIds = new Set((db.rhh_weekly_rol || [])
+        .filter(rol => rol.week_start === attendanceWeek)
+        .map(rol => Number(rol.id)));
+      const attendanceAssignmentIds = (db.rhh_rol_assignments || [])
+        .filter(assignment => attendanceRolIds.has(Number(assignment.rol_id)))
+        .map(assignment => Number(assignment.employee_id));
+      const attendanceTemplate = materializeAttendanceWeekTemplate(db, attendanceWeek, {
+        excludedEmployeeIds: getSystemEmpIds(db),
+        extraEmployeeIds: attendanceAssignmentIds,
+        requirePayrollSource: true,
+        updatedAt: nowMxTs(),
+        updatedBy: `contpaq:${req.rhhUser?.email || req.rhhUser?.username || req.rhhUser?.id || 'rh'}`,
+      });
+      response.attendance_template = {
+        week_start: attendanceWeek,
+        changed: attendanceTemplate.changed,
+        reason: attendanceTemplate.reason,
+        added: attendanceTemplate.added || 0,
+        employees: attendanceTemplate.template?.employees?.length || 0,
+        version: attendanceTemplate.template?.version || null,
+      };
+
       const batch = {
         id: importBatchId,
         file_hash: fileHash,
@@ -895,6 +919,7 @@ router.post(
           candidates_pending: (result.candidatos_pendientes || []).length,
           skipped: result.skipped || 0,
           duplicate_rows: duplicate_rows.length,
+          attendance_template_added: attendanceTemplate.added || 0,
         },
       };
       db.rhh_import_batches.push(batch);
@@ -1316,7 +1341,7 @@ router.post(
       const posibles_bajas = [];
       if (ultimaPeriod && empEncontradosPorPeriodo.has(ultimaPeriod.period_key)) {
         const enUltima = empEncontradosPorPeriodo.get(ultimaPeriod.period_key) || new Set();
-        const sysIds   = getSystemEmpIds();
+        const sysIds   = getSystemEmpIds(db);
         for (const e of db.rhh_employees) {
           if (e.status === 'inactive') continue;
           if (sysIds.has(Number(e.id))) continue;

@@ -555,7 +555,7 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
 
   const comprasDb = readCompras();
   const rhhDb = readRhh();
-  const results = { created_compras: 0, updated_compras: 0, created_rhh: 0, updated_rhh: 0 };
+  const results = { created_compras: 0, updated_compras: 0, created_rhh: 0, updated_rhh: 0, unlinked_rhh: [] };
 
   for (const u of users) {
     if (!u.email) continue;
@@ -589,19 +589,16 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
         results.updated_rhh++;
       } else {
         const employees = rhhDb.rhh_employees || [];
-        const empId = nextIdRhh(employees);
-        const today = new Date().toISOString().slice(0, 10);
-        employees.push({
-          id: empId, employee_number: 'EMP-' + String(empId).padStart(3, '0'),
-          full_name: u.full_name || emailLow, email: emailLow, phone: null,
-          department_id: null, position_id: null, shift_id: u.rhh_role === 'empleado' ? 1 : 4,
-          supervisor_id: null, start_date: today, hire_date: today, birth_date: null,
-          status: 'active', contract_type: 'indefinido', base_salary: 0, daily_salary: null,
-          rfc: '', curp: '', nss: '', checker_number: '', primary_position_id: null,
-          enabled_positions: [], project: '', emergency_contact_name: '',
-          emergency_contact_phone: '', total_vacation_days: 15, photo: null,
-          created_at: new Date().toISOString()
-        });
+        const explicitEmployeeId = Number(u.employee_id) || null;
+        const requestedNumber = String(u.employee_number || '').trim().replace(/^0+/, '');
+        const linkedEmployee = u.rhh_role === 'empleado'
+          ? employees.find(employee => (
+              (explicitEmployeeId && Number(employee.id) === explicitEmployeeId)
+              || (requestedNumber && String(employee.employee_number || '').trim().replace(/^0+/, '') === requestedNumber)
+              || (employee.email && employee.email.toLowerCase() === emailLow)
+            )) || null
+          : null;
+        const empId = linkedEmployee ? Number(linkedEmployee.id) : null;
         rhhDb.rhh_employees = employees;
         rhhDb.rhh_users = rhhDb.rhh_users || [];
         rhhDb.rhh_users.push({
@@ -610,6 +607,7 @@ router.post('/import-accesos', superAdminRequired, (req, res) => {
           role: u.rhh_role, employee_id: empId, active: u.rhh_active !== false,
           created_at: new Date().toISOString()
         });
+        if (!empId) results.unlinked_rhh.push({ email: emailLow, role: u.rhh_role });
         results.created_rhh++;
       }
     }

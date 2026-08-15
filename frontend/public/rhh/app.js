@@ -12046,7 +12046,10 @@ async function catImportContpaq() {
       const incMsg = semLbl ? ` | Incidencias ${semLbl}: ${d.inc_upserted}` : '';
       const fmt = d.formato === 'consolidado' ? ' [Consolidado]' : '';
       const batchMsg = d.import_batch?.id ? ` | Lote #${d.import_batch.id}` : '';
-      const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}${batchMsg}`;
+      const templateMsg = d.attendance_template?.employees
+        ? ` | Plantilla ${d.attendance_template.week_start}: ${d.attendance_template.employees} empleados (${d.attendance_template.added || 0} agregados)`
+        : '';
+      const msg = `✓${fmt} Empleados: ${d.updated} | Depts: ${d.created_depts} | Puestos: ${d.created_pos} | Omitidos: ${d.skipped}${incMsg}${templateMsg}${batchMsg}`;
       if (msgEl) { msgEl.textContent = msg; msgEl.style.color = '#16a34a'; }
       toast(msg, 'success');
       // Refrescar catálogos e invalidar cachés para que próxima navegación cargue datos frescos
