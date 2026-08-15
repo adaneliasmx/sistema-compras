@@ -9,6 +9,45 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek, isoWeekPeriod } = require('../utils/rhh-periods');
 const router = express.Router();
 
+// ── Diagnóstico temporal (protegido por query param, eliminar después) ────────
+router.get('/plantilla/diag', (req, res) => {
+  if (req.query.key !== 'diag2026') return res.status(404).json({ error: 'not found' });
+  const db = read();
+  const emps = db.rhh_employees || [];
+  const snaps = db.rhh_employee_period_snapshots || [];
+  const templates = db.rhh_attendance_week_templates || [];
+  const users = db.rhh_users || [];
+  const systemIds = new Set(users.filter(u => u.role !== 'empleado' && u.employee_id != null).map(u => Number(u.employee_id)));
+  const snapEmpIds = new Set(snaps.map(s => Number(s.employee_id)));
+  const activos = emps.filter(e => e.status === 'active');
+  const activosSinSnap = activos.filter(e => !snapEmpIds.has(Number(e.id)));
+  const validNum = e => { const v = String(e.employee_number||'').trim(); return v.length >= 3 && /^\d+$/.test(v.replace(/^0+/,'') || '0'); };
+  const periods = {};
+  for (const s of snaps) {
+    const k = s.period_key || `${s.year}-S${String(s.no_periodo).padStart(2,'0')}`;
+    periods[k] = (periods[k] || 0) + 1;
+  }
+  res.json({
+    total_empleados: emps.length,
+    activos: activos.length,
+    inactivos: emps.filter(e => e.status === 'inactive').length,
+    baja_locked: emps.filter(e => e.manual_baja_locked).length,
+    snapshots_total: snaps.length,
+    snapshot_periods: periods,
+    templates_materializadas: templates.map(t => ({
+      week: t.week_start, emps: t.employees?.length, version: t.version, updated: t.updated_at,
+    })),
+    system_employee_ids: [...systemIds],
+    activos_sin_snapshot: activosSinSnap.map(e => ({
+      id: e.id, num: e.employee_number, name: e.full_name, valid_num: validNum(e),
+      baja_locked: !!e.manual_baja_locked, is_system: systemIds.has(Number(e.id)),
+    })),
+    activos_num_invalido: activos.filter(e => !validNum(e)).map(e => ({
+      id: e.id, num: e.employee_number, name: e.full_name,
+    })),
+  });
+});
+
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
