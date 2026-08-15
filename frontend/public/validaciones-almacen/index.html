@@ -374,49 +374,114 @@ async function cargarTrazabilidad() {
 
   const rows = await apiFetch('/embarques-online?' + params.toString());
   if (!rows) return;
+  _trazRows = rows; // actualizar cache
 
-  const enviados  = rows.filter(r => r.estado === 'ENVIADO').length;
-  const validados = rows.filter(r => r.estado === 'VALIDADO').length;
+  // Agrupar por numero_embarque
+  const grupos = {};
+  for (const r of rows) {
+    const key = r.numero_embarque || r.uuid;
+    if (!grupos[key]) grupos[key] = { embarque: key, envios: [], flujo: r.flujo, side_origen: r.side_origen, total_piezas: 0, total_items: 0, anomalias: 0, enviados: 0, validados: 0 };
+    grupos[key].envios.push(r);
+    grupos[key].total_piezas += r.total_piezas || 0;
+    grupos[key].total_items += r.total_items || 0;
+    grupos[key].anomalias += r.anomalias_count || 0;
+    if (r.estado === 'ENVIADO') grupos[key].enviados++;
+    if (r.estado === 'VALIDADO') grupos[key].validados++;
+  }
+  const gruposList = Object.values(grupos);
+
+  const totalEnviados  = rows.filter(r => r.estado === 'ENVIADO').length;
+  const totalValidados = rows.filter(r => r.estado === 'VALIDADO').length;
 
   tablaEl.innerHTML = `
     <div class="kpi-grid" style="margin-bottom:16px">
-      <div class="kpi"><label>Total embarques online</label><div class="val">${rows.length}</div></div>
-      <div class="kpi orange"><label>En transito (ENVIADO)</label><div class="val">${enviados}</div></div>
-      <div class="kpi green"><label>Validados</label><div class="val">${validados}</div></div>
+      <div class="kpi"><label>Total embarques online</label><div class="val">${rows.length}</div><div class="sub">${gruposList.length} grupo${gruposList.length !== 1 ? 's' : ''} por No. Embarque</div></div>
+      <div class="kpi orange"><label>En transito (ENVIADO)</label><div class="val">${totalEnviados}</div></div>
+      <div class="kpi green"><label>Validados</label><div class="val">${totalValidados}</div></div>
     </div>
     <div class="tabla-wrap">
       <div class="tabla-header">
-        <h3>Embarques con trazabilidad online</h3>
-        <span class="tabla-count">${rows.length} registros</span>
+        <h3>Embarques agrupados por numero</h3>
+        <span class="tabla-count">${gruposList.length} embarques</span>
       </div>
       <div style="overflow-x:auto"><table>
         <thead>
-          <tr><th>UUID</th><th>Flujo</th><th>No. Embarque</th><th>Operador Envio</th>
-          <th>Fecha Envio</th><th>Piezas</th><th>Items</th><th>Estado</th>
-          <th>Recepcion</th><th>Anomalias</th><th></th></tr>
+          <tr><th>No. Embarque</th><th>Flujo</th><th>Envios</th>
+          <th>Total Piezas</th><th>Total Items</th><th>Estado</th>
+          <th>Anomalias</th><th></th></tr>
         </thead>
         <tbody>
-          ${rows.length === 0 ? '<tr><td colspan="11" class="empty">Sin embarques online registrados</td></tr>' :
-            rows.map(r => {
-              const flujoLabel = r.flujo === 'cuesto_a_skf' ? 'CUE → SKF' : 'SKF → CUE';
-              const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
+          ${gruposList.length === 0 ? '<tr><td colspan="8" class="empty">Sin embarques online registrados</td></tr>' :
+            gruposList.map(g => {
+              const flujoLabel = g.flujo === 'cuesto_a_skf' ? 'CUE → SKF' : 'SKF → CUE';
+              const allValidados = g.enviados === 0 && g.validados > 0;
+              const estadoHtml = allValidados
+                ? '<span class="badge conforme">VALIDADO</span>'
+                : g.enviados > 0
+                  ? '<span class="badge pendiente">ENVIADO (' + g.enviados + ')</span>'
+                  : '<span style="color:#aaa">—</span>';
               return `<tr>
-                <td style="font-size:.75rem;font-family:monospace;color:#1a5276;font-weight:600">${r.uuid}</td>
-                <td><span class="badge ${r.side_origen}">${flujoLabel}</span></td>
-                <td><b>${r.numero_embarque}</b></td>
-                <td>${r.operador_envio}</td>
-                <td>${r.fecha_envio || '-'} ${r.hora_envio || ''}</td>
-                <td style="text-align:right;font-weight:600">${r.total_piezas}</td>
-                <td style="text-align:right">${r.total_items}</td>
-                <td><span class="badge ${estadoBadge}">${r.estado}</span></td>
-                <td>${r.estado === 'VALIDADO' ? (r.operador_recepcion || '-') + '<br><small>' + (r.fecha_recepcion || '') + '</small>' : '<span style="color:#aaa">—</span>'}</td>
-                <td>${r.anomalias_count > 0 ? '<span class="badge faltante">' + r.anomalias_count + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
-                <td><button style="background:#e8f4fd;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.78rem" onclick="verEmbarqueOnline('${r.uuid}')">Detalle</button></td>
+                <td><b style="font-size:.95rem">${g.embarque}</b></td>
+                <td><span class="badge ${g.side_origen}">${flujoLabel}</span></td>
+                <td style="text-align:center">${g.envios.length}</td>
+                <td style="text-align:right;font-weight:600">${g.total_piezas}</td>
+                <td style="text-align:right">${g.total_items}</td>
+                <td>${estadoHtml}${g.validados > 0 && g.enviados > 0 ? ' <span class="badge conforme" style="margin-left:4px">✓' + g.validados + '</span>' : ''}</td>
+                <td>${g.anomalias > 0 ? '<span class="badge faltante">' + g.anomalias + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
+                <td><button style="background:#e8f4fd;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.78rem" onclick="verGrupoEmbarque('${g.embarque.replace(/'/g,"\\'")}')">Detalle</button></td>
               </tr>`;
             }).join('')}
         </tbody>
       </table></div>
     </div>`;
+}
+
+// Cache de datos para detalle de grupo
+let _trazRows = [];
+async function _getTrazRows() {
+  if (_trazRows.length) return _trazRows;
+  _trazRows = await apiFetch('/embarques-online') || [];
+  return _trazRows;
+}
+
+async function verGrupoEmbarque(numEmbarque) {
+  const body = document.getElementById('modalBody');
+  body.innerHTML = '<div class="spinner"></div>';
+  document.getElementById('modalOverlay').classList.add('open');
+
+  const all = await _getTrazRows();
+  const envios = all.filter(r => r.numero_embarque === numEmbarque);
+  if (!envios.length) { body.innerHTML = '<p>No encontrado</p>'; return; }
+
+  const totalPzas = envios.reduce((s,r) => s + (r.total_piezas||0), 0);
+  const flujoLabel = envios[0].flujo === 'cuesto_a_skf' ? 'CUESTO → SKF' : 'SKF → CUESTO';
+
+  body.innerHTML = `
+    <h2>Embarque: <span style="color:#c0392b">${numEmbarque}</span></h2>
+    <div class="detail-grid">
+      <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
+      <div class="detail-item"><label>Total Envios</label><span>${envios.length}</span></div>
+      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem">${totalPzas}</span></div>
+    </div>
+
+    <div class="section-title">Envios registrados (${envios.length})</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>UUID</th><th>Operador</th><th>Fecha</th><th>Hora</th><th>Piezas</th><th>Items</th><th>Estado</th><th>Recepcion</th><th></th></tr></thead>
+      <tbody>${envios.map(r => {
+        const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
+        return `<tr>
+          <td style="font-size:.75rem;font-family:monospace;color:#1a5276">${r.uuid}</td>
+          <td>${r.operador_envio}</td>
+          <td>${r.fecha_envio || '-'}</td>
+          <td>${r.hora_envio || '-'}</td>
+          <td style="text-align:right;font-weight:600">${r.total_piezas}</td>
+          <td style="text-align:right">${r.total_items}</td>
+          <td><span class="badge ${estadoBadge}">${r.estado}</span></td>
+          <td>${r.operador_recepcion || '<span style="color:#aaa">—</span>'}</td>
+          <td><button style="background:#e8f4fd;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:.75rem" onclick="verEmbarqueOnline('${r.uuid}')">Items</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table></div>`;
 }
 
 async function verEmbarqueOnline(uuid) {
