@@ -259,12 +259,23 @@ async function forceSeedFromJson() {
   return existing;
 }
 
-// IDs de empleados que son usuarios del sistema (admin/rh/supervisor): excluir de listas de nómina/asistencia
+// IDs de empleados ficticios del sistema: solo excluir de asistencia/nómina a
+// quienes NO tengan número de empleado numérico real (ej. rh@empresa.com,
+// supervisor@empresa.com). Un supervisor/rh/admin con número de nómina real
+// (importado de CONTPAQ) sí necesita control de asistencia.
 function getSystemEmpIds() {
   const db = read();
+  const empMap = new Map((db.rhh_employees || []).map(e => [Number(e.id), e]));
   return new Set(
     (db.rhh_users || [])
-      .filter(u => u.role !== 'empleado' && u.employee_id != null)
+      .filter(u => {
+        if (u.role === 'empleado' || u.employee_id == null) return false;
+        const emp = empMap.get(Number(u.employee_id));
+        if (!emp) return true; // usuario sin empleado → excluir
+        // Solo excluir si el número de empleado no es numérico real (ficticios)
+        const num = String(emp.employee_number || '').trim();
+        return !(num.length >= 3 && /^\d+$/.test(num.replace(/^0+/, '') || '0'));
+      })
       .map(u => Number(u.employee_id))
   );
 }

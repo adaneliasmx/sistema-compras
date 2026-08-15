@@ -9,7 +9,7 @@ const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek, isoWeekPeriod } = require('../utils/rhh-periods');
 const router = express.Router();
 
-// ── Diagnóstico temporal (protegido por query param, eliminar después) ────────
+// ── Diagnóstico temporal (eliminar después) ──────────────────────────────────
 router.get('/plantilla/diag', (req, res) => {
   if (req.query.key !== 'diag2026') return res.status(404).json({ error: 'not found' });
   const db = read();
