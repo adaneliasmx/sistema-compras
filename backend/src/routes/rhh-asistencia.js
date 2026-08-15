@@ -80,6 +80,21 @@ router.get('/plantilla/diag', (req, res) => {
     activos_num_invalido: activos.filter(e => !validNum(e)).map(e => ({
       id: e.id, num: e.employee_number, name: e.full_name,
     })),
+    // Buscar los 5 reportados
+    reported_missing: [163,164,165,166,167].map(num => {
+      const e = emps.find(x => Number(x.employee_number) === num || Number(x.id) === num);
+      if (!e) return { num, found: false };
+      const id = Number(e.id);
+      return {
+        num, id, name: e.full_name, status: e.status,
+        baja_locked: !!e.manual_baja_locked,
+        is_system: systemIds.has(id),
+        valid_num: validNum(e),
+        in_s32: s32Ids.has(id),
+        in_template: templateIds.has(id),
+        has_any_snapshot: snapEmpIds.has(id),
+      };
+    }),
   });
 });
 
