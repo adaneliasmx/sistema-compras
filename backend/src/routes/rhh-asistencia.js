@@ -27,6 +27,22 @@ router.get('/plantilla/diag', (req, res) => {
     const k = s.period_key || `${s.year}-S${String(s.no_periodo).padStart(2,'0')}`;
     periods[k] = (periods[k] || 0) + 1;
   }
+  // IDs de activos no-system
+  const expectedIds = new Set(activos.filter(e => !systemIds.has(Number(e.id))).map(e => Number(e.id)));
+  // IDs en la plantilla materializada de la semana actual
+  const currentWeek = templates.find(t => t.week_start === '2026-08-10');
+  const templateIds = new Set((currentWeek?.employees || []).map(e => Number(e.employee_id ?? e.id)));
+  const templateInc = new Set((currentWeek?.employees || []).filter(e => e.template_status === 'included').map(e => Number(e.employee_id ?? e.id)));
+  // Activos que faltan en la plantilla
+  const missingFromTemplate = [...expectedIds].filter(id => !templateIds.has(id));
+  // En plantilla pero no activos
+  const extraInTemplate = [...templateIds].filter(id => !expectedIds.has(id));
+  // Snapshot S32
+  const s32Ids = new Set(snaps.filter(s => s.period_key === '2026-S32' || (s.year === 2026 && s.no_periodo === 32)).map(s => Number(s.employee_id)));
+  const activosNoS32 = [...expectedIds].filter(id => !s32Ids.has(id));
+
+  const empById = new Map(emps.map(e => [Number(e.id), e]));
+
   res.json({
     total_empleados: emps.length,
     activos: activos.length,
@@ -36,8 +52,27 @@ router.get('/plantilla/diag', (req, res) => {
     snapshot_periods: periods,
     templates_materializadas: templates.map(t => ({
       week: t.week_start, emps: t.employees?.length, version: t.version, updated: t.updated_at,
+      included: t.employees?.filter(e => e.template_status === 'included').length,
+      baja: t.employees?.filter(e => e.template_status === 'baja').length,
+      absent: t.employees?.filter(e => e.template_status === 'absent').length,
     })),
     system_employee_ids: [...systemIds],
+    expected_in_template: expectedIds.size,
+    in_template: templateIds.size,
+    in_template_included: templateInc.size,
+    missing_from_template: missingFromTemplate.map(id => {
+      const e = empById.get(id);
+      return { id, num: e?.employee_number, name: e?.full_name, in_s32: s32Ids.has(id) };
+    }),
+    extra_in_template: extraInTemplate.map(id => {
+      const e = empById.get(id);
+      const te = (currentWeek?.employees||[]).find(x => Number(x.employee_id??x.id) === id);
+      return { id, num: e?.employee_number, name: e?.full_name, status: e?.status, tmpl_status: te?.template_status };
+    }),
+    activos_not_in_s32: activosNoS32.map(id => {
+      const e = empById.get(id);
+      return { id, num: e?.employee_number, name: e?.full_name };
+    }),
     activos_sin_snapshot: activosSinSnap.map(e => ({
       id: e.id, num: e.employee_number, name: e.full_name, valid_num: validNum(e),
       baja_locked: !!e.manual_baja_locked, is_system: systemIds.has(Number(e.id)),
