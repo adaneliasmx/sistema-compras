@@ -80,6 +80,13 @@ router.get('/plantilla/diag', (req, res) => {
     activos_num_invalido: activos.filter(e => !validNum(e)).map(e => ({
       id: e.id, num: e.employee_number, name: e.full_name,
     })),
+    // Detalle de system users
+    system_users_detail: users.filter(u => u.role !== 'empleado' && u.employee_id != null).map(u => ({
+      user_id: u.id, email: u.email, role: u.role, employee_id: u.employee_id,
+      emp_name: empById.get(Number(u.employee_id))?.full_name,
+      emp_num: empById.get(Number(u.employee_id))?.employee_number,
+      emp_status: empById.get(Number(u.employee_id))?.status,
+    })),
     // Buscar los 5 reportados
     reported_missing: [163,164,165,166,167].map(num => {
       const e = emps.find(x => Number(x.employee_number) === num || Number(x.id) === num);
