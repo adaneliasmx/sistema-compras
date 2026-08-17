@@ -943,9 +943,9 @@ async function vacaciones(el) {
   _vacCal.selEnd = null;
   _vacCal.month = now.getMonth();
   _vacCal.year = now.getFullYear();
-  _vacCal.diasRestantes = vi.dias_restantes ?? 0;
 
   const vi = vacInfo;
+  _vacCal.diasRestantes = vi.dias_restantes ?? 0;
   const dispColor  = (vi.dias_restantes ?? 0) === 0 ? '#dc2626' : '#0369a1';
 
   // Badge estilo boarding pass para cada solicitud
