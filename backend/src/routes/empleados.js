@@ -386,6 +386,20 @@ router.post('/queja', empAuthRequired, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /api/empleados/vacaciones/calendario ─────────────────────────────────
+// Datos para el calendario de vacaciones: festivos, cumpleaños, solicitudes previas
+router.get('/vacaciones/calendario', empAuthRequired, (req, res) => {
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
+  const holidays = (db.rhh_holidays || []).map(h => ({ date: h.date, name: h.name }));
+  const birth_date = emp?.birth_date || null;
+  const vacInfo = emp ? calcVacInfo(emp, db, nowMxDate()) : {};
+  const solicitudes = (db.rhh_vac_solicitudes || [])
+    .filter(r => r.employee_id === req.empPayload.sub && r.estado !== 'rechazada')
+    .map(r => ({ fecha_inicio: r.fecha_inicio, fecha_fin: r.fecha_fin, estado: r.estado }));
+  res.json({ holidays, birth_date, vac_info: vacInfo, solicitudes });
+});
+
 // ── GET /api/empleados/vacaciones ─────────────────────────────────────────────
 router.get('/vacaciones', empAuthRequired, (req, res) => {
   const db = read();
@@ -417,20 +431,34 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   const d2 = new Date(fecha_fin + 'T12:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return res.status(400).json({ error: 'Rango de fechas inválido' });
 
-  const dias = Math.round((d2 - d1) / 86400000) + 1;
-
   const db  = read();
   const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
 
-  // Validar días disponibles
+  // Calcular dias efectivos de vacaciones (excluir domingos, festivos, cumpleaños)
+  const holidayDates = new Set((db.rhh_holidays || []).map(h => h.date));
+  const birthMD = emp?.birth_date ? emp.birth_date.slice(5) : null; // MM-DD
+  let diasVac = 0, diasFestivo = 0, diasDescanso = 0, diasCumple = 0;
+  const totalNatural = Math.round((d2 - d1) / 86400000) + 1;
+  for (let i = 0; i < totalNatural; i++) {
+    const dt = new Date(d1.getTime() + i * 86400000);
+    const iso = dt.toISOString().slice(0, 10);
+    const dow = dt.getDay(); // 0=domingo
+    const md = iso.slice(5); // MM-DD
+    if (dow === 0) { diasDescanso++; }
+    else if (holidayDates.has(iso)) { diasFestivo++; }
+    else if (birthMD && md === birthMD) { diasCumple++; }
+    else { diasVac++; }
+  }
+
+  // Validar días disponibles (solo dias efectivos de vacaciones)
   if (emp) {
     const vacInfo = calcVacInfo(emp, db, nowMxDate());
     if (!vacInfo.elegible) {
       return res.status(400).json({ error: 'Aun no tienes dias de vacaciones disponibles para este año.' });
     }
-    if (dias > vacInfo.dias_restantes) {
+    if (diasVac > vacInfo.dias_restantes) {
       return res.status(400).json({
-        error: `No tienes suficientes dias disponibles. Disponibles: ${vacInfo.dias_disponibles}, comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${dias}.`
+        error: `No tienes suficientes dias disponibles. Disponibles: ${vacInfo.dias_disponibles}, comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${diasVac} dias de vacaciones.`
       });
     }
   }
@@ -447,13 +475,23 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   if (!Array.isArray(db.rhh_vac_solicitudes)) db.rhh_vac_solicitudes = [];
   const lista = db.rhh_vac_solicitudes;
   const newId = (lista.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1;
+  const desglose = [];
+  if (diasVac) desglose.push(`${diasVac} dia${diasVac>1?'s':''} vacaciones`);
+  if (diasFestivo) desglose.push(`${diasFestivo} festivo${diasFestivo>1?'s':''}`);
+  if (diasDescanso) desglose.push(`${diasDescanso} domingo${diasDescanso>1?'s':''}`);
+  if (diasCumple) desglose.push(`${diasCumple} cumpleaños`);
   const record = {
     id: newId,
     employee_id: req.empPayload.sub,
     no_periodo,
     year,
     period_key: `${year}-W${String(no_periodo).padStart(2, '0')}`,
-    dias,
+    dias: diasVac,
+    dias_naturales: totalNatural,
+    dias_festivo: diasFestivo,
+    dias_descanso: diasDescanso,
+    dias_cumple: diasCumple,
+    desglose: desglose.join(' + '),
     fecha_inicio,
     fecha_fin,
     notas: String(motivo || '').trim().slice(0, 300) || null,
@@ -466,7 +504,7 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   };
   lista.push(record);
   write(db);
-  res.json({ ok: true, id: newId, dias });
+  res.json({ ok: true, id: newId, dias: diasVac, dias_naturales: totalNatural, desglose: desglose.join(' + ') });
 });
 
 module.exports = router;

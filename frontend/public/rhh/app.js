@@ -2514,8 +2514,8 @@ async function autorizacionesView() {
         <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
         <td>${s.department?.name || '—'}</td>
         <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `Semana ${s.periodo.no_periodo} (${s.periodo.fecha_inicio} – ${s.periodo.fecha_fin})` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
-        <td style="text-align:center;font-weight:700;">${s.dias}</td>
-        <td>${s.notas || '—'}</td>
+        <td style="text-align:center;font-weight:700;">${s.dias}${s.dias_naturales && s.dias_naturales !== s.dias ? `<br><span class="small muted">${s.dias_naturales} nat.</span>` : ''}</td>
+        <td>${s.desglose ? `<span style="font-size:11px">${escHtml(s.desglose)}</span>` : ''}${s.notas ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${escHtml(s.notas)}</div>` : !s.desglose ? '—' : ''}</td>
         <td>
           <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarVacSol(${s.id},'aprobada')">✅ Aprobar</button>
           <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarVacSol(${s.id},'rechazada')">✗ Rechazar</button>

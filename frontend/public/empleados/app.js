@@ -669,114 +669,312 @@ async function lista_raya(el) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// VISTA: VACACIONES
+// VISTA: VACACIONES — estilo "boarding pass" con calendario interactivo
 // ══════════════════════════════════════════════════════════════════════════════
+
+// Estado del calendario de vacaciones
+let _vacCal = { holidays: [], birthMD: null, solicitudes: [], selStart: null, selEnd: null, month: null, year: null };
+const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const DIAS_CORTO = ['Do','Lu','Ma','Mi','Ju','Vi','Sa'];
+
+function _vacDayType(iso) {
+  const dt = new Date(iso + 'T12:00:00');
+  const dow = dt.getDay();
+  if (dow === 0) return 'descanso';
+  if (_vacCal.holidays.some(h => h.date === iso)) return 'festivo';
+  if (_vacCal.birthMD && iso.slice(5) === _vacCal.birthMD) return 'cumple';
+  // Ya solicitado?
+  if (_vacCal.solicitudes.some(s => s.fecha_inicio <= iso && s.fecha_fin >= iso)) return 'ocupado';
+  return 'habil';
+}
+
+function _vacBuildCalendar() {
+  const y = _vacCal.year, m = _vacCal.month;
+  const firstDay = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <button onclick="_vacNavMonth(-1)" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:16px">&lt;</button>
+    <div style="font-size:15px;font-weight:700;color:#1e293b">${MESES_NOMBRE[m]} ${y}</div>
+    <button onclick="_vacNavMonth(1)" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:16px">&gt;</button>
+  </div>`;
+
+  html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">';
+  // Headers
+  for (const d of DIAS_CORTO) {
+    html += `<div style="font-size:10px;font-weight:700;color:${d==='Do'?'#dc2626':'#64748b'};padding:4px 0">${d}</div>`;
+  }
+  // Blanks
+  for (let i = 0; i < firstDay; i++) html += '<div></div>';
+  // Days
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const type = _vacDayType(iso);
+    const isPast = iso < today;
+    const isSelected = _vacCal.selStart && _vacCal.selEnd && iso >= _vacCal.selStart && iso <= _vacCal.selEnd;
+    const isStart = iso === _vacCal.selStart;
+    const isEnd = iso === _vacCal.selEnd;
+    const isOnlyStart = _vacCal.selStart === iso && !_vacCal.selEnd;
+
+    let bg = '#fff', color = '#1e293b', border = '1px solid #f1f5f9', opacity = '1', cursor = 'pointer', extra = '';
+    if (isPast) { color = '#cbd5e1'; cursor = 'default'; opacity = '0.5'; }
+    else if (type === 'descanso') { bg = '#fee2e2'; color = '#991b1b'; cursor = 'default'; extra = 'Do'; }
+    else if (type === 'festivo') { bg = '#fef3c7'; color = '#92400e'; cursor = 'default'; extra = _vacCal.holidays.find(h=>h.date===iso)?.name?.slice(0,8)||'Festivo'; }
+    else if (type === 'cumple') { bg = '#fce7f3'; color = '#9d174d'; cursor = 'default'; extra = 'Cumple'; }
+    else if (type === 'ocupado') { bg = '#e0e7ff'; color = '#4338ca'; cursor = 'default'; extra = 'Solic.'; }
+
+    if (isSelected && !isPast) {
+      if (type === 'habil') { bg = '#2563eb'; color = '#fff'; border = '1px solid #1d4ed8'; }
+    }
+    if (isOnlyStart && !isPast) { bg = '#2563eb'; color = '#fff'; border = '2px solid #1e40af'; }
+    if (isStart && _vacCal.selEnd && type === 'habil') { border = '2px solid #1e40af'; }
+    if (isEnd && type === 'habil') { border = '2px solid #1e40af'; }
+
+    const canClick = !isPast && type === 'habil';
+    html += `<div onclick="${canClick ? `_vacSelectDay('${iso}')` : ''}"
+      style="position:relative;padding:6px 2px;border-radius:8px;background:${bg};color:${color};border:${border};
+      opacity:${opacity};cursor:${cursor};font-size:13px;font-weight:${isSelected?'700':'500'};min-height:38px;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;transition:all .15s">
+      <span>${d}</span>
+      ${extra ? `<span style="font-size:7px;line-height:1;margin-top:1px;white-space:nowrap">${extra}</span>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+
+  // Leyenda
+  html += `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;font-size:10px;color:#64748b">
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fee2e2;border:1px solid #fca5a5"></span> Domingo</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;border:1px solid #fcd34d"></span> Festivo</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fce7f3;border:1px solid #f9a8d4"></span> Cumpleaños</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#e0e7ff;border:1px solid #a5b4fc"></span> Solicitado</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#2563eb"></span> Seleccion</span>
+  </div>`;
+
+  document.getElementById('vac-calendar').innerHTML = html;
+  _vacUpdateSummary();
+}
+
+function _vacNavMonth(dir) {
+  _vacCal.month += dir;
+  if (_vacCal.month > 11) { _vacCal.month = 0; _vacCal.year++; }
+  if (_vacCal.month < 0)  { _vacCal.month = 11; _vacCal.year--; }
+  _vacBuildCalendar();
+}
+
+function _vacSelectDay(iso) {
+  if (!_vacCal.selStart || _vacCal.selEnd) {
+    _vacCal.selStart = iso;
+    _vacCal.selEnd = null;
+  } else {
+    if (iso < _vacCal.selStart) {
+      _vacCal.selEnd = _vacCal.selStart;
+      _vacCal.selStart = iso;
+    } else {
+      _vacCal.selEnd = iso;
+    }
+  }
+  _vacBuildCalendar();
+}
+
+function _vacUpdateSummary() {
+  const box = document.getElementById('vac-summary');
+  if (!box) return;
+  if (!_vacCal.selStart) {
+    box.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:16px;font-size:13px">Selecciona fecha de inicio en el calendario</div>';
+    return;
+  }
+  if (!_vacCal.selEnd) {
+    box.innerHTML = `<div style="text-align:center;color:#64748b;padding:16px;font-size:13px">Inicio: <strong>${_vacCal.selStart}</strong> — ahora selecciona la fecha de fin</div>`;
+    return;
+  }
+  // Calcular desglose
+  const d1 = new Date(_vacCal.selStart + 'T12:00:00');
+  const d2 = new Date(_vacCal.selEnd + 'T12:00:00');
+  const totalNat = Math.round((d2 - d1) / 86400000) + 1;
+  let vacDias = 0, festivos = 0, domingos = 0, cumples = 0;
+  const festNames = [];
+  for (let i = 0; i < totalNat; i++) {
+    const dt = new Date(d1.getTime() + i * 86400000);
+    const iso = dt.toISOString().slice(0, 10);
+    const type = _vacDayType(iso);
+    if (type === 'descanso') domingos++;
+    else if (type === 'festivo') { festivos++; const h = _vacCal.holidays.find(x=>x.date===iso); if(h) festNames.push(h.name); }
+    else if (type === 'cumple') cumples++;
+    else vacDias++;
+  }
+
+  const parts = [];
+  parts.push(`<span style="font-size:28px;font-weight:800;color:#1e40af">${vacDias}</span> <span style="font-size:13px;color:#475569">dias de vacaciones</span>`);
+
+  const extras = [];
+  if (festivos) extras.push(`<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:12px;font-size:11px">${festivos} festivo${festivos>1?'s':''}</span>`);
+  if (domingos) extras.push(`<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:12px;font-size:11px">${domingos} domingo${domingos>1?'s':''}</span>`);
+  if (cumples) extras.push(`<span style="background:#fce7f3;color:#9d174d;padding:2px 8px;border-radius:12px;font-size:11px">${cumples} cumpleaños</span>`);
+
+  box.innerHTML = `
+  <div style="background:#fff;border:2px solid #e2e8f0;border-radius:16px;overflow:hidden">
+    <!-- Boarding pass header -->
+    <div style="background:linear-gradient(135deg,#1e40af,#2563eb);padding:14px 18px;color:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Salida</div>
+          <div style="font-size:18px;font-weight:700">${_vacCal.selStart}</div>
+        </div>
+        <div style="font-size:22px;opacity:.5">→</div>
+        <div style="text-align:right">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Regreso</div>
+          <div style="font-size:18px;font-weight:700">${_vacCal.selEnd}</div>
+        </div>
+      </div>
+    </div>
+    <!-- Desglose -->
+    <div style="padding:16px 18px;border-bottom:2px dashed #e2e8f0">
+      <div style="margin-bottom:8px">${parts.join('')}</div>
+      ${extras.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${extras.join('')}</div>` : ''}
+      ${festNames.length ? `<div style="font-size:11px;color:#64748b;margin-top:6px">${festNames.join(', ')}</div>` : ''}
+      <div style="font-size:11px;color:#94a3b8;margin-top:4px">${totalNat} dias naturales en total</div>
+    </div>
+    <!-- Motivo + enviar -->
+    <div style="padding:16px 18px">
+      <div style="margin-bottom:10px">
+        <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px">Motivo (opcional)</label>
+        <input type="text" id="vac-motivo" placeholder="Ej: Vacaciones familiares"
+          style="width:100%;padding:10px 12px;border:1.5px solid #e2e8f0;border-radius:10px;font-size:14px;background:#f8fafc;outline:none"/>
+      </div>
+      <p class="emp-error" id="vac-err" style="margin-bottom:8px"></p>
+      <button class="emp-btn" id="btn-vac-send" ${vacDias <= 0 ? 'disabled' : ''}>Solicitar ${vacDias} dia${vacDias!==1?'s':''} de vacaciones</button>
+    </div>
+  </div>`;
+
+  // Bind enviar
+  const btn = document.getElementById('btn-vac-send');
+  if (btn) btn.onclick = async () => {
+    const motivo = document.getElementById('vac-motivo')?.value?.trim() || '';
+    const errEl = document.getElementById('vac-err');
+    if (errEl) errEl.textContent = '';
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    const r = await api('POST', '/vacaciones', { fecha_inicio: _vacCal.selStart, fecha_fin: _vacCal.selEnd, motivo });
+    btn.disabled = false; btn.textContent = `Solicitar ${vacDias} dia${vacDias!==1?'s':''} de vacaciones`;
+    if (!r || !r.ok) {
+      if (errEl) errEl.textContent = (r?.data?.error) || 'Error al enviar';
+      return;
+    }
+    _vacCal.selStart = null; _vacCal.selEnd = null;
+    const desg = r.data.desglose || `${r.data.dias} dias`;
+    // Mostrar confirmacion estilo boarding pass
+    document.getElementById('vac-summary').innerHTML = `
+    <div style="background:#f0fdf4;border:2px solid #86efac;border-radius:16px;padding:20px;text-align:center">
+      <div style="font-size:32px;margin-bottom:8px">&#9989;</div>
+      <div style="font-size:15px;font-weight:700;color:#166534;margin-bottom:4px">Solicitud enviada</div>
+      <div style="font-size:13px;color:#15803d">${desg}</div>
+      <div style="font-size:11px;color:#64748b;margin-top:6px">RH te confirmara pronto</div>
+    </div>`;
+    setTimeout(() => vacaciones(document.getElementById('app-content') || el), 2000);
+  };
+}
+
+function _vacClearSelection() {
+  _vacCal.selStart = null;
+  _vacCal.selEnd = null;
+  _vacBuildCalendar();
+}
+
 async function vacaciones(el) {
-  const [rVac, rInc] = await Promise.all([
+  el.innerHTML = '<p class="emp-page-title">Vacaciones</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
+
+  const [rVac, rInc, rCal] = await Promise.all([
     api('GET', '/vacaciones'),
     api('GET', '/incidencias'),
+    api('GET', '/vacaciones/calendario'),
   ]);
   const lista   = (rVac && rVac.ok && Array.isArray(rVac.data)) ? rVac.data : [];
   const vacInfo = (!Array.isArray(rInc?.data) ? rInc?.data?.vac_info : null) || {};
+  const calData = (rCal && rCal.ok) ? rCal.data : {};
 
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' }).slice(0, 10);
-  const minDate = today;
+  // Inicializar estado calendario
+  const now = new Date();
+  _vacCal.holidays = calData.holidays || [];
+  _vacCal.birthMD = calData.birth_date ? calData.birth_date.slice(5) : null;
+  _vacCal.solicitudes = calData.solicitudes || [];
+  _vacCal.selStart = null;
+  _vacCal.selEnd = null;
+  _vacCal.month = now.getMonth();
+  _vacCal.year = now.getFullYear();
 
   const vi = vacInfo;
   const dispColor  = (vi.dias_restantes ?? 0) === 0 ? '#dc2626' : '#0369a1';
-  const vacResumen = vi && vi.dias_disponibles != null ? `
-  <div class="emp-card" style="background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border:1px solid #bae6fd;padding:14px 16px;margin-bottom:14px;">
-    <div style="font-size:13px;font-weight:700;color:#0369a1;margin-bottom:10px;">Días de vacaciones ${new Date().getFullYear()}</div>
-    ${!vi.elegible ? `<div style="background:#fef3c7;color:#92400e;padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:8px;">⚠️ Aún no tienes días de vacaciones disponibles para este año. Necesitas haber laborado al menos 2 meses del año anterior.</div>` : ''}
-    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
-      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
-        <div style="font-size:20px;font-weight:700;color:#0369a1;">${vi.dias_disponibles ?? 0}</div>
-        <div style="font-size:10px;color:#64748b;">Disponibles</div>
-      </div>
-      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
-        <div style="font-size:20px;font-weight:700;color:#16a34a;">${vi.dias_tomados ?? 0}</div>
-        <div style="font-size:10px;color:#64748b;">Tomados</div>
-      </div>
-      <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
-        <div style="font-size:20px;font-weight:700;color:#ea580c;">${vi.dias_programados ?? 0}</div>
-        <div style="font-size:10px;color:#64748b;">Programados</div>
-      </div>
-      <div style="text-align:center;background:${(vi.dias_restantes??0)===0?'#fef2f2':'#f0fdf4'};border-radius:8px;padding:10px;border:1px solid ${(vi.dias_restantes??0)===0?'#fecaca':'#bbf7d0'};">
-        <div style="font-size:20px;font-weight:700;color:${dispColor};">${vi.dias_restantes ?? 0}</div>
-        <div style="font-size:10px;color:#64748b;">Restantes</div>
-      </div>
-    </div>
-    ${(vi.dias_restantes ?? 0) === 0 && vi.elegible ? `<div style="margin-top:10px;font-size:11px;color:#dc2626;background:#fef2f2;border-radius:6px;padding:6px 10px;">Sin días disponibles. Si ya tomaste o programaste todos tus días, deberás cancelar alguna solicitud para reagendar.</div>` : ''}
-  </div>` : '';
 
-  const listaHtml = lista.length ? lista.map(v => `
-  <div class="emp-card" style="padding:14px 16px;margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-      <span style="font-size:13px;font-weight:600">${fmtDate(v.fecha_inicio)} – ${fmtDate(v.fecha_fin)}</span>
-      <span class="vac-badge ${v.status}">${v.status}</span>
-    </div>
-    <div style="font-size:12px;color:#64748b">${v.dias} día${v.dias !== 1 ? 's' : ''} · Solicitado: ${fmtDate(v.created_at)}</div>
-    ${v.motivo ? `<div style="font-size:12px;color:#94a3b8;margin-top:4px">${esc(v.motivo)}</div>` : ''}
-    ${v.notas_rh ? `<div style="font-size:12px;color:#1e40af;margin-top:6px;background:#eff6ff;border-radius:6px;padding:6px 8px">RH: ${esc(v.notas_rh)}</div>` : ''}
-  </div>`).join('') : `<div class="emp-empty" style="padding:20px 0"><p>Sin solicitudes previas</p></div>`;
+  // Badge estilo boarding pass para cada solicitud
+  const listaHtml = lista.length ? lista.map(v => {
+    const stColor = v.status==='aprobado' ? '#16a34a' : v.status==='rechazado' ? '#dc2626' : '#d97706';
+    const stBg    = v.status==='aprobado' ? '#f0fdf4' : v.status==='rechazado' ? '#fef2f2' : '#fffbeb';
+    const stBorder = v.status==='aprobado' ? '#86efac' : v.status==='rechazado' ? '#fca5a5' : '#fcd34d';
+    const stLabel = v.status==='aprobado' ? 'APROBADO' : v.status==='rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+    return `
+    <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;margin-bottom:10px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
+        <div>
+          <div style="font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:.5px">Periodo</div>
+          <div style="font-size:14px;font-weight:700;color:#1e293b">${fmtDate(v.fecha_inicio)} → ${fmtDate(v.fecha_fin)}</div>
+        </div>
+        <div style="background:${stBg};border:1px solid ${stBorder};color:${stColor};padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;letter-spacing:.5px">${stLabel}</div>
+      </div>
+      <div style="border-top:1px dashed #e2e8f0;padding:8px 16px;display:flex;gap:16px;font-size:12px;color:#64748b">
+        <span><strong>${v.dias}</strong> dia${v.dias!==1?'s':''}</span>
+        <span>Solicitado: ${fmtDate(v.created_at)}</span>
+      </div>
+      ${v.motivo ? `<div style="padding:0 16px 8px;font-size:11px;color:#94a3b8">${esc(v.motivo)}</div>` : ''}
+      ${v.notas_rh ? `<div style="padding:0 16px 10px;font-size:11px;color:#1e40af;background:#eff6ff;margin:0 12px 10px;border-radius:6px;padding:6px 8px">RH: ${esc(v.notas_rh)}</div>` : ''}
+    </div>`;
+  }).join('') : '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px">Sin solicitudes previas</div>';
 
   el.innerHTML = `
   <p class="emp-page-title">Vacaciones</p>
 
-  ${vacResumen}
-
-  <div class="emp-card" id="vac-form-card">
-    <div class="emp-card-title">Nueva solicitud</div>
-    <div id="vac-success" class="emp-success"></div>
-    <div class="emp-form-group">
-      <label>Fecha de inicio</label>
-      <input class="emp-input" type="date" id="vac-ini" min="${minDate}"/>
+  <!-- Resumen de dias -->
+  <div class="emp-card" style="background:linear-gradient(135deg,#1e40af,#2563eb);color:#fff;padding:18px;margin-bottom:14px;border:none;">
+    <div style="font-size:12px;text-transform:uppercase;letter-spacing:1px;opacity:.7;margin-bottom:10px">Dias de vacaciones ${now.getFullYear()}</div>
+    ${!vi.elegible ? '<div style="background:rgba(255,255,255,.15);padding:8px 12px;border-radius:8px;font-size:12px;margin-bottom:8px">Aun no tienes dias de vacaciones disponibles para este año.</div>' : ''}
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+      <div style="text-align:center;background:rgba(255,255,255,.12);border-radius:10px;padding:10px;">
+        <div style="font-size:22px;font-weight:800">${vi.dias_disponibles ?? 0}</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Disponibles</div>
+      </div>
+      <div style="text-align:center;background:rgba(255,255,255,.12);border-radius:10px;padding:10px;">
+        <div style="font-size:22px;font-weight:800">${vi.dias_tomados ?? 0}</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Tomados</div>
+      </div>
+      <div style="text-align:center;background:rgba(255,255,255,.12);border-radius:10px;padding:10px;">
+        <div style="font-size:22px;font-weight:800">${(vi.dias_programados??0)-(vi.dias_tomados??0)}</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Pendientes</div>
+      </div>
+      <div style="text-align:center;background:rgba(255,255,255,.2);border-radius:10px;padding:10px;border:1px solid rgba(255,255,255,.3)">
+        <div style="font-size:22px;font-weight:800">${vi.dias_restantes ?? 0}</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Restantes</div>
+      </div>
     </div>
-    <div class="emp-form-group">
-      <label>Fecha de regreso (último día de vacaciones)</label>
-      <input class="emp-input" type="date" id="vac-fin" min="${minDate}"/>
-    </div>
-    <div class="emp-form-group">
-      <label>Motivo (opcional)</label>
-      <input class="emp-input" type="text" id="vac-motivo" placeholder="Ej: Vacaciones familiares"/>
-    </div>
-    <p class="emp-error" id="vac-err"></p>
-    <button class="emp-btn" id="btn-vac-send">Solicitar vacaciones</button>
   </div>
 
-  <div style="margin-top:20px">
-    <p style="font-size:14px;font-weight:600;color:#475569;margin-bottom:10px">Mis solicitudes</p>
+  <!-- Calendario -->
+  <div class="emp-card" style="padding:16px;margin-bottom:14px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <div style="font-size:14px;font-weight:700;color:#1e293b">Selecciona tus fechas</div>
+      <button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>
+    </div>
+    <div id="vac-calendar"></div>
+  </div>
+
+  <!-- Resumen / Boarding Pass -->
+  <div id="vac-summary" style="margin-bottom:14px"></div>
+
+  <!-- Historial de solicitudes -->
+  <div style="margin-top:6px">
+    <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:10px">Mis solicitudes</div>
     ${listaHtml}
   </div>`;
 
-  document.getElementById('btn-vac-send').addEventListener('click', async () => {
-    const ini = document.getElementById('vac-ini').value;
-    const fin = document.getElementById('vac-fin').value;
-    const motivo = document.getElementById('vac-motivo').value.trim();
-    const err = document.getElementById('vac-err');
-    const suc = document.getElementById('vac-success');
-    err.textContent = ''; suc.classList.remove('show');
-
-    if (!ini || !fin) { err.textContent = 'Selecciona las fechas'; return; }
-    if (fin < ini) { err.textContent = 'La fecha de fin no puede ser antes del inicio'; return; }
-
-    const btn = document.getElementById('btn-vac-send');
-    btn.disabled = true; btn.textContent = 'Enviando...';
-    const res = await api('POST', '/vacaciones', { fecha_inicio: ini, fecha_fin: fin, motivo });
-    btn.disabled = false; btn.textContent = 'Solicitar vacaciones';
-    if (!res || !res.ok) {
-      err.textContent = (res&&res.data&&res.data.error) || 'Error al enviar';
-      return;
-    }
-    const { dias } = res.data;
-    suc.textContent = `Solicitud enviada correctamente (${dias} día${dias !== 1 ? 's' : ''}). RH te confirmará pronto.`;
-    suc.classList.add('show');
-    document.getElementById('vac-ini').value = '';
-    document.getElementById('vac-fin').value = '';
-    document.getElementById('vac-motivo').value = '';
-    // Recargar lista
-    setTimeout(() => vacaciones(el), 1500);
-  });
+  _vacBuildCalendar();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
