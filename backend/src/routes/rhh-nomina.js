@@ -509,19 +509,117 @@ router.patch('/vac-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor
   res.json(s);
 });
 
-// PATCH /api/rhh/nomina/vac-solicitudes/:id/editar-dias — admin/rh edita dias de solicitud aprobada
+// PATCH /api/rhh/nomina/vac-solicitudes/:id/resolver-cambio — admin/rh aprueba o rechaza cambio/cancelacion
+router.patch('/vac-solicitudes/:id/resolver-cambio', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db  = read();
+  const idx = (db.rhh_vac_solicitudes || []).findIndex(s => s.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+  const { accion, respuesta } = req.body || {};
+  if (!['aprobar', 'rechazar'].includes(accion)) return res.status(400).json({ error: 'accion debe ser aprobar o rechazar' });
+
+  const s = db.rhh_vac_solicitudes[idx];
+  if (!s.cambio_solicitado) return res.status(400).json({ error: 'Esta solicitud no tiene cambio pendiente' });
+
+  if (accion === 'aprobar') {
+    if (s.cambio_solicitado === 'cancelacion') {
+      // Cancelar: revertir dias en incidencia semanal y marcar cancelada
+      const incLista = db.rhh_incidencias_semanales || [];
+      const year = effectivePeriodYear(s);
+      const incIdx = incLista.findIndex(i =>
+        samePeriod(i, s.no_periodo, year) && i.employee_id === s.employee_id
+      );
+      if (incIdx !== -1) {
+        incLista[incIdx].vacaciones_dias = Math.max(0, (Number(incLista[incIdx].vacaciones_dias) || 0) - (Number(s.dias) || 0));
+        incLista[incIdx].updated_at = new Date().toISOString();
+      }
+      s.estado = 'cancelada';
+    } else {
+      // Modificacion: actualizar fechas
+      if (s.cambio_nueva_fecha_inicio && s.cambio_nueva_fecha_fin) {
+        // Recalcular dias (excl domingos, festivos, cumpleaños)
+        const emp = (db.rhh_employees || []).find(e => e.id === s.employee_id);
+        const holidayDates = new Set((db.rhh_holidays || []).map(h => h.date));
+        const birthMD = emp?.birth_date ? emp.birth_date.slice(5) : null;
+        const d1 = new Date(s.cambio_nueva_fecha_inicio + 'T12:00:00');
+        const d2 = new Date(s.cambio_nueva_fecha_fin + 'T12:00:00');
+        const totalNat = Math.round((d2 - d1) / 86400000) + 1;
+        let diasVac = 0;
+        for (let i = 0; i < totalNat; i++) {
+          const dt = new Date(d1.getTime() + i * 86400000);
+          const iso = dt.toISOString().slice(0, 10);
+          const dow = dt.getDay();
+          if (dow === 0) continue;
+          if (holidayDates.has(iso)) continue;
+          if (birthMD && iso.slice(5) === birthMD) continue;
+          diasVac++;
+        }
+        const oldDias = Number(s.dias) || 0;
+        // Actualizar incidencia semanal
+        const incLista = db.rhh_incidencias_semanales || [];
+        const year = effectivePeriodYear(s);
+        const incIdx = incLista.findIndex(i =>
+          samePeriod(i, s.no_periodo, year) && i.employee_id === s.employee_id
+        );
+        if (incIdx !== -1) {
+          incLista[incIdx].vacaciones_dias = Math.max(0, (Number(incLista[incIdx].vacaciones_dias) || 0) - oldDias + diasVac);
+          incLista[incIdx].updated_at = new Date().toISOString();
+        }
+        s.fecha_inicio = s.cambio_nueva_fecha_inicio;
+        s.fecha_fin = s.cambio_nueva_fecha_fin;
+        s.dias = diasVac;
+        s.dias_naturales = totalNat;
+      }
+    }
+  }
+
+  s.cambio_respuesta = String(respuesta || '').trim().slice(0, 300) || null;
+  s.cambio_resuelto = true;
+  s.cambio_resuelto_por = req.rhhUser?.id || req.rhhUser?.email || 'rh';
+  s.cambio_resuelto_at = new Date().toISOString();
+  s.cambio_resultado = accion === 'aprobar' ? 'aprobado' : 'rechazado';
+  if (accion === 'rechazar') {
+    // Limpiar el flag de cambio para que siga como aprobada normal
+    // pero mantener historial
+  }
+
+  write(db);
+  res.json({ ok: true });
+});
+
+// PATCH /api/rhh/nomina/vac-solicitudes/:id/editar-dias — admin/rh edita dias y/o fechas de solicitud aprobada
 router.patch('/vac-solicitudes/:id/editar-dias', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db  = read();
   const idx = (db.rhh_vac_solicitudes || []).findIndex(s => s.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Solicitud no encontrada' });
 
-  const { dias } = req.body || {};
-  if (dias === undefined || isNaN(Number(dias))) return res.status(400).json({ error: 'dias es requerido' });
+  const { fecha_inicio, fecha_fin } = req.body || {};
+  if (!fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'fecha_inicio y fecha_fin son requeridos' });
 
   const s = db.rhh_vac_solicitudes[idx];
   const oldDias = Number(s.dias) || 0;
-  const newDias = Number(dias);
+
+  // Recalcular dias efectivos (excl domingos, festivos, cumple)
+  const emp = (db.rhh_employees || []).find(e => e.id === s.employee_id);
+  const holidayDates = new Set((db.rhh_holidays || []).map(h => h.date));
+  const birthMD = emp?.birth_date ? emp.birth_date.slice(5) : null;
+  const d1 = new Date(fecha_inicio + 'T12:00:00');
+  const d2 = new Date(fecha_fin + 'T12:00:00');
+  const totalNat = Math.round((d2 - d1) / 86400000) + 1;
+  let newDias = 0;
+  for (let i = 0; i < totalNat; i++) {
+    const dt = new Date(d1.getTime() + i * 86400000);
+    const iso = dt.toISOString().slice(0, 10);
+    if (dt.getDay() === 0) continue;
+    if (holidayDates.has(iso)) continue;
+    if (birthMD && iso.slice(5) === birthMD) continue;
+    newDias++;
+  }
+
+  s.fecha_inicio = fecha_inicio;
+  s.fecha_fin = fecha_fin;
   s.dias = newDias;
+  s.dias_naturales = totalNat;
   s.dias_editado_por = req.rhhUser?.id || req.rhhUser?.email || 'rh';
   s.dias_editado_at = new Date().toISOString();
 
@@ -539,14 +637,13 @@ router.patch('/vac-solicitudes/:id/editar-dias', rhhAuthRequired, rhhRequireRole
     }
   }
 
-  // Limpiar solicitud de cambio si existía
   if (s.cambio_solicitado) {
     s.cambio_resuelto = true;
     s.cambio_resuelto_at = new Date().toISOString();
   }
 
   write(db);
-  res.json({ ok: true });
+  res.json({ ok: true, dias: newDias });
 });
 
 // ── Solicitudes de Tiempo Extra ───────────────────────────────────────────────

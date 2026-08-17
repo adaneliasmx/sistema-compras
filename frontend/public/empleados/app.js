@@ -884,18 +884,35 @@ function _vacUpdateSummary() {
 }
 
 async function _vacSolicitarCambio(vacId, tipo) {
-  const label = tipo === 'cancelacion' ? 'cancelar estas vacaciones' : 'solicitar un cambio de fechas';
-  const motivo = prompt(`Escribe el motivo para ${label}:`);
-  if (motivo === null) return;
-  const r = await api('POST', '/vacaciones/cambio', { vacacion_id: vacId, tipo, motivo: motivo.trim() });
-  if (r && r.ok) {
-    alert(tipo === 'cancelacion'
-      ? 'Solicitud de cancelacion enviada. RH revisara tu peticion.'
-      : 'Solicitud de cambio enviada. RH revisara tu peticion.');
-    vacaciones(document.getElementById('app-content') || document.getElementById('app'));
-  } else {
-    alert((r?.data?.error) || 'Error al enviar solicitud');
+  if (tipo === 'cancelacion') {
+    const motivo = prompt('Escribe el motivo de la cancelacion:');
+    if (motivo === null) return;
+    const r = await api('POST', '/vacaciones/cambio', { vacacion_id: vacId, tipo, motivo: motivo.trim() });
+    if (r && r.ok) {
+      alert('Solicitud de cancelacion enviada. RH revisara tu peticion.');
+      vacaciones(document.getElementById('app-content') || document.getElementById('app'));
+    } else { alert((r?.data?.error) || 'Error al enviar'); }
+    return;
   }
+  // Modificacion: pedir nuevas fechas
+  const box = document.getElementById(`vac-cambio-form-${vacId}`);
+  if (box) { box.style.display = box.style.display === 'none' ? 'block' : 'none'; return; }
+}
+
+async function _vacEnviarCambio(vacId) {
+  const ini = document.getElementById(`vac-cambio-ini-${vacId}`)?.value;
+  const fin = document.getElementById(`vac-cambio-fin-${vacId}`)?.value;
+  const motivo = document.getElementById(`vac-cambio-motivo-${vacId}`)?.value?.trim() || '';
+  if (!ini || !fin) { alert('Selecciona las nuevas fechas'); return; }
+  if (fin < ini) { alert('La fecha fin no puede ser antes que inicio'); return; }
+  const r = await api('POST', '/vacaciones/cambio', {
+    vacacion_id: vacId, tipo: 'modificacion', motivo,
+    nueva_fecha_inicio: ini, nueva_fecha_fin: fin
+  });
+  if (r && r.ok) {
+    alert('Solicitud de cambio enviada. RH revisara las nuevas fechas.');
+    vacaciones(document.getElementById('app-content') || document.getElementById('app'));
+  } else { alert((r?.data?.error) || 'Error al enviar'); }
 }
 
 function _vacClearSelection() {
@@ -950,10 +967,26 @@ async function vacaciones(el) {
       </div>
       ${v.motivo ? `<div style="padding:0 16px 8px;font-size:11px;color:#94a3b8">${esc(v.motivo)}</div>` : ''}
       ${v.notas_rh ? `<div style="padding:0 16px 10px;font-size:11px;color:#1e40af;background:#eff6ff;margin:0 12px 10px;border-radius:6px;padding:6px 8px">RH: ${esc(v.notas_rh)}</div>` : ''}
-      ${v.status === 'aprobado' ? `<div style="border-top:1px dashed #e2e8f0;padding:10px 16px;display:flex;gap:8px">
-        <button onclick="_vacSolicitarCambio(${v.id},'modificacion')" style="flex:1;padding:7px;border:1px solid #d97706;background:#fffbeb;color:#92400e;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Solicitar cambio</button>
-        <button onclick="_vacSolicitarCambio(${v.id},'cancelacion')" style="flex:1;padding:7px;border:1px solid #dc2626;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Cancelar vacaciones</button>
+      ${v.cambio_solicitado && !v.cambio_respuesta ? `<div style="padding:8px 16px;font-size:11px;background:#fffbeb;border-top:1px solid #fcd34d;color:#92400e">
+        ${v.cambio_solicitado === 'cancelacion' ? 'Cancelacion solicitada' : 'Cambio solicitado'} — esperando respuesta de RH
+        ${v.cambio_motivo ? ` · ${esc(v.cambio_motivo)}` : ''}</div>` : ''}
+      ${v.cambio_respuesta ? `<div style="padding:8px 16px;font-size:11px;background:#eff6ff;border-top:1px solid #bfdbfe;color:#1e40af">RH: ${esc(v.cambio_respuesta)}</div>` : ''}
+      ${v.status === 'aprobado' && !v.cambio_solicitado ? `<div style="border-top:1px dashed #e2e8f0;padding:10px 16px">
+        <div style="display:flex;gap:8px;margin-bottom:0">
+          <button onclick="_vacSolicitarCambio(${v.id},'modificacion')" style="flex:1;padding:7px;border:1px solid #d97706;background:#fffbeb;color:#92400e;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Solicitar cambio</button>
+          <button onclick="_vacSolicitarCambio(${v.id},'cancelacion')" style="flex:1;padding:7px;border:1px solid #dc2626;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Cancelar vacaciones</button>
+        </div>
+        <div id="vac-cambio-form-${v.id}" style="display:none;margin-top:10px;padding:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+          <div style="font-size:12px;font-weight:600;color:#475569;margin-bottom:8px">Nuevas fechas solicitadas:</div>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <div style="flex:1"><label style="font-size:10px;color:#64748b">Inicio</label><input type="date" id="vac-cambio-ini-${v.id}" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/></div>
+            <div style="flex:1"><label style="font-size:10px;color:#64748b">Fin</label><input type="date" id="vac-cambio-fin-${v.id}" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/></div>
+          </div>
+          <input type="text" id="vac-cambio-motivo-${v.id}" placeholder="Motivo del cambio" style="width:100%;padding:6px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;margin-bottom:8px"/>
+          <button onclick="_vacEnviarCambio(${v.id})" style="width:100%;padding:8px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer">Enviar solicitud de cambio</button>
+        </div>
       </div>` : ''}
+      ${v.status === 'cancelado' ? `<div style="border-top:1px solid #fecaca;padding:8px 16px;font-size:11px;color:#991b1b;background:#fef2f2">Vacaciones canceladas</div>` : ''}
     </div>`;
   }).join('') : '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px">Sin solicitudes previas</div>';
 

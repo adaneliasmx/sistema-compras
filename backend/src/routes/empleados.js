@@ -395,7 +395,10 @@ router.get('/vacaciones/calendario', empAuthRequired, (req, res) => {
   const birth_date = emp?.birth_date || null;
   const vacInfo = emp ? calcVacInfo(emp, db, nowMxDate()) : {};
   const solicitudes = (db.rhh_vac_solicitudes || [])
-    .filter(r => r.employee_id === req.empPayload.sub && r.estado !== 'rechazada')
+    .filter(r => r.employee_id === req.empPayload.sub
+      && r.estado !== 'rechazada'
+      && r.estado !== 'cancelada'
+      && r.cambio_solicitado !== 'cancelacion')
     .map(r => ({ fecha_inicio: r.fecha_inicio, fecha_fin: r.fecha_fin, estado: r.estado }));
   res.json({ holidays, birth_date, vac_info: vacInfo, solicitudes });
 });
@@ -414,10 +417,13 @@ router.get('/vacaciones', empAuthRequired, (req, res) => {
     fecha_fin: r.fecha_fin || null,
     dias: r.dias,
     motivo: r.notas || r.motivo || null,
-    status: r.estado === 'aprobada' ? 'aprobado' : r.estado === 'rechazada' ? 'rechazado' : 'pendiente',
+    status: r.estado === 'aprobada' ? 'aprobado' : r.estado === 'rechazada' ? 'rechazado' : r.estado === 'cancelada' ? 'cancelado' : 'pendiente',
     created_at: r.created_at,
     notas_rh: r.notas_respuesta || null,
     no_periodo: r.no_periodo,
+    cambio_solicitado: r.cambio_solicitado || null,
+    cambio_motivo: r.cambio_motivo || null,
+    cambio_respuesta: r.cambio_respuesta || null,
   }));
   res.json(mapped);
 });
@@ -510,9 +516,12 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
 // ── POST /api/empleados/vacaciones/cambio ─────────────────────────────────────
 // Solicitar cambio o cancelación de vacaciones aprobadas
 router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
-  const { vacacion_id, tipo, motivo } = req.body || {};
+  const { vacacion_id, tipo, motivo, nueva_fecha_inicio, nueva_fecha_fin } = req.body || {};
   if (!vacacion_id || !['modificacion', 'cancelacion'].includes(tipo)) {
     return res.status(400).json({ error: 'vacacion_id y tipo (modificacion|cancelacion) son requeridos' });
+  }
+  if (tipo === 'modificacion' && (!nueva_fecha_inicio || !nueva_fecha_fin)) {
+    return res.status(400).json({ error: 'Debes indicar las nuevas fechas (nueva_fecha_inicio, nueva_fecha_fin)' });
   }
   const db = read();
   const sol = (db.rhh_vac_solicitudes || []).find(s =>
@@ -521,10 +530,13 @@ router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
   if (!sol) return res.status(404).json({ error: 'Solicitud no encontrada' });
   if (sol.estado !== 'aprobada') return res.status(400).json({ error: 'Solo puedes solicitar cambios en vacaciones aprobadas' });
 
-  // Marcar solicitud con petición de cambio
   sol.cambio_solicitado = tipo;
   sol.cambio_motivo = String(motivo || '').trim().slice(0, 300);
   sol.cambio_fecha = nowMxDate();
+  if (tipo === 'modificacion') {
+    sol.cambio_nueva_fecha_inicio = nueva_fecha_inicio;
+    sol.cambio_nueva_fecha_fin = nueva_fecha_fin;
+  }
 
   write(db);
   res.json({ ok: true });

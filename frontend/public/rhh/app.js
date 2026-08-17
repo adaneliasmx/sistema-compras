@@ -2576,18 +2576,28 @@ async function autorizacionesView() {
     const isRhAdmin = ['rh','admin'].includes(state.user?.role);
     const vacAprobCount = (vacAprobadas || []).length;
     const cambiosPend = (vacAprobadas || []).filter(s => s.cambio_solicitado).length;
+    const cambiosPendOnly = (vacAprobadas || []).filter(s => s.cambio_solicitado && !s.cambio_resuelto);
     const vacAprobRows = (vacAprobadas || []).map(s => {
-      const cambioTag = s.cambio_solicitado
-        ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">${s.cambio_solicitado === 'cancelacion' ? 'Pide cancelar' : 'Pide cambio'}</span>`
+      const hasCambio = s.cambio_solicitado && !s.cambio_resuelto;
+      const cambioTag = hasCambio
+        ? `<span style="background:${s.cambio_solicitado==='cancelacion'?'#fee2e2':'#fef3c7'};color:${s.cambio_solicitado==='cancelacion'?'#991b1b':'#92400e'};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${s.cambio_solicitado === 'cancelacion' ? 'Pide cancelar' : 'Pide cambio'}</span>`
         : '';
-      return `<tr>
+      const cambioFechas = hasCambio && s.cambio_nueva_fecha_inicio ? `<div style="font-size:11px;color:#1e40af;margin-top:2px">Nuevas fechas: ${s.cambio_nueva_fecha_inicio} → ${s.cambio_nueva_fecha_fin}</div>` : '';
+      const cambioAcciones = hasCambio && isRhAdmin ? `<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autResolverCambioVac(${s.id},'aprobar')">Aprobar ${s.cambio_solicitado==='cancelacion'?'cancelacion':'cambio'}</button>
+        <button class="btn-ghost" style="font-size:10px;padding:3px 8px;color:#b91c1c" onclick="autResolverCambioVac(${s.id},'rechazar')">Rechazar</button>
+      </div>` : '';
+      return `<tr ${hasCambio ? 'style="background:#fffbeb"' : ''}>
         <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
         <td>${s.department?.name || '—'}</td>
         <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `S${String(s.periodo.no_periodo).padStart(2,'0')}` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
         <td style="text-align:center;font-weight:700;">${s.dias}${s.desglose ? `<br><span class="small muted">${escHtml(s.desglose)}</span>` : ''}</td>
-        <td>${cambioTag}${s.cambio_motivo ? `<div style="font-size:11px;color:#64748b">${escHtml(s.cambio_motivo)}</div>` : ''}${s.notas && !s.cambio_solicitado ? escHtml(s.notas) : !s.cambio_solicitado ? '—' : ''}</td>
-        <td>${isRhAdmin ? `<input type="number" id="aut-vac-dias-${s.id}" value="${s.dias}" min="0" max="30" style="width:50px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"/>
-          <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autEditVacDias(${s.id})">Guardar</button>` : `<span class="small muted">${s.dias} dias</span>`}</td>
+        <td>${cambioTag}${s.cambio_motivo ? `<div style="font-size:11px;color:#64748b">${escHtml(s.cambio_motivo)}</div>` : ''}${cambioFechas}${cambioAcciones}${s.notas && !hasCambio ? escHtml(s.notas) : !hasCambio ? '—' : ''}</td>
+        <td>${isRhAdmin ? `<div style="display:flex;flex-direction:column;gap:3px">
+          <input type="date" id="aut-vac-ini-${s.id}" value="${s.fecha_inicio||''}" style="width:120px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
+          <input type="date" id="aut-vac-fin-${s.id}" value="${s.fecha_fin||''}" style="width:120px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
+          <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autEditVacDias(${s.id})">Guardar</button>
+        </div>` : `<span class="small muted">${s.dias} dias</span>`}</td>
       </tr>`;
     }).join('');
 
@@ -2596,7 +2606,7 @@ async function autorizacionesView() {
       `T.Extra (nomina) <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
       `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
       `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
-      `Vac. aprobadas <span class="badge" style="background:${cambiosPend>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobCount}</span>`,
+      `Vac. aprobadas <span class="badge" style="background:${cambiosPendOnly.length>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobCount}${cambiosPendOnly.length>0?' !':''}</span>`,
     ];
     const tabBar = tabs.map((t, i) =>
       `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
@@ -2621,9 +2631,10 @@ async function autorizacionesView() {
            <table><thead><tr><th>Empleado</th><th>Fecha</th><th>Horas</th><th>Horario TE</th><th>Razon</th><th>Proyecto</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${ovRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vales de tiempo extra pendientes</p></div>';
     } else {
+      const cambiosPendCount = cambiosPendOnly.length;
       tabContent = vacAprobRows
-        ? `${cambiosPend > 0 ? `<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;">${cambiosPend} solicitud${cambiosPend>1?'es':''} de cambio/cancelacion pendiente${cambiosPend>1?'s':''}.</div>` : ''}
-           <table><thead><tr><th>Empleado</th><th>Depto</th><th>Periodo</th><th>Dias</th><th>Notas / Cambios</th><th>${isRhAdmin ? 'Editar dias' : 'Dias'}</th></tr></thead><tbody>${vacAprobRows}</tbody></table>`
+        ? `${cambiosPendCount > 0 ? `<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;">${cambiosPendCount} solicitud${cambiosPendCount>1?'es':''} de cambio/cancelacion requiere${cambiosPendCount>1?'n':''} atencion.</div>` : ''}
+           <table><thead><tr><th>Empleado</th><th>Depto</th><th>Periodo</th><th>Dias</th><th>Solicitudes de cambio</th><th>${isRhAdmin ? 'Editar fechas' : 'Dias'}</th></tr></thead><tbody>${vacAprobRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vacaciones aprobadas</p></div>';
     }
 
@@ -2647,13 +2658,28 @@ async function aprobarVacSol(id, estado) {
 }
 
 async function autEditVacDias(solId) {
-  const input = document.getElementById(`aut-vac-dias-${solId}`);
-  if (!input) return;
-  const newDias = Number(input.value);
-  if (isNaN(newDias) || newDias < 0) { toast('Dias invalido', 'warning'); return; }
+  const ini = document.getElementById(`aut-vac-ini-${solId}`)?.value;
+  const fin = document.getElementById(`aut-vac-fin-${solId}`)?.value;
+  if (!ini || !fin) { toast('Selecciona fecha inicio y fin', 'warning'); return; }
+  if (fin < ini) { toast('Fecha fin debe ser posterior a inicio', 'warning'); return; }
   try {
-    await api(`/api/rhh/nomina/vac-solicitudes/${solId}/editar-dias`, { method: 'PATCH', body: JSON.stringify({ dias: newDias }) });
-    toast('Dias actualizados');
+    const r = await api(`/api/rhh/nomina/vac-solicitudes/${solId}/editar-dias`, { method: 'PATCH', body: JSON.stringify({ fecha_inicio: ini, fecha_fin: fin }) });
+    toast(`Fechas actualizadas (${r.dias || '?'} dias efectivos)`);
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function autResolverCambioVac(solId, accion) {
+  let respuesta = '';
+  if (accion === 'rechazar') {
+    respuesta = prompt('Escribe la razon del rechazo para el empleado:');
+    if (respuesta === null) return;
+  } else {
+    if (!confirm('Aprobar este cambio/cancelacion?')) return;
+  }
+  try {
+    await api(`/api/rhh/nomina/vac-solicitudes/${solId}/resolver-cambio`, { method: 'PATCH', body: JSON.stringify({ accion, respuesta }) });
+    toast(accion === 'aprobar' ? 'Cambio aprobado' : 'Cambio rechazado, se notifico al empleado');
     autorizacionesView();
   } catch (err) { toast(err.message, 'error'); }
 }
