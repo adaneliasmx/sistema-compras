@@ -11462,22 +11462,44 @@ async function catVerDetalle(empId) {
   const statusColor = e.status === 'active' ? '#16a34a' : '#64748b';
   const statusLabel = e.status === 'active' ? 'Activo' : 'Inactivo';
 
-  const incHtml = inc.length ? inc.slice(0, 20).map(r => {
+  // Ordenar incidencias de la más reciente a la más antigua
+  const incSorted = [...inc].sort((a, b) => {
+    const ya = Number(a.year || 0), yb = Number(b.year || 0);
+    if (ya !== yb) return yb - ya;
+    return Number(b.no_periodo || 0) - Number(a.no_periodo || 0);
+  });
+  // Totales
+  let totFaltas = 0, totHrsExtra = 0, totVacDias = 0;
+  const incHtml = incSorted.length ? incSorted.map(r => {
     const diasPag = r.dias_pagados ?? 7;
     // Deriva asist y séptimo desde dias_pagados (fuente real del Consolidado)
     const asistCalc = Math.round(diasPag * 6 / 7);
     const sepCalc   = Math.round((diasPag - asistCalc) * 100) / 100;
-    const vacDias   = r.vacaciones_dias != null ? r.vacaciones_dias : '—';
+    const faltas = 6 - asistCalc;
+    const hrsExt = Number(r.horas_extras_total || 0);
+    const vacDias   = r.vacaciones_dias != null ? r.vacaciones_dias : 0;
+    totFaltas += faltas;
+    totHrsExtra += hrsExt;
+    totVacDias += Number(vacDias) || 0;
+    const pad = n => String(n).padStart(2, '0');
     return `<tr>
-    <td>S${r.no_periodo}</td>
+    <td>S${pad(r.no_periodo)}</td>
     <td style="font-size:12px;color:#64748b">${r.fecha_inicio||''}–${r.fecha_fin||''}</td>
-    <td style="text-align:center;color:${asistCalc < 6 ? '#dc2626' : 'inherit'}">${6 - asistCalc}</td>
+    <td style="text-align:center;color:${faltas > 0 ? '#dc2626' : 'inherit'}">${faltas}</td>
     <td style="text-align:center;color:#0369a1;font-size:12px;">${sepCalc.toFixed(2)}</td>
     <td style="text-align:center;font-weight:600;">${Number(diasPag).toFixed(2)}</td>
-    <td style="text-align:center">${r.horas_extras_total || 0}</td>
+    <td style="text-align:center">${hrsExt || 0}</td>
     <td style="text-align:center">${r.despensa ? '✓' : ''}</td>
-    <td style="text-align:center;color:#1d4ed8;font-weight:${r.vacaciones_dias > 0 ? '600' : '400'}">${vacDias}</td>
+    <td style="text-align:center;color:#1d4ed8;font-weight:${vacDias > 0 ? '600' : '400'}">${r.vacaciones_dias != null ? vacDias : '—'}</td>
   </tr>`;}).join('')
+    + `<tr style="background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1">
+    <td colspan="2" style="text-align:right;color:#475569">Totales (${incSorted.length} semanas)</td>
+    <td style="text-align:center;color:${totFaltas > 0 ? '#dc2626' : '#16a34a'}">${totFaltas}</td>
+    <td></td><td></td>
+    <td style="text-align:center">${totHrsExtra}</td>
+    <td></td>
+    <td style="text-align:center;color:#1d4ed8">${totVacDias}</td>
+  </tr>`
   : '<tr><td colspan="8" style="text-align:center;color:#94a3b8;padding:20px">Sin incidencias registradas</td></tr>';
 
   const aclHtml = acl.length ? acl.map(a => `
@@ -11651,9 +11673,9 @@ async function catVerDetalle(empId) {
 
   <!-- Incidencias -->
   <div id="tab-content-incidencias" style="display:none">
-    <div style="overflow-x:auto">
-    <table class="data-table">
-      <thead><tr><th>Período</th><th>Fechas</th><th>Faltas</th><th style="color:#0369a1;">7mo Día</th><th>Días Pag.</th><th>H. Extra</th><th>Despensa</th><th style="color:#1d4ed8;">Vac. (días)</th></tr></thead>
+    <div style="max-height:420px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px">
+    <table class="data-table" style="margin:0">
+      <thead style="position:sticky;top:0;z-index:1;background:#f8fafc"><tr><th>Período</th><th>Fechas</th><th>Faltas</th><th style="color:#0369a1;">7mo Día</th><th>Días Pag.</th><th>H. Extra</th><th>Despensa</th><th style="color:#1d4ed8;">Vac. (días)</th></tr></thead>
       <tbody>${incHtml}</tbody>
     </table>
     </div>
