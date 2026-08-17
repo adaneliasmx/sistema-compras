@@ -509,6 +509,46 @@ router.patch('/vac-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor
   res.json(s);
 });
 
+// PATCH /api/rhh/nomina/vac-solicitudes/:id/editar-dias — admin/rh edita dias de solicitud aprobada
+router.patch('/vac-solicitudes/:id/editar-dias', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db  = read();
+  const idx = (db.rhh_vac_solicitudes || []).findIndex(s => s.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+  const { dias } = req.body || {};
+  if (dias === undefined || isNaN(Number(dias))) return res.status(400).json({ error: 'dias es requerido' });
+
+  const s = db.rhh_vac_solicitudes[idx];
+  const oldDias = Number(s.dias) || 0;
+  const newDias = Number(dias);
+  s.dias = newDias;
+  s.dias_editado_por = req.rhhUser?.id || req.rhhUser?.email || 'rh';
+  s.dias_editado_at = new Date().toISOString();
+
+  // Actualizar incidencia semanal si está aprobada
+  if (s.estado === 'aprobada') {
+    const incLista = db.rhh_incidencias_semanales || [];
+    const year = effectivePeriodYear(s);
+    const incIdx = incLista.findIndex(i =>
+      samePeriod(i, s.no_periodo, year) && i.employee_id === s.employee_id
+    );
+    if (incIdx !== -1) {
+      const current = Number(incLista[incIdx].vacaciones_dias) || 0;
+      incLista[incIdx].vacaciones_dias = Math.max(0, current - oldDias + newDias);
+      incLista[incIdx].updated_at = new Date().toISOString();
+    }
+  }
+
+  // Limpiar solicitud de cambio si existía
+  if (s.cambio_solicitado) {
+    s.cambio_resuelto = true;
+    s.cambio_resuelto_at = new Date().toISOString();
+  }
+
+  write(db);
+  res.json({ ok: true });
+});
+
 // ── Solicitudes de Tiempo Extra ───────────────────────────────────────────────
 
 // GET /api/rhh/nomina/te-solicitudes

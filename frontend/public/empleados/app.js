@@ -694,10 +694,13 @@ function _vacBuildCalendar() {
   const daysInMonth = new Date(y, m + 1, 0).getDate();
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
+  const currentYear = new Date().getFullYear();
+  const canPrev = !(y === currentYear && m === 0);
+  const canNext = !(y === currentYear && m === 11);
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-    <button onclick="_vacNavMonth(-1)" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:16px">&lt;</button>
+    <button onclick="_vacNavMonth(-1)" ${!canPrev?'disabled':''} style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:${canPrev?'pointer':'default'};font-size:16px;opacity:${canPrev?'1':'0.3'}">&lt;</button>
     <div style="font-size:15px;font-weight:700;color:#1e293b">${MESES_NOMBRE[m]} ${y}</div>
-    <button onclick="_vacNavMonth(1)" style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:16px">&gt;</button>
+    <button onclick="_vacNavMonth(1)" ${!canNext?'disabled':''} style="background:none;border:1px solid #e2e8f0;border-radius:8px;padding:6px 12px;cursor:${canNext?'pointer':'default'};font-size:16px;opacity:${canNext?'1':'0.3'}">&gt;</button>
   </div>`;
 
   html += '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center">';
@@ -756,9 +759,15 @@ function _vacBuildCalendar() {
 }
 
 function _vacNavMonth(dir) {
-  _vacCal.month += dir;
-  if (_vacCal.month > 11) { _vacCal.month = 0; _vacCal.year++; }
-  if (_vacCal.month < 0)  { _vacCal.month = 11; _vacCal.year--; }
+  const currentYear = new Date().getFullYear();
+  let newMonth = _vacCal.month + dir;
+  let newYear = _vacCal.year;
+  if (newMonth > 11) { newMonth = 0; newYear++; }
+  if (newMonth < 0)  { newMonth = 11; newYear--; }
+  // Bloquear navegacion fuera del año actual
+  if (newYear !== currentYear) return;
+  _vacCal.month = newMonth;
+  _vacCal.year = newYear;
   _vacBuildCalendar();
 }
 
@@ -874,6 +883,21 @@ function _vacUpdateSummary() {
   };
 }
 
+async function _vacSolicitarCambio(vacId, tipo) {
+  const label = tipo === 'cancelacion' ? 'cancelar estas vacaciones' : 'solicitar un cambio de fechas';
+  const motivo = prompt(`Escribe el motivo para ${label}:`);
+  if (motivo === null) return;
+  const r = await api('POST', '/vacaciones/cambio', { vacacion_id: vacId, tipo, motivo: motivo.trim() });
+  if (r && r.ok) {
+    alert(tipo === 'cancelacion'
+      ? 'Solicitud de cancelacion enviada. RH revisara tu peticion.'
+      : 'Solicitud de cambio enviada. RH revisara tu peticion.');
+    vacaciones(document.getElementById('app-content') || document.getElementById('app'));
+  } else {
+    alert((r?.data?.error) || 'Error al enviar solicitud');
+  }
+}
+
 function _vacClearSelection() {
   _vacCal.selStart = null;
   _vacCal.selEnd = null;
@@ -926,11 +950,20 @@ async function vacaciones(el) {
       </div>
       ${v.motivo ? `<div style="padding:0 16px 8px;font-size:11px;color:#94a3b8">${esc(v.motivo)}</div>` : ''}
       ${v.notas_rh ? `<div style="padding:0 16px 10px;font-size:11px;color:#1e40af;background:#eff6ff;margin:0 12px 10px;border-radius:6px;padding:6px 8px">RH: ${esc(v.notas_rh)}</div>` : ''}
+      ${v.status === 'aprobado' ? `<div style="border-top:1px dashed #e2e8f0;padding:10px 16px;display:flex;gap:8px">
+        <button onclick="_vacSolicitarCambio(${v.id},'modificacion')" style="flex:1;padding:7px;border:1px solid #d97706;background:#fffbeb;color:#92400e;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Solicitar cambio</button>
+        <button onclick="_vacSolicitarCambio(${v.id},'cancelacion')" style="flex:1;padding:7px;border:1px solid #dc2626;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Cancelar vacaciones</button>
+      </div>` : ''}
     </div>`;
   }).join('') : '<div style="text-align:center;color:#94a3b8;padding:20px;font-size:13px">Sin solicitudes previas</div>';
 
   el.innerHTML = `
   <p class="emp-page-title">Vacaciones</p>
+
+  <!-- Nota portal en prueba -->
+  <div style="background:#fffbeb;border:1px solid #fcd34d;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#92400e;line-height:1.5">
+    <strong>Portal en prueba</strong> — Tus dias de vacaciones pueden variar o no coincidir con los registros internos. Si tienes alguna duda, acude a RHH.
+  </div>
 
   <!-- Resumen de dias -->
   <div class="emp-card" style="background:linear-gradient(135deg,#1e40af,#2563eb);color:#fff;padding:18px;margin-bottom:14px;border:none;">
@@ -957,13 +990,16 @@ async function vacaciones(el) {
   </div>
 
   <!-- Calendario -->
-  <div class="emp-card" style="padding:16px;margin-bottom:14px">
+  ${(vi.dias_restantes ?? 0) > 0 && vi.elegible ? `<div class="emp-card" style="padding:16px;margin-bottom:14px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <div style="font-size:14px;font-weight:700;color:#1e293b">Selecciona tus fechas</div>
       <button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>
     </div>
     <div id="vac-calendar"></div>
-  </div>
+  </div>` : `<div class="emp-card" style="padding:18px;margin-bottom:14px;background:#fef2f2;border:1px solid #fecaca;text-align:center">
+    <div style="font-size:14px;font-weight:700;color:#991b1b;margin-bottom:4px">${!vi.elegible ? 'No tienes derecho a vacaciones este año' : 'Ya programaste todos tus dias de vacaciones'}</div>
+    <div style="font-size:12px;color:#b91c1c">Si necesitas hacer cambios, usa los botones de tus solicitudes aprobadas o acude a RHH.</div>
+  </div>`}
 
   <!-- Resumen / Boarding Pass -->
   <div id="vac-summary" style="margin-bottom:14px"></div>
@@ -974,7 +1010,7 @@ async function vacaciones(el) {
     ${listaHtml}
   </div>`;
 
-  _vacBuildCalendar();
+  if (document.getElementById('vac-calendar')) _vacBuildCalendar();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -2502,8 +2502,9 @@ async function autorizacionesView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
-    const [vacSols, teSols, incidences, ovVales] = await Promise.all([
+    const [vacSols, vacAprobadas, teSols, incidences, ovVales] = await Promise.all([
       api('/api/rhh/nomina/vac-solicitudes?estado=pendiente&created_from=2026-08-11'),
+      api('/api/rhh/nomina/vac-solicitudes?estado=aprobada'),
       api('/api/rhh/nomina/te-solicitudes'),
       api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
       ['rh','admin'].includes(state.user?.role) ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
@@ -2571,11 +2572,31 @@ async function autorizacionesView() {
         </td>
       </tr>`).join('');
 
+    // Vacaciones aprobadas — listado completo con edición
+    const isRhAdmin = ['rh','admin'].includes(state.user?.role);
+    const vacAprobCount = (vacAprobadas || []).length;
+    const cambiosPend = (vacAprobadas || []).filter(s => s.cambio_solicitado).length;
+    const vacAprobRows = (vacAprobadas || []).map(s => {
+      const cambioTag = s.cambio_solicitado
+        ? `<span style="background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:600">${s.cambio_solicitado === 'cancelacion' ? 'Pide cancelar' : 'Pide cambio'}</span>`
+        : '';
+      return `<tr>
+        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
+        <td>${s.department?.name || '—'}</td>
+        <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `S${String(s.periodo.no_periodo).padStart(2,'0')}` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
+        <td style="text-align:center;font-weight:700;">${s.dias}${s.desglose ? `<br><span class="small muted">${escHtml(s.desglose)}</span>` : ''}</td>
+        <td>${cambioTag}${s.cambio_motivo ? `<div style="font-size:11px;color:#64748b">${escHtml(s.cambio_motivo)}</div>` : ''}${s.notas && !s.cambio_solicitado ? escHtml(s.notas) : !s.cambio_solicitado ? '—' : ''}</td>
+        <td>${isRhAdmin ? `<input type="number" id="aut-vac-dias-${s.id}" value="${s.dias}" min="0" max="30" style="width:50px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;text-align:center"/>
+          <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autEditVacDias(${s.id})">Guardar</button>` : `<span class="small muted">${s.dias} dias</span>`}</td>
+      </tr>`;
+    }).join('');
+
     const tabs = [
       `Vacaciones <span class="badge" style="background:${(vacSols||[]).length>0?'#dc2626':'#6b7280'};font-size:10px;">${(vacSols||[]).length}</span>`,
       `T.Extra (nomina) <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
       `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
       `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
+      `Vac. aprobadas <span class="badge" style="background:${cambiosPend>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobCount}</span>`,
     ];
     const tabBar = tabs.map((t, i) =>
       `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
@@ -2594,11 +2615,16 @@ async function autorizacionesView() {
       tabContent = incRows
         ? `<table><thead><tr><th>Empleado</th><th>Tipo</th><th>Fecha(s)</th><th>Depto</th><th>Notas</th><th>Accion</th></tr></thead><tbody>${incRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin incidencias pendientes</p></div>';
-    } else {
+    } else if (autTabIdx === 3) {
       tabContent = ovRows
         ? `<div style="font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:12px;">Vales de tiempo extra generados desde Captura de Asistencia — pendientes de autorizacion.</div>
            <table><thead><tr><th>Empleado</th><th>Fecha</th><th>Horas</th><th>Horario TE</th><th>Razon</th><th>Proyecto</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${ovRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vales de tiempo extra pendientes</p></div>';
+    } else {
+      tabContent = vacAprobRows
+        ? `${cambiosPend > 0 ? `<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;">${cambiosPend} solicitud${cambiosPend>1?'es':''} de cambio/cancelacion pendiente${cambiosPend>1?'s':''}.</div>` : ''}
+           <table><thead><tr><th>Empleado</th><th>Depto</th><th>Periodo</th><th>Dias</th><th>Notas / Cambios</th><th>${isRhAdmin ? 'Editar dias' : 'Dias'}</th></tr></thead><tbody>${vacAprobRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vacaciones aprobadas</p></div>';
     }
 
     const content = `
@@ -2616,6 +2642,18 @@ async function aprobarVacSol(id, estado) {
   try {
     await api(`/api/rhh/nomina/vac-solicitudes/${id}`, { method: 'PATCH', body: JSON.stringify({ estado }) });
     toast(estado === 'aprobada' ? 'Vacaciones aprobadas y registradas en el período' : 'Solicitud rechazada');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function autEditVacDias(solId) {
+  const input = document.getElementById(`aut-vac-dias-${solId}`);
+  if (!input) return;
+  const newDias = Number(input.value);
+  if (isNaN(newDias) || newDias < 0) { toast('Dias invalido', 'warning'); return; }
+  try {
+    await api(`/api/rhh/nomina/vac-solicitudes/${solId}/editar-dias`, { method: 'PATCH', body: JSON.stringify({ dias: newDias }) });
+    toast('Dias actualizados');
     autorizacionesView();
   } catch (err) { toast(err.message, 'error'); }
 }

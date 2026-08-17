@@ -507,4 +507,27 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   res.json({ ok: true, id: newId, dias: diasVac, dias_naturales: totalNatural, desglose: desglose.join(' + ') });
 });
 
+// ── POST /api/empleados/vacaciones/cambio ─────────────────────────────────────
+// Solicitar cambio o cancelación de vacaciones aprobadas
+router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
+  const { vacacion_id, tipo, motivo } = req.body || {};
+  if (!vacacion_id || !['modificacion', 'cancelacion'].includes(tipo)) {
+    return res.status(400).json({ error: 'vacacion_id y tipo (modificacion|cancelacion) son requeridos' });
+  }
+  const db = read();
+  const sol = (db.rhh_vac_solicitudes || []).find(s =>
+    s.id === Number(vacacion_id) && s.employee_id === req.empPayload.sub
+  );
+  if (!sol) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  if (sol.estado !== 'aprobada') return res.status(400).json({ error: 'Solo puedes solicitar cambios en vacaciones aprobadas' });
+
+  // Marcar solicitud con petición de cambio
+  sol.cambio_solicitado = tipo;
+  sol.cambio_motivo = String(motivo || '').trim().slice(0, 300);
+  sol.cambio_fecha = nowMxDate();
+
+  write(db);
+  res.json({ ok: true });
+});
+
 module.exports = router;
