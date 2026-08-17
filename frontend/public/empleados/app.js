@@ -673,7 +673,7 @@ async function lista_raya(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // Estado del calendario de vacaciones
-let _vacCal = { holidays: [], birthMD: null, solicitudes: [], selStart: null, selEnd: null, month: null, year: null };
+let _vacCal = { holidays: [], birthMD: null, solicitudes: [], selStart: null, selEnd: null, month: null, year: null, diasRestantes: 0 };
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const DIAS_CORTO = ['Do','Lu','Ma','Mi','Ju','Vi','Sa'];
 
@@ -734,7 +734,7 @@ function _vacBuildCalendar() {
     if (isStart && _vacCal.selEnd && type === 'habil') { border = '2px solid #1e40af'; }
     if (isEnd && type === 'habil') { border = '2px solid #1e40af'; }
 
-    const canClick = !isPast && type === 'habil';
+    const canClick = !isPast && type === 'habil' && _vacCal.diasRestantes > 0;
     html += `<div onclick="${canClick ? `_vacSelectDay('${iso}')` : ''}"
       style="position:relative;padding:6px 2px;border-radius:8px;background:${bg};color:${color};border:${border};
       opacity:${opacity};cursor:${cursor};font-size:13px;font-weight:${isSelected?'700':'500'};min-height:38px;
@@ -772,6 +772,7 @@ function _vacNavMonth(dir) {
 }
 
 function _vacSelectDay(iso) {
+  if (_vacCal.diasRestantes <= 0) return;
   if (!_vacCal.selStart || _vacCal.selEnd) {
     _vacCal.selStart = iso;
     _vacCal.selEnd = null;
@@ -942,6 +943,7 @@ async function vacaciones(el) {
   _vacCal.selEnd = null;
   _vacCal.month = now.getMonth();
   _vacCal.year = now.getFullYear();
+  _vacCal.diasRestantes = vi.dias_restantes ?? 0;
 
   const vi = vacInfo;
   const dispColor  = (vi.dias_restantes ?? 0) === 0 ? '#dc2626' : '#0369a1';
@@ -1023,15 +1025,19 @@ async function vacaciones(el) {
   </div>
 
   <!-- Calendario -->
-  ${(vi.dias_restantes ?? 0) > 0 && vi.elegible ? `<div class="emp-card" style="padding:16px;margin-bottom:14px">
+  ${!vi.elegible ? `<div class="emp-card" style="padding:18px;margin-bottom:14px;background:#fef2f2;border:1px solid #fecaca;text-align:center">
+    <div style="font-size:14px;font-weight:700;color:#991b1b;margin-bottom:4px">No tienes derecho a vacaciones este año</div>
+    <div style="font-size:12px;color:#b91c1c">Si tienes alguna duda, acude a RHH.</div>
+  </div>` : `<div class="emp-card" style="padding:16px;margin-bottom:14px">
+    ${(vi.dias_restantes ?? 0) <= 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:12px;text-align:center">
+      <div style="font-size:13px;font-weight:700;color:#991b1b">Ya programaste todos tus dias de vacaciones</div>
+      <div style="font-size:11px;color:#b91c1c;margin-top:2px">Si necesitas hacer cambios, usa los botones de tus solicitudes aprobadas o acude a RHH.</div>
+    </div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:14px;font-weight:700;color:#1e293b">Selecciona tus fechas</div>
-      <button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>
+      <div style="font-size:14px;font-weight:700;color:#1e293b">${(vi.dias_restantes ?? 0) > 0 ? 'Selecciona tus fechas' : 'Tus vacaciones programadas'}</div>
+      ${(vi.dias_restantes ?? 0) > 0 ? `<button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>` : ''}
     </div>
     <div id="vac-calendar"></div>
-  </div>` : `<div class="emp-card" style="padding:18px;margin-bottom:14px;background:#fef2f2;border:1px solid #fecaca;text-align:center">
-    <div style="font-size:14px;font-weight:700;color:#991b1b;margin-bottom:4px">${!vi.elegible ? 'No tienes derecho a vacaciones este año' : 'Ya programaste todos tus dias de vacaciones'}</div>
-    <div style="font-size:12px;color:#b91c1c">Si necesitas hacer cambios, usa los botones de tus solicitudes aprobadas o acude a RHH.</div>
   </div>`}
 
   <!-- Resumen / Boarding Pass -->

@@ -405,7 +405,10 @@ router.get('/vac-solicitudes', rhhAuthRequired, (req, res) => {
   }
 
   const { estado, created_from } = req.query;
-  if (estado) lista = lista.filter(s => s.estado === estado);
+  if (estado) {
+    const estados = estado.split(',');
+    lista = lista.filter(s => estados.includes(s.estado));
+  }
   if (created_from) lista = lista.filter(s => (s.created_at || '') >= created_from);
 
   const _sysIds2  = getSystemEmpIds();
@@ -415,14 +418,17 @@ router.get('/vac-solicitudes', rhhAuthRequired, (req, res) => {
     ? db.rhh_periodos
     : PERIODOS_2026.map((p, i) => ({ id: i + 1, ...p }));
 
+  const positions = db.rhh_positions || [];
   const enriched = lista.map(s => {
     const emp    = employees.find(e => e.id === s.employee_id);
     const dept   = emp ? depts.find(d => d.id === emp.department_id) : null;
+    const pos    = emp ? positions.find(p => p.id === emp.position_id) : null;
     const periodo = periodos.find(p => samePeriod(p, s.no_periodo, effectivePeriodYear(s)));
     return {
       ...s,
-      employee:   emp  ? { id: emp.id, full_name: emp.full_name, employee_number: emp.employee_number } : null,
+      employee:   emp  ? { id: emp.id, full_name: emp.full_name, employee_number: emp.employee_number, position_id: emp.position_id } : null,
       department: dept ? { id: dept.id, name: dept.name } : null,
+      position:   pos  ? { id: pos.id, name: pos.name } : null,
       periodo:    periodo || null,
     };
   }).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -644,6 +650,208 @@ router.patch('/vac-solicitudes/:id/editar-dias', rhhAuthRequired, rhhRequireRole
 
   write(db);
   res.json({ ok: true, dias: newDias });
+});
+
+// GET /api/rhh/nomina/vac-solicitudes/resumen — resumen por empleado (dias aprobados, restantes)
+router.get('/vac-solicitudes/resumen', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const db = read();
+  const _sysIds = getSystemEmpIds();
+  const employees = (db.rhh_employees || []).filter(e => !_sysIds.has(Number(e.id)) && e.status !== 'baja');
+  const depts     = db.rhh_departments || [];
+  const positions = db.rhh_positions || [];
+  const today     = nowMxDate();
+  const currentYear = new Date(today).getFullYear();
+
+  const DEFAULT_LFT = [
+    { years: 1, dias: 12 }, { years: 2, dias: 14 }, { years: 3, dias: 16 },
+    { years: 4, dias: 18 }, { years: 5, dias: 20 }, { years: 6, dias: 22 }, { years: 11, dias: 24 },
+  ];
+
+  const solicitudes = (db.rhh_vac_solicitudes || []).filter(s =>
+    s.estado === 'aprobada' && effectivePeriodYear(s) === currentYear
+  );
+
+  const resumen = employees.map(emp => {
+    // calcVacInfo inline
+    const startDate = emp.start_date || emp.fecha_ingreso || null;
+    let elegible = false, ciclos = 0, lft_dias = 0;
+    if (startDate) {
+      let start;
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(startDate)) {
+        const [d, m, y] = startDate.split('/');
+        start = new Date(`${y}-${m}-${d}T12:00:00`);
+      } else { start = new Date(startDate + 'T12:00:00'); }
+      if (!isNaN(start.getTime())) {
+        const sy = start.getFullYear();
+        if (sy < currentYear && start < new Date(currentYear - 1, 10, 1)) {
+          elegible = true; ciclos = currentYear - sy;
+          const rules = (db.rhh_lft_rules?.length) ? [...db.rhh_lft_rules].sort((a,b)=>a.years-b.years) : DEFAULT_LFT;
+          for (const r of rules) { if (ciclos >= r.years) lft_dias = r.dias; }
+        }
+      }
+    }
+    const override_dias = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
+    const dias_disponibles = override_dias !== null ? override_dias : lft_dias;
+    const incidencias = (db.rhh_incidencias_semanales || []).filter(i => i.employee_id === emp.id);
+    const dias_tomados = incidencias.reduce((sum, inc) => {
+      if (!inc.vacaciones_dias) return sum;
+      if (inc.year || inc.period_key || inc.fecha_inicio || inc.fecha_fin) {
+        return effectivePeriodYear(inc) === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+      }
+      return (inc.no_periodo >= 1 && inc.no_periodo <= 53) ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
+    }, 0);
+    const CUTOFF = '2026-08-11';
+    const pendReqs = (db.rhh_vac_solicitudes || []).filter(r =>
+      r.employee_id === emp.id && r.estado === 'pendiente' && (r.created_at || '') >= CUTOFF
+    );
+    const diasPendientes = pendReqs.reduce((s, r) => s + (r.dias || 0), 0);
+    const dias_programados = dias_tomados + diasPendientes;
+    const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
+
+    const dept = depts.find(d => d.id === emp.department_id);
+    const pos  = positions.find(p => p.id === emp.position_id);
+    const empSols = solicitudes.filter(s => s.employee_id === emp.id);
+
+    return {
+      employee_id: emp.id,
+      full_name: emp.full_name,
+      employee_number: emp.employee_number,
+      department: dept ? dept.name : null,
+      position: pos ? pos.name : null,
+      elegible,
+      dias_disponibles,
+      dias_tomados,
+      dias_programados,
+      dias_restantes,
+      solicitudes: empSols.map(s => ({
+        id: s.id, fecha_inicio: s.fecha_inicio, fecha_fin: s.fecha_fin,
+        dias: s.dias, desglose: s.desglose, origen: s.origen, created_at: s.created_at,
+      })),
+    };
+  }).filter(e => e.elegible || e.solicitudes.length > 0);
+
+  res.json(resumen);
+});
+
+// POST /api/rhh/nomina/vac-solicitudes/programar — supervisor/rh/admin programa vacaciones para un trabajador
+router.post('/vac-solicitudes/programar', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+  const { employee_id, fecha_inicio, fecha_fin, notas } = req.body || {};
+  if (!employee_id || !fecha_inicio || !fecha_fin) {
+    return res.status(400).json({ error: 'employee_id, fecha_inicio y fecha_fin son requeridos' });
+  }
+  const d1 = new Date(fecha_inicio + 'T12:00:00');
+  const d2 = new Date(fecha_fin + 'T12:00:00');
+  if (isNaN(d1) || isNaN(d2) || d2 < d1) return res.status(400).json({ error: 'Rango de fechas invalido' });
+
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  // Calcular dias efectivos (excl domingos, festivos, cumple)
+  const holidayDates = new Set((db.rhh_holidays || []).map(h => h.date));
+  const birthMD = emp.birth_date ? emp.birth_date.slice(5) : null;
+  const totalNat = Math.round((d2 - d1) / 86400000) + 1;
+  let diasVac = 0, diasFestivo = 0, diasDescanso = 0, diasCumple = 0;
+  for (let i = 0; i < totalNat; i++) {
+    const dt = new Date(d1.getTime() + i * 86400000);
+    const iso = dt.toISOString().slice(0, 10);
+    const dow = dt.getDay();
+    const md = iso.slice(5);
+    if (dow === 0) diasDescanso++;
+    else if (holidayDates.has(iso)) diasFestivo++;
+    else if (birthMD && md === birthMD) diasCumple++;
+    else diasVac++;
+  }
+  if (diasVac <= 0) return res.status(400).json({ error: 'No hay dias habiles de vacaciones en ese rango' });
+
+  // Periodo ISO de fecha_inicio
+  const isoDate = new Date(fecha_inicio + 'T12:00:00');
+  const dayOfWeek = isoDate.getUTCDay() || 7;
+  const thursday = new Date(isoDate);
+  thursday.setUTCDate(thursday.getUTCDate() + 4 - dayOfWeek);
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  const no_periodo = Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
+  const year = thursday.getUTCFullYear();
+
+  if (!Array.isArray(db.rhh_vac_solicitudes)) db.rhh_vac_solicitudes = [];
+  const lista = db.rhh_vac_solicitudes;
+  const desglose = [];
+  if (diasVac) desglose.push(`${diasVac} dia${diasVac>1?'s':''} vacaciones`);
+  if (diasFestivo) desglose.push(`${diasFestivo} festivo${diasFestivo>1?'s':''}`);
+  if (diasDescanso) desglose.push(`${diasDescanso} domingo${diasDescanso>1?'s':''}`);
+  if (diasCumple) desglose.push(`${diasCumple} cumpleanos`);
+
+  const record = {
+    id: nextId(lista),
+    employee_id: Number(employee_id),
+    no_periodo, year,
+    period_key: `${year}-W${String(no_periodo).padStart(2,'0')}`,
+    dias: diasVac,
+    dias_naturales: totalNat,
+    dias_festivo: diasFestivo,
+    dias_descanso: diasDescanso,
+    dias_cumple: diasCumple,
+    desglose: desglose.join(' + '),
+    fecha_inicio, fecha_fin,
+    notas: String(notas || '').trim().slice(0, 300) || null,
+    estado: 'aprobada',
+    origen: 'programada_rhh',
+    autorizado_por: req.rhhUser.id,
+    autorizado_at: nowMxDate(),
+    created_by: req.rhhUser.id,
+    created_at: nowMxDate(),
+  };
+  lista.push(record);
+
+  // Crear/actualizar incidencia semanal
+  const incLista = db.rhh_incidencias_semanales || [];
+  const incIdx = incLista.findIndex(i => samePeriod(i, no_periodo, year) && i.employee_id === Number(employee_id));
+  if (incIdx !== -1) {
+    incLista[incIdx].vacaciones_dias = (Number(incLista[incIdx].vacaciones_dias) || 0) + diasVac;
+    incLista[incIdx].updated_at = new Date().toISOString();
+  } else {
+    incLista.push({
+      id: nextId(incLista), no_periodo, year, period_key: periodKey(year, no_periodo),
+      employee_id: Number(employee_id),
+      dias_pagados: 7, faltas: 0, horas_extras_total: 0, despensa: 1,
+      bono_puntualidad_dias: null, bono_eficiencia_dias: null, bono_instructor: null,
+      prima_dominical: 0, vacaciones_dias: diasVac, gratificacion: null, notas: '',
+      updated_by: req.rhhUser.id, updated_at: new Date().toISOString(), created_at: new Date().toISOString(),
+    });
+  }
+  db.rhh_incidencias_semanales = incLista;
+  db.rhh_vac_solicitudes = lista;
+  write(db);
+  res.status(201).json({ ok: true, id: record.id, dias: diasVac, desglose: desglose.join(' + ') });
+});
+
+// POST /api/rhh/nomina/vac-solicitudes/:id/cancelar-admin — admin/rh cancela vacaciones aprobadas
+router.post('/vac-solicitudes/:id/cancelar-admin', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const idx = (db.rhh_vac_solicitudes || []).findIndex(s => s.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Solicitud no encontrada' });
+
+  const s = db.rhh_vac_solicitudes[idx];
+  if (s.estado !== 'aprobada') return res.status(400).json({ error: 'Solo se pueden cancelar solicitudes aprobadas' });
+
+  const diasRevertir = Number(s.dias) || 0;
+
+  // Revertir incidencia semanal
+  const incLista = db.rhh_incidencias_semanales || [];
+  const year = effectivePeriodYear(s);
+  const incIdx = incLista.findIndex(i => samePeriod(i, s.no_periodo, year) && i.employee_id === s.employee_id);
+  if (incIdx !== -1) {
+    incLista[incIdx].vacaciones_dias = Math.max(0, (Number(incLista[incIdx].vacaciones_dias) || 0) - diasRevertir);
+    incLista[incIdx].updated_at = new Date().toISOString();
+  }
+
+  s.estado = 'cancelada';
+  s.cancelado_por = req.rhhUser.id;
+  s.cancelado_at = nowMxDate();
+  s.cancelado_motivo = String(req.body?.motivo || '').trim().slice(0, 300) || 'Cancelada por RHH';
+
+  write(db);
+  res.json({ ok: true, dias_revertidos: diasRevertir });
 });
 
 // ── Solicitudes de Tiempo Extra ───────────────────────────────────────────────

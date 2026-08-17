@@ -2497,36 +2497,113 @@ async function postularTE(teAuthId) {
 
 // ── 10. Autorizaciones ────────────────────────────────────────────────────────
 let autTabIdx = 0;
+let _autVacFilterName = '';
+let _autVacFilterPos = '';
+let _autShowProgramar = false;
+// Cache de datos para la vista
+let _autVacAllSols = [];
+let _autVacResumen = [];
+
+// Helpers: detectar conflictos y alertas de timing
+function _autDateRangesOverlap(a1, a2, b1, b2) {
+  return a1 <= b2 && b1 <= a2;
+}
+function _autCheckTimingAlert(s) {
+  if (!s.fecha_inicio || s.estado !== 'pendiente') return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const fi = s.fecha_inicio;
+  const dias = Number(s.dias) || 1;
+  // Dias naturales de anticipacion
+  const diff = Math.floor((new Date(fi + 'T12:00:00') - new Date(today + 'T12:00:00')) / 86400000);
+  if (dias <= 1 && diff < 1) return { level: 'error', msg: `Solicita ${dias} dia con solo ${diff} dia(s) de anticipacion (minimo 1 dia habil)` };
+  if (dias <= 3 && diff < 7) return { level: 'warn', msg: `Solicita ${dias} dias con ${diff} dia(s) de anticipacion (recomendado 1 semana)` };
+  if (dias > 3 && diff < 14) return { level: 'warn', msg: `Solicita ${dias} dias con ${diff} dia(s) de anticipacion (recomendado 2+ semanas)` };
+  return null;
+}
+function _autFindConflicts(sol, allSols) {
+  if (!sol.fecha_inicio || !sol.fecha_fin || !sol.position?.id) return [];
+  return allSols.filter(o =>
+    o.id !== sol.id &&
+    o.employee_id !== sol.employee_id &&
+    o.position?.id === sol.position.id &&
+    o.fecha_inicio && o.fecha_fin &&
+    (o.estado === 'pendiente' || o.estado === 'aprobada') &&
+    _autDateRangesOverlap(sol.fecha_inicio, sol.fecha_fin, o.fecha_inicio, o.fecha_fin)
+  );
+}
 
 async function autorizacionesView() {
   const el = document.getElementById('app');
   el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
-    const [vacSols, vacAprobadas, teSols, incidences, ovVales] = await Promise.all([
-      api('/api/rhh/nomina/vac-solicitudes?estado=pendiente&created_from=2026-08-11'),
-      api('/api/rhh/nomina/vac-solicitudes?estado=aprobada'),
+    const isRhAdmin = ['rh','admin'].includes(state.user?.role);
+    const fetchResumen = (autTabIdx === 4) ? api('/api/rhh/nomina/vac-solicitudes/resumen') : Promise.resolve(null);
+
+    const [vacAll, teSols, incidences, ovVales, vacResumen] = await Promise.all([
+      api('/api/rhh/nomina/vac-solicitudes?estado=pendiente,aprobada'),
       api('/api/rhh/nomina/te-solicitudes'),
       api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
-      ['rh','admin'].includes(state.user?.role) ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
+      isRhAdmin ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
+      fetchResumen,
     ]);
 
-    const vacRows = (vacSols || []).map(s => `
-      <tr>
-        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
-        <td>${s.department?.name || '—'}</td>
-        <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `Semana ${s.periodo.no_periodo} (${s.periodo.fecha_inicio} – ${s.periodo.fecha_fin})` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
-        <td style="text-align:center;font-weight:700;">${s.dias}${s.dias_naturales && s.dias_naturales !== s.dias ? `<br><span class="small muted">${s.dias_naturales} nat.</span>` : ''}</td>
-        <td>${s.desglose ? `<span style="font-size:11px">${escHtml(s.desglose)}</span>` : ''}${s.notas ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${escHtml(s.notas)}</div>` : !s.desglose ? '—' : ''}</td>
-        <td>
-          <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarVacSol(${s.id},'aprobada')">✅ Aprobar</button>
-          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarVacSol(${s.id},'rechazada')">✗ Rechazar</button>
-        </td>
-      </tr>`).join('');
+    _autVacAllSols = vacAll || [];
+    if (vacResumen) _autVacResumen = vacResumen;
+    const vacPendientes = _autVacAllSols.filter(s => s.estado === 'pendiente');
+    const vacAprobadas = _autVacAllSols.filter(s => s.estado === 'aprobada');
 
-    const tePend   = (teSols || []).filter(s => s.estado === 'pendiente_supervisor' || s.estado === 'pendiente_rh');
-    const teRows   = tePend.map(s => {
+    // ── Tab 0: Vacaciones (pendientes + aprobadas, filtrable) ──
+    const allPositions = [...new Set(_autVacAllSols.map(s => s.position?.name).filter(Boolean))].sort();
+    let vacFiltered = [..._autVacAllSols];
+    if (_autVacFilterName) {
+      const q = _autVacFilterName.toLowerCase();
+      vacFiltered = vacFiltered.filter(s => (s.employee?.full_name || '').toLowerCase().includes(q));
+    }
+    if (_autVacFilterPos) {
+      vacFiltered = vacFiltered.filter(s => s.position?.name === _autVacFilterPos);
+    }
+
+    const vacRows = vacFiltered.map(s => {
+      const isPend = s.estado === 'pendiente';
+      const timing = isPend ? _autCheckTimingAlert(s) : null;
+      const conflicts = isPend ? _autFindConflicts(s, _autVacAllSols) : [];
+      const estadoBadge = isPend
+        ? '<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">Pendiente</span>'
+        : '<span style="background:#f0fdf4;color:#166534;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">Aprobada</span>';
+      const origenBadge = s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : s.origen === 'programada_rhh' ? ' <span style="background:#f0fdf4;color:#166534;padding:1px 5px;border-radius:4px;font-size:10px">RHH</span>' : '';
+
+      let alertsHtml = '';
+      if (timing) {
+        const bg = timing.level === 'error' ? '#fee2e2' : '#fffbeb';
+        const color = timing.level === 'error' ? '#991b1b' : '#92400e';
+        alertsHtml += `<div style="font-size:10px;background:${bg};color:${color};padding:3px 8px;border-radius:4px;margin-top:4px">⚠ ${escHtml(timing.msg)}</div>`;
+      }
+      if (conflicts.length > 0) {
+        const names = conflicts.map(c => c.employee?.full_name || '?').join(', ');
+        alertsHtml += `<div style="font-size:10px;background:#fee2e2;color:#991b1b;padding:3px 8px;border-radius:4px;margin-top:4px">⚠ Mismo puesto con vacaciones: ${escHtml(names)}</div>`;
+      }
+
+      const dispBtn = isPend && s.fecha_inicio && s.fecha_fin
+        ? `<button class="btn-ghost" style="font-size:10px;padding:2px 6px;margin-top:4px" onclick="autVerDisponibilidad(${s.id})">Ver disponibilidad</button>` : '';
+
+      return `<tr${isPend ? '' : ' style="opacity:.75"'}>
+        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
+        <td>${s.position?.name || '—'}<br><span class="small muted">${s.department?.name || ''}</span></td>
+        <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `S${String(s.periodo.no_periodo).padStart(2,'0')}` : '—'}${origenBadge}</td>
+        <td style="text-align:center;font-weight:700">${s.dias}${s.desglose ? `<br><span class="small muted">${escHtml(s.desglose)}</span>` : ''}</td>
+        <td>${estadoBadge}${alertsHtml}${dispBtn}${s.notas ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${escHtml(s.notas)}</div>` : ''}</td>
+        <td>${isPend ? `<div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button class="btn-primary" style="font-size:11px;padding:4px 9px" onclick="aprobarVacSol(${s.id},'aprobada')">Aprobar</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c" onclick="aprobarVacSol(${s.id},'rechazada')">Rechazar</button>
+        </div>` : '<span class="small muted">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    // ── Tab 1-3 (sin cambios) ──
+    const tePend = (teSols || []).filter(s => s.estado === 'pendiente_supervisor' || s.estado === 'pendiente_rh');
+    const teRows = tePend.map(s => {
       const needsRH = s.requiere_auth_rh;
-      const canApprove = !needsRH || ['rh','admin'].includes(state.user?.role);
+      const canApprove = !needsRH || isRhAdmin;
       return `<tr>
         <td><strong>${escHtml(s.employee?.full_name || '—')}</strong></td>
         <td>${s.periodo ? `Semana ${s.periodo.no_periodo}` : '—'}</td>
@@ -2534,12 +2611,10 @@ async function autorizacionesView() {
         <td>${s.razon || '—'} ${s.sub_razon ? `/ ${s.sub_razon}` : ''}</td>
         <td>${needsRH ? '<span style="background:#fef3c7;color:#92400e;font-size:11px;padding:2px 6px;border-radius:4px;font-weight:600;">⚠ Requiere RHH/Admin</span>' : '<span style="background:#f0fdf4;color:#166534;font-size:11px;padding:2px 6px;border-radius:4px;">OK</span>'}</td>
         <td>${s.solicita || '—'}</td>
-        <td>
-          ${canApprove
-            ? `<button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarTESol(${s.id},'aprobada')">✅ Aprobar</button>
-               <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarTESol(${s.id},'rechazada')">✗ Rechazar</button>`
-            : '<span class="small muted">Solo RHH/Admin</span>'}
-        </td>
+        <td>${canApprove
+          ? `<button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="aprobarTESol(${s.id},'aprobada')">Aprobar</button>
+             <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="aprobarTESol(${s.id},'rechazada')">Rechazar</button>`
+          : '<span class="small muted">Solo RHH/Admin</span>'}</td>
       </tr>`;
     }).join('');
 
@@ -2572,51 +2647,100 @@ async function autorizacionesView() {
         </td>
       </tr>`).join('');
 
-    // Vacaciones aprobadas — listado completo con edición
-    const isRhAdmin = ['rh','admin'].includes(state.user?.role);
-    const vacAprobCount = (vacAprobadas || []).length;
-    const cambiosPend = (vacAprobadas || []).filter(s => s.cambio_solicitado).length;
-    const cambiosPendOnly = (vacAprobadas || []).filter(s => s.cambio_solicitado && !s.cambio_resuelto);
-    const vacAprobRows = (vacAprobadas || []).map(s => {
-      const hasCambio = s.cambio_solicitado && !s.cambio_resuelto;
-      const cambioTag = hasCambio
-        ? `<span style="background:${s.cambio_solicitado==='cancelacion'?'#fee2e2':'#fef3c7'};color:${s.cambio_solicitado==='cancelacion'?'#991b1b':'#92400e'};padding:2px 8px;border-radius:4px;font-size:10px;font-weight:600">${s.cambio_solicitado === 'cancelacion' ? 'Pide cancelar' : 'Pide cambio'}</span>`
-        : '';
-      const cambioFechas = hasCambio && s.cambio_nueva_fecha_inicio ? `<div style="font-size:11px;color:#1e40af;margin-top:2px">Nuevas fechas: ${s.cambio_nueva_fecha_inicio} → ${s.cambio_nueva_fecha_fin}</div>` : '';
-      const cambioAcciones = hasCambio && isRhAdmin ? `<div style="margin-top:6px;display:flex;gap:4px;flex-wrap:wrap">
-        <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autResolverCambioVac(${s.id},'aprobar')">Aprobar ${s.cambio_solicitado==='cancelacion'?'cancelacion':'cambio'}</button>
-        <button class="btn-ghost" style="font-size:10px;padding:3px 8px;color:#b91c1c" onclick="autResolverCambioVac(${s.id},'rechazar')">Rechazar</button>
-      </div>` : '';
-      return `<tr ${hasCambio ? 'style="background:#fffbeb"' : ''}>
-        <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
-        <td>${s.department?.name || '—'}</td>
-        <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `S${String(s.periodo.no_periodo).padStart(2,'0')}` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
-        <td style="text-align:center;font-weight:700;">${s.dias}${s.desglose ? `<br><span class="small muted">${escHtml(s.desglose)}</span>` : ''}</td>
-        <td>${cambioTag}${s.cambio_motivo ? `<div style="font-size:11px;color:#64748b">${escHtml(s.cambio_motivo)}</div>` : ''}${cambioFechas}${cambioAcciones}${s.notas && !hasCambio ? escHtml(s.notas) : !hasCambio ? '—' : ''}</td>
-        <td>${isRhAdmin ? `<div style="display:flex;flex-direction:column;gap:3px">
-          <input type="date" id="aut-vac-ini-${s.id}" value="${s.fecha_inicio||''}" style="width:120px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
-          <input type="date" id="aut-vac-fin-${s.id}" value="${s.fecha_fin||''}" style="width:120px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
-          <button class="btn-primary" style="font-size:10px;padding:3px 8px;" onclick="autEditVacDias(${s.id})">Guardar</button>
-        </div>` : `<span class="small muted">${s.dias} dias</span>`}</td>
-      </tr>`;
-    }).join('');
+    // ── Tab 4: Vacaciones aprobadas — agrupado por empleado ──
+    const cambiosPendOnly = vacAprobadas.filter(s => s.cambio_solicitado && !s.cambio_resuelto);
+    let vacAprobContent = '';
+    if (autTabIdx === 4 && _autVacResumen && _autVacResumen.length > 0) {
+      const resumen = _autVacResumen.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+      vacAprobContent = resumen.map(emp => {
+        const empSols = vacAprobadas.filter(s => s.employee_id === emp.employee_id);
+        const empCambios = empSols.filter(s => s.cambio_solicitado && !s.cambio_resuelto);
+        const solRows = empSols.map(s => {
+          const hasCambio = s.cambio_solicitado && !s.cambio_resuelto;
+          const cambioTag = hasCambio
+            ? `<span style="background:${s.cambio_solicitado==='cancelacion'?'#fee2e2':'#fef3c7'};color:${s.cambio_solicitado==='cancelacion'?'#991b1b':'#92400e'};padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600">${s.cambio_solicitado === 'cancelacion' ? 'Pide cancelar' : 'Pide cambio'}</span>`
+            : '';
+          const cambioFechas = hasCambio && s.cambio_nueva_fecha_inicio ? `<div style="font-size:11px;color:#1e40af;margin-top:2px">Nuevas: ${s.cambio_nueva_fecha_inicio} → ${s.cambio_nueva_fecha_fin}</div>` : '';
+          const cambioAcciones = hasCambio && isRhAdmin ? `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn-primary" style="font-size:10px;padding:3px 8px" onclick="autResolverCambioVac(${s.id},'aprobar')">Aprobar ${s.cambio_solicitado==='cancelacion'?'cancel.':'cambio'}</button>
+            <button class="btn-ghost" style="font-size:10px;padding:3px 8px;color:#b91c1c" onclick="autResolverCambioVac(${s.id},'rechazar')">Rechazar</button>
+          </div>` : '';
+          return `<tr ${hasCambio ? 'style="background:#fffbeb"' : ''}>
+            <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : s.origen === 'programada_rhh' ? ' <span style="background:#f0fdf4;color:#166534;padding:1px 5px;border-radius:4px;font-size:10px">RHH</span>' : ''}</td>
+            <td style="text-align:center;font-weight:700">${s.dias}${s.desglose ? `<br><span class="small muted">${escHtml(s.desglose)}</span>` : ''}</td>
+            <td>${cambioTag}${s.cambio_motivo ? `<div style="font-size:11px;color:#64748b">${escHtml(s.cambio_motivo)}</div>` : ''}${cambioFechas}${cambioAcciones}</td>
+            <td>${isRhAdmin ? `<div style="display:flex;gap:3px;align-items:center;flex-wrap:wrap">
+              <input type="date" id="aut-vac-ini-${s.id}" value="${s.fecha_inicio||''}" style="width:115px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
+              <input type="date" id="aut-vac-fin-${s.id}" value="${s.fecha_fin||''}" style="width:115px;padding:2px 4px;border:1px solid #cbd5e1;border-radius:4px;font-size:11px"/>
+              <button class="btn-primary" style="font-size:10px;padding:3px 6px" onclick="autEditVacDias(${s.id})">Guardar</button>
+              <button class="btn-ghost" style="font-size:10px;padding:3px 6px;color:#b91c1c" onclick="autCancelarVacAdmin(${s.id})">Cancelar</button>
+            </div>` : `<span class="small muted">${s.dias} dias</span>`}</td>
+          </tr>`;
+        }).join('');
+        const totalAprobados = empSols.reduce((s, v) => s + (Number(v.dias) || 0), 0);
+        return `<div style="border:1px solid #e2e8f0;border-radius:10px;margin-bottom:12px;overflow:hidden">
+          <div style="background:#f8fafc;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;border-bottom:1px solid #e2e8f0">
+            <div>
+              <strong style="font-size:14px">${escHtml(emp.full_name)}</strong>
+              <span class="small muted" style="margin-left:6px">${escHtml(emp.employee_number || '')}</span>
+              ${emp.position ? `<span style="margin-left:6px;font-size:11px;color:#6b7280">${escHtml(emp.position)}</span>` : ''}
+              ${empCambios.length > 0 ? `<span style="background:#fef3c7;color:#92400e;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-left:6px">${empCambios.length} cambio${empCambios.length>1?'s':''} pend.</span>` : ''}
+            </div>
+            <div style="display:flex;gap:12px;font-size:12px">
+              <span style="color:#166534;font-weight:700">Aprobados: ${totalAprobados}d</span>
+              <span style="color:#0369a1">Disponibles: ${emp.dias_disponibles}d</span>
+              <span style="color:${emp.dias_restantes > 0 ? '#059669' : '#dc2626'};font-weight:700">Restantes: ${emp.dias_restantes}d</span>
+            </div>
+          </div>
+          ${empSols.length > 0 ? `<table style="margin:0"><thead><tr><th>Periodo</th><th>Dias</th><th>Cambios</th><th>${isRhAdmin ? 'Editar / Cancelar' : 'Dias'}</th></tr></thead><tbody>${solRows}</tbody></table>` : '<div style="padding:10px;text-align:center;color:#94a3b8;font-size:12px">Sin vacaciones aprobadas</div>'}
+        </div>`;
+      }).join('');
+    }
 
+    // ── Tab bar ──
     const tabs = [
-      `Vacaciones <span class="badge" style="background:${(vacSols||[]).length>0?'#dc2626':'#6b7280'};font-size:10px;">${(vacSols||[]).length}</span>`,
+      `Vacaciones <span class="badge" style="background:${vacPendientes.length>0?'#dc2626':'#6b7280'};font-size:10px;">${vacPendientes.length > 0 ? vacPendientes.length + ' pend' : _autVacAllSols.length}</span>`,
       `T.Extra (nomina) <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
       `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
       `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
-      `Vac. aprobadas <span class="badge" style="background:${cambiosPendOnly.length>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobCount}${cambiosPendOnly.length>0?' !':''}</span>`,
+      `Vac. aprobadas <span class="badge" style="background:${cambiosPendOnly.length>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobadas.length}${cambiosPendOnly.length>0?' !':''}</span>`,
     ];
     const tabBar = tabs.map((t, i) =>
       `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
     ).join('');
 
+    // ── Tab content ──
     let tabContent = '';
     if (autTabIdx === 0) {
-      tabContent = vacRows
-        ? `<table><thead><tr><th>Empleado</th><th>Depto</th><th>Semana</th><th>Dias solicitados</th><th>Notas</th><th>Accion</th></tr></thead><tbody>${vacRows}</tbody></table>`
-        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de vacaciones pendientes</p></div>';
+      const filterBar = `<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+        <input type="text" placeholder="Buscar empleado..." value="${escHtml(_autVacFilterName)}" oninput="_autVacFilterName=this.value;autorizacionesView()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:200px"/>
+        <select onchange="_autVacFilterPos=this.value;autorizacionesView()" style="padding:6px 10px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
+          <option value="">Todos los puestos</option>
+          ${allPositions.map(p => `<option value="${escHtml(p)}" ${_autVacFilterPos===p?'selected':''}>${escHtml(p)}</option>`).join('')}
+        </select>
+        ${isRhAdmin ? `<button class="btn-primary" style="font-size:11px;padding:5px 12px;margin-left:auto" onclick="_autShowProgramar=!_autShowProgramar;autorizacionesView()">+ Programar vacaciones</button>` : ''}
+      </div>`;
+      const programarForm = _autShowProgramar && isRhAdmin ? `<div style="background:#f0f9ff;border:1px solid #bae6fd;border-radius:8px;padding:14px;margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:#0c4a6e;margin-bottom:10px">Programar vacaciones para un trabajador</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end">
+          <div><label style="font-size:11px;color:#475569;display:block;margin-bottom:2px">Empleado</label>
+            <select id="aut-prog-emp" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;min-width:200px">
+              <option value="">Seleccionar...</option>
+            </select></div>
+          <div><label style="font-size:11px;color:#475569;display:block;margin-bottom:2px">Fecha inicio</label>
+            <input type="date" id="aut-prog-ini" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"/></div>
+          <div><label style="font-size:11px;color:#475569;display:block;margin-bottom:2px">Fecha fin</label>
+            <input type="date" id="aut-prog-fin" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"/></div>
+          <div><label style="font-size:11px;color:#475569;display:block;margin-bottom:2px">Notas</label>
+            <input type="text" id="aut-prog-notas" placeholder="Opcional" style="padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:160px"/></div>
+          <button class="btn-primary" style="font-size:12px;padding:6px 14px" onclick="autProgramarVac()">Programar</button>
+        </div>
+        <div id="aut-prog-info" style="margin-top:6px;font-size:11px;color:#475569"></div>
+      </div>` : '';
+
+      tabContent = `${filterBar}${programarForm}${vacFiltered.length > 0
+        ? `<table><thead><tr><th>Empleado</th><th>Puesto / Depto</th><th>Periodo</th><th>Dias</th><th>Estado / Alertas</th><th>Accion</th></tr></thead><tbody>${vacRows}</tbody></table>`
+        : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin solicitudes de vacaciones</p></div>'}`;
     } else if (autTabIdx === 1) {
       tabContent = teRows
         ? `<table><thead><tr><th>Empleado</th><th>Semana</th><th>Horas</th><th>Razon</th><th>Nivel auth.</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${teRows}</tbody></table>`
@@ -2632,18 +2756,31 @@ async function autorizacionesView() {
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vales de tiempo extra pendientes</p></div>';
     } else {
       const cambiosPendCount = cambiosPendOnly.length;
-      tabContent = vacAprobRows
+      tabContent = vacAprobContent
         ? `${cambiosPendCount > 0 ? `<div style="font-size:12px;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;">${cambiosPendCount} solicitud${cambiosPendCount>1?'es':''} de cambio/cancelacion requiere${cambiosPendCount>1?'n':''} atencion.</div>` : ''}
-           <table><thead><tr><th>Empleado</th><th>Depto</th><th>Periodo</th><th>Dias</th><th>Solicitudes de cambio</th><th>${isRhAdmin ? 'Editar fechas' : 'Dias'}</th></tr></thead><tbody>${vacAprobRows}</tbody></table>`
+           ${vacAprobContent}`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vacaciones aprobadas</p></div>';
     }
 
     const content = `
-      <div class="module-title"><h2>✅ Autorizaciones</h2></div>
+      <div class="module-title"><h2>Autorizaciones</h2></div>
       <div class="tab-bar" style="margin-bottom:14px;">${tabBar}</div>
       <div class="card section table-wrap">${tabContent}</div>
     `;
     el.innerHTML = shell(content, 'autorizaciones');
+
+    // Populate employee select for programar form
+    if (_autShowProgramar && isRhAdmin && document.getElementById('aut-prog-emp')) {
+      if (!state.employees?.length) await loadCatalogs();
+      const sel = document.getElementById('aut-prog-emp');
+      const emps = (state.employees || []).filter(e => e.status !== 'baja').sort((a,b) => (a.full_name||'').localeCompare(b.full_name||''));
+      emps.forEach(e => {
+        const opt = document.createElement('option');
+        opt.value = e.id;
+        opt.textContent = `${e.full_name} (${e.employee_number || '—'})`;
+        sel.appendChild(opt);
+      });
+    }
   } catch (err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'autorizaciones');
   }
@@ -2682,6 +2819,58 @@ async function autResolverCambioVac(solId, accion) {
     toast(accion === 'aprobar' ? 'Cambio aprobado' : 'Cambio rechazado, se notifico al empleado');
     autorizacionesView();
   } catch (err) { toast(err.message, 'error'); }
+}
+
+function autVerDisponibilidad(solId) {
+  const sol = _autVacAllSols.find(s => s.id === solId);
+  if (!sol || !sol.fecha_inicio || !sol.fecha_fin) { toast('Sin fechas para verificar', 'warning'); return; }
+  const overlapping = _autVacAllSols.filter(s =>
+    s.id !== solId && s.fecha_inicio && s.fecha_fin &&
+    (s.estado === 'pendiente' || s.estado === 'aprobada') &&
+    _autDateRangesOverlap(sol.fecha_inicio, sol.fecha_fin, s.fecha_inicio, s.fecha_fin)
+  );
+  if (overlapping.length === 0) {
+    alert(`Disponibilidad ${sol.fecha_inicio} → ${sol.fecha_fin}\n\nNo hay otro personal con vacaciones en este periodo.`);
+    return;
+  }
+  const lines = overlapping.map(s => {
+    const same = s.position?.id === sol.position?.id ? ' [MISMO PUESTO]' : '';
+    return `- ${s.employee?.full_name || '?'} (${s.position?.name || '?'}) ${s.fecha_inicio}→${s.fecha_fin} [${s.estado}]${same}`;
+  });
+  alert(`Disponibilidad ${sol.fecha_inicio} → ${sol.fecha_fin}\n\nPersonal con vacaciones en el mismo periodo:\n${lines.join('\n')}`);
+}
+
+async function autProgramarVac() {
+  const empId = document.getElementById('aut-prog-emp')?.value;
+  const ini = document.getElementById('aut-prog-ini')?.value;
+  const fin = document.getElementById('aut-prog-fin')?.value;
+  const notas = document.getElementById('aut-prog-notas')?.value || '';
+  if (!empId) { toast('Selecciona un empleado', 'warning'); return; }
+  if (!ini || !fin) { toast('Selecciona fecha inicio y fin', 'warning'); return; }
+  if (fin < ini) { toast('Fecha fin debe ser posterior a inicio', 'warning'); return; }
+  if (!confirm('Programar vacaciones para este trabajador? Se registraran como aprobadas.')) return;
+  try {
+    const r = await api('/api/rhh/nomina/vac-solicitudes/programar', {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: Number(empId), fecha_inicio: ini, fecha_fin: fin, notas })
+    });
+    toast(`Vacaciones programadas (${r.dias || '?'} dias: ${r.desglose || ''})`);
+    _autShowProgramar = false;
+    autorizacionesView();
+  } catch (err) { toast(err.message || 'Error al programar', 'error'); }
+}
+
+async function autCancelarVacAdmin(solId) {
+  const motivo = prompt('Motivo de cancelacion (visible para el empleado):');
+  if (motivo === null) return;
+  try {
+    const r = await api(`/api/rhh/nomina/vac-solicitudes/${solId}/cancelar-admin`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo })
+    });
+    toast(`Vacaciones canceladas (${r.dias_revertidos || 0} dias revertidos)`);
+    autorizacionesView();
+  } catch (err) { toast(err.message || 'Error al cancelar', 'error'); }
 }
 
 async function aprobarTESol(id, estado) {
