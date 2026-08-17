@@ -782,7 +782,7 @@ router.patch('/lft-rules', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req,
 // Soporta dos formatos:
 //
 // 1. CONSOLIDADO (CONSOLIDADO_Listas_Raya_2026.xlsx — hoja "Consolidado"):
-//    Detección: col 0 = "semana", col 3 = "No. Empleado", cols con "P | " y "D | "
+//    Detección: col 0 = "semana" o "Periodo No.", col 3 = "No. Empleado", cols con "P | " y "D | "
 //    - Una fila por empleado por semana; importa incidencias + percepciones + deducciones
 //    - Actualiza dept, puesto, sal_diario, SDI, SBC, fecha_ingreso del empleado
 //
@@ -829,7 +829,7 @@ router.post(
 
     // Detectar formato: CONSOLIDADO vs LISTA ASISTENCIA
     const hdrs = all[0].map(v => norm(v).toLowerCase());
-    const isConsolidado = hdrs[0] === 'semana' &&
+    const isConsolidado = (hdrs[0] === 'semana' || hdrs[0] === 'periodo no.') &&
       all[0].some(v => String(v).startsWith('P | ') || String(v).startsWith('P(info) | '));
     console.log('[import-contpaq] hojas disponibles:', wb.SheetNames, '| hoja seleccionada:', sheetName, '| filas:', all.length, '| hdr[0]:', JSON.stringify(all[0][0]), '| isConsolidado:', isConsolidado);
 
@@ -1032,7 +1032,9 @@ router.post(
       const colIdx = {};
       hdrRaw.forEach((v, i) => { colIdx[norm(v)] = i; });
 
-      const requiredHeaders = ['semana', 'Fecha Inicio', 'Fecha Fin', 'No. Empleado', 'Nombre'];
+      // Aceptar "semana" o "Periodo No." como nombre de la columna de periodo
+      const periodoHeader = colIdx['semana'] !== undefined ? 'semana' : (colIdx['Periodo No.'] !== undefined ? 'Periodo No.' : null);
+      const requiredHeaders = [periodoHeader || 'semana', 'Fecha Inicio', 'Fecha Fin', 'No. Empleado', 'Nombre'];
       const missingHeaders = requiredHeaders.filter(header => colIdx[header] === undefined);
       if (missingHeaders.length) {
         return res.status(422).json({
@@ -1042,13 +1044,15 @@ router.post(
         });
       }
 
-      const semanaCol   = colIdx['semana']        ?? 0;
+      const semanaCol   = colIdx[periodoHeader]   ?? 0;
       const fechaIniCol = colIdx['Fecha Inicio']  ?? 1;
       const fechaFinCol = colIdx['Fecha Fin']     ?? 2;
       const empNumCol   = colIdx['No. Empleado']  ?? 3;
       const nombreCol   = colIdx['Nombre']        ?? 4;
       const deptCol     = colIdx['Departamento']  ?? 5;
       const puestoCol   = colIdx['Puesto']        ?? 6;
+      const rfcCol      = colIdx['RFC']            ?? -1;
+      const curpCol     = colIdx['CURP']           ?? -1;
       const salDiarioCol= colIdx['Sal. Diario']   ?? 11;
       const sdiCol      = colIdx['SDI']           ?? 12;
       const sbcCol      = colIdx['SBC']           ?? 13;
@@ -1101,14 +1105,20 @@ router.post(
         const pNom = norm(row[puestoCol]);
         const dId = findOrCreateDept(dNom);
         const pId = findOrCreatePos(pNom, dId);
+        const rfcRaw = rfcCol >= 0 ? norm(row[rfcCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+        const curpRaw = curpCol >= 0 ? norm(row[curpCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
         const emp = {
           id: nextId(db.rhh_employees), employee_number: empNumRaw, full_name: empName,
           status: 'active', department_id: dId, position_id: pId,
+          rfc: rfcRaw || null, curp: curpRaw || null,
           sal_diario: toNum(row[salDiarioCol]), salary_daily: toNum(row[salDiarioCol]),
           sdi: toNum(row[sdiCol]), sbc: toNum(row[sbcCol]),
           fecha_ingreso: norm(row[fechaIngCol]), fecha_alta: nowMxDate(),
           created_at: nowMxDate(), updated_at: nowMxDate(),
         };
+        if (rfcRaw.length >= 10 && curpRaw.length >= 6) {
+          emp.emp_login = { username: rfcRaw.slice(0, 10), password: curpRaw.slice(-6), must_change: true };
+        }
         db.rhh_employees.push(emp);
         nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
         recordStatusEvent(db, emp, {
@@ -1182,6 +1192,8 @@ router.post(
           const pNom = norm(row[puestoCol]);
           const dId2 = findOrCreateDept(dNom);
           const pId2 = findOrCreatePos(pNom, dId2);
+          const rfcRaw2 = rfcCol >= 0 ? norm(row[rfcCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
+          const curpRaw2 = curpCol >= 0 ? norm(row[curpCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase() : '';
           emp = {
             id: nextId(db.rhh_employees),
             employee_number: empNumRaw,
@@ -1189,6 +1201,7 @@ router.post(
             status: 'active',
             department_id: dId2,
             position_id: pId2,
+            rfc: rfcRaw2 || null, curp: curpRaw2 || null,
             sal_diario: toNum(row[salDiarioCol]),
             salary_daily: toNum(row[salDiarioCol]),
             sdi: toNum(row[sdiCol]),
@@ -1198,6 +1211,9 @@ router.post(
             created_at: nowMxDate(),
             updated_at: nowMxDate(),
           };
+          if (rfcRaw2.length >= 10 && curpRaw2.length >= 6) {
+            emp.emp_login = { username: rfcRaw2.slice(0, 10), password: curpRaw2.slice(-6), must_change: true };
+          }
           db.rhh_employees.push(emp);
           nuevos.push({ id: emp.id, employee_number: empNumRaw, full_name: empName });
           recordStatusEvent(db, emp, {
@@ -1238,6 +1254,24 @@ router.post(
         if (isLatestRow && sdi && emp.sdi !== sdi) { emp.sdi = sdi; empChanged = true; }
         if (isLatestRow && sbc && emp.sbc !== sbc) { emp.sbc = sbc; empChanged = true; }
         if (isLatestRow && fechaIngr && !emp.manual_start_date_locked && emp.fecha_ingreso !== fechaIngr) { emp.fecha_ingreso = fechaIngr; emp.start_date = fechaIngr; empChanged = true; }
+        // Actualizar RFC/CURP si vienen en el Excel y el empleado no los tiene
+        if (isLatestRow && rfcCol >= 0) {
+          const rfcVal = norm(row[rfcCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (rfcVal && !emp.rfc) { emp.rfc = rfcVal; empChanged = true; }
+        }
+        if (isLatestRow && curpCol >= 0) {
+          const curpVal = norm(row[curpCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (curpVal && !emp.curp) { emp.curp = curpVal; empChanged = true; }
+        }
+        // Crear emp_login si el empleado tiene RFC y CURP pero no tiene login
+        if (isLatestRow && !emp.emp_login) {
+          const rfcLogin = (emp.rfc || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          const curpLogin = (emp.curp || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+          if (rfcLogin.length >= 10 && curpLogin.length >= 6) {
+            emp.emp_login = { username: rfcLogin.slice(0, 10), password: curpLogin.slice(-6), must_change: true };
+            empChanged = true;
+          }
+        }
         // NO reactivar empleados inactivos: si tiene manual_baja_locked se detecta como possible_rehire
         if (empChanged) { emp.updated_at = nowMxDate(); updated++; }
 
