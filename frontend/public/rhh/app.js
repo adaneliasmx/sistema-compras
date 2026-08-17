@@ -2513,7 +2513,7 @@ async function autorizacionesView() {
       <tr>
         <td><strong>${escHtml(s.employee?.full_name || '—')}</strong><br><span class="small muted">${s.employee?.employee_number || ''}</span></td>
         <td>${s.department?.name || '—'}</td>
-        <td>${s.periodo ? `Semana ${s.periodo.no_periodo} (${s.periodo.fecha_inicio} – ${s.periodo.fecha_fin})` : '—'}</td>
+        <td>${s.fecha_inicio && s.fecha_fin ? `${s.fecha_inicio} → ${s.fecha_fin}` : s.periodo ? `Semana ${s.periodo.no_periodo} (${s.periodo.fecha_inicio} – ${s.periodo.fecha_fin})` : '—'}${s.origen === 'portal_empleado' ? ' <span style="background:#eff6ff;color:#1d4ed8;padding:1px 5px;border-radius:4px;font-size:10px">Portal</span>' : ''}</td>
         <td style="text-align:center;font-weight:700;">${s.dias}</td>
         <td>${s.notas || '—'}</td>
         <td>
@@ -11456,6 +11456,7 @@ async function catVerDetalle(empId) {
   const inc  = data.incidencias || [];
   const acl  = data.aclaraciones || [];
   const vac  = data.vacaciones   || [];
+  const semVac = data.semanas_vacaciones || [];
   const ev   = data.evaluaciones || [];
   const vi   = data.vac_info     || {};
 
@@ -11517,22 +11518,52 @@ async function catVerDetalle(empId) {
   </div>`).join('')
   : '<div style="text-align:center;color:#94a3b8;padding:20px">Sin aclaraciones</div>';
 
-  const vacHtml = vac.length ? vac.map(v => `
-  <div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+  // Solicitudes de vacaciones (ahora desde rhh_vac_solicitudes)
+  const vacStatusMap = { aprobada: 'aprobado', rechazada: 'rechazado', pendiente: 'pendiente' };
+  const vacHtml = vac.length ? `<div style="font-size:13px;font-weight:600;color:#475569;margin-bottom:8px">Solicitudes (${vac.length})</div>` + vac.map(v => {
+    const st = vacStatusMap[v.estado] || v.estado || 'pendiente';
+    const stColor = st==='aprobado'?'#dcfce7':st==='rechazado'?'#fee2e2':'#fef3c7';
+    const stText = st==='aprobado'?'#16a34a':st==='rechazado'?'#dc2626':'#92400e';
+    return `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
     <div>
-      <div style="font-size:13px;font-weight:600">${v.fecha_inicio} → ${v.fecha_fin} (${v.dias} días)</div>
-      <div style="font-size:12px;color:#64748b">${v.motivo || ''} · ${v.created_at}</div>
-      ${v.notas_rh ? `<div style="font-size:12px;color:#1e40af">${esc(v.notas_rh)}</div>` : ''}
+      <div style="font-size:13px;font-weight:600">${v.fecha_inicio ? v.fecha_inicio+' → '+v.fecha_fin : 'S'+String(v.no_periodo).padStart(2,'0')} (${v.dias} dias)</div>
+      <div style="font-size:12px;color:#64748b">${v.notas || ''} · ${v.created_at || ''} ${v.origen === 'portal_empleado' ? '· Portal' : v.origen === 'manual_rhh' ? '· Manual RHH' : ''}</div>
+      ${v.notas_respuesta ? `<div style="font-size:12px;color:#1e40af">${esc(v.notas_respuesta)}</div>` : ''}
     </div>
     <div style="display:flex;gap:6px;align-items:center">
-      <span style="background:${v.status==='aprobado'?'#dcfce7':v.status==='rechazado'?'#fee2e2':'#fef3c7'};color:${v.status==='aprobado'?'#16a34a':v.status==='rechazado'?'#dc2626':'#92400e'};padding:2px 8px;border-radius:20px;font-size:11px">${v.status}</span>
-      ${v.status === 'pendiente' ? `
-        <button class="btn-primary btn-sm" onclick="catAprobarVac(${v.id},'aprobado')">✓</button>
-        <button class="btn-ghost btn-sm" onclick="catAprobarVac(${v.id},'rechazado')">✗</button>
+      <span style="background:${stColor};color:${stText};padding:2px 8px;border-radius:20px;font-size:11px">${st}</span>
+      ${st === 'pendiente' ? `
+        <button class="btn-primary btn-sm" onclick="catAprobarVac(${v.id},'aprobado')">Aprobar</button>
+        <button class="btn-ghost btn-sm" onclick="catAprobarVac(${v.id},'rechazado')">Rechazar</button>
       ` : ''}
     </div>
-  </div>`).join('')
+  </div>`;
+  }).join('')
   : '<div style="text-align:center;color:#94a3b8;padding:20px">Sin solicitudes de vacaciones</div>';
+
+  // Semanas donde se tomaron vacaciones (desde incidencias semanales)
+  const semVacSorted = [...semVac].sort((a,b) => {
+    if (a.year !== b.year) return b.year - a.year;
+    return b.no_periodo - a.no_periodo;
+  });
+  const semVacHtml = semVacSorted.length ? `
+  <div style="max-height:250px;overflow:auto;border:1px solid #e2e8f0;border-radius:8px">
+  <table class="data-table" style="margin:0;font-size:13px">
+    <thead style="position:sticky;top:0;z-index:1;background:#f8fafc"><tr>
+      <th>Semana</th><th>Periodo</th><th>Dias vac.</th><th>Fuente</th><th></th>
+    </tr></thead>
+    <tbody>${semVacSorted.map(s => {
+      const fuenteLabel = s.fuente === 'manual_rhh' ? 'Manual RHH' : s.fuente === 'solicitud_aprobada' ? 'Solicitud' : 'CONTPAQ';
+      const fuenteColor = s.fuente === 'manual_rhh' ? '#7c3aed' : s.fuente === 'solicitud_aprobada' ? '#0369a1' : '#64748b';
+      return `<tr>
+        <td style="font-weight:600">S${String(s.no_periodo).padStart(2,'0')} (${s.year})</td>
+        <td>${s.fecha_inicio||'—'} → ${s.fecha_fin||'—'}</td>
+        <td style="text-align:center;font-weight:700;color:#1d4ed8">${s.vacaciones_dias}</td>
+        <td><span style="color:${fuenteColor};font-size:11px">${fuenteLabel}</span></td>
+        <td>${s.fuente === 'manual_rhh' ? `<button class="btn-ghost btn-sm" style="font-size:10px;color:#dc2626" onclick="catQuitarVacManual(${e.id},${s.no_periodo},${s.year},${s.vacaciones_dias})">Quitar</button>` : ''}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table></div>` : '<div style="text-align:center;color:#94a3b8;padding:12px;font-size:13px">Sin semanas con vacaciones registradas</div>';
 
   const credHtml = e.has_portal ? `
   <div style="background:#eff6ff;border-radius:10px;padding:14px;margin-bottom:12px">
@@ -11695,13 +11726,12 @@ async function catVerDetalle(empId) {
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:12px;">
         <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
           <div style="font-size:22px;font-weight:700;color:#0369a1;">${vi.dias_disponibles ?? 0}</div>
-          <div style="font-size:11px;color:#64748b;">Días disponibles</div>
+          <div style="font-size:11px;color:#64748b;">Dias disponibles</div>
           ${vi.override_dias != null ? '<div style="font-size:10px;color:#7c3aed;">Editado por RHH</div>' : `<div style="font-size:10px;color:#64748b;">LFT (ciclo ${vi.ciclos || 0})</div>`}
         </div>
         <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
           <div style="font-size:22px;font-weight:700;color:#16a34a;">${vi.dias_tomados ?? 0}</div>
-          <div style="font-size:11px;color:#64748b;">Días tomados</div>
-          <div style="font-size:10px;color:#64748b;">Fuente: nómina CONTPAQ</div>
+          <div style="font-size:11px;color:#64748b;">Dias tomados</div>
         </div>
         <div style="text-align:center;background:#fff;border-radius:8px;padding:10px;">
           <div style="font-size:22px;font-weight:700;color:#ea580c;">${(vi.dias_programados ?? 0) - (vi.dias_tomados ?? 0)}</div>
@@ -11715,7 +11745,7 @@ async function catVerDetalle(empId) {
       </div>
       <!-- Override manual RHH -->
       <div style="border-top:1px solid #bae6fd;padding-top:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <label style="font-size:12px;font-weight:600;color:#0369a1;">Editar días disponibles (RHH):</label>
+        <label style="font-size:12px;font-weight:600;color:#0369a1;">Editar dias disponibles (RHH):</label>
         <input type="number" id="cat-vac-override-${e.id}" min="0" max="60" step="1"
           value="${vi.override_dias ?? ''}" placeholder="Auto (LFT)"
           style="width:90px;padding:5px 8px;border:1px solid #bae6fd;border-radius:7px;font-size:13px;" />
@@ -11723,9 +11753,31 @@ async function catVerDetalle(empId) {
           style="padding:5px 14px;border:none;border-radius:7px;background:#0369a1;color:#fff;font-size:12px;cursor:pointer;font-weight:600;">Guardar</button>
         ${vi.override_dias != null ? `<button onclick="catBorrarVacOverride(${e.id})"
           style="padding:5px 10px;border:1px solid #e5e7eb;border-radius:7px;background:#f9fafb;font-size:11px;cursor:pointer;color:#64748b;">Restablecer LFT</button>` : ''}
-        <span style="font-size:11px;color:#64748b;">Vaciar = usar cálculo automático LFT · ${vi.lft_dias} días para ciclo ${vi.ciclos || '—'}</span>
+        <span style="font-size:11px;color:#64748b;">Vaciar = usar calculo automatico LFT · ${vi.lft_dias} dias para ciclo ${vi.ciclos || '—'}</span>
       </div>
     </div>
+
+    <!-- Semanas con vacaciones tomadas -->
+    <div style="margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:13px;font-weight:700;color:#475569;">Semanas con vacaciones registradas</div>
+        <button class="btn-ghost btn-sm" onclick="catToggleVacManualForm(${e.id})" style="font-size:11px">+ Agregar manual</button>
+      </div>
+      <!-- Formulario agregar manual (oculto) -->
+      <div id="cat-vac-manual-form-${e.id}" style="display:none;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div><label style="font-size:11px;color:#64748b;display:block">Semana</label>
+            <input type="number" id="vac-manual-sem-${e.id}" min="1" max="53" placeholder="Ej: 33" style="width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/></div>
+          <div><label style="font-size:11px;color:#64748b;display:block">Año</label>
+            <input type="number" id="vac-manual-year-${e.id}" value="${new Date().getFullYear()}" style="width:70px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/></div>
+          <div><label style="font-size:11px;color:#64748b;display:block">Dias</label>
+            <input type="number" id="vac-manual-dias-${e.id}" min="1" max="7" value="1" style="width:60px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/></div>
+          <button class="btn-primary btn-sm" onclick="catAgregarVacManual(${e.id})">Agregar</button>
+        </div>
+      </div>
+      ${semVacHtml}
+    </div>
+
     <!-- Solicitudes -->
     ${vacHtml}
   </div>
@@ -11751,8 +11803,35 @@ async function catResponderAcl(empId, aclId) {
 }
 
 async function catAprobarVac(vacId, status) {
+  if (status === 'aprobado' && !confirm('Aprobar vacaciones? Se registraran en incidencias semanales automaticamente.')) return;
   const r = await api(`/api/rhh/catalogo/vacaciones/${vacId}`, { method:'PATCH', body: JSON.stringify({ status }) }).catch(() => null);
-  if (r) { toast(status === 'aprobado' ? 'Vacaciones aprobadas' : 'Solicitud rechazada'); catVerDetalle(_catEmpDetalle); }
+  if (r) { toast(status === 'aprobado' ? 'Vacaciones aprobadas y registradas en incidencias' : 'Solicitud rechazada'); catVerDetalle(_catEmpDetalle); }
+}
+
+function catToggleVacManualForm(empId) {
+  const el = document.getElementById(`cat-vac-manual-form-${empId}`);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function catAgregarVacManual(empId) {
+  const sem = document.getElementById(`vac-manual-sem-${empId}`)?.value;
+  const year = document.getElementById(`vac-manual-year-${empId}`)?.value;
+  const dias = document.getElementById(`vac-manual-dias-${empId}`)?.value;
+  if (!sem || !year || !dias) { toast('Completa semana, año y dias', 'warning'); return; }
+  const r = await api(`/api/rhh/catalogo/${empId}/vacaciones/manual`, {
+    method: 'POST', body: JSON.stringify({ no_periodo: Number(sem), year: Number(year), dias: Number(dias), accion: 'agregar' })
+  }).catch(() => null);
+  if (r && r.ok) { toast('Vacacion manual agregada'); catVerDetalle(empId); }
+  else toast('Error al agregar', 'error');
+}
+
+async function catQuitarVacManual(empId, noPeriodo, year, dias) {
+  if (!confirm(`Quitar ${dias} dia(s) de vacaciones de la semana S${String(noPeriodo).padStart(2,'0')} (${year})?`)) return;
+  const r = await api(`/api/rhh/catalogo/${empId}/vacaciones/manual`, {
+    method: 'POST', body: JSON.stringify({ no_periodo: noPeriodo, year, dias, accion: 'quitar' })
+  }).catch(() => null);
+  if (r && r.ok) { toast('Vacacion removida'); catVerDetalle(empId); }
+  else toast('Error al quitar', 'error');
 }
 
 async function catGuardarVacDias(empId) {

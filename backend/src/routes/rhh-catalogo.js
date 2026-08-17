@@ -594,9 +594,21 @@ router.get('/:id', rhhAuthRequired, (req, res, next) => {
     .filter(r => r.employee_id === emp.id)
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
 
-  const vacaciones = (db.rhh_vacation_requests || [])
+  const vacaciones = (db.rhh_vac_solicitudes || [])
     .filter(r => r.employee_id === emp.id)
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+
+  // Semanas donde se tomaron vacaciones (desde incidencias semanales)
+  const semanas_vacaciones = incidencias
+    .filter(r => Number(r.vacaciones_dias) > 0)
+    .map(r => ({
+      no_periodo: r.no_periodo,
+      year: effectivePeriodYear(r),
+      fecha_inicio: r.fecha_inicio || null,
+      fecha_fin: r.fecha_fin || null,
+      vacaciones_dias: Number(r.vacaciones_dias),
+      fuente: r._vac_fuente || 'contpaq',
+    }));
 
   const evaluaciones = (db.rhh_evaluations || [])
     .filter(r => r.employee_id === emp.id);
@@ -608,6 +620,7 @@ router.get('/:id', rhhAuthRequired, (req, res, next) => {
     incidencias,
     aclaraciones,
     vacaciones,
+    semanas_vacaciones,
     evaluaciones,
     vac_info,
     departments: db.rhh_departments || [],
@@ -661,19 +674,122 @@ router.patch('/:id/aclaracion/:acid', rhhAuthRequired, rhhRequireRole('admin', '
 });
 
 // ── PATCH /api/rhh/catalogo/vacaciones/:vid ───────────────────────────────────
-// Aprobar/rechazar solicitud de vacaciones
+// Aprobar/rechazar solicitud de vacaciones (opera sobre rhh_vac_solicitudes)
 router.patch('/vacaciones/:vid', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
   const db = readFresh();
   if (!db) return res.status(500).json({ error: 'Error leyendo catálogo' });
 
   const { status, notas_rh } = req.body || {};
-  const vac = (db.rhh_vacation_requests || []).find(v => v.id === Number(req.params.vid));
-  if (!vac) return res.status(404).json({ error: 'Solicitud no encontrada' });
+  const estado = status === 'aprobado' ? 'aprobada' : status === 'rechazado' ? 'rechazada' : status;
+  if (!['aprobada', 'rechazada'].includes(estado)) {
+    return res.status(400).json({ error: 'status debe ser aprobado o rechazado' });
+  }
 
-  vac.status      = status || 'aprobado';
-  vac.notas_rh    = notas_rh || null;
-  vac.reviewed_at = nowMxDate();
+  const lista = db.rhh_vac_solicitudes || [];
+  const idx = lista.findIndex(v => v.id === Number(req.params.vid));
+  if (idx === -1) return res.status(404).json({ error: 'Solicitud no encontrada' });
 
+  lista[idx].estado = estado;
+  lista[idx].notas_respuesta = notas_rh || lista[idx].notas_respuesta || null;
+  lista[idx].autorizado_por = req.rhhUser?.id || req.rhhUser?.email || 'rh';
+  lista[idx].autorizado_at = nowMxTs();
+
+  // Al aprobar: crear/actualizar incidencia semanal con vacaciones_dias
+  if (estado === 'aprobada') {
+    const s = lista[idx];
+    const incLista = db.rhh_incidencias_semanales || [];
+    const year = effectivePeriodYear(s) || new Date().getFullYear();
+    const incIdx = incLista.findIndex(i =>
+      samePeriod(i, s.no_periodo, year) && i.employee_id === s.employee_id
+    );
+    const diasVac = Number(s.dias) || 0;
+    if (incIdx !== -1) {
+      incLista[incIdx].vacaciones_dias = (Number(incLista[incIdx].vacaciones_dias) || 0) + diasVac;
+      incLista[incIdx].updated_at = nowMxTs();
+      incLista[incIdx]._vac_fuente = 'solicitud_aprobada';
+    } else {
+      incLista.push({
+        id: nextId(incLista),
+        no_periodo: s.no_periodo,
+        year,
+        period_key: s.period_key || `${year}-W${String(s.no_periodo).padStart(2, '0')}`,
+        employee_id: s.employee_id,
+        dias_pagados: 7, faltas: 0, horas_extras_total: 0, despensa: 1,
+        bono_puntualidad_dias: null, bono_eficiencia_dias: null, bono_instructor: null,
+        prima_dominical: 0, vacaciones_dias: diasVac, gratificacion: null, notas: '',
+        _vac_fuente: 'solicitud_aprobada',
+        updated_by: req.rhhUser?.id || null, updated_at: nowMxTs(), created_at: nowMxTs(),
+      });
+    }
+    db.rhh_incidencias_semanales = incLista;
+  }
+
+  write(db);
+  res.json({ ok: true });
+});
+
+// ── POST /api/rhh/catalogo/:id/vacaciones/manual ─────────────────────────────
+// Agregar o quitar días de vacaciones manualmente en una semana
+router.post('/:id/vacaciones/manual', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!db) return res.status(500).json({ error: 'Error leyendo catálogo' });
+
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const { no_periodo, year, dias, accion } = req.body || {};
+  if (!no_periodo || !year || !dias) return res.status(400).json({ error: 'no_periodo, year y dias son requeridos' });
+  if (!['agregar', 'quitar'].includes(accion)) return res.status(400).json({ error: 'accion debe ser agregar o quitar' });
+
+  const incLista = db.rhh_incidencias_semanales || [];
+  const noPer = Number(no_periodo);
+  const yr = Number(year);
+  const diasNum = Number(dias);
+
+  const incIdx = incLista.findIndex(i =>
+    samePeriod(i, noPer, yr) && i.employee_id === empId
+  );
+
+  if (accion === 'agregar') {
+    if (incIdx !== -1) {
+      incLista[incIdx].vacaciones_dias = (Number(incLista[incIdx].vacaciones_dias) || 0) + diasNum;
+      incLista[incIdx].updated_at = nowMxTs();
+      incLista[incIdx]._vac_fuente = 'manual_rhh';
+    } else {
+      incLista.push({
+        id: nextId(incLista),
+        no_periodo: noPer, year: yr,
+        period_key: `${yr}-W${String(noPer).padStart(2, '0')}`,
+        employee_id: empId,
+        dias_pagados: 7, faltas: 0, horas_extras_total: 0, despensa: 1,
+        bono_puntualidad_dias: null, bono_eficiencia_dias: null, bono_instructor: null,
+        prima_dominical: 0, vacaciones_dias: diasNum, gratificacion: null, notas: '',
+        _vac_fuente: 'manual_rhh',
+        updated_by: req.rhhUser?.id || null, updated_at: nowMxTs(), created_at: nowMxTs(),
+      });
+    }
+    // Registrar como solicitud aprobada para auditoría
+    if (!Array.isArray(db.rhh_vac_solicitudes)) db.rhh_vac_solicitudes = [];
+    const solLista = db.rhh_vac_solicitudes;
+    solLista.push({
+      id: (solLista.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1,
+      employee_id: empId, no_periodo: noPer, year: yr,
+      period_key: `${yr}-W${String(noPer).padStart(2, '0')}`,
+      dias: diasNum, notas: 'Ajuste manual RHH',
+      estado: 'aprobada', origen: 'manual_rhh',
+      autorizado_por: req.rhhUser?.id || req.rhhUser?.email || 'rh',
+      autorizado_at: nowMxTs(), created_at: nowMxTs(),
+    });
+  } else {
+    // quitar
+    if (incIdx === -1) return res.status(404).json({ error: 'No hay incidencia semanal para ese periodo' });
+    const current = Number(incLista[incIdx].vacaciones_dias) || 0;
+    incLista[incIdx].vacaciones_dias = Math.max(0, current - diasNum);
+    incLista[incIdx].updated_at = nowMxTs();
+  }
+
+  db.rhh_incidencias_semanales = incLista;
   write(db);
   res.json({ ok: true });
 });

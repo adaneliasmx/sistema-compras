@@ -389,10 +389,23 @@ router.post('/queja', empAuthRequired, (req, res) => {
 // ── GET /api/empleados/vacaciones ─────────────────────────────────────────────
 router.get('/vacaciones', empAuthRequired, (req, res) => {
   const db = read();
-  const rows = (db.rhh_vacation_requests || [])
+  const rows = (db.rhh_vac_solicitudes || [])
     .filter(r => r.employee_id === req.empPayload.sub)
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  res.json(rows);
+  // Mapear campos para compatibilidad con frontend portal
+  const mapped = rows.map(r => ({
+    id: r.id,
+    employee_id: r.employee_id,
+    fecha_inicio: r.fecha_inicio || null,
+    fecha_fin: r.fecha_fin || null,
+    dias: r.dias,
+    motivo: r.notas || r.motivo || null,
+    status: r.estado === 'aprobada' ? 'aprobado' : r.estado === 'rechazada' ? 'rechazado' : 'pendiente',
+    created_at: r.created_at,
+    notas_rh: r.notas_respuesta || null,
+    no_periodo: r.no_periodo,
+  }));
+  res.json(mapped);
 });
 
 // ── POST /api/empleados/vacaciones ────────────────────────────────────────────
@@ -400,46 +413,60 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   const { fecha_inicio, fecha_fin, motivo } = req.body || {};
   if (!fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'Fechas requeridas' });
 
-  const d1 = new Date(fecha_inicio);
-  const d2 = new Date(fecha_fin);
+  const d1 = new Date(fecha_inicio + 'T12:00:00');
+  const d2 = new Date(fecha_fin + 'T12:00:00');
   if (isNaN(d1) || isNaN(d2) || d2 < d1) return res.status(400).json({ error: 'Rango de fechas inválido' });
 
   const dias = Math.round((d2 - d1) / 86400000) + 1;
 
   const db  = read();
   const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
-  if (!Array.isArray(db.rhh_vacation_requests)) db.rhh_vacation_requests = [];
 
-  // Validar días disponibles (no debe superar días_restantes incluyendo ya programados)
+  // Validar días disponibles
   if (emp) {
     const vacInfo = calcVacInfo(emp, db, nowMxDate());
     if (!vacInfo.elegible) {
-      return res.status(400).json({ error: 'Aún no tienes días de vacaciones disponibles para este año. Debes haber laborado al menos 2 meses del año anterior.' });
+      return res.status(400).json({ error: 'Aun no tienes dias de vacaciones disponibles para este año.' });
     }
     if (dias > vacInfo.dias_restantes) {
       return res.status(400).json({
-        error: `No tienes suficientes días disponibles. Disponibles: ${vacInfo.dias_disponibles}, ya comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${dias} días.${vacInfo.dias_programados > 0 ? ' Si quieres cambiar fechas, cancela primero los días ya programados.' : ''}`
+        error: `No tienes suficientes dias disponibles. Disponibles: ${vacInfo.dias_disponibles}, comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${dias}.`
       });
     }
   }
 
-  const nextId = (db.rhh_vacation_requests.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1;
+  // Determinar periodo ISO de fecha_inicio
+  const isoDate = new Date(fecha_inicio + 'T12:00:00');
+  const dayOfWeek = isoDate.getUTCDay() || 7;
+  const thursday = new Date(isoDate);
+  thursday.setUTCDate(thursday.getUTCDate() + 4 - dayOfWeek);
+  const yearStart = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 1));
+  const no_periodo = Math.ceil((((thursday - yearStart) / 86400000) + 1) / 7);
+  const year = thursday.getUTCFullYear();
+
+  if (!Array.isArray(db.rhh_vac_solicitudes)) db.rhh_vac_solicitudes = [];
+  const lista = db.rhh_vac_solicitudes;
+  const newId = (lista.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1;
   const record = {
-    id: nextId,
+    id: newId,
     employee_id: req.empPayload.sub,
+    no_periodo,
+    year,
+    period_key: `${year}-W${String(no_periodo).padStart(2, '0')}`,
+    dias,
     fecha_inicio,
     fecha_fin,
-    dias,
-    motivo: String(motivo || '').trim().slice(0, 300),
-    status: 'pendiente',
+    notas: String(motivo || '').trim().slice(0, 300) || null,
+    estado: 'pendiente',
+    origen: 'portal_empleado',
+    autorizado_por: null,
+    autorizado_at: null,
+    created_by: null,
     created_at: nowMxDate(),
-    reviewed_by: null,
-    reviewed_at: null,
-    notas_rh: null,
   };
-  db.rhh_vacation_requests.push(record);
+  lista.push(record);
   write(db);
-  res.json({ ok: true, id: nextId, dias });
+  res.json({ ok: true, id: newId, dias });
 });
 
 module.exports = router;
