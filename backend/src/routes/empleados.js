@@ -312,11 +312,12 @@ router.get('/lista-raya', empAuthRequired, (req, res) => {
   const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  // Siempre mostrar la ultima semana cargada (la mas reciente con datos)
+  // Preferir la semana mas reciente que tenga percepciones (datos PDF),
+  // si no hay ninguna con PDF, usar la mas reciente con datos
   const all = (db.rhh_incidencias_semanales || [])
     .filter(r => r.employee_id === req.empPayload.sub)
     .sort((a, b) => b.no_periodo - a.no_periodo);
-  let row = all[0] || null;
+  let row = all.find(r => r.percepciones && Object.keys(r.percepciones).length > 0) || all[0] || null;
 
   if (!row) return res.json({ periodo: null, datos: null });
 

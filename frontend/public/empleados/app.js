@@ -571,55 +571,83 @@ async function incidencias(el) {
   let totFaltas = 0, totHE = 0, totVac = 0;
   rows.forEach(r => { totFaltas += (r.faltas||0); totHE += (r.horas_extras_total||0); totVac += (r.vacaciones_dias||0); });
 
-  // Vacation breakdown
-  const vacAprobadas = vacList.filter(v => v.status === 'aprobado');
-  const vacPendientes = vacList.filter(v => v.status === 'pendiente');
-  const diasTomados = vacAprobadas.reduce((s, v) => s + (v.dias || 0), 0);
-  const diasProg = vacPendientes.reduce((s, v) => s + (v.dias || 0), 0);
+  // Vacation breakdown separado
+  const vacTomadas = vacList.filter(v => v.status === 'aprobado');
+  const vacProgramadas = vacList.filter(v => v.status === 'pendiente');
+  const diasTomados = vacTomadas.reduce((s, v) => s + (v.dias || 0), 0);
+  const diasProg = vacProgramadas.reduce((s, v) => s + (v.dias || 0), 0);
 
-  const tblRows = rows.map(r => `<tr>
-    <td style="white-space:nowrap;font-weight:600">S${r.no_periodo}</td>
-    <td style="font-size:11px;color:#64748b;white-space:nowrap">${r.fecha_inicio||''}<br>${r.fecha_fin||''}</td>
-    <td style="text-align:center">${fmt(r.dias_pagados)}</td>
-    <td style="text-align:center;${r.faltas ? 'color:#dc2626;font-weight:700' : ''}">${fmt(r.faltas||0)}</td>
-    <td style="text-align:center">${fmt(r.horas_extras_total||0)}</td>
-    <td style="text-align:center">${fmt(r.vacaciones_dias||0)}</td>
-    <td style="text-align:center">${r.despensa ? 'Si' : '—'}</td>
-  </tr>`).join('');
+  // Cards por periodo
+  const rowsHtml = rows.map(r => {
+    const hasFaltas = r.faltas > 0;
+    return `
+    <div class="emp-card" style="padding:12px 14px;margin-bottom:8px;${hasFaltas ? 'border-left:3px solid #dc2626' : ''}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <span style="font-weight:700;font-size:14px;color:#1e293b">Semana ${r.no_periodo}</span>
+        <span style="font-size:11px;color:#64748b">${r.fecha_inicio||''} – ${r.fecha_fin||''}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;text-align:center">
+        <div style="background:#f8fafc;border-radius:8px;padding:6px 4px">
+          <div style="font-size:16px;font-weight:700">${fmt(r.dias_pagados)}</div>
+          <div style="font-size:10px;color:#64748b">Dias pagados</div>
+        </div>
+        <div style="background:${hasFaltas?'#fef2f2':'#f8fafc'};border-radius:8px;padding:6px 4px">
+          <div style="font-size:16px;font-weight:700;${hasFaltas?'color:#dc2626':''}">${fmt(r.faltas||0)}</div>
+          <div style="font-size:10px;color:${hasFaltas?'#dc2626':'#64748b'}">Faltas</div>
+        </div>
+        <div style="background:#f8fafc;border-radius:8px;padding:6px 4px">
+          <div style="font-size:16px;font-weight:700;color:#059669">${fmt(r.horas_extras_total||0)}</div>
+          <div style="font-size:10px;color:#64748b">H. Extra</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:6px;font-size:11px;color:#64748b;flex-wrap:wrap">
+        ${r.vacaciones_dias ? `<span>Vacaciones: <strong style="color:#2563eb">${r.vacaciones_dias}d</strong></span>` : ''}
+        ${r.despensa ? '<span>Despensa: <strong>Si</strong></span>' : ''}
+        ${r.prima_dominical ? '<span>Prima dom.: <strong>Si</strong></span>' : ''}
+        ${r.bono_puntualidad_dias ? `<span>Bono punt.: <strong>${r.bono_puntualidad_dias}d</strong></span>` : ''}
+        ${r.bono_eficiencia_dias ? `<span>Bono efic.: <strong>${r.bono_eficiencia_dias}d</strong></span>` : ''}
+      </div>
+      ${r.notas ? `<div style="font-size:11px;color:#64748b;margin-top:4px">Nota: ${esc(r.notas)}</div>` : ''}
+    </div>`;
+  }).join('');
 
   el.innerHTML = `
   <p class="emp-page-title">Mis Incidencias</p>
 
-  ${vacInfo ? `<div class="emp-card" style="padding:12px 16px">
-    <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;text-align:center">
-      <div><div style="font-size:20px;font-weight:800;color:#1e40af">${vacInfo.dias_disponibles ?? '—'}</div><div style="font-size:10px;color:#64748b">Dias derecho</div></div>
-      <div><div style="font-size:20px;font-weight:800;color:#059669">${diasTomados}</div><div style="font-size:10px;color:#64748b">Vac. tomadas</div></div>
-      <div><div style="font-size:20px;font-weight:800;color:#d97706">${diasProg}</div><div style="font-size:10px;color:#64748b">Vac. programadas</div></div>
-      <div><div style="font-size:20px;font-weight:800;color:${(vacInfo.dias_restantes??0)>0?'#0369a1':'#dc2626'}">${vacInfo.dias_restantes ?? '—'}</div><div style="font-size:10px;color:#64748b">Restantes</div></div>
+  <!-- Resumen vacaciones -->
+  ${vacInfo ? `<div class="emp-card" style="padding:0;overflow:hidden;margin-bottom:10px">
+    <div style="background:#eff6ff;padding:10px 14px;border-bottom:1px solid #bfdbfe">
+      <div style="font-size:12px;font-weight:700;color:#1e40af;text-transform:uppercase;letter-spacing:.5px">Vacaciones ${new Date().getFullYear()}</div>
+    </div>
+    <div style="padding:12px 14px">
+      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:space-around;text-align:center">
+        <div><div style="font-size:22px;font-weight:800;color:#1e40af">${vacInfo.dias_disponibles ?? '—'}</div><div style="font-size:10px;color:#64748b">Dias de derecho</div></div>
+        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#059669">${diasTomados}</div><div style="font-size:10px;color:#059669">Tomadas</div></div>
+        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#d97706">${diasProg}</div><div style="font-size:10px;color:#d97706">Programadas</div></div>
+        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:${(vacInfo.dias_restantes??0)>0?'#0369a1':'#dc2626'}">${vacInfo.dias_restantes ?? '—'}</div><div style="font-size:10px;color:#64748b">Restantes</div></div>
+      </div>
+      ${vacTomadas.length > 0 ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
+        <div style="font-size:11px;font-weight:600;color:#059669;margin-bottom:4px">Vacaciones tomadas:</div>
+        ${vacTomadas.map(v => `<div style="font-size:11px;color:#475569;margin-bottom:2px">${v.fecha_inicio} → ${v.fecha_fin} <strong>(${v.dias}d)</strong></div>`).join('')}
+      </div>` : ''}
+      ${vacProgramadas.length > 0 ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
+        <div style="font-size:11px;font-weight:600;color:#d97706;margin-bottom:4px">Vacaciones programadas (pendientes):</div>
+        ${vacProgramadas.map(v => `<div style="font-size:11px;color:#475569;margin-bottom:2px">${v.fecha_inicio} → ${v.fecha_fin} <strong>(${v.dias}d)</strong></div>`).join('')}
+      </div>` : ''}
     </div>
   </div>` : ''}
 
-  <div class="emp-card" style="padding:0;overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:13px">
-      <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
-        <th style="padding:8px 10px;text-align:left">Sem</th>
-        <th style="padding:8px 6px;text-align:left">Periodo</th>
-        <th style="padding:8px 6px;text-align:center">Dias pag.</th>
-        <th style="padding:8px 6px;text-align:center">Faltas</th>
-        <th style="padding:8px 6px;text-align:center">H.Extra</th>
-        <th style="padding:8px 6px;text-align:center">Vac.</th>
-        <th style="padding:8px 6px;text-align:center">Desp.</th>
-      </tr></thead>
-      <tbody>${tblRows}</tbody>
-      <tfoot><tr style="background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1">
-        <td colspan="3" style="padding:8px 10px">Totales</td>
-        <td style="text-align:center;${totFaltas?'color:#dc2626':''}">${fmt(totFaltas)}</td>
-        <td style="text-align:center">${fmt(totHE)}</td>
-        <td style="text-align:center">${fmt(totVac)}</td>
-        <td></td>
-      </tr></tfoot>
-    </table>
+  <!-- Resumen totales -->
+  <div class="emp-card" style="padding:10px 14px;margin-bottom:10px;background:#f8fafc">
+    <div style="display:flex;gap:16px;justify-content:center;text-align:center">
+      <div><span style="font-size:18px;font-weight:800;${totFaltas?'color:#dc2626':''}">${fmt(totFaltas)}</span><div style="font-size:10px;color:#64748b">Total faltas</div></div>
+      <div><span style="font-size:18px;font-weight:800;color:#059669">${fmt(totHE)}</span><div style="font-size:10px;color:#64748b">Total H.Extra</div></div>
+      <div><span style="font-size:18px;font-weight:800;color:#2563eb">${fmt(totVac)}</span><div style="font-size:10px;color:#64748b">Total Vac.</div></div>
+    </div>
   </div>
+
+  <!-- Detalle por semana -->
+  ${rowsHtml}
 
   <div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:8px">Sitio en prueba, cualquier aclaracion o inconsistencia validar con RHH</div>`;
 }
