@@ -571,10 +571,9 @@ async function incidencias(el) {
   let totFaltas = 0, totHE = 0, totVac = 0;
   rows.forEach(r => { totFaltas += (r.faltas||0); totHE += (r.horas_extras_total||0); totVac += (r.vacaciones_dias||0); });
 
-  // Vacation breakdown separado
-  const vacTomadas = vacList.filter(v => v.status === 'aprobado');
-  const vacProgramadas = vacList.filter(v => v.status === 'pendiente');
-  const diasTomados = vacTomadas.reduce((s, v) => s + (v.dias || 0), 0);
+  // Vacation breakdown: tomadas=CONTPAQi, programadas=plataforma
+  const diasTomados = vacInfo ? (vacInfo.dias_tomados ?? 0) : totVac;
+  const vacProgramadas = vacList.filter(v => v.status === 'pendiente' || v.status === 'aprobado');
   const diasProg = vacProgramadas.reduce((s, v) => s + (v.dias || 0), 0);
 
   // Cards por periodo
@@ -622,17 +621,16 @@ async function incidencias(el) {
     <div style="padding:12px 14px">
       <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:space-around;text-align:center">
         <div><div style="font-size:22px;font-weight:800;color:#1e40af">${vacInfo.dias_disponibles ?? '—'}</div><div style="font-size:10px;color:#64748b">Dias de derecho</div></div>
-        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#059669">${diasTomados}</div><div style="font-size:10px;color:#059669">Tomadas</div></div>
-        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#d97706">${diasProg}</div><div style="font-size:10px;color:#d97706">Programadas</div></div>
+        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#059669">${diasTomados}</div><div style="font-size:10px;color:#059669">Tomadas</div><div style="font-size:9px;color:#94a3b8">(CONTPAQi)</div></div>
+        <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:#d97706">${diasProg}</div><div style="font-size:10px;color:#d97706">Programadas</div><div style="font-size:9px;color:#94a3b8">(Plataforma)</div></div>
         <div style="border-left:1px solid #e2e8f0;padding-left:12px"><div style="font-size:22px;font-weight:800;color:${(vacInfo.dias_restantes??0)>0?'#0369a1':'#dc2626'}">${vacInfo.dias_restantes ?? '—'}</div><div style="font-size:10px;color:#64748b">Restantes</div></div>
       </div>
-      ${vacTomadas.length > 0 ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
-        <div style="font-size:11px;font-weight:600;color:#059669;margin-bottom:4px">Vacaciones tomadas:</div>
-        ${vacTomadas.map(v => `<div style="font-size:11px;color:#475569;margin-bottom:2px">${v.fecha_inicio} → ${v.fecha_fin} <strong>(${v.dias}d)</strong></div>`).join('')}
+      ${diasTomados > 0 ? `<div style="margin-top:10px;padding-top:8px;border-top:1px solid #e2e8f0">
+        <div style="font-size:11px;font-weight:600;color:#059669;margin-bottom:4px">Vacaciones tomadas (registradas en CONTPAQi): ${diasTomados} dia${diasTomados>1?'s':''}</div>
       </div>` : ''}
       ${vacProgramadas.length > 0 ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e2e8f0">
-        <div style="font-size:11px;font-weight:600;color:#d97706;margin-bottom:4px">Vacaciones programadas (pendientes):</div>
-        ${vacProgramadas.map(v => `<div style="font-size:11px;color:#475569;margin-bottom:2px">${v.fecha_inicio} → ${v.fecha_fin} <strong>(${v.dias}d)</strong></div>`).join('')}
+        <div style="font-size:11px;font-weight:600;color:#d97706;margin-bottom:4px">Vacaciones programadas (solicitadas en plataforma):</div>
+        ${vacProgramadas.map(v => `<div style="font-size:11px;color:#475569;margin-bottom:2px">${v.fecha_inicio} → ${v.fecha_fin} <strong>(${v.dias}d)</strong> <span style="color:${v.status==='aprobado'?'#059669':'#d97706'}">${v.status==='aprobado'?'aprobada':'pendiente'}</span></div>`).join('')}
       </div>` : ''}
     </div>
   </div>` : ''}
@@ -1192,10 +1190,12 @@ async function vacaciones(el) {
       <div style="text-align:center;background:rgba(255,255,255,.12);border-radius:10px;padding:10px;">
         <div style="font-size:22px;font-weight:800">${vi.dias_tomados ?? 0}</div>
         <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Tomados</div>
+        <div style="font-size:8px;opacity:.5">(CONTPAQi)</div>
       </div>
       <div style="text-align:center;background:rgba(255,255,255,.12);border-radius:10px;padding:10px;">
         <div style="font-size:22px;font-weight:800">${(vi.dias_programados??0)-(vi.dias_tomados??0)}</div>
-        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Pendientes</div>
+        <div style="font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.7">Programados</div>
+        <div style="font-size:8px;opacity:.5">(Plataforma)</div>
       </div>
       <div style="text-align:center;background:rgba(255,255,255,.2);border-radius:10px;padding:10px;border:1px solid rgba(255,255,255,.3)">
         <div style="font-size:22px;font-weight:800">${vi.dias_restantes ?? 0}</div>
