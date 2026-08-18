@@ -144,6 +144,26 @@ function resolveEmpData(emp, db) {
   const dept = (db.rhh_departments || []).find(d => d.id === emp.department_id);
   const pos  = (db.rhh_positions  || []).find(p => p.id === emp.position_id);
   const shift = (db.rhh_shifts    || []).find(s => s.id === emp.shift_id);
+
+  // Turno asignado en control de asistencia de la semana en curso
+  let turno_asistencia = null;
+  const today = nowMxDate();
+  const td = new Date(today + 'T12:00:00');
+  const dow = td.getDay();
+  const monday = new Date(td);
+  monday.setDate(td.getDate() - (dow === 0 ? 6 : dow - 1));
+  const weekStart = monday.toISOString().slice(0, 10);
+  const weekRols = (db.rhh_weekly_rol || []).filter(r => r.week_start === weekStart && r.shift_id != null);
+  const weekRolIds = new Set(weekRols.map(r => r.id));
+  const myAssign = (db.rhh_rol_assignments || []).find(a => weekRolIds.has(a.rol_id) && a.employee_id === emp.id);
+  if (myAssign) {
+    const rolShift = weekRols.find(r => r.id === myAssign.rol_id);
+    if (rolShift) {
+      const s = (db.rhh_shifts || []).find(s => s.id === rolShift.shift_id);
+      if (s) turno_asistencia = s.name;
+    }
+  }
+
   return {
     id: emp.id,
     employee_number: emp.employee_number,
@@ -153,6 +173,7 @@ function resolveEmpData(emp, db) {
     department: dept ? dept.name : null,
     position: pos ? pos.name : null,
     shift: shift ? shift.name : null,
+    turno_asistencia,
     start_date: emp.start_date || emp.hire_date,
     rfc: emp.rfc,
     nss: emp.nss,
@@ -291,19 +312,11 @@ router.get('/lista-raya', empAuthRequired, (req, res) => {
   const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const curP = currentPeriodo();
-  const targetPeriodo = curP > 1 ? curP - 1 : 1;
-
-  // Buscar el registro de ese período; si no, el más reciente
-  let row = (db.rhh_incidencias_semanales || []).find(
-    r => r.employee_id === req.empPayload.sub && r.no_periodo === targetPeriodo
-  );
-  if (!row) {
-    const all = (db.rhh_incidencias_semanales || [])
-      .filter(r => r.employee_id === req.empPayload.sub)
-      .sort((a, b) => b.no_periodo - a.no_periodo);
-    row = all[0] || null;
-  }
+  // Siempre mostrar la ultima semana cargada (la mas reciente con datos)
+  const all = (db.rhh_incidencias_semanales || [])
+    .filter(r => r.employee_id === req.empPayload.sub)
+    .sort((a, b) => b.no_periodo - a.no_periodo);
+  let row = all[0] || null;
 
   if (!row) return res.json({ periodo: null, datos: null });
 
@@ -384,6 +397,139 @@ router.post('/queja', empAuthRequired, (req, res) => {
   db.rhh_anonymous_complaints.push(record);
   write(db);
   res.json({ ok: true });
+});
+
+// ── GET /api/empleados/mi-rol — asistencia de la semana en curso ─────────────
+router.get('/mi-rol', empAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.empPayload.sub;
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const today = nowMxDate();
+  const td = new Date(today + 'T12:00:00');
+  const dow = td.getDay();
+  const monday = new Date(td);
+  monday.setDate(td.getDate() - (dow === 0 ? 6 : dow - 1));
+  const weekStart = monday.toISOString().slice(0, 10);
+
+  const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  const shifts = db.rhh_shifts || [];
+  const shift = shifts.find(s => s.id === emp.shift_id) || null;
+  const workDays = shift && Array.isArray(shift.work_days) ? shift.work_days : [];
+  const holidays = db.rhh_holidays || [];
+  const attendance = db.rhh_attendance || [];
+  const incidences = db.rhh_incidences || [];
+  const vacSols = (db.rhh_vac_solicitudes || []).filter(v =>
+    v.employee_id === empId && v.estado === 'aprobada' && v.fecha_inicio && v.fecha_fin
+  );
+
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(monday.getTime() + i * 86400000);
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayOfWeek = d.getDay();
+    const isFuture = dateStr > today;
+    const holiday = holidays.find(h => h.date === dateStr);
+
+    let status = 'pendiente';
+    let te_hours = 0;
+    let notes = null;
+
+    // Base status from shift
+    if (shift && !isFuture) {
+      if (holiday) status = 'festivo';
+      else if (workDays.includes(dayOfWeek)) status = 'labora';
+      else status = 'descanso';
+    } else if (isFuture) {
+      if (holiday) status = 'festivo';
+      else if (workDays.includes(dayOfWeek)) status = 'programado';
+      else status = 'descanso';
+    }
+
+    // Attendance record overrides
+    const att = attendance.find(a => a.employee_id === empId && a.date === dateStr);
+    if (att) {
+      status = att.status;
+      te_hours = att.te_hours || 0;
+      notes = att.notes || null;
+    }
+
+    // Incidences override
+    const covering = incidences.filter(inc =>
+      inc.employee_id === empId && inc.status === 'aprobada' &&
+      inc.date <= dateStr && (inc.date_end || inc.date) >= dateStr
+    );
+    if (covering.length > 0) {
+      const inc = covering[covering.length - 1];
+      if (inc.type === 'vacacion') status = 'vacacion';
+      else if (inc.type === 'incapacidad') status = 'incapacidad';
+      else if (inc.type === 'permiso' || inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce') status = 'permiso';
+      else if (inc.type === 'falta') status = 'falta';
+      else if (inc.type === 'retardo') status = 'retardo';
+    }
+
+    // Vacation solicitudes override
+    const vacCovering = vacSols.find(v => dateStr >= v.fecha_inicio && dateStr <= v.fecha_fin);
+    if (vacCovering && status !== 'vacacion') status = 'vacacion';
+
+    // Birthday check
+    let birthday = false;
+    if (emp.birth_date && emp.birth_date.slice(5) === dateStr.slice(5)) birthday = true;
+
+    // Pending clarification for this day
+    const hasClarif = (db.rhh_attendance_clarifications || []).some(
+      c => c.employee_id === empId && c.date === dateStr && c.status === 'pendiente'
+    );
+
+    days.push({
+      date: dateStr,
+      day_name: DAY_NAMES[dayOfWeek],
+      day_num: d.getDate(),
+      status,
+      te_hours,
+      notes,
+      is_future: isFuture,
+      is_holiday: !!holiday,
+      holiday_name: holiday ? holiday.name : null,
+      birthday,
+      has_clarification: hasClarif,
+    });
+  }
+
+  res.json({
+    week_start: weekStart,
+    shift_name: shift ? shift.name : null,
+    days,
+  });
+});
+
+// ── POST /api/empleados/mi-rol/aclaracion — solicitar aclaracion por dia ─────
+router.post('/mi-rol/aclaracion', empAuthRequired, (req, res) => {
+  const { date, mensaje } = req.body || {};
+  if (!date || !mensaje) return res.status(400).json({ error: 'Fecha y mensaje requeridos' });
+
+  const db = read();
+  if (!Array.isArray(db.rhh_attendance_clarifications)) db.rhh_attendance_clarifications = [];
+
+  const dup = db.rhh_attendance_clarifications.find(
+    c => c.employee_id === req.empPayload.sub && c.date === date && c.status === 'pendiente'
+  );
+  if (dup) return res.status(409).json({ error: 'Ya tienes una aclaracion pendiente para este dia' });
+
+  const nId = (db.rhh_attendance_clarifications.reduce((m, c) => Math.max(m, c.id || 0), 0)) + 1;
+  db.rhh_attendance_clarifications.push({
+    id: nId,
+    employee_id: req.empPayload.sub,
+    date,
+    mensaje: String(mensaje).trim().slice(0, 500),
+    status: 'pendiente',
+    created_at: nowMxDate(),
+    respuesta: null,
+    respondido_at: null,
+  });
+  write(db);
+  res.json({ ok: true, id: nId });
 });
 
 // ── GET /api/empleados/vacaciones/calendario ─────────────────────────────────

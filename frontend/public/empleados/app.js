@@ -46,6 +46,7 @@ function pwaInstall() {
 // ── Navegación ────────────────────────────────────────────────────────────────
 const SECTIONS = [
   { id: 'perfil',       icon: '👤', label: 'Mi Perfil' },
+  { id: 'mi_rol',       icon: '📅', label: 'Mi ROL' },
   { id: 'incidencias',  icon: '📋', label: 'Incidencias' },
   { id: 'lista_raya',   icon: '💰', label: 'Lista de Raya' },
   { id: 'vacaciones',   icon: '🏖️',  label: 'Vacaciones' },
@@ -53,8 +54,8 @@ const SECTIONS = [
   { id: 'queja',        icon: '📝', label: 'Queja Anónima' },
 ];
 // Secciones en bottom nav (móvil) — máx 4 primarias + botón Más
-const NAV_PRIMARY = ['perfil', 'lista_raya', 'incidencias', 'vacaciones'];
-const NAV_MORE    = ['evaluaciones', 'queja'];
+const NAV_PRIMARY = ['perfil', 'mi_rol', 'lista_raya', 'vacaciones'];
+const NAV_MORE    = ['incidencias', 'evaluaciones', 'queja'];
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function tryRestore() {
@@ -149,7 +150,7 @@ function renderMain() {
   const el = document.getElementById('emp-main-content');
   if (!el) return;
   el.innerHTML = '<div class="emp-spinner">Cargando...</div>';
-  const views = { perfil, incidencias, lista_raya, vacaciones, evaluaciones, queja };
+  const views = { perfil, mi_rol, incidencias, lista_raya, vacaciones, evaluaciones, queja };
   const fn = views[state.section];
   if (fn) fn(el);
 }
@@ -412,65 +413,215 @@ async function perfil(el) {
   const r = await api('GET', '/perfil');
   if (!r || !r.ok) { el.innerHTML = `<div class="emp-empty"><p>${(r&&r.data&&r.data.error)||'Error al cargar perfil'}</p></div>`; return; }
   const d = r.data;
+  const initials = (d.full_name || '').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
   el.innerHTML = `
   <p class="emp-page-title">Mi Perfil</p>
 
+  <!-- Header con avatar -->
+  <div class="emp-card" style="padding:0;overflow:hidden">
+    <div style="background:linear-gradient(135deg,#1e40af,#3b82f6);padding:24px 20px;text-align:center;color:#fff">
+      <div style="width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.2);display:inline-flex;align-items:center;justify-content:center;font-size:24px;font-weight:800;letter-spacing:1px;margin-bottom:8px">${initials}</div>
+      <div style="font-size:18px;font-weight:700">${esc(d.full_name)}</div>
+      <div style="font-size:13px;opacity:.8;margin-top:2px">${esc(d.position||'—')} &middot; ${esc(d.department||'—')}</div>
+      <div style="font-size:12px;opacity:.6;margin-top:2px">No. ${esc(d.employee_number)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;border-top:1px solid #e2e8f0">
+      <div style="padding:12px 16px;text-align:center;border-right:1px solid #e2e8f0">
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Turno catalogo</div>
+        <div style="font-size:14px;font-weight:700;color:#1e293b;margin-top:2px">${esc(d.shift||'—')}</div>
+      </div>
+      <div style="padding:12px 16px;text-align:center">
+        <div style="font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px">Turno semanal</div>
+        <div style="font-size:14px;font-weight:700;color:${d.turno_asistencia ? '#059669' : '#94a3b8'};margin-top:2px">${esc(d.turno_asistencia||'Sin asignar')}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Datos personales -->
   <div class="emp-card">
     <div class="emp-card-title">Datos personales</div>
-    <div class="emp-field"><label>Nombre completo</label><span>${esc(d.full_name)}</span></div>
-    <div class="emp-field"><label>No. Nómina</label><span>${esc(d.employee_number)}</span></div>
     <div class="emp-field"><label>RFC</label><span>${esc(d.rfc||'—')}</span></div>
-    <div class="emp-field"><label>CURP</label><span style="font-size:12px">${esc(d.curp||'—')}</span></div>
+    <div class="emp-field"><label>CURP</label><span style="font-size:11px;word-break:break-all">${esc(d.curp||'—')}</span></div>
     <div class="emp-field"><label>NSS</label><span>${esc(d.nss||'—')}</span></div>
   </div>
 
+  <!-- Info laboral -->
   <div class="emp-card">
-    <div class="emp-card-title">Información laboral</div>
-    <div class="emp-field"><label>Departamento</label><span>${esc(d.department||'—')}</span></div>
-    <div class="emp-field"><label>Puesto</label><span>${esc(d.position||'—')}</span></div>
-    <div class="emp-field"><label>Turno</label><span>${esc(d.shift||'—')}</span></div>
+    <div class="emp-card-title">Informacion laboral</div>
     <div class="emp-field"><label>Fecha de ingreso</label><span>${fmtDate(d.start_date)}</span></div>
     <div class="emp-field"><label>Salario diario</label><span>${d.salary_daily ? fmtMoney(d.salary_daily) : '—'}</span></div>
   </div>
 
-  <div class="emp-card" style="background:#eff6ff">
-    <div style="font-size:12px;color:#3b82f6;line-height:1.6">
-      ¿Necesitas actualizar tus datos? Acude al área de Recursos Humanos.
+  <div class="emp-card" style="background:#f0f9ff;border:1px solid #bae6fd">
+    <div style="font-size:12px;color:#0369a1;line-height:1.6">
+      Sitio en prueba. Si necesitas actualizar tus datos o tienes alguna duda, acude a Recursos Humanos.
     </div>
   </div>`;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: MI ROL — asistencia semanal en tiempo real
+// ══════════════════════════════════════════════════════════════════════════════
+const _rolStatusLabel = {
+  asistencia: 'Asistencia', labora: 'Asistencia', retardo: 'Retardo', falta: 'Falta',
+  vacacion: 'Vacacion', vacaciones: 'Vacacion', incapacidad: 'Incapacidad',
+  permiso: 'Permiso', descanso: 'Descanso', festivo: 'Festivo',
+  programado: 'Programado', pendiente: '—', vacio: '—',
+};
+const _rolStatusColor = {
+  asistencia: '#059669', labora: '#059669', retardo: '#d97706', falta: '#dc2626',
+  vacacion: '#2563eb', vacaciones: '#2563eb', incapacidad: '#7c3aed',
+  permiso: '#0891b2', descanso: '#94a3b8', festivo: '#ea580c',
+  programado: '#94a3b8', pendiente: '#cbd5e1', vacio: '#cbd5e1',
+};
+
+async function mi_rol(el) {
+  el.innerHTML = '<p class="emp-page-title">Mi ROL</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
+  const r = await api('GET', '/mi-rol');
+  if (!r || !r.ok) { el.innerHTML = `<p class="emp-page-title">Mi ROL</p><div class="emp-empty"><p>Error al cargar</p></div>`; return; }
+  const { week_start, shift_name, days } = r.data;
+
+  const dayRows = days.map(d => {
+    const label = _rolStatusLabel[d.status] || d.status;
+    const color = _rolStatusColor[d.status] || '#64748b';
+    const isRed = d.status === 'falta';
+    const teInfo = d.te_hours ? `<span style="color:#059669;font-weight:700;margin-left:6px">+${d.te_hours}h TE</span>` : '';
+    const holidayTag = d.is_holiday ? `<span style="font-size:10px;color:#ea580c;margin-left:4px">(${esc(d.holiday_name||'Festivo')})</span>` : '';
+    const bdayTag = d.birthday ? '<span style="font-size:10px;margin-left:4px">🎂</span>' : '';
+    const clarifTag = d.has_clarification ? '<span style="font-size:10px;color:#d97706;margin-left:4px">Aclaracion pendiente</span>' : '';
+    const canClarif = !d.is_future && !d.has_clarification && d.status !== 'descanso' && d.status !== 'programado' && d.status !== 'pendiente';
+
+    return `<tr style="${d.is_future ? 'opacity:.5' : ''}">
+      <td style="padding:10px 12px;white-space:nowrap">
+        <div style="font-weight:700;font-size:14px">${esc(d.day_name)}</div>
+        <div style="font-size:12px;color:#64748b">${d.day_num}</div>
+      </td>
+      <td style="padding:10px 8px">
+        <span style="display:inline-block;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;color:#fff;background:${color}${isRed ? ';animation:pulse-red 1.5s infinite' : ''}">${label}</span>
+        ${teInfo}${holidayTag}${bdayTag}${clarifTag}
+        ${d.notes ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${esc(d.notes)}</div>` : ''}
+      </td>
+      <td style="padding:10px 8px;text-align:center">
+        ${canClarif ? `<button onclick="_rolAclaracion('${d.date}')" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:#475569">Aclarar</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  el.innerHTML = `
+  <p class="emp-page-title">Mi ROL</p>
+  <div class="emp-card" style="padding:12px 16px;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <div>
+        <div style="font-size:13px;font-weight:700;color:#1e293b">Semana del ${week_start}</div>
+        ${shift_name ? `<div style="font-size:12px;color:#64748b">Turno: ${esc(shift_name)}</div>` : ''}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:#059669;color:#fff">Asist.</span>
+        <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:#d97706;color:#fff">Retardo</span>
+        <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:#dc2626;color:#fff">Falta</span>
+        <span style="font-size:10px;padding:3px 8px;border-radius:10px;background:#2563eb;color:#fff">Vac.</span>
+      </div>
+    </div>
+  </div>
+  <div class="emp-card" style="padding:0;overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
+        <th style="padding:8px 12px;text-align:left;font-size:12px">Dia</th>
+        <th style="padding:8px 8px;text-align:left;font-size:12px">Incidencia</th>
+        <th style="padding:8px 8px;text-align:center;font-size:12px">Accion</th>
+      </tr></thead>
+      <tbody>${dayRows}</tbody>
+    </table>
+  </div>
+  <div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:8px">Sitio en prueba, cualquier aclaracion o inconsistencia validar con RHH</div>
+  <style>@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.6}}</style>`;
+}
+
+async function _rolAclaracion(date) {
+  const msg = prompt('Describe tu aclaracion para este dia:');
+  if (!msg || !msg.trim()) return;
+  const r = await api('POST', '/mi-rol/aclaracion', { date, mensaje: msg.trim() });
+  if (r && r.ok) {
+    alert('Aclaracion enviada. RHH la revisara.');
+    const el = document.getElementById('emp-main-content');
+    if (el) mi_rol(el);
+  } else {
+    alert((r?.data?.error) || 'Error al enviar');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
 // VISTA: MIS INCIDENCIAS
 // ══════════════════════════════════════════════════════════════════════════════
 async function incidencias(el) {
-  const r = await api('GET', '/incidencias');
-  if (!r || !r.ok) { el.innerHTML = `<div class="emp-empty"><p>Error al cargar incidencias</p></div>`; return; }
-  // El endpoint ahora retorna { rows, vac_info } en lugar del array directo
-  const rows   = Array.isArray(r.data) ? r.data : (r.data?.rows || []);
-  const vacInfo = Array.isArray(r.data) ? null : (r.data?.vac_info || null);
+  const [rInc, rVac] = await Promise.all([
+    api('GET', '/incidencias'),
+    api('GET', '/vacaciones'),
+  ]);
+  if (!rInc || !rInc.ok) { el.innerHTML = `<div class="emp-empty"><p>Error al cargar incidencias</p></div>`; return; }
+  const rows    = Array.isArray(rInc.data) ? rInc.data : (rInc.data?.rows || []);
+  const vacInfo = Array.isArray(rInc.data) ? null : (rInc.data?.vac_info || null);
+  const vacList = (rVac && rVac.ok && Array.isArray(rVac.data)) ? rVac.data : [];
   if (!rows.length) {
-    el.innerHTML = `<p class="emp-page-title">Mis Incidencias</p><div class="emp-empty"><div class="empty-icon">📋</div><p>Sin registros de incidencias aún</p></div>`;
+    el.innerHTML = `<p class="emp-page-title">Mis Incidencias</p><div class="emp-empty"><div class="empty-icon">📋</div><p>Sin registros de incidencias</p></div>`;
     return;
   }
-  const rowsHtml = rows.map(r => `
-  <div class="inc-row">
-    <div class="inc-row-header">
-      <span class="inc-periodo">Período S${r.no_periodo}</span>
-      <span class="inc-fechas">${r.fecha_inicio||''} – ${r.fecha_fin||''}</span>
-    </div>
-    <div class="inc-grid">
-      <div class="inc-cell"><div class="val">${fmt(r.dias_pagados)}</div><div class="lbl">Días pagados</div></div>
-      <div class="inc-cell"><div class="val" style="color:${r.faltas ? '#dc2626' : '#1e293b'}">${fmt(r.faltas||0)}</div><div class="lbl">Faltas</div></div>
-      <div class="inc-cell"><div class="val">${fmt(r.horas_extras_total||0)}</div><div class="lbl">H. Extra</div></div>
-      <div class="inc-cell"><div class="val">${r.despensa ? 'Sí' : 'No'}</div><div class="lbl">Despensa</div></div>
-      <div class="inc-cell"><div class="val">${fmt(r.vacaciones_dias||0)}</div><div class="lbl">Vacaciones</div></div>
-      <div class="inc-cell"><div class="val">${r.prima_dominical ? 'Sí' : 'No'}</div><div class="lbl">Prima dom.</div></div>
-    </div>
-    ${r.notas ? `<div style="margin-top:8px;font-size:12px;color:#64748b">Nota: ${esc(r.notas)}</div>` : ''}
-  </div>`).join('');
 
-  el.innerHTML = `<p class="emp-page-title">Mis Incidencias</p>${rowsHtml}`;
+  // Totales
+  let totFaltas = 0, totHE = 0, totVac = 0;
+  rows.forEach(r => { totFaltas += (r.faltas||0); totHE += (r.horas_extras_total||0); totVac += (r.vacaciones_dias||0); });
+
+  // Vacation breakdown
+  const vacAprobadas = vacList.filter(v => v.status === 'aprobado');
+  const vacPendientes = vacList.filter(v => v.status === 'pendiente');
+  const diasTomados = vacAprobadas.reduce((s, v) => s + (v.dias || 0), 0);
+  const diasProg = vacPendientes.reduce((s, v) => s + (v.dias || 0), 0);
+
+  const tblRows = rows.map(r => `<tr>
+    <td style="white-space:nowrap;font-weight:600">S${r.no_periodo}</td>
+    <td style="font-size:11px;color:#64748b;white-space:nowrap">${r.fecha_inicio||''}<br>${r.fecha_fin||''}</td>
+    <td style="text-align:center">${fmt(r.dias_pagados)}</td>
+    <td style="text-align:center;${r.faltas ? 'color:#dc2626;font-weight:700' : ''}">${fmt(r.faltas||0)}</td>
+    <td style="text-align:center">${fmt(r.horas_extras_total||0)}</td>
+    <td style="text-align:center">${fmt(r.vacaciones_dias||0)}</td>
+    <td style="text-align:center">${r.despensa ? 'Si' : '—'}</td>
+  </tr>`).join('');
+
+  el.innerHTML = `
+  <p class="emp-page-title">Mis Incidencias</p>
+
+  ${vacInfo ? `<div class="emp-card" style="padding:12px 16px">
+    <div style="display:flex;gap:16px;flex-wrap:wrap;justify-content:center;text-align:center">
+      <div><div style="font-size:20px;font-weight:800;color:#1e40af">${vacInfo.dias_disponibles ?? '—'}</div><div style="font-size:10px;color:#64748b">Dias derecho</div></div>
+      <div><div style="font-size:20px;font-weight:800;color:#059669">${diasTomados}</div><div style="font-size:10px;color:#64748b">Vac. tomadas</div></div>
+      <div><div style="font-size:20px;font-weight:800;color:#d97706">${diasProg}</div><div style="font-size:10px;color:#64748b">Vac. programadas</div></div>
+      <div><div style="font-size:20px;font-weight:800;color:${(vacInfo.dias_restantes??0)>0?'#0369a1':'#dc2626'}">${vacInfo.dias_restantes ?? '—'}</div><div style="font-size:10px;color:#64748b">Restantes</div></div>
+    </div>
+  </div>` : ''}
+
+  <div class="emp-card" style="padding:0;overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
+        <th style="padding:8px 10px;text-align:left">Sem</th>
+        <th style="padding:8px 6px;text-align:left">Periodo</th>
+        <th style="padding:8px 6px;text-align:center">Dias pag.</th>
+        <th style="padding:8px 6px;text-align:center">Faltas</th>
+        <th style="padding:8px 6px;text-align:center">H.Extra</th>
+        <th style="padding:8px 6px;text-align:center">Vac.</th>
+        <th style="padding:8px 6px;text-align:center">Desp.</th>
+      </tr></thead>
+      <tbody>${tblRows}</tbody>
+      <tfoot><tr style="background:#f1f5f9;font-weight:700;border-top:2px solid #cbd5e1">
+        <td colspan="3" style="padding:8px 10px">Totales</td>
+        <td style="text-align:center;${totFaltas?'color:#dc2626':''}">${fmt(totFaltas)}</td>
+        <td style="text-align:center">${fmt(totHE)}</td>
+        <td style="text-align:center">${fmt(totVac)}</td>
+        <td></td>
+      </tr></tfoot>
+    </table>
+  </div>
+
+  <div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:8px">Sitio en prueba, cualquier aclaracion o inconsistencia validar con RHH</div>`;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -615,11 +766,12 @@ async function lista_raya(el) {
 
   el.innerHTML = `
   <p class="emp-page-title">Lista de Raya</p>
+  <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:12px;color:#92400e">Sitio en prueba, cualquier aclaracion o inconsistencia validar con RHH.</div>
 
   <div class="emp-card">
     <div class="raya-header">
       <div>
-        <div class="raya-periodo">Período S${periodo.no_periodo}</div>
+        <div class="raya-periodo">Período S${periodo.no_periodo} (ultima semana cargada)</div>
         <div class="raya-fechas">${periodo.fecha_inicio||''} – ${periodo.fecha_fin||''}</div>
       </div>
     </div>
