@@ -448,12 +448,12 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
       else status = 'descanso';
     }
 
-    // Attendance record overrides
-    const att = attendance.find(a => a.employee_id === empId && a.date === dateStr);
+    // Attendance record overrides (campo fecha + incidencia_type de rhh-asistencia)
+    const att = attendance.find(a => a.employee_id === empId && (a.fecha === dateStr || a.date === dateStr));
     if (att) {
-      status = att.status;
-      te_hours = att.te_hours || 0;
-      notes = att.notes || null;
+      status = att.incidencia_type || att.status || status;
+      te_hours = att.te_horas || att.te_hours || 0;
+      notes = att.notas || att.notes || null;
     }
 
     // Incidences override

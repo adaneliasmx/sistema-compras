@@ -469,14 +469,16 @@ async function perfil(el) {
 const _rolStatusLabel = {
   asistencia: 'Asistencia', labora: 'Asistencia', retardo: 'Retardo', falta: 'Falta',
   vacacion: 'Vacacion', vacaciones: 'Vacacion', incapacidad: 'Incapacidad',
-  permiso: 'Permiso', descanso: 'Descanso', festivo: 'Festivo',
-  programado: 'Programado', pendiente: '—', vacio: '—',
+  permiso: 'Permiso', permiso_cg: 'Permiso c/goce', permiso_sg: 'Permiso s/goce',
+  descanso: 'Descanso', festivo: 'Festivo', baja: 'Baja',
+  paro_tecnico: 'Paro tecnico', programado: 'Programado', pendiente: '—', vacio: '—',
 };
 const _rolStatusColor = {
   asistencia: '#059669', labora: '#059669', retardo: '#d97706', falta: '#dc2626',
   vacacion: '#2563eb', vacaciones: '#2563eb', incapacidad: '#7c3aed',
-  permiso: '#0891b2', descanso: '#94a3b8', festivo: '#ea580c',
-  programado: '#94a3b8', pendiente: '#cbd5e1', vacio: '#cbd5e1',
+  permiso: '#0891b2', permiso_cg: '#0891b2', permiso_sg: '#64748b',
+  descanso: '#94a3b8', festivo: '#ea580c', baja: '#991b1b',
+  paro_tecnico: '#6b7280', programado: '#94a3b8', pendiente: '#cbd5e1', vacio: '#cbd5e1',
 };
 
 async function mi_rol(el) {
@@ -493,7 +495,7 @@ async function mi_rol(el) {
     const holidayTag = d.is_holiday ? `<span style="font-size:10px;color:#ea580c;margin-left:4px">(${esc(d.holiday_name||'Festivo')})</span>` : '';
     const bdayTag = d.birthday ? '<span style="font-size:10px;margin-left:4px">🎂</span>' : '';
     const clarifTag = d.has_clarification ? '<span style="font-size:10px;color:#d97706;margin-left:4px">Aclaracion pendiente</span>' : '';
-    const canClarif = !d.is_future && !d.has_clarification && d.status !== 'descanso' && d.status !== 'programado' && d.status !== 'pendiente';
+    const canClarif = !d.is_future && !d.has_clarification && !['descanso','programado','pendiente','festivo','vacio'].includes(d.status);
 
     return `<tr style="${d.is_future ? 'opacity:.5' : ''}">
       <td style="padding:10px 12px;white-space:nowrap">
