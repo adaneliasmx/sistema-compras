@@ -112,8 +112,12 @@ async function api(method, path, body) {
   }
 }
 
+let _rolTimer = null;
+function _rolStopRefresh() { if (_rolTimer) { clearInterval(_rolTimer); _rolTimer = null; } }
+
 // ── Navigate ──────────────────────────────────────────────────────────────────
 function navigate(section) {
+  _rolStopRefresh();
   state.section = section;
   renderMain();
   document.querySelectorAll('.emp-nav-item[data-nav]').forEach(el => {
@@ -534,7 +538,16 @@ async function mi_rol(el) {
     </table>
   </div>
   <div style="font-size:11px;color:#94a3b8;text-align:center;margin-top:8px">Sitio en prueba, cualquier aclaracion o inconsistencia validar con RHH</div>
+  <div style="font-size:10px;color:#cbd5e1;text-align:center;margin-top:4px">Se actualiza automaticamente cada 30s</div>
   <style>@keyframes pulse-red{0%,100%{opacity:1}50%{opacity:.6}}</style>`;
+
+  // Auto-refresh cada 30s mientras estemos en mi_rol
+  _rolStopRefresh();
+  _rolTimer = setInterval(() => {
+    if (state.section !== 'mi_rol') { _rolStopRefresh(); return; }
+    const el2 = document.getElementById('emp-main-content');
+    if (el2) mi_rol(el2);
+  }, 30000);
 }
 
 async function _rolAclaracion(date) {
