@@ -463,6 +463,77 @@ router.get('/embarques-online/:uuid', valAuthRequired, (req, res) => {
   res.json(emb);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// HEARTBEAT — las apps de escritorio reportan que estan en linea
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/app/heartbeat', syncKeyRequired, (req, res) => {
+  const { side, version, operador, hostname } = req.body;
+  if (!side || !version) {
+    return res.status(400).json({ error: 'side y version son requeridos' });
+  }
+
+  const db = read();
+  db.val_app_status = db.val_app_status || [];
+
+  const now = new Date().toLocaleString('en-CA', { timeZone: 'America/Mexico_City', hour12: false });
+  const [fecha, hora] = now.split(', ');
+
+  const existing = db.val_app_status.find(a => a.side === side);
+  const entry = {
+    side,
+    version,
+    operador: operador || '',
+    hostname: hostname || '',
+    last_seen: `${fecha}T${hora}`,
+    last_seen_date: fecha,
+    last_seen_time: hora
+  };
+
+  if (existing) {
+    Object.assign(existing, entry);
+  } else {
+    db.val_app_status.push(entry);
+  }
+
+  write(db);
+  res.json({ ok: true, server_time: `${fecha} ${hora}` });
+});
+
+// Estado de apps conectadas (para dashboard web)
+router.get('/app/status', valAuthRequired, (req, res) => {
+  const db = read();
+  const apps = db.val_app_status || [];
+
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+
+  const result = apps.map(a => {
+    const lastSeen = new Date(a.last_seen);
+    const diffMs = now - lastSeen;
+    const diffMin = Math.floor(diffMs / 60000);
+    const online = diffMin < 2;  // online si heartbeat hace menos de 2 min
+    return {
+      ...a,
+      online,
+      hace: diffMin < 1 ? 'ahora' : diffMin < 60 ? `hace ${diffMin} min` : `hace ${Math.floor(diffMin/60)}h ${diffMin%60}m`
+    };
+  });
+
+  res.json(result);
+});
+
+// Estado de apps (acceso con API key, para que las apps se vean entre si)
+router.get('/app/peers', syncKeyRequired, (req, res) => {
+  const db = read();
+  const apps = db.val_app_status || [];
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const result = apps.map(a => {
+    const diffMs = now - new Date(a.last_seen);
+    return { side: a.side, version: a.version, operador: a.operador, online: diffMs < 120000 };
+  });
+  res.json(result);
+});
+
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({

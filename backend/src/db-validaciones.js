@@ -30,7 +30,9 @@ const EMPTY_DB = {
   val_cuesto_ingresos: [],   // ingreso SKF en CUESTO
   val_cuesto_pendientes: [], // pendientes lado CUESTO
   // Embarques online (bidireccional)
-  val_embarques: []          // embarques registrados con UUID de trazabilidad
+  val_embarques: [],         // embarques registrados con UUID de trazabilidad
+  // Estado de apps conectadas (heartbeat)
+  val_app_status: []         // { side, version, operador, hostname, last_seen, ... }
 };
 
 async function initDb() {

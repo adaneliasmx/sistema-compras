@@ -140,6 +140,14 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
     <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
   </nav>
 
+  <!-- Banner de estado de PCs - siempre visible -->
+  <div id="pcStatusBar" style="background:#fff;border-bottom:1px solid #e0e4ea;padding:8px 24px;display:flex;gap:24px;align-items:center;font-size:.82rem">
+    <span style="font-weight:700;color:#1a3a5c;font-size:.78rem">PCs:</span>
+    <span id="pcCuesto" style="color:#888">CUESTO: cargando...</span>
+    <span id="pcSKF" style="color:#888">SKF: cargando...</span>
+    <span id="pcLastRefresh" style="margin-left:auto;color:#bbb;font-size:.72rem"></span>
+  </div>
+
   <main id="mainContent">
     <div class="spinner"></div>
   </main>
@@ -216,6 +224,7 @@ function startApp(user) {
   document.getElementById('appPage').style.flexDirection = 'column';
   document.getElementById('headerUser').textContent = user.nombre + ' (' + user.role + ')';
   if (user.role === 'admin') document.getElementById('tabSync').style.display = '';
+  startPCPolling();
   switchTab('resumen');
 }
 
@@ -261,8 +270,33 @@ async function renderResumen() {
   const embEnviados = (embOnline||[]).filter(e => e.estado === 'ENVIADO').length;
   const embValidados = (embOnline||[]).filter(e => e.estado === 'VALIDADO').length;
 
+  // Cargar estado de PCs para el dashboard
+  let appsHtml = '';
+  try {
+    const apps = await apiFetch('/app/status');
+    if (apps && apps.length > 0) {
+      appsHtml = `
+        <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Apps Conectadas</h3>
+        <div class="kpi-grid" style="margin-bottom:28px">
+          ${apps.map(a => {
+            const color = a.online ? 'green' : 'red';
+            const dot   = a.online ? '🟢' : '🔴';
+            const st    = a.online ? 'Online' : 'Offline';
+            return `<div class="kpi ${color}">
+              <label>${a.side.toUpperCase()}</label>
+              <div class="val" style="font-size:1.4rem">${dot} ${st}</div>
+              <div class="sub">v${a.version} &nbsp;|&nbsp; ${a.operador || '—'} &nbsp;|&nbsp; ${a.hostname || '—'}</div>
+              <div class="sub" style="margin-top:2px;color:#aaa">${a.hace}</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+    }
+  } catch(_) {}
+
   m.innerHTML = `
     <div class="alert info">Datos sincronizados desde las apps de escritorio + embarques registrados en tiempo real.</div>
+
+    ${appsHtml}
 
     <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Vista General</h3>
     <div class="kpi-grid">
@@ -772,6 +806,60 @@ async function renderSyncStatus() {
       <div class="kpi red"><label>Pendientes CUESTO</label><div class="val">${d.val_cuesto_pendientes||0}</div><div class="sub">registros sincronizados</div></div>
     </div>
     <div class="alert info" style="margin-top:8px">Para configurar el sync: edita <b>database/sync_config.json</b> en cada PC y ejecuta <b>setup_taskscheduler.bat</b> como Administrador.</div>`;
+}
+
+// ── ESTADO PCs CONECTADAS ────────────────────────────────────────────────────
+let _pcInterval = null;
+
+async function refreshPCStatus() {
+  try {
+    const apps = await apiFetch('/app/status');
+    if (!apps) return;
+
+    const cuesto = apps.find(a => a.side === 'cuesto');
+    const skf    = apps.find(a => a.side === 'skf');
+
+    const elC = document.getElementById('pcCuesto');
+    const elS = document.getElementById('pcSKF');
+
+    if (elC) {
+      if (cuesto) {
+        const dot = cuesto.online ? '🟢' : '🔴';
+        const st  = cuesto.online ? 'Online' : 'Offline';
+        elC.innerHTML = `${dot} <b>CUESTO</b>: ${st} &nbsp;v${cuesto.version} &nbsp;|&nbsp; ${cuesto.operador || '—'} &nbsp;<span style="color:#aaa">(${cuesto.hace})</span>`;
+        elC.style.color = cuesto.online ? '#1e8449' : '#c0392b';
+      } else {
+        elC.innerHTML = '⚪ <b>CUESTO</b>: sin registro';
+        elC.style.color = '#888';
+      }
+    }
+
+    if (elS) {
+      if (skf) {
+        const dot = skf.online ? '🟢' : '🔴';
+        const st  = skf.online ? 'Online' : 'Offline';
+        elS.innerHTML = `${dot} <b>SKF</b>: ${st} &nbsp;v${skf.version} &nbsp;|&nbsp; ${skf.operador || '—'} &nbsp;<span style="color:#aaa">(${skf.hace})</span>`;
+        elS.style.color = skf.online ? '#1e8449' : '#c0392b';
+      } else {
+        elS.innerHTML = '⚪ <b>SKF</b>: sin registro';
+        elS.style.color = '#888';
+      }
+    }
+
+    const elR = document.getElementById('pcLastRefresh');
+    if (elR) {
+      const now = new Date();
+      elR.textContent = `Actualizado: ${now.toLocaleTimeString('es-MX')}`;
+    }
+  } catch(e) {
+    // silenciar errores de red
+  }
+}
+
+function startPCPolling() {
+  refreshPCStatus();
+  if (_pcInterval) clearInterval(_pcInterval);
+  _pcInterval = setInterval(refreshPCStatus, 15000);  // cada 15s
 }
 
 // ── MODAL ──────────────────────────────────────────────────────────────────────
