@@ -539,9 +539,9 @@ router.get('/app/version', (req, res) => {
   res.json({
     version: '4.3.1',
     min_version: '4.2.0',
-    url_cuesto: '',
-    url_skf: '',
-    changelog: 'v4.3.1: Correccion duplicados falsos en contenedores del mismo producto. Correccion QR con comilla inicial. Icono personalizado. Auto-update habilitado.'
+    url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
+    url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
+    changelog: 'v4.3.1: Correccion duplicados falsos en contenedores del mismo producto. Correccion QR con comilla inicial. Icono personalizado. Auto-update habilitado. Fix segunda pantalla.'
   });
 });
 
