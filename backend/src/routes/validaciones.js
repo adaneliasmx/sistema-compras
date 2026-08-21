@@ -537,11 +537,11 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
-    version: '4.3.4',
+    version: '4.3.5',
     min_version: '4.2.0',
     url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
     url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
-    changelog: 'v4.3.4: Fix contador segunda pantalla. Auto-update con elevacion de permisos (UAC).'
+    changelog: 'v4.3.5: Fix contador segunda pantalla. Auto-update robusto con taskkill + UAC.'
   });
 });
 
