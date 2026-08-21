@@ -671,6 +671,7 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
 router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const week  = weekMonday(req.query.week);
   const dates = weekDates(week);
+  const DIAS_SHORT = ['L','M','Mi','J','V','S'];
   const DIAS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const MES   = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const db    = read();
@@ -681,6 +682,14 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const employees   = weeklyTemplate.employees;
   const positions   = db.rhh_positions  || [];
   const shifts      = db.rhh_shifts     || [];
+
+  // Color por código de turno (mismos colores que el frontend)
+  const SHIFT_COLORS = { T1: '#1d4ed8', T2: '#0f766e', T3: '#7c3aed', T4: '#b45309' };
+  const DEFAULT_COLOR = '#475569';
+  function shiftColor(shift) {
+    if (shift?.color) return shift.color;
+    return SHIFT_COLORS[shift?.code] || DEFAULT_COLOR;
+  }
 
   const rows = assignments
     .map(a => {
@@ -709,58 +718,127 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const d5 = new Date(dates[5] + 'T12:00:00');
   const semLbl = `${d0.getDate()} ${MES[d0.getMonth()]} al ${d5.getDate()} ${MES[d5.getMonth()]} ${d5.getFullYear()}`;
 
+  // Cabeceras de días con fecha
+  const dayHeaders = dates.map((dt, i) => {
+    const d = new Date(dt + 'T12:00:00');
+    return `<th class="day-col">${DIAS_SHORT[i]}<br><span class="day-date">${d.getDate()} ${MES[d.getMonth()]}</span></th>`;
+  }).join('');
+
+  // Construir filas
+  const totalCols = 5 + 6; // No., Nombre, Puesto, Horario, Proyecto + 6 días
   let tableBody = '';
   for (const [shiftName, { shift, rows: sRows }] of Object.entries(byShift)) {
+    const color    = shiftColor(shift);
     const workDays = shift?.work_days || [1,2,3,4,5];
-    const diasStr  = DIAS.filter((_, i) => workDays.includes(i + 1)).join(', ');
     const entry    = shift?.start_time || '—';
     const exitTime = shift?.end_time   || '—';
+    const empCount = sRows.length;
+
+    // Fila separadora de turno con color
     tableBody += `
-      <tr style="background:#1e3a5f;color:#fff;">
-        <td colspan="5" style="padding:6px 12px;font-weight:700;">
-          ${shiftName} &nbsp;|&nbsp; Entrada: ${entry} &nbsp;&nbsp; Salida: ${exitTime} &nbsp;|&nbsp; Días: ${diasStr}
+      <tr class="shift-header" style="background:${color};">
+        <td colspan="${totalCols}">
+          ━━━ ${shiftName} · ${entry} – ${exitTime} · ${empCount} empleado${empCount !== 1 ? 's' : ''}
         </td>
       </tr>`;
+
     let lastPos = '';
     for (const r of sRows) {
       const posName = r.pos?.name || '—';
       if (posName !== lastPos) {
         lastPos = posName;
-        tableBody += `<tr style="background:#dbeafe;"><td colspan="5" style="padding:3px 12px;font-weight:700;font-size:11px;color:#1e3a5f;">▸ ${posName}</td></tr>`;
+        tableBody += `<tr class="pos-header"><td colspan="${totalCols}">▸ ${posName}</td></tr>`;
       }
+
+      // Celdas de días: marca ✓ si trabaja, D si descansa
+      const dayCells = dates.map((_, di) => {
+        const dow = di + 1;
+        const works = workDays.includes(dow);
+        if (works) {
+          return `<td class="day-cell work" style="--sc:${color};">✓</td>`;
+        }
+        return `<td class="day-cell rest">D</td>`;
+      }).join('');
+
       tableBody += `
-        <tr style="border-bottom:1px solid #e5e7eb;">
-          <td style="padding:5px 12px;width:70px;">${r.emp?.employee_number || ''}</td>
-          <td style="padding:5px 12px;">${r.emp?.full_name || ''}</td>
-          <td style="padding:5px 12px;">${posName}</td>
-          <td style="padding:5px 12px;text-align:center;">${entry} – ${exitTime}</td>
-          <td style="padding:5px 12px;color:#1d4ed8;">${r.project || '—'}</td>
+        <tr class="emp-row">
+          <td class="col-num">${r.emp?.employee_number || ''}</td>
+          <td class="col-name">${r.emp?.full_name || ''}</td>
+          <td class="col-pos">${posName}</td>
+          <td class="col-hours">${entry} – ${exitTime}</td>
+          <td class="col-proj">${r.project || '—'}</td>
+          ${dayCells}
         </tr>`;
     }
   }
 
-  if (!tableBody) tableBody = '<tr><td colspan="5" style="padding:20px;text-align:center;color:#9ca3af;">Sin asignaciones en este rol</td></tr>';
+  if (!tableBody) tableBody = `<tr><td colspan="${totalCols}" style="padding:20px;text-align:center;color:#9ca3af;">Sin asignaciones en este rol</td></tr>`;
 
   const html = `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8">
 <title>Rol Semanal — ${semLbl}</title>
 <style>
-  body { font-family: Arial, sans-serif; font-size: 12px; margin: 16px; color: #111; }
-  h2   { text-align: center; color: #1e3a5f; margin: 0 0 4px; }
-  .sub { text-align: center; color: #374151; margin-bottom: 16px; font-size: 13px; }
-  table { width: 100%; border-collapse: collapse; }
-  thead th { background: #1e3a5f; color: #fff; padding: 6px 12px; text-align: left; font-size: 12px; }
-  tr:nth-child(even):not([style*="background"]) { background: #f9fafb; }
-  @media print { @page { size: landscape; margin: 1cm; } button { display: none; } }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; margin: 0; padding: 16px; background: #fff; }
+  .header { text-align: center; margin-bottom: 16px; }
+  .header h1 { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: .5px; margin-bottom: 2px; }
+  .header .week-label { font-size: 13px; color: #475569; font-weight: 600; }
+  .btn-print { display: inline-block; margin-bottom: 14px; padding: 7px 20px; background: #1e3a5f; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .btn-print:hover { background: #15304f; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  thead th { background: #1e293b; color: #fff; padding: 6px 8px; text-align: left; font-size: 11px; font-weight: 700; border: 1px solid #334155; }
+  thead th.day-col { text-align: center; min-width: 52px; }
+  thead .day-date { font-size: 9px; font-weight: 400; opacity: .8; }
+  .shift-header td { color: #fff; font-size: 12px; font-weight: 800; padding: 7px 12px; letter-spacing: .5px; border: none; }
+  .pos-header td { background: #f1f5f9; padding: 3px 12px; font-weight: 700; font-size: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; }
+  .emp-row td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+  .emp-row:nth-child(even) td { background: #f8fafc; }
+  .col-num { width: 50px; color: #64748b; font-weight: 600; text-align: center; }
+  .col-name { font-weight: 600; white-space: nowrap; }
+  .col-pos { color: #475569; font-size: 10px; }
+  .col-hours { text-align: center; font-weight: 600; color: #334155; white-space: nowrap; }
+  .col-proj { color: #2563eb; font-size: 10px; }
+  .day-cell { text-align: center; font-weight: 700; font-size: 11px; width: 52px; }
+  .day-cell.work { color: var(--sc, #16a34a); background: color-mix(in srgb, var(--sc, #16a34a) 8%, transparent); }
+  .day-cell.rest { color: #94a3b8; background: #f1f5f9; font-size: 10px; }
+  .legend { margin-top: 14px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 11px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
+  .summary { margin-top: 10px; font-size: 11px; color: #64748b; }
+  @media print {
+    @page { size: landscape; margin: 8mm; }
+    .btn-print { display: none; }
+    body { padding: 0; }
+  }
 </style>
 </head><body>
-<h2>ROL SEMANAL DE TRABAJO</h2>
-<div class="sub">Semana: ${semLbl}</div>
-<button onclick="window.print()" style="margin-bottom:12px;padding:6px 16px;background:#1e3a5f;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;">Imprimir / Guardar PDF</button>
+<div class="header">
+  <h1>ROL SEMANAL DE TRABAJO</h1>
+  <div class="week-label">Semana: ${semLbl}</div>
+</div>
+<button class="btn-print" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
 <table>
-  <thead><tr><th>No.</th><th>Nombre</th><th>Puesto</th><th>Horario</th><th>Proyecto</th></tr></thead>
+  <thead>
+    <tr>
+      <th>No.</th>
+      <th>Nombre</th>
+      <th>Puesto</th>
+      <th>Horario</th>
+      <th>Proyecto</th>
+      ${dayHeaders}
+    </tr>
+  </thead>
   <tbody>${tableBody}</tbody>
 </table>
+<div class="legend">
+  <strong>Turnos:</strong>
+  ${Object.entries(byShift).map(([name, { shift }]) => {
+    const c = shiftColor(shift);
+    return `<span class="legend-item"><span class="legend-dot" style="background:${c};"></span> ${name}</span>`;
+  }).join('')}
+  <span class="legend-item" style="margin-left:16px;"><span class="legend-dot" style="background:#f1f5f9;border:1px solid #cbd5e1;"></span> D = Descanso</span>
+</div>
+<div class="summary">Total empleados: ${rows.length} &nbsp;|&nbsp; Generado: ${new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' })}</div>
 </body></html>`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
