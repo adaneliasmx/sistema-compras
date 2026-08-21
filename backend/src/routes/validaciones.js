@@ -537,10 +537,11 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
-    version: '4.3.0',
+    version: '4.3.1',
     min_version: '4.2.0',
-    url: '',
-    changelog: 'Embarques online bidireccionales, auto-deteccion de embarques pendientes.'
+    url_cuesto: '',
+    url_skf: '',
+    changelog: 'v4.3.1: Correccion duplicados falsos en contenedores del mismo producto. Correccion QR con comilla inicial. Icono personalizado. Auto-update habilitado.'
   });
 });
 
