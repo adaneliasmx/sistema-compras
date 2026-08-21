@@ -7494,6 +7494,21 @@ async function saveHoliday() {
 }
 
 // ── ROL SEMANAL ────────────────────────────────────────────────────────────────
+async function printRolSemanal(week) {
+  try {
+    const r = await fetch(`/api/rhh/asistencia/rol/html?week=${week}`, {
+      headers: { Authorization: 'Bearer ' + (localStorage.getItem('rhh_token') || '') }
+    });
+    if (!r.ok) throw new Error('Error al obtener HTML');
+    const html = await r.text();
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+  } catch (e) {
+    alert('No se pudo generar la impresión: ' + e.message);
+  }
+}
+
 async function listaRolView(el) {
   el.innerHTML = shell('<div class="loading-overlay">Cargando ROL semanal...</div>', 'lista-asistencia');
   try {
@@ -8891,7 +8906,7 @@ function asisRolRender() {
           ? '<span style="font-size:11px;color:#64748b;">🔒 Plantilla histórica protegida</span>'
           : '<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;" onclick="rolVerCambiosPlantilla(\'asis\')">📋 Actualizar Plantilla</button>'}
         <button class="btn-ghost" onclick="asisShiftMgmtModal()">＋ Agregar turno</button>
-        <button class="btn-ghost" onclick="window.open('/api/rhh/asistencia/rol/html?week=${asisWeek}','_blank')">Imprimir</button>
+        <button class="btn-ghost" onclick="printRolSemanal('${asisWeek}')">Imprimir</button>
       </div>
     </div>
     <div style="font-size:11px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:6px 12px;margin-bottom:12px;">
