@@ -788,9 +788,11 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
   body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; color: #1e293b; margin: 0; padding: 12px; background: #fff; }
-  .header { text-align: center; margin-bottom: 10px; }
-  .header h1 { font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: .5px; margin-bottom: 1px; }
-  .header .week-label { font-size: 12px; color: #475569; font-weight: 600; }
+  .header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; border-bottom: 2px solid #7cb9e8; padding-bottom: 8px; }
+  .header img { height: 40px; }
+  .header-text { flex: 1; }
+  .header-text h1 { font-size: 14px; font-weight: 800; color: #0f172a; letter-spacing: .3px; margin-bottom: 1px; }
+  .header-text .week-label { font-size: 11px; color: #475569; font-weight: 600; }
   .btn-print { display: inline-block; margin-bottom: 10px; padding: 5px 16px; background: #1e3a5f; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; }
   .btn-print:hover { background: #15304f; }
   table { width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #94a3b8; }
@@ -825,8 +827,11 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 </style>
 </head><body>
 <div class="header">
-  <h1>ROL SEMANAL DE TRABAJO</h1>
-  <div class="week-label">Semana: ${semLbl}</div>
+  <img src="/img/logo.png" alt="Cuesto" />
+  <div class="header-text">
+    <h1>CORPORATIVO CUESTO — ROL DE SEMANA ${(() => { const d = new Date(week + 'T12:00:00'); const jan4 = new Date(d.getFullYear(), 0, 4); const s = new Date(jan4); s.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7)); return Math.floor((d - s) / 604800000) + 1; })()}</h1>
+    <div class="week-label">${semLbl}</div>
+  </div>
 </div>
 <button class="btn-print" onclick="window.print()">🖨 Imprimir / Guardar PDF</button>
 <table>
