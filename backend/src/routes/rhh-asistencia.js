@@ -715,6 +715,17 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
     byShift[sn].rows.push(r);
   });
 
+  // Ordenar: Turno 1, Turno 2, Turno 3 primero, luego el resto alfabético
+  const PRIORITY = ['turno 1', 'turno 2', 'turno 3'];
+  const sortedShiftEntries = Object.entries(byShift).sort((a, b) => {
+    const ai = PRIORITY.indexOf(a[0].toLowerCase());
+    const bi = PRIORITY.indexOf(b[0].toLowerCase());
+    if (ai !== -1 && bi !== -1) return ai - bi;
+    if (ai !== -1) return -1;
+    if (bi !== -1) return 1;
+    return a[0].localeCompare(b[0]);
+  });
+
   const d0 = new Date(dates[0] + 'T12:00:00');
   const d5 = new Date(dates[5] + 'T12:00:00');
   const semLbl = `${d0.getDate()} ${MES[d0.getMonth()]} al ${d5.getDate()} ${MES[d5.getMonth()]} ${d5.getFullYear()}`;
@@ -728,7 +739,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   // Construir filas
   const totalCols = 4 + 6; // No., Nombre, Puesto, Horario + 6 días
   let tableBody = '';
-  for (const [shiftName, { shift, rows: sRows }] of Object.entries(byShift)) {
+  for (const [shiftName, { shift, rows: sRows }] of sortedShiftEntries) {
     const color    = shiftColor(shift);
     // Color suave para filas de empleados (10% opacidad del color del turno)
     const lightBg  = color + '18';
@@ -776,34 +787,40 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 <title>Rol Semanal — ${semLbl}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; margin: 0; padding: 16px; background: #fff; }
-  .header { text-align: center; margin-bottom: 16px; }
-  .header h1 { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: .5px; margin-bottom: 2px; }
-  .header .week-label { font-size: 13px; color: #475569; font-weight: 600; }
-  .btn-print { display: inline-block; margin-bottom: 14px; padding: 7px 20px; background: #1e3a5f; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 10px; color: #1e293b; margin: 0; padding: 12px; background: #fff; }
+  .header { text-align: center; margin-bottom: 10px; }
+  .header h1 { font-size: 15px; font-weight: 800; color: #0f172a; letter-spacing: .5px; margin-bottom: 1px; }
+  .header .week-label { font-size: 12px; color: #475569; font-weight: 600; }
+  .btn-print { display: inline-block; margin-bottom: 10px; padding: 5px 16px; background: #1e3a5f; color: #fff; border: none; border-radius: 5px; cursor: pointer; font-size: 11px; font-weight: 600; }
   .btn-print:hover { background: #15304f; }
-  table { width: 100%; border-collapse: collapse; font-size: 11px; }
-  thead th { background: #1e293b; color: #fff; padding: 6px 8px; text-align: left; font-size: 11px; font-weight: 700; border: 1px solid #334155; }
-  thead th.day-col { text-align: center; min-width: 52px; }
-  thead .day-date { font-size: 9px; font-weight: 400; opacity: .8; }
-  .shift-header td { color: #fff; font-size: 12px; font-weight: 800; padding: 7px 12px; letter-spacing: .5px; border: none; }
-  .pos-header td { background: #f1f5f9; padding: 3px 12px; font-weight: 700; font-size: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; }
-  .emp-row td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
-  .col-num { width: 50px; color: #64748b; font-weight: 600; text-align: center; }
-  .col-name { font-weight: 600; white-space: nowrap; }
-  .col-pos { color: #475569; font-size: 10px; }
-  .col-hours { text-align: center; font-weight: 600; color: #334155; white-space: nowrap; }
-  .day-cell { text-align: center; font-weight: 700; font-size: 11px; width: 52px; }
-  .day-cell.work { color: var(--sc, #16a34a); background: color-mix(in srgb, var(--sc, #16a34a) 8%, transparent); }
-  .day-cell.rest { color: #94a3b8; background: #f1f5f9; font-size: 10px; }
-  .legend { margin-top: 14px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 11px; align-items: center; }
-  .legend-item { display: flex; align-items: center; gap: 4px; }
-  .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
-  .summary { margin-top: 10px; font-size: 11px; color: #64748b; }
+  table { width: 100%; border-collapse: collapse; font-size: 10px; border: 1px solid #94a3b8; }
+  thead th { background: #1e293b; color: #fff; padding: 3px 4px; text-align: left; font-size: 10px; font-weight: 700; border: 1px solid #475569; }
+  thead th.day-col { text-align: center; width: 38px; min-width: 38px; padding: 3px 2px; }
+  thead .day-date { font-size: 8px; font-weight: 400; opacity: .8; }
+  .shift-header td { color: #fff; font-size: 11px; font-weight: 800; padding: 4px 6px; letter-spacing: .3px; border: 1px solid rgba(255,255,255,.3); }
+  .emp-row td { padding: 2px 4px; border: 1px solid #cbd5e1; }
+  .col-num { width: 35px; color: #64748b; font-weight: 600; text-align: center; font-size: 9px; }
+  .col-name { font-weight: 600; white-space: nowrap; font-size: 10px; }
+  .col-pos { color: #475569; font-size: 9px; }
+  .col-hours { text-align: center; font-weight: 600; color: #334155; white-space: nowrap; font-size: 9px; }
+  .day-cell { text-align: center; font-weight: 700; font-size: 10px; width: 38px; border: 1px solid #cbd5e1; }
+  .day-cell.work { color: var(--sc, #16a34a); background: color-mix(in srgb, var(--sc, #16a34a) 10%, transparent); }
+  .day-cell.rest { color: #94a3b8; background: #f1f5f9; font-size: 9px; }
+  .legend { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 3px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
+  .summary { margin-top: 6px; font-size: 10px; color: #64748b; }
   @media print {
-    @page { size: portrait; margin: 8mm; }
+    @page { size: portrait; margin: 6mm; }
     .btn-print { display: none; }
-    body { padding: 0; }
+    body { padding: 0; font-size: 9px; }
+    table { font-size: 9px; }
+    .col-name { font-size: 9px; }
+    .col-num, .col-pos, .col-hours { font-size: 8px; }
+    .day-cell { font-size: 9px; width: 34px; }
+    thead th { font-size: 9px; padding: 2px 3px; }
+    .emp-row td { padding: 1px 3px; }
+    .shift-header td { font-size: 10px; padding: 3px 5px; }
   }
 </style>
 </head><body>
@@ -826,7 +843,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 </table>
 <div class="legend">
   <strong>Turnos:</strong>
-  ${Object.entries(byShift).map(([name, { shift }]) => {
+  ${sortedShiftEntries.map(([name, { shift }]) => {
     const c = shiftColor(shift);
     return `<span class="legend-item"><span class="legend-dot" style="background:${c};"></span> ${name}</span>`;
   }).join('')}
