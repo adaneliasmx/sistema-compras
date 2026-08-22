@@ -701,9 +701,10 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
       return { ...a, emp, shift, pos };
     })
     .filter(r => r.emp)
+    // Excluir turno administrativo de la impresión
+    .filter(r => !(r.shift?.name || '').toLowerCase().includes('administrativo'))
     .sort((a, b) => {
       if ((a.shift?.name || '') !== (b.shift?.name || '')) return (a.shift?.name || '').localeCompare(b.shift?.name || '');
-      if ((a.pos?.name   || '') !== (b.pos?.name   || '')) return (a.pos?.name   || '').localeCompare(b.pos?.name   || '');
       return (a.emp?.full_name || '').localeCompare(b.emp?.full_name || '');
     });
 
@@ -729,6 +730,8 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   let tableBody = '';
   for (const [shiftName, { shift, rows: sRows }] of Object.entries(byShift)) {
     const color    = shiftColor(shift);
+    // Color suave para filas de empleados (10% opacidad del color del turno)
+    const lightBg  = color + '18';
     const workDays = shift?.work_days || [1,2,3,4,5];
     const entry    = shift?.start_time || '—';
     const exitTime = shift?.end_time   || '—';
@@ -742,13 +745,8 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
         </td>
       </tr>`;
 
-    let lastPos = '';
     for (const r of sRows) {
       const posName = r.pos?.name || '—';
-      if (posName !== lastPos) {
-        lastPos = posName;
-        tableBody += `<tr class="pos-header"><td colspan="${totalCols}">▸ ${posName}</td></tr>`;
-      }
 
       // Celdas de días: marca ✓ si trabaja, D si descansa
       const dayCells = dates.map((_, di) => {
@@ -761,7 +759,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
       }).join('');
 
       tableBody += `
-        <tr class="emp-row">
+        <tr class="emp-row" style="background:${lightBg};">
           <td class="col-num">${r.emp?.employee_number || ''}</td>
           <td class="col-name">${r.emp?.full_name || ''}</td>
           <td class="col-pos">${posName}</td>
@@ -791,7 +789,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   .shift-header td { color: #fff; font-size: 12px; font-weight: 800; padding: 7px 12px; letter-spacing: .5px; border: none; }
   .pos-header td { background: #f1f5f9; padding: 3px 12px; font-weight: 700; font-size: 10px; color: #334155; border-bottom: 1px solid #e2e8f0; }
   .emp-row td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
-  .emp-row:nth-child(even) td { background: #f8fafc; }
   .col-num { width: 50px; color: #64748b; font-weight: 600; text-align: center; }
   .col-name { font-weight: 600; white-space: nowrap; }
   .col-pos { color: #475569; font-size: 10px; }
@@ -804,7 +801,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
   .summary { margin-top: 10px; font-size: 11px; color: #64748b; }
   @media print {
-    @page { size: landscape; margin: 8mm; }
+    @page { size: portrait; margin: 8mm; }
     .btn-print { display: none; }
     body { padding: 0; }
   }
