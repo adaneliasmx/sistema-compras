@@ -9106,14 +9106,17 @@ async function saveAsisRolAuto() {
 async function asisShiftMgmtModal() {
   const shifts = await api('/api/rhh/catalogs/shifts');
   if (!shifts) return;
+  const _DIAS_CORTOS = {1:'L',2:'M',3:'Mi',4:'J',5:'V',6:'S'};
   const shiftRows = shifts.map(s => {
     const sched = (s.start_time && s.end_time) ? `${fmtTimeAmPm(s.start_time)} – ${fmtTimeAmPm(s.end_time)}` : '—';
+    const diasLbl = (s.work_days||[1,2,3,4,5]).map(d => _DIAS_CORTOS[d]||d).join(', ');
     return `<tr>
       <td style="padding:6px 10px;font-weight:600;">${escHtml(s.name)}</td>
       <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(s.code||'')}</td>
       <td style="padding:6px 10px;font-size:12px;">${sched}</td>
+      <td style="padding:6px 10px;font-size:11px;color:#475569;">${diasLbl}</td>
       <td style="padding:6px 8px;text-align:center;">
-        <button onclick="asisShiftEditLoad(${s.id},'${escHtml(s.name).replace(/'/g,"&#39;")}','${escHtml(s.code||'')}','${s.start_time||''}','${s.end_time||''}','${s.color||'#1d4ed8'}')"
+        <button onclick="asisShiftEditLoad(${s.id},'${escHtml(s.name).replace(/'/g,"&#39;")}','${escHtml(s.code||'')}','${s.start_time||''}','${s.end_time||''}','${s.color||'#1d4ed8'}','${JSON.stringify(s.work_days||[1,2,3,4,5])}')"
           style="font-size:11px;padding:3px 9px;border:1px solid #e5e7eb;border-radius:6px;cursor:pointer;background:#f8fafc;">Editar</button>
       </td>
     </tr>`;
@@ -9138,9 +9141,10 @@ async function asisShiftMgmtModal() {
             <th style="padding:6px 10px;text-align:left;">Nombre</th>
             <th style="padding:6px 10px;text-align:left;">Código</th>
             <th style="padding:6px 10px;text-align:left;">Horario</th>
+            <th style="padding:6px 10px;text-align:left;">Días</th>
             <th style="padding:6px 10px;"></th>
           </tr></thead>
-          <tbody>${shiftRows || '<tr><td colspan="4" style="padding:12px;text-align:center;color:var(--muted);">Sin turnos</td></tr>'}</tbody>
+          <tbody>${shiftRows || '<tr><td colspan="5" style="padding:12px;text-align:center;color:var(--muted);">Sin turnos</td></tr>'}</tbody>
         </table>
         <div style="border-top:1px solid #e5e7eb;padding-top:14px;">
           <div id="asis-shift-form-title" style="font-size:13px;font-weight:700;margin-bottom:10px;color:#374151;">Nuevo turno</div>
@@ -9163,6 +9167,15 @@ async function asisShiftMgmtModal() {
               <input id="asis-sf-end" type="time" style="width:100%;padding:6px 8px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;" />
             </div>
           </div>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:11px;font-weight:700;display:block;margin-bottom:5px;">Días laborales</label>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${[{v:1,l:'Lun'},{v:2,l:'Mar'},{v:3,l:'Mié'},{v:4,l:'Jue'},{v:5,l:'Vie'},{v:6,l:'Sáb'}].map(d =>
+                '<label style="display:flex;align-items:center;gap:3px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;background:#f9fafb;">' +
+                '<input type="checkbox" class="asis-sf-day" value="' + d.v + '" ' + (d.v <= 5 ? 'checked' : '') + ' style="accent-color:#4f46e5;" />' + d.l + '</label>'
+              ).join('')}
+            </div>
+          </div>
           <div style="display:flex;gap:8px;justify-content:flex-end;">
             <button id="asis-sf-cancel" onclick="asisShiftFormReset()" style="display:none;padding:7px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-size:13px;cursor:pointer;">Cancelar</button>
             <button onclick="asisShiftSave()" style="padding:7px 18px;border:none;border-radius:8px;background:#4f46e5;color:#fff;font-size:13px;cursor:pointer;font-weight:600;">Guardar turno</button>
@@ -9182,9 +9195,12 @@ function asisShiftFormReset() {
   document.getElementById('asis-shift-form-title').textContent = 'Nuevo turno';
   const btn = document.getElementById('asis-sf-cancel');
   if (btn) btn.style.display = 'none';
+  document.querySelectorAll('.asis-sf-day').forEach(cb => {
+    cb.checked = Number(cb.value) <= 5;
+  });
 }
 
-function asisShiftEditLoad(id, name, code, start, end, color) {
+function asisShiftEditLoad(id, name, code, start, end, color, workDaysJson) {
   document.getElementById('asis-sf-id').value    = id;
   document.getElementById('asis-sf-name').value  = name;
   document.getElementById('asis-sf-code').value  = code;
@@ -9193,6 +9209,11 @@ function asisShiftEditLoad(id, name, code, start, end, color) {
   document.getElementById('asis-shift-form-title').textContent = 'Editar turno';
   const btn = document.getElementById('asis-sf-cancel');
   if (btn) btn.style.display = '';
+  // Cargar días laborales
+  const wd = workDaysJson ? JSON.parse(workDaysJson) : [1,2,3,4,5];
+  document.querySelectorAll('.asis-sf-day').forEach(cb => {
+    cb.checked = wd.includes(Number(cb.value));
+  });
 }
 
 async function asisShiftSave() {
@@ -9202,7 +9223,9 @@ async function asisShiftSave() {
   const start = document.getElementById('asis-sf-start').value;
   const end   = document.getElementById('asis-sf-end').value;
   if (!name || !code || !start || !end) { toast('Completa nombre, código, hora inicio y fin', 'error'); return; }
-  const body = JSON.stringify({ name, code, start_time: start, end_time: end });
+  const work_days = [...document.querySelectorAll('.asis-sf-day:checked')].map(c => Number(c.value));
+  if (work_days.length === 0) { toast('Selecciona al menos un día laboral', 'error'); return; }
+  const body = JSON.stringify({ name, code, start_time: start, end_time: end, work_days });
   if (id) {
     await api(`/api/rhh/catalogs/shifts/${id}`, { method: 'PATCH', body });
   } else {
