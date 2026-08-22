@@ -725,7 +725,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   }).join('');
 
   // Construir filas
-  const totalCols = 5 + 6; // No., Nombre, Puesto, Horario, Proyecto + 6 días
+  const totalCols = 4 + 6; // No., Nombre, Puesto, Horario + 6 días
   let tableBody = '';
   for (const [shiftName, { shift, rows: sRows }] of Object.entries(byShift)) {
     const color    = shiftColor(shift);
@@ -766,7 +766,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
           <td class="col-name">${r.emp?.full_name || ''}</td>
           <td class="col-pos">${posName}</td>
           <td class="col-hours">${entry} – ${exitTime}</td>
-          <td class="col-proj">${r.project || '—'}</td>
           ${dayCells}
         </tr>`;
     }
@@ -778,7 +777,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 <html lang="es"><head><meta charset="UTF-8">
 <title>Rol Semanal — ${semLbl}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; color-adjust: exact !important; }
   body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #1e293b; margin: 0; padding: 16px; background: #fff; }
   .header { text-align: center; margin-bottom: 16px; }
   .header h1 { font-size: 18px; font-weight: 800; color: #0f172a; letter-spacing: .5px; margin-bottom: 2px; }
@@ -797,7 +796,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   .col-name { font-weight: 600; white-space: nowrap; }
   .col-pos { color: #475569; font-size: 10px; }
   .col-hours { text-align: center; font-weight: 600; color: #334155; white-space: nowrap; }
-  .col-proj { color: #2563eb; font-size: 10px; }
   .day-cell { text-align: center; font-weight: 700; font-size: 11px; width: 52px; }
   .day-cell.work { color: var(--sc, #16a34a); background: color-mix(in srgb, var(--sc, #16a34a) 8%, transparent); }
   .day-cell.rest { color: #94a3b8; background: #f1f5f9; font-size: 10px; }
@@ -824,7 +822,6 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
       <th>Nombre</th>
       <th>Puesto</th>
       <th>Horario</th>
-      <th>Proyecto</th>
       ${dayHeaders}
     </tr>
   </thead>
