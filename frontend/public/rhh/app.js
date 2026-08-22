@@ -7497,9 +7497,9 @@ async function saveHoliday() {
 async function printRolSemanal(week) {
   try {
     const r = await fetch(`/api/rhh/asistencia/rol/html?week=${week}`, {
-      headers: { Authorization: 'Bearer ' + (localStorage.getItem('rhh_token') || '') }
+      headers: { Authorization: 'Bearer ' + (state.token || '') }
     });
-    if (!r.ok) throw new Error('Error al obtener HTML');
+    if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.error || `Error ${r.status}`); }
     const html = await r.text();
     const win = window.open('', '_blank');
     win.document.write(html);
