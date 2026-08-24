@@ -9403,7 +9403,7 @@ async function asisCaptureView() {
           rowBtn = `<button onclick="asisOpenValeModal(${teValeId})" style="padding:4px 10px;border:1px solid #fed7aa;border-radius:6px;background:#fff7ed;color:#c2410c;font-size:11px;cursor:pointer;font-weight:600;">Ver vale</button>`;
         } else {
           rowBtn = `<button onclick="asisGuardarFila(${emp.employee_id},'${selFecha}')"
-            style="padding:4px 12px;border:none;border-radius:6px;background:#4f46e5;color:#fff;font-size:11px;cursor:pointer;font-weight:700;" id="asis-btn-${emp.employee_id}">Guardar</button>`;
+            style="padding:4px 12px;border:none;border-radius:6px;background:#e2e8f0;color:#64748b;font-size:11px;cursor:pointer;font-weight:600;" id="asis-btn-${emp.employee_id}" title="Autoguardado activo">—</button>`;
         }
 
         const rowStyle = teActivo ? 'background:#fffbf5;' : '';
@@ -9686,10 +9686,72 @@ function asisToggleTE(empId) {
   asisMarkDirty(empId);
 }
 
-/* Marcar fila como modificada (btn azul) */
+/* Autoguardado con debounce por empleado */
+const _asisAutoTimers = {};
 function asisMarkDirty(empId) {
-  const btn = document.getElementById('asis-btn-' + empId);
-  if (btn) { btn.style.background = '#4f46e5'; btn.textContent = 'Guardar'; }
+  // Encontrar la fecha del día seleccionado desde el DOM
+  const incSel = document.getElementById('asis-inc-' + empId);
+  const fecha = incSel ? incSel.getAttribute('data-fecha') : null;
+  if (!fecha) return;
+  // Debounce 600ms
+  if (_asisAutoTimers[empId]) clearTimeout(_asisAutoTimers[empId]);
+  _asisAutoTimers[empId] = setTimeout(() => asisAutoSave(empId, fecha), 600);
+}
+
+async function asisAutoSave(empId, fecha) {
+  const incSel = document.getElementById('asis-inc-' + empId);
+  const incidencia_type = incSel ? incSel.value : '';
+  if (!incidencia_type) return; // no guardar sin incidencia
+
+  const teChk  = document.getElementById('asis-te-'     + empId);
+  const teEnt  = document.getElementById('asis-te-ent-' + empId);
+  const teSal  = document.getElementById('asis-te-sal-' + empId);
+  const teRaz  = document.getElementById('asis-te-raz-' + empId);
+  const teProy = document.getElementById('asis-te-proy-'+ empId);
+  const btn    = document.getElementById('asis-btn-'    + empId);
+
+  const te_activo       = teChk  ? teChk.checked : false;
+  const te_hora_entrada = teEnt  ? teEnt.value   : '';
+  const te_hora_salida  = teSal  ? teSal.value   : '';
+  const te_razon        = teRaz  ? teRaz.value   : '';
+  const te_proyecto     = teProy ? teProy.value  : '';
+
+  // Si TE activo pero incompleto, no guardar aún
+  if (te_activo && (!te_hora_entrada || !te_hora_salida || !te_razon)) return;
+
+  // Multi-proyecto
+  const projChks = [...document.querySelectorAll(`.asis-proj-chk-${empId}:checked`)];
+  const proyectosArr = projChks.map(c => {
+    const pctInput = document.querySelector(`.asis-proj-pct-${empId}[data-proj="${c.value}"]`);
+    return { name: c.value, pct: pctInput ? Number(pctInput.value) || 0 : 100 };
+  });
+  if (proyectosArr.length > 1) {
+    const totalPct = proyectosArr.reduce((s, p) => s + p.pct, 0);
+    if (totalPct !== 100) return; // no guardar si % no cuadra
+  }
+
+  if (btn) { btn.textContent = '...'; btn.style.background = '#94a3b8'; btn.disabled = true; }
+  try {
+    await api('/api/rhh/asistencia/diaria', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: empId, fecha, incidencia_type,
+        proyecto:  proyectosArr.length === 1 ? proyectosArr[0].name : (proyectosArr.length > 0 ? proyectosArr[0].name : null),
+        proyectos: proyectosArr.length > 0 ? proyectosArr : null,
+        te_activo,
+        te_hora_entrada: te_activo ? te_hora_entrada : null,
+        te_hora_salida:  te_activo ? te_hora_salida  : null,
+        te_razon:        te_activo ? te_razon        : null,
+        te_proyecto:     te_activo ? te_proyecto     : null,
+      })
+    });
+    if (btn) { btn.textContent = '✓'; btn.style.background = '#16a34a'; btn.disabled = false; }
+    if (te_activo) {
+      setTimeout(() => asisCaptureView(), 1500);
+    }
+  } catch(err) {
+    if (btn) { btn.textContent = '!'; btn.style.background = '#ef4444'; btn.disabled = false; }
+  }
 }
 
 /* Guardar fila individual */
