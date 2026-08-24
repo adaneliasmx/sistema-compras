@@ -538,10 +538,12 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 router.get('/app/version', (req, res) => {
   res.json({
     version: '4.3.5',
+    version_skf: '4.3.6',
+    version_cuesto: '4.3.5',
     min_version: '4.2.0',
     url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
     url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
-    changelog: 'v4.3.5: Fix contador segunda pantalla. Auto-update robusto con taskkill + UAC.'
+    changelog: 'v4.3.6: Recepcion PT: botones Generar Informe, Limpiar Todo, Cambiar embarque. Contador con meta. Resumen consolidado por componente en correo.'
   });
 });
 
