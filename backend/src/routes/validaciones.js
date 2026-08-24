@@ -537,13 +537,13 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
-    version: '4.3.7',
-    version_skf: '4.3.7',
+    version: '4.3.8',
+    version_skf: '4.3.8',
     version_cuesto: '4.3.6',
     min_version: '4.2.0',
     url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
     url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
-    changelog: 'v4.3.7: Ventana maximizada, footer visible. Recepcion PT: botones Generar Informe, Limpiar Todo, Cambiar embarque. Contador con meta. Resumen consolidado por componente en correo.'
+    changelog: 'v4.3.8: Fix layout botones (side=bottom). Barra de progreso en descarga. Ventana maximizada, footer visible. Recepcion PT: Generar Informe, Limpiar Todo, Cambiar embarque, contador N/M, resumen por componente.'
   });
 });
 
