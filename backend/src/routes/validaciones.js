@@ -537,9 +537,9 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
-    version: '4.3.5',
+    version: '4.3.6',
     version_skf: '4.3.6',
-    version_cuesto: '4.3.5',
+    version_cuesto: '4.3.6',
     min_version: '4.2.0',
     url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
     url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
