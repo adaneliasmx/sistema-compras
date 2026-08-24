@@ -9365,6 +9365,7 @@ async function asisCaptureView() {
         const teHrSal   = dayData.te_hora_salida  || '';
         const teRazon   = dayData.te_razon        || '';
         const teProy    = dayData.te_proyecto      || '';
+        const teProyArr = teProy ? teProy.split(',').map(s => s.trim()).filter(Boolean) : [];
         const teValeId  = dayData.te_vale_id      || null;
         const teStatus  = dayData.te_vale_status  || '';
         const disTE     = isSundayDay ? !teActivo : (!editable || !teActivo);
@@ -9424,6 +9425,8 @@ async function asisCaptureView() {
           <td style="padding:4px 6px;">
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
               ${projChecks}
+              ${(!editable||isLocked&&!noRec)?'':`<button type="button" onclick="asisToggleAllProj(${emp.employee_id})"
+                style="padding:1px 5px;font-size:9px;border:1px solid #c7d2fe;border-radius:4px;background:#eef2ff;color:#4338ca;cursor:pointer;white-space:nowrap;">Todos</button>`}
             </div>
           </td>
           <!-- TE columns -->
@@ -9451,11 +9454,18 @@ async function asisCaptureView() {
             </select>
           </td>
           <td style="padding:4px 6px;">
-            <select id="asis-te-proy-${emp.employee_id}" ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
-              style="width:100%;padding:4px 6px;border:1px solid ${disTE?'#e2e8f0':'#f97316'};border-radius:6px;font-size:11px;${disTE?'opacity:.4;':''}">
-              <option value="" ${!teProy?'selected':''}>— Proyecto —</option>
-              ${proyectos.map(p=>`<option value="${p}" ${teProy===p?'selected':''}>${p}</option>`).join('')}
-            </select>
+            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+              ${proyectos.map(p => {
+                const teChecked = teProyArr.includes(p);
+                return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:10px;white-space:nowrap;cursor:pointer;">
+                  <input type="checkbox" class="asis-te-proy-chk-${emp.employee_id}" value="${p}" ${teChecked?'checked':''} ${disTE?'disabled':''}
+                    onchange="asisUpdateTeProy(${emp.employee_id})" style="accent-color:#ea580c;width:12px;height:12px;" />
+                  ${p}
+                </label>`;
+              }).join('')}
+              ${disTE?'':`<button type="button" onclick="asisToggleAllTeProj(${emp.employee_id})"
+                style="padding:1px 5px;font-size:9px;border:1px solid #fdba74;border-radius:4px;background:#fff7ed;color:#c2410c;cursor:pointer;white-space:nowrap;">Todos</button>`}
+            </div>
           </td>
           <td style="padding:4px 8px;text-align:center;white-space:nowrap;">
             <div style="display:flex;flex-direction:column;gap:3px;align-items:center;">
@@ -9596,12 +9606,13 @@ async function asisGuardarFilaDom(empId, fecha) {
   const teEnt   = document.getElementById('asis-te-ent-' + empId);
   const teSal   = document.getElementById('asis-te-sal-' + empId);
   const teRaz   = document.getElementById('asis-te-raz-' + empId);
-  const teProy  = document.getElementById('asis-te-proy-'+ empId);
   const btn     = document.getElementById('asis-btn-'    + empId);
   if (!teChk?.checked) { toast('Activa tiempo extra para guardar en domingo', 'warning'); return; }
   if (!teEnt?.value || !teSal?.value) { toast('Ingresa hora de entrada y salida del TE', 'warning'); return; }
   if (!teRaz?.value) { toast('Selecciona la razon del tiempo extra', 'warning'); return; }
   if (btn) { btn.textContent = '...'; btn.disabled = true; }
+  const teProyChks = [...document.querySelectorAll(`.asis-te-proy-chk-${empId}:checked`)];
+  const te_proyecto_val = teProyChks.map(c => c.value).join(', ') || null;
   try {
     await api('/api/rhh/asistencia/diaria', {
       method: 'POST',
@@ -9611,7 +9622,7 @@ async function asisGuardarFilaDom(empId, fecha) {
         te_hora_entrada: teEnt.value,
         te_hora_salida: teSal.value,
         te_razon: teRaz.value,
-        te_proyecto: teProy?.value || null,
+        te_proyecto: te_proyecto_val,
       })
     });
     if (btn) { btn.textContent = 'Guardado'; btn.style.background = '#16a34a'; btn.disabled = false; }
@@ -9670,18 +9681,44 @@ function asisUpdateProjPcts(empId) {
   asisMarkDirty(empId);
 }
 
+/* Actualizar proyecto TE al marcar/desmarcar checkbox */
+function asisUpdateTeProy(empId) {
+  asisMarkDirty(empId);
+}
+
+/* Seleccionar/deseleccionar todos los proyectos principales */
+function asisToggleAllProj(empId) {
+  const chks = [...document.querySelectorAll(`.asis-proj-chk-${empId}`)];
+  const allChecked = chks.every(c => c.checked);
+  chks.forEach(c => { c.checked = !allChecked; });
+  asisUpdateProjPcts(empId);
+}
+
+/* Seleccionar/deseleccionar todos los proyectos TE */
+function asisToggleAllTeProj(empId) {
+  const chks = [...document.querySelectorAll(`.asis-te-proy-chk-${empId}`)];
+  const allChecked = chks.every(c => c.checked);
+  chks.forEach(c => { c.checked = !allChecked; });
+  asisMarkDirty(empId);
+}
+
 /* Toggle campos TE al activar/desactivar checkbox */
 function asisToggleTE(empId) {
   const chk = document.getElementById('asis-te-' + empId);
   if (!chk) return;
   const on  = chk.checked;
-  const ids = ['asis-te-ent-', 'asis-te-sal-', 'asis-te-raz-', 'asis-te-proy-'];
+  const ids = ['asis-te-ent-', 'asis-te-sal-', 'asis-te-raz-'];
   ids.forEach(prefix => {
     const el = document.getElementById(prefix + empId);
     if (!el) return;
     el.disabled = !on;
     el.style.opacity = on ? '1' : '0.35';
     el.style.borderColor = on ? '#f97316' : '#e2e8f0';
+  });
+  // Toggle TE project checkboxes
+  document.querySelectorAll(`.asis-te-proy-chk-${empId}`).forEach(c => {
+    c.disabled = !on;
+    c.style.opacity = on ? '1' : '0.35';
   });
   asisMarkDirty(empId);
 }
@@ -9707,14 +9744,14 @@ async function asisAutoSave(empId, fecha) {
   const teEnt  = document.getElementById('asis-te-ent-' + empId);
   const teSal  = document.getElementById('asis-te-sal-' + empId);
   const teRaz  = document.getElementById('asis-te-raz-' + empId);
-  const teProy = document.getElementById('asis-te-proy-'+ empId);
   const btn    = document.getElementById('asis-btn-'    + empId);
 
   const te_activo       = teChk  ? teChk.checked : false;
   const te_hora_entrada = teEnt  ? teEnt.value   : '';
   const te_hora_salida  = teSal  ? teSal.value   : '';
   const te_razon        = teRaz  ? teRaz.value   : '';
-  const te_proyecto     = teProy ? teProy.value  : '';
+  const teProyChks = [...document.querySelectorAll(`.asis-te-proy-chk-${empId}:checked`)];
+  const te_proyecto = teProyChks.map(c => c.value).join(', ');
 
   // Si TE activo pero incompleto, no guardar aún
   if (te_activo && (!te_hora_entrada || !te_hora_salida || !te_razon)) return;
@@ -9761,7 +9798,6 @@ async function asisGuardarFila(empId, fecha) {
   const teEnt   = document.getElementById('asis-te-ent-' + empId);
   const teSal   = document.getElementById('asis-te-sal-' + empId);
   const teRaz   = document.getElementById('asis-te-raz-' + empId);
-  const teProy  = document.getElementById('asis-te-proy-'+ empId);
   const btn     = document.getElementById('asis-btn-'    + empId);
 
   const incidencia_type = incSel ? incSel.value : '';
@@ -9779,11 +9815,12 @@ async function asisGuardarFila(empId, fecha) {
     if (totalPct !== 100) { toast(`Los porcentajes deben sumar 100% (actual: ${totalPct}%)`, 'warning'); return; }
   }
 
-  const te_activo      = teChk  ? teChk.checked  : false;
-  const te_hora_entrada = teEnt ? teEnt.value    : '';
-  const te_hora_salida  = teSal ? teSal.value    : '';
-  const te_razon        = teRaz ? teRaz.value    : '';
-  const te_proyecto     = teProy? teProy.value   : '';
+  const te_activo       = teChk  ? teChk.checked  : false;
+  const te_hora_entrada = teEnt  ? teEnt.value     : '';
+  const te_hora_salida  = teSal  ? teSal.value     : '';
+  const te_razon        = teRaz  ? teRaz.value     : '';
+  const teProyChks      = [...document.querySelectorAll(`.asis-te-proy-chk-${empId}:checked`)];
+  const te_proyecto     = teProyChks.map(c => c.value).join(', ');
 
   if (te_activo && (!te_hora_entrada || !te_hora_salida)) {
     toast('Ingresa hora de entrada y salida del tiempo extra', 'warning'); return;
