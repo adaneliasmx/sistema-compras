@@ -9252,6 +9252,7 @@ async function asisCaptureView() {
     const grid            = data.grid            || [];
     const proyectos       = data.proyectos       || ['SKF','AMSTED','TENNECO'];
     const overtimeRazones = data.overtime_razones || [];
+    const dataUnlocks     = data.unlocks         || [];
     const today           = data.today           || '';
     const role            = state.user?.role;
     const isRHHAdmin      = ['rh','admin'].includes(role);
@@ -9271,12 +9272,19 @@ async function asisCaptureView() {
       `<option value="${s.id}" ${asisShiftId==s.id?'selected':''}>${escHtml(s.name)}</option>`
     ).join('');
 
+    // Verificar desbloqueos vigentes por fecha
+    const nowDT = `${today} ${new Date().toLocaleTimeString('en-GB',{timeZone:'America/Mexico_City',hour:'2-digit',minute:'2-digit',hour12:false}).slice(0,5)}`;
+    const activeUnlockDates = new Set(dataUnlocks.filter(u => u.active !== false && u.start_dt <= nowDT && u.end_dt >= nowDT).map(u => u.fecha));
+
     const dayTabsHtml = dates.map((fecha, i) => {
       const label    = asisDateLabel(fecha);
       const isPast   = fecha < today;
       const isToday  = fecha === today;
-      const dot      = isPast ? ' &#x1F512;' : (isToday ? ' &#x2022;' : '');
-      return `<button class="tab-btn ${i===asisDayIdx?'active':''}" onclick="asisDayIdx=${i};asisCaptureView()">${label}${dot}</button>`;
+      const isSunday = new Date(fecha + 'T12:00:00').getDay() === 0;
+      const isUnlocked = activeUnlockDates.has(fecha);
+      const dot      = isUnlocked ? ' &#x1F513;' : (isPast ? ' &#x1F512;' : (isToday ? ' &#x2022;' : ''));
+      const sunStyle = isSunday ? 'border-bottom:2px solid #ea580c;' : '';
+      return `<button class="tab-btn ${i===asisDayIdx?'active':''}" style="${sunStyle}" onclick="asisDayIdx=${i};asisCaptureView()">${label}${isSunday?' (TE)':''}${dot}</button>`;
     }).join('');
 
     const razOpts = overtimeRazones.map(r =>
@@ -9317,10 +9325,12 @@ async function asisCaptureView() {
         for (const emp of emps) {
         const dayData  = (emp.days||[]).find(d => d.fecha === selFecha) || {};
         const isAuto   = !!dayData.is_auto;
+        const isSundayDay = !!dayData.is_sunday;
         const hasRec   = !!dayData.id;
-        const isLocked = !isRHHAdmin && isPastDay && hasRec && !!dayData.incidencia_type;
+        const dayUnlocked = activeUnlockDates.has(selFecha);
+        const isLocked = !isRHHAdmin && isPastDay && hasRec && !!dayData.incidencia_type && !dayUnlocked;
         const noRec    = !hasRec || !dayData.incidencia_type; // sin incidencia registrada -> editable siempre
-        const editable = !isAuto && (!isLocked || noRec);
+        const editable = isSundayDay ? true : (!isAuto && (!isLocked || noRec));
 
         // Incidencia actual (puede ser null/undefined si no hay registro)
         const inc      = dayData.incidencia_type || '';
@@ -9333,9 +9343,21 @@ async function asisCaptureView() {
             .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
             .join('');
 
-        const projOpts = proyectos.map(p =>
-          `<option value="${p}" ${dayData.proyecto===p?'selected':''}>${p}</option>`
-        ).join('');
+        // Multi-proyecto: array [{name,pct}] o fallback a proyecto simple
+        const empProyectos = dayData.proyectos || (dayData.proyecto ? [{ name: dayData.proyecto, pct: 100 }] : []);
+        const projChecks = proyectos.map(p => {
+          const found = empProyectos.find(ep => ep.name === p);
+          const checked = !!found;
+          const pctVal  = found ? found.pct : '';
+          return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:11px;white-space:nowrap;cursor:pointer;">
+            <input type="checkbox" class="asis-proj-chk-${emp.employee_id}" value="${p}" ${checked?'checked':''} ${(!editable||isLocked&&!noRec)?'disabled':''}
+              onchange="asisUpdateProjPcts(${emp.employee_id})" style="accent-color:#4f46e5;width:13px;height:13px;" />
+            ${p}
+            <input type="number" class="asis-proj-pct-${emp.employee_id}" data-proj="${p}" value="${pctVal}" min="0" max="100"
+              ${(!editable||isLocked&&!noRec||!checked)?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:38px;padding:1px 3px;border:1px solid #e5e7eb;border-radius:4px;font-size:10px;text-align:center;${!checked?'opacity:.3;':''}" placeholder="%" />
+          </label>`;
+        }).join('');
 
         // Tiempo extra
         const teActivo  = !!dayData.te_activo;
@@ -9345,7 +9367,7 @@ async function asisCaptureView() {
         const teProy    = dayData.te_proyecto      || '';
         const teValeId  = dayData.te_vale_id      || null;
         const teStatus  = dayData.te_vale_status  || '';
-        const disTE     = !editable || !teActivo;
+        const disTE     = isSundayDay ? !teActivo : (!editable || !teActivo);
 
         // Audit trail para modal RHH
         const auditTrail = dayData.audit_trail || [];
@@ -9363,7 +9385,12 @@ async function asisCaptureView() {
 
         // Boton por fila
         let rowBtn = '';
-        if (isAuto) {
+        if (isSundayDay && !teActivo) {
+          rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#fff7ed;color:#ea580c;font-size:11px;cursor:default;">Descanso</button>`;
+        } else if (isSundayDay && teActivo) {
+          rowBtn = `<button onclick="asisGuardarFilaDom(${emp.employee_id},'${selFecha}')"
+            style="padding:4px 12px;border:none;border-radius:6px;background:#ea580c;color:#fff;font-size:11px;cursor:pointer;font-weight:700;" id="asis-btn-${emp.employee_id}">Guardar TE</button>`;
+        } else if (isAuto) {
           rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#f1f5f9;color:#9ca3af;font-size:11px;cursor:default;">auto</button>`;
         } else if (isLocked && !noRec) {
           if (isRHHAdmin) {
@@ -9380,26 +9407,24 @@ async function asisCaptureView() {
         }
 
         const rowStyle = teActivo ? 'background:#fffbf5;' : '';
-        const disabledAttr = (!editable || isLocked && !noRec) ? 'disabled' : '';
-        const onChangeInc = editable ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisMarkDirty(${emp.employee_id})"` : '';
+        const incDisabled  = isSundayDay ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const disabledAttr = isSundayDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const onChangeInc = (!isSundayDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisMarkDirty(${emp.employee_id})"` : '';
 
         rowsHtml += `<tr style="${rowStyle}">
           <td style="padding:7px 10px;font-size:13px;font-weight:600;">${escHtml(emp.full_name)}</td>
           <td style="padding:7px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
           <td style="padding:4px 6px;">
             <select id="asis-inc-${emp.employee_id}" data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-inc-sel"
-              ${disabledAttr} ${onChangeInc}
+              ${incDisabled} ${onChangeInc}
               style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}">
               ${incSelOpts}
             </select>
           </td>
           <td style="padding:4px 6px;">
-            <select id="asis-proj-${emp.employee_id}" data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-proj-sel"
-              ${disabledAttr} onchange="asisMarkDirty(${emp.employee_id})"
-              style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;">
-              <option value="" ${!dayData.proyecto?'selected':''}>— Sin proyecto —</option>
-              ${projOpts}
-            </select>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              ${projChecks}
+            </div>
           </td>
           <!-- TE columns -->
           <td style="padding:4px 6px;text-align:center;border-left:2px solid #fed7aa;">
@@ -9456,8 +9481,13 @@ async function asisCaptureView() {
           <option value="">Todos los turnos</option>${shiftOpts}
         </select>
       </div>
-      ${isPastDay && !isRHHAdmin ? `<div style="font-size:12px;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:10px;">Dia anterior: las incidencias ya registradas estan bloqueadas para supervisores. Solo puedes capturar las que aun no tienen registro.</div>` : ''}
+      ${isPastDay && !isRHHAdmin ? `<div style="font-size:12px;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:10px;">Dia anterior: las incidencias ya registradas estan bloqueadas para supervisores.${activeUnlockDates.has(selFecha) ? ' <strong style="color:#16a34a;">Este dia esta desbloqueado temporalmente.</strong>' : ' Solo puedes capturar las que aun no tienen registro.'}</div>` : ''}
+      ${isPastDay && isRHHAdmin ? `<div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <button class="btn-ghost" style="font-size:11px;color:#7c3aed;border-color:#ddd6fe;" onclick="asisUnlockModal('${selFecha}')">🔓 Desbloquear dia para supervisores</button>
+        ${activeUnlockDates.has(selFecha) ? '<span style="font-size:11px;color:#16a34a;font-weight:600;">Desbloqueado</span>' : ''}
+      </div>` : ''}
       <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin dias</span>'}</div>
+      ${selFecha && new Date(selFecha+'T12:00:00').getDay()===0 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Domingo — dia de descanso. Solo se puede registrar tiempo extra.</div>' : ''}
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;min-width:900px;">
           <thead>
@@ -9514,6 +9544,132 @@ async function asisCaptureView() {
   }
 }
 
+/* Modal para desbloquear un día pasado para supervisores */
+function asisUnlockModal(fecha) {
+  const now = nowMxStr();
+  const existente = document.getElementById('asis-unlock-modal');
+  if (existente) existente.remove();
+  const div = document.createElement('div');
+  div.id = 'asis-unlock-modal';
+  div.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:10000;display:grid;place-items:center;';
+  div.innerHTML = `
+    <div style="background:#fff;border-radius:14px;width:min(420px,94vw);box-shadow:0 20px 60px rgba(0,0,0,.25);overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#7c3aed,#a855f7);color:#fff;padding:14px 18px;font-size:14px;font-weight:700;display:flex;justify-content:space-between;align-items:center;">
+        Desbloquear dia ${fecha}
+        <button onclick="document.getElementById('asis-unlock-modal').remove()" style="background:none;border:none;color:#fff;font-size:20px;cursor:pointer;">x</button>
+      </div>
+      <div style="padding:16px 18px;">
+        <p style="font-size:12px;color:#475569;margin-bottom:12px;">Permite a supervisores editar incidencias de este dia durante la ventana definida.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Inicio</label>
+            <input id="unlock-start-date" type="date" value="${now.fecha}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;" />
+            <input id="unlock-start-time" type="time" value="${now.hora}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;margin-top:4px;" />
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Fin</label>
+            <input id="unlock-end-date" type="date" value="${now.fecha}" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;" />
+            <input id="unlock-end-time" type="time" value="23:59" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;margin-top:4px;" />
+          </div>
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:11px;font-weight:700;display:block;margin-bottom:3px;">Motivo (opcional)</label>
+          <input id="unlock-motivo" type="text" placeholder="Ej: correccion de asistencia" style="width:100%;padding:5px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;" />
+        </div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          <button onclick="document.getElementById('asis-unlock-modal').remove()" style="padding:7px 14px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb;font-size:12px;cursor:pointer;">Cancelar</button>
+          <button onclick="asisUnlockSave('${fecha}')" style="padding:7px 16px;border:none;border-radius:8px;background:#7c3aed;color:#fff;font-size:12px;cursor:pointer;font-weight:600;">Desbloquear</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(div);
+}
+
+function nowMxStr() {
+  const f = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const h = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+  return { fecha: f, hora: h };
+}
+
+async function asisGuardarFilaDom(empId, fecha) {
+  const teChk   = document.getElementById('asis-te-'     + empId);
+  const teEnt   = document.getElementById('asis-te-ent-' + empId);
+  const teSal   = document.getElementById('asis-te-sal-' + empId);
+  const teRaz   = document.getElementById('asis-te-raz-' + empId);
+  const teProy  = document.getElementById('asis-te-proy-'+ empId);
+  const btn     = document.getElementById('asis-btn-'    + empId);
+  if (!teChk?.checked) { toast('Activa tiempo extra para guardar en domingo', 'warning'); return; }
+  if (!teEnt?.value || !teSal?.value) { toast('Ingresa hora de entrada y salida del TE', 'warning'); return; }
+  if (!teRaz?.value) { toast('Selecciona la razon del tiempo extra', 'warning'); return; }
+  if (btn) { btn.textContent = '...'; btn.disabled = true; }
+  try {
+    await api('/api/rhh/asistencia/diaria', {
+      method: 'POST',
+      body: JSON.stringify({
+        employee_id: empId, fecha, incidencia_type: 'descanso',
+        te_activo: true,
+        te_hora_entrada: teEnt.value,
+        te_hora_salida: teSal.value,
+        te_razon: teRaz.value,
+        te_proyecto: teProy?.value || null,
+      })
+    });
+    if (btn) { btn.textContent = 'Guardado'; btn.style.background = '#16a34a'; btn.disabled = false; }
+    toast('Tiempo extra de domingo guardado. Vale generado.');
+    setTimeout(() => asisCaptureView(), 1200);
+  } catch(err) {
+    if (btn) { btn.textContent = 'Guardar TE'; btn.style.background = '#ea580c'; btn.disabled = false; }
+    toast('Error: ' + err.message, 'error');
+  }
+}
+
+async function asisUnlockSave(fecha) {
+  const sd = document.getElementById('unlock-start-date').value;
+  const st = document.getElementById('unlock-start-time').value;
+  const ed = document.getElementById('unlock-end-date').value;
+  const et = document.getElementById('unlock-end-time').value;
+  const motivo = document.getElementById('unlock-motivo').value.trim();
+  if (!sd || !st || !ed || !et) { toast('Completa fecha y hora de inicio/fin', 'error'); return; }
+  const start_dt = `${sd} ${st}`;
+  const end_dt   = `${ed} ${et}`;
+  if (end_dt <= start_dt) { toast('La fecha/hora fin debe ser posterior al inicio', 'error'); return; }
+  try {
+    await api('/api/rhh/asistencia/unlocks', {
+      method: 'POST',
+      body: JSON.stringify({ fecha, start_dt, end_dt, motivo: motivo || null })
+    });
+    toast('Dia desbloqueado para supervisores');
+    document.getElementById('asis-unlock-modal')?.remove();
+    asisCaptureView();
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
+/* Actualizar % de proyectos al marcar/desmarcar checkbox */
+function asisUpdateProjPcts(empId) {
+  const chks = [...document.querySelectorAll(`.asis-proj-chk-${empId}`)];
+  const checked = chks.filter(c => c.checked);
+  // Habilitar/deshabilitar inputs de % según checkbox
+  chks.forEach(c => {
+    const pctInput = document.querySelector(`.asis-proj-pct-${empId}[data-proj="${c.value}"]`);
+    if (pctInput) {
+      pctInput.disabled = !c.checked;
+      pctInput.style.opacity = c.checked ? '1' : '.3';
+    }
+  });
+  // Auto-distribuir % equitativamente si hay seleccionados
+  if (checked.length > 0) {
+    const pctEach = Math.floor(100 / checked.length);
+    const remainder = 100 - pctEach * checked.length;
+    checked.forEach((c, i) => {
+      const pctInput = document.querySelector(`.asis-proj-pct-${empId}[data-proj="${c.value}"]`);
+      if (pctInput) pctInput.value = pctEach + (i === 0 ? remainder : 0);
+    });
+  }
+  asisMarkDirty(empId);
+}
+
 /* Toggle campos TE al activar/desactivar checkbox */
 function asisToggleTE(empId) {
   const chk = document.getElementById('asis-te-' + empId);
@@ -9539,7 +9695,6 @@ function asisMarkDirty(empId) {
 /* Guardar fila individual */
 async function asisGuardarFila(empId, fecha) {
   const incSel  = document.getElementById('asis-inc-'    + empId);
-  const projSel = document.getElementById('asis-proj-'   + empId);
   const teChk   = document.getElementById('asis-te-'     + empId);
   const teEnt   = document.getElementById('asis-te-ent-' + empId);
   const teSal   = document.getElementById('asis-te-sal-' + empId);
@@ -9549,6 +9704,18 @@ async function asisGuardarFila(empId, fecha) {
 
   const incidencia_type = incSel ? incSel.value : '';
   if (!incidencia_type) { toast('Selecciona una incidencia antes de guardar', 'warning'); return; }
+
+  // Multi-proyecto: leer checkboxes y porcentajes
+  const projChks = [...document.querySelectorAll(`.asis-proj-chk-${empId}:checked`)];
+  const proyectosArr = projChks.map(c => {
+    const pctInput = document.querySelector(`.asis-proj-pct-${empId}[data-proj="${c.value}"]`);
+    return { name: c.value, pct: pctInput ? Number(pctInput.value) || 0 : 100 };
+  });
+  // Validar que sumen 100% si hay mas de 1
+  if (proyectosArr.length > 1) {
+    const totalPct = proyectosArr.reduce((s, p) => s + p.pct, 0);
+    if (totalPct !== 100) { toast(`Los porcentajes deben sumar 100% (actual: ${totalPct}%)`, 'warning'); return; }
+  }
 
   const te_activo      = teChk  ? teChk.checked  : false;
   const te_hora_entrada = teEnt ? teEnt.value    : '';
@@ -9569,7 +9736,8 @@ async function asisGuardarFila(empId, fecha) {
       method: 'POST',
       body: JSON.stringify({
         employee_id: empId, fecha, incidencia_type,
-        proyecto:      projSel ? projSel.value : null,
+        proyecto:      proyectosArr.length === 1 ? proyectosArr[0].name : (proyectosArr.length > 0 ? proyectosArr[0].name : null),
+        proyectos:     proyectosArr.length > 0 ? proyectosArr : null,
         te_activo,
         te_hora_entrada: te_activo ? te_hora_entrada : null,
         te_hora_salida:  te_activo ? te_hora_salida  : null,

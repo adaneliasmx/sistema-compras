@@ -560,11 +560,11 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
     weekStart = d.toISOString().slice(0, 10);
   }
 
-  // Calcular 6 días (lunes a sábado) — domingo no se trabaja
+  // Calcular 7 días (lunes a domingo) — domingo es TE-only
   const days = [];
   const DAY_NAMES = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
   const MONTHS_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const d = new Date(weekStart + 'T12:00:00');
     d.setDate(d.getDate() + i);
     const dateStr = d.toISOString().slice(0, 10);
@@ -574,11 +574,12 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
       label: `${DAY_NAMES[d.getDay()]} ${d.getDate()}`,
       day_num: d.getDay(), // 0=Dom, 1=Lun...
       is_holiday: !!holiday,
-      holiday_name: holiday ? holiday.name : null
+      holiday_name: holiday ? holiday.name : null,
+      is_sunday: d.getDay() === 0
     });
   }
 
-  const weekEndDate = days[5].date;
+  const weekEndDate = days[6].date;
   const weekNum = getISOWeekNumber(weekStart);
 
   const weekRols = (db.rhh_weekly_rol || []).filter(r => r.week_start === weekStart && r.shift_id != null);

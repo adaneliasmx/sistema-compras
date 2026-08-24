@@ -159,11 +159,11 @@ function weekMonday(dateStr) {
   return d.toLocaleDateString('en-CA', { timeZone: 'UTC' });
 }
 
-/* Array de 6 fechas Lun-Sáb */
+/* Array de 7 fechas Lun-Dom */
 function weekDates(monday) {
   const out = [];
   const d   = new Date(monday + 'T12:00:00');
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 7; i++) {
     const nd = new Date(d);
     nd.setDate(d.getDate() + i);
     out.push(nd.toLocaleDateString('en-CA', { timeZone: 'UTC' }));
@@ -182,11 +182,20 @@ function calcHoras(entrada, salida) {
 }
 
 /* ¿Registro bloqueado para supervisor? */
-function isLockedForSupervisor(rec, fecha, role) {
+function isLockedForSupervisor(rec, fecha, role, unlocks) {
   if (role === 'rh' || role === 'admin') return false;
   if (!rec) return false;  // sin registro = no bloqueado
   if (!rec.incidencia_type) return false; // sin incidencia registrada = no bloqueado
-  return fecha < nowMxDate();
+  if (fecha >= nowMxDate()) return false;
+  // Verificar si hay un desbloqueo vigente para esta fecha
+  if (unlocks && unlocks.length > 0) {
+    const now = nowMxDateTime();
+    const hasUnlock = unlocks.some(u =>
+      u.fecha === fecha && u.active !== false && u.start_dt <= now && u.end_dt >= now
+    );
+    if (hasUnlock) return false;
+  }
+  return true;
 }
 
 /* Enriquece un empleado con dept/position/shift */
@@ -670,7 +679,7 @@ router.post('/rol', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin')
 // GET /api/rhh/asistencia/rol/html?week=YYYY-MM-DD — HTML para imprimir/PDF
 router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const week  = weekMonday(req.query.week);
-  const dates = weekDates(week);
+  const dates = weekDates(week).slice(0, 6); // Solo L-S para impresión
   const DIAS_SHORT = ['L','M','Mi','J','V','S'];
   const DIAS  = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
   const MES   = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -892,10 +901,11 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
   const holidays   = (db.rhh_holidays  || []).map(h => h.date);
   const vacSols    = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
   const records    = (db.rhh_attendance || []).filter(r =>
-    r.fecha >= dates[0] && r.fecha <= dates[5]
+    r.fecha >= dates[0] && r.fecha <= dates[6]
   );
   const audits     = db.rhh_attendance_audit || [];
   const ovVales    = db.rhh_overtime_vales   || [];
+  const unlocks    = db.rhh_attendance_unlocks || [];
 
   const grid = employees
     .map(emp => {
@@ -906,8 +916,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         : positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
       const days = dates.map((fecha, di) => {
-        const rec     = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
-        const dow     = di + 1;
+        const rec      = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
+        const dow      = di + 1; // 1=L..6=S, 7=Dom
+        const isSunday = dow === 7;
         const worksDay = shift?.work_days ? shift.work_days.includes(dow) : dow <= 5;
         const isFest   = holidays.includes(fecha);
         const isVac    = vacSols.some(v =>
@@ -920,7 +931,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         if (isVac)     autoType = 'vacacion';
         if (emp.template_status === 'baja') autoType = 'baja';
 
-        const locked    = isLockedForSupervisor(rec, fecha, role);
+        const locked    = isLockedForSupervisor(rec, fecha, role, unlocks);
         const vale      = rec ? ovVales.find(v => v.attendance_id === rec.id) : null;
         const recAudit  = rec ? audits.filter(a => a.attendance_id === rec.id)
           .sort((a, b) => a.id - b.id) : [];
@@ -931,6 +942,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
           incidencia_type:    rec?.incidencia_type  ?? autoType,
           tiempo_retardo_min: rec?.tiempo_retardo_min ?? null,
           proyecto:           rec?.proyecto          ?? ra?.project ?? emp.project ?? null,
+          proyectos:          rec?.proyectos         ?? null,
           notas:              rec?.notas             ?? null,
           is_auto:            !rec && !!autoType,
           registrado_por:     rec?.registrado_por    ?? null,
@@ -944,7 +956,8 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
           te_proyecto:        rec?.te_proyecto        ?? null,
           te_vale_id:         vale?.id                ?? null,
           te_vale_status:     vale?.status            ?? null,
-          // Lock
+          // Sunday / Lock
+          is_sunday:          isSunday,
           is_locked:          locked,
           // Audit trail (para modal RHH/Admin)
           audit_trail:        recAudit.map(a => ({
@@ -982,6 +995,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     dates,
     shifts,
     proyectos:       PROYECTOS,
+    unlocks:         unlocks.filter(u => u.active !== false),
     overtime_razones: OVERTIME_RAZONES,
     incidencia_types: INCIDENCIA_LABELS,
     grid,
@@ -994,10 +1008,10 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
 });
 
 // ── Función interna de upsert para bulk y single ──────────────────────────────
-function upsertAttendance(att, item, userLabel, role, skipLockCheck) {
+function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks) {
   const {
     employee_id, fecha, incidencia_type, tiempo_retardo_min,
-    proyecto, shift_id, notas,
+    proyecto, proyectos, shift_id, notas,
     te_activo, te_hora_entrada, te_hora_salida, te_razon, te_proyecto,
   } = item;
 
@@ -1008,12 +1022,24 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck) {
   const today = nowMxDate();
   const idx   = att.findIndex(r => r.employee_id === Number(employee_id) && r.fecha === fecha);
 
-  // Lock check para supervisores
+  // Lock check para supervisores (respeta desbloqueos vigentes)
   if (!skipLockCheck && role === 'supervisor' && fecha < today && idx !== -1 && att[idx].incidencia_type) {
-    return { error: 'Incidencia bloqueada para supervisor', locked: true, skip: true };
+    const now = nowMxDateTime();
+    const hasUnlock = (unlocks || []).some(u =>
+      u.fecha === fecha && u.active !== false && u.start_dt <= now && u.end_dt >= now
+    );
+    if (!hasUnlock) return { error: 'Incidencia bloqueada para supervisor', locked: true, skip: true };
   }
 
   const teHoras = te_activo ? calcHoras(te_hora_entrada, te_hora_salida) : null;
+
+  // Multi-proyecto: si viene 'proyectos' (array [{name,pct}]) lo usa; si viene 'proyecto' (string) lo convierte
+  let proyectosArr = null;
+  if (Array.isArray(proyectos) && proyectos.length > 0) {
+    proyectosArr = proyectos;
+  } else if (proyecto) {
+    proyectosArr = [{ name: proyecto, pct: 100 }];
+  }
 
   if (idx !== -1) {
     att[idx] = {
@@ -1021,6 +1047,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck) {
       incidencia_type,
       tiempo_retardo_min: tiempo_retardo_min != null ? Number(tiempo_retardo_min) : att[idx].tiempo_retardo_min,
       proyecto:           proyecto    ?? att[idx].proyecto,
+      proyectos:          proyectosArr ?? att[idx].proyectos ?? null,
       shift_id:           shift_id    ? Number(shift_id) : att[idx].shift_id,
       notas:              notas       ?? att[idx].notas,
       te_activo:          !!te_activo,
@@ -1042,6 +1069,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck) {
     incidencia_type,
     tiempo_retardo_min: tiempo_retardo_min != null ? Number(tiempo_retardo_min) : null,
     proyecto:           proyecto   || null,
+    proyectos:          proyectosArr || null,
     shift_id:           shift_id   ? Number(shift_id) : null,
     notas:              notas      || null,
     te_activo:          !!te_activo,
@@ -1063,8 +1091,9 @@ router.post('/diaria', rhhAuthRequired, (req, res) => {
   const att     = db.rhh_attendance || [];
   const role    = req.rhhUser.role;
   const userLbl = req.rhhUser.full_name || req.rhhUser.email;
+  const unlocks = db.rhh_attendance_unlocks || [];
 
-  const result = upsertAttendance(att, req.body || {}, userLbl, role, false);
+  const result = upsertAttendance(att, req.body || {}, userLbl, role, false, unlocks);
 
   if (result.skip) {
     const code = result.locked ? 403 : 400;
@@ -1091,10 +1120,11 @@ router.post('/diaria/bulk', rhhAuthRequired, (req, res) => {
   const att     = db.rhh_attendance || [];
   const role    = req.rhhUser.role;
   const userLbl = req.rhhUser.full_name || req.rhhUser.email;
+  const unlocks = db.rhh_attendance_unlocks || [];
   let saved = 0, locked = 0;
 
   for (const item of records) {
-    const result = upsertAttendance(att, item, userLbl, role, false);
+    const result = upsertAttendance(att, item, userLbl, role, false, unlocks);
     if (result.skip) {
       if (result.locked) locked++;
       continue;
@@ -1177,6 +1207,53 @@ router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh',
   const idx = (db.rhh_attendance || []).findIndex(r => r.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
   db.rhh_attendance.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DESBLOQUEOS TEMPORALES DE DÍAS PASADOS
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /api/rhh/asistencia/unlocks — listar desbloqueos
+router.get('/unlocks', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const unlocks = (db.rhh_attendance_unlocks || []).filter(u => u.active !== false);
+  res.json(unlocks);
+});
+
+// POST /api/rhh/asistencia/unlocks — crear desbloqueo (solo rh/admin)
+router.post('/unlocks', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { fecha, start_dt, end_dt, motivo } = req.body || {};
+  if (!fecha || !start_dt || !end_dt) return res.status(400).json({ error: 'fecha, start_dt y end_dt son requeridos' });
+  if (end_dt <= start_dt) return res.status(400).json({ error: 'end_dt debe ser posterior a start_dt' });
+
+  const db = read();
+  const unlocks = db.rhh_attendance_unlocks || [];
+  const unlock = {
+    id: nextId(unlocks),
+    fecha,
+    start_dt,
+    end_dt,
+    motivo: motivo || null,
+    created_by: req.rhhUser.full_name || req.rhhUser.email,
+    created_at: nowMxDateTime(),
+    active: true
+  };
+  unlocks.push(unlock);
+  db.rhh_attendance_unlocks = unlocks;
+  write(db);
+  res.status(201).json(unlock);
+});
+
+// DELETE /api/rhh/asistencia/unlocks/:id — desactivar desbloqueo
+router.delete('/unlocks/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const unlocks = db.rhh_attendance_unlocks || [];
+  const idx = unlocks.findIndex(u => u.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Desbloqueo no encontrado' });
+  unlocks[idx].active = false;
+  db.rhh_attendance_unlocks = unlocks;
   write(db);
   res.json({ ok: true });
 });
