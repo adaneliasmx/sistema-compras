@@ -559,7 +559,7 @@ async function verDetalleTraz(uuid) {
   for (const it of items) {
     const comp = (esSKF ? it.COMPONENTE : it.componente) || 'SIN COMPONENTE';
     const qty  = parseInt(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
-    const scan = esSKF ? (it.NO_SKF || it.DISPACH || '') : (it.codigo || '');
+    const scan = esSKF ? (it.DISPACH || '') : (it.codigo || '');
     if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [] };
     grupos[comp].contenedores++;
     grupos[comp].piezas += qty;
@@ -586,7 +586,7 @@ async function verDetalleTraz(uuid) {
 
     <div class="section-title">Resumen por Componente</div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Numeros de escaneo</th></tr></thead>
+      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Dispatch</th></tr></thead>
       <tbody>
         ${gruposList.map(g => `<tr>
           <td style="font-weight:600">${g.componente}</td>
