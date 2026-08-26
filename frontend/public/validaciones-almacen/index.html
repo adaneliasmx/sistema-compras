@@ -90,6 +90,7 @@ tr:hover td{background:#fafbff}
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
 .modal{background:#fff;border-radius:12px;padding:28px;max-width:800px;width:95%;max-height:85vh;overflow-y:auto;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+.modal.wide{max-width:1100px}
 .modal h2{font-size:1.05rem;color:#1a3a5c;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid #eee}
 .modal-close{float:right;background:none;border:none;font-size:1.3rem;cursor:pointer;color:#888;line-height:1}
 .modal-close:hover{color:#c0392b}
@@ -97,6 +98,21 @@ tr:hover td{background:#fafbff}
 .detail-item label{font-size:.72rem;font-weight:700;color:#888;text-transform:uppercase;display:block;margin-bottom:2px}
 .detail-item span{font-size:.88rem;color:#222}
 .section-title{font-size:.82rem;font-weight:700;color:#1a3a5c;text-transform:uppercase;margin:16px 0 8px;border-bottom:1px solid #eee;padding-bottom:4px}
+
+/* ── SECCIONES COLAPSABLES TRAZABILIDAD ── */
+.traz-section{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);margin-bottom:20px;overflow:hidden}
+.traz-section-header{padding:14px 20px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;user-select:none;border-bottom:1px solid #eee;transition:background .15s}
+.traz-section-header:hover{background:#f5f8ff}
+.traz-section-header h3{font-size:.95rem;font-weight:700;color:#1a3a5c;display:flex;align-items:center;gap:8px}
+.traz-section-header .arrow{transition:transform .2s;font-size:.7rem;color:#888}
+.traz-section-header.collapsed .arrow{transform:rotate(-90deg)}
+.traz-section-body{transition:max-height .3s ease}
+.traz-section-body.collapsed{display:none}
+.traz-badge-count{font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:12px;background:#e8f0fe;color:#1a5276}
+.scan-nums{font-size:.75rem;color:#555;font-family:'Consolas','Courier New',monospace;word-break:break-all;max-width:400px}
+.resumen-total td{font-weight:700;background:#f5f8ff;border-top:2px solid #1a3a5c}
+.collapsible-toggle{background:none;border:1px solid #ccd;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;color:#555;margin-top:12px}
+.collapsible-toggle:hover{background:#f0f4ff}
 
 /* ── ALERTAS ── */
 .alert{padding:12px 16px;border-radius:6px;font-size:.85rem;margin-bottom:16px}
@@ -380,173 +396,211 @@ async function renderResumen() {
 }
 
 // ── TRAZABILIDAD ONLINE ─────────────────────────────────────────────────────────
+let _trazRows = [];
+
+function _extraerTurno(numEmbarque) {
+  if (!numEmbarque) return null;
+  const m = String(numEmbarque).match(/^(\d+)\./);
+  return m ? parseInt(m[1]) : null;
+}
+
 async function renderTrazabilidad() {
   const m = document.getElementById('mainContent');
   m.innerHTML = `
     <div class="filtros">
       <div><label>Flujo</label>
-        <select id="tFlujo"><option value="">Todos</option><option value="cuesto_a_skf">Cuesto → SKF</option><option value="skf_a_cuesto">SKF → Cuesto</option></select>
+        <select id="tFlujo"><option value="">Todos</option><option value="cuesto_a_skf">Cuesto &rarr; SKF</option><option value="skf_a_cuesto">SKF &rarr; Cuesto</option></select>
       </div>
       <div><label>Estado</label>
-        <select id="tEstado"><option value="">Todos</option><option value="ENVIADO">Enviado (pendiente)</option><option value="VALIDADO">Validado</option></select>
+        <select id="tEstado"><option value="">Todos</option><option value="ENVIADO">Enviado</option><option value="VALIDADO">Validado</option></select>
+      </div>
+      <div><label>Desde</label><input type="date" id="tDesde"></div>
+      <div><label>Hasta</label><input type="date" id="tHasta"></div>
+      <div><label>Turno</label>
+        <select id="tTurno"><option value="">Todos</option><option value="1">Turno 1 (1.x)</option><option value="2">Turno 2 (2.x)</option><option value="3">Turno 3 (3.x)</option></select>
       </div>
       <button class="btn-buscar" onclick="cargarTrazabilidad()">Buscar</button>
+      <button class="btn-clear" onclick="limpiarFiltrosTraz()">Limpiar</button>
     </div>
     <div id="trazTabla"><div class="spinner"></div></div>`;
   cargarTrazabilidad();
 }
 
+function limpiarFiltrosTraz() {
+  ['tDesde','tHasta'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['tFlujo','tEstado','tTurno'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  cargarTrazabilidad();
+}
+
 async function cargarTrazabilidad() {
+  const tablaEl = document.getElementById('trazTabla');
+  tablaEl.innerHTML = '<div class="spinner"></div>';
+
+  // Traer todos del servidor (filtro flujo/estado server-side)
   const params = new URLSearchParams();
   const flujo  = document.getElementById('tFlujo')?.value;
   const estado = document.getElementById('tEstado')?.value;
   if (flujo)  params.set('flujo', flujo);
   if (estado) params.set('estado', estado);
 
-  const tablaEl = document.getElementById('trazTabla');
-  tablaEl.innerHTML = '<div class="spinner"></div>';
-
   const rows = await apiFetch('/embarques-online?' + params.toString());
   if (!rows) return;
-  _trazRows = rows; // actualizar cache
 
-  // Agrupar por numero_embarque
-  const grupos = {};
-  for (const r of rows) {
-    const key = r.numero_embarque || r.uuid;
-    if (!grupos[key]) grupos[key] = { embarque: key, envios: [], flujo: r.flujo, side_origen: r.side_origen, total_piezas: 0, total_items: 0, anomalias: 0, enviados: 0, validados: 0 };
-    grupos[key].envios.push(r);
-    grupos[key].total_piezas += r.total_piezas || 0;
-    grupos[key].total_items += r.total_items || 0;
-    grupos[key].anomalias += r.anomalias_count || 0;
-    if (r.estado === 'ENVIADO') grupos[key].enviados++;
-    if (r.estado === 'VALIDADO') grupos[key].validados++;
-  }
-  const gruposList = Object.values(grupos);
+  // Filtros client-side: fecha y turno
+  const desde = document.getElementById('tDesde')?.value;
+  const hasta = document.getElementById('tHasta')?.value;
+  const turno = document.getElementById('tTurno')?.value;
 
-  const totalEnviados  = rows.filter(r => r.estado === 'ENVIADO').length;
-  const totalValidados = rows.filter(r => r.estado === 'VALIDADO').length;
+  let filtered = rows;
+  if (desde) filtered = filtered.filter(r => (r.fecha_envio || '') >= desde);
+  if (hasta) filtered = filtered.filter(r => (r.fecha_envio || '') <= hasta);
+  if (turno) filtered = filtered.filter(r => _extraerTurno(r.numero_embarque) === parseInt(turno));
+
+  _trazRows = filtered;
+
+  // Separar por flujo
+  const skfACue = filtered.filter(r => r.flujo === 'skf_a_cuesto');
+  const cueASkf = filtered.filter(r => r.flujo === 'cuesto_a_skf');
+
+  // KPIs
+  const skfEnv = skfACue.filter(r => r.estado === 'ENVIADO').length;
+  const skfVal = skfACue.filter(r => r.estado === 'VALIDADO').length;
+  const cueEnv = cueASkf.filter(r => r.estado === 'ENVIADO').length;
+  const cueVal = cueASkf.filter(r => r.estado === 'VALIDADO').length;
 
   tablaEl.innerHTML = `
-    <div class="kpi-grid" style="margin-bottom:16px">
-      <div class="kpi"><label>Total embarques online</label><div class="val">${rows.length}</div><div class="sub">${gruposList.length} grupo${gruposList.length !== 1 ? 's' : ''} por No. Embarque</div></div>
-      <div class="kpi orange"><label>En transito (ENVIADO)</label><div class="val">${totalEnviados}</div></div>
-      <div class="kpi green"><label>Validados</label><div class="val">${totalValidados}</div></div>
-    </div>
-    <div class="tabla-wrap">
-      <div class="tabla-header">
-        <h3>Embarques agrupados por numero</h3>
-        <span class="tabla-count">${gruposList.length} embarques</span>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px">
+      <div style="display:flex;gap:12px">
+        <div class="kpi" style="flex:1"><label>SKF &rarr; Cuesto</label><div class="val">${skfACue.length}</div><div class="sub">embarques</div></div>
+        <div class="kpi orange" style="flex:1"><label>En transito</label><div class="val">${skfEnv}</div></div>
+        <div class="kpi green" style="flex:1"><label>Validados</label><div class="val">${skfVal}</div></div>
       </div>
-      <div style="overflow-x:auto"><table>
-        <thead>
-          <tr><th>No. Embarque</th><th>Flujo</th><th>Envios</th>
-          <th>Total Piezas</th><th>Total Items</th><th>Estado</th>
-          <th>Anomalias</th><th></th></tr>
-        </thead>
-        <tbody>
-          ${gruposList.length === 0 ? '<tr><td colspan="8" class="empty">Sin embarques online registrados</td></tr>' :
-            gruposList.map(g => {
-              const flujoLabel = g.flujo === 'cuesto_a_skf' ? 'CUE → SKF' : 'SKF → CUE';
-              const allValidados = g.enviados === 0 && g.validados > 0;
-              const estadoHtml = allValidados
-                ? '<span class="badge conforme">VALIDADO</span>'
-                : g.enviados > 0
-                  ? '<span class="badge pendiente">ENVIADO (' + g.enviados + ')</span>'
-                  : '<span style="color:#aaa">—</span>';
-              return `<tr>
-                <td><b style="font-size:.95rem">${g.embarque}</b></td>
-                <td><span class="badge ${g.side_origen}">${flujoLabel}</span></td>
-                <td style="text-align:center">${g.envios.length}</td>
-                <td style="text-align:right;font-weight:600">${g.total_piezas}</td>
-                <td style="text-align:right">${g.total_items}</td>
-                <td>${estadoHtml}${g.validados > 0 && g.enviados > 0 ? ' <span class="badge conforme" style="margin-left:4px">✓' + g.validados + '</span>' : ''}</td>
-                <td>${g.anomalias > 0 ? '<span class="badge faltante">' + g.anomalias + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
-                <td><button style="background:#e8f4fd;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.78rem" onclick="verGrupoEmbarque('${g.embarque.replace(/'/g,"\\'")}')">Detalle</button></td>
-              </tr>`;
-            }).join('')}
-        </tbody>
-      </table></div>
+      <div style="display:flex;gap:12px">
+        <div class="kpi" style="flex:1"><label>Cuesto &rarr; SKF</label><div class="val">${cueASkf.length}</div><div class="sub">embarques</div></div>
+        <div class="kpi orange" style="flex:1"><label>En transito</label><div class="val">${cueEnv}</div></div>
+        <div class="kpi green" style="flex:1"><label>Validados</label><div class="val">${cueVal}</div></div>
+      </div>
+    </div>
+
+    ${_renderTrazSection('skf_a_cuesto', 'SKF &rarr; Cuesto (material de almacen)', skfACue)}
+    ${_renderTrazSection('cuesto_a_skf', 'Cuesto &rarr; SKF (producto terminado)', cueASkf)}
+  `;
+}
+
+function _renderTrazSection(id, titulo, rows) {
+  const enviados = rows.filter(r => r.estado === 'ENVIADO').length;
+  const validados = rows.filter(r => r.estado === 'VALIDADO').length;
+  return `
+    <div class="traz-section">
+      <div class="traz-section-header" onclick="toggleTrazSection('${id}')">
+        <h3><span class="arrow" id="arrow_${id}">&#9660;</span> ${titulo}</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="traz-badge-count">${rows.length} embarques</span>
+          ${enviados > 0 ? '<span class="badge pendiente">' + enviados + ' en transito</span>' : ''}
+          ${validados > 0 ? '<span class="badge conforme">' + validados + ' validados</span>' : ''}
+        </div>
+      </div>
+      <div class="traz-section-body" id="body_${id}">
+        <div style="overflow-x:auto"><table>
+          <thead>
+            <tr><th>UUID</th><th>No. Embarque</th><th>Operador</th><th>Fecha</th><th>Hora</th>
+            <th>Piezas</th><th>Items</th><th>Estado</th><th>Anomalias</th><th></th></tr>
+          </thead>
+          <tbody>
+            ${rows.length === 0 ? '<tr><td colspan="10" class="empty">Sin embarques en este flujo</td></tr>' :
+              rows.map(r => {
+                const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
+                return `<tr>
+                  <td style="font-size:.75rem;font-family:monospace;color:#1a5276">${r.uuid}</td>
+                  <td><b>${r.numero_embarque || '-'}</b></td>
+                  <td>${r.operador_envio || '-'}</td>
+                  <td>${r.fecha_envio || '-'}</td>
+                  <td>${r.hora_envio || '-'}</td>
+                  <td style="text-align:right;font-weight:600">${r.total_piezas || 0}</td>
+                  <td style="text-align:right">${r.total_items || 0}</td>
+                  <td><span class="badge ${estadoBadge}">${r.estado}</span>${r.operador_recepcion ? '<br><span style="font-size:.7rem;color:#888">' + r.operador_recepcion + '</span>' : ''}</td>
+                  <td>${(r.anomalias_count || 0) > 0 ? '<span class="badge faltante">' + r.anomalias_count + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
+                  <td><button style="background:#1a3a5c;color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600" onclick="verDetalleTraz('${r.uuid}')">Detalle</button></td>
+                </tr>`;
+              }).join('')}
+          </tbody>
+        </table></div>
+      </div>
     </div>`;
 }
 
-// Cache de datos para detalle de grupo
-let _trazRows = [];
-async function _getTrazRows() {
-  if (_trazRows.length) return _trazRows;
-  _trazRows = await apiFetch('/embarques-online') || [];
-  return _trazRows;
+function toggleTrazSection(id) {
+  const body = document.getElementById('body_' + id);
+  const arrow = document.getElementById('arrow_' + id);
+  if (!body) return;
+  body.classList.toggle('collapsed');
+  if (arrow) {
+    arrow.parentElement.parentElement.classList.toggle('collapsed');
+  }
 }
 
-async function verGrupoEmbarque(numEmbarque) {
+// ── DETALLE TRAZABILIDAD (modal extenso con resumen agrupado) ───────────────
+async function verDetalleTraz(uuid) {
   const body = document.getElementById('modalBody');
-  body.innerHTML = '<div class="spinner"></div>';
-  document.getElementById('modalOverlay').classList.add('open');
-
-  const all = await _getTrazRows();
-  const envios = all.filter(r => r.numero_embarque === numEmbarque);
-  if (!envios.length) { body.innerHTML = '<p>No encontrado</p>'; return; }
-
-  const totalPzas = envios.reduce((s,r) => s + (r.total_piezas||0), 0);
-  const flujoLabel = envios[0].flujo === 'cuesto_a_skf' ? 'CUESTO → SKF' : 'SKF → CUESTO';
-
-  body.innerHTML = `
-    <h2>Embarque: <span style="color:#c0392b">${numEmbarque}</span></h2>
-    <div class="detail-grid">
-      <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
-      <div class="detail-item"><label>Total Envios</label><span>${envios.length}</span></div>
-      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem">${totalPzas}</span></div>
-    </div>
-
-    <div class="section-title">Envios registrados (${envios.length})</div>
-    <div style="overflow-x:auto"><table>
-      <thead><tr><th>UUID</th><th>Operador</th><th>Fecha</th><th>Hora</th><th>Piezas</th><th>Items</th><th>Estado</th><th>Recepcion</th><th></th></tr></thead>
-      <tbody>${envios.map(r => {
-        const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
-        return `<tr>
-          <td style="font-size:.75rem;font-family:monospace;color:#1a5276">${r.uuid}</td>
-          <td>${r.operador_envio}</td>
-          <td>${r.fecha_envio || '-'}</td>
-          <td>${r.hora_envio || '-'}</td>
-          <td style="text-align:right;font-weight:600">${r.total_piezas}</td>
-          <td style="text-align:right">${r.total_items}</td>
-          <td><span class="badge ${estadoBadge}">${r.estado}</span></td>
-          <td>${r.operador_recepcion || '<span style="color:#aaa">—</span>'}</td>
-          <td><button style="background:#e8f4fd;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:.75rem" onclick="verEmbarqueOnline('${r.uuid}')">Items</button></td>
-        </tr>`;
-      }).join('')}</tbody>
-    </table></div>`;
-}
-
-async function verEmbarqueOnline(uuid) {
-  const body = document.getElementById('modalBody');
+  const modal = document.getElementById('modalContent');
+  modal.classList.add('wide');
   body.innerHTML = '<div class="spinner"></div>';
   document.getElementById('modalOverlay').classList.add('open');
 
   const e = await apiFetch('/embarques-online/' + encodeURIComponent(uuid));
   if (!e) return;
 
-  const flujoLabel = e.flujo === 'cuesto_a_skf' ? 'CUESTO → SKF' : 'SKF → CUESTO';
+  const flujoLabel = e.flujo === 'cuesto_a_skf' ? 'CUESTO &rarr; SKF' : 'SKF &rarr; CUESTO';
   const items = e.items || [];
+  const esSKF = e.flujo === 'skf_a_cuesto';
+
+  // Agrupar items por componente
+  const grupos = {};
+  for (const it of items) {
+    const comp = (esSKF ? it.COMPONENTE : it.componente) || 'SIN COMPONENTE';
+    const qty  = parseInt(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
+    const scan = esSKF ? (it.NO_SKF || it.DISPACH || '') : (it.codigo || '');
+    if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [] };
+    grupos[comp].contenedores++;
+    grupos[comp].piezas += qty;
+    if (scan) grupos[comp].scans.push(String(scan));
+  }
+  const gruposList = Object.values(grupos).sort((a,b) => a.componente.localeCompare(b.componente));
+  const totalCont = gruposList.reduce((s,g) => s + g.contenedores, 0);
+  const totalPzas = gruposList.reduce((s,g) => s + g.piezas, 0);
 
   body.innerHTML = `
-    <h2>Embarque <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
+    <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
+
     <div class="detail-grid">
       <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
-      <div class="detail-item"><label>No. Embarque</label><span>${e.numero_embarque}</span></div>
+      <div class="detail-item"><label>No. Embarque</label><span style="font-weight:700;font-size:1.1rem">${e.numero_embarque}</span></div>
       <div class="detail-item"><label>Operador Envio</label><span>${e.operador_envio}</span></div>
-      <div class="detail-item"><label>Fecha Envio</label><span>${e.fecha_envio} ${e.hora_envio||''}</span></div>
-      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem">${e.total_piezas}</span></div>
+      <div class="detail-item"><label>Fecha / Hora Envio</label><span>${e.fecha_envio || '-'} &nbsp; ${e.hora_envio || ''}</span></div>
+      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem;color:#1a3a5c">${e.total_piezas}</span></div>
       <div class="detail-item"><label>Estado</label><span class="badge ${e.estado==='VALIDADO'?'conforme':'pendiente'}">${e.estado}</span></div>
       ${e.operador_recepcion ? `<div class="detail-item"><label>Operador Recepcion</label><span>${e.operador_recepcion}</span></div>` : ''}
-      ${e.fecha_recepcion ? `<div class="detail-item"><label>Fecha Recepcion</label><span>${e.fecha_recepcion}</span></div>` : ''}
+      ${e.fecha_recepcion ? `<div class="detail-item"><label>Fecha Recepcion</label><span>${e.fecha_recepcion} ${e.hora_recepcion || ''}</span></div>` : ''}
       ${e.resultado_validacion ? `<div class="detail-item"><label>Resultado</label><span class="badge ${e.resultado_validacion==='CONFORME'?'conforme':'faltante'}">${e.resultado_validacion}</span></div>` : ''}
     </div>
 
-    <div class="section-title">Items del embarque (${items.length})</div>
+    <div class="section-title">Resumen por Componente</div>
     <div style="overflow-x:auto"><table>
-      <thead><tr>${Object.keys(items[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
-      <tbody>${items.map(it => '<tr>' + Object.values(it).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
+      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Numeros de escaneo</th></tr></thead>
+      <tbody>
+        ${gruposList.map(g => `<tr>
+          <td style="font-weight:600">${g.componente}</td>
+          <td style="text-align:center">${g.contenedores}</td>
+          <td style="text-align:right;font-weight:600">${g.piezas}</td>
+          <td><span class="scan-nums">${g.scans.join(', ')}</span></td>
+        </tr>`).join('')}
+        <tr class="resumen-total">
+          <td>TOTAL</td>
+          <td style="text-align:center">${totalCont}</td>
+          <td style="text-align:right">${totalPzas}</td>
+          <td></td>
+        </tr>
+      </tbody>
     </table></div>
 
     ${(e.anomalias||[]).length > 0 ? `
@@ -554,7 +608,20 @@ async function verEmbarqueOnline(uuid) {
       <div style="overflow-x:auto"><table>
         <thead><tr>${Object.keys(e.anomalias[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
         <tbody>${e.anomalias.map(a => '<tr>' + Object.values(a).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
-      </table></div>` : ''}`;
+      </table></div>` : ''}
+
+    <button class="collapsible-toggle" onclick="toggleItemsDetalle()">Mostrar/Ocultar items individuales (${items.length})</button>
+    <div id="itemsDetalleWrap" style="display:none;margin-top:12px">
+      <div style="overflow-x:auto"><table>
+        <thead><tr>${Object.keys(items[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
+        <tbody>${items.map(it => '<tr>' + Object.values(it).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
+      </table></div>
+    </div>`;
+}
+
+function toggleItemsDetalle() {
+  const el = document.getElementById('itemsDetalleWrap');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 // ── EMBARQUES ──────────────────────────────────────────────────────────────────
@@ -866,6 +933,7 @@ function startPCPolling() {
 function closeModal(e) {
   if (!e || e.target === document.getElementById('modalOverlay')) {
     document.getElementById('modalOverlay').classList.remove('open');
+    document.getElementById('modalContent').classList.remove('wide');
   }
 }
 </script>
