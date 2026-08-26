@@ -5191,6 +5191,42 @@ async function viewCatalogos(el, linea) {
         } catch(e) { alert('Error: ' + e.message); }
       });
     });
+
+    // Mini instructivo al dar clic en encabezado de columna
+    el.querySelectorAll('[data-col-help]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.colHelp;
+        const helpTexts = {
+          es_tiempo_maquina:     '<b>T. Maquina</b><br>Si esta marcado, al registrar un paro con este motivo se activa <b>automaticamente</b> la tolerancia de descuento.<br><br>Los primeros minutos del paro se "perdonan":<br>• L3 = 15 min<br>• L4 = 5 min<br>• Baker / L1 = 13.5 min<br><br>Si NO esta marcado, la duracion completa del paro cuenta.',
+          afecta_eficiencia:     '<b>Eficiencia</b><br><b>Si</b> = Paro <b>programado</b>. El objetivo de ciclos se reduce proporcionalmente al tiempo del paro, por lo que <b>no penaliza</b> la eficiencia.<br><br><b>No</b> = Paro <b>no programado</b>. El objetivo se mantiene completo y la eficiencia <b>baja</b>.',
+          afecta_disponibilidad: '<b>Disponibilidad</b><br><b>Si</b> = Los minutos de este paro se <b>restan</b> de las horas disponibles del turno. Baja el % de disponibilidad en el pizarron.<br><br><b>No</b> = El paro <b>no cuenta</b> como tiempo no disponible.',
+          afecta_rendimiento:    '<b>Rendimiento</b><br><b>Si</b> = Los minutos de paro se usan para calcular el rendimiento del operador (ciclos reales vs horas efectivas).<br><br><b>No</b> = El paro se <b>excluye</b> del calculo de rendimiento. Util para paros que no dependen del operador.'
+        };
+        const txt = helpTexts[key];
+        if (!txt) return;
+        // Remover tooltip previo si existe
+        document.querySelectorAll('.col-help-tooltip').forEach(e => e.remove());
+        const tip = document.createElement('div');
+        tip.className = 'col-help-tooltip';
+        tip.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:6px">
+          <span style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:.5px">Instructivo</span>
+          <span class="col-help-close" style="cursor:pointer;font-size:16px;line-height:1;color:#94a3b8">&times;</span>
+        </div>${txt}`;
+        Object.assign(tip.style, {
+          position:'absolute', zIndex:'9999', background:'#fff', border:'1px solid #e2e8f0',
+          borderRadius:'10px', padding:'14px 16px', maxWidth:'340px', fontSize:'12.5px',
+          lineHeight:'1.5', color:'#1e293b', boxShadow:'0 8px 24px rgba(0,0,0,.15)',
+          animation:'fadeIn .15s ease'
+        });
+        const rect = th.getBoundingClientRect();
+        tip.style.top  = (rect.bottom + window.scrollY + 6) + 'px';
+        tip.style.left = (rect.left + window.scrollX) + 'px';
+        document.body.appendChild(tip);
+        tip.querySelector('.col-help-close').addEventListener('click', () => tip.remove());
+        const autoClose = (ev) => { if (!tip.contains(ev.target) && ev.target !== th) { tip.remove(); document.removeEventListener('click', autoClose); } };
+        setTimeout(() => document.addEventListener('click', autoClose), 10);
+      });
+    });
   }
 
   await loadAndRender();
@@ -5259,6 +5295,13 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     afecta_rendimiento:    'Rendimiento'
   };
 
+  const colHelp = {
+    es_tiempo_maquina:     'T. Maquina: Si esta marcado, al registrar un paro con este motivo se activa automaticamente la tolerancia de descuento (L3=15min, L4=5min, Baker/L1=13.5min). Los primeros X minutos del paro se "perdonan".',
+    afecta_eficiencia:     'Eficiencia: Si=paro PROGRAMADO, el objetivo de ciclos se reduce proporcionalmente al tiempo de paro (no penaliza eficiencia). No=paro NO programado, el objetivo se mantiene completo y la eficiencia baja.',
+    afecta_disponibilidad: 'Disponibilidad: Si=los minutos de este paro se restan de las horas disponibles del turno, baja el % de disponibilidad. No=el paro no cuenta como tiempo no disponible.',
+    afecta_rendimiento:    'Rendimiento: Si=los minutos de paro se usan para calcular rendimiento del operador (ciclos reales vs horas efectivas). No=el paro se excluye del calculo de rendimiento.'
+  };
+
   // Render especial para excluir_calidad y campos de impacto de paros
   const badgeSi  = '<span style="background:#dcfce7;color:#16a34a;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">Sí</span>';
   const badgeNo  = '<span style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:700">No</span>';
@@ -5279,7 +5322,13 @@ function renderCatalogoTable(tipo, items, linea, catalogo) {
     <thead>
       <tr>
         <th>#</th>
-        ${cols.map(c => `<th>${colHeaders[c] || c.replace(/_/g,' ')}</th>`).join('')}
+        ${cols.map(c => {
+          const label = colHeaders[c] || c.replace(/_/g,' ');
+          if (tipo === 'motivos_paro' && colHelp[c]) {
+            return `<th style="cursor:help;user-select:none;white-space:nowrap" data-col-help="${c}">${label} <span style="font-size:10px;opacity:.5">ℹ</span></th>`;
+          }
+          return `<th>${label}</th>`;
+        }).join('')}
         <th></th>
       </tr>
     </thead>
