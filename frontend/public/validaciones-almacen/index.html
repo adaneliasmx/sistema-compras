@@ -520,7 +520,7 @@ function _renderTrazSection(id, titulo, rows) {
                   <td style="text-align:right">${r.total_items || 0}</td>
                   <td><span class="badge ${estadoBadge}">${r.estado}</span>${r.operador_recepcion ? '<br><span style="font-size:.7rem;color:#888">' + r.operador_recepcion + '</span>' : ''}</td>
                   <td>${(r.anomalias_count || 0) > 0 ? '<span class="badge faltante">' + r.anomalias_count + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
-                  <td><button style="background:#1a3a5c;color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600" onclick="verDetalleTraz('${r.uuid}')">Detalle</button></td>
+                  <td style="white-space:nowrap"><button style="background:#1a3a5c;color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600" onclick="verDetalleTraz('${r.uuid}')">Detalle</button>${currentUser && currentUser.role === 'admin' ? ' <button style="background:#c0392b;color:#fff;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;margin-left:4px" onclick="eliminarEmbarque(\'' + r.uuid + '\')">Eliminar</button>' : ''}</td>
                 </tr>`;
               }).join('')}
           </tbody>
@@ -570,7 +570,9 @@ async function verDetalleTraz(uuid) {
   const totalPzas = gruposList.reduce((s,g) => s + g.piezas, 0);
 
   body.innerHTML = `
-    <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
+    <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span>
+      ${currentUser && currentUser.role === 'admin' ? '<button style="float:right;background:#c0392b;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:.82rem;font-weight:600;margin-top:-4px" onclick="eliminarEmbarque(\'' + e.uuid + '\')">Eliminar embarque</button>' : ''}
+    </h2>
 
     <div class="detail-grid">
       <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
@@ -622,6 +624,22 @@ async function verDetalleTraz(uuid) {
 function toggleItemsDetalle() {
   const el = document.getElementById('itemsDetalleWrap');
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function eliminarEmbarque(uuid) {
+  if (!confirm('¿Seguro que desea ELIMINAR el embarque?\n\n' + uuid + '\n\nEsta accion no se puede deshacer.')) return;
+  try {
+    const r = await apiFetch('/embarques-online/' + encodeURIComponent(uuid), { method: 'DELETE' });
+    if (r && r.ok) {
+      alert('Embarque eliminado: ' + uuid);
+      closeModal();
+      cargarTrazabilidad();
+    } else {
+      alert('Error al eliminar: ' + (r?.error || 'desconocido'));
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 // ── EMBARQUES ──────────────────────────────────────────────────────────────────

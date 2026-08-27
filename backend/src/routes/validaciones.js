@@ -463,6 +463,16 @@ router.get('/embarques-online/:uuid', valAuthRequired, (req, res) => {
   res.json(emb);
 });
 
+// Eliminar un embarque online (solo admin)
+router.delete('/embarques-online/:uuid', valAuthRequired, valAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.val_embarques || []).findIndex(e => e.uuid === req.params.uuid);
+  if (idx === -1) return res.status(404).json({ error: 'Embarque no encontrado' });
+  const removed = db.val_embarques.splice(idx, 1)[0];
+  write(db);
+  res.json({ ok: true, uuid: removed.uuid, mensaje: 'Embarque eliminado' });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // HEARTBEAT — las apps de escritorio reportan que estan en linea
 // ═══════════════════════════════════════════════════════════════════════════════
