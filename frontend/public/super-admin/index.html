@@ -1194,20 +1194,16 @@ function renderModulePanel(m) {
     </div>`;
 }
 
-async function runVacuum() {
-  if (!confirm('Ejecutar VACUUM FULL en todas las tablas de PostgreSQL.
-Esto compacta la base de datos y libera espacio en disco.
 
-Puede tardar unos segundos. ¿Continuar?')) return;
+async function runVacuum() {
+  if (!confirm('Ejecutar VACUUM FULL en todas las tablas.\nCompacta la DB y libera espacio en disco.\n\nContinuar?')) return;
   try {
     const r = await api('/api/super-admin/vacuum', { method: 'POST' });
-    const summary = r.results.map(t => t.table + ': ' + t.status).join('
-');
-    alert('VACUUM completado:
-
-' + summary);
+    const summary = r.results.map(t => t.table + ': ' + t.status).join('\n');
+    alert('VACUUM completado:\n\n' + summary);
   } catch(e) { alert('Error: ' + e.message); }
 }
+
 
 async function rhhReseed() {
   if (!confirm('Esto agregará empleados faltantes desde el JSON seed. Los datos productivos, locks, bajas y empleados importados se conservarán.\n\n¿Continuar?')) return;
