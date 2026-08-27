@@ -362,6 +362,34 @@ router.patch('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req,
   res.json(list[idx]);
 });
 
+// PATCH batch — aplicar cambios a múltiples items del catálogo en 1 solo write
+router.patch('/catalogos/:linea/:tipo', produccionAllowRoles('admin'), (req, res) => {
+  const { linea, tipo } = req.params;
+  const key = catalogCollection(linea, tipo);
+  if (!key) return res.status(400).json({ error: 'Tipo de catálogo inválido' });
+
+  const updates = req.body; // [{id, campo, valor}, ...]
+  if (!Array.isArray(updates) || updates.length === 0) return res.status(400).json({ error: 'Se requiere un array de cambios' });
+
+  const pdb = dbProd.read();
+  const list = pdb[key] || [];
+  const allowed = new Set(['nombre', 'activo', 'cliente', 'carga_optima_varillas', 'piezas_objetivo', 'piezas_por_varilla', 'descripcion', 'numero', 'motivo_id', 'proceso_id', 'no_skf', 'tipo', 'cavidades', 'varillas_totales', 'excluir_calidad', 'afecta_eficiencia', 'afecta_disponibilidad', 'afecta_rendimiento', 'es_tiempo_maquina']);
+
+  let applied = 0;
+  for (const u of updates) {
+    if (!u.id) continue;
+    const item = list.find(x => String(x.id) === String(u.id));
+    if (!item) continue;
+    for (const [field, val] of Object.entries(u)) {
+      if (field === 'id') continue;
+      if (allowed.has(field)) { item[field] = val; applied++; }
+    }
+  }
+
+  dbProd.write(pdb);
+  res.json({ ok: true, applied });
+});
+
 router.delete('/catalogos/:linea/:tipo/:id', produccionAllowRoles('admin'), (req, res) => {
   const { linea, tipo, id } = req.params;
   const key = catalogCollection(linea, tipo);

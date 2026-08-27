@@ -182,6 +182,7 @@
             <button class="btn-ghost" onclick="exportAccesos()" title="Descargar base de accesos como JSON">📥 Exportar</button>
             <button class="btn-ghost" onclick="toggleRhhSync()" id="rhhSyncToggleBtn" style="background:#eff6ff;color:#1d4ed8;border-color:#bfdbfe">👥 Vincular RHH</button>
             <button class="btn-ghost" onclick="toggleDupPanel()" id="dupToggleBtn" style="background:#fef9c3;color:#92400e;border-color:#fde68a">🔀 Detectar duplicados</button>
+            <button class="btn-ghost" onclick="runVacuum()" style="background:#fef2f2;color:#991b1b;border-color:#fecaca">🧹 VACUUM DB</button>
             <button class="btn-primary" onclick="openCreateModal()">+ Nuevo usuario</button>
           </div>
         </div>
@@ -1191,6 +1192,21 @@ function renderModulePanel(m) {
       </div>
       <div class="module-body">${bodyContent}</div>
     </div>`;
+}
+
+async function runVacuum() {
+  if (!confirm('Ejecutar VACUUM FULL en todas las tablas de PostgreSQL.
+Esto compacta la base de datos y libera espacio en disco.
+
+Puede tardar unos segundos. ¿Continuar?')) return;
+  try {
+    const r = await api('/api/super-admin/vacuum', { method: 'POST' });
+    const summary = r.results.map(t => t.table + ': ' + t.status).join('
+');
+    alert('VACUUM completado:
+
+' + summary);
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function rhhReseed() {

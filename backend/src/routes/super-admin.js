@@ -1124,4 +1124,25 @@ router.post('/rhh-reseed', superAdminRequired, async (req, res) => {
 });
 
 
+// ── VACUUM: limpiar dead tuples de PostgreSQL ────────────────────────────────
+router.post('/vacuum', superAdminRequired, async (req, res) => {
+  if (!process.env.DATABASE_URL) return res.json({ ok: true, message: 'No PostgreSQL (entorno local)' });
+  try {
+    const { Pool } = require('pg');
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+    const tables = ['app_data', 'rhh_data', 'vales_data', 'produccion_data', 'inventarios_data', 'mantenimiento_data', 'validaciones_data'];
+    const results = [];
+    for (const t of tables) {
+      try {
+        await pool.query(`VACUUM FULL ${t}`);
+        results.push({ table: t, status: 'ok' });
+      } catch (e) { results.push({ table: t, status: 'error', error: e.message }); }
+    }
+    await pool.end();
+    res.json({ ok: true, results });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

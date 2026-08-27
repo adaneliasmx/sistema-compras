@@ -5178,17 +5178,30 @@ async function viewCatalogos(el, linea) {
       });
     });
 
+    // Batch toggle: acumula cambios y hace 1 solo PATCH despues de 800ms sin clics
+    let _impactBatch = {};
+    let _impactTimer = null;
     el.querySelectorAll('[data-toggle-impact]').forEach(td => {
-      td.addEventListener('click', async () => {
+      td.addEventListener('click', () => {
         const id    = td.dataset.toggleImpact;
         const campo = td.dataset.campo;
         const item  = items.find(i => String(i.id) === String(id));
         if (!item) return;
-        const newVal = !item[campo]; // true→false, false/undefined→true
-        try {
-          await PATCH(`/catalogos/${linea}/${apiTipo(activeTab)}/${id}`, { [campo]: newVal });
-          loadAndRender();
-        } catch(e) { alert('Error: ' + e.message); }
+        const newVal = !(item[campo] !== false);
+        item[campo] = newVal;
+        td.innerHTML = newVal ? '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600">Si</span>'
+                              : '<span style="background:#fee2e2;color:#991b1b;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600">No</span>';
+        if (!_impactBatch[id]) _impactBatch[id] = { id: Number(id) };
+        _impactBatch[id][campo] = newVal;
+        clearTimeout(_impactTimer);
+        _impactTimer = setTimeout(async () => {
+          const batch = Object.values(_impactBatch);
+          _impactBatch = {};
+          try {
+            await PATCH(`/catalogos/${linea}/${apiTipo(activeTab)}`, batch);
+            loadAndRender();
+          } catch(e) { alert('Error guardando cambios: ' + e.message); }
+        }, 800);
       });
     });
 

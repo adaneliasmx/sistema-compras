@@ -20,6 +20,7 @@ if (process.env.DATABASE_URL) {
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;
+let _writeQueue = Promise.resolve();
 
 const EMPTY_DB = {
   // Catálogos por línea (cada línea es independiente)
@@ -137,8 +138,11 @@ function read() {
 function write(data) {
   _cache = data;
   if (pool) {
-    pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [JSON.stringify(data)])
-      .catch(err => console.error('[db-produccion] Error persistiendo en PostgreSQL:', err.message));
+    const snapshot = JSON.stringify(data);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
+        .catch(err => console.error('[db-produccion] Error persistiendo en PostgreSQL:', err.message))
+    );
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
