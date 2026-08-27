@@ -615,12 +615,19 @@ async function verDetalleTraz(uuid) {
   // ── 4. EXTRAS detalle (sobrantes + resueltos historicos) ──
   const extraDetalle = [];
   for (const sRaw of rawSobrantes) {
-    const sId = typeof sRaw === 'string' ? sRaw : (sRaw.codigo || sRaw.DISPACH || '');
+    const isObj = typeof sRaw === 'object' && sRaw !== null;
+    const sId = isObj ? (sRaw.codigo || sRaw.dispach || sRaw.DISPACH || '') : String(sRaw);
     const resuelto = resueltosMap[sId];
+    const comp = resuelto ? (resuelto.componente || resuelto.COMPONENTE || '-')
+               : isObj ? (sRaw.componente || sRaw.COMPONENTE || '-') : '-';
+    const lote = resuelto ? (resuelto.lote || '')
+               : isObj ? (sRaw.lote || sRaw.LOTE || '') : '';
+    const qty = isObj ? (parseInt(sRaw.cantidad || sRaw.qty || sRaw.QTY || 0) || 0) : 0;
     extraDetalle.push({
       dispatch: sId,
-      componente: resuelto ? (resuelto.componente || resuelto.COMPONENTE || '-') : '-',
-      lote: resuelto ? (resuelto.lote || '') : '',
+      componente: comp,
+      lote,
+      piezas: qty,
       embarque_original: resuelto ? (resuelto.embarque_original || '') : '',
       fecha_original: resuelto ? (resuelto.fecha_original || '') : '',
       esDestiempo: !!resuelto
@@ -752,7 +759,7 @@ async function verDetalleTraz(uuid) {
     ${extraDetalle.length > 0 ? `
       <div class="section-title" style="color:#e67e22">Material Extra (${extraDetalle.length}) &mdash; recibido pero NO en QRY de este embarque</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr style="background:#fef3cd"><th>Componente</th><th>Dispatch</th><th>Lote</th><th>Observacion</th></tr></thead>
+        <thead><tr style="background:#fef3cd"><th>Componente</th><th>Dispatch</th><th style="text-align:right">Piezas</th><th>Lote</th><th>Observacion</th></tr></thead>
         <tbody>
           ${extraDetalle.map(x => {
             const bg = x.esDestiempo ? 'background:#fff8e1' : 'background:#fffcf0';
@@ -762,6 +769,7 @@ async function verDetalleTraz(uuid) {
             return `<tr style="${bg}">
               <td style="font-weight:600">${x.componente}</td>
               <td><span class="scan-nums">${x.dispatch}</span></td>
+              <td style="text-align:right;font-weight:600">${x.piezas || '-'}</td>
               <td>${x.lote || '-'}</td>
               <td>${obs}</td>
             </tr>`;

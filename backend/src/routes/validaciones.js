@@ -474,6 +474,45 @@ router.delete('/embarques-online/:uuid', valAuthRequired, valAllowRoles('admin')
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// PENDIENTES — sincronizacion de pendientes desde las apps de escritorio
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Recibe la lista completa de pendientes activos desde una app
+router.post('/pendientes/sync', syncKeyRequired, (req, res) => {
+  const { side, pendientes } = req.body;
+  if (!side || !Array.isArray(pendientes)) {
+    return res.status(400).json({ error: 'side y pendientes[] son requeridos' });
+  }
+  if (!['skf', 'cuesto'].includes(side)) {
+    return res.status(400).json({ error: 'side debe ser skf o cuesto' });
+  }
+
+  const db = read();
+  const key = side === 'skf' ? 'val_skf_pendientes' : 'val_cuesto_pendientes';
+  db[key] = pendientes.map(p => ({
+    ...p,
+    side,
+    synced_at: new Date().toISOString()
+  }));
+  write(db);
+  res.json({ ok: true, count: pendientes.length });
+});
+
+// Consulta pendientes (para dashboard web)
+router.get('/pendientes', valAuthRequired, (req, res) => {
+  const db = read();
+  const { side } = req.query;
+  let result = [];
+  if (!side || side === 'skf') {
+    result = result.concat((db.val_skf_pendientes || []).map(p => ({ ...p, side: 'skf' })));
+  }
+  if (!side || side === 'cuesto') {
+    result = result.concat((db.val_cuesto_pendientes || []).map(p => ({ ...p, side: 'cuesto' })));
+  }
+  res.json(result);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // HEARTBEAT — las apps de escritorio reportan que estan en linea
 // ═══════════════════════════════════════════════════════════════════════════════
 
