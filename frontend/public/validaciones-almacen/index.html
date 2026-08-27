@@ -539,7 +539,7 @@ function toggleTrazSection(id) {
   }
 }
 
-// ── DETALLE TRAZABILIDAD (modal extenso con resumen agrupado) ───────────────
+// ── DETALLE TRAZABILIDAD (modal extenso con conciliacion) ────────────────────
 async function verDetalleTraz(uuid) {
   const body = document.getElementById('modalBody');
   const modal = document.getElementById('modalContent');
@@ -553,51 +553,108 @@ async function verDetalleTraz(uuid) {
   const flujoLabel = e.flujo === 'cuesto_a_skf' ? 'CUESTO &rarr; SKF' : 'SKF &rarr; CUESTO';
   const items = e.items || [];
   const esSKF = e.flujo === 'skf_a_cuesto';
-
-  // Extraer faltantes/sobrantes del detalle de validacion
   const vd = e.validacion_detalle || {};
+  const rawCoinciden = vd.coinciden || [];
   const rawFaltantes = vd.faltantes || [];
   const rawSobrantes = vd.sobrantes || [];
+  const resueltos = vd.resueltos_historicos || [];
+  const hayValidacion = e.estado === 'VALIDADO';
+  const hayDiferencias = rawFaltantes.length > 0 || rawSobrantes.length > 0;
 
-  // Construir set de IDs faltantes para cruzar con items
-  // SKF→CUE: faltantes son DISPACHs (strings)
-  // CUE→SKF: faltantes son objetos {codigo, ...} o strings
+  // Helpers segun flujo
+  const getComp = it => (esSKF ? it.COMPONENTE : it.componente) || 'SIN COMPONENTE';
+  const getQty  = it => parseInt(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
+  const getId   = it => String(esSKF ? (it.DISPACH || '') : (it.codigo || ''));
+  const getLote  = it => String(esSKF ? (it.LOTE || '') : (it.lote || ''));
+
+  // Sets de IDs
+  const coincidirSet = new Set(rawCoinciden);
   const faltanteIds = new Set(rawFaltantes.map(f => typeof f === 'string' ? f : (f.codigo || f.DISPACH || '')));
+  const resueltosMap = {};
+  for (const r of resueltos) resueltosMap[r.dispach || r.codigo || ''] = r;
 
-  // Agrupar items por componente + marcar faltantes
-  const grupos = {};
+  // ── 1. ENVIADO por componente (de items) ──
+  const envComp = {};
   for (const it of items) {
-    const comp = (esSKF ? it.COMPONENTE : it.componente) || 'SIN COMPONENTE';
-    const qty  = parseInt(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
-    const scan = esSKF ? (it.DISPACH || '') : (it.codigo || '');
-    if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [], faltantes: 0 };
-    grupos[comp].contenedores++;
-    grupos[comp].piezas += qty;
-    if (scan) grupos[comp].scans.push(String(scan));
+    const c = getComp(it), q = getQty(it), d = getId(it);
+    if (!envComp[c]) envComp[c] = { cont: 0, pzas: 0, dispatches: [] };
+    envComp[c].cont++; envComp[c].pzas += q; envComp[c].dispatches.push(d);
   }
 
-  // Cruzar faltantes con componentes: buscar en items originales a qué componente pertenece cada faltante
-  for (const fId of faltanteIds) {
-    if (!fId) continue;
-    const itemOrig = items.find(it => (esSKF ? it.DISPACH : it.codigo) === fId);
-    if (itemOrig) {
-      const comp = (esSKF ? itemOrig.COMPONENTE : itemOrig.componente) || 'SIN COMPONENTE';
-      if (grupos[comp]) grupos[comp].faltantes++;
-    } else {
-      // Faltante sin match en items enviados (puede pasar con datos de QRY)
-      // Intentar extraer componente del objeto faltante si es objeto
-      const fObj = rawFaltantes.find(f => (typeof f === 'object') && ((f.codigo || f.DISPACH) === fId));
-      const comp = fObj ? (fObj.componente || fObj.COMPONENTE || 'SIN COMPONENTE') : 'SIN COMPONENTE';
-      if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [], faltantes: 0 };
-      grupos[comp].faltantes++;
+  // ── 2. RECIBIDO por componente (coinciden mapeados a items) ──
+  const recComp = {};
+  for (const it of items) {
+    const d = getId(it);
+    if (coincidirSet.has(d)) {
+      const c = getComp(it), q = getQty(it);
+      if (!recComp[c]) recComp[c] = { cont: 0, pzas: 0, dispatches: [] };
+      recComp[c].cont++; recComp[c].pzas += q; recComp[c].dispatches.push(d);
     }
   }
 
-  const gruposList = Object.values(grupos).sort((a,b) => a.componente.localeCompare(b.componente));
-  const totalCont = gruposList.reduce((s,g) => s + g.contenedores, 0);
-  const totalPzas = gruposList.reduce((s,g) => s + g.piezas, 0);
-  const totalFalt = gruposList.reduce((s,g) => s + g.faltantes, 0);
-  const hayDiferencias = rawFaltantes.length > 0 || rawSobrantes.length > 0;
+  // ── 3. FALTANTES por componente (de items que no llegaron) ──
+  const faltComp = {};
+  const faltDetalle = [];
+  for (const fId of faltanteIds) {
+    if (!fId) continue;
+    const itemOrig = items.find(it => getId(it) === fId);
+    let comp, qty, lote;
+    if (itemOrig) {
+      comp = getComp(itemOrig); qty = getQty(itemOrig); lote = getLote(itemOrig);
+    } else {
+      const fObj = rawFaltantes.find(f => typeof f === 'object' && (f.codigo || f.DISPACH) === fId);
+      comp = fObj ? (fObj.componente || fObj.COMPONENTE || '-') : '-';
+      qty = fObj ? (parseInt(fObj.cantidad || fObj.QTY || 0) || 0) : 0;
+      lote = fObj ? (fObj.lote || fObj.LOTE || '') : '';
+    }
+    if (!faltComp[comp]) faltComp[comp] = { cont: 0, pzas: 0 };
+    faltComp[comp].cont++; faltComp[comp].pzas += qty;
+    faltDetalle.push({ dispatch: fId, componente: comp, piezas: qty, lote });
+  }
+
+  // ── 4. EXTRAS detalle (sobrantes + resueltos historicos) ──
+  const extraDetalle = [];
+  for (const sRaw of rawSobrantes) {
+    const sId = typeof sRaw === 'string' ? sRaw : (sRaw.codigo || sRaw.DISPACH || '');
+    const resuelto = resueltosMap[sId];
+    extraDetalle.push({
+      dispatch: sId,
+      componente: resuelto ? (resuelto.componente || resuelto.COMPONENTE || '-') : '-',
+      lote: resuelto ? (resuelto.lote || '') : '',
+      embarque_original: resuelto ? (resuelto.embarque_original || '') : '',
+      fecha_original: resuelto ? (resuelto.fecha_original || '') : '',
+      esDestiempo: !!resuelto
+    });
+  }
+
+  // ── 5. CONCILIACION: todas las componentes ──
+  const allComps = new Set([...Object.keys(envComp), ...Object.keys(recComp), ...Object.keys(faltComp)]);
+  const concRows = [];
+  for (const comp of [...allComps].sort()) {
+    const env = envComp[comp] || { cont: 0, pzas: 0, dispatches: [] };
+    const rec = recComp[comp] || { cont: 0, pzas: 0, dispatches: [] };
+    const fal = faltComp[comp] || { cont: 0, pzas: 0 };
+    const diff = rec.pzas - env.pzas;
+    // Generar conclusion
+    let conclusion = '';
+    if (fal.cont === 0 && env.pzas === rec.pzas) {
+      conclusion = `Se esperaban ${env.pzas.toLocaleString()} pzas (${env.cont} cont.) y se recibieron ${rec.pzas.toLocaleString()} pzas (${rec.cont} cont.). Todos los dispatch coinciden.`;
+    } else if (fal.cont > 0) {
+      conclusion = `Se esperaban ${env.pzas.toLocaleString()} pzas (${env.cont} cont.) y se recibieron ${rec.pzas.toLocaleString()} pzas (${rec.cont} cont.). Faltan ${fal.cont} contenedor(es) = ${fal.pzas.toLocaleString()} pzas.`;
+    } else if (rec.pzas > env.pzas) {
+      conclusion = `Se esperaban ${env.pzas.toLocaleString()} pzas y se recibieron ${rec.pzas.toLocaleString()} pzas (+${(rec.pzas - env.pzas).toLocaleString()} de mas).`;
+    }
+    concRows.push({ comp, env, rec, fal, diff, conclusion });
+  }
+
+  // Totales
+  const totEnvCont = concRows.reduce((s,r) => s + r.env.cont, 0);
+  const totEnvPzas = concRows.reduce((s,r) => s + r.env.pzas, 0);
+  const totRecCont = concRows.reduce((s,r) => s + r.rec.cont, 0);
+  const totRecPzas = concRows.reduce((s,r) => s + r.rec.pzas, 0);
+  const totFaltCont = concRows.reduce((s,r) => s + r.fal.cont, 0);
+  const totFaltPzas = concRows.reduce((s,r) => s + r.fal.pzas, 0);
+  const destCount = extraDetalle.filter(x => x.esDestiempo).length;
 
   body.innerHTML = `
     <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
@@ -607,62 +664,123 @@ async function verDetalleTraz(uuid) {
       <div class="detail-item"><label>No. Embarque</label><span style="font-weight:700;font-size:1.1rem">${e.numero_embarque}</span></div>
       <div class="detail-item"><label>Operador Envio</label><span>${e.operador_envio}</span></div>
       <div class="detail-item"><label>Fecha / Hora Envio</label><span>${e.fecha_envio || '-'} &nbsp; ${e.hora_envio || ''}</span></div>
-      <div class="detail-item"><label>Total Piezas</label><span style="font-weight:700;font-size:1.1rem;color:#1a3a5c">${e.total_piezas}</span></div>
+      <div class="detail-item"><label>Total Piezas Enviadas</label><span style="font-weight:700;font-size:1.1rem;color:#1a3a5c">${e.total_piezas}</span></div>
       <div class="detail-item"><label>Estado</label><span class="badge ${e.estado==='VALIDADO'?'conforme':'pendiente'}">${e.estado}</span></div>
       ${e.operador_recepcion ? `<div class="detail-item"><label>Operador Recepcion</label><span>${e.operador_recepcion}</span></div>` : ''}
       ${e.fecha_recepcion ? `<div class="detail-item"><label>Fecha Recepcion</label><span>${e.fecha_recepcion} ${e.hora_recepcion || ''}</span></div>` : ''}
       ${e.resultado_validacion ? `<div class="detail-item"><label>Resultado</label><span class="badge ${e.resultado_validacion==='CONFORME'?'conforme':'faltante'}">${e.resultado_validacion}</span></div>` : ''}
     </div>
 
-    ${hayDiferencias ? '<div class="alert warn" style="margin-top:4px"><b>Este embarque tiene diferencias:</b> ' + rawFaltantes.length + ' faltante(s), ' + rawSobrantes.length + ' sobrante(s)</div>' : ''}
+    ${hayDiferencias ? `<div class="alert warn" style="margin-top:4px"><b>Este embarque tiene diferencias:</b> ${rawFaltantes.length} faltante(s), ${rawSobrantes.length} extra(s)${destCount > 0 ? ', ' + destCount + ' recibido(s) a destiempo' : ''}</div>` : ''}
+    ${hayValidacion && !hayDiferencias ? '<div class="alert info" style="margin-top:4px"><b>Embarque conforme.</b> Todo el material enviado fue recibido correctamente.</div>' : ''}
 
-    <div class="section-title">Resumen por Componente</div>
+    ${hayValidacion ? `
+    <div class="section-title">Conciliacion por Componente &mdash; Enviado vs Recibido</div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Dispatch</th>${hayDiferencias ? '<th style="text-align:center">Faltantes</th>' : ''}</tr></thead>
+      <thead><tr>
+        <th rowspan="2" style="vertical-align:bottom">Componente</th>
+        <th colspan="2" style="text-align:center;background:#d4e8f7;border-bottom:1px solid #b0d0e8">ENVIADO</th>
+        <th colspan="2" style="text-align:center;background:#d5f5e3;border-bottom:1px solid #a0ddb8">RECIBIDO</th>
+        <th rowspan="2" style="text-align:center;vertical-align:bottom">Diferencia</th>
+      </tr><tr>
+        <th style="text-align:center;background:#e8f2fa;font-size:.72rem">Cont.</th>
+        <th style="text-align:right;background:#e8f2fa;font-size:.72rem">Piezas</th>
+        <th style="text-align:center;background:#e5f8ed;font-size:.72rem">Cont.</th>
+        <th style="text-align:right;background:#e5f8ed;font-size:.72rem">Piezas</th>
+      </tr></thead>
       <tbody>
-        ${gruposList.map(g => {
-          const rowStyle = g.faltantes > 0 ? 'background:#fce4e4' : '';
-          return `<tr style="${rowStyle}">
-          <td style="font-weight:600">${g.componente}${g.faltantes > 0 ? ' <span class="badge faltante" style="margin-left:6px">FALTA</span>' : ''}</td>
-          <td style="text-align:center">${g.contenedores}</td>
-          <td style="text-align:right;font-weight:600">${g.piezas}</td>
-          <td><span class="scan-nums">${g.scans.join(', ')}</span></td>
-          ${hayDiferencias ? '<td style="text-align:center;font-weight:700;color:' + (g.faltantes > 0 ? '#c0392b' : '#27ae60') + '">' + g.faltantes + '</td>' : ''}
-        </tr>`;}).join('')}
+        ${concRows.map(r => {
+          const ok = r.fal.cont === 0 && r.diff >= 0;
+          const bg = ok ? '' : 'background:#fce4e4';
+          return `<tr style="${bg}">
+            <td style="font-weight:600">${r.comp}${!ok ? ' <span class="badge faltante" style="margin-left:4px">FALTA</span>' : ''}</td>
+            <td style="text-align:center">${r.env.cont}</td>
+            <td style="text-align:right;font-weight:600">${r.env.pzas.toLocaleString()}</td>
+            <td style="text-align:center">${r.rec.cont}</td>
+            <td style="text-align:right;font-weight:600">${r.rec.pzas.toLocaleString()}</td>
+            <td style="text-align:center;font-weight:700;color:${ok ? '#27ae60' : '#c0392b'}">${r.diff > 0 ? '+' : ''}${r.diff === 0 && ok ? '0 &check;' : r.diff.toLocaleString()}</td>
+          </tr>`;
+        }).join('')}
         <tr class="resumen-total">
           <td>TOTAL</td>
-          <td style="text-align:center">${totalCont}</td>
-          <td style="text-align:right">${totalPzas}</td>
-          <td></td>
-          ${hayDiferencias ? '<td style="text-align:center;color:#c0392b">' + totalFalt + '</td>' : ''}
+          <td style="text-align:center">${totEnvCont}</td>
+          <td style="text-align:right">${totEnvPzas.toLocaleString()}</td>
+          <td style="text-align:center">${totRecCont}</td>
+          <td style="text-align:right">${totRecPzas.toLocaleString()}</td>
+          <td style="text-align:center;color:${totRecPzas - totEnvPzas >= 0 && totFaltCont === 0 ? '#27ae60' : '#c0392b'}">${(totRecPzas - totEnvPzas) > 0 ? '+' : ''}${(totRecPzas - totEnvPzas).toLocaleString()}</td>
         </tr>
       </tbody>
-    </table></div>
+    </table></div>` : `
+    <div class="section-title">Resumen por Componente (enviado)</div>
+    <div style="overflow-x:auto"><table>
+      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Dispatch</th></tr></thead>
+      <tbody>
+        ${Object.entries(envComp).sort((a,b) => a[0].localeCompare(b[0])).map(([c,v]) => `<tr>
+          <td style="font-weight:600">${c}</td>
+          <td style="text-align:center">${v.cont}</td>
+          <td style="text-align:right;font-weight:600">${v.pzas.toLocaleString()}</td>
+          <td><span class="scan-nums">${v.dispatches.join(', ')}</span></td>
+        </tr>`).join('')}
+        <tr class="resumen-total">
+          <td>TOTAL</td>
+          <td style="text-align:center">${totEnvCont}</td>
+          <td style="text-align:right">${totEnvPzas.toLocaleString()}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table></div>`}
 
-    ${rawFaltantes.length > 0 ? `
-      <div class="section-title" style="color:#c0392b">Material Faltante (${rawFaltantes.length}) &mdash; en QRY pero NO recibido</div>
+    ${faltDetalle.length > 0 ? `
+      <div class="section-title" style="color:#c0392b">Material Faltante (${faltDetalle.length}) &mdash; en QRY pero NO recibido</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr style="background:#fce4e4">${esSKF
-          ? '<th>Codigo</th><th>Componente</th><th>Lote</th><th>Proceso</th>'
-          : '<th>Dispatch</th><th>Componente</th>'
-        }</tr></thead>
-        <tbody>${rawFaltantes.map(f => {
-          if (typeof f === 'object') {
-            return '<tr style="background:#fff5f5"><td>' + (f.codigo || f.DISPACH || '-') + '</td><td>' + (f.componente || f.COMPONENTE || '-') + '</td>' + (f.lote ? '<td>' + f.lote + '</td>' : '') + (f.proceso ? '<td>' + f.proceso + '</td>' : '') + '</tr>';
-          }
-          // faltante es string (DISPACH) - buscar en items el componente
-          const itemOrig = items.find(it => (esSKF ? it.DISPACH : it.codigo) === f);
-          const comp = itemOrig ? (esSKF ? itemOrig.COMPONENTE : itemOrig.componente) : '-';
-          return '<tr style="background:#fff5f5"><td>' + f + '</td><td>' + (comp || '-') + '</td></tr>';
-        }).join('')}</tbody>
+        <thead><tr style="background:#fce4e4"><th>Componente</th><th>Dispatch</th><th style="text-align:right">Piezas</th><th>Lote</th></tr></thead>
+        <tbody>
+          ${faltDetalle.map(f => `<tr style="background:#fff5f5">
+            <td style="font-weight:600">${f.componente}</td>
+            <td><span class="scan-nums">${f.dispatch}</span></td>
+            <td style="text-align:right;font-weight:600">${f.piezas}</td>
+            <td>${f.lote || '-'}</td>
+          </tr>`).join('')}
+          <tr class="resumen-total" style="background:#fce4e4">
+            <td>Total faltante</td><td></td>
+            <td style="text-align:right">${faltDetalle.reduce((s,f) => s + f.piezas, 0).toLocaleString()}</td>
+            <td></td>
+          </tr>
+        </tbody>
       </table></div>` : ''}
 
-    ${rawSobrantes.length > 0 ? `
-      <div class="section-title" style="color:#e67e22">Material Extra (${rawSobrantes.length}) &mdash; recibido pero NO en QRY</div>
+    ${extraDetalle.length > 0 ? `
+      <div class="section-title" style="color:#e67e22">Material Extra (${extraDetalle.length}) &mdash; recibido pero NO en QRY de este embarque</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr style="background:#fef3cd"><th>ID</th></tr></thead>
-        <tbody>${rawSobrantes.map(s => '<tr style="background:#fffcf0"><td>' + (typeof s === 'object' ? JSON.stringify(s) : s) + '</td></tr>').join('')}</tbody>
+        <thead><tr style="background:#fef3cd"><th>Componente</th><th>Dispatch</th><th>Lote</th><th>Observacion</th></tr></thead>
+        <tbody>
+          ${extraDetalle.map(x => {
+            const bg = x.esDestiempo ? 'background:#fff8e1' : 'background:#fffcf0';
+            const obs = x.esDestiempo
+              ? '<span style="color:#b7770d;font-weight:600">EMBARQUE ANTERIOR: ' + x.embarque_original + '</span><br><span style="font-size:.75rem;color:#888">Recibido a destiempo' + (x.fecha_original ? ' (enviado ' + x.fecha_original + ')' : '') + '</span>'
+              : '<span style="color:#888">Sin historial (SIN QRY)</span>';
+            return `<tr style="${bg}">
+              <td style="font-weight:600">${x.componente}</td>
+              <td><span class="scan-nums">${x.dispatch}</span></td>
+              <td>${x.lote || '-'}</td>
+              <td>${obs}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
       </table></div>` : ''}
+
+    ${hayValidacion && concRows.length > 0 ? `
+      <div class="section-title">Conclusiones de Conciliacion</div>
+      <div style="background:#f8f9fb;border-radius:8px;padding:16px 20px;border:1px solid #e0e4ea">
+        ${concRows.map(r => {
+          const ok = r.fal.cont === 0 && r.diff >= 0;
+          const icon = ok ? '<span style="color:#27ae60;font-weight:700">&#10003;</span>' : '<span style="color:#c0392b;font-weight:700">&#10007;</span>';
+          return '<div style="margin-bottom:8px;font-size:.85rem">' + icon + ' <b>' + r.comp + ':</b> ' + r.conclusion + '</div>';
+        }).join('')}
+        ${extraDetalle.filter(x => x.esDestiempo).map(x =>
+          '<div style="margin-bottom:8px;font-size:.85rem"><span style="color:#b7770d;font-weight:700">&#9200;</span> <b>' + x.componente + '</b> (' + x.dispatch + '): Recibido a destiempo. Pertenece al embarque <b>' + x.embarque_original + '</b>' + (x.fecha_original ? ' del ' + x.fecha_original : '') + '.</div>'
+        ).join('')}
+      </div>` : ''}
 
     <button class="collapsible-toggle" onclick="toggleItemsDetalle()">Mostrar/Ocultar items individuales (${items.length})</button>
     <div id="itemsDetalleWrap" style="display:none;margin-top:12px">
