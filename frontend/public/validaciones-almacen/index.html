@@ -554,25 +554,53 @@ async function verDetalleTraz(uuid) {
   const items = e.items || [];
   const esSKF = e.flujo === 'skf_a_cuesto';
 
-  // Agrupar items por componente
+  // Extraer faltantes/sobrantes del detalle de validacion
+  const vd = e.validacion_detalle || {};
+  const rawFaltantes = vd.faltantes || [];
+  const rawSobrantes = vd.sobrantes || [];
+
+  // Construir set de IDs faltantes para cruzar con items
+  // SKF→CUE: faltantes son DISPACHs (strings)
+  // CUE→SKF: faltantes son objetos {codigo, ...} o strings
+  const faltanteIds = new Set(rawFaltantes.map(f => typeof f === 'string' ? f : (f.codigo || f.DISPACH || '')));
+
+  // Agrupar items por componente + marcar faltantes
   const grupos = {};
   for (const it of items) {
     const comp = (esSKF ? it.COMPONENTE : it.componente) || 'SIN COMPONENTE';
     const qty  = parseInt(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
     const scan = esSKF ? (it.DISPACH || '') : (it.codigo || '');
-    if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [] };
+    if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [], faltantes: 0 };
     grupos[comp].contenedores++;
     grupos[comp].piezas += qty;
     if (scan) grupos[comp].scans.push(String(scan));
   }
+
+  // Cruzar faltantes con componentes: buscar en items originales a qué componente pertenece cada faltante
+  for (const fId of faltanteIds) {
+    if (!fId) continue;
+    const itemOrig = items.find(it => (esSKF ? it.DISPACH : it.codigo) === fId);
+    if (itemOrig) {
+      const comp = (esSKF ? itemOrig.COMPONENTE : itemOrig.componente) || 'SIN COMPONENTE';
+      if (grupos[comp]) grupos[comp].faltantes++;
+    } else {
+      // Faltante sin match en items enviados (puede pasar con datos de QRY)
+      // Intentar extraer componente del objeto faltante si es objeto
+      const fObj = rawFaltantes.find(f => (typeof f === 'object') && ((f.codigo || f.DISPACH) === fId));
+      const comp = fObj ? (fObj.componente || fObj.COMPONENTE || 'SIN COMPONENTE') : 'SIN COMPONENTE';
+      if (!grupos[comp]) grupos[comp] = { componente: comp, contenedores: 0, piezas: 0, scans: [], faltantes: 0 };
+      grupos[comp].faltantes++;
+    }
+  }
+
   const gruposList = Object.values(grupos).sort((a,b) => a.componente.localeCompare(b.componente));
   const totalCont = gruposList.reduce((s,g) => s + g.contenedores, 0);
   const totalPzas = gruposList.reduce((s,g) => s + g.piezas, 0);
+  const totalFalt = gruposList.reduce((s,g) => s + g.faltantes, 0);
+  const hayDiferencias = rawFaltantes.length > 0 || rawSobrantes.length > 0;
 
   body.innerHTML = `
-    <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span>
-      ${currentUser && currentUser.role === 'admin' ? '<button style="float:right;background:#c0392b;color:#fff;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;font-size:.82rem;font-weight:600;margin-top:-4px" onclick="eliminarEmbarque(\'' + e.uuid + '\')">Eliminar embarque</button>' : ''}
-    </h2>
+    <h2>Detalle: <span style="color:#c0392b;font-family:monospace">${e.uuid}</span></h2>
 
     <div class="detail-grid">
       <div class="detail-item"><label>Flujo</label><span>${flujoLabel}</span></div>
@@ -586,30 +614,54 @@ async function verDetalleTraz(uuid) {
       ${e.resultado_validacion ? `<div class="detail-item"><label>Resultado</label><span class="badge ${e.resultado_validacion==='CONFORME'?'conforme':'faltante'}">${e.resultado_validacion}</span></div>` : ''}
     </div>
 
+    ${hayDiferencias ? '<div class="alert warn" style="margin-top:4px"><b>Este embarque tiene diferencias:</b> ' + rawFaltantes.length + ' faltante(s), ' + rawSobrantes.length + ' sobrante(s)</div>' : ''}
+
     <div class="section-title">Resumen por Componente</div>
     <div style="overflow-x:auto"><table>
-      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Dispatch</th></tr></thead>
+      <thead><tr><th>Componente</th><th style="text-align:center">Contenedores</th><th style="text-align:right">Piezas</th><th>Dispatch</th>${hayDiferencias ? '<th style="text-align:center">Faltantes</th>' : ''}</tr></thead>
       <tbody>
-        ${gruposList.map(g => `<tr>
-          <td style="font-weight:600">${g.componente}</td>
+        ${gruposList.map(g => {
+          const rowStyle = g.faltantes > 0 ? 'background:#fce4e4' : '';
+          return `<tr style="${rowStyle}">
+          <td style="font-weight:600">${g.componente}${g.faltantes > 0 ? ' <span class="badge faltante" style="margin-left:6px">FALTA</span>' : ''}</td>
           <td style="text-align:center">${g.contenedores}</td>
           <td style="text-align:right;font-weight:600">${g.piezas}</td>
           <td><span class="scan-nums">${g.scans.join(', ')}</span></td>
-        </tr>`).join('')}
+          ${hayDiferencias ? '<td style="text-align:center;font-weight:700;color:' + (g.faltantes > 0 ? '#c0392b' : '#27ae60') + '">' + g.faltantes + '</td>' : ''}
+        </tr>`;}).join('')}
         <tr class="resumen-total">
           <td>TOTAL</td>
           <td style="text-align:center">${totalCont}</td>
           <td style="text-align:right">${totalPzas}</td>
           <td></td>
+          ${hayDiferencias ? '<td style="text-align:center;color:#c0392b">' + totalFalt + '</td>' : ''}
         </tr>
       </tbody>
     </table></div>
 
-    ${(e.anomalias||[]).length > 0 ? `
-      <div class="section-title" style="color:#c0392b">Anomalias (${e.anomalias.length})</div>
+    ${rawFaltantes.length > 0 ? `
+      <div class="section-title" style="color:#c0392b">Material Faltante (${rawFaltantes.length}) &mdash; en QRY pero NO recibido</div>
       <div style="overflow-x:auto"><table>
-        <thead><tr>${Object.keys(e.anomalias[0]||{}).map(k => '<th>'+k+'</th>').join('')}</tr></thead>
-        <tbody>${e.anomalias.map(a => '<tr>' + Object.values(a).map(v => '<td>'+v+'</td>').join('') + '</tr>').join('')}</tbody>
+        <thead><tr style="background:#fce4e4">${esSKF
+          ? '<th>Codigo</th><th>Componente</th><th>Lote</th><th>Proceso</th>'
+          : '<th>Dispatch</th><th>Componente</th>'
+        }</tr></thead>
+        <tbody>${rawFaltantes.map(f => {
+          if (typeof f === 'object') {
+            return '<tr style="background:#fff5f5"><td>' + (f.codigo || f.DISPACH || '-') + '</td><td>' + (f.componente || f.COMPONENTE || '-') + '</td>' + (f.lote ? '<td>' + f.lote + '</td>' : '') + (f.proceso ? '<td>' + f.proceso + '</td>' : '') + '</tr>';
+          }
+          // faltante es string (DISPACH) - buscar en items el componente
+          const itemOrig = items.find(it => (esSKF ? it.DISPACH : it.codigo) === f);
+          const comp = itemOrig ? (esSKF ? itemOrig.COMPONENTE : itemOrig.componente) : '-';
+          return '<tr style="background:#fff5f5"><td>' + f + '</td><td>' + (comp || '-') + '</td></tr>';
+        }).join('')}</tbody>
+      </table></div>` : ''}
+
+    ${rawSobrantes.length > 0 ? `
+      <div class="section-title" style="color:#e67e22">Material Extra (${rawSobrantes.length}) &mdash; recibido pero NO en QRY</div>
+      <div style="overflow-x:auto"><table>
+        <thead><tr style="background:#fef3cd"><th>ID</th></tr></thead>
+        <tbody>${rawSobrantes.map(s => '<tr style="background:#fffcf0"><td>' + (typeof s === 'object' ? JSON.stringify(s) : s) + '</td></tr>').join('')}</tbody>
       </table></div>` : ''}
 
     <button class="collapsible-toggle" onclick="toggleItemsDetalle()">Mostrar/Ocultar items individuales (${items.length})</button>
