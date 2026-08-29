@@ -1,0 +1,10 @@
+{
+  "name": "Inventario con App - Cuesto/SKF",
+  "short_name": "Inventario",
+  "start_url": "/home/inventarioconapp",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0f0f1a",
+  "theme_color": "#1a1a2e",
+  "icons": []
+}

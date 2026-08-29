@@ -255,6 +255,10 @@ app.get('/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(proce
 app.get('/empleados', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
 app.get('/empleados/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
 
+// Inventario con App (escaneo QR movil)
+app.get('/home/inventarioconapp', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
+app.get('/home/inventarioconapp/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
+
 // Vista pública PO (proveedor)
 app.get('/po-view', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/po-view.html'));
