@@ -173,6 +173,66 @@ app.use('/api/mant',      mantRoutes);
 // ── API Validaciones Almacen ──────────────────────────────────────────────────
 app.use('/api/val', validacionesRoutes);
 
+// ── API Inventario con App (aislada, sin acceso a BD del sistema) ─────────────
+const crypto = require('crypto');
+const INVAPP_USERS = {
+  'IsaCha2026': 'bd3ef80a63ec33e9e49caee0e21a2d3687b3f7613cd5c32fac99c617019a4579'
+};
+app.post('/api/invapp/login', (req, res) => {
+  const { user, pass } = req.body || {};
+  const hash = crypto.createHash('sha256').update(String(pass || '')).digest('hex');
+  if (INVAPP_USERS[user] && INVAPP_USERS[user] === hash) {
+    const token = crypto.createHmac('sha256', JWT_SECRET)
+      .update('invapp:' + user + ':' + Date.now()).digest('hex');
+    const expires = Date.now() + 24 * 60 * 60 * 1000;
+    if (!global._invappTokens) global._invappTokens = {};
+    for (const [k, v] of Object.entries(global._invappTokens)) {
+      if (v.expires < Date.now()) delete global._invappTokens[k];
+    }
+    global._invappTokens[token] = { user, expires };
+    res.json({ ok: true, token, user });
+  } else {
+    res.status(401).json({ ok: false, error: 'Usuario o contrasena incorrectos' });
+  }
+});
+app.get('/api/invapp/verify', (req, res) => {
+  const token = req.headers['x-invapp-token'] || '';
+  const entry = (global._invappTokens || {})[token];
+  if (entry && entry.expires > Date.now()) {
+    res.json({ ok: true, user: entry.user });
+  } else {
+    res.status(401).json({ ok: false });
+  }
+});
+// Middleware para validar token invapp
+function invappAuth(req, res, next) {
+  const token = req.headers['x-invapp-token'] || '';
+  const entry = (global._invappTokens || {})[token];
+  if (entry && entry.expires > Date.now()) { req.invappUser = entry.user; next(); }
+  else res.status(401).json({ ok: false, error: 'No autorizado' });
+}
+// Archivo aislado para datos de invapp (no toca BD del sistema)
+const INVAPP_DATA = path.resolve(process.cwd(), 'database/invapp-data.json');
+function readInvapp() {
+  try { return JSON.parse(require('fs').readFileSync(INVAPP_DATA, 'utf8')); }
+  catch { return { ubicaciones: [] }; }
+}
+function writeInvapp(data) {
+  require('fs').writeFileSync(INVAPP_DATA, JSON.stringify(data, null, 2));
+}
+app.get('/api/invapp/ubicaciones', invappAuth, (req, res) => {
+  const data = readInvapp();
+  res.json({ ok: true, ubicaciones: data.ubicaciones || [] });
+});
+app.post('/api/invapp/ubicaciones', invappAuth, (req, res) => {
+  const { ubicaciones: ubis } = req.body || {};
+  if (!Array.isArray(ubis)) return res.status(400).json({ ok: false, error: 'Formato invalido' });
+  const data = readInvapp();
+  data.ubicaciones = ubis.map(u => String(u).trim()).filter(Boolean);
+  writeInvapp(data);
+  res.json({ ok: true, ubicaciones: data.ubicaciones });
+});
+
 // ── API Pública (sin auth) ────────────────────────────────────────────────────
 app.use('/api/public/po', publicPoRoutes);
 

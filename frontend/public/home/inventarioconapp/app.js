@@ -3,9 +3,15 @@
    Modulo web para escaneo QR con camara, reporte y exportacion Excel
    ═══════════════════════════════════════════════════════════════════ */
 
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.0.1';
 const LS_UBIS = 'invapp_ubicaciones';
 const LS_SESSIONS = 'invapp_sesiones';
+const SS_TOKEN = 'invapp_token';
+const SS_USER = 'invapp_user';
+
+// ── Auth State ───────────────────────────────────────────────────────
+let authToken = sessionStorage.getItem(SS_TOKEN) || '';
+let authUser = sessionStorage.getItem(SS_USER) || '';
 
 // ── State ────────────────────────────────────────────────────────────
 let ubicaciones = JSON.parse(localStorage.getItem(LS_UBIS) || '[]');
@@ -111,7 +117,34 @@ function claveEscaneo(campos) {
 }
 
 // ── Persistence ──────────────────────────────────────────────────────
-function saveUbicaciones() { localStorage.setItem(LS_UBIS, JSON.stringify(ubicaciones)); }
+function saveUbicaciones() {
+  localStorage.setItem(LS_UBIS, JSON.stringify(ubicaciones));
+  // Sync to server
+  if (authToken) {
+    fetch('/api/invapp/ubicaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-invapp-token': authToken },
+      body: JSON.stringify({ ubicaciones })
+    }).catch(() => {});
+  }
+}
+async function loadUbicacionesFromServer() {
+  if (!authToken) return;
+  try {
+    const resp = await fetch('/api/invapp/ubicaciones', {
+      headers: { 'x-invapp-token': authToken }
+    });
+    const data = await resp.json();
+    if (data.ok && Array.isArray(data.ubicaciones)) {
+      // Merge: server is source of truth, but keep any local-only items
+      const serverSet = new Set(data.ubicaciones);
+      const localOnly = ubicaciones.filter(u => !serverSet.has(u));
+      ubicaciones = [...data.ubicaciones, ...localOnly];
+      localStorage.setItem(LS_UBIS, JSON.stringify(ubicaciones));
+      if (localOnly.length > 0) saveUbicaciones(); // push merged list back
+    }
+  } catch (e) {}
+}
 function saveSesiones() { localStorage.setItem(LS_SESSIONS, JSON.stringify(sesiones)); }
 
 // ── Render helper ────────────────────────────────────────────────────
@@ -119,18 +152,121 @@ const $ = sel => document.querySelector(sel);
 function render(html) { document.getElementById('app').innerHTML = html; }
 
 // ════════════════════════════════════════════════════════════════════
+//  AUTH
+// ════════════════════════════════════════════════════════════════════
+
+async function verifyToken() {
+  if (!authToken) return false;
+  try {
+    const resp = await fetch('/api/invapp/verify', {
+      headers: { 'x-invapp-token': authToken }
+    });
+    const data = await resp.json();
+    if (data.ok) { authUser = data.user; return true; }
+  } catch (e) {}
+  authToken = '';
+  authUser = '';
+  sessionStorage.removeItem(SS_TOKEN);
+  sessionStorage.removeItem(SS_USER);
+  return false;
+}
+
+function showLogin(errorMsg) {
+  stopCamera();
+  render(`
+    <div class="screen" style="justify-content:center;align-items:center;min-height:100vh">
+      <div style="width:100%;max-width:340px">
+        <div class="home-logo">
+          <h1>Inventario con App</h1>
+          <p>Cuesto / SKF - Escaneo QR</p>
+        </div>
+        <div class="card" style="margin-top:24px">
+          <h3 style="text-align:center;margin-bottom:16px">Iniciar Sesion</h3>
+          ${errorMsg ? `<div class="scan-feedback error" style="margin-bottom:12px">${errorMsg}</div>` : ''}
+          <input type="text" id="login-user" placeholder="Usuario"
+                 class="login-input" autocomplete="username" autocapitalize="off" />
+          <input type="password" id="login-pass" placeholder="Contrasena"
+                 class="login-input" autocomplete="current-password"
+                 onkeydown="if(event.key==='Enter')doLogin()" />
+          <button class="btn btn-green mt-16" id="btn-login" onclick="doLogin()">Entrar</button>
+        </div>
+        <div class="version-footer">v${APP_VERSION}</div>
+      </div>
+    </div>
+  `);
+  document.getElementById('login-user').focus();
+}
+
+async function doLogin() {
+  const user = document.getElementById('login-user').value.trim();
+  const pass = document.getElementById('login-pass').value;
+  if (!user || !pass) { showLogin('Ingresa usuario y contrasena'); return; }
+
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try {
+    const resp = await fetch('/api/invapp/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user, pass })
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      authToken = data.token;
+      authUser = data.user;
+      sessionStorage.setItem(SS_TOKEN, authToken);
+      sessionStorage.setItem(SS_USER, authUser);
+      await loadUbicacionesFromServer();
+      showHome();
+    } else {
+      showLogin(data.error || 'Credenciales incorrectas');
+    }
+  } catch (e) {
+    showLogin('Error de conexion. Intenta de nuevo.');
+  }
+}
+
+function logout() {
+  authToken = '';
+  authUser = '';
+  sessionStorage.removeItem(SS_TOKEN);
+  sessionStorage.removeItem(SS_USER);
+  showLogin();
+}
+
+// ════════════════════════════════════════════════════════════════════
 //  SCREENS
 // ════════════════════════════════════════════════════════════════════
+
+// ── PWA Install ──────────────────────────────────────────────────────
+let deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+});
+
+function installApp() {
+  if (deferredInstallPrompt) {
+    deferredInstallPrompt.prompt();
+    deferredInstallPrompt.userChoice.then(() => { deferredInstallPrompt = null; });
+  } else {
+    alert('Para instalar: abre el menu del navegador (3 puntos) y selecciona "Agregar a pantalla de inicio" o "Instalar aplicacion".');
+  }
+}
 
 // ── HOME ─────────────────────────────────────────────────────────────
 function showHome() {
   stopCamera();
   const totalSesiones = sesiones.length;
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
   render(`
     <div class="screen">
       <div class="home-logo">
         <h1>Inventario con App</h1>
         <p>Cuesto / SKF - Escaneo QR</p>
+        <p style="color:var(--green);font-size:12px;margin-top:4px">${esc(authUser)}</p>
       </div>
       <div class="home-menu">
         <div class="menu-btn" onclick="showSeleccionUbicacion()">
@@ -148,7 +284,15 @@ function showHome() {
           <div class="info">Ubicaciones<small>${ubicaciones.length} configuradas</small></div>
           <div class="arrow">&#8250;</div>
         </div>
+        ${!isStandalone ? `
+        <div class="menu-btn" onclick="installApp()">
+          <div class="icon purple">&#128241;</div>
+          <div class="info">Instalar App<small>Agregar a pantalla de inicio</small></div>
+          <div class="arrow">&#8250;</div>
+        </div>
+        ` : ''}
       </div>
+      <button class="btn btn-outline btn-sm" style="margin-top:auto;opacity:0.6" onclick="logout()">Cerrar sesion</button>
       <div class="version-footer">v${APP_VERSION} - Inventario con App</div>
     </div>
   `);
@@ -962,4 +1106,14 @@ async function syncInventario(sesion) {
 // ════════════════════════════════════════════════════════════════════
 //  INIT
 // ════════════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', showHome);
+document.addEventListener('DOMContentLoaded', async () => {
+  if (authToken) {
+    const valid = await verifyToken();
+    if (valid) {
+      await loadUbicacionesFromServer();
+      showHome();
+      return;
+    }
+  }
+  showLogin();
+});

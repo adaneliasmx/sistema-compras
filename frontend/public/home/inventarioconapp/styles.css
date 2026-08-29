@@ -693,3 +693,20 @@ html, body {
   font-size: 14px;
   width: 100%;
 }
+
+/* ── Login ────────────────────────────────────────────────────────── */
+.login-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 15px;
+  outline: none;
+  margin-bottom: 10px;
+}
+
+.login-input:focus { border-color: var(--green); }
+
+.login-input::placeholder { color: var(--text2); }
