@@ -9327,11 +9327,12 @@ async function asisCaptureView() {
         const dayData  = (emp.days||[]).find(d => d.fecha === selFecha) || {};
         const isAuto   = !!dayData.is_auto;
         const isSundayDay = !!dayData.is_sunday;
+        const isBaja   = emp.template_status === 'baja';
         const hasRec   = !!dayData.id;
         const dayUnlocked = activeUnlockDates.has(selFecha);
         const isLocked = !isRHHAdmin && isPastDay && hasRec && !!dayData.incidencia_type && !dayUnlocked;
         const noRec    = !hasRec || !dayData.incidencia_type; // sin incidencia registrada -> editable siempre
-        const editable = isSundayDay ? true : (!isAuto && (!isLocked || noRec));
+        const editable = isBaja ? false : (isSundayDay ? true : (!isLocked || noRec));
 
         // Incidencia actual (puede ser null/undefined si no hay registro)
         const inc      = dayData.incidencia_type || '';
@@ -9392,7 +9393,7 @@ async function asisCaptureView() {
         } else if (isSundayDay && teActivo) {
           rowBtn = `<button onclick="asisGuardarFilaDom(${emp.employee_id},'${selFecha}')"
             style="padding:4px 12px;border:none;border-radius:6px;background:#ea580c;color:#fff;font-size:11px;cursor:pointer;font-weight:700;" id="asis-btn-${emp.employee_id}">Guardar TE</button>`;
-        } else if (isAuto) {
+        } else if (isAuto && isBaja) {
           rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#f1f5f9;color:#9ca3af;font-size:11px;cursor:default;">auto</button>`;
         } else if (isLocked && !noRec) {
           if (isRHHAdmin) {
