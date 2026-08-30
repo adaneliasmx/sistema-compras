@@ -6969,17 +6969,18 @@ let _asisRolUnlocked = false; // bandera de contraseña para acceder al Rol Sema
 let _asisLastWeek   = null;  // semana que ya fue inicializada en captura (para auto-saltar a hoy)
 
 const ASIST_INC_TYPES = [
-  { v:'labora',       l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
-  { v:'falta',        l:'Falta',        bg:'#fee2e2', fg:'#991b1b' },
-  { v:'festivo',      l:'Festivo',      bg:'#fef3c7', fg:'#92400e' },
-  { v:'vacacion',     l:'Vacación',     bg:'#dbeafe', fg:'#1e40af' },
-  { v:'baja',         l:'Baja',         bg:'#f3f4f6', fg:'#374151' },
-  { v:'retardo',      l:'Retardo',      bg:'#fef9c3', fg:'#854d0e' },
-  { v:'incapacidad',  l:'Incapacidad',  bg:'#f5d0fe', fg:'#7e22ce' },
-  { v:'permiso_cg',   l:'Permiso C/G',  bg:'#e0e7ff', fg:'#4338ca' },
-  { v:'permiso_sg',   l:'Permiso S/G',  bg:'#ffe4e6', fg:'#9f1239' },
-  { v:'paro_tecnico', l:'Paro Téc.',    bg:'#fff7ed', fg:'#c2410c' },
-  { v:'descanso',     l:'Descanso',     bg:'#f9fafb', fg:'#9ca3af' },
+  { v:'labora',            l:'Labora',       bg:'#d1fae5', fg:'#065f46' },
+  { v:'falta',             l:'Falta',        bg:'#fee2e2', fg:'#991b1b' },
+  { v:'festivo',           l:'Festivo',      bg:'#fef3c7', fg:'#92400e' },
+  { v:'vacacion',          l:'Vacación',     bg:'#dbeafe', fg:'#1e40af' },
+  { v:'baja',              l:'Baja',         bg:'#f3f4f6', fg:'#374151' },
+  { v:'retardo',           l:'Retardo',      bg:'#fef9c3', fg:'#854d0e' },
+  { v:'incapacidad',       l:'Incapacidad',  bg:'#f5d0fe', fg:'#7e22ce' },
+  { v:'permiso_cg',        l:'Permiso C/G',  bg:'#e0e7ff', fg:'#4338ca' },
+  { v:'permiso_sg',        l:'Permiso S/G',  bg:'#ffe4e6', fg:'#9f1239' },
+  { v:'paro_tecnico',      l:'Paro Téc.',    bg:'#fff7ed', fg:'#c2410c' },
+  { v:'descanso',          l:'Descanso',     bg:'#f9fafb', fg:'#9ca3af' },
+  { v:'turno_incompleto',  l:'Turno Inc.',   bg:'#fce7f3', fg:'#9d174d' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -9407,13 +9408,48 @@ async function asisCaptureView() {
             style="padding:4px 12px;border:none;border-radius:6px;background:#e2e8f0;color:#64748b;font-size:11px;cursor:pointer;font-weight:600;" id="asis-btn-${emp.employee_id}" title="Autoguardado activo">—</button>`;
         }
 
-        const rowStyle = teActivo ? 'background:#fffbf5;' : '';
+        // TxT: deuda activa
+        const txtHorasPend = emp.txt_horas_pendientes || 0;
+        const teBlockedByTxt = txtHorasPend > 0;
+        const disTE_final = isSundayDay ? (!teActivo || teBlockedByTxt) : (!editable || !teActivo || teBlockedByTxt);
+
+        // Cumpleaños
+        const isBirthday = !!dayData.is_birthday;
+        // Bonos del día
+        const dayBonos = dayData.bonos || [];
+
+        // Turno incompleto: horas pendientes
+        const hpTurno = dayData.horas_pendientes_turno || '';
+        const isIncTurnoInc = inc === 'turno_incompleto';
+
+        // Bono: habilitar solo sábado T3 o domingo
+        const dow = new Date(selFecha + 'T12:00:00').getDay();
+        const empShiftId = emp.shift_id;
+        const canBono = (dow === 6 && Number(empShiftId) === 3) || dow === 0;
+
+        const rowStyle = teActivo ? 'background:#fffbf5;' : (isBirthday ? 'background:#fdf2f8;' : '');
         const incDisabled  = isSundayDay ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
         const disabledAttr = isSundayDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
-        const onChangeInc = (!isSundayDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisMarkDirty(${emp.employee_id})"` : '';
+        const onChangeInc = (!isSundayDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisOnIncChange(${emp.employee_id},this.value);asisMarkDirty(${emp.employee_id})"` : '';
+
+        // TxT buttons
+        let txtBtn = '';
+        if (isRHHAdmin && inc === 'falta' && hasRec) {
+          const alreadyTxt = dayData.bonos ? false : false; // placeholder
+          txtBtn = `<button onclick="asisTxtCrearDeuda(${emp.employee_id},${dayData.id},'${selFecha}')"
+            style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;cursor:pointer;font-weight:600;white-space:nowrap;">TXT pend.</button>`;
+        }
+        if (inc === 'labora' && txtHorasPend > 0) {
+          txtBtn = `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
+            style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">TXT PAGAR</button>`;
+        }
 
         rowsHtml += `<tr style="${rowStyle}">
-          <td style="padding:7px 10px;font-size:13px;font-weight:600;">${escHtml(emp.full_name)}</td>
+          <td style="padding:7px 10px;font-size:13px;font-weight:600;">
+            ${escHtml(emp.full_name)}
+            ${isBirthday ? '<span style="font-size:10px;color:#ec4899;margin-left:4px;" title="Cumpleaños">&#127874;</span>' : ''}
+            ${txtHorasPend > 0 ? `<span style="font-size:9px;color:#dc2626;background:#fef2f2;padding:1px 4px;border-radius:4px;margin-left:4px;" title="Deuda TxT">-${txtHorasPend}h</span>` : ''}
+          </td>
           <td style="padding:7px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
           <td style="padding:4px 6px;">
             <select id="asis-inc-${emp.employee_id}" data-emp="${emp.employee_id}" data-fecha="${selFecha}" class="asis-inc-sel"
@@ -9421,6 +9457,11 @@ async function asisCaptureView() {
               style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}">
               ${incSelOpts}
             </select>
+            <div id="asis-hp-wrap-${emp.employee_id}" style="margin-top:3px;${isIncTurnoInc?'':'display:none;'}">
+              <input type="number" id="asis-hp-${emp.employee_id}" value="${hpTurno}" min="0.5" max="12" step="0.5" placeholder="Hrs pend."
+                onchange="asisMarkDirty(${emp.employee_id})"
+                style="width:70px;padding:3px 5px;border:1px solid #f9a8d4;border-radius:4px;font-size:11px;" />
+            </div>
           </td>
           <td style="padding:4px 6px;">
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
@@ -9431,24 +9472,27 @@ async function asisCaptureView() {
           </td>
           <!-- TE columns -->
           <td style="padding:4px 6px;text-align:center;border-left:2px solid #fed7aa;">
-            <input type="checkbox" id="asis-te-${emp.employee_id}" ${teActivo?'checked':''}
+            ${teBlockedByTxt
+              ? `<span style="font-size:9px;color:#dc2626;font-weight:700;" title="No puede hacer TE: debe ${txtHorasPend}h">&#10007;</span>`
+              : `<input type="checkbox" id="asis-te-${emp.employee_id}" ${teActivo?'checked':''}
               ${(!editable || isLocked && !noRec)?'disabled':''}
               onchange="asisToggleTE(${emp.employee_id})"
-              style="width:16px;height:16px;accent-color:#ea580c;cursor:pointer;" />
+              style="width:16px;height:16px;accent-color:#ea580c;cursor:pointer;" />`
+            }
           </td>
           <td style="padding:4px 6px;">
             <input type="time" id="asis-te-ent-${emp.employee_id}" value="${teHrEnt}"
-              ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
-              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE?'opacity:.35;':'border-color:#f97316;'}" />
+              ${disTE_final?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE_final?'opacity:.35;':'border-color:#f97316;'}" />
           </td>
           <td style="padding:4px 6px;">
             <input type="time" id="asis-te-sal-${emp.employee_id}" value="${teHrSal}"
-              ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
-              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE?'opacity:.35;':'border-color:#f97316;'}" />
+              ${disTE_final?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;${disTE_final?'opacity:.35;':'border-color:#f97316;'}" />
           </td>
           <td style="padding:4px 6px;">
-            <select id="asis-te-raz-${emp.employee_id}" ${disTE?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
-              style="width:100%;padding:4px 6px;border:1px solid ${disTE?'#e2e8f0':'#f97316'};border-radius:6px;font-size:11px;${disTE?'opacity:.4;':''}">
+            <select id="asis-te-raz-${emp.employee_id}" ${disTE_final?'disabled':''} onchange="asisMarkDirty(${emp.employee_id})"
+              style="width:100%;padding:4px 6px;border:1px solid ${disTE_final?'#e2e8f0':'#f97316'};border-radius:6px;font-size:11px;${disTE_final?'opacity:.4;':''}">
               <option value="" ${!teRazon?'selected':''}>— Seleccionar —</option>
               ${razOpts.replace(`value="${escHtml(teRazon)}"`,`value="${escHtml(teRazon)}" selected`)}
             </select>
@@ -9458,12 +9502,12 @@ async function asisCaptureView() {
               ${proyectos.map(p => {
                 const teChecked = teProyArr.includes(p);
                 return `<label style="display:inline-flex;align-items:center;gap:2px;font-size:10px;white-space:nowrap;cursor:pointer;">
-                  <input type="checkbox" class="asis-te-proy-chk-${emp.employee_id}" value="${p}" ${teChecked?'checked':''} ${disTE?'disabled':''}
+                  <input type="checkbox" class="asis-te-proy-chk-${emp.employee_id}" value="${p}" ${teChecked?'checked':''} ${disTE_final?'disabled':''}
                     onchange="asisUpdateTeProy(${emp.employee_id})" style="accent-color:#ea580c;width:12px;height:12px;" />
                   ${p}
                 </label>`;
               }).join('')}
-              ${disTE?'':`<button type="button" onclick="asisToggleAllTeProj(${emp.employee_id})"
+              ${disTE_final?'':`<button type="button" onclick="asisToggleAllTeProj(${emp.employee_id})"
                 style="padding:1px 5px;font-size:9px;border:1px solid #fdba74;border-radius:4px;background:#fff7ed;color:#c2410c;cursor:pointer;white-space:nowrap;">Todos</button>`}
             </div>
           </td>
@@ -9471,6 +9515,23 @@ async function asisCaptureView() {
             <div style="display:flex;flex-direction:column;gap:3px;align-items:center;">
               ${rowBtn}
               ${lockInfo}
+              ${txtBtn}
+              ${isBirthday && inc === 'labora' ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
+                <input type="checkbox" id="asis-cumple-${emp.employee_id}" onchange="asisCumpleLaboroToggle(${emp.employee_id},'${selFecha}',this.checked)"
+                  style="accent-color:#ec4899;width:12px;height:12px;" /> Cumple. lab.
+              </label>` : ''}
+              ${canBono && inc === 'labora' && isRHHAdmin ? `<div style="display:flex;gap:3px;margin-top:2px;">
+                ${['limpieza','encendido_resistencias'].map(bt => {
+                  const existing = dayBonos.find(b => b.type === bt);
+                  const lbl = bt === 'limpieza' ? 'B.Limp' : 'B.Enc';
+                  if (existing) {
+                    const sc = existing.status === 'autorizado' ? '#16a34a' : (existing.status === 'rechazado' ? '#dc2626' : '#d97706');
+                    return `<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:${sc}15;color:${sc};font-weight:600;">${lbl}: ${existing.status.slice(0,4)}</span>`;
+                  }
+                  return `<button onclick="asisCrearBono(${emp.employee_id},'${selFecha}','${bt}',${dayData.id||'null'})"
+                    style="padding:1px 4px;font-size:8px;border:1px solid #a78bfa;border-radius:3px;background:#f5f3ff;color:#7c3aed;cursor:pointer;white-space:nowrap;">${lbl}</button>`;
+                }).join('')}
+              </div>` : ''}
             </div>
           </td>
         </tr>`;
@@ -9723,6 +9784,117 @@ function asisToggleTE(empId) {
   asisMarkDirty(empId);
 }
 
+/* Mostrar/ocultar campo horas pendientes al cambiar incidencia */
+function asisOnIncChange(empId, value) {
+  const wrap = document.getElementById('asis-hp-wrap-' + empId);
+  if (wrap) wrap.style.display = value === 'turno_incompleto' ? '' : 'none';
+}
+
+/* ── TxT: Crear deuda desde falta ────────────────────────────────────────── */
+async function asisTxtCrearDeuda(empId, attendanceId, fecha) {
+  if (!confirm('Crear deuda TxT para esta falta?')) return;
+  const r = await api('/api/rhh/asistencia/txt/crear-deuda', {
+    method: 'POST',
+    body: JSON.stringify({ employee_id: empId, attendance_id: attendanceId, fecha })
+  });
+  if (r) { toast('Deuda TxT creada', 'success'); asisCaptureView(); }
+}
+
+/* ── TxT: Modal para pagar deuda ─────────────────────────────────────────── */
+async function asisTxtPagarModal(empId, fecha, attendanceId) {
+  const deudas = await api(`/api/rhh/asistencia/txt/deudas?employee_id=${empId}&status=pendiente_pago`);
+  if (!deudas || deudas.length === 0) { toast('Sin deudas pendientes', 'info'); return; }
+
+  // Cargar turnos
+  const shifts = state.shifts || [];
+  const deudaList = deudas.map(d => `<div style="font-size:11px;margin:4px 0;padding:4px;background:#fef2f2;border-radius:4px;">
+    Deuda #${d.id} — ${d.origen_fecha} (${d.origen_tipo}) — Pend: ${d.horas_pendientes}h
+  </div>`).join('');
+
+  const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)} (${s.hours || 8}h)</option>`).join('');
+
+  const html = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:grid;place-items:center;" id="txt-pagar-modal">
+    <div style="background:#fff;border-radius:16px;width:min(440px,96vw);overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="background:linear-gradient(135deg,#059669,#10b981);color:#fff;padding:16px 20px;">
+        <div style="font-size:15px;font-weight:700;">Pagar deuda TxT</div>
+        <div style="font-size:11px;opacity:.8;">${escHtml(deudas[0].employee_name)}</div>
+      </div>
+      <div style="padding:16px 20px;">
+        ${deudaList}
+        <div style="margin-top:12px;">
+          <label style="font-size:12px;font-weight:600;">Tipo de pago:</label>
+          <select id="txt-tipo-pago" onchange="document.getElementById('txt-shift-wrap').style.display=this.value==='turno_completo'?'':'none';document.getElementById('txt-horas-wrap').style.display=this.value==='parcial'?'':'none';"
+            style="width:100%;padding:6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;margin-top:4px;">
+            <option value="turno_completo">Turno completo</option>
+            <option value="parcial">Parcial (horas)</option>
+          </select>
+        </div>
+        <div id="txt-shift-wrap" style="margin-top:8px;">
+          <label style="font-size:12px;font-weight:600;">Turno trabajado:</label>
+          <select id="txt-shift-id" style="width:100%;padding:6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;margin-top:4px;">
+            ${shiftOpts}
+          </select>
+        </div>
+        <div id="txt-horas-wrap" style="margin-top:8px;display:none;">
+          <label style="font-size:12px;font-weight:600;">Horas a aplicar:</label>
+          <input type="number" id="txt-horas-aplicar" min="0.5" max="12" step="0.5" value="2"
+            style="width:100%;padding:6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;margin-top:4px;" />
+        </div>
+      </div>
+      <div style="padding:0 20px 16px;display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="document.getElementById('txt-pagar-modal').remove()">Cancelar</button>
+        <button onclick="asisTxtPagarConfirm(${deudas[0].id},${empId},'${fecha}',${attendanceId||'null'})"
+          style="padding:6px 16px;border:none;border-radius:8px;background:#059669;color:#fff;font-weight:700;cursor:pointer;">Pagar</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function asisTxtPagarConfirm(deudaId, empId, fecha, attendanceId) {
+  const tipoPago = document.getElementById('txt-tipo-pago').value;
+  const shiftId  = document.getElementById('txt-shift-id')?.value;
+  const horasAplicadas = document.getElementById('txt-horas-aplicar')?.value;
+  const body = {
+    deuda_id: deudaId,
+    attendance_id: attendanceId,
+    fecha_pago: fecha,
+    tipo_pago: tipoPago,
+    shift_id_pagado: tipoPago === 'turno_completo' ? Number(shiftId) : null,
+    horas_aplicadas: tipoPago === 'parcial' ? Number(horasAplicadas) : null,
+  };
+  const r = await api('/api/rhh/asistencia/txt/pagar', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+  const modal = document.getElementById('txt-pagar-modal');
+  if (modal) modal.remove();
+  if (r) {
+    const msg = r.horas_sobrante > 0 ? `Pagado. Sobrante: ${r.horas_sobrante}h (TE extra)` : 'Deuda pagada';
+    toast(msg, 'success');
+    asisCaptureView();
+  }
+}
+
+/* ── Cumpleaños laborado ─────────────────────────────────────────────────── */
+async function asisCumpleLaboroToggle(empId, fecha, checked) {
+  await api('/api/rhh/asistencia/cumpleanos-laboro', {
+    method: 'POST',
+    body: JSON.stringify({ employee_id: empId, fecha, laboro: checked })
+  });
+  toast(checked ? 'Cumpleaños laborado registrado' : 'Desmarcado', 'success');
+}
+
+/* ── Bonos ────────────────────────────────────────────────────────────────── */
+async function asisCrearBono(empId, fecha, bonoType, attendanceId) {
+  const lbl = bonoType === 'limpieza' ? 'Bono Limpieza' : 'Bono Enc. Resistencias';
+  if (!confirm(`Solicitar ${lbl}?`)) return;
+  const r = await api('/api/rhh/asistencia/bonos', {
+    method: 'POST',
+    body: JSON.stringify({ employee_id: empId, fecha, bono_type: bonoType, attendance_id: attendanceId })
+  });
+  if (r) { toast(`${lbl} solicitado`, 'success'); asisCaptureView(); }
+}
+
 /* Autoguardado con debounce por empleado */
 const _asisAutoTimers = {};
 function asisMarkDirty(empId) {
@@ -9767,6 +9939,10 @@ async function asisAutoSave(empId, fecha) {
     if (totalPct !== 100) return; // no guardar si % no cuadra
   }
 
+  // Horas pendientes turno incompleto
+  const hpInput = document.getElementById('asis-hp-' + empId);
+  const horas_pendientes_turno = (incidencia_type === 'turno_incompleto' && hpInput) ? Number(hpInput.value) || 0 : null;
+
   if (btn) { btn.textContent = '...'; btn.style.background = '#94a3b8'; btn.disabled = true; }
   try {
     await api('/api/rhh/asistencia/diaria', {
@@ -9780,6 +9956,7 @@ async function asisAutoSave(empId, fecha) {
         te_hora_salida:  te_activo ? te_hora_salida  : null,
         te_razon:        te_activo ? te_razon        : null,
         te_proyecto:     te_activo ? te_proyecto     : null,
+        horas_pendientes_turno,
       })
     });
     if (btn) { btn.textContent = '✓'; btn.style.background = '#16a34a'; btn.disabled = false; }
@@ -9829,6 +10006,9 @@ async function asisGuardarFila(empId, fecha) {
     toast('Selecciona la razon del tiempo extra', 'warning'); return;
   }
 
+  const hpInput2 = document.getElementById('asis-hp-' + empId);
+  const horas_pendientes_turno2 = (incidencia_type === 'turno_incompleto' && hpInput2) ? Number(hpInput2.value) || 0 : null;
+
   if (btn) { btn.textContent = '...'; btn.disabled = true; }
   try {
     await api('/api/rhh/asistencia/diaria', {
@@ -9842,12 +10022,12 @@ async function asisGuardarFila(empId, fecha) {
         te_hora_salida:  te_activo ? te_hora_salida  : null,
         te_razon:        te_activo ? te_razon        : null,
         te_proyecto:     te_activo ? te_proyecto     : null,
+        horas_pendientes_turno: horas_pendientes_turno2,
       })
     });
     if (btn) { btn.textContent = 'Guardado'; btn.style.background = '#16a34a'; btn.disabled = false; }
     if (te_activo) {
       toast('Registro guardado. Vale de tiempo extra generado — pendiente de aprobacion.');
-      // Refrescar para mostrar el boton "Ver vale"
       setTimeout(() => asisCaptureView(), 1200);
     } else {
       toast('Registro guardado');
@@ -9995,6 +10175,7 @@ async function asisListaView() {
     const shifts = data.shifts || [];
     const dates  = data.dates  || [];
     const grid   = data.grid   || [];
+    const isRHHAdmin = ['rh','admin'].includes(state.user?.role);
 
     const dayHeaders = dates.map(fecha => `
       <th style="text-align:center;min-width:80px;padding:6px 4px;font-size:12px;font-weight:600;">${asisDateLabel(fecha)}</th>
@@ -10012,14 +10193,28 @@ async function asisListaView() {
         const rec = (emp.days||[]).find(dr => dr.fecha === fecha);
         const inc = rec?.incidencia_type || 'descanso';
         const t   = ASIST_INC_TYPES.find(x => x.v === inc) || { l: inc, bg:'#f9fafb', fg:'#9ca3af' };
-        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span></td>`;
+        // TE y deuda junto a la incidencia
+        const teH = rec?.te_horas;
+        const teBadge = teH ? `<span style="font-size:9px;color:#ea580c;font-weight:700;margin-left:2px;">+${teH}</span>` : '';
+        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}</td>`;
       }).join('');
+
+      // Comentarios
+      const comentarios = (emp.comentarios || []).map(c => {
+        let color = '#64748b';
+        if (c.type === 'te') color = '#ea580c';
+        if (c.type === 'deuda') color = '#dc2626';
+        if (c.type === 'cumpleanos') color = '#ec4899';
+        if (c.type === 'bono') color = c.status === 'autorizado' ? '#16a34a' : (c.status === 'rechazado' ? '#dc2626' : '#d97706');
+        if (c.type === 'vacacion') color = '#1e40af';
+        return `<span style="font-size:10px;color:${color};font-weight:600;white-space:nowrap;">${escHtml(c.text)}</span>`;
+      }).join(' ');
 
       rowsHtml += `<tr>
         <td style="padding:6px 10px;font-size:13px;">${escHtml(emp.full_name)}</td>
         <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.position||'—')}</td>
-        <td style="padding:6px 10px;font-size:12px;color:var(--muted);">${escHtml(emp.project||'—')}</td>
         ${dayCells}
+        <td style="padding:6px 8px;font-size:10px;">${comentarios}</td>
       </tr>`;
     }
 
@@ -10032,13 +10227,14 @@ async function asisListaView() {
     ).join(' ');
 
     const content = `
-      <div class="module-title"><h2>🗓️ Control de Asistencias</h2></div>
+      <div class="module-title"><h2>Control de Asistencias</h2></div>
       ${asisTabs(1)}
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
-        <button class="btn-ghost" onclick="asisNavWeek(-1)">‹ Anterior</button>
+        <button class="btn-ghost" onclick="asisNavWeek(-1)">&#8249; Anterior</button>
         <span style="font-weight:700;">${fmtWeekLabel(asisWeek)}</span>
-        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente ›</button>
+        <button class="btn-ghost" onclick="asisNavWeek(1)">Siguiente &#8250;</button>
         <button class="btn-ghost" style="font-size:12px;" onclick="asisWeek=getMonday(new Date());asistenciasView()">Hoy</button>
+        ${isRHHAdmin ? `<button class="btn-ghost" style="font-size:12px;color:#059669;border-color:#a7f3d0;" onclick="asisExportExcel()">Descargar Reporte</button>` : ''}
         <select onchange="asisShiftId=this.value;asisListaView()"
           style="margin-left:auto;padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;">
           <option value="">Todos los turnos</option>${shiftOpts}
@@ -10051,8 +10247,8 @@ async function asisListaView() {
             <tr style="background:#f9fafb;font-size:12px;color:var(--muted);">
               <th style="padding:8px 10px;text-align:left;font-weight:600;">Empleado</th>
               <th style="padding:8px 10px;text-align:left;font-weight:600;">Puesto</th>
-              <th style="padding:8px 10px;text-align:left;font-weight:600;">Proyecto</th>
               ${dayHeaders}
+              <th style="padding:8px 10px;text-align:left;font-weight:600;min-width:150px;">Comentarios</th>
             </tr>
           </thead>
           <tbody>${rowsHtml || `<tr><td colspan="${3+dates.length}" style="text-align:center;padding:24px;color:var(--muted);">Sin datos para esta semana</td></tr>`}</tbody>
@@ -10062,6 +10258,27 @@ async function asisListaView() {
     el.innerHTML = shell(content, 'asistencias');
   } catch(err) {
     el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'asistencias');
+  }
+}
+
+/* ── Export Excel ─────────────────────────────────────────────────────────── */
+async function asisExportExcel() {
+  try {
+    const token = state.token;
+    const resp = await fetch(`/api/rhh/asistencia/semana/export-excel?week=${asisWeek}`, {
+      headers: { 'Authorization': 'Bearer ' + token }
+    });
+    if (!resp.ok) { toast('Error al generar reporte', 'error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `asistencia_${asisWeek}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Reporte descargado', 'success');
+  } catch(e) {
+    toast('Error: ' + e.message, 'error');
   }
 }
 
