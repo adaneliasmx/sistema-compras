@@ -122,14 +122,16 @@ function buildUnifiedList() {
 // ── Auth ──────────────────────────────────────────────────────────────────────
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
-  if (String(email || '').toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase())
+  if (typeof email !== 'string' || typeof password !== 'string')
+    return res.status(400).json({ error: 'Credenciales inválidas' });
+  if (email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase())
     return res.status(401).json({ error: 'Credenciales inválidas' });
 
   const db = readCompras();
   const user = db.users?.find(u => u.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() && u.active !== false);
   if (!user) return res.status(401).json({ error: 'Usuario super admin no encontrado.' });
 
-  const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
+  const ok = bcrypt.compareSync(password, user.password_hash);
   if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
 
   const token = jwt.sign(

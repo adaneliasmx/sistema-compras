@@ -153,11 +153,11 @@
   }
 
   async function doLogin() {
-    const email    = document.getElementById('ss-user-sel').value;
+    const user_id  = document.getElementById('ss-user-sel').value;
     const password = document.getElementById('ss-pass').value;
     const errEl    = document.getElementById('ss-error');
     errEl.style.display = 'none';
-    if (!email || !password) {
+    if (!user_id || !password) {
       errEl.textContent = 'Selecciona usuario e ingresa contraseña.';
       errEl.style.display = 'block';
       return;
@@ -168,7 +168,7 @@
       const res = await fetch(API + '/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ user_id, password })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error de autenticación');
@@ -1118,7 +1118,7 @@
       const sel  = document.getElementById('ss-user-sel');
       users.forEach(u => {
         const o = document.createElement('option');
-        o.value = u.email;
+        o.value = u.id;
         o.textContent = u.nombre;
         sel.appendChild(o);
       });

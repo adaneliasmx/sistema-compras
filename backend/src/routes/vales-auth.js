@@ -7,10 +7,11 @@ const router = express.Router();
 
 // Login
 router.post('/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
+    return res.status(400).json({ error: 'Email y contraseña requeridos' });
   const db = read();
-  const user = db.users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.active);
+  const user = db.users.find(u => u.email?.toLowerCase() === email.toLowerCase() && u.active);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }

@@ -86,20 +86,36 @@ app.set('trust proxy', 1);
 
 // ── Seguridad de headers HTTP (helmet) ────────────────────────────────────────
 app.use(helmet({
-  contentSecurityPolicy: false, // La SPA usa inline scripts; CSP requiere configuración específica
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://cdn.sheetjs.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://unpkg.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net", "https://cdnjs.cloudflare.com"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      connectSrc: ["'self'"],
+      mediaSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+    }
+  },
   crossOriginEmbedderPolicy: false
 }));
 
-// ── CORS: restringido si ALLOWED_ORIGINS está configurado, abierto si no ──────
+// ── CORS: restringido a orígenes conocidos ────────────────────────────────────
+const DEFAULT_ORIGINS = ['https://cuestocompras.onrender.com'];
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(o => o.trim()).filter(Boolean);
+const CORS_ORIGINS = ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ORIGINS;
 app.use(cors({
-  origin: ALLOWED_ORIGINS.length > 0
-    ? (origin, cb) => {
-        if (!origin || ALLOWED_ORIGINS.some(o => origin.startsWith(o))) return cb(null, true);
-        cb(new Error(`CORS: origin no autorizado — ${origin}`));
-      }
-    : true, // Si no se configura ALLOWED_ORIGINS, permite todo (modo permisivo)
+  origin: (origin, cb) => {
+    // Permitir requests sin origin (server-to-server, curl, mobile apps)
+    if (!origin) return cb(null, true);
+    if (CORS_ORIGINS.some(o => origin === o || origin.startsWith(o))) return cb(null, true);
+    // En desarrollo local, permitir localhost
+    if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin no autorizado — ${origin}`));
+  },
   credentials: true
 }));
 
@@ -175,9 +191,13 @@ app.use('/api/val', validacionesRoutes);
 
 // ── API Inventario con App (aislada, sin acceso a BD del sistema) ─────────────
 const crypto = require('crypto');
-const INVAPP_USERS = {
-  'IsaCha2026': 'bd3ef80a63ec33e9e49caee0e21a2d3687b3f7613cd5c32fac99c617019a4579'
-};
+// INVAPP_USERS: formato env "user1:hash1,user2:hash2" o fallback hardcoded
+const INVAPP_USERS = (process.env.INVAPP_USERS || 'IsaCha2026:bd3ef80a63ec33e9e49caee0e21a2d3687b3f7613cd5c32fac99c617019a4579')
+  .split(',').reduce((acc, pair) => {
+    const [u, h] = pair.split(':');
+    if (u && h) acc[u.trim()] = h.trim();
+    return acc;
+  }, {});
 app.post('/api/invapp/login', (req, res) => {
   const { user, pass } = req.body || {};
   const hash = crypto.createHash('sha256').update(String(pass || '')).digest('hex');
@@ -324,7 +344,12 @@ app.get('/po-view', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/po-view.html'));
 });
 
-// Fallback
+// ── API 404: rutas /api inexistentes devuelven JSON, no HTML ──────────────────
+app.all('/api/*', (req, res) => {
+  res.status(404).json({ error: 'Endpoint no encontrado' });
+});
+
+// Fallback SPA — solo rutas no-API
 app.get('*', (req, res) => {
   res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
 });

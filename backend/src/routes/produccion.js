@@ -109,16 +109,18 @@ function nextFolio(prefix, list, field = 'folio') {
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
 router.post('/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password)
-    return res.status(400).json({ error: 'Correo y contraseña son requeridos' });
+  const { email, user_id, password } = req.body || {};
+  if (typeof password !== 'string' || (!email && !user_id))
+    return res.status(400).json({ error: 'Usuario y contraseña son requeridos' });
+  if (email && typeof email !== 'string')
+    return res.status(400).json({ error: 'Credenciales inválidas' });
 
   const mainDb = db.read();
-  const user = (mainDb.users || []).find(u =>
-    u.active !== false &&
-    u.produccion_role &&
-    u.email && u.email.toLowerCase() === email.toLowerCase()
-  );
+  const user = (mainDb.users || []).find(u => {
+    if (u.active === false || !u.produccion_role) return false;
+    if (user_id) return u.id === Number(user_id);
+    return u.email && u.email.toLowerCase() === String(email).toLowerCase();
+  });
 
   if (!user || !bcrypt.compareSync(String(password), user.password_hash || ''))
     return res.status(401).json({ error: 'Credenciales inválidas o sin acceso a Producción' });
@@ -147,7 +149,7 @@ router.get('/auth/usuarios', (req, res) => {
   const mainDb = db.read();
   const users = (mainDb.users || [])
     .filter(u => u.active !== false && u.produccion_role)
-    .map(u => ({ email: u.email, nombre: u.full_name }))
+    .map(u => ({ id: u.id, nombre: u.full_name }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre));
   res.json(users);
 });

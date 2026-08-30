@@ -2788,7 +2788,7 @@ async function purchasesView() {
       if (!email) { nsMsg.textContent = 'El email es obligatorio para crear el acceso del proveedor.'; return; }
       try {
         nsMsg.textContent = 'Guardando...';
-        const tempPwd = Math.random().toString(36).slice(2, 10) + 'A1!';
+        const tempPwd = Array.from(crypto.getRandomValues(new Uint8Array(10)), b => b.toString(36)).join('').slice(0, 10) + 'A1!';
         const result = await api('/api/catalogs/suppliers', { method: 'POST', body: JSON.stringify({
           business_name: bizName,
           contact_name: document.getElementById('nsContact').value.trim(),

@@ -43,7 +43,9 @@ function _clearSessionCookie(res) {
 
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
-  const emailKey = String(email || '').toLowerCase().trim();
+  if (typeof email !== 'string' || typeof password !== 'string')
+    return res.status(400).json({ error: 'Credenciales inválidas' });
+  const emailKey = email.toLowerCase().trim();
   const key = `${emailKey}|${_getIp(req)}`;
   const limit = _checkLimit(key);
   if (limit.blocked) {
@@ -53,7 +55,7 @@ router.post('/login', (req, res) => {
   const db = read();
   const user = db.users.find(u => u.email?.toLowerCase() === emailKey && u.active);
   if (!user) { _recordFail(key); return res.status(401).json({ error: 'Credenciales inválidas' }); }
-  const ok = bcrypt.compareSync(String(password || ''), user.password_hash);
+  const ok = bcrypt.compareSync(password, user.password_hash);
   if (!ok) { _recordFail(key); return res.status(401).json({ error: 'Credenciales inválidas' }); }
 
   _clearLimit(key);

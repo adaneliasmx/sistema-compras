@@ -11,7 +11,8 @@ const router = express.Router();
 // verifica credenciales del módulo compras como fallback.
 router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
+    return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
   const emailLow = String(email).toLowerCase().trim();
   const db = read();

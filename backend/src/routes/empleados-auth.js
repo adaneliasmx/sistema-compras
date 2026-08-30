@@ -14,7 +14,8 @@ function nowMxDate() {
 // POST /api/empleados/auth/login
 router.post('/login', (req, res) => {
   const { username, password } = req.body || {};
-  if (!username || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+  if (typeof username !== 'string' || typeof password !== 'string' || !username || !password)
+    return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
 
   const db = read();
   const emp = (db.rhh_employees || []).find(e =>

@@ -707,7 +707,13 @@ router.get('/settings', mantAllowRoles('admin'), (req, res) => {
 
 router.patch('/settings', mantAllowRoles('admin'), (req, res) => {
   const db = readMant();
-  db.settings = { ...db.settings, ...req.body };
+  const body = req.body || {};
+  const safe = {};
+  for (const k of Object.keys(body)) {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+    safe[k] = body[k];
+  }
+  db.settings = { ...db.settings, ...safe };
   writeMant(db);
   res.json(db.settings);
 });

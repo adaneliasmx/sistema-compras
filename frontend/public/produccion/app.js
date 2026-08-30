@@ -592,24 +592,24 @@ function bindLogin() {
         return;
       }
       sel.innerHTML = '<option value="">— Seleccionar usuario —</option>' +
-        usuarios.map(u => `<option value="${escHtml(u.email)}">${escHtml(u.nombre)} · ${escHtml(u.email)}</option>`).join('');
+        usuarios.map(u => `<option value="${u.id}">${escHtml(u.nombre)}</option>`).join('');
     })
     .catch(() => {
       sel.innerHTML = '<option value="">— Error al cargar usuarios —</option>';
     });
 
   const doLogin = async () => {
-    const email = sel.value.trim();
+    const user_id = sel.value.trim();
     const pass  = document.getElementById('l-pass').value;
     const err   = document.getElementById('login-err');
-    if (!email) { err.textContent = 'Selecciona un usuario'; return; }
+    if (!user_id) { err.textContent = 'Selecciona un usuario'; return; }
     if (!pass)  { err.textContent = 'Ingresa la contraseña'; return; }
     btn.disabled = true; btn.textContent = 'Verificando...';
     try {
       const res = await fetch('/api/produccion/auth/login', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ email, password: pass })
+        body:    JSON.stringify({ user_id, password: pass })
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

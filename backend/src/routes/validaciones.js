@@ -15,11 +15,12 @@ function nowMxDate() {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.post('/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email y contrasena requeridos' });
+  const { email, password } = req.body || {};
+  if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
+    return res.status(400).json({ error: 'Email y contrasena requeridos' });
   const db = read();
   const user = (db.usuarios_val || []).find(u =>
-    u.email.toLowerCase() === email.toLowerCase() && u.activo !== false
+    u.email?.toLowerCase() === email.toLowerCase() && u.activo !== false
   );
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
     return res.status(401).json({ error: 'Credenciales invalidas' });
@@ -82,10 +83,20 @@ router.post('/sync', syncKeyRequired, (req, res) => {
     const src_id = rec.id;
     const existing = db[collectionKey].find(r => r.src_id === src_id && r.side === side);
     if (existing) {
-      Object.assign(existing, rec, { src_id, side, synced_at: nowMxDate() });
+      const safeRec = {};
+      for (const k of Object.keys(rec)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        safeRec[k] = rec[k];
+      }
+      Object.assign(existing, safeRec, { src_id, side, synced_at: nowMxDate() });
       updated++;
     } else {
-      db[collectionKey].push({ ...rec, src_id, side, synced_at: nowMxDate() });
+      const safeRec = {};
+      for (const k of Object.keys(rec)) {
+        if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        safeRec[k] = rec[k];
+      }
+      db[collectionKey].push({ ...safeRec, src_id, side, synced_at: nowMxDate() });
       inserted++;
     }
   }
