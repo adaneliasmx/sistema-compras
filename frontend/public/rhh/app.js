@@ -9331,11 +9331,16 @@ async function asisCaptureView() {
         const hasRec   = !!dayData.id;
         const dayUnlocked = activeUnlockDates.has(selFecha);
         const isLocked = !isRHHAdmin && isPastDay && hasRec && !!dayData.incidencia_type && !dayUnlocked;
-        const noRec    = !hasRec || !dayData.incidencia_type; // sin incidencia registrada -> editable siempre
-        const editable = isBaja ? false : (isSundayDay ? true : (!isLocked || noRec));
+        const noRec    = !hasRec || !dayData.incidencia_type;
 
         // Incidencia actual (puede ser null/undefined si no hay registro)
         const inc      = dayData.incidencia_type || '';
+
+        // Día de descanso: domingo O auto-descanso (sábado para L-V, etc.)
+        // En descanso: incidencia fija, solo TE y TXT disponibles
+        const isRestDay = isBaja ? false : (isSundayDay || (isAuto && inc === 'descanso'));
+        const editable = isBaja ? false : (isRestDay ? true : (!isLocked || noRec));
+
         const incType  = inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null;
         const selStyle = incType ? `background:${incType.bg};color:${incType.fg};` : 'background:#f8fafc;color:#9ca3af;';
 
@@ -9370,7 +9375,7 @@ async function asisCaptureView() {
         const teProyArr = teProy ? teProy.split(',').map(s => s.trim()).filter(Boolean) : [];
         const teValeId  = dayData.te_vale_id      || null;
         const teStatus  = dayData.te_vale_status  || '';
-        const disTE     = isSundayDay ? !teActivo : (!editable || !teActivo);
+        const disTE     = isRestDay ? !teActivo : (!editable || !teActivo);
 
         // Audit trail para modal RHH
         const auditTrail = dayData.audit_trail || [];
@@ -9388,9 +9393,9 @@ async function asisCaptureView() {
 
         // Boton por fila
         let rowBtn = '';
-        if (isSundayDay && !teActivo) {
+        if (isRestDay && !teActivo) {
           rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#fff7ed;color:#ea580c;font-size:11px;cursor:default;">Descanso</button>`;
-        } else if (isSundayDay && teActivo) {
+        } else if (isRestDay && teActivo) {
           rowBtn = `<button onclick="asisGuardarFilaDom(${emp.employee_id},'${selFecha}')"
             style="padding:4px 12px;border:none;border-radius:6px;background:#ea580c;color:#fff;font-size:11px;cursor:pointer;font-weight:700;" id="asis-btn-${emp.employee_id}">Guardar TE</button>`;
         } else if (isAuto && isBaja) {
@@ -9412,7 +9417,7 @@ async function asisCaptureView() {
         // TxT: deuda activa
         const txtHorasPend = emp.txt_horas_pendientes || 0;
         const teBlockedByTxt = txtHorasPend > 0;
-        const disTE_final = isSundayDay ? (!teActivo || teBlockedByTxt) : (!editable || !teActivo || teBlockedByTxt);
+        const disTE_final = isRestDay ? (!teActivo || teBlockedByTxt) : (!editable || !teActivo || teBlockedByTxt);
 
         // Cumpleaños
         const isBirthday = !!dayData.is_birthday;
@@ -9429,9 +9434,9 @@ async function asisCaptureView() {
         const canBono = (dow === 6 && Number(empShiftId) === 3) || dow === 0;
 
         const rowStyle = teActivo ? 'background:#fffbf5;' : (isBirthday ? 'background:#fdf2f8;' : '');
-        const incDisabled  = isSundayDay ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
-        const disabledAttr = isSundayDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
-        const onChangeInc = (!isSundayDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisOnIncChange(${emp.employee_id},this.value);asisMarkDirty(${emp.employee_id})"` : '';
+        const incDisabled  = isRestDay ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const disabledAttr = isRestDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const onChangeInc = (!isRestDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisOnIncChange(${emp.employee_id},this.value);asisMarkDirty(${emp.employee_id})"` : '';
 
         // TxT buttons
         let txtBtn = '';
@@ -9559,6 +9564,7 @@ async function asisCaptureView() {
       </div>` : ''}
       <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin dias</span>'}</div>
       ${selFecha && new Date(selFecha+'T12:00:00').getDay()===0 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Domingo — dia de descanso. Solo se puede registrar tiempo extra.</div>' : ''}
+      ${selFecha && new Date(selFecha+'T12:00:00').getDay()===6 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Sabado — los turnos con descanso solo pueden registrar tiempo extra o TXT.</div>' : ''}
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;min-width:900px;">
           <thead>
