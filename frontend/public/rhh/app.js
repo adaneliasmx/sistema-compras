@@ -9436,12 +9436,11 @@ async function asisCaptureView() {
         // TxT buttons
         let txtBtn = '';
         if (isRHHAdmin && inc === 'falta' && hasRec) {
-          const alreadyTxt = dayData.bonos ? false : false; // placeholder
           txtBtn = `<button onclick="asisTxtCrearDeuda(${emp.employee_id},${dayData.id},'${selFecha}')"
             style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;cursor:pointer;font-weight:600;white-space:nowrap;">TXT pend.</button>`;
         }
-        if (inc === 'labora' && txtHorasPend > 0) {
-          txtBtn = `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
+        if (txtHorasPend > 0 && !isBaja) {
+          txtBtn += `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
             style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">TXT PAGAR</button>`;
         }
 
@@ -9517,20 +9516,20 @@ async function asisCaptureView() {
               ${rowBtn}
               ${lockInfo}
               ${txtBtn}
-              ${isBirthday && inc === 'labora' ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
+              ${isBirthday ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
                 <input type="checkbox" id="asis-cumple-${emp.employee_id}" onchange="asisCumpleLaboroToggle(${emp.employee_id},'${selFecha}',this.checked)"
                   style="accent-color:#ec4899;width:12px;height:12px;" /> Cumple. lab.
               </label>` : ''}
-              ${canBono && inc === 'labora' && isRHHAdmin ? `<div style="display:flex;gap:3px;margin-top:2px;">
+              ${canBono && isRHHAdmin ? `<div style="display:flex;gap:3px;margin-top:2px;">
                 ${['limpieza','encendido_resistencias'].map(bt => {
                   const existing = dayBonos.find(b => b.type === bt);
-                  const lbl = bt === 'limpieza' ? 'B.Limp' : 'B.Enc';
+                  const lbl = bt === 'limpieza' ? 'B.Limp' : 'B.Enc.Res';
                   if (existing) {
                     const sc = existing.status === 'autorizado' ? '#16a34a' : (existing.status === 'rechazado' ? '#dc2626' : '#d97706');
-                    return `<span style="font-size:8px;padding:1px 4px;border-radius:3px;background:${sc}15;color:${sc};font-weight:600;">${lbl}: ${existing.status.slice(0,4)}</span>`;
+                    return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;background:${sc}15;color:${sc};font-weight:600;">${lbl}: ${existing.status.slice(0,4)}</span>`;
                   }
                   return `<button onclick="asisCrearBono(${emp.employee_id},'${selFecha}','${bt}',${dayData.id||'null'})"
-                    style="padding:1px 4px;font-size:8px;border:1px solid #a78bfa;border-radius:3px;background:#f5f3ff;color:#7c3aed;cursor:pointer;white-space:nowrap;">${lbl}</button>`;
+                    style="padding:2px 6px;font-size:9px;border:1px solid #a78bfa;border-radius:4px;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-weight:600;white-space:nowrap;">${lbl}</button>`;
                 }).join('')}
               </div>` : ''}
             </div>
