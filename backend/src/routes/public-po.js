@@ -7,13 +7,14 @@
 const express = require('express');
 const crypto = require('crypto');
 const { read, write } = require('../db');
+const JWT_SECRET = require('../jwt-secret');
 
 const router = express.Router();
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 
 function poToken(po) {
-  const secret = process.env.JWT_SECRET || 'cambia-esta-clave';
+  const secret = JWT_SECRET;
   return crypto
     .createHmac('sha256', secret)
     .update(`po:${po.id}:${po.folio}`)

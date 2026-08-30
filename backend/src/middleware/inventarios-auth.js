@@ -1,12 +1,13 @@
 const jwt = require('jsonwebtoken');
 const { read } = require('../db-inventarios');
+const JWT_SECRET = require('../jwt-secret');
 
 function invAuthRequired(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'cambia-esta-clave');
+    const payload = jwt.verify(token, JWT_SECRET);
     if (payload.module !== 'inventarios') return res.status(401).json({ error: 'Token no válido para este módulo' });
     const db = read();
     const user = (db.usuarios_inv || []).find(u => u.id === payload.sub && u.activo !== false);

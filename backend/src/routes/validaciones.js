@@ -5,6 +5,9 @@ const router  = express.Router();
 
 const { read, write, nextId } = require('../db-validaciones');
 const { valAuthRequired, valAllowRoles, syncKeyRequired } = require('../middleware/validaciones-auth');
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -18,16 +21,20 @@ router.post('/auth/login', (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
     return res.status(400).json({ error: 'Email y contrasena requeridos' });
+  const rlKey = `val|${email.toLowerCase()}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
   const db = read();
   const user = (db.usuarios_val || []).find(u =>
     u.email?.toLowerCase() === email.toLowerCase() && u.activo !== false
   );
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales invalidas' });
   }
   const token = jwt.sign(
     { sub: user.id, module: 'validaciones', role: user.role },
-    process.env.JWT_SECRET || 'cambia-esta-clave',
+    JWT_SECRET,
     { expiresIn: '12h' }
   );
   res.json({ token, user: { id: user.id, nombre: user.nombre, email: user.email, role: user.role } });

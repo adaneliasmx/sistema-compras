@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const { read, write } = require('../db-rhh');
 const { read: readCompras } = require('../db');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 const router = express.Router();
 
 // POST /api/rhh/auth/login
@@ -15,6 +18,9 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
   const emailLow = String(email).toLowerCase().trim();
+  const rlKey = `${emailLow}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
   const db = read();
   const comprasDb = readCompras();
 
@@ -33,10 +39,11 @@ router.post('/login', (req, res) => {
     if (!ok && comprasUser) {
       ok = bcrypt.compareSync(String(password), comprasUser.password_hash);
     }
-    if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+    if (!ok) { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+    _rl.clear(rlKey);
     const token = jwt.sign(
       { sub: rhhUser.id, module: 'rhh', role: rhhUser.role, employee_id: rhhUser.employee_id },
-      process.env.JWT_SECRET || 'cambia-esta-clave',
+      JWT_SECRET,
       { expiresIn: '8h' }
     );
     return res.json({
@@ -46,16 +53,17 @@ router.post('/login', (req, res) => {
   }
 
   // 2. Fallback: usuario de compras con rol admin/super_admin (acceso total a RHH)
-  if (!comprasUser) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!comprasUser) { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
   if (comprasUser.role_code !== 'admin' && comprasUser.role_code !== 'super_admin') {
     return res.status(403).json({ error: 'No tienes acceso al módulo RHH. Solicita que te asignen un rol.' });
   }
   const ok = bcrypt.compareSync(String(password), comprasUser.password_hash);
-  if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!ok) { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
 
+  _rl.clear(rlKey);
   const token = jwt.sign(
     { sub: `compras_${comprasUser.id}`, module: 'rhh', role: 'admin', employee_id: null },
-    process.env.JWT_SECRET || 'cambia-esta-clave',
+    JWT_SECRET,
     { expiresIn: '8h' }
   );
   return res.json({

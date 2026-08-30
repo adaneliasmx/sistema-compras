@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
+const JWT_SECRET = require('../jwt-secret');
 const router = express.Router();
 
 // ── Rate limiting: 5 intentos fallidos por EMAIL+IP cada 15 minutos ──────────
@@ -59,7 +60,7 @@ router.post('/login', (req, res) => {
   if (!ok) { _recordFail(key); return res.status(401).json({ error: 'Credenciales inválidas' }); }
 
   _clearLimit(key);
-  const token = jwt.sign({ sub: user.id, module: 'compras', role: user.role_code }, process.env.JWT_SECRET || 'cambia-esta-clave', { expiresIn: '8h' });
+  const token = jwt.sign({ sub: user.id, module: 'compras', role: user.role_code }, JWT_SECRET, { expiresIn: '8h' });
   _setSessionCookie(res, token);
   res.json({
     token, // kept for non-browser/API clients
@@ -87,10 +88,10 @@ router.get('/me', authRequired, (req, res) => res.json(req.user));
 // ── Solicitar recuperación de contraseña ──────────────────────────────────────
 router.post('/request-reset', (req, res) => {
   const { email } = req.body || {};
-  if (!email) return res.status(400).json({ error: 'Correo requerido' });
+  if (typeof email !== 'string' || !email) return res.status(400).json({ error: 'Correo requerido' });
   const db = read();
-  const user = db.users.find(u => u.email?.toLowerCase() === String(email).toLowerCase() && u.active !== false);
-  if (!user) return res.status(404).json({ error: 'No existe un usuario activo con ese correo' });
+  const user = db.users.find(u => u.email?.toLowerCase() === email.toLowerCase() && u.active !== false);
+  if (!user) return res.json({ ok: true, message: 'Si el correo existe, se procesará la solicitud.' });
 
   if (!db.password_reset_requests) db.password_reset_requests = [];
   // Eliminar solicitudes anteriores del mismo usuario

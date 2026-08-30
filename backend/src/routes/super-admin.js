@@ -9,7 +9,9 @@ const { read: readVal, write: writeVal, nextId: nextIdVal } = require('../db-val
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-esta-clave';
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 function superAdminRequired(req, res, next) {
@@ -124,15 +126,21 @@ router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== 'string' || typeof password !== 'string')
     return res.status(400).json({ error: 'Credenciales inválidas' });
-  if (email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase())
+  const rlKey = `sa|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
+  if (email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales inválidas' });
+  }
 
   const db = readCompras();
   const user = db.users?.find(u => u.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() && u.active !== false);
   if (!user) return res.status(401).json({ error: 'Usuario super admin no encontrado.' });
 
   const ok = bcrypt.compareSync(password, user.password_hash);
-  if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!ok) { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+  _rl.clear(rlKey);
 
   const token = jwt.sign(
     { sub: user.id, role: 'super_admin', email: user.email, name: user.full_name },

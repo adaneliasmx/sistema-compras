@@ -1,13 +1,14 @@
 const jwt = require('jsonwebtoken');
 const { read } = require('../db-rhh');
 const { read: readCompras } = require('../db');
+const JWT_SECRET = require('../jwt-secret');
 
 function rhhAuthRequired(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'cambia-esta-clave');
+    const payload = jwt.verify(token, JWT_SECRET);
     if (payload.module && payload.module !== 'rhh') return res.status(401).json({ error: 'Token no válido para este módulo' });
 
     // Tokens emitidos para admins de compras tienen sub con prefijo "compras_"

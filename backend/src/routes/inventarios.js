@@ -9,7 +9,9 @@ const { read: readCompras, write: writeCompras, nextId: nextIdCompras } = requir
 const { read: readRhh }     = require('../db-rhh');
 const { invAuthRequired, invAllowRoles, invCanAccessType } = require('../middleware/inventarios-auth');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-esta-clave';
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 
 // ── ISO week helpers ──────────────────────────────────────────────────────────
 function isoWeek(date) {
@@ -49,11 +51,15 @@ router.post('/auth/login', (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  const rlKey = `inv|${email.toLowerCase()}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
   const db = readInv();
   const user = (db.usuarios_inv || []).find(u =>
     u.email?.toLowerCase() === email.toLowerCase() && u.activo !== false
   );
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
   const token = jwt.sign(

@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 const router = express.Router();
 
 const db = require('../db');
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 const dbProd = require('../db-produccion');
 const dbRhh = require('../db-rhh');
 const { read: readMant, write: writeMant, nextId: nextMantId, nextFolio: nextMantFolio } = require('../db-mantenimiento');
@@ -115,6 +118,10 @@ router.post('/auth/login', (req, res) => {
   if (email && typeof email !== 'string')
     return res.status(400).json({ error: 'Credenciales inválidas' });
 
+  const rlKey = `prod|${user_id || email}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
+
   const mainDb = db.read();
   const user = (mainDb.users || []).find(u => {
     if (u.active === false || !u.produccion_role) return false;
@@ -122,8 +129,10 @@ router.post('/auth/login', (req, res) => {
     return u.email && u.email.toLowerCase() === String(email).toLowerCase();
   });
 
-  if (!user || !bcrypt.compareSync(String(password), user.password_hash || ''))
+  if (!user || !bcrypt.compareSync(String(password), user.password_hash || '')) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales inválidas o sin acceso a Producción' });
+  }
 
   // Buscar empleado RH por email para vinculación en operadores
   const rhhDb = dbRhh.read();
@@ -134,7 +143,7 @@ router.post('/auth/login', (req, res) => {
 
   const token = jwt.sign(
     { module: 'produccion', sub: user.id, nombre: user.full_name, email: user.email, role: user.produccion_role, rhh_employee_id },
-    process.env.JWT_SECRET || 'cambia-esta-clave',
+    JWT_SECRET,
     { expiresIn: '12h' }
   );
   return res.json({

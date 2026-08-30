@@ -5,7 +5,9 @@ const { read, write } = require('../db-rhh');
 const { empAuthRequired } = require('../middleware/empleados-auth');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'cambia-esta-clave';
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -17,22 +19,33 @@ router.post('/login', (req, res) => {
   if (typeof username !== 'string' || typeof password !== 'string' || !username || !password)
     return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
 
+  const rlKey = `emp|${username.toUpperCase()}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
+
   const db = read();
   const emp = (db.rhh_employees || []).find(e =>
     e.emp_login && e.emp_login.username === String(username).toUpperCase().trim()
   );
-  if (!emp || emp.status !== 'active') return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!emp || emp.status !== 'active') { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
 
   const login = emp.emp_login;
 
   // Soporte dual: hash bcrypt (después del primer cambio) o texto plano (credencial inicial)
   let ok = false;
   if (login.password_hash) {
-    ok = bcrypt.compareSync(String(password), login.password_hash);
+    ok = bcrypt.compareSync(password, login.password_hash);
   } else if (login.password) {
-    ok = String(password) === String(login.password);
+    ok = password === String(login.password);
+    // Auto-migrar a bcrypt en login exitoso con texto plano
+    if (ok) {
+      login.password_hash = bcrypt.hashSync(password, 10);
+      delete login.password;
+      write(db);
+    }
   }
-  if (!ok) return res.status(401).json({ error: 'Credenciales inválidas' });
+  if (!ok) { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+  _rl.clear(rlKey);
 
   const token = jwt.sign(
     { sub: emp.id, module: 'empleado', employee_number: emp.employee_number },

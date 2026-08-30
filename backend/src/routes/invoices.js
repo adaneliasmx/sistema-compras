@@ -8,6 +8,7 @@ const { read, write, nextId } = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { allowRoles } = require('../middleware/roles');
 const { addHistory, recalcRequisition } = require('../utils/workflow');
+const JWT_SECRET = require('../jwt-secret');
 const router = express.Router();
 router.use(authRequired);
 
@@ -91,7 +92,7 @@ router.post('/request/:po_id', allowRoles('comprador', 'admin'), (req, res) => {
   write(db);
 
   const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
-  const secret = process.env.JWT_SECRET || 'cambia-esta-clave';
+  const secret = JWT_SECRET;
   const token = crypto.createHmac('sha256', secret).update(`po:${po.id}:${po.folio}`).digest('hex').slice(0, 32);
 
   // Ítems de la PO

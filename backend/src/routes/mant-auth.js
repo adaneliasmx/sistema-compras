@@ -3,6 +3,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read } = require('../db');
 const { mantAuthRequired } = require('../middleware/mant-auth');
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 const router = express.Router();
 
 // POST /api/mant/auth/login
@@ -10,6 +13,9 @@ router.post('/login', (req, res) => {
   const { email, user_id, password } = req.body || {};
   if (typeof password !== 'string' || (!email && !user_id)) return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
   if (email && typeof email !== 'string') return res.status(400).json({ error: 'Credenciales inválidas' });
+  const rlKey = `mant|${user_id || email}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
   const db = read();
   const user = db.users.find(u => {
     if (!u.active) return false;
@@ -17,6 +23,7 @@ router.post('/login', (req, res) => {
     return u.email && u.email.toLowerCase() === String(email).toLowerCase();
   });
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
   if (!user.mant_role) {
@@ -24,7 +31,7 @@ router.post('/login', (req, res) => {
   }
   const token = jwt.sign(
     { sub: user.id, module: 'mantenimiento', role: user.mant_role },
-    process.env.JWT_SECRET || 'cambia-esta-clave',
+    JWT_SECRET,
     { expiresIn: '12h' }
   );
   res.json({

@@ -1,11 +1,12 @@
 const jwt = require('jsonwebtoken');
+const JWT_SECRET = require('../jwt-secret');
 
 function produccionAuthRequired(req, res, next) {
   const auth = req.headers.authorization || '';
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Token requerido' });
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET || 'cambia-esta-clave');
+    const payload = jwt.verify(token, JWT_SECRET);
     if (payload.module !== 'produccion') {
       return res.status(401).json({ error: 'Token no válido para este módulo' });
     }

@@ -3,6 +3,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { read, write } = require('../db');
 const { valesAuthRequired } = require('../middleware/vales-auth');
+const JWT_SECRET = require('../jwt-secret');
+const { createRateLimiter } = require('../rate-limit');
+const _rl = createRateLimiter();
 const router = express.Router();
 
 // Login
@@ -10,9 +13,13 @@ router.post('/login', (req, res) => {
   const { email, password } = req.body || {};
   if (typeof email !== 'string' || typeof password !== 'string' || !email || !password)
     return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  const rlKey = `${email.toLowerCase()}|${_rl.getIp(req)}`;
+  const lim = _rl.check(rlKey);
+  if (lim.blocked) return res.status(429).json({ error: `Demasiados intentos. Intenta en ${lim.wait} min.` });
   const db = read();
   const user = db.users.find(u => u.email?.toLowerCase() === email.toLowerCase() && u.active);
   if (!user || !bcrypt.compareSync(password, user.password_hash)) {
+    _rl.recordFail(rlKey);
     return res.status(401).json({ error: 'Credenciales inválidas' });
   }
   if (!user.vales_role) {
@@ -20,7 +27,7 @@ router.post('/login', (req, res) => {
   }
   const token = jwt.sign(
     { sub: user.id, module: 'vales', role: user.vales_role },
-    process.env.JWT_SECRET || 'cambia-esta-clave',
+    JWT_SECRET,
     { expiresIn: '8h' }
   );
   res.json({
