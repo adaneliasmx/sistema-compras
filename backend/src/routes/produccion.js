@@ -136,9 +136,10 @@ router.post('/auth/login', (req, res) => {
 
   // Buscar empleado RH por email para vinculación en operadores
   const rhhDb = dbRhh.read();
-  const rhhEmp = (rhhDb.rhh_employees || []).find(e =>
-    e.status !== 'deleted' && e.email && e.email.toLowerCase() === email.toLowerCase()
-  );
+  const userEmail = user.email || email || '';
+  const rhhEmp = userEmail ? (rhhDb.rhh_employees || []).find(e =>
+    e.status !== 'deleted' && e.email && e.email.toLowerCase() === userEmail.toLowerCase()
+  ) : null;
   const rhh_employee_id = rhhEmp ? rhhEmp.id : null;
 
   const token = jwt.sign(
