@@ -106,24 +106,24 @@
       rendimiento: a.rendD > 0 ? a.rendN / a.rendD : null
     };
   }
-  function kpiClass(v) {
+  function kpiClass(v, target = 90) {
     if (v == null || isNaN(Number(v))) return 'kpi-na';
     const p = Number(v) * 100;
-    if (p >= 90) return 'kpi-green';
-    if (p >= 70) return 'kpi-amber';
+    if (p >= target) return 'kpi-green';
+    if (p >= Math.max(0, target - 10)) return 'kpi-amber';
     return 'kpi-red';
   }
-  function kpiEmoji(v) {
+  function kpiEmoji(v, target = 90) {
     if (v == null || isNaN(Number(v))) return '';
     const p = Number(v) * 100;
-    if (p >= 90) return '&#x1F60A;'; // 😊
-    if (p >= 70) return '&#x1F610;'; // 😐
+    if (p >= target) return '&#x1F60A;'; // 😊
+    if (p >= Math.max(0, target - 10)) return '&#x1F610;'; // 😐
     return '&#x1F622;'; // 😢
   }
-  function kpiImg(v, size, inline) {
+  function kpiImg(v, size, inline, target = 90) {
     if (v == null || isNaN(Number(v))) return '';
     const p = Number(v) * 100;
-    const src = p >= 90 ? '/emojis/bien.png' : p >= 70 ? '/emojis/regular.png' : '/emojis/mal.png';
+    const src = p >= target ? '/emojis/bien.png' : p >= Math.max(0, target - 10) ? '/emojis/regular.png' : '/emojis/mal.png';
     const s = size || 30;
     const st = inline ? `width:${s}px;height:${s}px;vertical-align:middle;margin-left:4px` : `width:${s}px;height:${s}px;display:block;margin:6px auto 0`;
     return `<img src="${src}" style="${st}" alt="">`;
@@ -371,25 +371,30 @@
     const turno    = getTurnoKey(l);
     const ld       = kpiData[l] || {};
     const tot      = ld[turno]?.totals || {};
+    const objKpi   = ld.objetivos || {};
     const slots    = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0 || s.es_hora_en_curso);
     const label    = LINEA_LABELS[l] || l;
     const ciclosTotales = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
     const scrapPct = scrapData[l] != null ? scrapData[l] : null;
+    const overtimeLegend = l === 'L4' && Number(ld[turno]?.minutos_adicionales || tot.minutos_adicionales || 0) > 0
+      ? `<div style="margin:6px 0 10px;padding:8px 12px;border:1px solid #8b5cf6;border-radius:8px;background:rgba(124,58,237,.14);color:#c4b5fd;font-weight:800;text-align:center">⏱ TIEMPO ADICIONAL TL4 · incluido en el KPI hasta descargar la línea${(ld[turno]?.tiempo_extra_activo || tot.tiempo_extra_activo) ? ` · ACTIVO (${ld[turno]?.cargas_activas ?? tot.cargas_activas ?? 0} cargas)` : ''}</div>`
+      : '';
 
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">${getTurnoLabel(turno)} · ${label}</div>
         <div class="ss-slide-subtitle">${nowDateLong()}</div>
+        ${overtimeLegend}
         <div class="ss-summary-row">
           <div class="ss-stat-chip"><span class="val">${ciclosTotales}</span><span class="lbl">Ciclos</span></div>
           <div class="ss-stat-chip" style="color:#f59e0b"><span class="val">${tot.paros_min != null ? Math.round(tot.paros_min) : 0}</span><span class="lbl">Paros (min)</span></div>
         </div>
         <div class="ss-kpi-grid">
-          ${kpiCard('Eficiencia · horas cerradas', tot.eficiencia)}
-          ${kpiCard('Capacidad',      tot.capacidad)}
-          ${kpiCard('Calidad',        tot.calidad)}
-          ${kpiCard('Disponibilidad', tot.disponibilidad)}
-          ${kpiCard('Rendimiento',    tot.rendimiento)}
+          ${kpiCard('Eficiencia · horas cerradas', tot.eficiencia, objKpi.eficiencia ?? 85)}
+          ${kpiCard('Capacidad',      tot.capacidad, objKpi.capacidad ?? 90)}
+          ${kpiCard('Calidad',        tot.calidad, objKpi.calidad ?? 95)}
+          ${kpiCard('Disponibilidad', tot.disponibilidad, objKpi.disponibilidad ?? 90)}
+          ${kpiCard('Rendimiento',    tot.rendimiento, objKpi.rendimiento ?? 90)}
           <div class="ss-kpi-card ${scrapCardClass(scrapPct)}">
             <div class="ss-kpi-label">% Scrap (día)</div>
             <div class="ss-kpi-value ${scrapCardClass(scrapPct)}">${fmtScrap(scrapPct)}</div>
@@ -410,14 +415,17 @@
                 const actualWidth = Math.min(100, cycles / scale * 100);
                 const targetWidth = Math.min(100, obj / scale * 100);
                 const efficiency = inProgress ? s.eficiencia_avance : s.eficiencia;
-                return `<tr${inProgress ? ' style="background:rgba(59,130,246,.10)"' : ''}>
-                <td>${escHtml(s.hora_inicio)}\u2013${escHtml(s.hora_fin)}</td>
+                const rowStyle = s.es_tiempo_adicional
+                  ? ' style="background:rgba(124,58,237,.16)"'
+                  : (inProgress ? ' style="background:rgba(59,130,246,.10)"' : '');
+                return `<tr${rowStyle}>
+                <td>${escHtml(s.hora_inicio)}\u2013${escHtml(s.hora_fin)}${s.es_tiempo_adicional ? '<br><small style="color:#c4b5fd;font-weight:800">⏱ TIEMPO ADICIONAL</small>' : ''}</td>
                 <td style="text-align:center;font-weight:700">${cycles}<div style="height:7px;background:#334155;border-radius:4px;position:relative;overflow:hidden;margin-top:3px"><div style="width:${targetWidth}%;height:100%;background:#64748b"></div><div style="position:absolute;left:0;top:1px;height:5px;width:${actualWidth}%;background:${cycles>=obj?'#22c55e':'#3b82f6'}"></div></div></td>
                 <td style="text-align:center;color:#64748b">${obj.toFixed(1)}${inProgress ? `<br><small style="color:#60a5fa">${Number(s.progreso_pct||0).toFixed(0)}% hora</small>` : ''}</td>
-                <td class="kpi-cell ${kpiClass(efficiency)}">${inProgress ? 'Avance ' : ''}${fmtPct(efficiency)} ${kpiImg(efficiency, 16, true)}</td>
-                <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)} ${kpiImg(s.capacidad, 16, true)}</td>
-                <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)} ${kpiImg(s.calidad, 16, true)}</td>
-                <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)} ${kpiImg(s.disponibilidad, 16, true)}</td>
+                <td class="kpi-cell ${kpiClass(efficiency, objKpi.eficiencia ?? 85)}">${inProgress ? 'Avance ' : ''}${fmtPct(efficiency)} ${kpiImg(efficiency, 16, true, objKpi.eficiencia ?? 85)}</td>
+                <td class="kpi-cell ${kpiClass(s.capacidad, objKpi.capacidad ?? 90)}">${fmtPct(s.capacidad)} ${kpiImg(s.capacidad, 16, true, objKpi.capacidad ?? 90)}</td>
+                <td class="kpi-cell ${kpiClass(s.calidad, objKpi.calidad ?? 95)}">${fmtPct(s.calidad)} ${kpiImg(s.calidad, 16, true, objKpi.calidad ?? 95)}</td>
+                <td class="kpi-cell ${kpiClass(s.disponibilidad, objKpi.disponibilidad ?? 90)}">${fmtPct(s.disponibilidad)} ${kpiImg(s.disponibilidad, 16, true, objKpi.disponibilidad ?? 90)}</td>
                 <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${s.paros_min > 0 ? Math.round(s.paros_min) + ' min' : '\u2014'}</td>
               </tr>`; }).join('')}
             </tbody>
@@ -434,6 +442,7 @@
       const turno   = getTurnoKey(l);
       const ld      = kpiData[l] || {};
       const tot     = ld[turno]?.totals || {};
+      const objKpi  = ld.objetivos || {};
       const ciclos  = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
       const paretoP = (ld[turno]?.pareto_paros    || []).slice(0, 3);
       const paretoD = (ld[turno]?.pareto_defectos || []).slice(0, 3);
@@ -446,11 +455,11 @@
             <div class="ss-stat-chip"><span class="val" style="font-size:20px;color:#f59e0b">${tot.paros_min != null ? Math.round(tot.paros_min) : 0}</span><span class="lbl">Paros min</span></div>
           </div>
           <div class="ss-mini-kpi-grid">
-            ${miniKpiCard('Eficiencia',     tot.eficiencia)}
-            ${miniKpiCard('Capacidad',      tot.capacidad)}
-            ${miniKpiCard('Calidad',        tot.calidad)}
-            ${miniKpiCard('Disponibilidad', tot.disponibilidad)}
-            ${miniKpiCard('Rendimiento',    tot.rendimiento)}
+            ${miniKpiCard('Eficiencia',     tot.eficiencia, objKpi.eficiencia ?? 85)}
+            ${miniKpiCard('Capacidad',      tot.capacidad, objKpi.capacidad ?? 90)}
+            ${miniKpiCard('Calidad',        tot.calidad, objKpi.calidad ?? 95)}
+            ${miniKpiCard('Disponibilidad', tot.disponibilidad, objKpi.disponibilidad ?? 90)}
+            ${miniKpiCard('Rendimiento',    tot.rendimiento, objKpi.rendimiento ?? 90)}
             <div class="ss-mini-kpi"><div class="lbl">% Scrap</div><div class="val ${scrapCardClass(sp)}">${fmtScrap(sp)}</div></div>
           </div>
           <div class="ss-pareto-col" style="margin-top:8px">
@@ -499,9 +508,13 @@
     const l        = slide.linea;
     const ld       = kpiData[l] || {};
     const diaT     = ld.totales_dia || {};
+    const objKpi   = ld.objetivos || {};
     const label    = LINEA_LABELS[l] || l;
     const fecha    = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
     const scrapPct = scrapData[l] != null ? scrapData[l] : null;
+    const overtimeLegend = l === 'L4' && Number(ld.TL4?.minutos_adicionales || diaT.minutos_adicionales || 0) > 0
+      ? `<div style="margin:6px 0 10px;padding:8px 12px;border:1px solid #8b5cf6;border-radius:8px;background:rgba(124,58,237,.14);color:#c4b5fd;font-weight:800;text-align:center">⏱ TIEMPO ADICIONAL TL4 incluido en el KPI del día${(ld.TL4?.tiempo_extra_activo || diaT.tiempo_extra_activo) ? ' · ACTIVO hasta descargar la línea' : ''}</div>`
+      : '';
 
     // Para L4 en modo TL4, mostrar solo TL4; para el resto T1/T2/T3
     const turnosToShow = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
@@ -511,11 +524,11 @@
       return `
         <div class="ss-dia-row">
           <span class="ss-dia-t-lbl">${getTurnoLabel(t)}</span>
-          <span class="kpi-cell ${kpiClass(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
-          <span class="kpi-cell ${kpiClass(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
-          <span class="kpi-cell ${kpiClass(tot.calidad)}">${fmtPct(tot.calidad)}</span>
-          <span class="kpi-cell ${kpiClass(tot.disponibilidad)}">${fmtPct(tot.disponibilidad)}</span>
-          <span class="kpi-cell ${kpiClass(tot.rendimiento)}">${fmtPct(tot.rendimiento)}</span>
+          <span class="kpi-cell ${kpiClass(tot.eficiencia, objKpi.eficiencia ?? 85)}">${fmtPct(tot.eficiencia)}</span>
+          <span class="kpi-cell ${kpiClass(tot.capacidad, objKpi.capacidad ?? 90)}">${fmtPct(tot.capacidad)}</span>
+          <span class="kpi-cell ${kpiClass(tot.calidad, objKpi.calidad ?? 95)}">${fmtPct(tot.calidad)}</span>
+          <span class="kpi-cell ${kpiClass(tot.disponibilidad, objKpi.disponibilidad ?? 90)}">${fmtPct(tot.disponibilidad)}</span>
+          <span class="kpi-cell ${kpiClass(tot.rendimiento, objKpi.rendimiento ?? 90)}">${fmtPct(tot.rendimiento)}</span>
           <span class="ss-dia-ciclos">${ciclos} ciclos</span>
         </div>`;
     }).join('');
@@ -523,6 +536,7 @@
     return `
       <div class="ss-slide">
         <div class="ss-slide-title">${fecha} · ${label}</div>
+        ${overtimeLegend}
 
         <!-- Subtotales por turno -->
         <div class="ss-dia-turnos">
@@ -540,11 +554,11 @@
           <div class="ss-dia-kpi-col">
             <div class="ss-dia-total-sep">Total del Día</div>
             <div class="ss-kpi-grid ss-kpi-sm">
-              ${kpiCard('Eficiencia',     diaT.eficiencia)}
-              ${kpiCard('Capacidad',      diaT.capacidad)}
-              ${kpiCard('Calidad',        diaT.calidad)}
-              ${kpiCard('Disponibilidad', diaT.disponibilidad)}
-              ${kpiCard('Rendimiento',    diaT.rendimiento)}
+              ${kpiCard('Eficiencia',     diaT.eficiencia, objKpi.eficiencia ?? 85)}
+              ${kpiCard('Capacidad',      diaT.capacidad, objKpi.capacidad ?? 90)}
+              ${kpiCard('Calidad',        diaT.calidad, objKpi.calidad ?? 95)}
+              ${kpiCard('Disponibilidad', diaT.disponibilidad, objKpi.disponibilidad ?? 90)}
+              ${kpiCard('Rendimiento',    diaT.rendimiento, objKpi.rendimiento ?? 90)}
               <div class="ss-kpi-card ${scrapCardClass(scrapPct)}">
                 <div class="ss-kpi-label">% Scrap (día)</div>
                 <div class="ss-kpi-value ${scrapCardClass(scrapPct)}">${fmtScrap(scrapPct)}</div>
@@ -590,6 +604,7 @@
     const panels = lineas.map(l => {
       const ld      = kpiData[l] || {};
       const diaT    = ld.totales_dia || {};
+      const objKpi  = ld.objetivos || {};
       const sp      = scrapData[l] != null ? scrapData[l] : null;
       const turnosL = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1','T2','T3'];
       const ciclosDia = turnosL.reduce((s, t) => s + ((ld[t]?.slots || []).reduce((a, x) => a + (x.ciclos_totales || 0), 0)), 0);
@@ -597,11 +612,11 @@
         <div class="ss-linea-panel">
           <h3>${LINEA_LABELS[l] || l}</h3>
           <div class="ss-mini-kpi-grid">
-            ${miniKpiCard('Eficiencia',     diaT.eficiencia)}
-            ${miniKpiCard('Capacidad',      diaT.capacidad)}
-            ${miniKpiCard('Calidad',        diaT.calidad)}
-            ${miniKpiCard('Disponibilidad', diaT.disponibilidad)}
-            ${miniKpiCard('Rendimiento',    diaT.rendimiento)}
+            ${miniKpiCard('Eficiencia',     diaT.eficiencia, objKpi.eficiencia ?? 85)}
+            ${miniKpiCard('Capacidad',      diaT.capacidad, objKpi.capacidad ?? 90)}
+            ${miniKpiCard('Calidad',        diaT.calidad, objKpi.calidad ?? 95)}
+            ${miniKpiCard('Disponibilidad', diaT.disponibilidad, objKpi.disponibilidad ?? 90)}
+            ${miniKpiCard('Rendimiento',    diaT.rendimiento, objKpi.rendimiento ?? 90)}
             <div class="ss-mini-kpi"><div class="lbl">% Scrap</div><div class="val ${scrapCardClass(sp)}">${fmtScrap(sp)}</div></div>
           </div>
           <div style="text-align:center;font-size:.8em;color:#94a3b8;margin-top:4px">Ciclos día: <strong>${ciclosDia}</strong></div>
@@ -825,11 +840,11 @@
     ];
     const LINEAS = ['L3', 'L4', 'Baker', 'L1'];
     const TURNO_LABEL = { T1:'Turno 1', T2:'Turno 2', T3:'Turno 3', TL4:'Turno L4' };
-    const EF_TGT = 0.90, REND_TGT = 0.90;
-
     const ganadores = [];
     for (const l of LINEAS) {
       const ld = kpiData[l] || {};
+      const efTarget = Number(ld.objetivos?.eficiencia ?? 85) / 100;
+      const rendTarget = Number(ld.objetivos?.rendimiento ?? 90) / 100;
       // Para L4 en modo TL4, revisar TL4; para el resto T1/T2/T3
       const turnosCheck = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
       for (const t of turnosCheck) {
@@ -837,7 +852,7 @@
         if (!tot) continue;
         const ef   = tot.eficiencia;
         const rend = tot.rendimiento;
-        if (ef != null && rend != null && ef >= EF_TGT && rend >= REND_TGT) {
+        if (ef != null && rend != null && ef >= efTarget && rend >= rendTarget) {
           const ops = (reconocimientosData[l] || {})[t] || [];
           ganadores.push({ linea: l, turno: t, eficiencia: ef, rendimiento: rend, calidad: tot.calidad, operadores: ops });
         }
@@ -895,20 +910,20 @@
   }
 
   // ── KPI card builders ─────────────────────────────────────────────────────
-  function kpiCard(label, val) {
-    const cls = kpiClass(val);
+  function kpiCard(label, val, target = 90) {
+    const cls = kpiClass(val, target);
     return `<div class="ss-kpi-card ${cls !== 'kpi-na' ? cls : ''}">
       <div class="ss-kpi-label">${label}</div>
-      <div class="ss-kpi-value ${cls}" style="display:flex;align-items:center;justify-content:center;gap:10px">${fmtPct(val)}${kpiImg(val, 80, true)}</div>
+      <div class="ss-kpi-value ${cls}" style="display:flex;align-items:center;justify-content:center;gap:10px">${fmtPct(val)}${kpiImg(val, 80, true, target)}</div>
     </div>`;
   }
 
-  function miniKpiCard(label, val) {
-    const cls = kpiClass(val);
+  function miniKpiCard(label, val, target = 90) {
+    const cls = kpiClass(val, target);
     return `<div class="ss-mini-kpi">
       <div class="lbl">${label}</div>
       <div class="val ${cls}">${fmtPct(val)}</div>
-      ${kpiImg(val, 34)}
+      ${kpiImg(val, 34, false, target)}
     </div>`;
   }
 

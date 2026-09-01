@@ -32,6 +32,11 @@ const state = {
   // Watcher de fin de turno
   _shiftTimer: null,
   _shiftWarnShown: false,
+  _tl4HoraSalida: null,
+  _tl4HoraFinEfectiva: null,
+  _tl4CargasActivas: 0,
+  _tl4TiempoExtraActivo: false,
+  _kpiConfig: null,
   _autoParoLastTs: {}   // { [linea]: lastTs } — timestamp que disparó el último pendiente_motivo creado
 };
 
@@ -140,6 +145,9 @@ function minsToNextShiftEnd() {
   const cur = now.getHours() * 60 + now.getMinutes();
   // L4 en modo TL4: usar hora_salida dinámica del turno
   if (state.lineaActiva === 'L4' && state._tl4HoraSalida) {
+    // Una carga iniciada dentro del horario programado mantiene TL4 abierto
+    // hasta su descarga. No cerrar la sesion mientras la linea siga cargada.
+    if (Number(state._tl4CargasActivas || 0) > 0) return null;
     const [h, m] = state._tl4HoraSalida.split(':').map(Number);
     const endMin = h * 60 + m;
     const diff = endMin - cur;
@@ -159,11 +167,23 @@ function showShiftWarningBanner(minsLeft) {
   if (!banner) {
     banner = document.createElement('div');
     banner.id = 'shift-warn-banner';
-    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#fff;font-weight:600;text-align:center;padding:10px 16px;font-size:15px;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
     document.body.prepend(banner);
   }
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#f59e0b;color:#fff;font-weight:600;text-align:center;padding:10px 16px;font-size:15px;display:flex;align-items:center;justify-content:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
   const mins = Math.max(0, minsLeft);
   banner.innerHTML = `⏰ El turno termina en <strong>${mins} minuto${mins !== 1 ? 's' : ''}</strong>. La sesión se cerrará automáticamente al cambio de turno.`;
+}
+
+function showTL4OvertimeBanner() {
+  let banner = document.getElementById('shift-warn-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'shift-warn-banner';
+    document.body.prepend(banner);
+  }
+  banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#7c3aed;color:#fff;font-weight:700;text-align:center;padding:10px 16px;font-size:15px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+  const horas = state._tl4HoraFinEfectiva ? ` · corte actual ${state._tl4HoraFinEfectiva}` : '';
+  banner.innerHTML = `⏱ TIEMPO ADICIONAL TL4 — la sesión y el KPI permanecen activos hasta descargar la línea${horas}.`;
 }
 
 function hideShiftWarningBanner() {
@@ -176,6 +196,11 @@ function initShiftWatcher() {
   state._shiftWarnShown = false;
   state._shiftTimer = setInterval(async () => {
     if (!state.token) { clearInterval(state._shiftTimer); return; }
+    if (state.lineaActiva === 'L4' && state._tl4TiempoExtraActivo && Number(state._tl4CargasActivas || 0) > 0) {
+      showTL4OvertimeBanner();
+      state._shiftWarnShown = true;
+      return;
+    }
     const mins = minsToNextShiftEnd();
     if (mins === null) {
       // No cerca de un cambio de turno — ocultar banner si estaba visible
@@ -288,11 +313,18 @@ function getTurnoColor(turno) {
   return '';
 }
 
-function kpiColor(pct) {
+function kpiTarget(linea, metrica) {
+  const suffix = linea === 'Baker' ? 'baker' : String(linea || '').toLowerCase();
+  const defaults = { eficiencia: 85, rendimiento: 90, capacidad: 90, calidad: 95, disponibilidad: 90 };
+  return Number(state._kpiConfig?.[`${metrica}_obj_${suffix}`] ?? defaults[metrica] ?? 90);
+}
+
+function kpiColor(pct, metrica = 'eficiencia', linea = null) {
   if (pct === null || pct === undefined || isNaN(pct)) return 'kpi-na';
   const n = parseFloat(pct);
-  if (n >= 90) return 'kpi-green';
-  if (n >= 70) return 'kpi-amber';
+  const objetivo = typeof metrica === 'number' ? metrica : kpiTarget(linea, metrica);
+  if (n >= objetivo) return 'kpi-green';
+  if (n >= Math.max(0, objetivo - 10)) return 'kpi-amber';
   return 'kpi-red';
 }
 
@@ -361,7 +393,7 @@ function getWeekRange() {
   return { lunes: fmt(lunes), domingo: fmt(domingo) };
 }
 
-function renderOpStatsSidebar(statsData, userName, linked = true) {
+function renderOpStatsSidebar(statsData, userName, linked = true, linea = null) {
   const { lunes, domingo } = getWeekRange();
   const today = getShiftDates().fecha_ini;
 
@@ -409,7 +441,8 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
       </tr>`;
     }
     const efPct = s.eficiencia != null ? Math.round(s.eficiencia * 100) : null;
-    const efClass = efPct == null ? 'op-val-muted' : efPct >= 90 ? 'op-val-green' : efPct >= 80 ? 'op-val-amber' : 'op-val-red';
+    const efTarget = kpiTarget(linea, 'eficiencia');
+    const efClass = efPct == null ? 'op-val-muted' : efPct >= efTarget ? 'op-val-green' : efPct >= Math.max(0, efTarget - 10) ? 'op-val-amber' : 'op-val-red';
     const pClass  = s.paros_min_rend <= 30 ? 'op-val-green' : s.paros_min_rend <= 60 ? 'op-val-amber' : 'op-val-red';
     return `<tr${isToday ? ' class="op-today"' : ''}>
       <td>${label}</td>
@@ -428,7 +461,7 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
     const avgEfic    = totalObj > 0 ? totalCiclos / totalObj : null;
     if (totalParos > 90) {
       recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Llevas bastantes minutos de paro esta semana. Registrar y atender causas raíz ayuda a mejorar el rendimiento.</div>`;
-    } else if (avgEfic != null && avgEfic < 0.85) {
+    } else if (avgEfic != null && avgEfic < kpiTarget(linea, 'eficiencia') / 100) {
       recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Tu eficiencia ha estado por debajo del objetivo esta semana. Revisa tiempos de ciclo y herramentales.</div>`;
     } else {
       recHtml = `<div class="op-recommendation op-rec-good"><span class="op-rec-icon">✅</span>¡Buen trabajo esta semana! Mantén el ritmo.</div>`;
@@ -451,7 +484,7 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
     </div>`;
 }
 
-function renderAdminStatsSidebar(operadorActual, statsLinea, lineaNombre) {
+function renderAdminStatsSidebar(operadorActual, statsLinea, lineaNombre, linea = null) {
   const { lunes } = getWeekRange();
   const today = getShiftDates().fecha_ini;
 
@@ -481,7 +514,8 @@ function renderAdminStatsSidebar(operadorActual, statsLinea, lineaNombre) {
     turnos.sort((a, b) => a.turno.localeCompare(b.turno));
     for (const s of turnos) {
       const efPct = s.eficiencia != null ? Math.round(s.eficiencia * 100) : null;
-      const efClass = efPct == null ? 'op-val-muted' : efPct >= 90 ? 'op-val-green' : efPct >= 80 ? 'op-val-amber' : 'op-val-red';
+      const efTarget = kpiTarget(linea, 'eficiencia');
+      const efClass = efPct == null ? 'op-val-muted' : efPct >= efTarget ? 'op-val-green' : efPct >= Math.max(0, efTarget - 10) ? 'op-val-amber' : 'op-val-red';
       const pClass  = s.paros_min_rend <= 30 ? 'op-val-green' : s.paros_min_rend <= 60 ? 'op-val-amber' : 'op-val-red';
       const opShort = (s.operador || '—').split(' ')[0];
       rowsHtml += `<tr${isToday ? ' class="op-today"' : ''}>
@@ -753,6 +787,9 @@ async function renderMain() {
     n.classList.toggle('active', n.dataset.nav === state.section);
   });
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
+  if (!state._kpiConfig) {
+    state._kpiConfig = await GET('/config').catch(() => ({}));
+  }
   try {
     switch (state.section) {
       case 'dashboard':     await viewDashboard(el);     break;
@@ -837,9 +874,9 @@ async function viewDashboard(el) {
               <tr>
                 <td>${escHtml(r.hora)}</td>
                 <td>${escHtml(r.linea)}</td>
-                <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
-                <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
-                <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+                <td class="${kpiColor(r.eficiencia, 'eficiencia', r.linea)}">${fmtPct(r.eficiencia)}</td>
+                <td class="${kpiColor(r.calidad, 'calidad', r.linea)}">${fmtPct(r.calidad)}</td>
+                <td class="${kpiColor(r.disponibilidad, 'disponibilidad', r.linea)}">${fmtPct(r.disponibilidad)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
@@ -902,7 +939,7 @@ function openModalCiclosHora(lineaLabel, turno, slots, totals) {
       <td style="padding:7px 12px;font-family:monospace;font-size:12px">${s.hora_inicio}–${s.hora_fin}</td>
       <td style="padding:7px 8px;text-align:center;font-weight:700;color:${s.ciclos_totales > 0 ? '#0f172a' : '#94a3b8'}">${s.ciclos_totales}</td>
       <td style="padding:7px 8px;text-align:center;color:#64748b">${s.ciclos_obj ?? '—'}</td>
-      <td style="padding:7px 8px;text-align:center" class="${kpiColor(ef)}">${fmtPctR(s.eficiencia)}</td>
+      <td style="padding:7px 8px;text-align:center" class="${kpiColor(ef, 'eficiencia', lineaLabel)}">${fmtPctR(s.eficiencia)}</td>
     </tr>`;
   }).join('') || `<tr><td colspan="4" style="padding:16px;text-align:center;color:#94a3b8">Sin ciclos registrados en este turno</td></tr>`;
 
@@ -935,7 +972,7 @@ function openModalCiclosHora(lineaLabel, turno, slots, totals) {
               <td style="padding:9px 12px">TOTAL TURNO</td>
               <td style="padding:9px 8px;text-align:center;font-size:15px">${ciclosTotal}</td>
               <td style="padding:9px 8px;text-align:center">${objTotal}</td>
-              <td style="padding:9px 8px;text-align:center" class="${kpiColor(efTotalPct)}">${fmtPctR(efTotal)}</td>
+              <td style="padding:9px 8px;text-align:center" class="${kpiColor(efTotalPct, 'eficiencia', lineaLabel)}">${fmtPctR(efTotal)}</td>
             </tr>
           </tfoot>
         </table>
@@ -986,9 +1023,16 @@ async function viewLinea(el, linea) {
     const isTL4 = linea === 'L4' && pizarronData?.data?.L4?.TL4;
     if (isTL4) {
       turnoActual = 'TL4';
-      state._tl4HoraSalida = pizarronData.data.L4.TL4.hora_salida || null;
+      const tl4Data = pizarronData.data.L4.TL4;
+      state._tl4HoraSalida = tl4Data.hora_salida_programada || tl4Data.hora_salida || null;
+      state._tl4HoraFinEfectiva = tl4Data.hora_fin_efectiva || state._tl4HoraSalida;
+      state._tl4CargasActivas = Number(tl4Data.cargas_activas ?? cargasData?.length ?? 0);
+      state._tl4TiempoExtraActivo = !!tl4Data.tiempo_extra_activo;
     } else {
       state._tl4HoraSalida = null;
+      state._tl4HoraFinEfectiva = null;
+      state._tl4CargasActivas = 0;
+      state._tl4TiempoExtraActivo = false;
     }
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
@@ -1001,7 +1045,8 @@ async function viewLinea(el, linea) {
     const ciclosObjHora = cfg[`ciclos_objetivo_${linea.toLowerCase()}`] ?? 2;
     const horasTurno = isTL4
       ? (() => {
-          const ent = turnoData?.hora_entrada || '08:00', sal = turnoData?.hora_salida || '17:00';
+          const ent = turnoData?.hora_entrada || '08:00';
+          const sal = turnoData?.hora_fin_efectiva || turnoData?.hora_salida || '17:00';
           const em = Number(ent.split(':')[0]) * 60 + Number(ent.split(':')[1] || 0);
           const sm = Number(sal.split(':')[0]) * 60 + Number(sal.split(':')[1] || 0);
           return Math.max(1, (sm - em) / 60);
@@ -1020,7 +1065,7 @@ async function viewLinea(el, linea) {
       const opActual = cargas.length > 0
         ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
         : null;
-      opSidebarHtml = renderAdminStatsSidebar(opActual, statsLinea, `Línea ${linea.replace('L', '')}`);
+      opSidebarHtml = renderAdminStatsSidebar(opActual, statsLinea, `Línea ${linea.replace('L', '')}`, linea);
     } else {
       const operadores = (catalogo.operadores || []).filter(o => o.activo !== false);
       const myOp = operadores.find(o =>
@@ -1030,7 +1075,7 @@ async function viewLinea(el, linea) {
       const statsData = myOp
         ? await GET(`/stats/operador-semana?operador_id=${myOp.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
         : null;
-      opSidebarHtml = renderOpStatsSidebar(statsData, state.user?.nombre || myOp?.nombre || '', !!myOp);
+      opSidebarHtml = renderOpStatsSidebar(statsData, state.user?.nombre || myOp?.nombre || '', !!myOp, linea);
     }
 
     // Auto-cerrar paro de cambio de turno al entrar a la línea (nuevo usuario)
@@ -1111,6 +1156,9 @@ async function viewLinea(el, linea) {
     const tarjetasHtml = cargas.length === 0
       ? '<div class="empty-state"><div class="icon">📭</div><p>No hay cargas activas en esta línea.</p></div>'
       : `<div class="tarjetero-grid">${cargas.map(c => renderTarjeta(c)).join('')}</div>`;
+    const overtimeCaptureBanner = isTL4 && Number(turnoData?.minutos_adicionales || 0) > 0
+      ? `<div style="margin-bottom:12px;padding:10px 14px;border:1.5px solid #8b5cf6;border-radius:9px;background:#f5f3ff;color:#6d28d9;font-weight:800">⏱ TIEMPO ADICIONAL TL4${turnoData?.tiempo_extra_activo ? ' · ACTIVO' : ''} — estas horas cuentan en el KPI del día hasta descargar la línea. Durante la extensión sólo se permite terminar y descargar las cargas ya activas.</div>`
+      : '';
 
     el.innerHTML = `
       <div class="tarjetero-header">
@@ -1128,10 +1176,21 @@ async function viewLinea(el, linea) {
           </div>
         </div>
       </div>
+      ${overtimeCaptureBanner}
       <div class="tarjetero-con-panel">
         <div class="tarjetero-main">${tarjetasHtml}</div>
         ${opSidebarHtml}
       </div>`;
+
+    if (turnoData?.tiempo_extra_activo) {
+      for (const id of ['btn-nueva-carga', 'btn-carga-vacia']) {
+        const btn = el.querySelector(`#${id}`);
+        if (btn) {
+          btn.disabled = true;
+          btn.title = 'Durante tiempo adicional TL4 sólo se descargan las cargas ya activas';
+        }
+      }
+    }
 
     // Bind events
     el.querySelector('#btn-ciclos-turno')?.addEventListener('click', () => {
@@ -1264,7 +1323,7 @@ async function viewBaker(el) {
       const opActualBk = cargas.length > 0
         ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
         : null;
-      opSidebarBkHtml = renderAdminStatsSidebar(opActualBk, statsLineaBk, 'Baker');
+      opSidebarBkHtml = renderAdminStatsSidebar(opActualBk, statsLineaBk, 'Baker', 'Baker');
     } else {
       const operadoresBk = (catalogo.operadores || []).filter(o => o.activo !== false);
       const myOpBk = operadoresBk.find(o =>
@@ -1274,7 +1333,7 @@ async function viewBaker(el) {
       const statsBk = myOpBk
         ? await GET(`/stats/operador-semana?operador_id=${myOpBk.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
         : null;
-      opSidebarBkHtml = renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk?.nombre || '', !!myOpBk);
+      opSidebarBkHtml = renderOpStatsSidebar(statsBk, state.user?.nombre || myOpBk?.nombre || '', !!myOpBk, 'Baker');
     }
     const cfg = (cfgData?.config || cfgData) ?? {};
     const planesUrl = cfg.planes_control_baker_url || '';
@@ -1466,7 +1525,7 @@ async function viewL1(el) {
       const opActualL1 = cargas.length > 0
         ? cargas.reduce((lat, c) => !lat || (c.created_at || '') > (lat.created_at || '') ? c : lat, null)?.operador || null
         : null;
-      opSidebarL1Html = renderAdminStatsSidebar(opActualL1, statsLineaL1, 'Línea 1');
+      opSidebarL1Html = renderAdminStatsSidebar(opActualL1, statsLineaL1, 'Línea 1', 'L1');
     } else {
       const operadoresL1 = (catalogo.operadores || []).filter(o => o.activo !== false);
       const myOpL1 = operadoresL1.find(o =>
@@ -1476,7 +1535,7 @@ async function viewL1(el) {
       const statsL1 = myOpL1
         ? await GET(`/stats/operador-semana?operador_id=${myOpL1.id}&fecha_ini=${semLunes}&fecha_fin=${semDomingo}`).catch(() => null)
         : null;
-      opSidebarL1Html = renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1?.nombre || '', !!myOpL1);
+      opSidebarL1Html = renderOpStatsSidebar(statsL1, state.user?.nombre || myOpL1?.nombre || '', !!myOpL1, 'L1');
     }
     const cfg = (cfgData?.config || cfgData) ?? {};
 
@@ -3166,6 +3225,7 @@ async function viewPizarron(el) {
       const pct = v => v != null ? v * 100 : null;
 
       for (const [l, lineaData] of Object.entries(backendData)) {
+        const objetivos = lineaData.objetivos || {};
         // L4 en modo TL4: iterar ['TL4'], no T1/T2/T3
         const turnos = turno ? [turno] : (l === 'L4' && lineaData.TL4 ? ['TL4'] : ['T1', 'T2', 'T3']);
         for (const t of turnos) {
@@ -3193,7 +3253,10 @@ async function viewPizarron(el) {
                 objetivo_transcurrido: slot.objetivo_transcurrido,
                 estado_slot:    slot.estado_slot,
                 es_hora_en_curso: !!slot.es_hora_en_curso,
-                progreso_pct:   slot.progreso_pct
+                progreso_pct:   slot.progreso_pct,
+                es_tiempo_adicional: !!slot.es_tiempo_adicional,
+                minutos_tiempo_adicional: Number(slot.minutos_tiempo_adicional || 0),
+                objetivos
               });
             }
           }
@@ -3207,7 +3270,12 @@ async function viewPizarron(el) {
               calidad:        pct(tot.calidad),
               disponibilidad: pct(tot.disponibilidad),
               rendimiento:    pct(tot.rendimiento),
-              hora_en_curso:  tot.hora_en_curso
+              hora_en_curso:  tot.hora_en_curso,
+              minutos_adicionales: Number(turnoData.minutos_adicionales ?? tot.minutos_adicionales ?? 0),
+              tiempo_extra_activo: !!(turnoData.tiempo_extra_activo ?? tot.tiempo_extra_activo),
+              cargas_activas: Number(turnoData.cargas_activas ?? tot.cargas_activas ?? 0),
+              hora_fin_efectiva: turnoData.hora_fin_efectiva || null,
+              objetivos
             };
           }
         }
@@ -3221,7 +3289,8 @@ async function viewPizarron(el) {
             calidad:        pct(td.calidad),
             disponibilidad: pct(td.disponibilidad),
             rendimiento:    pct(td.rendimiento),
-            hora_en_curso:  td.hora_en_curso
+            hora_en_curso:  td.hora_en_curso,
+            objetivos
           };
         }
       }
@@ -3348,14 +3417,15 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
         </tr>`;
       } else {
         for (const r of grupo) {
-          bodyHtml += `<tr${r.es_hora_en_curso ? ' style="background:#eff6ff"' : ''}>
-            <td>${escHtml(r.hora || '—')}${r.es_hora_en_curso ? '<div style="font-size:10px;color:#2563eb;font-weight:700">EN CURSO</div>' : ''}</td>
+          const rowBg = r.es_tiempo_adicional ? '#f5f3ff' : (r.es_hora_en_curso ? '#eff6ff' : '');
+          bodyHtml += `<tr${rowBg ? ` style="background:${rowBg}"` : ''}>
+            <td>${escHtml(r.hora || '—')}${r.es_hora_en_curso ? '<div style="font-size:10px;color:#2563eb;font-weight:700">EN CURSO</div>' : ''}${r.es_tiempo_adicional ? '<div style="font-size:10px;color:#7c3aed;font-weight:800">⏱ TIEMPO ADICIONAL</div>' : ''}</td>
             <td>${ciclosVsObjetivo(r)}</td>
-            <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
-            <td class="${kpiColor(r.rendimiento)}">${fmtPct(r.rendimiento)}</td>
-            <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
-            <td class="${kpiColor(r.calidad)}">${fmtPct(r.calidad)}</td>
-            <td class="${kpiColor(r.disponibilidad)}">${fmtPct(r.disponibilidad)}</td>
+            <td class="${kpiColor(r.eficiencia, r.objetivos?.eficiencia ?? 85)}">${fmtPct(r.eficiencia)}</td>
+            <td class="${kpiColor(r.rendimiento, r.objetivos?.rendimiento ?? 90)}">${fmtPct(r.rendimiento)}</td>
+            <td class="${kpiColor(r.capacidad, r.objetivos?.capacidad ?? 90)}">${fmtPct(r.capacidad)}</td>
+            <td class="${kpiColor(r.calidad, r.objetivos?.calidad ?? 95)}">${fmtPct(r.calidad)}</td>
+            <td class="${kpiColor(r.disponibilidad, r.objetivos?.disponibilidad ?? 90)}">${fmtPct(r.disponibilidad)}</td>
           </tr>`;
         }
         const tt = turnoTotals[`${linea}-${turno}`];
@@ -3363,11 +3433,11 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
           bodyHtml += `<tr class="totals-row">
             <td>Total ${tLabel}</td>
             <td style="text-align:center;font-weight:700">${tt.ciclos ?? '—'}</td>
-            <td class="${kpiColor(tt.eficiencia)}">${fmtPct(tt.eficiencia)}</td>
-            <td class="${kpiColor(tt.rendimiento)}">${fmtPct(tt.rendimiento)}</td>
-            <td class="${kpiColor(tt.capacidad)}">${fmtPct(tt.capacidad)}</td>
-            <td class="${kpiColor(tt.calidad)}">${fmtPct(tt.calidad)}</td>
-            <td class="${kpiColor(tt.disponibilidad)}">${fmtPct(tt.disponibilidad)}</td>
+            <td class="${kpiColor(tt.eficiencia, tt.objetivos?.eficiencia ?? 85)}">${fmtPct(tt.eficiencia)}</td>
+            <td class="${kpiColor(tt.rendimiento, tt.objetivos?.rendimiento ?? 90)}">${fmtPct(tt.rendimiento)}</td>
+            <td class="${kpiColor(tt.capacidad, tt.objetivos?.capacidad ?? 90)}">${fmtPct(tt.capacidad)}</td>
+            <td class="${kpiColor(tt.calidad, tt.objetivos?.calidad ?? 95)}">${fmtPct(tt.calidad)}</td>
+            <td class="${kpiColor(tt.disponibilidad, tt.objetivos?.disponibilidad ?? 90)}">${fmtPct(tt.disponibilidad)}</td>
           </tr>`;
         }
       }
@@ -3377,19 +3447,27 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
       bodyHtml += `<tr class="day-total-row">
         <td>TOTAL DÍA</td>
         <td style="text-align:center;font-weight:700">${dt.ciclos ?? '—'}</td>
-        <td class="${kpiColor(dt.eficiencia)}">${fmtPct(dt.eficiencia)}</td>
-        <td class="${kpiColor(dt.rendimiento)}">${fmtPct(dt.rendimiento)}</td>
-        <td class="${kpiColor(dt.capacidad)}">${fmtPct(dt.capacidad)}</td>
-        <td class="${kpiColor(dt.calidad)}">${fmtPct(dt.calidad)}</td>
-        <td class="${kpiColor(dt.disponibilidad)}">${fmtPct(dt.disponibilidad)}</td>
+        <td class="${kpiColor(dt.eficiencia, dt.objetivos?.eficiencia ?? 85)}">${fmtPct(dt.eficiencia)}</td>
+        <td class="${kpiColor(dt.rendimiento, dt.objetivos?.rendimiento ?? 90)}">${fmtPct(dt.rendimiento)}</td>
+        <td class="${kpiColor(dt.capacidad, dt.objetivos?.capacidad ?? 90)}">${fmtPct(dt.capacidad)}</td>
+        <td class="${kpiColor(dt.calidad, dt.objetivos?.calidad ?? 95)}">${fmtPct(dt.calidad)}</td>
+        <td class="${kpiColor(dt.disponibilidad, dt.objetivos?.disponibilidad ?? 90)}">${fmtPct(dt.disponibilidad)}</td>
       </tr>`;
     }
+
+    const tl4Totals = turnoTotals[`${linea}-TL4`];
+    const extraLegend = linea === 'L4' && (grupoHasExtra(lineaRows) || Number(tl4Totals?.minutos_adicionales || 0) > 0)
+      ? `<div style="margin:10px 14px;padding:9px 12px;border:1px solid #8b5cf6;background:#f5f3ff;color:#6d28d9;border-radius:8px;font-size:12px;font-weight:700">
+          ⏱ Tiempo adicional TL4: horas posteriores a las 9 horas base. Se incluyen en el KPI del día hasta descargar la línea${tl4Totals?.tiempo_extra_activo ? ` · ACTIVO (${tl4Totals.cargas_activas} carga${tl4Totals.cargas_activas === 1 ? '' : 's'})` : ''}.
+        </div>`
+      : '';
 
     return `
       <div class="table-card" style="margin-bottom:18px">
         <div class="table-header">
           <h3>📊 KPI — ${escHtml(linea)}</h3>
         </div>
+        ${extraLegend}
         <div class="pizarron-scroll">
           <table class="pizarron-table">
             <thead><tr>
@@ -3399,6 +3477,10 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
           </table>
         </div>
       </div>`;
+  }
+
+  function grupoHasExtra(lineaRows) {
+    return lineaRows.some(r => r.es_tiempo_adicional);
   }
 
   const sectionsHtml = lineas.map(renderLineaSection).join('');
@@ -3736,18 +3818,16 @@ async function viewMonitorGrafico(el) {
     let tl4Bounds = null;
     if (activeTab === 'L4' && selFecha && selTurno === 'TL4') {
       try {
-        const cfgRes = await GET(`/turno-l4-config?week=${selFecha}`);
-        const dayNames = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
-        const dayName = dayNames[new Date(selFecha + 'T12:00:00').getDay()];
-        const dc = cfgRes?.config?.dias?.[dayName];
-        if (dc?.activo && dc.hora_entrada && dc.hora_salida) {
+        const board = await GET(`/pizarron?linea=L4&fecha=${selFecha}&turno=TL4`);
+        const tl4 = board?.data?.L4?.TL4;
+        if (tl4?.hora_entrada && (tl4.hora_fin_efectiva || tl4.hora_salida)) {
           const toMinutes = value => {
             const [h, m] = value.split(':').map(Number);
             return h * 60 + m;
           };
-          tl4Bounds = [toMinutes(dc.hora_entrada), toMinutes(dc.hora_salida)];
+          tl4Bounds = [toMinutes(tl4.hora_entrada), toMinutes(tl4.hora_fin_efectiva || tl4.hora_salida)];
         }
-      } catch (_) { /* conservar rango de día completo si no se puede cargar config */ }
+      } catch (_) { /* conservar rango de día completo si no se puede cargar KPI */ }
     }
 
     // Filtrar cargas
@@ -4553,7 +4633,7 @@ async function viewReportes(el) {
 
     function calRow(b, d) {
       const t = b + d; const p = t > 0 ? ((b / t) * 100).toFixed(1) : null;
-      return `<td class="${kpiColor(p ? Number(p) : null)}">${p !== null ? p+'%' : '—'}</td>`;
+      return `<td class="${kpiColor(p ? Number(p) : null, 'calidad', activeTab)}">${p !== null ? p+'%' : '—'}</td>`;
     }
     function defCell(n) {
       return `<td style="text-align:center;${n>0?'color:#ef4444;font-weight:700':''}">${n}</td>`;
@@ -4579,7 +4659,7 @@ async function viewReportes(el) {
             <span>Buenas: <strong style="color:#22c55e">${buenas}</strong></span>
             <span>Con defecto: <strong style="color:#ef4444">${defecto}</strong></span>
             ${vacias ? `<span>Vacías: <strong>${vacias}</strong></span>` : ''}
-            <span>Calidad: <strong class="${kpiColor(calidad ? Number(calidad) : null)}">${calidad !== null ? calidad+'%' : '—'}</strong></span>
+            <span>Calidad: <strong class="${kpiColor(calidad ? Number(calidad) : null, 'calidad', activeTab)}">${calidad !== null ? calidad+'%' : '—'}</strong></span>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px">
@@ -6476,6 +6556,13 @@ async function viewConfiguracion(el) {
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-baker" value="${n('disponibilidad_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
             <td style="padding:6px 10px"><input type="number" id="cfg-dis-l1" value="${n('disponibilidad_obj_l1',90)}" min="0" max="100" style="width:80px"/></td>
           </tr>
+          <tr>
+            <td style="padding:6px 10px">Rendimiento</td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ren-l3" value="${n('rendimiento_obj_l3',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ren-l4" value="${n('rendimiento_obj_l4',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ren-baker" value="${n('rendimiento_obj_baker',90)}" min="0" max="100" style="width:80px"/></td>
+            <td style="padding:6px 10px"><input type="number" id="cfg-ren-l1" value="${n('rendimiento_obj_l1',90)}" min="0" max="100" style="width:80px"/></td>
+          </tr>
         </tbody>
       </table>
 
@@ -6515,7 +6602,7 @@ async function viewConfiguracion(el) {
     const msg = document.getElementById('cfg-msg');
     btn.disabled = true; btn.textContent = 'Guardando...';
     try {
-      await PATCH('/config', {
+      state._kpiConfig = await PATCH('/config', {
         ciclos_objetivo_l3:    g('cfg-ciclos-l3'),
         ciclos_objetivo_l4:    g('cfg-ciclos-l4'),
         ciclos_objetivo_baker: g('cfg-ciclos-baker'),
@@ -6536,6 +6623,10 @@ async function viewConfiguracion(el) {
         disponibilidad_obj_l4: g('cfg-dis-l4'),
         disponibilidad_obj_baker: g('cfg-dis-baker'),
         disponibilidad_obj_l1: g('cfg-dis-l1'),
+        rendimiento_obj_l3:     g('cfg-ren-l3'),
+        rendimiento_obj_l4:     g('cfg-ren-l4'),
+        rendimiento_obj_baker:  g('cfg-ren-baker'),
+        rendimiento_obj_l1:     g('cfg-ren-l1'),
         planes_control_baker_url: document.getElementById('cfg-planes-url')?.value?.trim() || ''
       });
       msg.style.color = 'var(--p-success)';
@@ -7221,11 +7312,11 @@ function renderKpiHistTable(snaps) {
                 <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
                 ${bkLike ? `<td style="text-align:center">${s.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${s.ciclos_buenos}</td>
-                <td class="${kpiColor(s.eficiencia*100)}">${fmtPctR(s.eficiencia)}</td>
-                <td class="${kpiColor(s.rendimiento*100)}">${fmtPctR(s.rendimiento)}</td>
-                <td class="${kpiColor(s.capacidad*100)}">${fmtPctR(s.capacidad)}</td>
-                <td class="${kpiColor(s.calidad*100)}">${fmtPctR(s.calidad)}</td>
-                <td class="${kpiColor(s.disponibilidad*100)}">${fmtPctR(s.disponibilidad)}</td>
+                <td class="${kpiColor(s.eficiencia*100, 'eficiencia', snap.linea)}">${fmtPctR(s.eficiencia)}</td>
+                <td class="${kpiColor(s.rendimiento*100, 'rendimiento', snap.linea)}">${fmtPctR(s.rendimiento)}</td>
+                <td class="${kpiColor(s.capacidad*100, 'capacidad', snap.linea)}">${fmtPctR(s.capacidad)}</td>
+                <td class="${kpiColor(s.calidad*100, 'calidad', snap.linea)}">${fmtPctR(s.calidad)}</td>
+                <td class="${kpiColor(s.disponibilidad*100, 'disponibilidad', snap.linea)}">${fmtPctR(s.disponibilidad)}</td>
                 <td style="text-align:center">${s.paros_min}</td>
               </tr>`).join('')}
               <tr class="totals-row">
@@ -7233,11 +7324,11 @@ function renderKpiHistTable(snaps) {
                 <td style="text-align:center;font-weight:700">${snap.ciclos_totales}</td>
                 ${bkLike ? `<td style="text-align:center">${snap.ciclos_no_vacios}</td>` : ''}
                 <td style="text-align:center">${snap.ciclos_buenos}</td>
-                <td class="${kpiColor(snap.eficiencia*100)}">${fmtPctR(snap.eficiencia)}</td>
-                <td class="${kpiColor(snap.rendimiento*100)}">${fmtPctR(snap.rendimiento)}</td>
-                <td class="${kpiColor(snap.capacidad*100)}">${fmtPctR(snap.capacidad)}</td>
-                <td class="${kpiColor(snap.calidad*100)}">${fmtPctR(snap.calidad)}</td>
-                <td class="${kpiColor(snap.disponibilidad*100)}">${fmtPctR(snap.disponibilidad)}</td>
+                <td class="${kpiColor(snap.eficiencia*100, 'eficiencia', snap.linea)}">${fmtPctR(snap.eficiencia)}</td>
+                <td class="${kpiColor(snap.rendimiento*100, 'rendimiento', snap.linea)}">${fmtPctR(snap.rendimiento)}</td>
+                <td class="${kpiColor(snap.capacidad*100, 'capacidad', snap.linea)}">${fmtPctR(snap.capacidad)}</td>
+                <td class="${kpiColor(snap.calidad*100, 'calidad', snap.linea)}">${fmtPctR(snap.calidad)}</td>
+                <td class="${kpiColor(snap.disponibilidad*100, 'disponibilidad', snap.linea)}">${fmtPctR(snap.disponibilidad)}</td>
                 <td style="text-align:center">${snap.paros_min_total}</td>
               </tr>
             </tbody>
@@ -7669,11 +7760,14 @@ function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
       <td style="padding:4px 8px">${s.fecha}</td>
       <td style="padding:4px 8px;text-align:center;font-weight:600">${s.turno}</td>
       <td style="padding:4px 8px;text-align:center">${s.ciclos_totales}</td>
-      <td style="padding:4px 8px;text-align:center" class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${s.eficiencia != null ? (s.eficiencia * 100).toFixed(1) + '%' : '—'}</td>
+      <td style="padding:4px 8px;text-align:center" class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null, 'eficiencia', linea)}">${s.eficiencia != null ? (s.eficiencia * 100).toFixed(1) + '%' : '—'}</td>
     </tr>`).join('');
   overlay.querySelector('#efModalBody').innerHTML = `
     <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Eficiencia consolidada por día</h4>
-    ${renderHBarChart(dias, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444')}
+    ${renderHBarChart(dias, d => {
+      const target = kpiTarget(linea, 'eficiencia');
+      return d.value >= target ? '#16a34a' : d.value >= Math.max(0, target - 10) ? '#f59e0b' : '#ef4444';
+    })}
     <h4 style="font-size:13px;margin:16px 0 8px;color:#374151">Detalle por turno</h4>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
       <thead><tr style="background:#f8fafc">
@@ -7911,27 +8005,30 @@ async function viewResumenTurno(el) {
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📈 Eficiencia por Día — ${escHtml(activeTab)}</h4>
-            ${diasEf.length ? renderHBarChart(diasEf, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444') : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
+            ${diasEf.length ? renderHBarChart(diasEf, d => {
+              const target = kpiTarget(activeTab, 'eficiencia');
+              return d.value >= target ? '#16a34a' : d.value >= Math.max(0, target - 10) ? '#f59e0b' : '#ef4444';
+            }) : '<div style="color:#6b7280;font-size:12px">Sin datos</div>'}
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Eficiencia semanal — ${escHtml(activeTab)}</h4>
-            ${renderSVGBarChart(mkSeries('Eficiencia', '#3b82f6', kpiByDay.ef), DIAS_SEMANA, barOpts(90))}
+            ${renderSVGBarChart(mkSeries('Eficiencia', '#3b82f6', kpiByDay.ef), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'eficiencia')))}
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Calidad semanal — ${escHtml(activeTab)}</h4>
-            ${renderSVGBarChart(mkSeries('Calidad', '#10b981', kpiByDay.cal), DIAS_SEMANA, barOpts(99))}
+            ${renderSVGBarChart(mkSeries('Calidad', '#10b981', kpiByDay.cal), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'calidad')))}
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Capacidad semanal — ${escHtml(activeTab)}</h4>
-            ${renderSVGBarChart(mkSeries('Capacidad', '#8b5cf6', kpiByDay.cap), DIAS_SEMANA, barOpts(85))}
+            ${renderSVGBarChart(mkSeries('Capacidad', '#8b5cf6', kpiByDay.cap), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'capacidad')))}
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Disponibilidad semanal — ${escHtml(activeTab)}</h4>
-            ${renderSVGBarChart(mkSeries('Disponibilidad', '#f59e0b', kpiByDay.disp), DIAS_SEMANA, barOpts(90))}
+            ${renderSVGBarChart(mkSeries('Disponibilidad', '#f59e0b', kpiByDay.disp), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'disponibilidad')))}
           </div>
           <div style="${cardStyle}">
             <h4 style="margin:0 0 10px;font-size:14px">📊 Tendencia Rendimiento semanal — ${escHtml(activeTab)}</h4>
-            ${renderSVGBarChart(mkSeries('Rendimiento', '#6366f1', kpiByDay.rend), DIAS_SEMANA, barOpts(90))}
+            ${renderSVGBarChart(mkSeries('Rendimiento', '#6366f1', kpiByDay.rend), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'rendimiento')))}
           </div>
         </div>`;
     } catch (e) {
@@ -8034,7 +8131,7 @@ async function viewResumenTurno(el) {
         const lRows = LINEAS.map(l => {
           const cells = periods.map(p => {
             const v = getCellVal(l, p);
-            const cs = colorFn ? colorFn(v) : '';
+            const cs = colorFn ? colorFn(v, l) : '';
             return `<td style="${tdStyle};${cs}">${v}</td>`;
           }).join('');
           return `<tr style="border-bottom:1px solid #f3f4f6"><td style="${tdStyle};font-weight:600;color:#374151">${LLAB[l]}</td>${cells}</tr>`;
@@ -8050,9 +8147,17 @@ async function viewResumenTurno(el) {
           </tr></thead>
           <tbody>
             ${tableRows('Eficiencia', (l, p) => { const {ef} = aggKPI(allSnaps, l, p.filter); return ef!=null?fmtP(ef):'—'; },
-              v => v==='—'?'':parseFloat(v)>=90?'color:#16a34a;font-weight:700':parseFloat(v)>=70?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700')}
+              (v, l) => {
+                if (v === '—') return '';
+                const target = kpiTarget(l, 'eficiencia');
+                return parseFloat(v) >= target ? 'color:#16a34a;font-weight:700' : parseFloat(v) >= Math.max(0, target - 10) ? 'color:#d97706;font-weight:700' : 'color:#dc2626;font-weight:700';
+              })}
             ${tableRows('Calidad', (l, p) => { const {cal} = aggKPI(allSnaps, l, p.filter); return cal!=null?fmtP(cal):'—'; },
-              v => v==='—'?'':parseFloat(v)>=99?'color:#16a34a;font-weight:700':parseFloat(v)>=95?'color:#d97706;font-weight:700':'color:#dc2626;font-weight:700')}
+              (v, l) => {
+                if (v === '—') return '';
+                const target = kpiTarget(l, 'calidad');
+                return parseFloat(v) >= target ? 'color:#16a34a;font-weight:700' : parseFloat(v) >= Math.max(0, target - 10) ? 'color:#d97706;font-weight:700' : 'color:#dc2626;font-weight:700';
+              })}
             ${tableRows('Horas de Paro', (l, p) => fmtH(paroHrs(l, p.pFilter)),
               v => v==='—'?'color:#16a34a':'color:#dc2626')}
           </tbody>
@@ -8137,11 +8242,11 @@ function renderResumenTurnoTable(snaps, linea) {
       <td style="text-align:center;font-weight:700">${fmtNum(s.ciclos_totales)}</td>
       ${isBakerLike ? `<td style="text-align:center">${fmtNum(s.ciclos_no_vacios)}</td>` : ''}
       <td style="text-align:center">${fmtNum(s.ciclos_buenos)}</td>
-      <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)} eficiencia-click" data-sid="${s.id}" title="Clic para ver ciclos por hora">${fmtPct(s.eficiencia)} 🔍</td>
-      <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
-      <td class="${kpiColor(s.capacidad != null ? s.capacidad * 100 : null)} capacidad-click" data-sid="${s.id}" title="Clic para ver piezas por hora">${fmtPct(s.capacidad)}${s.capacidad != null ? ' 🔍' : ''}</td>
-      <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null)} disponibilidad-click" data-sid="${s.id}" title="Clic para ver paros">${fmtPct(s.disponibilidad)}${s.disponibilidad != null && s.disponibilidad < 1 ? ' 🔍' : ''}</td>
-      <td class="${kpiColor(s.rendimiento != null ? s.rendimiento * 100 : null)}">${fmtPct(s.rendimiento)}</td>
+      <td class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null, 'eficiencia', linea)} eficiencia-click" data-sid="${s.id}" title="Clic para ver ciclos por hora">${fmtPct(s.eficiencia)} 🔍</td>
+      <td class="${kpiColor(s.calidad != null ? s.calidad * 100 : null, 'calidad', linea)} calidad-click" data-sid="${s.id}" title="Clic para ver defectos">${fmtPct(s.calidad)}${s.calidad != null && s.calidad < 1 ? ' 🔍' : ''}</td>
+      <td class="${kpiColor(s.capacidad != null ? s.capacidad * 100 : null, 'capacidad', linea)} capacidad-click" data-sid="${s.id}" title="Clic para ver piezas por hora">${fmtPct(s.capacidad)}${s.capacidad != null ? ' 🔍' : ''}</td>
+      <td class="${kpiColor(s.disponibilidad != null ? s.disponibilidad * 100 : null, 'disponibilidad', linea)} disponibilidad-click" data-sid="${s.id}" title="Clic para ver paros">${fmtPct(s.disponibilidad)}${s.disponibilidad != null && s.disponibilidad < 1 ? ' 🔍' : ''}</td>
+      <td class="${kpiColor(s.rendimiento != null ? s.rendimiento * 100 : null, 'rendimiento', linea)}">${fmtPct(s.rendimiento)}</td>
       <td style="text-align:center">${fmtNum(s.piezas_total)}</td>
       <td style="text-align:center">${fmtNum(s.paros_min_total)} min</td>
     </tr>`).join('');
@@ -8168,11 +8273,11 @@ function renderResumenTurnoTable(snaps, linea) {
       <td style="text-align:center">${ciclosTot}</td>
       ${isBakerLike ? `<td style="text-align:center">${ciclosNoV}</td>` : ''}
       <td style="text-align:center">${ciclosBuenos}</td>
-      <td class="${kpiColor(ef!=null?ef*100:null)}">${fmtPct(ef)}</td>
-      <td class="${kpiColor(cal!=null?cal*100:null)}">${fmtPct(cal)}</td>
-      <td class="${kpiColor(cap!=null?cap*100:null)}">${fmtPct(cap)}</td>
-      <td class="${kpiColor(disp!=null?disp*100:null)}">${fmtPct(disp)}</td>
-      <td class="${kpiColor(rend!=null?rend*100:null)}">${fmtPct(rend)}</td>
+      <td class="${kpiColor(ef!=null?ef*100:null, 'eficiencia', linea)}">${fmtPct(ef)}</td>
+      <td class="${kpiColor(cal!=null?cal*100:null, 'calidad', linea)}">${fmtPct(cal)}</td>
+      <td class="${kpiColor(cap!=null?cap*100:null, 'capacidad', linea)}">${fmtPct(cap)}</td>
+      <td class="${kpiColor(disp!=null?disp*100:null, 'disponibilidad', linea)}">${fmtPct(disp)}</td>
+      <td class="${kpiColor(rend!=null?rend*100:null, 'rendimiento', linea)}">${fmtPct(rend)}</td>
       <td style="text-align:center">${ws.reduce((s,x)=>s+x.piezas_total,0)}</td>
       <td style="text-align:center">${paroMin.toFixed(0)} min</td>
     </tr>`;

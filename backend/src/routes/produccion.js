@@ -105,6 +105,17 @@ function lineaKey(linea) {
   return linea.toLowerCase();
 }
 
+function getKpiObjectives(config, linea) {
+  const suffix = linea === 'Baker' ? 'baker' : String(linea || '').toLowerCase();
+  return {
+    eficiencia: Number(config[`eficiencia_obj_${suffix}`] ?? 85),
+    rendimiento: Number(config[`rendimiento_obj_${suffix}`] ?? 90),
+    capacidad: Number(config[`capacidad_obj_${suffix}`] ?? 90),
+    calidad: Number(config[`calidad_obj_${suffix}`] ?? 95),
+    disponibilidad: Number(config[`disponibilidad_obj_${suffix}`] ?? 90)
+  };
+}
+
 function catalogCollection(linea, tipo) {
   // tipo: componentes | procesos | acabados | herramentales | defectos | motivos-paro | sub-motivos-paro
   // linea: L3 | L4 | baker | l1
@@ -623,7 +634,7 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
   // Resolver turno con validación completa (TL4 ventana, calendario)
   const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
   if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
-  if (!ctx.en_ventana) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
   const fecha_turno = ctx.fecha_turno;
   const turno = ctx.turno;
 
@@ -749,7 +760,7 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   // Resolver turno correctamente: L4 post-cutover → TL4
   const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
   if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
-  if (!ctx.en_ventana) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
 
   const fecha_turno = ctx.fecha_turno;
   const turno = ctx.turno;
@@ -1984,6 +1995,10 @@ const ARRANQUE_LUNES = { L3: 5, L4: 6, Baker: 7, L1: 7 };
 const L4_TL4_CUTOVER_DATE = '2026-08-31';
 // Ciclos de arranque diario para L4 en modo TL4 (fijo, no configurable via UI)
 const L4_ARRANQUE_CICLOS = 6;
+// Las primeras nueve horas de TL4 son tiempo base. Cualquier minuto posterior
+// es tiempo adicional y permanece dentro del KPI del mismo dia hasta que la
+// ultima carga activa de L4 sea descargada.
+const L4_TIEMPO_BASE_MIN = 9 * 60;
 
 // Retorna true si la fecha YYYY-MM-DD es lunes
 function isLunes(dateStr) {
@@ -2022,6 +2037,88 @@ function toMins(timeStr) {
   if (!timeStr) return 0;
   const [h, m] = timeStr.split(':').map(Number);
   return h * 60 + m;
+}
+
+function minsToTime(totalMins) {
+  const mins = Math.max(0, Math.min(1440, Math.round(Number(totalMins) || 0)));
+  if (mins === 1440) return '24:00';
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+}
+
+// Fuente unica de la ventana operativa TL4. La salida configurada conserva la
+// ventana para iniciar cargas; la ventana KPI puede extenderse cuando existen
+// cargas activas o cuando la ultima descarga ocurrio despues de esa salida.
+// La extension nunca cambia la fecha operativa ni permite cruzar medianoche.
+function getTL4EffectiveWindow(pdb, targetDate) {
+  const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
+  const diaConf = cfg.dias[getDiaSemana(targetDate)];
+  if (!diaConf || !diaConf.activo || !diaConf.hora_entrada || !diaConf.hora_salida) {
+    return { activo: false, targetDate, cargas_activas: 0, tiempo_extra_activo: false };
+  }
+
+  const startMins = toMins(diaConf.hora_entrada);
+  const scheduledEndMins = toMins(diaConf.hora_salida);
+  if (scheduledEndMins <= startMins) {
+    return { activo: false, targetDate, cargas_activas: 0, tiempo_extra_activo: false };
+  }
+
+  const baseEndMins = Math.min(1440, startMins + L4_TIEMPO_BASE_MIN);
+  const completed = (pdb.cargas || []).filter(c => {
+    if (c.linea !== 'L4' || c.estado === 'cancelado' || !c.fecha_descarga || !c.hora_descarga) return false;
+    const descargaMins = toMins(c.hora_descarga);
+    return c.fecha_descarga === targetDate && descargaMins >= startMins && descargaMins <= 1440;
+  });
+  const lastDischargeMins = completed.reduce(
+    (max, c) => Math.max(max, toMins(c.hora_descarga)),
+    startMins
+  );
+
+  const today = nowDateStr();
+  const nowMins = toMins(nowTimeStr());
+  const activeLoads = targetDate === today
+    ? (pdb.cargas || []).filter(c => {
+        if (c.linea !== 'L4' || c.estado !== 'activo') return false;
+        const fechaCarga = c.fecha_turno || c.fecha_carga;
+        const cargaMins = toMins(c.hora_carga || '00:00');
+        return fechaCarga === targetDate && cargaMins >= startMins && cargaMins < scheduledEndMins;
+      })
+    : [];
+  const operatingLive = targetDate === today && activeLoads.length > 0 && nowMins >= startMins;
+
+  // minutos_calculo es la duracion que entra a disponibilidad/rendimiento.
+  // minutos_render puede completar visualmente la hora abierta para mostrar su
+  // avance sin incluirla aun en la eficiencia acumulada.
+  let effectiveEndMins = Math.max(scheduledEndMins, lastDischargeMins, operatingLive ? nowMins : 0);
+  effectiveEndMins = Math.min(1440, effectiveEndMins);
+  let renderEndMins = effectiveEndMins;
+  if (operatingLive && nowMins >= scheduledEndMins && nowMins < 1440) {
+    const elapsed = Math.max(0, nowMins - startMins);
+    renderEndMins = Math.max(
+      renderEndMins,
+      Math.min(1440, startMins + (Math.floor(elapsed / 60) + 1) * 60)
+    );
+  }
+
+  const overtimeMins = Math.max(0, effectiveEndMins - baseEndMins);
+  return {
+    activo: true,
+    targetDate,
+    hora_entrada: diaConf.hora_entrada,
+    hora_salida_programada: diaConf.hora_salida,
+    hora_fin_efectiva: minsToTime(effectiveEndMins),
+    hora_fin_render: minsToTime(renderEndMins),
+    inicio_min: startMins,
+    salida_programada_min: scheduledEndMins,
+    fin_base_min: baseEndMins,
+    fin_efectivo_min: effectiveEndMins,
+    fin_render_min: renderEndMins,
+    minutos_calculo: Math.max(0, effectiveEndMins - startMins),
+    minutos_adicionales: overtimeMins,
+    cargas_activas: activeLoads.length,
+    operando_en_vivo: operatingLive,
+    tiempo_extra_activo: operatingLive && nowMins >= baseEndMins,
+    ultima_descarga: completed.length ? minsToTime(lastDischargeMins) : null
+  };
 }
 
 function slotOverlap(ss, se, paroStart, paroEnd, paroFechaInicio, paroFechaFin, slotDate) {
@@ -2293,16 +2390,17 @@ function getShiftProgress(pdb, linea, turno, targetDate, slots) {
   let elapsedMins = slots.reduce((s, slot) => s + Number(slot.slotDuration || 60), 0);
 
   if (turno === 'TL4') {
-    const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
-    const diaConf = cfg.dias[getDiaSemana(targetDate)];
-    if (!diaConf || !diaConf.activo) return { status: 'inactivo', elapsedMins: 0 };
+    const window = getTL4EffectiveWindow(pdb, targetDate);
+    if (!window.activo) return { status: 'inactivo', elapsedMins: 0 };
     if (targetDate > today) {
       status = 'futuro'; elapsedMins = 0;
     } else if (targetDate === today) {
-      const start = toMins(diaConf.hora_entrada);
-      const end = toMins(diaConf.hora_salida);
+      const start = window.inicio_min;
+      const end = window.fin_efectivo_min;
       if (nowMins < start) { status = 'futuro'; elapsedMins = 0; }
-      else if (nowMins < end) { status = 'en_curso'; elapsedMins = nowMins - start; }
+      else if (window.operando_en_vivo || nowMins < end) {
+        status = 'en_curso'; elapsedMins = nowMins - start;
+      }
     }
   } else {
     const currentOperationalDate = getShiftDate(today, nowTimeStr());
@@ -2368,6 +2466,8 @@ function annotateLiveSlots(pdb, linea, turno, targetDate, slots) {
         slot: slot.slot,
         hora_inicio: slot.hora_inicio,
         hora_fin: slot.hora_fin,
+        es_tiempo_adicional: !!slot.es_tiempo_adicional,
+        minutos_tiempo_adicional: Number(slot.minutos_tiempo_adicional || 0),
         progreso_pct: slot.progreso_pct,
         ciclos: Number(slot.ciclos_totales || 0),
         ciclos_eficiencia: ciclosEficiencia,
@@ -2397,18 +2497,11 @@ function annotateLiveSlots(pdb, linea, turno, targetDate, slots) {
 
 // Construir slots hora x hora para L4 con TL4 (turno configurable)
 function buildSlotsForL4TL4(pdb, config, targetDate) {
-  const weekStart = getWeekStart(targetDate);
-  const l4cfg = getTurnoL4Config(pdb, weekStart);
-  const dia = getDiaSemana(targetDate);
-  const diaConf = l4cfg.dias[dia];
+  const window = getTL4EffectiveWindow(pdb, targetDate);
+  if (!window.activo) return [];
 
-  // Si el dia no esta activo, retorna array vacio
-  if (!diaConf || !diaConf.activo) return [];
-
-  const horaEntrada = diaConf.hora_entrada;
-  const horaSalida  = diaConf.hora_salida;
-  const entMins = toMins(horaEntrada);
-  const salMins = toMins(horaSalida);
+  const entMins = window.inicio_min;
+  const salMins = window.fin_render_min;
   if (salMins <= entMins) return []; // config invalida
 
   const totalHours = Math.ceil((salMins - entMins) / 60);
@@ -2441,15 +2534,16 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
     const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
     const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
 
-    const ssR = ss % 1440;
-    const seR = se % 1440;
+    const ssR = ss;
+    const seR = se;
 
     // Cargas descargadas en este slot
+    const isLastSlot = h === totalHours - 1;
     const cargasEnSlot = (pdb.cargas || []).filter(c => {
       if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
       if (c.estado === 'cancelado') return false;
       const dm = toMins(c.hora_descarga);
-      return c.fecha_descarga === targetDate && dm >= ssR && dm < seR;
+      return c.fecha_descarga === targetDate && dm >= ssR && (dm < seR || (isLastSlot && dm === seR));
     });
 
     const ciclos_totales = cargasEnSlot.length;
@@ -2496,10 +2590,13 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
     paros_min_rend = Math.min(paros_min_rend, slotDuration);
 
     // Objetivo base (sin arranque) para este slot
-    const slotObjBase = slotCiclosObj(ciclos_obj, h);
+    const slotObjBase = slotCiclosObj(ciclos_obj, h) * (slotDuration / 60);
+    const minutosTiempoAdicional = Math.max(0, se - Math.max(ss, window.fin_base_min));
 
     slots.push({
       slot: h + 1, hora_inicio: ssStr, hora_fin: seStr, slotDuration,
+      es_tiempo_adicional: minutosTiempoAdicional > 0,
+      minutos_tiempo_adicional: minutosTiempoAdicional,
       ciclos_totales, ciclos_no_vacios, ciclos_buenos,
       ciclos_no_vacios_calidad: cargasCalidad.length, ciclos_buenos_calidad,
       piezas_total, piezas_obj_total,
@@ -2560,21 +2657,19 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
 // objetivo; calidad y capacidad conservan todos los ciclos.
 function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
   const slots = buildSlotsForL4TL4(pdb, config, targetDate);
-  const weekStart = getWeekStart(targetDate);
-  const l4cfg = getTurnoL4Config(pdb, weekStart);
-  const diaConf = l4cfg.dias[getDiaSemana(targetDate)];
-  if (!diaConf || !diaConf.activo || slots.length === 0) {
+  const window = getTL4EffectiveWindow(pdb, targetDate);
+  if (!window.activo || slots.length === 0) {
     return { ciclos_eficiencia: 0, objetivo: 0, eficiencia: null };
   }
 
-  const entMins = toMins(diaConf.hora_entrada);
-  const salMins = toMins(diaConf.hora_salida);
+  const entMins = window.inicio_min;
+  const salMins = window.fin_render_min;
   const completadas = (pdb.cargas || [])
     .filter(c => {
       if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
       if (c.estado === 'cancelado' || c.fecha_descarga !== targetDate) return false;
       const mins = toMins(c.hora_descarga);
-      return mins >= entMins && mins < salMins;
+      return mins >= entMins && mins <= salMins;
     })
     .sort((a, b) =>
       (a.hora_descarga || '').localeCompare(b.hora_descarga || '') ||
@@ -2585,7 +2680,10 @@ function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
   const completedWindows = slots.filter(s => s.estado_slot === 'completado');
   const despuesArranque = completadas.slice(L4_ARRANQUE_CICLOS).filter(c => {
     const mins = toMins(c.hora_descarga);
-    return completedWindows.some(s => mins >= toMins(s.hora_inicio) && mins < toMins(s.hora_fin));
+    return completedWindows.some((s, index) => {
+      const end = toMins(s.hora_fin);
+      return mins >= toMins(s.hora_inicio) && (mins < end || (index === completedWindows.length - 1 && mins === end));
+    });
   });
   const ciclosEficiencia = operadorId == null
     ? despuesArranque.length
@@ -2727,13 +2825,9 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
   // Construir ventanas de turno: para TL4 usar horas dinámicas de la config
   const windows = [];
   if (turno === 'TL4' || (!turno && lineaLabel === 'L4' && l4UsesTL4(pdb, fecha))) {
-    // Ventana dinámica TL4 desde config
-    const weekStart = getWeekStart(fecha);
-    const l4cfg = getTurnoL4Config(pdb, weekStart);
-    const dia = getDiaSemana(fecha);
-    const diaConf = l4cfg.dias[dia];
-    if (diaConf && diaConf.activo) {
-      windows.push({ start: toMins(diaConf.hora_entrada), end: toMins(diaConf.hora_salida) });
+    const tl4Window = getTL4EffectiveWindow(pdb, fecha);
+    if (tl4Window.activo) {
+      windows.push({ start: tl4Window.inicio_min, end: tl4Window.fin_render_min });
     }
   } else {
     const targetTurnos = turno ? [turno] : ['T1', 'T2', 'T3'];
@@ -2929,6 +3023,7 @@ router.get('/pizarron', (req, res) => {
     }
 
     const slots = buildSlotsForL4TL4(pdb, config, targetDate);
+    const window = getTL4EffectiveWindow(pdb, targetDate);
     // Filtrar slots que aun no inician (si es hoy)
     let filteredSlots = slots;
     if (targetDate === nowDateStr()) {
@@ -2949,9 +3044,9 @@ router.get('/pizarron', (req, res) => {
     const tParos     = filteredSlots.reduce((s, x) => s + (x.paros_min ?? 0), 0);
     const tParosDisp = filteredSlots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
     const tParosRend = filteredSlots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
-    const tElap      = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
+    const tElap      = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, window.hora_fin_efectiva || diaConf.hora_salida);
     const tObjElap   = liveEfficiency.objetivo_eficiencia;
-    const totalMins  = (toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada));
+    const totalMins  = window.minutos_calculo;
     const tDispMins  = Math.max(0, totalMins - tParosDisp);
 
     data['L4'] = {
@@ -2959,6 +3054,12 @@ router.get('/pizarron', (req, res) => {
         slots: filteredSlots,
         hora_entrada: diaConf.hora_entrada,
         hora_salida:  diaConf.hora_salida,
+        hora_salida_programada: diaConf.hora_salida,
+        hora_fin_efectiva: window.hora_fin_efectiva,
+        minutos_adicionales: window.minutos_adicionales,
+        tiempo_extra_activo: window.tiempo_extra_activo,
+        cargas_activas: window.cargas_activas,
+        ultima_descarga: window.ultima_descarga,
         totals: {
           ciclos_totales: tC, ciclos_no_vacios: tNV, ciclos_buenos: tB,
           piezas_total: tPz, piezas_obj_total: tPzO,
@@ -2970,6 +3071,9 @@ router.get('/pizarron', (req, res) => {
           slots_completados: liveEfficiency.slots_completados,
           estado_turno: liveEfficiency.status,
           hora_en_curso: liveEfficiency.hora_en_curso,
+          minutos_adicionales: window.minutos_adicionales,
+          tiempo_extra_activo: window.tiempo_extra_activo,
+          cargas_activas: window.cargas_activas,
           eficiencia:    r3(liveEfficiency.eficiencia),
           calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
@@ -2984,6 +3088,9 @@ router.get('/pizarron', (req, res) => {
         ciclos_eficiencia: liveEfficiency.ciclos_eficiencia,
         objetivo_eficiencia: r3(tObjElap),
         hora_en_curso: liveEfficiency.hora_en_curso,
+        minutos_adicionales: window.minutos_adicionales,
+        tiempo_extra_activo: window.tiempo_extra_activo,
+        cargas_activas: window.cargas_activas,
         eficiencia:    r3(liveEfficiency.eficiencia),
         calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
         capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
@@ -3005,6 +3112,7 @@ router.get('/pizarron', (req, res) => {
 
   // Añadir datos pareto del día y por turno a cada línea
   for (const l of Object.keys(data)) {
+    data[l].objetivos = getKpiObjectives(config, l);
     data[l].pareto_paros    = buildParetoParos(pdb, l, targetDate);
     data[l].pareto_defectos = buildParetoDefectos(pdb, l, targetDate);
     // Pareto por turno (T1/T2/T3 o TL4)
@@ -3171,12 +3279,22 @@ router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
     'eficiencia_obj_l3',  'eficiencia_obj_l4',  'eficiencia_obj_baker',  'eficiencia_obj_l1',
     'capacidad_obj_l3',   'capacidad_obj_l4',   'capacidad_obj_baker',   'capacidad_obj_l1',
     'calidad_obj_l3',     'calidad_obj_l4',     'calidad_obj_baker',     'calidad_obj_l1',
-    'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker', 'disponibilidad_obj_l1'
+    'disponibilidad_obj_l3', 'disponibilidad_obj_l4', 'disponibilidad_obj_baker', 'disponibilidad_obj_l1',
+    'rendimiento_obj_l3', 'rendimiento_obj_l4', 'rendimiento_obj_baker', 'rendimiento_obj_l1'
   ];
   const camposStr = ['planes_control_baker_url', 'planes_control_l1_url'];
   const body = req.body || {};
   for (const f of camposNum) {
-    if (body[f] !== undefined) pdb.config[f] = Number(body[f]);
+    if (body[f] === undefined) continue;
+    const value = Number(body[f]);
+    if (!Number.isFinite(value)) return res.status(400).json({ error: `${f} debe ser numerico` });
+    if (f.startsWith('ciclos_objetivo_') && value <= 0) {
+      return res.status(400).json({ error: `${f} debe ser mayor que cero` });
+    }
+    if (!f.startsWith('ciclos_objetivo_') && (value < 0 || value > 100)) {
+      return res.status(400).json({ error: `${f} debe estar entre 0 y 100` });
+    }
+    pdb.config[f] = value;
   }
   for (const f of camposStr) {
     if (body[f] !== undefined) pdb.config[f] = String(body[f] || '');
@@ -3246,12 +3364,14 @@ function calculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
 
   let slots;
   let plannedMinutes;
+  let tl4Window = null;
   if (isTL4) {
     slots = buildSlotsForL4TL4(pdb, config, targetDate);
     const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
     const diaConf = cfg.dias[getDiaSemana(targetDate)];
     if (!diaConf || !diaConf.activo || slots.length === 0) return null;
-    plannedMinutes = toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada);
+    tl4Window = getTL4EffectiveWindow(pdb, targetDate);
+    plannedMinutes = tl4Window.minutos_calculo;
   } else {
     slots = linea === 'Baker'
       ? buildSlotsForBaker(pdb, config, turno, targetDate)
@@ -3303,6 +3423,14 @@ function calculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
     objetivo_eficiencia: r3(live.objetivo_eficiencia),
     slots_completados: live.slots_completados,
     hora_en_curso: live.hora_en_curso,
+    ...(tl4Window ? {
+      hora_salida_programada: tl4Window.hora_salida_programada,
+      hora_fin_efectiva: tl4Window.hora_fin_efectiva,
+      minutos_adicionales: tl4Window.minutos_adicionales,
+      tiempo_extra_activo: tl4Window.tiempo_extra_activo,
+      cargas_activas: tl4Window.cargas_activas,
+      ultima_descarga: tl4Window.ultima_descarga
+    } : {}),
     eficiencia: r3(live.eficiencia),
     calidad: ciclosNoVaciosCalidad > 0 ? r3(ciclosBuenosCalidad / ciclosNoVaciosCalidad) : null,
     capacidad: piezasObjTotal > 0 ? r3(piezasTotal / piezasObjTotal) : null,
@@ -5558,20 +5686,24 @@ router.get('/scrap/resumen', (req, res) => {
     } else {
       cargas = (pdb.cargas || []).filter(c => c.linea === l && isShiftCarga(c, l));
     }
-    let piezas_total = 0;
+    let piezas_buenas = 0;
     for (const c of cargas) {
       if (l === 'Baker' || l === 'L1') {
         if (c.herramental_tipo === 'barril') {
-          piezas_total += Number(c.cavidades_buenas || 0);
+          piezas_buenas += Number(c.cavidades_buenas || 0);
         } else {
-          piezas_total += Number(c.cantidad || 0);
+          piezas_buenas += Number(c.cantidad || 0);
         }
       } else {
-        piezas_total += Number(c.cantidad || (Number(c.varillas || 0) * Number(c.piezas_por_varilla || 0)));
+        piezas_buenas += Number(c.cantidad || (Number(c.varillas || 0) * Number(c.piezas_por_varilla || 0)));
       }
     }
+    // Scrap se expresa sobre el total fabricado: piezas buenas registradas +
+    // piezas declaradas como scrap. Evita usar solo producto bueno como
+    // denominador, que sobrestimaba el porcentaje.
+    const piezas_total = piezas_buenas + scrap;
     const pct_scrap = piezas_total > 0 ? Math.round((scrap / piezas_total) * 10000) / 100 : null;
-    return { linea: l, fecha, piezas_scrap: scrap, piezas_total, pct_scrap };
+    return { linea: l, fecha, piezas_scrap: scrap, piezas_buenas, piezas_total, pct_scrap };
   }).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
 
   res.json({ resumen });
@@ -5716,15 +5848,21 @@ function resolveTurnoContext(pdb, linea, fecha, hora) {
     const mins = toMins(hora);
     const entMins = toMins(hora_entrada);
     const salMins = toMins(hora_salida);
+    const window = getTL4EffectiveWindow(pdb, fecha);
     // TL4 no admite horarios que crucen medianoche (salida > entrada validado en POST /turno-l4-config)
-    const en_ventana = activo && mins >= entMins && mins < salMins;
+    const en_ventana_programada = activo && mins >= entMins && mins < salMins;
+    const en_ventana = activo && mins >= entMins && mins <= (window.fin_efectivo_min ?? salMins);
     return {
       fecha_turno: fecha,    // TL4 no pasa por regla nocturna T3
       turno: 'TL4',
       activo,
       en_ventana,
+      en_ventana_programada,
+      es_tiempo_adicional: activo && mins >= (window.fin_base_min ?? entMins + L4_TIEMPO_BASE_MIN),
       hora_entrada,
       hora_salida,
+      hora_fin_efectiva: window.hora_fin_efectiva || hora_salida,
+      cargas_activas: window.cargas_activas || 0,
       week_start: weekStart,
       dia
     };
@@ -5755,13 +5893,8 @@ function resolveStoredTurno(carga, pdb) {
 // Horas de un turno: para TL4 usa config dinámica, para T1/T2/T3 usa TURNOS_DEF
 function horasDelTurno(turno, pdb, fecha) {
   if (turno === 'TL4' && pdb && fecha) {
-    const weekStart = getWeekStart(fecha);
-    const cfg = getTurnoL4Config(pdb, weekStart);
-    const dia = getDiaSemana(fecha);
-    const dc = cfg.dias[dia];
-    if (dc && dc.activo && dc.hora_entrada && dc.hora_salida) {
-      return (toMins(dc.hora_salida) - toMins(dc.hora_entrada)) / 60;
-    }
+    const window = getTL4EffectiveWindow(pdb, fecha);
+    if (window.activo) return window.minutos_calculo / 60;
     return 9; // fallback
   }
   return TURNOS_DEF[turno]?.hours || 8;

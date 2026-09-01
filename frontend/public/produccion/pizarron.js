@@ -77,12 +77,12 @@
     return 'T3';
   }
 
-  function kpiColor(val) {
+  function kpiColor(val, target = 90) {
     if (val === null || val === undefined) return '';
     const n = Number(val);
     if (isNaN(n)) return '';
-    if (n >= 90) return 'kpi-green';
-    if (n >= 70) return 'kpi-amber';
+    if (n >= target) return 'kpi-green';
+    if (n >= Math.max(0, target - 10)) return 'kpi-amber';
     return 'kpi-red';
   }
 
@@ -95,12 +95,12 @@
     return 'kpi-red';
   }
 
-  function kpiEmoji(val) {
+  function kpiEmoji(val, target = 90) {
     if (val === null || val === undefined) return '';
     const n = Number(val);
     if (isNaN(n)) return '';
-    if (n >= 90) return '&#x1F60A;'; // 😊
-    if (n >= 70) return '&#x1F610;'; // 😐
+    if (n >= target) return '&#x1F60A;'; // 😊
+    if (n >= Math.max(0, target - 10)) return '&#x1F610;'; // 😐
     return '&#x1F622;'; // 😢
   }
 
@@ -159,6 +159,8 @@
             objetivo_transcurrido: s.objetivo_transcurrido ?? 0,
             estado_slot:    s.estado_slot,
             es_hora_en_curso: !!s.es_hora_en_curso,
+            es_tiempo_adicional: !!s.es_tiempo_adicional,
+            minutos_tiempo_adicional: Number(s.minutos_tiempo_adicional || 0),
             progreso_pct:   s.progreso_pct ?? 0,
             eficiencia_avance: pct(s.eficiencia_avance),
             eficiencia:     pct(s.eficiencia),
@@ -176,7 +178,11 @@
             calidad:        pct(tot.calidad),
             disponibilidad: pct(tot.disponibilidad),
             rendimiento:    pct(tot.rendimiento),
-            hora_en_curso:  tot.hora_en_curso || null
+            hora_en_curso:  tot.hora_en_curso || null,
+            minutos_adicionales: Number(td.minutos_adicionales ?? tot.minutos_adicionales ?? 0),
+            tiempo_extra_activo: !!(td.tiempo_extra_activo ?? tot.tiempo_extra_activo),
+            cargas_activas: Number(td.cargas_activas ?? tot.cargas_activas ?? 0),
+            hora_fin_efectiva: td.hora_fin_efectiva || null
           };
           paros_turno[t]  = td.pareto_paros || [];
           no_trabajado[t] = td.turno_no_trabajado || false;
@@ -187,9 +193,13 @@
           capacidad:      pct(tdia.capacidad),
           calidad:        pct(tdia.calidad),
           disponibilidad: pct(tdia.disponibilidad),
-          rendimiento:    pct(tdia.rendimiento)
+          rendimiento:    pct(tdia.rendimiento),
+          minutos_adicionales: Number(tdia.minutos_adicionales || 0),
+          tiempo_extra_activo: !!tdia.tiempo_extra_activo,
+          cargas_activas: Number(tdia.cargas_activas || 0)
         };
         transformed[l] = {
+          objetivos: ld.objetivos || { eficiencia:85, rendimiento:90, capacidad:90, calidad:95, disponibilidad:90 },
           horas,
           totales,
           paros_turno,
@@ -358,12 +368,12 @@
     return buildDiaSlide(slide.linea);
   }
 
-  function kpiCard(label, val, big) {
+  function kpiCard(label, val, big, target = 90) {
     const cls = big ? 'pzs-kpi-card pzs-kpi-big' : 'pzs-kpi-card';
     return `
-      <div class="${cls} ${kpiColor(val)}">
+      <div class="${cls} ${kpiColor(val, target)}">
         <div class="pzs-kpi-label">${label}</div>
-        <div class="pzs-kpi-value">${fmtPct(val)} <span style="font-size:.85em">${kpiEmoji(val)}</span></div>
+        <div class="pzs-kpi-value">${fmtPct(val)} <span style="font-size:.85em">${kpiEmoji(val, target)}</span></div>
       </div>`;
   }
 
@@ -385,30 +395,34 @@
 
     const tot   = state.data?.[linea]?.totales?.[turno] || {};
     const horas = state.data?.[linea]?.horas?.[turno]   || [];
+    const objKpi = state.data?.[linea]?.objetivos || {};
 
     // El backend entrega la eficiencia acumulada únicamente con horas cerradas.
     const efDisplay = fmtPct(tot.eficiencia);
-    const efColorClass = kpiColor(tot.eficiencia);
+    const efColorClass = kpiColor(tot.eficiencia, objKpi.eficiencia ?? 85);
     const currentSlotIdx = horas.findIndex(h => h.es_hora_en_curso);
 
     const EP = '<span style="font-size:10px;color:#94a3b8;font-style:italic">⏳ en proceso</span>';
     const hrRows = horas.map((h, idx) => {
       const ip = idx === currentSlotIdx;
-      const em = v => ip ? '' : `<span style="font-size:.9em">${kpiEmoji(v)}</span>`;
+      const em = (v, target) => ip ? '' : `<span style="font-size:.9em">${kpiEmoji(v, target)}</span>`;
       const obj = ip ? Number(h.objetivo_transcurrido || 0) : Number(h.ciclos_obj_adj || h.ciclos_obj || 0);
       const scale = Math.max(Number(h.ciclos || 0), obj, 1);
       const realW = Math.min(100, Number(h.ciclos || 0) / scale * 100);
       const objW = Math.min(100, obj / scale * 100);
       const cycleVisual = `<div style="min-width:105px"><b>${h.ciclos ?? 0}</b> / ${obj.toFixed(1)}<div style="height:7px;background:#334155;border-radius:4px;position:relative;overflow:hidden;margin-top:3px"><div style="width:${objW}%;height:100%;background:#64748b"></div><div style="position:absolute;left:0;top:1px;height:5px;width:${realW}%;background:${Number(h.ciclos||0)>=obj?'#22c55e':'#3b82f6'};border-radius:3px"></div></div>${ip ? `<small style="color:#60a5fa">${Number(h.progreso_pct||0).toFixed(0)}% de la hora</small>` : ''}</div>`;
+      const rowStyle = h.es_tiempo_adicional
+        ? ' style="background:rgba(124,58,237,.12)"'
+        : (ip ? ' style="background:rgba(59,130,246,.08)"' : '');
       return `
-      <tr${ip ? ' style="background:rgba(59,130,246,.08)"' : ''}>
-        <td class="mono">${escHtml(h.hora)}</td>
+      <tr${rowStyle}>
+        <td class="mono">${escHtml(h.hora)}${h.es_tiempo_adicional ? '<br><small style="color:#8b5cf6;font-weight:800">⏱ TIEMPO ADICIONAL</small>' : ''}</td>
         <td style="text-align:center">${cycleVisual}</td>
-        <td class="${ip ? kpiColor(h.eficiencia_avance) : kpiColor(h.eficiencia)}">${ip ? 'Avance ' + fmtPct(h.eficiencia_avance) : fmtPct(h.eficiencia)}${em(h.eficiencia)}</td>
-        <td class="${ip ? '' : kpiColor(h.rendimiento)}">${ip ? EP : fmtPct(h.rendimiento)}${em(h.rendimiento)}</td>
-        <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}${em(h.capacidad)}</td>
-        <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}${em(h.calidad)}</td>
-        <td class="${ip ? '' : kpiColor(h.disponibilidad)}">${ip ? EP : fmtPct(h.disponibilidad)}${em(h.disponibilidad)}</td>
+        <td class="${ip ? kpiColor(h.eficiencia_avance, objKpi.eficiencia ?? 85) : kpiColor(h.eficiencia, objKpi.eficiencia ?? 85)}">${ip ? 'Avance ' + fmtPct(h.eficiencia_avance) : fmtPct(h.eficiencia)}${em(h.eficiencia, objKpi.eficiencia ?? 85)}</td>
+        <td class="${ip ? '' : kpiColor(h.rendimiento, objKpi.rendimiento ?? 90)}">${ip ? EP : fmtPct(h.rendimiento)}${em(h.rendimiento, objKpi.rendimiento ?? 90)}</td>
+        <td class="${ip ? '' : kpiColor(h.capacidad, objKpi.capacidad ?? 90)}">${ip ? EP : fmtPct(h.capacidad)}${em(h.capacidad, objKpi.capacidad ?? 90)}</td>
+        <td class="${ip ? '' : kpiColor(h.calidad, objKpi.calidad ?? 95)}">${ip ? EP : fmtPct(h.calidad)}${em(h.calidad, objKpi.calidad ?? 95)}</td>
+        <td class="${ip ? '' : kpiColor(h.disponibilidad, objKpi.disponibilidad ?? 90)}">${ip ? EP : fmtPct(h.disponibilidad)}${em(h.disponibilidad, objKpi.disponibilidad ?? 90)}</td>
         <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${ip ? EP : (h.paros_min > 0 ? h.paros_min + ' min' : '—')}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="8" class="pzs-no-data">Sin registros en este turno</td></tr>';
@@ -423,19 +437,24 @@
         ).join('')
       : '<div style="font-size:11px;color:#94a3b8;font-style:italic">Sin paros registrados</div>';
 
+    const overtimeLegend = linea === 'L4' && Number(tot.minutos_adicionales || 0) > 0
+      ? `<div style="margin:8px 0;padding:8px 12px;border:1px solid #8b5cf6;border-radius:8px;background:rgba(124,58,237,.10);color:#8b5cf6;font-weight:800;font-size:.8em">⏱ Tiempo adicional TL4: después de 9 horas base; incluido hasta descargar la línea${tot.tiempo_extra_activo ? ` · ACTIVO (${tot.cargas_activas} carga${tot.cargas_activas === 1 ? '' : 's'})` : ''}.</div>`
+      : '';
+
     return `
       <div class="pzs-turno-slide">
+        ${overtimeLegend}
         <!-- KPI cards grandes -->
         <div class="pzs-kpi-grid">
           <div class="pzs-kpi-card pzs-kpi-big ${efColorClass}">
             <div class="pzs-kpi-label">Eficiencia</div>
-            <div class="pzs-kpi-value">${efDisplay} <span style="font-size:.85em">${kpiEmoji(tot.eficiencia)}</span></div>
+            <div class="pzs-kpi-value">${efDisplay} <span style="font-size:.85em">${kpiEmoji(tot.eficiencia, objKpi.eficiencia ?? 85)}</span></div>
             <div style="font-size:10px;color:#94a3b8">Solo horas cerradas</div>
           </div>
-          ${kpiCard('Rendimiento',    tot.rendimiento,    true)}
-          ${kpiCard('Capacidad',      tot.capacidad,      true)}
-          ${kpiCard('Calidad',        tot.calidad,        true)}
-          ${kpiCard('Disponibilidad', tot.disponibilidad, true)}
+          ${kpiCard('Rendimiento',    tot.rendimiento,    true, objKpi.rendimiento ?? 90)}
+          ${kpiCard('Capacidad',      tot.capacidad,      true, objKpi.capacidad ?? 90)}
+          ${kpiCard('Calidad',        tot.calidad,        true, objKpi.calidad ?? 95)}
+          ${kpiCard('Disponibilidad', tot.disponibilidad, true, objKpi.disponibilidad ?? 90)}
           <div class="pzs-kpi-card pzs-kpi-big ${scrapColor(scrapPct)}">
             <div class="pzs-kpi-label">% Scrap (día)</div>
             <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
@@ -472,10 +491,11 @@
       const effectiveTurno = (l === 'L4' && state.data?.L4?.horas?.TL4) ? 'TL4' : turno;
       const tot    = state.data?.[l]?.totales?.[effectiveTurno] || {};
       const horas  = state.data?.[l]?.horas?.[effectiveTurno]   || [];
+      const objKpi = state.data?.[l]?.objetivos || {};
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
 
       const efVal = tot.eficiencia;
-      const efColor = kpiColor(efVal);
+      const efColor = kpiColor(efVal, objKpi.eficiencia ?? 85);
       const efCard = `<div class="pzs-kpi-card ${efColor}">
         <div class="pzs-kpi-label">Eficiencia · horas cerradas</div>
         <div class="pzs-kpi-value">${fmtPct(efVal)}</div>
@@ -493,10 +513,10 @@
             ? `<div class="pzs-paro-prog-sm">⛔ PARO PROGRAMADO</div>`
             : `<div class="pzs-kpi-grid pzs-kpi-grid-compact">
                 ${efCard}
-                ${kpiCard('Rendimiento',    tot.rendimiento)}
-                ${kpiCard('Capacidad',      tot.capacidad)}
-                ${kpiCard('Calidad',        tot.calidad)}
-                ${kpiCard('Disponibilidad', tot.disponibilidad)}
+                ${kpiCard('Rendimiento',    tot.rendimiento, false, objKpi.rendimiento ?? 90)}
+                ${kpiCard('Capacidad',      tot.capacidad, false, objKpi.capacidad ?? 90)}
+                ${kpiCard('Calidad',        tot.calidad, false, objKpi.calidad ?? 95)}
+                ${kpiCard('Disponibilidad', tot.disponibilidad, false, objKpi.disponibilidad ?? 90)}
                 <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
                   <div class="pzs-kpi-label">% Scrap</div>
                   <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
@@ -537,6 +557,7 @@
   function buildDiaSlide(linea) {
     const ld       = state.data?.[linea];
     const dia      = ld?.totales?.dia || {};
+    const objKpi   = ld?.objetivos || {};
     const scrapPct = state.scrapData?.[linea] ?? null;
 
     // L4 en modo TL4: mostrar TL4 en vez de T1/T2/T3
@@ -556,17 +577,22 @@
       return `
         <div class="pzs-dia-row">
           <span class="pzs-dia-turno-lbl">${turnoLabel(t)}</span>
-          <span class="pzs-dia-kpi-cell ${kpiColor(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
-          <span class="pzs-dia-kpi-cell ${kpiColor(tot.rendimiento)}">${fmtPct(tot.rendimiento)}</span>
-          <span class="pzs-dia-kpi-cell ${kpiColor(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
-          <span class="pzs-dia-kpi-cell ${kpiColor(tot.calidad)}">${fmtPct(tot.calidad)}</span>
-          <span class="pzs-dia-kpi-cell ${kpiColor(tot.disponibilidad)}">${fmtPct(tot.disponibilidad)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.eficiencia, objKpi.eficiencia ?? 85)}">${fmtPct(tot.eficiencia)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.rendimiento, objKpi.rendimiento ?? 90)}">${fmtPct(tot.rendimiento)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.capacidad, objKpi.capacidad ?? 90)}">${fmtPct(tot.capacidad)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.calidad, objKpi.calidad ?? 95)}">${fmtPct(tot.calidad)}</span>
+          <span class="pzs-dia-kpi-cell ${kpiColor(tot.disponibilidad, objKpi.disponibilidad ?? 90)}">${fmtPct(tot.disponibilidad)}</span>
           <span class="pzs-dia-ciclos-cell">${ciclos} ciclos</span>
         </div>`;
     }).join('');
 
+    const overtimeLegend = linea === 'L4' && Number(dia.minutos_adicionales || 0) > 0
+      ? `<div style="margin:0 0 10px;padding:8px 12px;border:1px solid #8b5cf6;border-radius:8px;background:rgba(124,58,237,.10);color:#8b5cf6;font-weight:800;font-size:.8em">⏱ Tiempo adicional TL4 incluido en el KPI del día: ${(Number(dia.minutos_adicionales) / 60).toFixed(2)} h${dia.tiempo_extra_activo ? ` · ACTIVO hasta descargar (${dia.cargas_activas} carga${dia.cargas_activas === 1 ? '' : 's'})` : ''}.</div>`
+      : '';
+
     return `
       <div class="pzs-dia-slide">
+        ${overtimeLegend}
         <!-- Subtotales por turno -->
         <div class="pzs-dia-turnos">
           <div class="pzs-dia-row pzs-dia-header">
@@ -580,11 +606,11 @@
         <!-- Total del día (grande) -->
         <div class="pzs-dia-total-label">Total del Día</div>
         <div class="pzs-kpi-grid">
-          ${kpiCard('Eficiencia',     dia.eficiencia,     true)}
-          ${kpiCard('Rendimiento',    dia.rendimiento,    true)}
-          ${kpiCard('Capacidad',      dia.capacidad,      true)}
-          ${kpiCard('Calidad',        dia.calidad,        true)}
-          ${kpiCard('Disponibilidad', dia.disponibilidad, true)}
+          ${kpiCard('Eficiencia',     dia.eficiencia,     true, objKpi.eficiencia ?? 85)}
+          ${kpiCard('Rendimiento',    dia.rendimiento,    true, objKpi.rendimiento ?? 90)}
+          ${kpiCard('Capacidad',      dia.capacidad,      true, objKpi.capacidad ?? 90)}
+          ${kpiCard('Calidad',        dia.calidad,        true, objKpi.calidad ?? 95)}
+          ${kpiCard('Disponibilidad', dia.disponibilidad, true, objKpi.disponibilidad ?? 90)}
           <div class="pzs-kpi-card pzs-kpi-big ${scrapColor(scrapPct)}">
             <div class="pzs-kpi-label">% Scrap</div>
             <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
@@ -629,6 +655,7 @@
     const blocks = lineas.map(l => {
       const ld        = state.data?.[l];
       const dia       = ld?.totales?.dia || {};
+      const objKpi    = ld?.objetivos || {};
       const scrapPct  = state.scrapData?.[l] ?? null;
       const turnosDia = (l === 'L4' && ld?.horas?.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
       const ciclosDia = turnosDia.reduce((s, t) => {
@@ -640,11 +667,11 @@
         <div class="pzs-all-linea-block">
           <div class="pzs-all-linea-label">${escHtml(LINEA_LABELS[l] || l)}</div>
           <div class="pzs-kpi-grid pzs-kpi-grid-compact">
-            ${kpiCard('Eficiencia',     dia.eficiencia)}
-            ${kpiCard('Rendimiento',    dia.rendimiento)}
-            ${kpiCard('Capacidad',      dia.capacidad)}
-            ${kpiCard('Calidad',        dia.calidad)}
-            ${kpiCard('Disponibilidad', dia.disponibilidad)}
+            ${kpiCard('Eficiencia',     dia.eficiencia, false, objKpi.eficiencia ?? 85)}
+            ${kpiCard('Rendimiento',    dia.rendimiento, false, objKpi.rendimiento ?? 90)}
+            ${kpiCard('Capacidad',      dia.capacidad, false, objKpi.capacidad ?? 90)}
+            ${kpiCard('Calidad',        dia.calidad, false, objKpi.calidad ?? 95)}
+            ${kpiCard('Disponibilidad', dia.disponibilidad, false, objKpi.disponibilidad ?? 90)}
             <div class="pzs-kpi-card ${scrapColor(scrapPct)}">
               <div class="pzs-kpi-label">% Scrap</div>
               <div class="pzs-kpi-value">${scrapPct !== null ? scrapPct.toFixed(2) + '%' : '—'}</div>
