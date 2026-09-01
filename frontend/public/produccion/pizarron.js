@@ -97,6 +97,8 @@
   // na=true  → primera hora en curso → mostrar "N/A"
   // value=null → turno no activo o histórico → usar valor del backend
   function calcEficienciaCompletada(linea, turno) {
+    // TL4: no aplica cálculo de eficiencia por horas completadas (usa backend directo)
+    if (turno === 'TL4') return { value: null, na: false };
     const turnoActual = currentTurno();
     if (turnoActual !== turno) return { value: null, na: false };
 
@@ -166,7 +168,9 @@
       const transformed = {};
       for (const [l, ld] of Object.entries(raw?.data || {})) {
         const horas = {}, totales = {}, paros_turno = {}, no_trabajado = {};
-        for (const t of ['T1', 'T2', 'T3']) {
+        // L4 en modo TL4: iterar ['TL4'] en vez de T1/T2/T3
+        const turnosIter = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
+        for (const t of turnosIter) {
           const td    = ld[t] || {};
           const slots = td.slots || [];
           horas[t] = slots.map(s => ({
@@ -281,7 +285,8 @@
       const label = slide.linea === 'all'
         ? 'Todas las Líneas (L3, L4 y Baker)'
         : LINEA_LABELS[slide.linea] || slide.linea;
-      return `${turno} · ${label}`;
+      const effectiveTurno = (slide.linea === 'L4' && state.data?.L4?.horas?.TL4) ? 'TL4' : turno;
+      return `${effectiveTurno} · ${label}`;
     } else {
       const label = slide.linea === 'all'
         ? 'Todas las Líneas (L3, L4 y Baker)'
@@ -361,8 +366,10 @@
   // ── Slide content builders ────────────────────────────────────────────────
   function buildSlideContent(slide, turno) {
     if (slide.scope === 'turno') {
+      // L4 en modo TL4: usar 'TL4' como turno key
+      const effectiveTurno = (slide.linea === 'L4' && state.data?.L4?.horas?.TL4) ? 'TL4' : turno;
       if (slide.linea === 'all') return buildAllTurnoSlide(turno);
-      return buildTurnoSlide(slide.linea, turno);
+      return buildTurnoSlide(slide.linea, effectiveTurno);
     }
     if (slide.linea === 'all') return buildAllDiaSlide();
     return buildDiaSlide(slide.linea);
@@ -494,11 +501,13 @@
     const lineas = ['L3', 'L4', 'Baker'];
 
     const blocks = lineas.map(l => {
-      const tot    = state.data?.[l]?.totales?.[turno] || {};
-      const horas  = state.data?.[l]?.horas?.[turno]   || [];
+      // L4 en modo TL4: usar 'TL4' como key
+      const effectiveTurno = (l === 'L4' && state.data?.L4?.horas?.TL4) ? 'TL4' : turno;
+      const tot    = state.data?.[l]?.totales?.[effectiveTurno] || {};
+      const horas  = state.data?.[l]?.horas?.[effectiveTurno]   || [];
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
 
-      const efComp = calcEficienciaCompletada(l, turno);
+      const efComp = calcEficienciaCompletada(l, effectiveTurno);
       let efVal, efColor;
       if (efComp.na) {
         efVal = null; efColor = '';
@@ -513,9 +522,9 @@
       </div>`;
 
       const scrapPct  = state.scrapData?.[l] ?? null;
-      const parosList = state.data?.[l]?.paros_turno?.[turno] || [];
+      const parosList = state.data?.[l]?.paros_turno?.[effectiveTurno] || [];
       const parosTot  = parosList.reduce((s, p) => s + (p.duracion_min || 0), 0);
-      const noTrabajado = state.data?.[l]?.no_trabajado?.[turno] || false;
+      const noTrabajado = state.data?.[l]?.no_trabajado?.[effectiveTurno] || false;
 
       return `
         <div class="pzs-all-linea-block">
@@ -570,20 +579,23 @@
     const dia      = ld?.totales?.dia || {};
     const scrapPct = state.scrapData?.[linea] ?? null;
 
-    const turnoRows = ['T1', 'T2', 'T3'].map(t => {
+    // L4 en modo TL4: mostrar TL4 en vez de T1/T2/T3
+    const turnosShow = (linea === 'L4' && ld?.horas?.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
+    const turnoLabel = t => t === 'TL4' ? 'TL4' : t;
+    const turnoRows = turnosShow.map(t => {
       const tot    = ld?.totales?.[t] || {};
       const horas  = ld?.horas?.[t]   || [];
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
       if (ld?.no_trabajado?.[t]) {
         return `
           <div class="pzs-dia-row">
-            <span class="pzs-dia-turno-lbl">${t}</span>
+            <span class="pzs-dia-turno-lbl">${turnoLabel(t)}</span>
             <span style="grid-column:2/8;color:#b45309;font-weight:700;font-size:.82em;letter-spacing:.04em">⛔ PARO PROGRAMADO</span>
           </div>`;
       }
       return `
         <div class="pzs-dia-row">
-          <span class="pzs-dia-turno-lbl">${t}</span>
+          <span class="pzs-dia-turno-lbl">${turnoLabel(t)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.rendimiento)}">${fmtPct(tot.rendimiento)}</span>
           <span class="pzs-dia-kpi-cell ${kpiColor(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
@@ -658,7 +670,8 @@
       const ld        = state.data?.[l];
       const dia       = ld?.totales?.dia || {};
       const scrapPct  = state.scrapData?.[l] ?? null;
-      const ciclosDia = ['T1', 'T2', 'T3'].reduce((s, t) => {
+      const turnosDia = (l === 'L4' && ld?.horas?.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
+      const ciclosDia = turnosDia.reduce((s, t) => {
         const tot = ld?.totales?.[t] || {};
         return s + (tot.ciclos ?? (ld?.horas?.[t] || []).reduce((a, h) => a + (h.ciclos || 0), 0));
       }, 0);

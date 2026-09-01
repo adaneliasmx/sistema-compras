@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node --max-old-space-size=1024 --expose-gc backend/src/server.js",
     "dev": "node backend/src/server.js",
-    "init-db": "node scripts/init-db.js"
+    "init-db": "node scripts/init-db.js",
+    "test:tl4": "node test_tl4.js && node test_tl4_supertest.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "better-sqlite3": "^12.8.0",
+    "supertest": "^7.2.2",
     "xlsx-populate": "^1.21.0"
   }
 }

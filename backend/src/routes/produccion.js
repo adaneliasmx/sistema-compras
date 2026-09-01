@@ -46,6 +46,15 @@ function getShiftDate(fecha, hora) {
   return fecha;
 }
 
+function isValidDateStr(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const [year, month, day] = value.split('-').map(Number);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month - 1 &&
+    parsed.getUTCDate() === day;
+}
+
 const MX_TZ = 'America/Mexico_City';
 
 function nowDateStr() {
@@ -573,9 +582,15 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
 
   const now = new Date();
   const hora_carga  = nowTimeStr();
-  const fecha_carga = nowDateStr();                          // fecha real del calendario
-  const fecha_turno = getShiftDate(fecha_carga, hora_carga); // fecha del turno (T3 nocturno → día anterior)
-  const turno = getTurno(hora_carga);
+  const fecha_carga = nowDateStr();
+
+  // Resolver turno con validación completa (TL4 ventana, calendario)
+  const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
+  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
+  if (!ctx.en_ventana) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  const fecha_turno = ctx.fecha_turno;
+  const turno = ctx.turno;
+
   const semana = getISOWeek(new Date(fecha_turno + 'T12:00:00'));
   const cantidad = es_vacia ? 0 : Number(varillas) * Number(piezas_por_varilla);
 
@@ -688,8 +703,14 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   const now = new Date();
   const hora_carga  = nowTimeStr();
   const fecha_carga = nowDateStr();
-  const fecha_turno = getShiftDate(fecha_carga, hora_carga);
-  const turno = getTurno(hora_carga);
+
+  // Resolver turno correctamente: L4 post-cutover → TL4
+  const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
+  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
+  if (!ctx.en_ventana) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+
+  const fecha_turno = ctx.fecha_turno;
+  const turno = ctx.turno;
   const semana = getISOWeek(new Date(fecha_turno + 'T12:00:00'));
 
   const newId = dbProd.nextId(pdb.cargas);
@@ -935,9 +956,6 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
   const pdb = dbProd.read();
   const cfg = pdb.config || {};
 
-  // Horas por turno
-  const horasTurno = { T1: 8, T2: 7, T3: 9 };
-
   // Todas las cargas procesadas del operador en el rango
   // L3/L4 en pdb.cargas (con campo linea), Baker/L1 en colecciones separadas
   const allCargas = [
@@ -947,7 +965,7 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
   ];
 
   const opCargas = allCargas.filter(c => {
-    if (!c.fecha_descarga) return false;                          // no descargada
+    if (!c.fecha_descarga) return false;
     if (c.estado === 'activo' || c.estado === 'cancelado') return false;
     if (String(c.operador_id) !== String(operador_id)) return false;
     const f = c.fecha_descarga;
@@ -956,10 +974,10 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
     return true;
   });
 
-  // Agrupar por (fecha_descarga, linea, turno_descarga)
+  // Agrupar por (fecha_descarga, linea, turno_descarga) — usar turno almacenado para L4 TL4
   const groups = {};
   for (const c of opCargas) {
-    const turnoDesc = getTurno(c.hora_descarga || c.hora_carga || '06:30');
+    const turnoDesc = resolveStoredTurno(c, pdb);
     const key = `${c.fecha_descarga}|${c._linea}|${turnoDesc}`;
     if (!groups[key]) {
       groups[key] = { fecha: c.fecha_descarga, linea: c._linea, turno: turnoDesc, ciclos: 0 };
@@ -987,9 +1005,15 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
     const { fecha, linea, turno } = g;
     const lineaKey = linea.toLowerCase();
     const ciclosObjHora = cfg[`ciclos_objetivo_${lineaKey}`] || 2;
-    const horas = horasTurno[turno] || 8;
-    const objetivo = ciclosObjHora * horas;
-    const eficiencia = objetivo > 0 ? g.ciclos / objetivo : null;
+    const horas = horasDelTurno(turno, pdb, fecha);
+    let objetivo = ciclosObjHora * horas;
+    let ciclosEficiencia = g.ciclos;
+    if (linea === 'L4' && turno === 'TL4') {
+      const tl4 = getTL4EfficiencySummary(pdb, cfg, fecha, operador_id);
+      objetivo = tl4.objetivo;
+      ciclosEficiencia = tl4.ciclos_eficiencia;
+    }
+    const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : null;
 
     // Paros que afectan rendimiento en este (linea, turno, fecha)
     const parosFiltrados = allParos.filter(p => {
@@ -1014,7 +1038,6 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
 
   const pdb = dbProd.read();
   const cfg = pdb.config || {};
-  const horasTurno = { T1: 8, T2: 7, T3: 9 };
 
   if (!['L3', 'L4', 'Baker', 'L1'].includes(linea)) return res.status(400).json({ error: 'Línea no válida' });
 
@@ -1040,10 +1063,10 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
     return true;
   });
 
-  // Agrupar por (fecha_descarga, turno_descarga)
+  // Agrupar por (fecha_descarga, turno_descarga) — usar turno almacenado para L4 TL4
   const groups = {};
   for (const c of cargas) {
-    const turnoDesc = getTurno(c.hora_descarga || c.hora_carga || '06:30');
+    const turnoDesc = resolveStoredTurno({ ...c, _linea: linea }, pdb);
     const key = `${c.fecha_descarga}|${turnoDesc}`;
     if (!groups[key]) groups[key] = { fecha: c.fecha_descarga, turno: turnoDesc, ops: {} };
     const opNom = c.operador || '—';
@@ -1057,8 +1080,14 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
     const { fecha, turno } = g;
     const ciclos  = Object.values(g.ops).reduce((s, n) => s + n, 0);
     const operador = Object.entries(g.ops).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
-    const objetivo = ciclosObjHora * (horasTurno[turno] || 8);
-    const eficiencia = objetivo > 0 ? ciclos / objetivo : null;
+    let objetivo = ciclosObjHora * horasDelTurno(turno, pdb, fecha);
+    let ciclosEficiencia = ciclos;
+    if (linea === 'L4' && turno === 'TL4') {
+      const tl4 = getTL4EfficiencySummary(pdb, cfg, fecha);
+      objetivo = tl4.objetivo;
+      ciclosEficiencia = tl4.ciclos_eficiencia;
+    }
+    const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : null;
 
     const parosFiltrados = parosSrc.filter(p => {
       if (p.turno !== turno || p.fecha_inicio !== fecha) return false;
@@ -1082,7 +1111,7 @@ router.get('/resumen/defectos', (req, res) => {
   const result = [];
   // Usar fecha de DESCARGA (mismo criterio que el KPI) para coherencia con los snapshots de turno
   const ftD   = c => c.fecha_descarga || c.fecha_turno || c.fecha_carga;
-  const turnoD = c => getTurno(c.hora_descarga || c.hora_carga || '06:30');
+  const turnoD = (c, l) => resolveStoredTurno({ ...c, _linea: l }, pdb);
   for (const l of lineasReq) {
     if (l === 'Baker' || l === 'L1') {
       const src = l === 'Baker' ? 'cargas_baker' : 'cargas_l1';
@@ -1091,20 +1120,19 @@ router.get('/resumen/defectos', (req, res) => {
       let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga);
       if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
       if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
-      if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
+      if (turno) cargas = cargas.filter(c => turnoD(c, l) === turno);
       for (const carga of cargas) {
         const excluido = excluirIds.has(String(carga.herramental_id));
         if (carga.herramental_tipo === 'barril') {
           const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
           for (const cav of cavsMalas) {
-            result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
+            result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga, l),
               herramental: carga.herramental_no || String(carga.herramental_id || ''),
               operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
               detalle: `Cavidad ${cav.num}`, folio: carga.folio, afecta_calidad: !excluido });
           }
         } else if (carga.estado === 'defecto' || carga.defecto_id) {
-          // rack vacío (es_vacia=true) no se cuenta en ciclos_no_vacios → no afecta KPI calidad
-          result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga),
+          result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga, l),
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
             operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
             detalle: carga.es_vacia ? `Ciclo vacío ${carga.folio}` : `Ciclo ${carga.folio}`,
@@ -1117,10 +1145,10 @@ router.get('/resumen/defectos', (req, res) => {
       let cargas = (pdb.cargas || []).filter(c => c.linea === l && !!c.fecha_descarga);
       if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
       if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
-      if (turno) cargas = cargas.filter(c => turnoD(c) === turno);
+      if (turno) cargas = cargas.filter(c => turnoD(c, l) === turno);
       for (const c of cargas.filter(x => x.estado === 'defecto' || x.defecto_id)) {
         const excluido = excluirIds.has(String(c.herramental_id));
-        result.push({ linea: l, fecha: ftD(c), turno: turnoD(c),
+        result.push({ linea: l, fecha: ftD(c), turno: turnoD(c, l),
           herramental: c.herramental_no || '', operador: c.operador || '',
           defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio,
           afecta_calidad: !excluido && !c.es_vacia });
@@ -1134,7 +1162,10 @@ router.get('/resumen/defectos', (req, res) => {
 // Admin: crear paro manual con fechas/horas personalizadas (cualquier línea)
 router.post('/paros/admin-crear', produccionAllowRoles('admin'), (req, res) => {
   const body = req.body || {};
-  const { linea, motivo_id, sub_motivo_id, fecha_inicio, hora_inicio, fecha_fin, hora_fin } = body;
+  const {
+    linea, motivo_id, sub_motivo_id, fecha_inicio, hora_inicio, fecha_fin, hora_fin,
+    override_turno, override_motivo
+  } = body;
   if (!linea || !motivo_id || !fecha_inicio || !hora_inicio) {
     return res.status(400).json({ error: 'linea, motivo_id, fecha_inicio y hora_inicio son requeridos' });
   }
@@ -1154,7 +1185,21 @@ router.post('/paros/admin-crear', produccionAllowRoles('admin'), (req, res) => {
     if (found) sub_motivo = found;
   }
 
-  const turno = getTurno(hora_inicio);
+  // Resolver turno: L4 post-cutover → TL4
+  const ctx = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
+  const turno = ctx.turno;
+  const fueraDeTurno = !ctx.activo || !ctx.en_ventana;
+  if (fueraDeTurno && override_turno !== true) {
+    return res.status(409).json({
+      error: ctx.activo
+        ? `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})`
+        : `El turno ${ctx.turno} no está activo para ${linea} en esta fecha`,
+      requiere_override: true
+    });
+  }
+  if (fueraDeTurno && (typeof override_motivo !== 'string' || !override_motivo.trim())) {
+    return res.status(400).json({ error: 'override_motivo es requerido para registrar un paro fuera de turno' });
+  }
   const duracion_min = (fecha_fin && hora_fin)
     ? Math.round((new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${fecha_inicio}T${hora_inicio}:00`)) / 60000)
     : null;
@@ -1199,6 +1244,9 @@ router.post('/paros/admin-crear', produccionAllowRoles('admin'), (req, res) => {
     duracion_min,
     estado: fecha_fin ? 'cerrado' : 'activo',
     registrado_por: req.prodUser?.nombre || 'Admin',
+    override_turno: fueraDeTurno,
+    override_motivo: fueraDeTurno ? override_motivo.trim() : null,
+    override_por: fueraDeTurno ? (req.prodUser?.nombre || 'Admin') : null,
     creado_admin: true,
     corregido: false,
     created_at: new Date().toISOString()
@@ -1361,7 +1409,17 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
 
   const fecha_inicio = req.body.fecha_inicio || nowDateStr();
   const hora_inicio  = req.body.hora_inicio  || nowTimeStr();
-  const turno        = getTurno(hora_inicio);
+  const ctxParo = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
+  const fecha_turno_paro = ctxParo.fecha_turno;
+  const turno = ctxParo.turno;
+
+  // Validar que el turno/día está activo en el calendario
+  if (!ctxParo.activo) {
+    return res.status(409).json({ error: `El turno ${turno} no está activo para ${linea} en esta fecha` });
+  }
+  if (!ctxParo.en_ventana) {
+    return res.status(409).json({ error: `Fuera del horario de ${turno} (${ctxParo.hora_entrada}–${ctxParo.hora_salida})` });
+  }
 
   const id = dbProd.nextId(pdb.paros || []);
   const dateStr = fecha_inicio.replace(/-/g, '');
@@ -1429,7 +1487,17 @@ router.post('/paros/:linea/pendiente-motivo', produccionAuthRequired, (req, res)
     return res.json({ skipped: true, reason: 'Última actividad fuera del turno actual' });
   }
 
-  const turno  = getTurno(_hora);
+  // L4 post-cutover: usar TL4
+  const ctx = resolveTurnoContext(pdb, linea, _fecha, _hora);
+  const turno = ctx.turno;
+  if (!ctx.activo || !ctx.en_ventana) {
+    return res.json({ skipped: true, reason: ctx.activo ? 'fuera_horario' : 'turno_inactivo' });
+  }
+  const currentCtx = resolveTurnoContext(pdb, linea, nowDateStr(), nowTimeStr());
+  if (!currentCtx.activo || !currentCtx.en_ventana ||
+      currentCtx.fecha_turno !== ctx.fecha_turno || currentCtx.turno !== ctx.turno) {
+    return res.json({ skipped: true, reason: 'fuera_turno_actual' });
+  }
 
   if (!pdb.paros) pdb.paros = [];
   const id = dbProd.nextId(pdb.paros);
@@ -1534,7 +1602,18 @@ router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (r
 
   const fecha_inicio = nowDateStr();
   const hora_inicio  = nowTimeStr();
-  const turno        = getTurno(hora_inicio);
+  const ctxCT = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
+  const fecha_turno_ct = ctxCT.fecha_turno;
+  const turno        = ctxCT.turno;
+  if (linea === 'L4' && l4UsesTL4(pdb, fecha_inicio)) {
+    if (!ctxCT.activo) return res.status(409).json({ error: 'TL4 no está activo en esta fecha' });
+    const diffSalida = Math.abs(toMins(hora_inicio) - toMins(ctxCT.hora_salida));
+    if (diffSalida > 2) {
+      return res.status(409).json({
+        error: `El cambio de turno TL4 solo puede registrarse al cierre (${ctxCT.hora_salida})`
+      });
+    }
+  }
   pdb.paros          = pdb.paros || [];
   const id           = dbProd.nextId(pdb.paros);
   const dateStr      = fecha_inicio.replace(/-/g, '');
@@ -1572,6 +1651,20 @@ router.post('/paros/:linea/auto-sin-actividad', produccionAllowRoles('produccion
 
   const pdb = dbProd.read();
 
+  // L4 en modo TL4: solo acepta turno 'TL4', no T1/T2/T3
+  if (linea === 'L4' && l4UsesTL4(pdb, fecha)) {
+    if (turno !== 'TL4') return res.json({ skipped: true, reason: 'l4_usa_tl4' });
+  }
+  // L4 en modo legacy: no acepta TL4
+  if (linea === 'L4' && !l4UsesTL4(pdb, fecha) && turno === 'TL4') {
+    return res.json({ skipped: true, reason: 'l4_no_usa_tl4' });
+  }
+
+  // Verificar que el turno está activo en el calendario
+  if (!isTurnoActivo(pdb, linea, turno, fecha)) {
+    return res.json({ skipped: true, reason: 'turno_inactivo' });
+  }
+
   // Verificar que no hay cargas en ese turno/fecha/línea
   // Usa fecha_turno (campo canónico para T3) con fallback a fecha_carga para registros anteriores
   const cargasEnTurno = (pdb.cargas || []).filter(c =>
@@ -1586,14 +1679,25 @@ router.post('/paros/:linea/auto-sin-actividad', produccionAllowRoles('produccion
   );
   if (parosEnTurno.length > 0) return res.json({ skipped: true, reason: 'hay_paros' });
 
-  // Horarios fijos por turno
-  const SHIFT_TIMES = {
-    T1: { h_ini: '06:30', h_fin: '14:30', dur: 480 },
-    T2: { h_ini: '14:30', h_fin: '21:30', dur: 420 },
-    T3: { h_ini: '21:30', h_fin: '06:30', dur: 540 }
-  };
-  const st = SHIFT_TIMES[turno];
-  if (!st) return res.status(400).json({ error: 'Turno inválido' });
+  // Horarios: para TL4 usar config dinámica, para T1/T2/T3 usar fijos
+  let st;
+  if (turno === 'TL4') {
+    const weekStart = getWeekStart(fecha);
+    const l4cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(fecha);
+    const diaConf = l4cfg.dias[dia];
+    if (!diaConf || !diaConf.activo) return res.json({ skipped: true, reason: 'dia_inactivo_tl4' });
+    const durMin = toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada);
+    st = { h_ini: diaConf.hora_entrada, h_fin: diaConf.hora_salida, dur: durMin };
+  } else {
+    const SHIFT_TIMES = {
+      T1: { h_ini: '06:30', h_fin: '14:30', dur: 480 },
+      T2: { h_ini: '14:30', h_fin: '21:30', dur: 420 },
+      T3: { h_ini: '21:30', h_fin: '06:30', dur: 540 }
+    };
+    st = SHIFT_TIMES[turno];
+    if (!st) return res.status(400).json({ error: 'Turno inválido' });
+  }
 
   // T3 termina al día siguiente
   let fecha_fin = fecha;
@@ -1772,6 +1876,13 @@ const TURNOS_DEF = {
 // ── Arranque de lunes: herramentales cargados que no descargan en T1 del lunes ─
 // Estos ciclos se descuentan del objetivo para no penalizar la eficiencia del arranque.
 const ARRANQUE_LUNES = { L3: 5, L4: 6, Baker: 7, L1: 7 };
+
+// ── Constantes TL4 ───────────────────────────────────────────────────────────
+// Fecha de corte: desde esta fecha en adelante, L4 siempre usa TL4.
+// Antes de esta fecha: L4 usa TL4 solo si hay config explicita para la semana.
+const L4_TL4_CUTOVER_DATE = '2026-08-31';
+// Ciclos de arranque diario para L4 en modo TL4 (fijo, no configurable via UI)
+const L4_ARRANQUE_CICLOS = 6;
 
 // Retorna true si la fecha YYYY-MM-DD es lunes
 function isLunes(dateStr) {
@@ -2057,11 +2168,228 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
   return slots;
 }
 
+// Horas transcurridas para TL4 (turno dinámico L4)
+function elapsedHoursForTL4(targetDate, horaEntrada, horaSalida) {
+  const nowDate = nowDateStr();
+  const nowMins = toMins(nowTimeStr());
+  const entMins = toMins(horaEntrada);
+  const salMins = toMins(horaSalida);
+  const totalHours = (salMins - entMins) / 60;
+  if (nowDate !== targetDate) return totalHours; // fecha historica
+  if (nowMins >= salMins) return totalHours;     // turno ya termino
+  if (nowMins < entMins) return 0;               // aun no inicia
+  return (nowMins - entMins) / 60;               // en curso
+}
+
+// Construir slots hora x hora para L4 con TL4 (turno configurable)
+function buildSlotsForL4TL4(pdb, config, targetDate) {
+  const weekStart = getWeekStart(targetDate);
+  const l4cfg = getTurnoL4Config(pdb, weekStart);
+  const dia = getDiaSemana(targetDate);
+  const diaConf = l4cfg.dias[dia];
+
+  // Si el dia no esta activo, retorna array vacio
+  if (!diaConf || !diaConf.activo) return [];
+
+  const horaEntrada = diaConf.hora_entrada;
+  const horaSalida  = diaConf.hora_salida;
+  const entMins = toMins(horaEntrada);
+  const salMins = toMins(horaSalida);
+  if (salMins <= entMins) return []; // config invalida
+
+  const totalHours = Math.ceil((salMins - entMins) / 60);
+  const ciclos_obj = config.ciclos_objetivo_l4 ?? 2;
+  const arranqueCiclos = L4_ARRANQUE_CICLOS;
+
+  // Mapa de componentes para piezas_objetivo
+  const compMap = {};
+  for (const c of (pdb.componentes_l4 || [])) compMap[String(c.id)] = c;
+
+  // Motivos de paro
+  const motivosParoLinea = pdb.motivos_paro_l4 || [];
+  const motivosParoMap = {};
+  for (const m of motivosParoLinea) motivosParoMap[String(m.id)] = m;
+
+  // Herramentales para excluir_calidad
+  const herramentalesLinea = pdb.herramentales_l4 || [];
+  const excluirCalidadIds = new Set(
+    herramentalesLinea.filter(h => h.excluir_calidad).map(h => String(h.id))
+  );
+
+  const slots = [];
+  let curMins = entMins;
+
+  // ── Fase 1: construir slots con objetivo COMPLETO (sin arranque) ──
+  for (let h = 0; h < totalHours; h++) {
+    const ss = curMins;
+    const se = Math.min(curMins + 60, salMins); // ultimo slot puede ser parcial
+    const slotDuration = se - ss; // minutos reales del slot (60 o menos)
+    const ssStr = `${String(Math.floor(ss/60)%24).padStart(2,'0')}:${String(ss%60).padStart(2,'0')}`;
+    const seStr = `${String(Math.floor(se/60)%24).padStart(2,'0')}:${String(se%60).padStart(2,'0')}`;
+
+    const ssR = ss % 1440;
+    const seR = se % 1440;
+
+    // Cargas descargadas en este slot
+    const cargasEnSlot = (pdb.cargas || []).filter(c => {
+      if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
+      if (c.estado === 'cancelado') return false;
+      const dm = toMins(c.hora_descarga);
+      return c.fecha_descarga === targetDate && dm >= ssR && dm < seR;
+    });
+
+    const ciclos_totales = cargasEnSlot.length;
+    const cargasNoVacias = cargasEnSlot.filter(c => !c.es_vacia);
+    const ciclos_no_vacios = cargasNoVacias.length;
+    const ciclos_buenos = cargasNoVacias.filter(c => !c.defecto_id).length;
+
+    const cargasCalidad = cargasNoVacias.filter(c => !excluirCalidadIds.has(String(c.herramental_id)));
+    const ciclos_buenos_calidad = cargasCalidad.filter(c => !c.defecto_id).length;
+
+    let piezas_total = 0, piezas_obj_total = 0;
+    for (const c of cargasNoVacias) {
+      piezas_total += (c.cantidad || (Number(c.varillas || 0) * Number(c.piezas_por_varilla || 0)));
+      const comp = c.componente_id ? compMap[String(c.componente_id)] : null;
+      piezas_obj_total += comp
+        ? (Number(comp.carga_optima_varillas || 0) * Number(comp.piezas_objetivo || 0))
+        : 0;
+    }
+    for (const c of cargasEnSlot.filter(c => c.es_vacia && c.varillas && c.piezas_por_varilla)) {
+      piezas_obj_total += Number(c.varillas) * Number(c.piezas_por_varilla);
+    }
+
+    // Paros de L4
+    let paros_min = 0, paros_min_prog = 0, paros_min_disp = 0, paros_min_rend = 0;
+    for (const p of (pdb.paros || []).filter(p => p.linea === 'L4')) {
+      const overlap = slotOverlap(ssR, seR, p.hora_inicio, p.hora_fin || nowTimeStr(),
+                                  p.fecha_inicio, p.fecha_fin, targetDate);
+      if (overlap <= 0) continue;
+      const motivo = motivosParoMap[String(p.motivo_id)];
+      const afecEf   = motivo?.afecta_eficiencia    !== false;
+      const afecDisp = motivo?.afecta_disponibilidad !== false;
+      const afecRend = motivo?.afecta_rendimiento    !== false;
+      const efectividad = (p.duracion_min > 0 && p.deduccion_min > 0)
+        ? Math.max(0, p.duracion_min - p.deduccion_min) / p.duracion_min : 1;
+      const overlapEf = Math.round(overlap * efectividad * 10) / 10;
+      paros_min += overlapEf;
+      if (afecEf)   paros_min_prog += overlapEf;
+      if (afecDisp) paros_min_disp += overlapEf;
+      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
+    }
+    paros_min      = Math.min(paros_min,      slotDuration);
+    paros_min_prog = Math.min(paros_min_prog, slotDuration);
+    paros_min_disp = Math.min(paros_min_disp, slotDuration);
+    paros_min_rend = Math.min(paros_min_rend, slotDuration);
+
+    // Objetivo base (sin arranque) para este slot
+    const slotObjBase = slotCiclosObj(ciclos_obj, h);
+
+    slots.push({
+      slot: h + 1, hora_inicio: ssStr, hora_fin: seStr, slotDuration,
+      ciclos_totales, ciclos_no_vacios, ciclos_buenos,
+      ciclos_no_vacios_calidad: cargasCalidad.length, ciclos_buenos_calidad,
+      piezas_total, piezas_obj_total,
+      paros_min, paros_min_prog, paros_min_disp, paros_min_rend,
+      ciclos_obj_base: slotObjBase
+    });
+    curMins += 60;
+  }
+
+  // ── Fase 2: arranque diario — descontar primeros 6 ciclos REALES ──
+  // "Los primeros 6 ciclos reales completados no cuentan para eficiencia"
+  // Se restan de AMBOS numerador (ciclos) Y denominador (objetivo).
+  // Calidad y capacidad incluyen TODOS los ciclos (arranque no afecta material).
+  let arranqueLeft = arranqueCiclos;
+  const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+
+  for (const s of slots) {
+    // Cuántos ciclos de este slot caen en arranque
+    const arranqueEnSlot = Math.min(arranqueLeft, s.ciclos_totales);
+    arranqueLeft -= arranqueEnSlot;
+
+    s.ciclos_arranque    = arranqueEnSlot;
+    s.ciclos_eficiencia  = s.ciclos_totales - arranqueEnSlot; // numerador de eficiencia
+
+    // Objetivo: reducir por arranque (misma cantidad que se resta del numerador)
+    s.ciclos_obj = Math.max(0, s.ciclos_obj_base - arranqueEnSlot);
+
+    // Ajustar objetivo por paros programados
+    const efectivoMin = Math.max(0, s.slotDuration - s.paros_min_prog);
+    s.ciclos_obj_adj = r3(s.ciclos_obj * (efectivoMin / s.slotDuration));
+
+    // Eficiencia = ciclos_eficiencia / ciclos_obj_adj
+    // Arranque: ambos son 0 → eficiencia = 1 (no penaliza)
+    s.eficiencia = s.ciclos_obj_adj > 0
+      ? r3(s.ciclos_eficiencia / s.ciclos_obj_adj)
+      : (s.ciclos_eficiencia === 0 ? 1 : null);
+
+    // Calidad y capacidad usan TODOS los ciclos (incl. arranque)
+    s.calidad = s.ciclos_no_vacios_calidad > 0 ? r3(s.ciclos_buenos_calidad / s.ciclos_no_vacios_calidad) : null;
+    s.capacidad = s.piezas_obj_total > 0 ? r3(s.piezas_total / s.piezas_obj_total) : null;
+    s.disponibilidad = r3(Math.max(0, s.slotDuration - Math.min(s.paros_min_disp, s.slotDuration)) / s.slotDuration);
+    const tDisp = Math.max(0, s.slotDuration - s.paros_min_disp);
+    s.rendimiento = tDisp > 0
+      ? r3(Math.max(0, tDisp - Math.min(s.paros_min_rend, tDisp)) / tDisp) : 1;
+
+    // Limpiar campos internos y redondear paros
+    s.paros_min      = Math.round(s.paros_min      * 10) / 10;
+    s.paros_min_prog = Math.round(s.paros_min_prog * 10) / 10;
+    s.paros_min_disp = Math.round(s.paros_min_disp * 10) / 10;
+    s.paros_min_rend = Math.round(s.paros_min_rend * 10) / 10;
+    delete s.slotDuration;
+    delete s.ciclos_obj_base;
+  }
+  return slots;
+}
+
+// Fuente común para la eficiencia TL4 usada por pizarrón, KPI y estadísticas.
+// Los primeros seis ciclos completados del día se excluyen del numerador y del
+// objetivo; calidad y capacidad conservan todos los ciclos.
+function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
+  const slots = buildSlotsForL4TL4(pdb, config, targetDate);
+  const weekStart = getWeekStart(targetDate);
+  const l4cfg = getTurnoL4Config(pdb, weekStart);
+  const diaConf = l4cfg.dias[getDiaSemana(targetDate)];
+  if (!diaConf || !diaConf.activo || slots.length === 0) {
+    return { ciclos_eficiencia: 0, objetivo: 0, eficiencia: null };
+  }
+
+  const entMins = toMins(diaConf.hora_entrada);
+  const salMins = toMins(diaConf.hora_salida);
+  const completadas = (pdb.cargas || [])
+    .filter(c => {
+      if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
+      if (c.estado === 'cancelado' || c.fecha_descarga !== targetDate) return false;
+      const mins = toMins(c.hora_descarga);
+      return mins >= entMins && mins < salMins;
+    })
+    .sort((a, b) =>
+      (a.hora_descarga || '').localeCompare(b.hora_descarga || '') ||
+      Number(a.id || 0) - Number(b.id || 0)
+    );
+
+  const despuesArranque = completadas.slice(L4_ARRANQUE_CICLOS);
+  const ciclosEficiencia = operadorId == null
+    ? despuesArranque.length
+    : despuesArranque.filter(c => String(c.operador_id) === String(operadorId)).length;
+  const horasTranscurridas = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
+  const objetivo = computeObjElapsedAdj(slots, horasTranscurridas);
+
+  return {
+    ciclos_eficiencia: ciclosEficiencia,
+    objetivo,
+    eficiencia: objetivo > 0 ? ciclosEficiencia / objetivo : null
+  };
+}
+
 function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
   const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
   const result = {};
 
   for (const l of lineas) {
+    // Si L4 usa TL4 para esta fecha, no procesar aquí (se agrega aparte)
+    if (l === 'L4' && l4UsesTL4(pdb, targetDate)) continue;
+
     result[l] = {};
     const ciclos_obj = l === 'L3'
       ? (config.ciclos_objetivo_l3 ?? 2)
@@ -2070,6 +2398,9 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
     let dayC = 0, dayNV = 0, dayB = 0, dayNVQ = 0, dayBQ = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosDisp = 0, dayParosRend = 0, daySlots = 0, dayElapHours = 0, dayObjElap = 0;
 
     for (const t of turnos) {
+      // Filtrar turnos desactivados en el calendario
+      if (!isTurnoActivo(pdb, l, t, targetDate)) continue;
+
       const tDef  = TURNOS_DEF[t];
       const slots = buildSlotsForLinTur(pdb, config, l, t, targetDate);
 
@@ -2161,10 +2492,25 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
     paros = (pdb.paros || []).filter(p => p.linea === lineaLabel);
   }
 
-  // Calcular la intersección de cada paro con el turno (o día completo) usando
-  // los mismos límites de minutos que slotOverlap, para manejar correctamente
-  // paros que cruzan límites de turno o de día.
-  const targetTurnos = turno ? [turno] : ['T1', 'T2', 'T3'];
+  // Construir ventanas de turno: para TL4 usar horas dinámicas de la config
+  const windows = [];
+  if (turno === 'TL4' || (!turno && lineaLabel === 'L4' && l4UsesTL4(pdb, fecha))) {
+    // Ventana dinámica TL4 desde config
+    const weekStart = getWeekStart(fecha);
+    const l4cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(fecha);
+    const diaConf = l4cfg.dias[dia];
+    if (diaConf && diaConf.activo) {
+      windows.push({ start: toMins(diaConf.hora_entrada), end: toMins(diaConf.hora_salida) });
+    }
+  } else {
+    const targetTurnos = turno ? [turno] : ['T1', 'T2', 'T3'];
+    for (const t of targetTurnos) {
+      const tDef = TURNOS_DEF[t];
+      if (!tDef) continue; // safety: skip unknown turnos
+      windows.push({ start: tDef.start, end: tDef.start + tDef.hours * 60 });
+    }
+  }
 
   const agg = {};
   for (const p of paros) {
@@ -2172,11 +2518,8 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
     const paroHoraFin  = p.hora_fin    || nowTimeStr();
 
     let totalOverlap = 0;
-    for (const t of targetTurnos) {
-      const tDef = TURNOS_DEF[t];
-      const ss = tDef.start;
-      const se = ss + tDef.hours * 60;
-      totalOverlap += slotOverlap(ss, se, p.hora_inicio, paroHoraFin, p.fecha_inicio, paroFechaFin, fecha);
+    for (const w of windows) {
+      totalOverlap += slotOverlap(w.start, w.end, p.hora_inicio, paroHoraFin, p.fecha_inicio, paroFechaFin, fecha);
     }
 
     if (totalOverlap <= 0) continue;
@@ -2192,11 +2535,11 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
 function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
   const agg = {};
   const ftD  = c => c.fecha_descarga || c.fecha_carga;
-  const tnoD = c => getTurno(c.hora_descarga || c.hora_carga || '06:30');
+  const tnoD = (c, linea) => resolveStoredTurno({ ...c, _linea: linea }, pdb);
   if (lineaLabel === 'Baker' || lineaLabel === 'L1') {
     const src = lineaLabel === 'Baker' ? 'cargas_baker' : 'cargas_l1';
     let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga && ftD(c) === fecha);
-    if (turno) cargas = cargas.filter(c => tnoD(c) === turno);
+    if (turno) cargas = cargas.filter(c => tnoD(c, lineaLabel) === turno);
     for (const carga of cargas) {
       if (carga.herramental_tipo === 'barril') {
         for (const cav of (carga.cavidades || []).filter(cv => cv.estado === 'defecto')) {
@@ -2213,7 +2556,7 @@ function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
       c.linea === lineaLabel && !!c.fecha_descarga && ftD(c) === fecha &&
       (c.estado === 'defecto' || c.defecto_id)
     );
-    if (turno) cargas = cargas.filter(c => tnoD(c) === turno);
+    if (turno) cargas = cargas.filter(c => tnoD(c, lineaLabel) === turno);
     for (const c of cargas) {
       const key = c.defecto || 'Sin motivo';
       agg[key] = (agg[key] || 0) + 1;
@@ -2255,6 +2598,9 @@ router.get('/pizarron', (req, res) => {
     const turnData = {};
     let dC = 0, dNV = 0, dB = 0, dNVQ = 0, dBQ = 0, dPz = 0, dPzO = 0, dParos = 0, dParosDisp = 0, dParosRend = 0, dSlots = 0, dElapHours = 0, dObjElap = 0;
     for (const t of targetTurnos) {
+      // Filtrar turnos desactivados en el calendario
+      if (!isTurnoActivo(pdb, lineaLabel, t, targetDate)) continue;
+
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
       const tC    = slots.reduce((s, x) => s + x.ciclos_totales,   0);
@@ -2269,7 +2615,6 @@ router.get('/pizarron', (req, res) => {
       const tParosRend = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate);
-      // Usa objetivo ajustado por arranque de lunes Y paros no-eficiencia
       const tObjElap   = computeObjElapsedAdj(slots, tElap);
       const tDispMins  = Math.max(0, turnoMins - tParosDisp);
       turnData[t] = {
@@ -2278,7 +2623,6 @@ router.get('/pizarron', (req, res) => {
           ciclos_totales:   tC,
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
-          // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
           eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : null)),
           calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
@@ -2292,11 +2636,10 @@ router.get('/pizarron', (req, res) => {
       dParos     += tParos;
       dParosDisp += tParosDisp;
       dParosRend += tParosRend;
-      dSlots     += tDef.hours;  // horas totales planeadas (para disponibilidad)
-      dElapHours += tElap;       // horas reales transcurridas
-      dObjElap   += tObjElap;    // objetivo acumulado ajustado (incluye descuento arranque lunes)
+      dSlots     += tDef.hours;
+      dElapHours += tElap;
+      dObjElap   += tObjElap;
     }
-    const ciclos_obj = config[ciclosObjKey] ?? 2;
     const dTotalMins = dSlots * 60;
     const dDispMins  = Math.max(0, dTotalMins - dParosDisp);
     data[lineaLabel] = {
@@ -2315,19 +2658,90 @@ router.get('/pizarron', (req, res) => {
     };
   }
 
+  // L4 en modo TL4: agregar con slot builder dinámico
+  function addL4TL4() {
+    const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+    const weekStart = getWeekStart(targetDate);
+    const l4cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(targetDate);
+    const diaConf = l4cfg.dias[dia];
+
+    if (!diaConf || !diaConf.activo) {
+      // Dia no activo: incluir L4 vacio para que el frontend sepa que existe
+      data['L4'] = { totales_dia: { eficiencia: null, calidad: null, capacidad: null, disponibilidad: null, rendimiento: null } };
+      return;
+    }
+
+    const slots = buildSlotsForL4TL4(pdb, config, targetDate);
+    // Filtrar slots que aun no inician (si es hoy)
+    let filteredSlots = slots;
+    if (targetDate === nowDateStr()) {
+      const nowMins = toMins(nowTimeStr());
+      const entMins = toMins(diaConf.hora_entrada);
+      if (nowMins < entMins) filteredSlots = [];
+    }
+
+    const tC         = filteredSlots.reduce((s, x) => s + x.ciclos_totales, 0);
+    const tCEff      = filteredSlots.reduce((s, x) => s + (x.ciclos_eficiencia ?? x.ciclos_totales), 0);
+    const tNV        = filteredSlots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+    const tB         = filteredSlots.reduce((s, x) => s + x.ciclos_buenos, 0);
+    const tNVQ       = filteredSlots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+    const tBQ        = filteredSlots.reduce((s, x) => s + (x.ciclos_buenos_calidad ?? x.ciclos_buenos), 0);
+    const tPz        = filteredSlots.reduce((s, x) => s + x.piezas_total, 0);
+    const tPzO       = filteredSlots.reduce((s, x) => s + x.piezas_obj_total, 0);
+    const tParosDisp = filteredSlots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+    const tParosRend = filteredSlots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+    const tElap      = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
+    const tObjElap   = computeObjElapsedAdj(filteredSlots, tElap);
+    const totalMins  = (toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada));
+    const tDispMins  = Math.max(0, totalMins - tParosDisp);
+
+    data['L4'] = {
+      TL4: {
+        slots: filteredSlots,
+        hora_entrada: diaConf.hora_entrada,
+        hora_salida:  diaConf.hora_salida,
+        totals: {
+          ciclos_totales: tC, ciclos_no_vacios: tNV, ciclos_buenos: tB,
+          piezas_total: tPz, piezas_obj_total: tPzO,
+          eficiencia:    r3(tObjElap > 0 ? tCEff / tObjElap : (tCEff === 0 ? 1 : null)),
+          calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
+          capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
+          disponibilidad: totalMins > 0 ? r3(Math.max(0, totalMins - Math.min(tParosDisp, totalMins)) / totalMins) : 1,
+          rendimiento:    tDispMins > 0 ? r3((tDispMins - Math.min(tParosRend, tDispMins)) / tDispMins) : 1
+        }
+      },
+      totales_dia: {
+        ciclos_totales: tC, ciclos_no_vacios: tNV, ciclos_buenos: tB,
+        piezas_total: tPz, piezas_obj_total: tPzO,
+        eficiencia:    r3(tObjElap > 0 ? tCEff / tObjElap : (tCEff === 0 ? 1 : null)),
+        calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
+        capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
+        disponibilidad: totalMins > 0 ? r3(Math.max(0, totalMins - Math.min(tParosDisp, totalMins)) / totalMins) : 1,
+        rendimiento:    tDispMins > 0 ? r3((tDispMins - Math.min(tParosRend, tDispMins)) / tDispMins) : 1
+      }
+    };
+  }
+
   if (linea === 'ambas' || linea.toLowerCase() === 'baker') addBakerLike('Baker', buildSlotsForBaker, 'ciclos_objetivo_baker');
   if (linea === 'ambas' || linea === 'L1')                  addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
+
+  // Si L4 usa TL4 y fue solicitada, agregarla
+  if ((linea === 'ambas' || linea === 'L4') && l4UsesTL4(pdb, targetDate)) {
+    addL4TL4();
+  }
 
   // Añadir datos pareto del día y por turno a cada línea
   for (const l of Object.keys(data)) {
     data[l].pareto_paros    = buildParetoParos(pdb, l, targetDate);
     data[l].pareto_defectos = buildParetoDefectos(pdb, l, targetDate);
-    for (const t of ['T1', 'T2', 'T3']) {
+    // Pareto por turno (T1/T2/T3 o TL4)
+    const turnosToCheck = data[l].TL4 ? ['TL4'] : ['T1', 'T2', 'T3'];
+    for (const t of turnosToCheck) {
       if (data[l][t]) {
         const pp = buildParetoParos(pdb, l, targetDate, t);
         data[l][t].pareto_paros    = pp;
         data[l][t].pareto_defectos = buildParetoDefectos(pdb, l, targetDate, t);
-        // Marcar si el turno completo fue "no trabajado" (paro programado)
         data[l][t].turno_no_trabajado = pp.some(p => /turno\s*no\s*trabajado/i.test(p.motivo));
       }
     }
@@ -2390,11 +2804,18 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
 
   // Canastas completadas en el turno actual — por hora de descarga
   const turnoActual = getTurno(nowTimeStr());
+  const l4TL4Hoy    = l4UsesTL4(pdb, hoy);
   const completadasTurno = [
-    ...(pdb.cargas       || []),
-    ...(pdb.cargas_baker || []),
-    ...(pdb.cargas_l1    || [])
-  ].filter(c => c.fecha_descarga === hoy && getTurno(c.hora_descarga) === turnoActual).length;
+    ...(pdb.cargas       || []).map(c => ({ ...c, _linea: c.linea })),
+    ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
+    ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' }))
+  ].filter(c => {
+    if (c.fecha_descarga !== hoy) return false;
+    const t = resolveStoredTurno(c, pdb);
+    // TL4 es turno único del día para L4; cuenta como "turno actual" si TL4 activo
+    if (t === 'TL4') return l4TL4Hoy;
+    return t === turnoActual;
+  }).length;
 
   // Mini pizarron: últimas 3 horas L3 y L4
   const now   = nowTimeStr();
@@ -2519,15 +2940,19 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
   const config       = pdb.config || {};
   if (!pdb.kpi_snapshots) pdb.kpi_snapshots = [];
 
-  const lineasL3L4 = linea === 'ambas' ? ['L3', 'L4'] : (['Baker','L1'].includes(linea) ? [] : [linea]);
+  // Separar L3 de L4 para manejar TL4 correctamente
+  const lineasL3Only = linea === 'ambas' ? ['L3'] : (linea === 'L3' ? ['L3'] : []);
+  const includeL4G   = linea === 'ambas' || linea === 'L4';
   const includeBakerG = linea === 'ambas' || linea === 'Baker';
   const includeL1G    = linea === 'ambas' || linea === 'L1';
   const turnos   = turno === 'all'   ? ['T1', 'T2', 'T3'] : [turno];
   const guardados = [];
   const semana = getISOWeek(new Date(targetDate + 'T12:00:00'));
 
-  for (const l of lineasL3L4) {
+  // L3 (siempre usa T1/T2/T3)
+  for (const l of lineasL3Only) {
     for (const t of turnos) {
+      if (!isTurnoActivo(pdb, l, t, targetDate)) continue; // No guardar snapshot de turno desactivado
       const slots                    = buildSlotsForLinTur(pdb, config, l, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -2576,8 +3001,119 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
     }
   }
 
+  // L4: puede usar TL4 o T1/T2/T3 dependiendo de la fecha
+  if (includeL4G) {
+    if (l4UsesTL4(pdb, targetDate)) {
+      // L4 en modo TL4: un solo snapshot con turno 'TL4'
+      const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+      const slots = buildSlotsForL4TL4(pdb, config, targetDate);
+      const weekStart = getWeekStart(targetDate);
+      const l4cfg = getTurnoL4Config(pdb, weekStart);
+      const dia = getDiaSemana(targetDate);
+      const diaConf = l4cfg.dias[dia];
+      if (diaConf && diaConf.activo && slots.length > 0) {
+        const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+        const ciclos_eficiencia_total  = slots.reduce((s, x) => s + (x.ciclos_eficiencia ?? x.ciclos_totales), 0);
+        const ciclos_no_vacios         = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+        const ciclos_buenos            = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+        const ciclos_no_vacios_calidad = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+        const ciclos_buenos_calidad    = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
+        const piezas_total             = slots.reduce((s, x) => s + x.piezas_total, 0);
+        const piezas_obj_total         = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+        const paros_min_total          = slots.reduce((s, x) => s + x.paros_min, 0);
+        const paros_min_disp           = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+        const paros_min_rend           = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+        const totalMins                = toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada);
+        const tElap                    = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
+        const tObjElap                 = computeObjElapsedAdj(slots, tElap);
+        const tDispMins                = Math.max(0, totalMins - paros_min_disp);
+        const eficiencia               = r3(tObjElap > 0 ? ciclos_eficiencia_total / tObjElap : (ciclos_eficiencia_total === 0 ? 1 : null));
+        const calidad                  = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
+        const capacidad                = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+        const disponibilidad           = totalMins > 0 ? r3((totalMins - Math.min(paros_min_disp, totalMins)) / totalMins) : 1;
+        const rendimiento              = tDispMins > 0 ? r3((tDispMins - Math.min(paros_min_rend, tDispMins)) / tDispMins) : 1;
+
+        const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'L4' && k.turno === 'TL4');
+        const snap = {
+          id:             existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+          fecha:          targetDate,
+          semana,
+          turno:          'TL4',
+          linea:          'L4',
+          guardado_at:    new Date().toISOString(),
+          ciclos_totales,
+          ciclos_no_vacios,
+          ciclos_buenos,
+          piezas_total,
+          paros_min_total,
+          paros_min_disp,
+          eficiencia,
+          capacidad,
+          calidad,
+          disponibilidad,
+          rendimiento,
+          slots
+        };
+        if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+        else pdb.kpi_snapshots.push(snap);
+        guardados.push(snap);
+      }
+    } else {
+      // L4 en modo legacy T1/T2/T3
+      for (const t of turnos) {
+        if (!isTurnoActivo(pdb, 'L4', t, targetDate)) continue;
+        const slots                    = buildSlotsForLinTur(pdb, config, 'L4', t, targetDate);
+        const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
+        const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
+        const ciclos_no_vacios         = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+        const ciclos_buenos            = slots.reduce((s, x) => s + x.ciclos_buenos, 0);
+        const ciclos_no_vacios_calidad = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+        const ciclos_buenos_calidad    = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
+        const piezas_total             = slots.reduce((s, x) => s + x.piezas_total, 0);
+        const piezas_obj_total         = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+        const paros_min_total          = slots.reduce((s, x) => s + x.paros_min, 0);
+        const paros_min_disp           = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+        const paros_min_rend           = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+        const tObjElap                 = computeObjElapsedAdj(slots, TURNOS_DEF[t].hours);
+        const turnoMins                = TURNOS_DEF[t].hours * 60;
+        const tDispMins                = Math.max(0, turnoMins - paros_min_disp);
+        const eficiencia               = r3(tObjElap > 0 ? ciclos_totales / tObjElap : (ciclos_totales === 0 ? 1 : null));
+        const calidad                  = ciclos_no_vacios_calidad > 0 ? r3(ciclos_buenos_calidad / ciclos_no_vacios_calidad) : null;
+        const capacidad                = piezas_obj_total > 0 ? r3(piezas_total / piezas_obj_total) : null;
+        const disponibilidad           = r3((turnoMins - Math.min(paros_min_disp, turnoMins)) / turnoMins);
+        const rendimiento              = tDispMins > 0 ? r3((tDispMins - Math.min(paros_min_rend, tDispMins)) / tDispMins) : 1;
+
+        const existIdx = pdb.kpi_snapshots.findIndex(k => k.fecha === targetDate && k.linea === 'L4' && k.turno === t);
+        const snap = {
+          id:             existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+          fecha:          targetDate,
+          semana,
+          turno:          t,
+          linea:          'L4',
+          guardado_at:    new Date().toISOString(),
+          ciclos_totales,
+          ciclos_no_vacios,
+          ciclos_buenos,
+          piezas_total,
+          paros_min_total,
+          paros_min_disp,
+          eficiencia,
+          capacidad,
+          calidad,
+          disponibilidad,
+          rendimiento,
+          slots
+        };
+        if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+        else pdb.kpi_snapshots.push(snap);
+        guardados.push(snap);
+      }
+    }
+  }
+
   if (includeBakerG) {
     for (const t of turnos) {
+      if (!isTurnoActivo(pdb, 'Baker', t, targetDate)) continue;
       const slots                    = buildSlotsForBaker(pdb, config, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -2628,6 +3164,7 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 
   if (includeL1G) {
     for (const t of turnos) {
+      if (!isTurnoActivo(pdb, 'L1', t, targetDate)) continue;
       const slots                    = buildSlotsForL1(pdb, config, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -2701,7 +3238,9 @@ router.get('/kpis', (req, res) => {
     cur.setDate(cur.getDate() + 1);
   }
 
-  const lineasL3L4 = (!linea || linea === 'ambas') ? ['L3', 'L4'] : (['Baker','L1'].includes(linea) ? [] : [linea]);
+  // Separar L3 de L4 para manejar TL4 por fecha
+  const lineasL3Only = (!linea || linea === 'ambas') ? ['L3'] : (linea === 'L3' ? ['L3'] : []);
+  const includeL4    = !linea || linea === 'ambas' || linea === 'L4';
   const includeBaker = !linea || linea === 'ambas' || linea === 'Baker';
   const includeL1    = !linea || linea === 'ambas' || linea === 'L1';
   const turnos  = turno ? [turno] : ['T1', 'T2', 'T3'];
@@ -2710,13 +3249,14 @@ router.get('/kpis', (req, res) => {
   const snapshots = [];
 
   for (const date of dates) {
-    // L3 / L4
-    for (const l of lineasL3L4) {
-      const ciclos_obj = l === 'L3'
-        ? (config.ciclos_objetivo_l3 ?? 2)
-        : (config.ciclos_objetivo_l4 ?? 2);
+    const semana = getISOWeek(new Date(date + 'T12:00:00'));
+
+    // L3 (siempre T1/T2/T3)
+    for (const l of lineasL3Only) {
+      const ciclos_obj = config.ciclos_objetivo_l3 ?? 2;
 
       for (const t of turnos) {
+        if (!isTurnoActivo(pdb, l, t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForLinTur(pdb, config, l, t, date);
 
@@ -2726,7 +3266,6 @@ router.get('/kpis', (req, res) => {
         const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
         const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
         const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
-        // Para calidad: usar conteos filtrados (excluyen herramentales con defecto contemplado)
         const nv_calidad = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
         const bq_calidad = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
 
@@ -2746,7 +3285,6 @@ router.get('/kpis', (req, res) => {
         const rendimiento    = tDisp_turno > 0
           ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
           : 1;
-        const semana         = getISOWeek(new Date(date + 'T12:00:00'));
 
         snapshots.push({
           id:              `${date}-${l}-${t}`,
@@ -2773,10 +3311,126 @@ router.get('/kpis', (req, res) => {
       }
     }
 
+    // L4: TL4 o T1/T2/T3 según la fecha
+    if (includeL4) {
+      const ciclos_obj_l4 = config.ciclos_objetivo_l4 ?? 2;
+      if (l4UsesTL4(pdb, date)) {
+        // L4 en modo TL4
+        const slots = buildSlotsForL4TL4(pdb, config, date);
+        const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+        const ciclos_eficiencia_total  = slots.reduce((s, x) => s + (x.ciclos_eficiencia ?? x.ciclos_totales), 0);
+        const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+        if (ciclos_totales > 0 || paros_min_total > 0) {
+          const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+          const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+          const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
+          const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+          const nv_calidad       = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+          const bq_calidad       = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
+          const paros_min_disp_t = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+          const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+          const weekStart        = getWeekStart(date);
+          const l4cfg            = getTurnoL4Config(pdb, weekStart);
+          const dia              = getDiaSemana(date);
+          const diaConf          = l4cfg.dias[dia];
+          const totalMins        = diaConf && diaConf.activo ? (toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada)) : 0;
+          const elapHours        = diaConf && diaConf.activo ? elapsedHoursForTL4(date, diaConf.hora_entrada, diaConf.hora_salida) : 0;
+          const objElap          = computeObjElapsedAdj(slots, elapHours);
+          const eficiencia       = ciclos_eficiencia_total > 0 && objElap > 0 ? ciclos_eficiencia_total / objElap : null;
+          const calidad          = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
+          const capacidad        = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
+          const disponibilidad   = totalMins > 0 ? (totalMins - Math.min(paros_min_disp_t, totalMins)) / totalMins : 1;
+          const tDisp_turno      = Math.max(0, totalMins - paros_min_disp_t);
+          const rendimiento      = tDisp_turno > 0
+            ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
+            : 1;
+
+          snapshots.push({
+            id:              `${date}-L4-TL4`,
+            fecha:           date,
+            semana,
+            turno:           'TL4',
+            linea:           'L4',
+            ciclos_totales,
+            ciclos_no_vacios,
+            ciclos_buenos,
+            ciclos_no_vacios_calidad: nv_calidad,
+            ciclos_buenos_calidad:    bq_calidad,
+            piezas_total,
+            piezas_obj_total,
+            paros_min_total:    Math.round(paros_min_total * 10) / 10,
+            horas_eficiencia:   Math.round(elapHours * 1000) / 1000,
+            eficiencia:         r3(eficiencia),
+            calidad:            r3(calidad),
+            capacidad:          r3(capacidad),
+            disponibilidad:     r3(disponibilidad),
+            rendimiento:        r3(rendimiento),
+            slots
+          });
+        }
+      } else {
+        // L4 en modo legacy T1/T2/T3
+        for (const t of turnos) {
+          if (!isTurnoActivo(pdb, 'L4', t, date)) continue;
+          const tDef  = TURNOS_DEF[t];
+          const slots = buildSlotsForLinTur(pdb, config, 'L4', t, date);
+          const ciclos_totales   = slots.reduce((s, x) => s + x.ciclos_totales,   0);
+          const ciclos_no_vacios = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
+          const ciclos_buenos    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
+          const piezas_total     = slots.reduce((s, x) => s + x.piezas_total,     0);
+          const piezas_obj_total = slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+          const paros_min_total  = slots.reduce((s, x) => s + x.paros_min,        0);
+          const nv_calidad       = slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+          const bq_calidad       = slots.reduce((s, x) => s + (x.ciclos_buenos_calidad    ?? x.ciclos_buenos),    0);
+
+          if (ciclos_totales === 0 && paros_min_total === 0) continue;
+
+          const turnoMins      = tDef.hours * 60;
+          const elapHours      = elapsedHoursForTurno(t, date);
+          const esT1Lunes      = t === 'T1' && isLunes(date);
+          const objElap        = esT1Lunes ? computeObjElapsed(slots, elapHours) : ciclos_obj_l4 * elapHours;
+          const paros_min_disp_t = slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+          const paros_min_rend_t = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+          const eficiencia     = ciclos_totales > 0 && objElap > 0 ? ciclos_totales / objElap : null;
+          const calidad        = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
+          const capacidad      = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
+          const disponibilidad = (turnoMins - Math.min(paros_min_total, turnoMins)) / turnoMins;
+          const tDisp_turno    = Math.max(0, turnoMins - paros_min_disp_t);
+          const rendimiento    = tDisp_turno > 0
+            ? (tDisp_turno - Math.min(paros_min_rend_t, tDisp_turno)) / tDisp_turno
+            : 1;
+
+          snapshots.push({
+            id:              `${date}-L4-${t}`,
+            fecha:           date,
+            semana,
+            turno:           t,
+            linea:           'L4',
+            ciclos_totales,
+            ciclos_no_vacios,
+            ciclos_buenos,
+            ciclos_no_vacios_calidad: nv_calidad,
+            ciclos_buenos_calidad:    bq_calidad,
+            piezas_total,
+            piezas_obj_total,
+            paros_min_total:    Math.round(paros_min_total * 10) / 10,
+            horas_eficiencia:   Math.round(elapHours * 1000) / 1000,
+            eficiencia:         r3(eficiencia),
+            calidad:            r3(calidad),
+            capacidad:          r3(capacidad),
+            disponibilidad:     r3(disponibilidad),
+            rendimiento:        r3(rendimiento),
+            slots
+          });
+        }
+      }
+    }
+
     // Baker
     if (includeBaker) {
       const ciclos_obj_baker = config.ciclos_objetivo_baker ?? 2;
       for (const t of turnos) {
+        if (!isTurnoActivo(pdb, 'Baker', t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForBaker(pdb, config, t, date);
 
@@ -2836,6 +3490,7 @@ router.get('/kpis', (req, res) => {
     if (includeL1) {
       const ciclos_obj_l1 = config.ciclos_objetivo_l1 ?? 2;
       for (const t of turnos) {
+        if (!isTurnoActivo(pdb, 'L1', t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForL1(pdb, config, t, date);
 
@@ -3297,8 +3952,10 @@ router.post('/l1/cargas', (req, res) => {
   const now           = new Date().toISOString();
   const hora          = nowTimeStr();
   const fecha         = nowDateStr();
-  const fecha_turno_l1 = getShiftDate(fecha, hora);
-  const turno         = getTurno(hora);
+  const _l1Ctx        = resolveTurnoContext(pdb, 'L1', fecha, hora);
+  if (!_l1Ctx.activo) return res.status(409).json({ error: `El turno ${_l1Ctx.turno} no está activo para L1 en esta fecha` });
+  const fecha_turno_l1 = _l1Ctx.fecha_turno;
+  const turno         = _l1Ctx.turno;
   const semana        = getISOWeek(new Date(fecha_turno_l1 + 'T12:00:00'));
   const folio = nextFolio('L1', pdb.cargas_l1, 'folio');
 
@@ -3483,6 +4140,9 @@ router.post('/l1/cargas/:id/reprocesar', (req, res) => {
     original.hora_descarga  = nowTimeStr();
   }
 
+  const _l1rCtx = resolveTurnoContext(pdb, 'L1', nowDateStr(), nowTimeStr());
+  if (!_l1rCtx.activo) return res.status(409).json({ error: `El turno ${_l1rCtx.turno} no está activo para L1 en esta fecha` });
+
   const activos = pdb.cargas_l1.filter(c => c.estado === 'activo');
   if (activos.length >= 8) return res.status(409).json({ error: 'Máximo de 8 herramentales activos en L1' });
 
@@ -3492,8 +4152,8 @@ router.post('/l1/cargas/:id/reprocesar', (req, res) => {
     id: dbProd.nextId(pdb.cargas_l1),
     folio,
     estado: 'activo',
-    fecha_carga: nowDateStr(), fecha_turno: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
-    turno: getTurno(nowTimeStr()),
+    fecha_carga: nowDateStr(), fecha_turno: _l1rCtx.fecha_turno, hora_carga: nowTimeStr(),
+    turno: _l1rCtx.turno,
     fecha_descarga: null, hora_descarga: null,
     defecto_id: null, defecto: null,
     es_reproceso: true, folio_origen: original.folio,
@@ -3529,7 +4189,9 @@ router.post('/l1/paros', (req, res) => {
   const body = req.body || {};
   const fecha_inicio = body.fecha_inicio || nowDateStr();
   const hora_inicio  = body.hora_inicio  || nowTimeStr();
-  const turno        = getTurno(hora_inicio);
+  const _l1PCtx = resolveTurnoContext(pdb, 'L1', fecha_inicio, hora_inicio);
+  if (!_l1PCtx.activo) return res.status(409).json({ error: `El turno ${_l1PCtx.turno} no está activo para L1 en esta fecha` });
+  const turno        = _l1PCtx.turno;
 
   let motivo_id = body.motivo_id, motivo = body.motivo;
   if (!motivo_id && motivo) {
@@ -3587,6 +4249,12 @@ router.post('/l1/paros/auto-sin-actividad', (req, res) => {
   if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
 
   const pdb = dbProd.read();
+
+  // Verificar que el turno está activo en el calendario
+  if (!isTurnoActivo(pdb, 'L1', turno, fecha)) {
+    return res.json({ skipped: true, reason: 'turno_inactivo' });
+  }
+
   const cargas = (pdb.cargas_l1 || []).filter(c =>
     ((c.fecha_turno || c.fecha_carga) === fecha) && c.turno === turno
   );
@@ -3638,7 +4306,9 @@ router.post('/l1/paros/antes-de-tiempo', produccionAllowRoles('produccion'), (re
     p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
-  const turno = getTurno(hora_inicio);
+  const _l1atCtx = resolveTurnoContext(pdb, 'L1', fecha_inicio, hora_inicio);
+  if (!_l1atCtx.activo) return res.status(409).json({ error: `El turno ${_l1atCtx.turno} no está activo para L1 en esta fecha` });
+  const turno = _l1atCtx.turno;
   const id    = dbProd.nextId(pdb.paros_l1 || []);
   const paro  = {
     id, folio: `L1PAT-${nowDateStr().replace(/-/g,'')}-${id}`,
@@ -3767,9 +4437,11 @@ router.post('/baker/cargas', (req, res) => {
 
   const now        = new Date().toISOString();
   const hora       = nowTimeStr();
-  const fecha      = nowDateStr();                     // fecha real del calendario
-  const fecha_turno_b = getShiftDate(fecha, hora);    // fecha del turno
-  const turno      = getTurno(hora);
+  const fecha      = nowDateStr();
+  const ctx        = resolveTurnoContext(pdb, 'Baker', fecha, hora);
+  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para Baker en esta fecha` });
+  const fecha_turno_b = ctx.fecha_turno;
+  const turno      = ctx.turno;
   const semana     = getISOWeek(new Date(fecha_turno_b + 'T12:00:00'));
   const folio = nextFolio('BKR', pdb.cargas_baker, 'folio');
 
@@ -3967,11 +4639,14 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
 
   if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
 
+  const _bkrCtx = resolveTurnoContext(pdb, 'Baker', nowDateStr(), nowTimeStr());
+  if (!_bkrCtx.activo) return res.status(409).json({ error: `El turno ${_bkrCtx.turno} no está activo para Baker en esta fecha` });
+
   if (original.estado === 'activo') {
     original.estado = 'defecto';
     original.fecha_descarga = nowDateStr();
     original.hora_descarga  = nowTimeStr();
-    original.turno          = getTurno(nowTimeStr());
+    original.turno          = _bkrCtx.turno;
   }
 
   const activos = pdb.cargas_baker.filter(c => c.estado === 'activo');
@@ -3983,8 +4658,8 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
     id: dbProd.nextId(pdb.cargas_baker),
     folio,
     estado: 'activo',
-    fecha_carga: nowDateStr(), fecha_turno: getShiftDate(nowDateStr(), nowTimeStr()), hora_carga: nowTimeStr(),
-    turno: getTurno(nowTimeStr()),
+    fecha_carga: nowDateStr(), fecha_turno: _bkrCtx.fecha_turno, hora_carga: nowTimeStr(),
+    turno: _bkrCtx.turno,
     fecha_descarga: null, hora_descarga: null,
     defecto_id: null, defecto: null,
     es_reproceso: true, folio_origen: original.folio,
@@ -4020,7 +4695,9 @@ router.post('/baker/paros', (req, res) => {
   const body = req.body || {};
   const fecha_inicio = body.fecha_inicio || nowDateStr();
   const hora_inicio  = body.hora_inicio  || nowTimeStr();
-  const turno        = getTurno(hora_inicio);
+  const _bkrPCtx = resolveTurnoContext(pdb, 'Baker', fecha_inicio, hora_inicio);
+  if (!_bkrPCtx.activo) return res.status(409).json({ error: `El turno ${_bkrPCtx.turno} no está activo para Baker en esta fecha` });
+  const turno        = _bkrPCtx.turno;
 
   let motivo_id = body.motivo_id, motivo = body.motivo;
   if (!motivo_id && motivo) {
@@ -4078,7 +4755,12 @@ router.post('/baker/paros/auto-sin-actividad', (req, res) => {
   if (!fecha || !turno) return res.status(400).json({ error: 'fecha y turno requeridos' });
 
   const pdb = dbProd.read();
-  // Usa fecha_turno (campo canónico para T3) con fallback a fecha_carga para registros anteriores
+
+  // Verificar que el turno está activo en el calendario
+  if (!isTurnoActivo(pdb, 'Baker', turno, fecha)) {
+    return res.json({ skipped: true, reason: 'turno_inactivo' });
+  }
+
   const cargas = (pdb.cargas_baker || []).filter(c =>
     ((c.fecha_turno || c.fecha_carga) === fecha) && c.turno === turno
   );
@@ -4179,7 +4861,17 @@ router.post('/paros/:linea/antes-de-tiempo', produccionAllowRoles('produccion'),
     p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
-  const turno = getTurno(hora_inicio);
+  const ctxPAT = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
+  if (!ctxPAT.activo) {
+    return res.status(409).json({ error: `El turno ${ctxPAT.turno} no está activo para ${linea} en esta fecha` });
+  }
+  if (!ctxPAT.en_ventana) {
+    return res.status(409).json({ error: `Fuera del horario de ${ctxPAT.turno} (${ctxPAT.hora_entrada}–${ctxPAT.hora_salida})` });
+  }
+  if (ctxPAT.turno === 'TL4' && toMins(hora_fin) > toMins(ctxPAT.hora_salida)) {
+    return res.status(409).json({ error: `hora_fin excede la salida de TL4 (${ctxPAT.hora_salida})` });
+  }
+  const turno = ctxPAT.turno;
   const id    = dbProd.nextId(pdb.paros || []);
   const paro  = {
     id, folio: `PAT-${nowDateStr().replace(/-/g,'')}-${id}`, linea,
@@ -4212,7 +4904,9 @@ router.post('/baker/paros/antes-de-tiempo', produccionAllowRoles('produccion'), 
     p.fecha_inicio === fecha_inicio && p.hora_inicio === hora_inicio);
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
-  const turno = getTurno(hora_inicio);
+  const _bkratCtx = resolveTurnoContext(pdb, 'Baker', fecha_inicio, hora_inicio);
+  if (!_bkratCtx.activo) return res.status(409).json({ error: `El turno ${_bkratCtx.turno} no está activo para Baker en esta fecha` });
+  const turno = _bkratCtx.turno;
   const id    = dbProd.nextId(pdb.paros_baker || []);
   const paro  = {
     id, folio: `BKPAT-${nowDateStr().replace(/-/g,'')}-${id}`,
@@ -4307,7 +5001,7 @@ router.post('/scrap', produccionAllowRoles('admin', 'produccion'), (req, res) =>
     linea:      req.body.linea      || '',
     fecha:      req.body.fecha      || nowDateStr(),
     hora:       req.body.hora       || nowTimeStr(),
-    turno:      req.body.turno      || getTurno(req.body.hora || nowTimeStr()),
+    turno:      req.body.turno      || resolveTurnoContext(pdb, req.body.linea || '', req.body.fecha || nowDateStr(), req.body.hora || nowTimeStr()).turno,
     operador:   req.body.operador   || '',
     componente: req.body.componente || '',
     no_skf:     req.body.no_skf     || null,
@@ -4404,6 +5098,330 @@ router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) =>
     }
   }
   res.json({ fecha, operadores: result });
+});
+
+// ─── Calendario de turnos por línea ────────────────────────────────────────
+
+const LINEAS_VALIDAS = ['L3', 'L4', 'Baker', 'L1'];
+const DIAS_SEMANA = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
+
+const DEFAULT_SCHEDULE = {
+  lunes:     { T1: true, T2: true, T3: true },
+  martes:    { T1: true, T2: true, T3: true },
+  miercoles: { T1: true, T2: true, T3: true },
+  jueves:    { T1: true, T2: true, T3: true },
+  viernes:   { T1: true, T2: true, T3: true },
+  sabado:    { T1: true, T2: true, T3: false },
+  domingo:   { T1: false, T2: false, T3: false }
+};
+
+// Obtener el lunes de la semana para una fecha dada
+function getWeekStart(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay(); // 0=dom, 1=lun
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff);
+  const yy = dt.getFullYear();
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  const dd = String(dt.getDate()).padStart(2, '0');
+  return `${yy}-${mm}-${dd}`;
+}
+
+// Helper: nombre del día de la semana para una fecha YYYY-MM-DD
+function getDiaSemana(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const dt = new Date(y, m - 1, d);
+  const idx = dt.getDay(); // 0=dom
+  return ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'][idx];
+}
+
+// Obtener calendario semanal para una línea; retorna default si no existe
+function getTurnoSchedule(pdb, linea, weekStart) {
+  const schedules = pdb.turno_schedules || [];
+  const found = schedules.find(s => s.linea === linea && s.week_start === weekStart);
+  return found ? found.schedule : { ...DEFAULT_SCHEDULE };
+}
+
+// Obtener config L4 para una semana; retorna default si no existe
+function getTurnoL4Config(pdb, weekStart) {
+  const configs = pdb.turno_l4_config || [];
+  const found = configs.find(c => c.week_start === weekStart);
+  if (found) return found;
+  return {
+    week_start: weekStart,
+    dias: {
+      lunes:     { activo: true,  hora_entrada: '08:00', hora_salida: '17:00' },
+      martes:    { activo: true,  hora_entrada: '08:00', hora_salida: '17:00' },
+      miercoles: { activo: true,  hora_entrada: '08:00', hora_salida: '17:00' },
+      jueves:    { activo: true,  hora_entrada: '08:00', hora_salida: '17:00' },
+      viernes:   { activo: true,  hora_entrada: '08:00', hora_salida: '17:00' },
+      sabado:    { activo: false, hora_entrada: '08:00', hora_salida: '13:00' },
+      domingo:   { activo: false, hora_entrada: '',      hora_salida: '' }
+    },
+    arranque_ciclos: 6
+  };
+}
+
+// L4 usa TL4 si:
+//   1. La fecha >= L4_TL4_CUTOVER_DATE, O
+//   2. Existe un registro explícito en turno_l4_config para esa semana.
+// Antes del cutover: backward compatible con T1/T2/T3 (datos históricos intactos).
+function l4UsesTL4(pdb, fecha) {
+  if (fecha >= L4_TL4_CUTOVER_DATE) return true;
+  const weekStart = getWeekStart(fecha);
+  return (pdb.turno_l4_config || []).some(c => c.week_start === weekStart);
+}
+
+// Saber si un turno está activo para una línea/fecha dada
+function isTurnoActivo(pdb, linea, turno, fecha) {
+  const weekStart = getWeekStart(fecha);
+  if (linea === 'L4' && l4UsesTL4(pdb, fecha)) {
+    // L4 en modo TL4: solo acepta turno 'TL4'
+    if (turno !== 'TL4') return false;
+    const cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(fecha);
+    return !!(cfg.dias[dia] && cfg.dias[dia].activo);
+  }
+  // Modo normal (T1/T2/T3) — L3, L4 legacy, Baker, L1
+  const schedule = getTurnoSchedule(pdb, linea, weekStart);
+  const dia = getDiaSemana(fecha);
+  return !!(schedule[dia] && schedule[dia][turno]);
+}
+
+// ── Helper central: resolver contexto de turno ──────────────────────────────
+// Devuelve toda la info necesaria para determinar turno, validación de ventana,
+// y fecha_turno correcta para cualquier línea.
+// Usar para capturas, paros, reprocesos, stats.
+function resolveTurnoContext(pdb, linea, fecha, hora) {
+  if (linea === 'L4' && l4UsesTL4(pdb, fecha)) {
+    const weekStart = getWeekStart(fecha);
+    const cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(fecha);
+    const diaConf = cfg.dias[dia] || { activo: false };
+    const activo = !!diaConf.activo;
+    const hora_entrada = diaConf.hora_entrada || '08:00';
+    const hora_salida = diaConf.hora_salida || '17:00';
+    const mins = toMins(hora);
+    const entMins = toMins(hora_entrada);
+    const salMins = toMins(hora_salida);
+    // TL4 no admite horarios que crucen medianoche (salida > entrada validado en POST /turno-l4-config)
+    const en_ventana = activo && mins >= entMins && mins < salMins;
+    return {
+      fecha_turno: fecha,    // TL4 no pasa por regla nocturna T3
+      turno: 'TL4',
+      activo,
+      en_ventana,
+      hora_entrada,
+      hora_salida,
+      week_start: weekStart,
+      dia
+    };
+  }
+  // T1/T2/T3 normal
+  const turno = getTurno(hora);
+  const fecha_turno = getShiftDate(fecha, hora);
+  const activo = isTurnoActivo(pdb, linea, turno, fecha_turno);
+  return {
+    fecha_turno,
+    turno,
+    activo,
+    en_ventana: activo,  // T1/T2/T3 siempre "en ventana" si el turno es detectado
+    hora_entrada: null,
+    hora_salida: null,
+    week_start: getWeekStart(fecha_turno),
+    dia: getDiaSemana(fecha_turno)
+  };
+}
+
+// Resolver turno de una carga ya guardada (para stats/resumen).
+// Usa el campo turno almacenado; solo recalcula si falta.
+function resolveStoredTurno(carga, pdb) {
+  if (carga.turno === 'TL4') return 'TL4';
+  if (carga.turno && carga.turno.startsWith('T')) return carga.turno;
+  const linea = carga.linea || carga._linea;
+  const fecha = carga.fecha_descarga || carga.fecha_turno || carga.fecha_carga;
+  if (linea === 'L4' && fecha && l4UsesTL4(pdb, fecha)) return 'TL4';
+  return getTurno(carga.hora_descarga || carga.hora_carga || '06:30');
+}
+
+// Horas de un turno: para TL4 usa config dinámica, para T1/T2/T3 usa TURNOS_DEF
+function horasDelTurno(turno, pdb, fecha) {
+  if (turno === 'TL4' && pdb && fecha) {
+    const weekStart = getWeekStart(fecha);
+    const cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(fecha);
+    const dc = cfg.dias[dia];
+    if (dc && dc.activo && dc.hora_entrada && dc.hora_salida) {
+      return (toMins(dc.hora_salida) - toMins(dc.hora_entrada)) / 60;
+    }
+    return 9; // fallback
+  }
+  return TURNOS_DEF[turno]?.hours || 8;
+}
+
+router.get('/turno-schedule/:linea', produccionAllowRoles('produccion'), (req, res) => {
+  const linea = req.params.linea;
+  if (!LINEAS_VALIDAS.includes(linea)) return res.status(400).json({ error: 'Línea inválida' });
+  const pdb = dbProd.read();
+  const week = req.query.week || getWeekStart(nowDateStr());
+  if (!isValidDateStr(week)) return res.status(400).json({ error: 'week debe ser una fecha YYYY-MM-DD válida' });
+  const weekStart = getWeekStart(week); // normalizar
+  const schedule = getTurnoSchedule(pdb, linea, weekStart);
+  res.json({ linea, week_start: weekStart, schedule });
+});
+
+router.post('/turno-schedule/:linea', produccionAllowRoles('admin'), (req, res) => {
+  const linea = req.params.linea;
+  if (!LINEAS_VALIDAS.includes(linea)) return res.status(400).json({ error: 'Línea inválida' });
+  const { week_start, schedule } = req.body || {};
+  if (!week_start || !schedule) return res.status(400).json({ error: 'week_start y schedule requeridos' });
+  if (!isValidDateStr(week_start)) return res.status(400).json({ error: 'week_start debe ser una fecha YYYY-MM-DD válida' });
+  const weekStart = getWeekStart(week_start);
+  // Validar estructura del schedule — normalizar solo campos esperados
+  const normalizedSchedule = {};
+  for (const dia of DIAS_SEMANA) {
+    if (!schedule[dia] || typeof schedule[dia] !== 'object') {
+      return res.status(400).json({ error: `Falta config para ${dia}` });
+    }
+    for (const turno of ['T1', 'T2', 'T3']) {
+      if (typeof schedule[dia][turno] !== 'boolean') {
+        return res.status(400).json({ error: `${dia}.${turno} debe ser booleano` });
+      }
+    }
+    normalizedSchedule[dia] = {
+      T1: schedule[dia].T1,
+      T2: schedule[dia].T2,
+      T3: schedule[dia].T3
+    };
+  }
+  const pdb = dbProd.read();
+  if (!pdb.turno_schedules) pdb.turno_schedules = [];
+  const existing = pdb.turno_schedules.findIndex(s => s.linea === linea && s.week_start === weekStart);
+  const record = {
+    id: existing >= 0 ? pdb.turno_schedules[existing].id : dbProd.nextId(pdb.turno_schedules),
+    linea,
+    week_start: weekStart,
+    schedule: normalizedSchedule,
+    created_by: req.prodUser?.nombre || 'admin',
+    created_at: nowDateStr() + ' ' + nowTimeStr(),
+    updated_by: req.prodUser?.nombre || 'admin',
+    updated_at: nowDateStr() + ' ' + nowTimeStr()
+  };
+  // Guardar historial antes de sobrescribir
+  if (existing >= 0) {
+    if (!pdb.turno_schedule_history) pdb.turno_schedule_history = [];
+    pdb.turno_schedule_history.push({
+      ...pdb.turno_schedules[existing],
+      replaced_at: nowDateStr() + ' ' + nowTimeStr(),
+      replaced_by: req.prodUser?.nombre || 'admin'
+    });
+    record.created_by = pdb.turno_schedules[existing].created_by;
+    record.created_at = pdb.turno_schedules[existing].created_at;
+    pdb.turno_schedules[existing] = record;
+  } else {
+    pdb.turno_schedules.push(record);
+  }
+  dbProd.write(pdb);
+  res.json({ ok: true, record });
+});
+
+// ─── Config Turno L4 ──────────────────────────────────────────────────────────
+
+router.get('/turno-l4-config', produccionAllowRoles('produccion'), (req, res) => {
+  const pdb = dbProd.read();
+  const week = req.query.week || getWeekStart(nowDateStr());
+  if (!isValidDateStr(week)) return res.status(400).json({ error: 'week debe ser una fecha YYYY-MM-DD válida' });
+  const weekStart = getWeekStart(week);
+  const config = getTurnoL4Config(pdb, weekStart);
+  res.json({ week_start: weekStart, config });
+});
+
+router.post('/turno-l4-config', produccionAllowRoles('admin'), (req, res) => {
+  const { week_start, dias } = req.body || {};
+  if (!week_start || !dias) return res.status(400).json({ error: 'week_start y dias requeridos' });
+  if (!isValidDateStr(week_start)) return res.status(400).json({ error: 'week_start debe ser una fecha YYYY-MM-DD válida' });
+  const weekStart = getWeekStart(week_start);
+  // Validar y normalizar estructura
+  const normalizedDias = {};
+  for (const dia of DIAS_SEMANA) {
+    if (!dias[dia] || typeof dias[dia] !== 'object') {
+      return res.status(400).json({ error: `Falta config para ${dia}` });
+    }
+    if (typeof dias[dia].activo !== 'boolean') {
+      return res.status(400).json({ error: `${dia}.activo debe ser booleano` });
+    }
+    const activo = dias[dia].activo;
+    if (activo) {
+      if (!dias[dia].hora_entrada || !dias[dia].hora_salida) {
+        return res.status(400).json({ error: `${dia} activo requiere hora_entrada y hora_salida` });
+      }
+      // Validar formato HH:MM con rango 00:00-23:59
+      const hhmmRegex = /^([01]\d|2[0-3]):[0-5]\d$/;
+      if (!hhmmRegex.test(dias[dia].hora_entrada) || !hhmmRegex.test(dias[dia].hora_salida)) {
+        return res.status(400).json({ error: `${dia}: horas deben ser HH:MM (00:00-23:59)` });
+      }
+      // Validar que hora_salida > hora_entrada (no cross-midnight)
+      if (toMins(dias[dia].hora_salida) <= toMins(dias[dia].hora_entrada)) {
+        return res.status(400).json({ error: `${dia}: hora_salida debe ser mayor que hora_entrada` });
+      }
+      normalizedDias[dia] = {
+        activo: true,
+        hora_entrada: dias[dia].hora_entrada,
+        hora_salida: dias[dia].hora_salida
+      };
+    } else {
+      normalizedDias[dia] = { activo: false };
+    }
+  }
+  const pdb = dbProd.read();
+  if (!pdb.turno_l4_config) pdb.turno_l4_config = [];
+  const existing = pdb.turno_l4_config.findIndex(c => c.week_start === weekStart);
+  const record = {
+    id: existing >= 0 ? pdb.turno_l4_config[existing].id : dbProd.nextId(pdb.turno_l4_config),
+    week_start: weekStart,
+    dias: normalizedDias,
+    arranque_ciclos: L4_ARRANQUE_CICLOS,
+    created_by: req.prodUser?.nombre || 'admin',
+    created_at: nowDateStr() + ' ' + nowTimeStr(),
+    updated_by: req.prodUser?.nombre || 'admin',
+    updated_at: nowDateStr() + ' ' + nowTimeStr()
+  };
+  // Guardar historial antes de sobrescribir
+  if (existing >= 0) {
+    if (!pdb.turno_l4_config_history) pdb.turno_l4_config_history = [];
+    pdb.turno_l4_config_history.push({
+      ...pdb.turno_l4_config[existing],
+      replaced_at: nowDateStr() + ' ' + nowTimeStr(),
+      replaced_by: req.prodUser?.nombre || 'admin'
+    });
+    record.created_by = pdb.turno_l4_config[existing].created_by;
+    record.created_at = pdb.turno_l4_config[existing].created_at;
+    pdb.turno_l4_config[existing] = record;
+  } else {
+    pdb.turno_l4_config.push(record);
+  }
+  dbProd.write(pdb);
+  res.json({ ok: true, record });
+});
+
+// ─── History endpoints (admin) ────────────────────────────────────────────────
+
+router.get('/turno-schedule-history/:linea', produccionAllowRoles('admin'), (req, res) => {
+  const linea = req.params.linea;
+  if (!LINEAS_VALIDAS.includes(linea)) return res.status(400).json({ error: 'Línea inválida' });
+  const pdb = dbProd.read();
+  const history = (pdb.turno_schedule_history || [])
+    .filter(h => h.linea === linea)
+    .sort((a, b) => (b.replaced_at || '').localeCompare(a.replaced_at || ''));
+  res.json({ linea, history });
+});
+
+router.get('/turno-l4-config-history', produccionAllowRoles('admin'), (req, res) => {
+  const pdb = dbProd.read();
+  const history = (pdb.turno_l4_config_history || [])
+    .sort((a, b) => (b.replaced_at || '').localeCompare(a.replaced_at || ''));
+  res.json({ history });
 });
 
 module.exports = router;

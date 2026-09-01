@@ -4,6 +4,8 @@
    ══════════════════════════════════════════════════════════════════════════════ */
 
 // ── Estado global ─────────────────────────────────────────────────────────────
+const L4_TL4_CUTOVER_DATE = '2026-08-31';
+
 const state = {
   user:    null,
   token:   null,
@@ -136,6 +138,14 @@ const SHIFT_WARN_BEFORE = 10; // minutos de anticipación para la alerta
 function minsToNextShiftEnd() {
   const now = new Date();
   const cur = now.getHours() * 60 + now.getMinutes();
+  // L4 en modo TL4: usar hora_salida dinámica del turno
+  if (state.lineaActiva === 'L4' && state._tl4HoraSalida) {
+    const [h, m] = state._tl4HoraSalida.split(':').map(Number);
+    const endMin = h * 60 + m;
+    const diff = endMin - cur;
+    if (diff >= -1 && diff <= 60) return diff;
+    return null;
+  }
   // Buscar el próximo fin de turno dentro de los próximos 60 minutos
   for (const end of SHIFT_ENDS_MINS) {
     const diff = end - cur;
@@ -952,7 +962,7 @@ async function viewLinea(el, linea) {
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando tarjetas...</p></div>';
   try {
     const { fecha_ini: shiftFechaIni, fecha_fin: shiftFechaFin } = getShiftDates();
-    const turnoActual = getCurrentTurno();
+    let turnoActual = getCurrentTurno();
 
     // Para el conteo de ciclos necesitamos incluir el día anterior:
     // cargas cargadas en T3 (ayer) pueden descargarse en T1 (hoy).
@@ -966,15 +976,35 @@ async function viewLinea(el, linea) {
       GET(`/paros/${linea}/activo`).catch(() => null),
       GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
       GET('/config').catch(() => ({})),
-      GET(`/pizarron?linea=${linea}&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null)
+      GET(`/pizarron?linea=${linea}&turno=all&fecha=${shiftFechaIni}`).catch(() => null)
     ]);
+
+    // Detectar si L4 esta en modo TL4
+    const isTL4 = linea === 'L4' && pizarronData?.data?.L4?.TL4;
+    if (isTL4) {
+      turnoActual = 'TL4';
+      state._tl4HoraSalida = pizarronData.data.L4.TL4.hora_salida || null;
+    } else {
+      state._tl4HoraSalida = null;
+    }
 
     // Ciclos del turno desde el pizarron (fuente de verdad, igual que KPI pizarrón).
     const todasHoy = Array.isArray(todasHoyData) ? todasHoyData : [];
-    const ciclosTurno = pizarronData?.data?.[linea]?.[turnoActual]?.totals?.ciclos_totales ?? 0;
+    const turnoData = isTL4
+      ? pizarronData?.data?.L4?.TL4
+      : pizarronData?.data?.[linea]?.[turnoActual];
+    const ciclosTurno = turnoData?.totals?.ciclos_totales ?? 0;
     const cfg = (cfgData?.config || cfgData) ?? {};
     const ciclosObjHora = cfg[`ciclos_objetivo_${linea.toLowerCase()}`] ?? 2;
-    const objetivoTurno = Math.round(ciclosObjHora * (HORAS_TURNO[turnoActual] ?? 8));
+    const horasTurno = isTL4
+      ? (() => {
+          const ent = turnoData?.hora_entrada || '08:00', sal = turnoData?.hora_salida || '17:00';
+          const em = Number(ent.split(':')[0]) * 60 + Number(ent.split(':')[1] || 0);
+          const sm = Number(sal.split(':')[0]) * 60 + Number(sal.split(':')[1] || 0);
+          return Math.max(1, (sm - em) / 60);
+        })()
+      : (HORAS_TURNO[turnoActual] ?? 8);
+    const objetivoTurno = Math.round(ciclosObjHora * horasTurno);
     const cargas    = Array.isArray(cargasData) ? cargasData : (cargasData?.cargas || []);
     const catalogo  = catalogData || {};
     let paroActivo  = parosData?.paro || null;
@@ -1100,8 +1130,9 @@ async function viewLinea(el, linea) {
 
     // Bind events
     el.querySelector('#btn-ciclos-turno')?.addEventListener('click', () => {
-      const slots  = pizarronData?.data?.[linea]?.[turnoActual]?.slots  || [];
-      const totals = pizarronData?.data?.[linea]?.[turnoActual]?.totals || {};
+      const td = isTL4 ? pizarronData?.data?.L4?.TL4 : pizarronData?.data?.[linea]?.[turnoActual];
+      const slots  = td?.slots  || [];
+      const totals = td?.totals || {};
       openModalCiclosHora(`Línea ${linea.replace('L', '')}`, turnoActual, slots, totals);
     });
 
@@ -3090,6 +3121,7 @@ async function viewPizarron(el) {
           <option value="T1">T1</option>
           <option value="T2">T2</option>
           <option value="T3">T3</option>
+          <option value="TL4">TL4</option>
         </select>
       </div>
       <button class="btn btn-outline btn-sm" id="pz-buscar">🔍 Consultar</button>
@@ -3129,7 +3161,8 @@ async function viewPizarron(el) {
       const pct = v => v != null ? v * 100 : null;
 
       for (const [l, lineaData] of Object.entries(backendData)) {
-        const turnos = turno ? [turno] : ['T1', 'T2', 'T3'];
+        // L4 en modo TL4: iterar ['TL4'], no T1/T2/T3
+        const turnos = turno ? [turno] : (l === 'L4' && lineaData.TL4 ? ['TL4'] : ['T1', 'T2', 'T3']);
         for (const t of turnos) {
           const turnoData = lineaData[t];
           if (!turnoData) continue;
@@ -3254,7 +3287,9 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
   turnoTotals      = turnoTotals      || {};
   dayTotals        = dayTotals        || {};
   turnoNoTrabajado = turnoNoTrabajado || {};
-  const ORDER = ['T1', 'T2', 'T3'];
+  // Detectar turnos presentes (incluye TL4 si aplica)
+  const allTurnos = [...new Set(rows.map(r => r.turno).filter(Boolean))];
+  const ORDER = allTurnos.includes('TL4') ? ['TL4', 'T1', 'T2', 'T3'] : ['T1', 'T2', 'T3'];
 
   // Determinar líneas presentes
   const lineas = Object.keys(dayTotals).length
@@ -3277,7 +3312,7 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
     let bodyHtml = '';
     for (const turno of turnosConDatos) {
       const grupo  = byTurno[turno] || [];
-      const tLabel = `Turno ${turno}`;
+      const tLabel = turno === 'TL4' ? 'Turno L4' : `Turno ${turno}`;
       bodyHtml += `<tr class="turno-row"><td colspan="7">${tLabel}</td></tr>`;
       if (turnoNoTrabajado[`${linea}-${turno}`]) {
         bodyHtml += `<tr>
@@ -3362,9 +3397,12 @@ async function viewMonitor(el) {
     return;
   }
 
-  function renderMonitorContent(cargasL3, cargasL4, cargasBaker, paroL3, paroL4, paroBaker) {
+  function renderMonitorContent(cargasL3, cargasL4, cargasBaker, paroL3, paroL4, paroBaker, pizarronL4) {
     const turno    = getCurrentTurno();
     const now      = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const hoy      = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const l4EsTL4  = hoy >= L4_TL4_CUTOVER_DATE;
+    const turnoL4  = l4EsTL4 ? 'TL4' : turno;
 
     const cBakerNorm = cargasBaker.map(c => ({ ...c, linea: 'Baker' }));
     const todas    = [...cargasL3, ...cargasL4, ...cBakerNorm].sort((a, b) => {
@@ -3374,7 +3412,10 @@ async function viewMonitor(el) {
     });
 
     const ciclosL3    = cargasL3.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
-    const ciclosL4    = cargasL4.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosL4    = l4EsTL4
+      ? (pizarronL4?.data?.L4?.TL4?.totals?.ciclos_totales ??
+         cargasL4.filter(c => c.fecha_descarga === hoy && c.turno === 'TL4').length)
+      : cargasL4.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
     const ciclosBaker = cargasBaker.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
 
     const paroHtml = (paro, label) => paro
@@ -3414,7 +3455,7 @@ async function viewMonitor(el) {
             L3 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL3}</span>
           </div>
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
-            L4 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL4}</span>
+            L4 — Ciclos ${turnoL4}: <span style="color:#38bdf8">${ciclosL4}</span>
           </div>
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
             Baker — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosBaker}</span>
@@ -3444,18 +3485,24 @@ async function viewMonitor(el) {
     const contenedor = document.getElementById('monitor-contenido');
     if (!contenedor) return;
     try {
-      const [dL3, dL4, dBaker, paroL3Res, paroL4Res, paroBakerRes] = await Promise.all([
+      const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+      const [dL3, dL4, dBaker, paroL3Res, paroL4Res, paroBakerRes, pizarronL4] = await Promise.all([
         GET(`/cargas/L3?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET(`/cargas/L4?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET(`/baker/cargas?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET('/paros/L3/activo').catch(() => null),
         GET('/paros/L4/activo').catch(() => null),
-        GET('/baker/paros/activo').catch(() => null)
+        GET('/baker/paros/activo').catch(() => null),
+        GET(`/pizarron?linea=L4&fecha=${hoy}&turno=all`).catch(() => null)
       ]);
       const cL3    = Array.isArray(dL3)    ? dL3    : [];
       const cL4    = Array.isArray(dL4)    ? dL4    : [];
       const cBaker = Array.isArray(dBaker) ? dBaker : [];
-      contenedor.innerHTML = renderMonitorContent(cL3, cL4, cBaker, paroL3Res?.paro || null, paroL4Res?.paro || null, paroBakerRes?.paro || null);
+      contenedor.innerHTML = renderMonitorContent(
+        cL3, cL4, cBaker,
+        paroL3Res?.paro || null, paroL4Res?.paro || null, paroBakerRes?.paro || null,
+        pizarronL4
+      );
     } catch (e) {
       contenedor.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
@@ -3506,7 +3553,7 @@ async function viewMonitorGrafico(el) {
       <div><span class="flabel">Día</span><select id="mg-fecha"><option value="">Todos</option></select></div>
       <div><span class="flabel">Turno</span>
         <select id="mg-turno">
-          <option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option>
+          <option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option><option>TL4</option>
         </select>
       </div>
       <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap">
@@ -3532,6 +3579,7 @@ async function viewMonitorGrafico(el) {
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#3b82f6" rx="2"/></svg>T1 06:30–14:30</span>
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#10b981" rx="2"/></svg>T2 14:30–21:30</span>
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#f59e0b" rx="2"/></svg>T3 21:30–06:30</span>
+      <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#8b5cf6" rx="2"/></svg>TL4 (configurable)</span>
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#6366f1" rx="2" opacity=".7"/></svg>Activo</span>
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#dc2626" rx="2"/></svg>Paro</span>
       <span style="display:flex;align-items:center;gap:3px"><svg width="18" height="11"><rect width="18" height="9" y="1" fill="#3b82f6" rx="2" stroke="#ef4444" stroke-width="1.5"/><circle cx="15" cy="4" r="2.5" fill="#ef4444"/></svg>Con defecto</span>
@@ -3557,7 +3605,7 @@ async function viewMonitorGrafico(el) {
     }
     return c.estado === 'defecto' || c.estado === 'reproceso' || !!c.defecto_id;
   };
-  const T_COLORS = { T1:'#3b82f6', T2:'#10b981', T3:'#f59e0b' };
+  const T_COLORS = { T1:'#3b82f6', T2:'#10b981', T3:'#f59e0b', TL4:'#8b5cf6' };
 
   // ── carga de datos ─────────────────────────────────────────────────────────
   async function loadData() {
@@ -3637,17 +3685,36 @@ async function viewMonitorGrafico(el) {
   }
 
   // ── renderizar gantt ───────────────────────────────────────────────────────
-  function renderGantt() {
+  async function renderGantt() {
     const wrap = document.getElementById('mg-wrap'); if (!wrap) return;
     ganttData = [];
+
+    let tl4Bounds = null;
+    if (activeTab === 'L4' && selFecha && selTurno === 'TL4') {
+      try {
+        const cfgRes = await GET(`/turno-l4-config?week=${selFecha}`);
+        const dayNames = ['domingo','lunes','martes','miercoles','jueves','viernes','sabado'];
+        const dayName = dayNames[new Date(selFecha + 'T12:00:00').getDay()];
+        const dc = cfgRes?.config?.dias?.[dayName];
+        if (dc?.activo && dc.hora_entrada && dc.hora_salida) {
+          const toMinutes = value => {
+            const [h, m] = value.split(':').map(Number);
+            return h * 60 + m;
+          };
+          tl4Bounds = [toMinutes(dc.hora_entrada), toMinutes(dc.hora_salida)];
+        }
+      } catch (_) { /* conservar rango de día completo si no se puede cargar config */ }
+    }
 
     // Filtrar cargas
     let cargas = allCargas.filter(c => !selSemana || String(c.semana) === String(selSemana));
     if (selFecha) cargas = cargas.filter(c =>
       c.fecha_carga === selFecha || c.fecha_descarga === selFecha);
     if (selTurno) cargas = cargas.filter(c => {
-      if (!c.fecha_descarga) return true;  // activas siempre visibles
-      return getTurnoDeHora(c.hora_descarga || c.hora_carga || '06:30') === selTurno;
+      const turnoCarga = c.turno === 'TL4'
+        ? 'TL4'
+        : getTurnoDeHora(c.hora_descarga || c.hora_carga || '06:30');
+      return turnoCarga === selTurno;
     });
 
     // Filtrar paros
@@ -3667,7 +3734,12 @@ async function viewMonitorGrafico(el) {
     if (selFecha && selTurno) {
       // Día + turno específico → solo esas horas
       const base = new Date(selFecha + 'T00:00:00').getTime();
-      const turnoBounds = { T1: [6*60+30, 14*60+30], T2: [14*60+30, 21*60+30], T3: [21*60+30, 30*60+30] };
+      const turnoBounds = {
+        T1: [6*60+30, 14*60+30],
+        T2: [14*60+30, 21*60+30],
+        T3: [21*60+30, 30*60+30],
+        TL4: tl4Bounds || [0, 24*60]
+      };
       const [sm, em] = turnoBounds[selTurno] || [0, 24*60];
       tMin = base + sm * 60000;
       tMax = base + em * 60000;
@@ -3845,7 +3917,8 @@ async function viewMonitorGrafico(el) {
           if (!e || e < tMin || s > tMax) continue;
           const x1 = Math.max(tsX(s), LW), x2 = Math.min(tsX(e), LW + CW), bw = Math.max(x2 - x1, 4);
           const hRef  = isAct ? (c.hora_carga||'06:30') : (c.hora_descarga||c.hora_carga||'06:30');
-          const color = isAct ? '#6366f1' : (T_COLORS[getTurnoDeHora(hRef)] || '#6b7280');
+          const turnoColor = c.turno === 'TL4' ? 'TL4' : getTurnoDeHora(hRef);
+          const color = isAct ? '#6366f1' : (T_COLORS[turnoColor] || '#6b7280');
           const def   = hasDefecto(c);
           const gi    = ganttData.length; ganttData.push({ type:'carga', data: { ...c, _herrName: herrName } });
           px.push(`<rect x="${x1}" y="${by}" width="${bw}" height="${BH}" fill="${color}" rx="3" opacity="${isAct ? '.7' : '.88'}" ${isAct ? 'stroke="'+color+'" stroke-dasharray="4,2"' : ''} class="mg-bar" data-gi="${gi}" style="cursor:pointer"/>`);
@@ -4715,7 +4788,7 @@ async function viewReportes(el) {
             <div class="form-group"><label>Turno</label>
               <select id="re-turno" class="form-control">
                 <option value="">—</option>
-                ${['T1','T2','T3'].map(t=>`<option value="${t}"${carga.turno===t?' selected':''}>${t}</option>`).join('')}
+                ${['T1','T2','T3','TL4'].map(t=>`<option value="${t}"${carga.turno===t?' selected':''}>${t}</option>`).join('')}
               </select>
             </div>
 
@@ -6697,6 +6770,221 @@ async function viewConfiguracion(el) {
       btn.disabled = false; btn.textContent = '💾 Guardar configuración pizarrón';
     }
   });
+
+  // ─── Calendario de turnos por línea ────────────────────────────────────────
+  const calCard = document.createElement('div');
+  calCard.className = 'form-card config-section';
+  calCard.style.marginTop = '24px';
+  calCard.id = 'turno-cal-card';
+  calCard.innerHTML = `
+    <h3>Calendario de Turnos</h3>
+    <p style="color:var(--p-muted);font-size:13px;margin:4px 0 16px">
+      Activa/desactiva turnos por dia para cada linea. Turnos desactivados no se capturan ni penalizan KPIs.
+    </p>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+      <label style="font-size:13px">Linea:</label>
+      <select id="cal-linea" style="padding:4px 8px">
+        <option value="L3">Linea 3</option>
+        <option value="L4">Linea 4</option>
+        <option value="Baker">Baker</option>
+        <option value="L1">Linea 1</option>
+      </select>
+      <label style="font-size:13px;margin-left:12px">Semana:</label>
+      <input type="date" id="cal-week" style="padding:4px 8px"/>
+      <button class="btn btn-outline btn-sm" id="cal-load">Cargar</button>
+    </div>
+    <div id="cal-grid"></div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" id="cal-save" style="display:none">Guardar calendario</button>
+      <span id="cal-msg" style="margin-left:12px;font-size:13px"></span>
+    </div>`;
+  el.appendChild(calCard);
+
+  function getMonday(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, d);
+    const day = dt.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    dt.setDate(dt.getDate() + diff);
+    return dt.toLocaleDateString('en-CA');
+  }
+
+  const DIAS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
+  const DIAS_LABEL = ['Lun','Mar','Mie','Jue','Vie','Sab','Dom'];
+
+  async function loadCalendar() {
+    const linea = document.getElementById('cal-linea').value;
+    const weekVal = document.getElementById('cal-week').value;
+    if (!weekVal) return;
+    const weekStart = getMonday(weekVal);
+    const grid = document.getElementById('cal-grid');
+
+    // L4 post-cutover usa TL4 — redirigir al panel de abajo
+    if (linea === 'L4' && weekStart >= L4_TL4_CUTOVER_DATE) {
+      grid.innerHTML = `<p style="color:var(--p-warning);font-size:13px;padding:12px;background:var(--p-warning-bg,#fff8e1);border-radius:6px">
+        L4 usa turno flexible (TL4) desde 2026-08-31. Configure horario en el panel <b>"Turno L4 — Horario configurable"</b> de abajo.
+      </p>`;
+      document.getElementById('cal-save').style.display = 'none';
+      return;
+    }
+
+    try {
+      const data = await GET(`/turno-schedule/${linea}?week=${weekStart}`);
+      const sch = data.schedule || {};
+      grid.innerHTML = `
+        <table style="border-collapse:collapse;font-size:13px;width:100%">
+          <thead>
+            <tr>
+              <th style="padding:6px 10px;text-align:left">Turno</th>
+              ${DIAS.map((d,i) => `<th style="padding:6px 10px;text-align:center">${DIAS_LABEL[i]}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>
+            ${['T1','T2','T3'].map(t => `
+              <tr>
+                <td style="padding:6px 10px;font-weight:600">${t}</td>
+                ${DIAS.map(d => {
+                  const checked = sch[d] && sch[d][t] !== false ? 'checked' : '';
+                  return `<td style="padding:6px 10px;text-align:center">
+                    <input type="checkbox" class="cal-cb" data-dia="${d}" data-turno="${t}" ${checked} style="cursor:pointer;width:18px;height:18px"/>
+                  </td>`;
+                }).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+      grid.dataset.linea = linea;
+      grid.dataset.weekStart = weekStart;
+      document.getElementById('cal-save').style.display = '';
+    } catch (e) {
+      grid.innerHTML = `<p style="color:var(--p-danger)">Error: ${e.message}</p>`;
+    }
+  }
+
+  // Set default week to current
+  document.getElementById('cal-week').value = new Date().toLocaleDateString('en-CA');
+  document.getElementById('cal-load').addEventListener('click', loadCalendar);
+
+  document.getElementById('cal-save').addEventListener('click', async () => {
+    const grid = document.getElementById('cal-grid');
+    const linea = grid.dataset.linea;
+    const weekStart = grid.dataset.weekStart;
+    const schedule = {};
+    for (const d of DIAS) schedule[d] = { T1: false, T2: false, T3: false };
+    grid.querySelectorAll('.cal-cb').forEach(cb => {
+      schedule[cb.dataset.dia][cb.dataset.turno] = cb.checked;
+    });
+    const msg = document.getElementById('cal-msg');
+    try {
+      await POST(`/turno-schedule/${linea}`, { week_start: weekStart, schedule });
+      msg.style.color = 'var(--p-success)';
+      msg.textContent = 'Guardado';
+      setTimeout(() => { msg.textContent = ''; }, 3000);
+    } catch (e) {
+      msg.style.color = 'var(--p-danger)';
+      msg.textContent = 'Error: ' + e.message;
+    }
+  });
+
+  // ─── Config Turno L4 ─────────────────────────────────────────────────────
+  const l4Card = document.createElement('div');
+  l4Card.className = 'form-card config-section';
+  l4Card.style.marginTop = '24px';
+  l4Card.id = 'turno-l4-card';
+  l4Card.innerHTML = `
+    <h3>Turno L4 — Horario configurable</h3>
+    <p style="color:var(--p-muted);font-size:13px;margin:4px 0 16px">
+      Linea 4 usa un solo turno por dia con horario flexible. Guardar activa el modo TL4 para la semana seleccionada.
+    </p>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px">
+      <label style="font-size:13px">Semana:</label>
+      <input type="date" id="l4-week" style="padding:4px 8px"/>
+      <button class="btn btn-outline btn-sm" id="l4-load">Cargar</button>
+    </div>
+    <div id="l4-grid"></div>
+    <div style="margin-top:12px;display:flex;gap:12px;align-items:center">
+      <label style="font-size:13px">Ciclos arranque diario:</label>
+      <input type="number" id="l4-arranque" value="6" disabled style="width:70px;opacity:0.6;cursor:not-allowed"/>
+      <span style="font-size:12px;color:var(--p-muted)">Fijo en 6 ciclos (no configurable)</span>
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primary" id="l4-save" style="display:none">Guardar config L4</button>
+      <span id="l4-msg" style="margin-left:12px;font-size:13px"></span>
+    </div>`;
+  el.appendChild(l4Card);
+
+  async function loadL4Config() {
+    const weekVal = document.getElementById('l4-week').value;
+    if (!weekVal) return;
+    const weekStart = getMonday(weekVal);
+    const grid = document.getElementById('l4-grid');
+
+    try {
+      const data = await GET(`/turno-l4-config?week=${weekStart}`);
+      const cfg = data.config || {};
+      const dias = cfg.dias || {};
+      document.getElementById('l4-arranque').value = cfg.arranque_ciclos ?? 6;
+      grid.innerHTML = `
+        <table style="border-collapse:collapse;font-size:13px;width:100%">
+          <thead>
+            <tr>
+              <th style="padding:6px 10px;text-align:left">Dia</th>
+              <th style="padding:6px 10px;text-align:center">Activo</th>
+              <th style="padding:6px 10px;text-align:center">Entrada</th>
+              <th style="padding:6px 10px;text-align:center">Salida</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${DIAS.map((d,i) => {
+              const dc = dias[d] || { activo: false, hora_entrada: '08:00', hora_salida: '17:00' };
+              return `
+                <tr>
+                  <td style="padding:6px 10px;font-weight:600">${DIAS_LABEL[i]}</td>
+                  <td style="padding:6px 10px;text-align:center">
+                    <input type="checkbox" class="l4-activo" data-dia="${d}" ${dc.activo ? 'checked' : ''} style="cursor:pointer;width:18px;height:18px"/>
+                  </td>
+                  <td style="padding:6px 10px;text-align:center">
+                    <input type="time" class="l4-entrada" data-dia="${d}" value="${dc.hora_entrada || '08:00'}" style="padding:2px 6px"/>
+                  </td>
+                  <td style="padding:6px 10px;text-align:center">
+                    <input type="time" class="l4-salida" data-dia="${d}" value="${dc.hora_salida || '17:00'}" style="padding:2px 6px"/>
+                  </td>
+                </tr>`;
+            }).join('')}
+          </tbody>
+        </table>`;
+      grid.dataset.weekStart = weekStart;
+      document.getElementById('l4-save').style.display = '';
+    } catch (e) {
+      grid.innerHTML = `<p style="color:var(--p-danger)">Error: ${e.message}</p>`;
+    }
+  }
+
+  document.getElementById('l4-week').value = new Date().toLocaleDateString('en-CA');
+  document.getElementById('l4-load').addEventListener('click', loadL4Config);
+
+  document.getElementById('l4-save').addEventListener('click', async () => {
+    const grid = document.getElementById('l4-grid');
+    const weekStart = grid.dataset.weekStart;
+    const dias = {};
+    for (const d of DIAS) {
+      const activo = grid.querySelector(`.l4-activo[data-dia="${d}"]`)?.checked || false;
+      const hora_entrada = grid.querySelector(`.l4-entrada[data-dia="${d}"]`)?.value || '';
+      const hora_salida  = grid.querySelector(`.l4-salida[data-dia="${d}"]`)?.value || '';
+      dias[d] = { activo, hora_entrada, hora_salida };
+    }
+    const arranque_ciclos = Number(document.getElementById('l4-arranque').value) || 6;
+    const msg = document.getElementById('l4-msg');
+    try {
+      await POST('/turno-l4-config', { week_start: weekStart, dias, arranque_ciclos });
+      msg.style.color = 'var(--p-success)';
+      msg.textContent = 'Guardado — L4 usa modo TL4 para esta semana';
+      setTimeout(() => { msg.textContent = ''; }, 4000);
+    } catch (e) {
+      msg.style.color = 'var(--p-danger)';
+      msg.textContent = 'Error: ' + e.message;
+    }
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -6729,6 +7017,7 @@ async function viewKpiHistorico(el) {
           <option value="T1">T1</option>
           <option value="T2">T2</option>
           <option value="T3">T3</option>
+          <option value="TL4">TL4</option>
         </select>
       </div>
       <div><span class="flabel">Desde</span><input type="date" id="kh-desde" value="${lunes}"/></div>

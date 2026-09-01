@@ -318,10 +318,21 @@
     }
   }
 
+  // Helper: obtener turno key para una linea (TL4 para L4 en modo TL4)
+  function getTurnoKey(linea) {
+    if (linea === 'L4' && kpiData.L4?.TL4) return 'TL4';
+    return currentTurno();
+  }
+  // Helper: etiqueta turno para mostrar
+  function getTurnoLabel(turno) {
+    if (turno === 'TL4') return 'Turno L4';
+    return `Turno ${turno.slice(1)}`;
+  }
+
   /* ── Diapositiva: turno de una línea ──────────────────────────────────── */
   function renderTurnoSlide(slide) {
-    const turno    = currentTurno();
     const l        = slide.linea;
+    const turno    = getTurnoKey(l);
     const ld       = kpiData[l] || {};
     const tot      = ld[turno]?.totals || {};
     const slots    = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0);
@@ -331,7 +342,7 @@
 
     return `
       <div class="ss-slide">
-        <div class="ss-slide-title">Turno ${turno.slice(1)} · ${label}</div>
+        <div class="ss-slide-title">${getTurnoLabel(turno)} · ${label}</div>
         <div class="ss-slide-subtitle">${nowDateLong()}</div>
         <div class="ss-summary-row">
           <div class="ss-stat-chip"><span class="val">${ciclosTotales}</span><span class="lbl">Ciclos</span></div>
@@ -373,10 +384,10 @@
 
   /* ── Diapositiva: turno TODAS las líneas ─────────────────────────────── */
   function renderAllSlide(slide) {
-    const turno  = currentTurno();
     const lineas = ['L3', 'L4', 'Baker'];
 
     const panels = lineas.map(l => {
+      const turno   = getTurnoKey(l);
       const ld      = kpiData[l] || {};
       const tot     = ld[turno]?.totals || {};
       const ciclos  = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
@@ -411,7 +422,7 @@
 
     return `
       <div class="ss-slide">
-        <div class="ss-slide-title">Turno ${turno.slice(1)} · Todas las Líneas (L3, L4 y Baker)</div>
+        <div class="ss-slide-title">Turno Actual · Todas las Líneas (L3, L4 y Baker)</div>
         <div class="ss-tres-grid" style="flex:1;margin-top:10px">${panels}</div>
       </div>`;
   }
@@ -448,12 +459,14 @@
     const fecha    = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
     const scrapPct = scrapData[l] != null ? scrapData[l] : null;
 
-    const turnoRows = ['T1', 'T2', 'T3'].map(t => {
+    // Para L4 en modo TL4, mostrar solo TL4; para el resto T1/T2/T3
+    const turnosToShow = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
+    const turnoRows = turnosToShow.map(t => {
       const tot    = ld[t]?.totals || {};
       const ciclos = (ld[t]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
       return `
         <div class="ss-dia-row">
-          <span class="ss-dia-t-lbl">Turno ${t.slice(1)}</span>
+          <span class="ss-dia-t-lbl">${getTurnoLabel(t)}</span>
           <span class="kpi-cell ${kpiClass(tot.eficiencia)}">${fmtPct(tot.eficiencia)}</span>
           <span class="kpi-cell ${kpiClass(tot.capacidad)}">${fmtPct(tot.capacidad)}</span>
           <span class="kpi-cell ${kpiClass(tot.calidad)}">${fmtPct(tot.calidad)}</span>
@@ -534,9 +547,8 @@
       const ld      = kpiData[l] || {};
       const diaT    = ld.totales_dia || {};
       const sp      = scrapData[l] != null ? scrapData[l] : null;
-      const ciclosDia = lineas.length > 0
-        ? ['T1','T2','T3'].reduce((s, t) => s + ((ld[t]?.slots || []).reduce((a, x) => a + (x.ciclos_totales || 0), 0)), 0)
-        : 0;
+      const turnosL = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1','T2','T3'];
+      const ciclosDia = turnosL.reduce((s, t) => s + ((ld[t]?.slots || []).reduce((a, x) => a + (x.ciclos_totales || 0), 0)), 0);
       return `
         <div class="ss-linea-panel">
           <h3>${LINEA_LABELS[l] || l}</h3>
@@ -645,7 +657,8 @@
         allDates.add(s.fecha);
         if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0,rendN:0,rendD:0 };
         const d  = byDate[s.fecha];
-        const h  = TURNO_H[s.turno] || 8;
+        // TL4: usar horas_eficiencia (dinámicas del backend); T1/T2/T3: horas fijas
+        const h  = s.turno === 'TL4' ? (s.horas_eficiencia || 9) : (TURNO_H[s.turno] || 8);
         const he = s.horas_eficiencia || h; // horas reales del turno (parciales si está en curso)
         if (s.eficiencia  != null) { d.efN  += s.eficiencia  * he; d.efD  += he; }
         if (s.capacidad   != null) { d.capN += s.capacidad   * h;  d.capD += h; }
@@ -778,14 +791,15 @@
       '\u00a1Cada pieza cuenta, y la hicieron perfecta!'
     ];
     const LINEAS = ['L3', 'L4', 'Baker'];
-    const TURNOS = ['T1', 'T2', 'T3'];
-    const TURNO_LABEL = { T1:'Turno 1', T2:'Turno 2', T3:'Turno 3' };
+    const TURNO_LABEL = { T1:'Turno 1', T2:'Turno 2', T3:'Turno 3', TL4:'Turno L4' };
     const EF_TGT = 0.90, REND_TGT = 0.90;
 
     const ganadores = [];
     for (const l of LINEAS) {
       const ld = kpiData[l] || {};
-      for (const t of TURNOS) {
+      // Para L4 en modo TL4, revisar TL4; para el resto T1/T2/T3
+      const turnosCheck = (l === 'L4' && ld.TL4) ? ['TL4'] : ['T1', 'T2', 'T3'];
+      for (const t of turnosCheck) {
         const tot = ld[t]?.totals;
         if (!tot) continue;
         const ef   = tot.eficiencia;

@@ -71,6 +71,11 @@ const EMPTY_DB = {
   operadores_l1: [],           // {id, nombre, rhh_employee_id, compras_user_id, activo, created_at}
   cargas_l1: [],               // igual a cargas_baker (con array cavidades)
   paros_l1: [],                // {id, folio, motivo_id, motivo, sub_motivo_id, sub_motivo, fecha_inicio, hora_inicio, fecha_fin, hora_fin, duracion_min, turno, created_at}
+  // ── Calendario de turnos por línea ────────────────────────────────────────
+  turno_schedules: [],     // {id, linea, week_start, schedule:{lunes:{T1,T2,T3},...}, created_by, created_at, updated_by, updated_at}
+  turno_l4_config: [],     // {id, week_start, dias:{lunes:{activo,hora_entrada,hora_salida},...}, arranque_ciclos, created_by, created_at, updated_by, updated_at}
+  turno_schedule_history: [],   // snapshots antes de sobrescribir
+  turno_l4_config_history: [],  // snapshots antes de sobrescribir
   // Configuración
   config: {
     ciclos_objetivo_l3: 2,
