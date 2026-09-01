@@ -1067,8 +1067,10 @@ async function viewLinea(el, linea) {
             const fechaIni = lastDate.toLocaleDateString('en-CA');
             try {
               const nuevoParo = await POST(`/paros/${linea}/pendiente-motivo`, { hora_inicio: horaIni, fecha_inicio: fechaIni });
-              paroActivo = nuevoParo;
-              state.paroActivo[linea] = nuevoParo;
+              if (nuevoParo && !nuevoParo.skipped) {
+                paroActivo = nuevoParo;
+                state.paroActivo[linea] = nuevoParo;
+              }
             } catch (err) {
               // 409 = ya existe paro activo en otra pestaña/sesión — sincronizar estado
               try {
