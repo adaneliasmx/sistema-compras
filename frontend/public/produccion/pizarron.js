@@ -38,6 +38,17 @@
   let progressStart = null;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+  const MX_TZ = 'America/Mexico_City';
+  function mxNowParts() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MX_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+    }).formatToParts(new Date());
+    return Object.fromEntries(parts.map(p => [p.type, p.value]));
+  }
+  function mxNowMins() {
+    const p = mxNowParts();
+    return Number(p.hour) * 60 + Number(p.minute);
+  }
   function todayStr() {
     // Usa zona horaria Mexico City (no UTC) y aplica shift date:
     // T3 nocturno (00:00-06:29 local) pertenece al día anterior
@@ -53,13 +64,14 @@
 
   function nowStr() {
     return new Date().toLocaleString('es-MX', {
+      timeZone: MX_TZ,
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
       hour: '2-digit', minute: '2-digit', second: '2-digit'
     });
   }
 
   function currentTurno() {
-    const t = new Date().getHours() * 60 + new Date().getMinutes();
+    const t = mxNowMins();
     if (t >= 6*60+30 && t < 14*60+30) return 'T1';
     if (t >= 14*60+30 && t < 21*60+30) return 'T2';
     return 'T3';
@@ -90,43 +102,6 @@
     if (n >= 90) return '&#x1F60A;'; // 😊
     if (n >= 70) return '&#x1F610;'; // 😐
     return '&#x1F622;'; // 😢
-  }
-
-  // Calcula eficiencia usando solo horas completadas del turno activo.
-  // Retorna: { value: number|null, na: boolean }
-  // na=true  → primera hora en curso → mostrar "N/A"
-  // value=null → turno no activo o histórico → usar valor del backend
-  function calcEficienciaCompletada(linea, turno) {
-    // TL4: no aplica cálculo de eficiencia por horas completadas (usa backend directo)
-    if (turno === 'TL4') return { value: null, na: false };
-    const turnoActual = currentTurno();
-    if (turnoActual !== turno) return { value: null, na: false };
-
-    const now      = new Date();
-    const nowMins  = now.getHours() * 60 + now.getMinutes();
-    const TURNO_START = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
-    const start = TURNO_START[turno];
-
-    let elapsedMins;
-    if (turno === 'T3') {
-      elapsedMins = nowMins >= start ? nowMins - start : 1440 - start + nowMins;
-    } else {
-      elapsedMins = nowMins - start;
-      if (elapsedMins < 0) return { value: null, na: false };
-    }
-
-    const currentSlotIdx = Math.floor(elapsedMins / 60);
-    if (currentSlotIdx <= 0) return { value: null, na: true }; // primera hora en curso
-
-    const horas = state.data?.[linea]?.horas?.[turno] || [];
-    const completed = horas.slice(0, currentSlotIdx);
-    if (completed.length === 0) return { value: null, na: true };
-
-    const sumCiclos = completed.reduce((s, h) => s + (h.ciclos     || 0), 0);
-    const sumObj    = completed.reduce((s, h) => s + (h.ciclos_obj || 0), 0);
-
-    if (sumObj === 0) return { value: sumCiclos === 0 ? 100 : null, na: false };
-    return { value: (sumCiclos / sumObj) * 100, na: false };
   }
 
   function fmtPct(val) {
@@ -179,6 +154,13 @@
             hora_fin:       s.hora_fin,
             ciclos:         s.ciclos_totales ?? 0,
             ciclos_obj:     s.ciclos_obj ?? 0,
+            ciclos_obj_adj: s.ciclos_obj_adj ?? s.ciclos_obj ?? 0,
+            ciclos_eficiencia: s.ciclos_eficiencia ?? s.ciclos_totales ?? 0,
+            objetivo_transcurrido: s.objetivo_transcurrido ?? 0,
+            estado_slot:    s.estado_slot,
+            es_hora_en_curso: !!s.es_hora_en_curso,
+            progreso_pct:   s.progreso_pct ?? 0,
+            eficiencia_avance: pct(s.eficiencia_avance),
             eficiencia:     pct(s.eficiencia),
             capacidad:      pct(s.capacidad),
             calidad:        pct(s.calidad),
@@ -193,7 +175,8 @@
             capacidad:      pct(tot.capacidad),
             calidad:        pct(tot.calidad),
             disponibilidad: pct(tot.disponibilidad),
-            rendimiento:    pct(tot.rendimiento)
+            rendimiento:    pct(tot.rendimiento),
+            hora_en_curso:  tot.hora_en_curso || null
           };
           paros_turno[t]  = td.pareto_paros || [];
           no_trabajado[t] = td.turno_no_trabajado || false;
@@ -403,42 +386,25 @@
     const tot   = state.data?.[linea]?.totales?.[turno] || {};
     const horas = state.data?.[linea]?.horas?.[turno]   || [];
 
-    // Eficiencia global: solo horas completadas (excluye hora en curso)
-    const efComp = calcEficienciaCompletada(linea, turno);
-    let efDisplay, efColorClass;
-    if (efComp.na) {
-      efDisplay   = 'N/A';
-      efColorClass = '';
-    } else if (efComp.value !== null) {
-      efDisplay    = fmtPct(efComp.value);
-      efColorClass = kpiColor(efComp.value);
-    } else {
-      efDisplay    = fmtPct(tot.eficiencia);
-      efColorClass = kpiColor(tot.eficiencia);
-    }
-
-    // Detectar índice del slot en curso para mostrarlo como "en proceso"
-    let currentSlotIdx = -1;
-    if (currentTurno() === turno) {
-      const now = new Date();
-      const nowMins = now.getHours() * 60 + now.getMinutes();
-      const TURNO_START = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
-      const start = TURNO_START[turno];
-      const elap = turno === 'T3'
-        ? (nowMins >= start ? nowMins - start : 1440 - start + nowMins)
-        : nowMins - start;
-      if (elap >= 0) currentSlotIdx = Math.floor(elap / 60);
-    }
+    // El backend entrega la eficiencia acumulada únicamente con horas cerradas.
+    const efDisplay = fmtPct(tot.eficiencia);
+    const efColorClass = kpiColor(tot.eficiencia);
+    const currentSlotIdx = horas.findIndex(h => h.es_hora_en_curso);
 
     const EP = '<span style="font-size:10px;color:#94a3b8;font-style:italic">⏳ en proceso</span>';
     const hrRows = horas.map((h, idx) => {
       const ip = idx === currentSlotIdx;
       const em = v => ip ? '' : `<span style="font-size:.9em">${kpiEmoji(v)}</span>`;
+      const obj = ip ? Number(h.objetivo_transcurrido || 0) : Number(h.ciclos_obj_adj || h.ciclos_obj || 0);
+      const scale = Math.max(Number(h.ciclos || 0), obj, 1);
+      const realW = Math.min(100, Number(h.ciclos || 0) / scale * 100);
+      const objW = Math.min(100, obj / scale * 100);
+      const cycleVisual = `<div style="min-width:105px"><b>${h.ciclos ?? 0}</b> / ${obj.toFixed(1)}<div style="height:7px;background:#334155;border-radius:4px;position:relative;overflow:hidden;margin-top:3px"><div style="width:${objW}%;height:100%;background:#64748b"></div><div style="position:absolute;left:0;top:1px;height:5px;width:${realW}%;background:${Number(h.ciclos||0)>=obj?'#22c55e':'#3b82f6'};border-radius:3px"></div></div>${ip ? `<small style="color:#60a5fa">${Number(h.progreso_pct||0).toFixed(0)}% de la hora</small>` : ''}</div>`;
       return `
       <tr${ip ? ' style="background:rgba(59,130,246,.08)"' : ''}>
         <td class="mono">${escHtml(h.hora)}</td>
-        <td style="text-align:center;font-weight:700">${h.ciclos ?? '—'}</td>
-        <td class="${ip ? '' : kpiColor(h.eficiencia)}">${ip ? EP : fmtPct(h.eficiencia)}${em(h.eficiencia)}</td>
+        <td style="text-align:center">${cycleVisual}</td>
+        <td class="${ip ? kpiColor(h.eficiencia_avance) : kpiColor(h.eficiencia)}">${ip ? 'Avance ' + fmtPct(h.eficiencia_avance) : fmtPct(h.eficiencia)}${em(h.eficiencia)}</td>
         <td class="${ip ? '' : kpiColor(h.rendimiento)}">${ip ? EP : fmtPct(h.rendimiento)}${em(h.rendimiento)}</td>
         <td class="${ip ? '' : kpiColor(h.capacidad)}">${ip ? EP : fmtPct(h.capacidad)}${em(h.capacidad)}</td>
         <td class="${ip ? '' : kpiColor(h.calidad)}">${ip ? EP : fmtPct(h.calidad)}${em(h.calidad)}</td>
@@ -463,7 +429,8 @@
         <div class="pzs-kpi-grid">
           <div class="pzs-kpi-card pzs-kpi-big ${efColorClass}">
             <div class="pzs-kpi-label">Eficiencia</div>
-            <div class="pzs-kpi-value">${efDisplay} <span style="font-size:.85em">${efComp.na ? '' : kpiEmoji(efComp.value !== null ? efComp.value : tot.eficiencia)}</span></div>
+            <div class="pzs-kpi-value">${efDisplay} <span style="font-size:.85em">${kpiEmoji(tot.eficiencia)}</span></div>
+            <div style="font-size:10px;color:#94a3b8">Solo horas cerradas</div>
           </div>
           ${kpiCard('Rendimiento',    tot.rendimiento,    true)}
           ${kpiCard('Capacidad',      tot.capacidad,      true)}
@@ -507,18 +474,11 @@
       const horas  = state.data?.[l]?.horas?.[effectiveTurno]   || [];
       const ciclos = tot.ciclos ?? horas.reduce((s, h) => s + (h.ciclos || 0), 0);
 
-      const efComp = calcEficienciaCompletada(l, effectiveTurno);
-      let efVal, efColor;
-      if (efComp.na) {
-        efVal = null; efColor = '';
-      } else if (efComp.value !== null) {
-        efVal = efComp.value; efColor = kpiColor(efVal);
-      } else {
-        efVal = tot.eficiencia; efColor = kpiColor(efVal);
-      }
+      const efVal = tot.eficiencia;
+      const efColor = kpiColor(efVal);
       const efCard = `<div class="pzs-kpi-card ${efColor}">
-        <div class="pzs-kpi-label">Eficiencia</div>
-        <div class="pzs-kpi-value">${efComp.na ? 'N/A' : fmtPct(efVal)}</div>
+        <div class="pzs-kpi-label">Eficiencia · horas cerradas</div>
+        <div class="pzs-kpi-value">${fmtPct(efVal)}</div>
       </div>`;
 
       const scrapPct  = state.scrapData?.[l] ?? null;

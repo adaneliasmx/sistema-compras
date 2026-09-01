@@ -10,16 +10,18 @@
     { id:'k1', cfgId:1, scope:'turno', linea:'L3'    },
     { id:'k2', cfgId:2, scope:'turno', linea:'L4'    },
     { id:'k3', cfgId:7, scope:'turno', linea:'Baker' },
-    { id:'k4', cfgId:3, scope:'turno', linea:'all'   },  // L3 + L4 + Baker
+    { id:'k4', cfgId:3, scope:'turno', linea:'all'   },  // Todas las líneas
     { id:'k5', cfgId:4, scope:'dia',   linea:'L3'    },
     { id:'k6', cfgId:5, scope:'dia',   linea:'L4'    },
     { id:'k7', cfgId:8, scope:'dia',   linea:'Baker' },
     { id:'k8', cfgId:6, scope:'dia',   linea:'all'   },  // Todas las líneas día
     { id:'k9', cfgId:9, scope:'trend_semana', linea:'all' }, // Tendencia semanal
     { id:'k10', cfgId:10, scope:'reconocimientos', linea:'all' }, // Reconocimiento
+    { id:'k11', cfgId:11, scope:'turno', linea:'L1' },
+    { id:'k12', cfgId:12, scope:'dia', linea:'L1' },
   ];
 
-  const LINEA_LABELS = { L3:'Línea 3', L4:'Línea 4', Baker:'Baker' };
+  const LINEA_LABELS = { L3:'Línea 3', L4:'Línea 4', Baker:'Baker', L1:'Línea 1' };
   const FONT_SIZES   = { sm:'12px', md:'15px', lg:'19px', xl:'24px' };
 
   // ── State ─────────────────────────────────────────────────────────────────
@@ -41,25 +43,32 @@
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const MX = 'es-MX';
+  const MX_TZ = 'America/Mexico_City';
+  function mxNowParts() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: MX_TZ, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hourCycle:'h23'
+    }).formatToParts(new Date());
+    return Object.fromEntries(parts.map(p => [p.type, p.value]));
+  }
   function nowTimeStr() {
-    return new Date().toLocaleTimeString(MX, { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    return new Date().toLocaleTimeString(MX, { timeZone: MX_TZ, hour:'2-digit', minute:'2-digit', second:'2-digit' });
   }
   function nowDateLong() {
-    return new Date().toLocaleDateString(MX, { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+    return new Date().toLocaleDateString(MX, { timeZone: MX_TZ, weekday:'long', year:'numeric', month:'long', day:'numeric' });
   }
   function nowDateShort() {
-    return new Date().toLocaleDateString('en-CA');
+    return new Date().toLocaleDateString('en-CA', { timeZone: MX_TZ });
   }
   function nowMins() {
-    const d = new Date();
-    return d.getHours() * 60 + d.getMinutes();
+    const p = mxNowParts();
+    return Number(p.hour) * 60 + Number(p.minute);
   }
   // Shift date: T3 (00:00–06:29) belongs to previous day
   function shiftDate() {
     const m = nowMins();
     if (m < 6 * 60 + 30) {
       const d = new Date(Date.now() - 86400000);
-      return d.toLocaleDateString('en-CA');
+      return d.toLocaleDateString('en-CA', { timeZone: MX_TZ });
     }
     return nowDateShort();
   }
@@ -72,6 +81,30 @@
   function fmtPct(v) {
     if (v == null || isNaN(Number(v))) return '—';
     return (Number(v) * 100).toFixed(1) + '%';
+  }
+  function aggregateSnapshots(items) {
+    const a = { efN:0,efD:0,calN:0,calD:0,capN:0,capD:0,dispN:0,dispD:0,rendN:0,rendD:0 };
+    for (const s of (items || [])) {
+      const efDen = Number(s.objetivo_eficiencia || 0);
+      if (efDen > 0) { a.efD += efDen; a.efN += Number(s.ciclos_eficiencia ?? s.ciclos_totales ?? 0); }
+      a.calN += Number(s.ciclos_buenos_calidad ?? s.ciclos_buenos ?? 0);
+      a.calD += Number(s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
+      a.capN += Number(s.piezas_total || 0);
+      a.capD += Number(s.piezas_obj_total || 0);
+      const planned = Number(s.minutos_planificados || 0);
+      const available = Math.max(0, planned - Number(s.paros_min_disp || 0));
+      if (planned > 0) {
+        a.dispD += planned; a.dispN += available;
+        a.rendD += available; a.rendN += Math.max(0, available - Number(s.paros_min_rend || 0));
+      }
+    }
+    return {
+      eficiencia: a.efD > 0 ? a.efN / a.efD : null,
+      calidad: a.calD > 0 ? a.calN / a.calD : null,
+      capacidad: a.capD > 0 ? a.capN / a.capD : null,
+      disponibilidad: a.dispD > 0 ? a.dispN / a.dispD : null,
+      rendimiento: a.rendD > 0 ? a.rendN / a.rendD : null
+    };
   }
   function kpiClass(v) {
     if (v == null || isNaN(Number(v))) return 'kpi-na';
@@ -202,12 +235,13 @@
   }
 
   function getWeekRange() {
-    const d = new Date();
+    const p = mxNowParts();
+    const d = new Date(`${p.year}-${p.month}-${p.day}T12:00:00`);
     const day = d.getDay(); // 0=Dom, 1=Lun...
     const diff = d.getDate() - day + (day === 0 ? -6 : 1);
     const mon = new Date(d);
     mon.setDate(diff);
-    const desde = mon.toLocaleDateString('en-CA');
+    const desde = mon.toLocaleDateString('en-CA', { timeZone: MX_TZ });
     const hasta  = nowDateShort();
     return { desde, hasta };
   }
@@ -234,7 +268,7 @@
       });
       if (!res.ok) return;
       const data = await res.json();
-      const byLinea = { L3: {}, L4: {}, Baker: {} };
+      const byLinea = { L3: {}, L4: {}, Baker: {}, L1: {} };
       for (const r of (data.resumen || [])) {
         if (byLinea[r.linea]) byLinea[r.linea][r.fecha] = r.pct_scrap;
       }
@@ -245,15 +279,17 @@
   async function fetchWeeklyKpi() {
     try {
       const { desde, hasta } = getWeekRange();
-      const [dL3, dL4, dBk] = await Promise.all([
+      const [dL3, dL4, dBk, dL1] = await Promise.all([
         apiFetch(`/kpis?linea=L3&desde=${desde}&hasta=${hasta}`),
         apiFetch(`/kpis?linea=L4&desde=${desde}&hasta=${hasta}`),
-        apiFetch(`/kpis?linea=Baker&desde=${desde}&hasta=${hasta}`)
+        apiFetch(`/kpis?linea=Baker&desde=${desde}&hasta=${hasta}`),
+        apiFetch(`/kpis?linea=L1&desde=${desde}&hasta=${hasta}`)
       ]);
       weeklyData = {
         L3:    dL3?.snapshots  || [],
         L4:    dL4?.snapshots  || [],
-        Baker: dBk?.snapshots  || []
+        Baker: dBk?.snapshots  || [],
+        L1:    dL1?.snapshots  || []
       };
     } catch {}
   }
@@ -335,7 +371,7 @@
     const turno    = getTurnoKey(l);
     const ld       = kpiData[l] || {};
     const tot      = ld[turno]?.totals || {};
-    const slots    = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0);
+    const slots    = (ld[turno]?.slots || []).filter(s => s.ciclos_totales > 0 || s.paros_min > 0 || s.es_hora_en_curso);
     const label    = LINEA_LABELS[l] || l;
     const ciclosTotales = (ld[turno]?.slots || []).reduce((s, x) => s + (x.ciclos_totales || 0), 0);
     const scrapPct = scrapData[l] != null ? scrapData[l] : null;
@@ -349,7 +385,7 @@
           <div class="ss-stat-chip" style="color:#f59e0b"><span class="val">${tot.paros_min != null ? Math.round(tot.paros_min) : 0}</span><span class="lbl">Paros (min)</span></div>
         </div>
         <div class="ss-kpi-grid">
-          ${kpiCard('Eficiencia',     tot.eficiencia)}
+          ${kpiCard('Eficiencia · horas cerradas', tot.eficiencia)}
           ${kpiCard('Capacidad',      tot.capacidad)}
           ${kpiCard('Calidad',        tot.calidad)}
           ${kpiCard('Disponibilidad', tot.disponibilidad)}
@@ -366,16 +402,24 @@
               <th>Hora</th><th>Ciclos</th><th>Obj.</th><th>Eficiencia</th><th>Capacidad</th><th>Calidad</th><th>Disponibilidad</th><th>Paros</th>
             </tr></thead>
             <tbody>
-              ${slots.map(s => `<tr>
+              ${slots.map(s => {
+                const inProgress = !!s.es_hora_en_curso;
+                const obj = Number(inProgress ? s.objetivo_transcurrido : (s.ciclos_obj_adj ?? s.ciclos_obj ?? 0));
+                const cycles = Number(s.ciclos_totales || 0);
+                const scale = Math.max(obj, cycles, 1);
+                const actualWidth = Math.min(100, cycles / scale * 100);
+                const targetWidth = Math.min(100, obj / scale * 100);
+                const efficiency = inProgress ? s.eficiencia_avance : s.eficiencia;
+                return `<tr${inProgress ? ' style="background:rgba(59,130,246,.10)"' : ''}>
                 <td>${escHtml(s.hora_inicio)}\u2013${escHtml(s.hora_fin)}</td>
-                <td style="text-align:center;font-weight:700">${s.ciclos_totales}</td>
-                <td style="text-align:center;color:#64748b">${s.ciclos_obj ?? '\u2014'}</td>
-                <td class="kpi-cell ${kpiClass(s.eficiencia)}">${fmtPct(s.eficiencia)} ${kpiImg(s.eficiencia, 16, true)}</td>
+                <td style="text-align:center;font-weight:700">${cycles}<div style="height:7px;background:#334155;border-radius:4px;position:relative;overflow:hidden;margin-top:3px"><div style="width:${targetWidth}%;height:100%;background:#64748b"></div><div style="position:absolute;left:0;top:1px;height:5px;width:${actualWidth}%;background:${cycles>=obj?'#22c55e':'#3b82f6'}"></div></div></td>
+                <td style="text-align:center;color:#64748b">${obj.toFixed(1)}${inProgress ? `<br><small style="color:#60a5fa">${Number(s.progreso_pct||0).toFixed(0)}% hora</small>` : ''}</td>
+                <td class="kpi-cell ${kpiClass(efficiency)}">${inProgress ? 'Avance ' : ''}${fmtPct(efficiency)} ${kpiImg(efficiency, 16, true)}</td>
                 <td class="kpi-cell ${kpiClass(s.capacidad)}">${fmtPct(s.capacidad)} ${kpiImg(s.capacidad, 16, true)}</td>
                 <td class="kpi-cell ${kpiClass(s.calidad)}">${fmtPct(s.calidad)} ${kpiImg(s.calidad, 16, true)}</td>
                 <td class="kpi-cell ${kpiClass(s.disponibilidad)}">${fmtPct(s.disponibilidad)} ${kpiImg(s.disponibilidad, 16, true)}</td>
                 <td style="text-align:center;font-size:11px;color:#dc2626;font-weight:600">${s.paros_min > 0 ? Math.round(s.paros_min) + ' min' : '\u2014'}</td>
-              </tr>`).join('')}
+              </tr>`; }).join('')}
             </tbody>
           </table>
         </div>` : '<div class="ss-no-data">Sin ciclos registrados en este turno</div>'}
@@ -384,7 +428,7 @@
 
   /* ── Diapositiva: turno TODAS las líneas ─────────────────────────────── */
   function renderAllSlide(slide) {
-    const lineas = ['L3', 'L4', 'Baker'];
+    const lineas = ['L3', 'L4', 'Baker', 'L1'];
 
     const panels = lineas.map(l => {
       const turno   = getTurnoKey(l);
@@ -422,7 +466,7 @@
 
     return `
       <div class="ss-slide">
-        <div class="ss-slide-title">Turno Actual · Todas las Líneas (L3, L4 y Baker)</div>
+        <div class="ss-slide-title">Turno Actual · Todas las Líneas (L3, L4, Baker y L1)</div>
         <div class="ss-tres-grid" style="flex:1;margin-top:10px">${panels}</div>
       </div>`;
   }
@@ -523,7 +567,7 @@
 
   /* ── Diapositiva: acumulado del día — TODAS las líneas ───────────────── */
   function renderAllDiaSlide() {
-    const lineas = ['L3', 'L4', 'Baker'];
+    const lineas = ['L3', 'L4', 'Baker', 'L1'];
     const fecha  = new Date().toLocaleDateString(MX, { day:'2-digit', month:'short', year:'numeric' });
 
     // Agregar pareto de todas las líneas
@@ -566,7 +610,7 @@
 
     return `
       <div class="ss-slide">
-        <div class="ss-slide-title">${fecha} · Todas las Líneas (L3, L4 y Baker)</div>
+        <div class="ss-slide-title">${fecha} · Todas las Líneas (L3, L4, Baker y L1)</div>
         <div class="ss-slide-subtitle">${nowDateLong()}</div>
         <div class="ss-tres-grid" style="margin-bottom:10px">${panels}</div>
         <div class="ss-pareto-section">
@@ -644,30 +688,18 @@
   /* ── Diapositiva: tendencia semanal de KPIs por línea ────────────────── */
   function renderTrendSemanaSlide() {
     const { desde, hasta } = getWeekRange();
-    const LINEAS = ['L3', 'L4', 'Baker'];
-    const COLORS = { L3: '#3b82f6', L4: '#10b981', Baker: '#f59e0b' };
-    const TURNO_H = { T1: 8, T2: 7, T3: 9 };
-
+    const LINEAS = ['L3', 'L4', 'Baker', 'L1'];
+    const COLORS = { L3: '#3b82f6', L4: '#10b981', Baker: '#f59e0b', L1: '#8b5cf6' };
     const allDates = new Set();
     const dailyByLinea = {};
     LINEAS.forEach(l => {
       const snaps = weeklyData[l] || [];
-      const byDate = {};
+      const grouped = {};
       snaps.forEach(s => {
         allDates.add(s.fecha);
-        if (!byDate[s.fecha]) byDate[s.fecha] = { efN:0,efD:0,calB:0,calN:0,capN:0,capD:0,paroMin:0,tMin:0,rendN:0,rendD:0 };
-        const d  = byDate[s.fecha];
-        // TL4: usar horas_eficiencia (dinámicas del backend); T1/T2/T3: horas fijas
-        const h  = s.turno === 'TL4' ? (s.horas_eficiencia || 9) : (TURNO_H[s.turno] || 8);
-        const he = s.horas_eficiencia || h; // horas reales del turno (parciales si está en curso)
-        if (s.eficiencia  != null) { d.efN  += s.eficiencia  * he; d.efD  += he; }
-        if (s.capacidad   != null) { d.capN += s.capacidad   * h;  d.capD += h; }
-        if (s.rendimiento != null) { d.rendN += s.rendimiento * h; d.rendD += h; }
-        d.calB     += (s.ciclos_buenos_calidad   ?? s.ciclos_buenos   ?? 0);
-        d.calN     += (s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
-        d.paroMin  += s.paros_min_total || 0;
-        d.tMin     += h * 60;
+        (grouped[s.fecha] ||= []).push(s);
       });
+      const byDate = Object.fromEntries(Object.entries(grouped).map(([fecha, items]) => [fecha, aggregateSnapshots(items)]));
       dailyByLinea[l] = byDate;
     });
 
@@ -694,11 +726,12 @@
       }));
     }
 
-    const efSeries   = getSeries(d => d.efD   > 0 ? +(d.efN  /d.efD  *100).toFixed(1) : null);
-    const calSeries  = getSeries(d => d.calN  > 0 ? +(d.calB /d.calN *100).toFixed(1) : null);
-    const capSeries  = getSeries(d => d.capD  > 0 ? +(d.capN /d.capD *100).toFixed(1) : null);
-    const dispSeries = getSeries(d => d.tMin  > 0 ? +((d.tMin-d.paroMin)/d.tMin*100).toFixed(1) : null);
-    const rendSeries = getSeries(d => d.rendD > 0 ? +(d.rendN/d.rendD *100).toFixed(1) : null);
+    const pct = v => v == null ? null : +(v * 100).toFixed(1);
+    const efSeries   = getSeries(d => pct(d.eficiencia));
+    const calSeries  = getSeries(d => pct(d.calidad));
+    const capSeries  = getSeries(d => pct(d.capacidad));
+    const dispSeries = getSeries(d => pct(d.disponibilidad));
+    const rendSeries = getSeries(d => pct(d.rendimiento));
 
     // Scrap series from weeklyScrap (inverted axis: lower is better)
     const scrapSeries = LINEAS.map(l => ({
@@ -790,7 +823,7 @@
       '\u00a1KPIs en verde, gracias a ustedes!',
       '\u00a1Cada pieza cuenta, y la hicieron perfecta!'
     ];
-    const LINEAS = ['L3', 'L4', 'Baker'];
+    const LINEAS = ['L3', 'L4', 'Baker', 'L1'];
     const TURNO_LABEL = { T1:'Turno 1', T2:'Turno 2', T3:'Turno 3', TL4:'Turno L4' };
     const EF_TGT = 0.90, REND_TGT = 0.90;
 

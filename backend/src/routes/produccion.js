@@ -38,12 +38,41 @@ function getShiftDate(fecha, hora) {
   const [hh, mm] = hora.split(':').map(Number);
   const mins = hh * 60 + mm;
   const isEarlyT3 = mins < 6 * 60 + 30;
-  if (isEarlyT3) {
-    const d = new Date(fecha + 'T00:00:00');
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
-  }
+  if (isEarlyT3) return addDays(fecha, -1);
   return fecha;
+}
+
+// Contexto operativo de un registro completado. La descarga manda sobre el
+// turno en el que se creó la carga; TL4 conserva su fecha calendario porque su
+// ventana configurada no cruza medianoche.
+function getStoredOperationalContext(carga, pdb) {
+  const linea = carga.linea || carga._linea || '';
+  if (carga.fecha_descarga && carga.hora_descarga) {
+    const ctx = resolveTurnoContext(pdb, linea, carga.fecha_descarga, carga.hora_descarga);
+    return {
+      // La descarga es siempre la fuente de verdad. Los campos persistidos se
+      // conservan para auditoría, pero nunca sustituyen fecha/hora de descarga.
+      turno: ctx.turno,
+      fecha_operativa: ctx.fecha_turno
+    };
+  }
+  const fecha = carga.fecha_turno || carga.fecha_carga || carga.fecha || nowDateStr();
+  const hora = carga.hora_carga || carga.hora || '06:30';
+  const turno = carga.turno_descarga || carga.turno || getTurno(hora);
+  const fecha_operativa = carga.fecha_operativa_descarga ||
+    (turno === 'TL4' ? fecha : getShiftDate(fecha, hora));
+  return { turno, fecha_operativa };
+}
+
+function getParoOperationalContext(paro, pdb) {
+  const linea = paro.linea || paro._linea || '';
+  const fecha = paro.fecha_inicio || nowDateStr();
+  const hora = paro.hora_inicio || '06:30';
+  const ctx = resolveTurnoContext(pdb, linea, fecha, hora);
+  return {
+    turno: paro.turno_operativo || ctx.turno,
+    fecha_operativa: paro.fecha_operativa || ctx.fecha_turno
+  };
 }
 
 function isValidDateStr(value) {
@@ -511,13 +540,20 @@ router.get('/cargas/:linea', (req, res) => {
   const { linea } = req.params;
   const { fecha_ini, fecha_fin, turno, estado, operador } = req.query;
   const pdb = dbProd.read();
-  let cargas = (pdb.cargas || []).filter(c => c.linea === linea);
+  let cargas = (pdb.cargas || []).filter(c => c.linea === linea).map(c => {
+    const ctx = getStoredOperationalContext(c, pdb);
+    return {
+      ...c,
+      turno_captura: c.turno,
+      turno: ctx.turno,
+      turno_operativo: ctx.turno,
+      fecha_operativa: ctx.fecha_operativa
+    };
+  });
 
-  // Usar fecha_turno si existe (fecha del turno), sino fecha_carga (retrocompat)
-  const ft = c => c.fecha_turno || c.fecha_carga;
-  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
-  if (turno) cargas = cargas.filter(c => c.turno === turno);
+  if (fecha_ini) cargas = cargas.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => c.fecha_operativa <= fecha_fin);
+  if (turno) cargas = cargas.filter(c => c.turno_operativo === turno);
   if (estado) cargas = cargas.filter(c => c.estado === estado);
   if (operador) cargas = cargas.filter(c => String(c.operador_id) === String(operador));
 
@@ -652,6 +688,9 @@ router.post('/cargas/:linea/:id/descargar', produccionAllowRoles('produccion'), 
 
   carga.fecha_descarga = nowDateStr();
   carga.hora_descarga = nowTimeStr();
+  const descargaCtx = resolveTurnoContext(pdb, linea, carga.fecha_descarga, carga.hora_descarga);
+  carga.turno_descarga = descargaCtx.turno;
+  carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
 
   if (salio_bien) {
     carga.estado = 'procesado';
@@ -690,6 +729,9 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
     original.estado = 'defecto';
     original.fecha_descarga = nowDateStr();
     original.hora_descarga = nowTimeStr();
+    const descargaCtx = resolveTurnoContext(pdb, linea, original.fecha_descarga, original.hora_descarga);
+    original.turno_descarga = descargaCtx.turno;
+    original.fecha_operativa_descarga = descargaCtx.fecha_turno;
     if (defecto_id !== undefined) original.defecto_id = defecto_id;
     if (defecto !== undefined) original.defecto = defecto;
     if (defecto_id && !defecto) {
@@ -813,6 +855,28 @@ router.patch('/cargas/:id/admin-editar', produccionAllowRoles('admin'), (req, re
   for (const f of campos) {
     if (body[f] !== undefined) carga[f] = body[f] !== '' ? body[f] : null;
   }
+  // Una edición de la descarga puede mover la carga a otro turno operativo
+  // (en especial T3 después de medianoche). No conservar el turno capturado
+  // por el formulario como fuente de verdad.
+  const lineaCarga = found.key === 'cargas_baker'
+    ? 'Baker'
+    : found.key === 'cargas_l1'
+      ? 'L1'
+      : carga.linea;
+  if (carga.fecha_descarga && carga.hora_descarga && lineaCarga) {
+    const descargaCtx = resolveTurnoContext(pdb, lineaCarga, carga.fecha_descarga, carga.hora_descarga);
+    carga.turno = descargaCtx.turno;
+    carga.turno_descarga = descargaCtx.turno;
+    carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
+  } else {
+    carga.turno_descarga = null;
+    carga.fecha_operativa_descarga = null;
+    if (carga.fecha_carga && carga.hora_carga && lineaCarga) {
+      const cargaCtx = resolveTurnoContext(pdb, lineaCarga, carga.fecha_carga, carga.hora_carga);
+      carga.turno = cargaCtx.turno;
+      carga.fecha_turno = cargaCtx.fecha_turno;
+    }
+  }
   carga.editado_por = req.prodUser?.nombre || 'Admin';
   carga.editado_at  = new Date().toISOString();
 
@@ -917,9 +981,12 @@ router.get('/paros/reporte', produccionAllowRoles('admin'), (req, res) => {
     paros = (pdb.paros || []).filter(p => p.linea === linea);
   }
 
-  // Incluir paros cross-day: activos durante el rango (no solo los que iniciaron en él)
-  if (desde) paros = paros.filter(p => !p.fecha_fin || p.fecha_fin >= desde);
-  if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
+  paros = paros.map(p => {
+    const ctx = getParoOperationalContext(p, pdb);
+    return { ...p, turno: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (desde) paros = paros.filter(p => p.fecha_operativa >= desde);
+  if (hasta) paros = paros.filter(p => p.fecha_operativa <= hasta);
   if (turno) paros = paros.filter(p => p.turno === turno);
   paros = paros.sort((a, b) =>
     (`${b.fecha_inicio}T${b.hora_inicio}`).localeCompare(`${a.fecha_inicio}T${a.hora_inicio}`)
@@ -938,9 +1005,12 @@ router.get('/resumen/paros', (req, res) => {
     else if (l === 'L1') paros.push(...(pdb.paros_l1 || []).map(p => ({ ...p, linea: 'L1' })));
     else paros.push(...(pdb.paros || []).filter(p => p.linea === l));
   }
-  // Incluir paros cross-day: activos durante el rango
-  if (desde) paros = paros.filter(p => !p.fecha_fin || p.fecha_fin >= desde);
-  if (hasta) paros = paros.filter(p => p.fecha_inicio <= hasta);
+  paros = paros.map(p => {
+    const ctx = getParoOperationalContext(p, pdb);
+    return { ...p, turno: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (desde) paros = paros.filter(p => p.fecha_operativa >= desde);
+  if (hasta) paros = paros.filter(p => p.fecha_operativa <= hasta);
   if (turno) paros = paros.filter(p => p.turno === turno);
   paros = paros.filter(p => Number(p.duracion_min || 0) > 0);
   res.json({ total: paros.length, paros });
@@ -964,34 +1034,30 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
     ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' })),
   ];
 
-  const opCargas = allCargas.filter(c => {
+  const opCargas = allCargas.map(c => {
+    const ctx = getStoredOperationalContext(c, pdb);
+    return { ...c, _fecha_operativa: ctx.fecha_operativa, _turno_descarga: ctx.turno };
+  }).filter(c => {
     if (!c.fecha_descarga) return false;
     if (c.estado === 'activo' || c.estado === 'cancelado') return false;
     if (String(c.operador_id) !== String(operador_id)) return false;
-    const f = c.fecha_descarga;
+    const f = c._fecha_operativa;
     if (f < fecha_ini) return false;
     if (fecha_fin && f > fecha_fin) return false;
     return true;
   });
 
-  // Agrupar por (fecha_descarga, linea, turno_descarga) — usar turno almacenado para L4 TL4
+  // Agrupar por fecha operativa, línea y turno de descarga.
   const groups = {};
   for (const c of opCargas) {
-    const turnoDesc = resolveStoredTurno(c, pdb);
-    const key = `${c.fecha_descarga}|${c._linea}|${turnoDesc}`;
+    const turnoDesc = c._turno_descarga;
+    const key = `${c._fecha_operativa}|${c._linea}|${turnoDesc}`;
     if (!groups[key]) {
-      groups[key] = { fecha: c.fecha_descarga, linea: c._linea, turno: turnoDesc, ciclos: 0 };
+      groups[key] = { fecha: c._fecha_operativa, linea: c._linea, turno: turnoDesc, ciclos: 0, cargas: [] };
     }
     groups[key].ciclos++;
+    groups[key].cargas.push(c);
   }
-
-  // Todos los motivos para filtrar afecta_rendimiento
-  const allMotivos = [
-    ...(pdb.motivos_paro_l3    || []),
-    ...(pdb.motivos_paro_l4    || []),
-    ...(pdb.motivos_paro_baker || []),
-    ...(pdb.motivos_paro_l1    || []),
-  ];
 
   // Todos los paros
   const allParos = [
@@ -1003,27 +1069,47 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
   const result = [];
   for (const g of Object.values(groups)) {
     const { fecha, linea, turno } = g;
-    const lineaKey = linea.toLowerCase();
-    const ciclosObjHora = cfg[`ciclos_objetivo_${lineaKey}`] || 2;
-    const horas = horasDelTurno(turno, pdb, fecha);
-    let objetivo = ciclosObjHora * horas;
+    const kpiTurno = calculateKpiSnapshot(pdb, cfg, linea, turno, fecha);
+    let objetivo = kpiTurno?.objetivo_eficiencia || 0;
     let ciclosEficiencia = g.ciclos;
     if (linea === 'L4' && turno === 'TL4') {
       const tl4 = getTL4EfficiencySummary(pdb, cfg, fecha, operador_id);
       objetivo = tl4.objetivo;
       ciclosEficiencia = tl4.ciclos_eficiencia;
+    } else if (kpiTurno?.slots) {
+      // Igual que el KPI en vivo: las descargas de la hora abierta se muestran,
+      // pero no entran todavía en la eficiencia semanal del operador.
+      const completedSlots = kpiTurno.slots.filter(slot => slot.estado_slot === 'completado');
+      ciclosEficiencia = g.cargas.filter(c => {
+        const eventDay = Math.round((
+          new Date(`${c.fecha_descarga}T00:00:00Z`) - new Date(`${fecha}T00:00:00Z`)
+        ) / 86400000);
+        const eventMinute = eventDay * 1440 + toMins(c.hora_descarga);
+        return completedSlots.some(slot => {
+          let start = toMins(slot.hora_inicio);
+          if (turno === 'T3' && start < TURNOS_DEF.T3.start) start += 1440;
+          const duration = Number(slot.slotDuration || 60);
+          return eventMinute >= start && eventMinute < start + duration;
+        });
+      }).length;
     }
     const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : null;
 
     // Paros que afectan rendimiento en este (linea, turno, fecha)
+    const motivosLinea = pdb[`motivos_paro_${linea.toLowerCase()}`] || [];
     const parosFiltrados = allParos.filter(p => {
-      if (p.linea !== linea || p.turno !== turno || p.fecha_inicio !== fecha) return false;
-      const motivo = allMotivos.find(m => String(m.id) === String(p.motivo_id));
+      const ctx = getParoOperationalContext(p, pdb);
+      if (p.linea !== linea || ctx.turno !== turno || ctx.fecha_operativa !== fecha) return false;
+      const motivo = motivosLinea.find(m => String(m.id) === String(p.motivo_id));
       return motivo?.afecta_rendimiento !== false;
     });
-    const paros_min_rend = parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
+    const paros_min_rend = kpiTurno?.paros_min_rend ??
+      parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
 
-    result.push({ fecha, linea, turno, ciclos: g.ciclos, objetivo, eficiencia, paros_min_rend });
+    result.push({
+      fecha, linea, turno, ciclos: g.ciclos, ciclos_eficiencia: ciclosEficiencia,
+      objetivo, eficiencia, paros_min_rend
+    });
   }
 
   result.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
@@ -1055,46 +1141,44 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
     ? (pdb[`cargas_${linea.toLowerCase()}`] || [])
     : (pdb.cargas || []).filter(c => c.linea === linea);
 
-  const cargas = cargasSrc.filter(c => {
+  const cargas = cargasSrc.map(c => {
+    const ctx = getStoredOperationalContext({ ...c, _linea: linea }, pdb);
+    return { ...c, _fecha_operativa: ctx.fecha_operativa, _turno_descarga: ctx.turno };
+  }).filter(c => {
     if (!c.fecha_descarga) return false;
     if (c.estado === 'activo' || c.estado === 'cancelado') return false;
-    if (c.fecha_descarga < fecha_ini) return false;
-    if (fecha_fin && c.fecha_descarga > fecha_fin) return false;
+    if (c._fecha_operativa < fecha_ini) return false;
+    if (fecha_fin && c._fecha_operativa > fecha_fin) return false;
     return true;
   });
 
-  // Agrupar por (fecha_descarga, turno_descarga) — usar turno almacenado para L4 TL4
+  // Agrupar por fecha operativa y turno de descarga.
   const groups = {};
   for (const c of cargas) {
-    const turnoDesc = resolveStoredTurno({ ...c, _linea: linea }, pdb);
-    const key = `${c.fecha_descarga}|${turnoDesc}`;
-    if (!groups[key]) groups[key] = { fecha: c.fecha_descarga, turno: turnoDesc, ops: {} };
+    const turnoDesc = c._turno_descarga;
+    const key = `${c._fecha_operativa}|${turnoDesc}`;
+    if (!groups[key]) groups[key] = { fecha: c._fecha_operativa, turno: turnoDesc, ops: {} };
     const opNom = c.operador || '—';
     groups[key].ops[opNom] = (groups[key].ops[opNom] || 0) + 1;
   }
-
-  const lineaKey = linea.toLowerCase();
-  const ciclosObjHora = cfg[`ciclos_objetivo_${lineaKey}`] || 2;
 
   const result = Object.values(groups).map(g => {
     const { fecha, turno } = g;
     const ciclos  = Object.values(g.ops).reduce((s, n) => s + n, 0);
     const operador = Object.entries(g.ops).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
-    let objetivo = ciclosObjHora * horasDelTurno(turno, pdb, fecha);
-    let ciclosEficiencia = ciclos;
-    if (linea === 'L4' && turno === 'TL4') {
-      const tl4 = getTL4EfficiencySummary(pdb, cfg, fecha);
-      objetivo = tl4.objetivo;
-      ciclosEficiencia = tl4.ciclos_eficiencia;
-    }
-    const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : null;
+    const kpiTurno = calculateKpiSnapshot(pdb, cfg, linea, turno, fecha);
+    const objetivo = kpiTurno?.objetivo_eficiencia || 0;
+    const ciclosEficiencia = kpiTurno?.ciclos_eficiencia ?? ciclos;
+    const eficiencia = kpiTurno?.eficiencia ?? (objetivo > 0 ? ciclosEficiencia / objetivo : null);
 
     const parosFiltrados = parosSrc.filter(p => {
-      if (p.turno !== turno || p.fecha_inicio !== fecha) return false;
+      const ctx = getParoOperationalContext({ ...p, _linea: linea }, pdb);
+      if (ctx.turno !== turno || ctx.fecha_operativa !== fecha) return false;
       const mot = motivos.find(m => String(m.id) === String(p.motivo_id));
       return mot?.afecta_rendimiento !== false;
     });
-    const paros_min_rend = parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
+    const paros_min_rend = kpiTurno?.paros_min_rend ??
+      parosFiltrados.reduce((s, p) => s + Math.max(0, (p.duracion_min || 0) - (p.deduccion_min || 0)), 0);
 
     return { fecha, turno, operador, ciclos, objetivo, eficiencia, paros_min_rend };
   });
@@ -1109,8 +1193,7 @@ router.get('/resumen/defectos', (req, res) => {
   const pdb = dbProd.read();
   const lineasReq = linea ? linea.split(',').map(s => s.trim()) : ['L3', 'L4', 'Baker', 'L1'];
   const result = [];
-  // Usar fecha de DESCARGA (mismo criterio que el KPI) para coherencia con los snapshots de turno
-  const ftD   = c => c.fecha_descarga || c.fecha_turno || c.fecha_carga;
+  const ftD   = (c, l) => getStoredOperationalContext({ ...c, _linea: l }, pdb).fecha_operativa;
   const turnoD = (c, l) => resolveStoredTurno({ ...c, _linea: l }, pdb);
   for (const l of lineasReq) {
     if (l === 'Baker' || l === 'L1') {
@@ -1118,21 +1201,21 @@ router.get('/resumen/defectos', (req, res) => {
       const herrKey = l === 'Baker' ? 'herramentales_baker' : 'herramentales_l1';
       const excluirIds = new Set((pdb[herrKey] || []).filter(h => h.excluir_calidad).map(h => String(h.id)));
       let cargas = (pdb[src] || []).filter(c => !!c.fecha_descarga);
-      if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
-      if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
+      if (desde) cargas = cargas.filter(c => ftD(c, l) >= desde);
+      if (hasta) cargas = cargas.filter(c => ftD(c, l) <= hasta);
       if (turno) cargas = cargas.filter(c => turnoD(c, l) === turno);
       for (const carga of cargas) {
         const excluido = excluirIds.has(String(carga.herramental_id));
         if (carga.herramental_tipo === 'barril') {
           const cavsMalas = (carga.cavidades || []).filter(cv => cv.estado === 'defecto');
           for (const cav of cavsMalas) {
-            result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga, l),
+            result.push({ linea: l, fecha: ftD(carga, l), turno: turnoD(carga, l),
               herramental: carga.herramental_no || String(carga.herramental_id || ''),
               operador: carga.operador || '', defecto: cav.defecto || 'Sin motivo',
               detalle: `Cavidad ${cav.num}`, folio: carga.folio, afecta_calidad: !excluido });
           }
         } else if (carga.estado === 'defecto' || carga.defecto_id) {
-          result.push({ linea: l, fecha: ftD(carga), turno: turnoD(carga, l),
+          result.push({ linea: l, fecha: ftD(carga, l), turno: turnoD(carga, l),
             herramental: carga.herramental_no || String(carga.herramental_id || ''),
             operador: carga.operador || '', defecto: carga.defecto || 'Sin motivo',
             detalle: carga.es_vacia ? `Ciclo vacío ${carga.folio}` : `Ciclo ${carga.folio}`,
@@ -1143,12 +1226,12 @@ router.get('/resumen/defectos', (req, res) => {
       const herrKey = `herramentales_${l.toLowerCase()}`;
       const excluirIds = new Set((pdb[herrKey] || []).filter(h => h.excluir_calidad).map(h => String(h.id)));
       let cargas = (pdb.cargas || []).filter(c => c.linea === l && !!c.fecha_descarga);
-      if (desde) cargas = cargas.filter(c => ftD(c) >= desde);
-      if (hasta) cargas = cargas.filter(c => ftD(c) <= hasta);
+      if (desde) cargas = cargas.filter(c => ftD(c, l) >= desde);
+      if (hasta) cargas = cargas.filter(c => ftD(c, l) <= hasta);
       if (turno) cargas = cargas.filter(c => turnoD(c, l) === turno);
       for (const c of cargas.filter(x => x.estado === 'defecto' || x.defecto_id)) {
         const excluido = excluirIds.has(String(c.herramental_id));
-        result.push({ linea: l, fecha: ftD(c), turno: turnoD(c, l),
+        result.push({ linea: l, fecha: ftD(c, l), turno: turnoD(c, l),
           herramental: c.herramental_no || '', operador: c.operador || '',
           defecto: c.defecto || 'Sin motivo', detalle: `Ciclo ${c.folio}`, folio: c.folio,
           afecta_calidad: !excluido && !c.es_vacia });
@@ -1272,7 +1355,11 @@ router.get('/paros/:linea', (req, res) => {
   const { fecha, turno } = req.query;
   const pdb = dbProd.read();
   let paros = (pdb.paros || []).filter(p => p.linea === linea);
-  if (fecha) paros = paros.filter(p => p.fecha_inicio === fecha);
+  paros = paros.map(p => {
+    const ctx = getParoOperationalContext(p, pdb);
+    return { ...p, turno: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (fecha) paros = paros.filter(p => p.fecha_operativa === fecha);
   if (turno) paros = paros.filter(p => p.turno === turno);
   res.json(paros);
 });
@@ -1821,6 +1908,20 @@ router.patch('/paros/:id/admin-editar', produccionAllowRoles('admin'), (req, res
   for (const f of campos) {
     if (body[f] !== undefined) paro[f] = body[f] || null;
   }
+  // La fecha/turno operativos se derivan siempre de la hora de inicio. Así un
+  // paro de T3 registrado después de medianoche sigue perteneciendo al día en
+  // que comenzó el turno.
+  const lineaParo = collection === 'paros_baker'
+    ? 'Baker'
+    : collection === 'paros_l1'
+      ? 'L1'
+      : paro.linea;
+  if (paro.fecha_inicio && paro.hora_inicio && lineaParo) {
+    const paroCtx = resolveTurnoContext(pdb, lineaParo, paro.fecha_inicio, paro.hora_inicio);
+    paro.turno = paroCtx.turno;
+    paro.turno_operativo = paroCtx.turno;
+    paro.fecha_operativa = paroCtx.fecha_turno;
+  }
   // Recalcular duración si hay fecha_fin
   if (paro.fecha_fin && paro.hora_fin && paro.fecha_inicio && paro.hora_inicio) {
     paro.duracion_min = Math.round(
@@ -1933,7 +2034,11 @@ function slotOverlap(ss, se, paroStart, paroEnd, paroFechaInicio, paroFechaFin, 
   const pe = paroFechaFin
     ? abs(paroFechaFin, paroEnd)
     : abs(nowDateStr(), paroEnd);   // paroEnd ya trae nowTimeStr() desde el caller
-  return Math.max(0, Math.min(se, pe) - Math.max(ss, ps));
+  // Los callers normalizan las horas a 0..1439. Un slot 23:30–00:30
+  // llega como 1410–30 y su final pertenece al día siguiente.
+  const slotStart = ss;
+  const slotEnd = se <= ss ? se + 1440 : se;
+  return Math.max(0, Math.min(slotEnd, pe) - Math.max(slotStart, ps));
 }
 
 function addDays(dateStr, n) {
@@ -2099,7 +2204,7 @@ function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
       paros_min += overlapEf;
       if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlapEf;
-      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
+      if (afecRend) paros_min_rend += overlapEf;
     }
     // Cap: paros no pueden exceder la duración del slot (60 min) — evita inflación por registros solapados
     paros_min      = Math.min(paros_min,      60);
@@ -2179,6 +2284,115 @@ function elapsedHoursForTL4(targetDate, horaEntrada, horaSalida) {
   if (nowMins >= salMins) return totalHours;     // turno ya termino
   if (nowMins < entMins) return 0;               // aun no inicia
   return (nowMins - entMins) / 60;               // en curso
+}
+
+function getShiftProgress(pdb, linea, turno, targetDate, slots) {
+  const today = nowDateStr();
+  const nowMins = toMins(nowTimeStr());
+  let status = 'completado';
+  let elapsedMins = slots.reduce((s, slot) => s + Number(slot.slotDuration || 60), 0);
+
+  if (turno === 'TL4') {
+    const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
+    const diaConf = cfg.dias[getDiaSemana(targetDate)];
+    if (!diaConf || !diaConf.activo) return { status: 'inactivo', elapsedMins: 0 };
+    if (targetDate > today) {
+      status = 'futuro'; elapsedMins = 0;
+    } else if (targetDate === today) {
+      const start = toMins(diaConf.hora_entrada);
+      const end = toMins(diaConf.hora_salida);
+      if (nowMins < start) { status = 'futuro'; elapsedMins = 0; }
+      else if (nowMins < end) { status = 'en_curso'; elapsedMins = nowMins - start; }
+    }
+  } else {
+    const currentOperationalDate = getShiftDate(today, nowTimeStr());
+    if (targetDate > currentOperationalDate) {
+      status = 'futuro'; elapsedMins = 0;
+    } else if (targetDate === today && targetDate !== currentOperationalDate) {
+      status = 'futuro'; elapsedMins = 0;
+    } else if (targetDate === currentOperationalDate) {
+      const order = { T1: 0, T2: 1, T3: 2 };
+      const currentTurno = getTurno(nowTimeStr());
+      if (order[turno] > order[currentTurno]) { status = 'futuro'; elapsedMins = 0; }
+      else if (turno === currentTurno) {
+        status = 'en_curso';
+        const start = TURNOS_DEF[turno].start;
+        elapsedMins = turno === 'T3' && nowMins < start
+          ? 1440 - start + nowMins
+          : Math.max(0, nowMins - start);
+      }
+    }
+  }
+
+  return { status, elapsedMins: Math.max(0, elapsedMins) };
+}
+
+// La hora abierta se reporta como avance, pero no entra al acumulado de
+// eficiencia hasta quedar completada.
+function annotateLiveSlots(pdb, linea, turno, targetDate, slots) {
+  const progress = getShiftProgress(pdb, linea, turno, targetDate, slots);
+  let consumed = 0;
+  let current = null;
+  const completed = [];
+
+  for (const slot of slots) {
+    const duration = Number(slot.slotDuration || 60);
+    const slotElapsed = Math.max(0, Math.min(duration, progress.elapsedMins - consumed));
+    let estado = 'futuro';
+    if (progress.status === 'completado' || slotElapsed >= duration) estado = 'completado';
+    else if (progress.status === 'en_curso' && progress.elapsedMins >= consumed && progress.elapsedMins < consumed + duration) estado = 'en_curso';
+
+    const progreso = duration > 0 ? slotElapsed / duration : 0;
+    const objetivoCompleto = Number(slot.ciclos_obj_adj ?? slot.ciclos_obj ?? 0);
+    const objetivoBase = Number(slot.ciclos_obj ?? objetivoCompleto);
+    // Para la hora abierta se descuenta del tiempo ya transcurrido únicamente
+    // el paro programado ocurrido hasta ahora. Multiplicar otra vez el objetivo
+    // ya ajustado por el progreso descontaría el mismo paro dos veces.
+    const objetivoTranscurrido = estado === 'en_curso'
+      ? objetivoBase * (Math.max(0, slotElapsed - Number(slot.paros_min_prog || 0)) / duration)
+      : objetivoCompleto * progreso;
+    const ciclosEficiencia = Number(slot.ciclos_eficiencia ?? slot.ciclos_totales ?? 0);
+    const eficienciaAvance = objetivoTranscurrido > 0
+      ? ciclosEficiencia / objetivoTranscurrido
+      : (ciclosEficiencia === 0 && estado === 'en_curso' ? null : slot.eficiencia);
+
+    slot.estado_slot = estado;
+    slot.es_hora_en_curso = estado === 'en_curso';
+    slot.progreso_pct = Math.round(progreso * 1000) / 10;
+    slot.objetivo_transcurrido = Math.round(objetivoTranscurrido * 1000) / 1000;
+    slot.eficiencia_avance = eficienciaAvance == null ? null : Math.round(eficienciaAvance * 1000) / 1000;
+
+    if (estado === 'completado') completed.push(slot);
+    if (estado === 'en_curso') {
+      current = {
+        slot: slot.slot,
+        hora_inicio: slot.hora_inicio,
+        hora_fin: slot.hora_fin,
+        progreso_pct: slot.progreso_pct,
+        ciclos: Number(slot.ciclos_totales || 0),
+        ciclos_eficiencia: ciclosEficiencia,
+        objetivo_hora: objetivoCompleto,
+        objetivo_transcurrido: slot.objetivo_transcurrido,
+        eficiencia_avance: slot.eficiencia_avance
+      };
+    }
+    consumed += duration;
+  }
+
+  const ciclos = completed.reduce((s, slot) => s + Number(slot.ciclos_eficiencia ?? slot.ciclos_totales ?? 0), 0);
+  const objetivo = completed.reduce((s, slot) => s + Number(slot.ciclos_obj_adj ?? slot.ciclos_obj ?? 0), 0);
+  let eficiencia = null;
+  if (objetivo > 0) eficiencia = ciclos / objetivo;
+  else if (progress.status === 'completado' && ciclos === 0) eficiencia = 1;
+
+  return {
+    status: progress.status,
+    slots_completados: completed.length,
+    ciclos_eficiencia: ciclos,
+    objetivo_eficiencia: objetivo,
+    eficiencia,
+    hora_en_curso: current
+  };
 }
 
 // Construir slots hora x hora para L4 con TL4 (turno configurable)
@@ -2274,7 +2488,7 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
       paros_min += overlapEf;
       if (afecEf)   paros_min_prog += overlapEf;
       if (afecDisp) paros_min_disp += overlapEf;
-      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
+      if (afecRend) paros_min_rend += overlapEf;
     }
     paros_min      = Math.min(paros_min,      slotDuration);
     paros_min_prog = Math.min(paros_min_prog, slotDuration);
@@ -2336,7 +2550,6 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
     s.paros_min_prog = Math.round(s.paros_min_prog * 10) / 10;
     s.paros_min_disp = Math.round(s.paros_min_disp * 10) / 10;
     s.paros_min_rend = Math.round(s.paros_min_rend * 10) / 10;
-    delete s.slotDuration;
     delete s.ciclos_obj_base;
   }
   return slots;
@@ -2368,12 +2581,16 @@ function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
       Number(a.id || 0) - Number(b.id || 0)
     );
 
-  const despuesArranque = completadas.slice(L4_ARRANQUE_CICLOS);
+  const live = annotateLiveSlots(pdb, 'L4', 'TL4', targetDate, slots);
+  const completedWindows = slots.filter(s => s.estado_slot === 'completado');
+  const despuesArranque = completadas.slice(L4_ARRANQUE_CICLOS).filter(c => {
+    const mins = toMins(c.hora_descarga);
+    return completedWindows.some(s => mins >= toMins(s.hora_inicio) && mins < toMins(s.hora_fin));
+  });
   const ciclosEficiencia = operadorId == null
     ? despuesArranque.length
     : despuesArranque.filter(c => String(c.operador_id) === String(operadorId)).length;
-  const horasTranscurridas = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
-  const objetivo = computeObjElapsedAdj(slots, horasTranscurridas);
+  const objetivo = live.objetivo_eficiencia;
 
   return {
     ciclos_eficiencia: ciclosEficiencia,
@@ -2395,7 +2612,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       ? (config.ciclos_objetivo_l3 ?? 2)
       : (config.ciclos_objetivo_l4 ?? 2);
 
-    let dayC = 0, dayNV = 0, dayB = 0, dayNVQ = 0, dayBQ = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosDisp = 0, dayParosRend = 0, daySlots = 0, dayElapHours = 0, dayObjElap = 0;
+    let dayC = 0, dayCEff = 0, dayNV = 0, dayB = 0, dayNVQ = 0, dayBQ = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosDisp = 0, dayParosRend = 0, daySlots = 0, dayCompletedSlots = 0, dayElapHours = 0, dayObjElap = 0, dayCurrentHour = null;
 
     for (const t of turnos) {
       // Filtrar turnos desactivados en el calendario
@@ -2403,6 +2620,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
 
       const tDef  = TURNOS_DEF[t];
       const slots = buildSlotsForLinTur(pdb, config, l, t, targetDate);
+      const liveEfficiency = annotateLiveSlots(pdb, l, t, targetDate, slots);
 
       const tC        = slots.reduce((s, x) => s + x.ciclos_totales,   0);
       const tNV       = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
@@ -2417,7 +2635,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate); // horas reales transcurridas
       // Usa objetivo ajustado por arranque de lunes Y por paros no-eficiencia
-      const tObjElap   = computeObjElapsedAdj(slots, tElap);
+      const tObjElap   = liveEfficiency.objetivo_eficiencia;
       // Rendimiento: base = tiempo disponible (excluye paros de disponibilidad)
       const tDispMins  = Math.max(0, turnoMins - tParosDisp);
 
@@ -2430,8 +2648,14 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
           piezas_total:     tPz,
           piezas_obj_total: tPzObj,
           paros_min:        Math.round(tParos * 10) / 10,
-          // Eficiencia dinámica: usa horas transcurridas y objetivo ajustado
-          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : null)),
+          paros_min_disp:   Math.round(tParosDisp * 10) / 10,
+          paros_min_rend:   Math.round(tParosRend * 10) / 10,
+          ciclos_eficiencia: liveEfficiency.ciclos_eficiencia,
+          objetivo_eficiencia: r3(tObjElap),
+          slots_completados: liveEfficiency.slots_completados,
+          estado_turno: liveEfficiency.status,
+          hora_en_curso: liveEfficiency.hora_en_curso,
+          eficiencia:    r3(liveEfficiency.eficiencia),
           calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
           capacidad:     tPzObj > 0 ? r3(tPz / tPzObj) : null,
           disponibilidad: r3((turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins),
@@ -2442,6 +2666,7 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       };
 
       dayC          += tC;
+      dayCEff       += liveEfficiency.ciclos_eficiencia;
       dayNV         += tNV;
       dayB          += tB;
       dayNVQ        += tNVQ;
@@ -2452,8 +2677,10 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       dayParosDisp  += tParosDisp;
       dayParosRend  += tParosRend;
       daySlots      += tDef.hours;   // horas totales planeadas (para disponibilidad)
+      dayCompletedSlots += liveEfficiency.slots_completados;
       dayElapHours  += tElap;        // horas reales transcurridas
       dayObjElap    += tObjElap;     // objetivo acumulado ajustado (incluye descuento arranque lunes)
+      if (liveEfficiency.hora_en_curso) dayCurrentHour = { turno: t, ...liveEfficiency.hora_en_curso };
     }
 
     const totalMins = daySlots * 60;
@@ -2464,7 +2691,12 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
       piezas_total:     dayPz,
       piezas_obj_total: dayPzObj,
       paros_min:        Math.round(dayParos * 10) / 10,
-      eficiencia:    r3(dayObjElap > 0 ? dayC / dayObjElap : (dayC === 0 ? 1 : null)),
+      ciclos_eficiencia: dayCEff,
+      objetivo_eficiencia: r3(dayObjElap),
+      hora_en_curso: dayCurrentHour,
+      eficiencia:    r3(dayObjElap > 0
+        ? dayCEff / dayObjElap
+        : (dayCompletedSlots > 0 && dayCEff === 0 ? 1 : null)),
       calidad:       dayNVQ > 0 ? r3(dayBQ / dayNVQ) : null,
       capacidad:     dayPzObj > 0 ? r3(dayPz / dayPzObj) : null,
       disponibilidad: totalMins > 0
@@ -2534,7 +2766,7 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
 
 function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
   const agg = {};
-  const ftD  = c => c.fecha_descarga || c.fecha_carga;
+  const ftD  = c => getStoredOperationalContext({ ...c, _linea: lineaLabel }, pdb).fecha_operativa;
   const tnoD = (c, linea) => resolveStoredTurno({ ...c, _linea: linea }, pdb);
   if (lineaLabel === 'Baker' || lineaLabel === 'L1') {
     const src = lineaLabel === 'Baker' ? 'cargas_baker' : 'cargas_l1';
@@ -2596,13 +2828,14 @@ router.get('/pizarron', (req, res) => {
   function addBakerLike(lineaLabel, buildFn, ciclosObjKey) {
     const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
     const turnData = {};
-    let dC = 0, dNV = 0, dB = 0, dNVQ = 0, dBQ = 0, dPz = 0, dPzO = 0, dParos = 0, dParosDisp = 0, dParosRend = 0, dSlots = 0, dElapHours = 0, dObjElap = 0;
+    let dC = 0, dCEff = 0, dNV = 0, dB = 0, dNVQ = 0, dBQ = 0, dPz = 0, dPzO = 0, dParos = 0, dParosDisp = 0, dParosRend = 0, dSlots = 0, dCompletedSlots = 0, dElapHours = 0, dObjElap = 0, dCurrentHour = null;
     for (const t of targetTurnos) {
       // Filtrar turnos desactivados en el calendario
       if (!isTurnoActivo(pdb, lineaLabel, t, targetDate)) continue;
 
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
+      const liveEfficiency = annotateLiveSlots(pdb, lineaLabel, t, targetDate, slots);
       const tC    = slots.reduce((s, x) => s + x.ciclos_totales,   0);
       const tNV   = slots.reduce((s, x) => s + x.ciclos_no_vacios, 0);
       const tB    = slots.reduce((s, x) => s + x.ciclos_buenos,    0);
@@ -2615,7 +2848,7 @@ router.get('/pizarron', (req, res) => {
       const tParosRend = slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
       const turnoMins  = tDef.hours * 60;
       const tElap      = elapsedHoursForTurno(t, targetDate);
-      const tObjElap   = computeObjElapsedAdj(slots, tElap);
+      const tObjElap   = liveEfficiency.objetivo_eficiencia;
       const tDispMins  = Math.max(0, turnoMins - tParosDisp);
       turnData[t] = {
         slots,
@@ -2623,7 +2856,17 @@ router.get('/pizarron', (req, res) => {
           ciclos_totales:   tC,
           ciclos_no_vacios: tNV,
           ciclos_buenos:    tB,
-          eficiencia:    r3(tObjElap > 0 ? tC / tObjElap : (tC === 0 ? 1 : null)),
+          piezas_total: tPz,
+          piezas_obj_total: tPzO,
+          paros_min: Math.round(tParos * 10) / 10,
+          paros_min_disp: Math.round(tParosDisp * 10) / 10,
+          paros_min_rend: Math.round(tParosRend * 10) / 10,
+          ciclos_eficiencia: liveEfficiency.ciclos_eficiencia,
+          objetivo_eficiencia: r3(tObjElap),
+          slots_completados: liveEfficiency.slots_completados,
+          estado_turno: liveEfficiency.status,
+          hora_en_curso: liveEfficiency.hora_en_curso,
+          eficiencia:    r3(liveEfficiency.eficiencia),
           calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: r3(Math.max(0, turnoMins - Math.min(tParosDisp, turnoMins)) / turnoMins),
@@ -2632,20 +2875,33 @@ router.get('/pizarron', (req, res) => {
             : 1
         }
       };
-      dC += tC; dNV += tNV; dB += tB; dNVQ += tNVQ; dBQ += tBQ; dPz += tPz; dPzO += tPzO;
+      dC += tC; dCEff += liveEfficiency.ciclos_eficiencia; dNV += tNV; dB += tB; dNVQ += tNVQ; dBQ += tBQ; dPz += tPz; dPzO += tPzO;
       dParos     += tParos;
       dParosDisp += tParosDisp;
       dParosRend += tParosRend;
       dSlots     += tDef.hours;
+      dCompletedSlots += liveEfficiency.slots_completados;
       dElapHours += tElap;
       dObjElap   += tObjElap;
+      if (liveEfficiency.hora_en_curso) dCurrentHour = { turno: t, ...liveEfficiency.hora_en_curso };
     }
     const dTotalMins = dSlots * 60;
     const dDispMins  = Math.max(0, dTotalMins - dParosDisp);
     data[lineaLabel] = {
       ...turnData,
       totales_dia: {
-        eficiencia:    r3(dObjElap > 0 ? dC / dObjElap : (dC === 0 ? 1 : null)),
+        ciclos_totales: dC,
+        ciclos_no_vacios: dNV,
+        ciclos_buenos: dB,
+        piezas_total: dPz,
+        piezas_obj_total: dPzO,
+        paros_min: Math.round(dParos * 10) / 10,
+        ciclos_eficiencia: dCEff,
+        objetivo_eficiencia: r3(dObjElap),
+        hora_en_curso: dCurrentHour,
+        eficiencia:    r3(dObjElap > 0
+          ? dCEff / dObjElap
+          : (dCompletedSlots > 0 && dCEff === 0 ? 1 : null)),
         calidad:       dNVQ > 0 ? r3(dBQ / dNVQ) : null,
         capacidad:     dPzO > 0 ? r3(dPz / dPzO) : null,
         disponibilidad: dTotalMins > 0
@@ -2680,6 +2936,7 @@ router.get('/pizarron', (req, res) => {
       const entMins = toMins(diaConf.hora_entrada);
       if (nowMins < entMins) filteredSlots = [];
     }
+    const liveEfficiency = annotateLiveSlots(pdb, 'L4', 'TL4', targetDate, filteredSlots);
 
     const tC         = filteredSlots.reduce((s, x) => s + x.ciclos_totales, 0);
     const tCEff      = filteredSlots.reduce((s, x) => s + (x.ciclos_eficiencia ?? x.ciclos_totales), 0);
@@ -2689,10 +2946,11 @@ router.get('/pizarron', (req, res) => {
     const tBQ        = filteredSlots.reduce((s, x) => s + (x.ciclos_buenos_calidad ?? x.ciclos_buenos), 0);
     const tPz        = filteredSlots.reduce((s, x) => s + x.piezas_total, 0);
     const tPzO       = filteredSlots.reduce((s, x) => s + x.piezas_obj_total, 0);
+    const tParos     = filteredSlots.reduce((s, x) => s + (x.paros_min ?? 0), 0);
     const tParosDisp = filteredSlots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
     const tParosRend = filteredSlots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
     const tElap      = elapsedHoursForTL4(targetDate, diaConf.hora_entrada, diaConf.hora_salida);
-    const tObjElap   = computeObjElapsedAdj(filteredSlots, tElap);
+    const tObjElap   = liveEfficiency.objetivo_eficiencia;
     const totalMins  = (toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada));
     const tDispMins  = Math.max(0, totalMins - tParosDisp);
 
@@ -2704,7 +2962,15 @@ router.get('/pizarron', (req, res) => {
         totals: {
           ciclos_totales: tC, ciclos_no_vacios: tNV, ciclos_buenos: tB,
           piezas_total: tPz, piezas_obj_total: tPzO,
-          eficiencia:    r3(tObjElap > 0 ? tCEff / tObjElap : (tCEff === 0 ? 1 : null)),
+          paros_min: Math.round(tParos * 10) / 10,
+          paros_min_disp: Math.round(tParosDisp * 10) / 10,
+          paros_min_rend: Math.round(tParosRend * 10) / 10,
+          ciclos_eficiencia: liveEfficiency.ciclos_eficiencia,
+          objetivo_eficiencia: r3(tObjElap),
+          slots_completados: liveEfficiency.slots_completados,
+          estado_turno: liveEfficiency.status,
+          hora_en_curso: liveEfficiency.hora_en_curso,
+          eficiencia:    r3(liveEfficiency.eficiencia),
           calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
           capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
           disponibilidad: totalMins > 0 ? r3(Math.max(0, totalMins - Math.min(tParosDisp, totalMins)) / totalMins) : 1,
@@ -2714,7 +2980,11 @@ router.get('/pizarron', (req, res) => {
       totales_dia: {
         ciclos_totales: tC, ciclos_no_vacios: tNV, ciclos_buenos: tB,
         piezas_total: tPz, piezas_obj_total: tPzO,
-        eficiencia:    r3(tObjElap > 0 ? tCEff / tObjElap : (tCEff === 0 ? 1 : null)),
+        paros_min: Math.round(tParos * 10) / 10,
+        ciclos_eficiencia: liveEfficiency.ciclos_eficiencia,
+        objetivo_eficiencia: r3(tObjElap),
+        hora_en_curso: liveEfficiency.hora_en_curso,
+        eficiencia:    r3(liveEfficiency.eficiencia),
         calidad:       tNVQ > 0 ? r3(tBQ / tNVQ) : null,
         capacidad:     tPzO > 0 ? r3(tPz / tPzO) : null,
         disponibilidad: totalMins > 0 ? r3(Math.max(0, totalMins - Math.min(tParosDisp, totalMins)) / totalMins) : 1,
@@ -2727,7 +2997,9 @@ router.get('/pizarron', (req, res) => {
   if (linea === 'ambas' || linea === 'L1')                  addBakerLike('L1',    buildSlotsForL1,    'ciclos_objetivo_l1');
 
   // Si L4 usa TL4 y fue solicitada, agregarla
-  if ((linea === 'ambas' || linea === 'L4') && l4UsesTL4(pdb, targetDate)) {
+  if ((linea === 'ambas' || linea === 'L4') &&
+      (turno === 'all' || turno === 'TL4') &&
+      l4UsesTL4(pdb, targetDate)) {
     addL4TL4();
   }
 
@@ -2770,9 +3042,15 @@ router.get('/reportes', (req, res) => {
     cargas = (pdb.cargas || []).filter(c => c.linea === linea);
   }
 
-  const ftR = c => c.fecha_turno || c.fecha_carga;
-  if (desde) cargas = cargas.filter(c => ftR(c) >= desde);
-  if (hasta) cargas = cargas.filter(c => ftR(c) <= hasta);
+  cargas = cargas.map(c => {
+    const ctx = getStoredOperationalContext(c, pdb);
+    return {
+      ...c, turno_captura: c.turno, turno: ctx.turno,
+      turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa
+    };
+  });
+  if (desde) cargas = cargas.filter(c => c.fecha_operativa >= desde);
+  if (hasta) cargas = cargas.filter(c => c.fecha_operativa <= hasta);
 
   cargas = cargas.sort((a, b) => {
     const ta = `${a.fecha_carga}T${a.hora_carga || '00:00'}`;
@@ -2788,6 +3066,7 @@ router.get('/reportes', (req, res) => {
 router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
   const pdb  = dbProd.read();
   const hoy  = nowDateStr();
+  const fechaOperativaActual = getShiftDate(hoy, nowTimeStr());
 
   // Cargas activas por línea
   const activas_l3 = (pdb.cargas || []).filter(c => c.linea === 'L3' && c.estado === 'activo').length;
@@ -2795,23 +3074,22 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
   const activas_baker = (pdb.cargas_baker || []).filter(c => c.estado === 'activo').length;
   const activas_l1    = (pdb.cargas_l1    || []).filter(c => c.estado === 'activo').length;
 
-  // Canastas completadas hoy — por fecha de DESCARGA
-  const completadasHoy = [
-    ...(pdb.cargas       || []),
-    ...(pdb.cargas_baker || []),
-    ...(pdb.cargas_l1    || [])
-  ].filter(c => c.fecha_descarga === hoy).length;
+  const allCargasDescargadas = [
+    ...(pdb.cargas       || []).map(c => ({ ...c, _linea: c.linea })),
+    ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
+    ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' }))
+  ].filter(c => c.fecha_descarga).map(c => {
+    const ctx = getStoredOperationalContext(c, pdb);
+    return { ...c, _fecha_operativa: ctx.fecha_operativa, _turno_descarga: ctx.turno };
+  });
+  const completadasHoy = allCargasDescargadas.filter(c => c._fecha_operativa === fechaOperativaActual).length;
 
   // Canastas completadas en el turno actual — por hora de descarga
   const turnoActual = getTurno(nowTimeStr());
   const l4TL4Hoy    = l4UsesTL4(pdb, hoy);
-  const completadasTurno = [
-    ...(pdb.cargas       || []).map(c => ({ ...c, _linea: c.linea })),
-    ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
-    ...(pdb.cargas_l1    || []).map(c => ({ ...c, _linea: 'L1' }))
-  ].filter(c => {
-    if (c.fecha_descarga !== hoy) return false;
-    const t = resolveStoredTurno(c, pdb);
+  const completadasTurno = allCargasDescargadas.filter(c => {
+    if (c._fecha_operativa !== fechaOperativaActual) return false;
+    const t = c._turno_descarga;
     // TL4 es turno único del día para L4; cuenta como "turno actual" si TL4 activo
     if (t === 'TL4') return l4TL4Hoy;
     return t === turnoActual;
@@ -2819,28 +3097,37 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
 
   // Mini pizarron: últimas 3 horas L3 y L4
   const now   = nowTimeStr();
-  const nowM  = now.split(':').map(Number).reduce((h, m) => h * 60 + m);
+  const nowM  = toMins(now);
+  const ordinal = date => Math.floor(Date.parse(date + 'T00:00:00Z') / 60000);
+  const nowAbs = ordinal(hoy) + nowM;
+  const hourStartAbs = Math.floor(nowAbs / 60) * 60;
   const mini_pizarron = [];
   for (let delta = 2; delta >= 0; delta--) {
-    const slotM = nowM - delta * 60;
-    if (slotM < 0) continue;
-    const h = Math.floor(slotM / 60);
+    const slotAbs = hourStartAbs - delta * 60;
+    const slotDay = Math.floor(slotAbs / 1440) * 1440;
+    const slotDate = new Date(slotDay * 60000).toISOString().slice(0, 10);
+    const h = Math.floor((slotAbs - slotDay) / 60);
     const slotHora = String(h).padStart(2, '0') + ':00';
-    const slotFin  = String(h + 1).padStart(2, '0') + ':00';
+    const slotFinAbs = slotAbs + 60;
     for (const linea of ['L3', 'L4']) {
       const slot = (pdb.cargas || []).filter(c =>
         c.linea === linea &&
-        c.fecha_descarga === hoy &&
-        c.hora_descarga >= slotHora && c.hora_descarga < slotFin
+        c.fecha_descarga && c.hora_descarga &&
+        ordinal(c.fecha_descarga) + toMins(c.hora_descarga) >= slotAbs &&
+        ordinal(c.fecha_descarga) + toMins(c.hora_descarga) < slotFinAbs
       );
       if (slot.length === 0) continue;
-      const buenos = slot.filter(c => !c.defecto_id && !c.es_vacia).length;
+      const excluirIds = new Set((pdb[`herramentales_${linea.toLowerCase()}`] || [])
+        .filter(herr => herr.excluir_calidad).map(herr => String(herr.id)));
+      const elegibles = slot.filter(c => !c.es_vacia && !excluirIds.has(String(c.herramental_id)));
+      const buenos = elegibles.filter(c => !c.defecto_id).length;
       mini_pizarron.push({
+        fecha:         slotDate,
         hora:          slotHora,
         linea,
         ciclos:        slot.length,
         eficiencia:    null,
-        calidad:       slot.length > 0 ? buenos / slot.length : null,
+        calidad:       elegibles.length > 0 ? buenos / elegibles.length : null,
         disponibilidad: null
       });
     }
@@ -2853,6 +3140,7 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
     activas_l1,
     cargas_hoy:     completadasHoy,
     cargas_turno:   completadasTurno,
+    fecha_operativa: fechaOperativaActual,
     turno_actual:   turnoActual,
     mini_pizarron
   });
@@ -2909,13 +3197,30 @@ const DEFAULT_SLIDESHOW = {
     {id:5, type:'kpi', scope:'dia',   linea:'L4',    duracion_seg:null, activo:true},
     {id:6, type:'kpi', scope:'dia',   linea:'ambas', duracion_seg:null, activo:true},
     {id:7, type:'kpi', scope:'turno', linea:'Baker', duracion_seg:null, activo:true},
-    {id:8, type:'kpi', scope:'dia',   linea:'Baker', duracion_seg:null, activo:true}
+    {id:8, type:'kpi', scope:'dia',   linea:'Baker', duracion_seg:null, activo:true},
+    {id:9, type:'kpi', scope:'trend_semana', linea:'ambas', duracion_seg:null, activo:true},
+    {id:10,type:'kpi', scope:'reconocimientos', linea:'ambas', duracion_seg:null, activo:true},
+    {id:11,type:'kpi', scope:'turno', linea:'L1', duracion_seg:null, activo:true},
+    {id:12,type:'kpi', scope:'dia',   linea:'L1', duracion_seg:null, activo:true}
   ]
 };
 
 router.get('/slideshow-config', (req, res) => {
   const pdb = dbProd.read();
-  const slideshow = pdb.config?.slideshow || DEFAULT_SLIDESHOW;
+  const stored = pdb.config?.slideshow;
+  const storedSlides = Array.isArray(stored?.slides) ? stored.slides : [];
+  const ids = new Set(storedSlides.map(slide => `${slide.type}:${slide.id}`));
+  // Incorporar definiciones agregadas por versiones nuevas (por ejemplo L1)
+  // sin alterar orden, duración o estado de las ya configuradas.
+  const slideshow = stored
+    ? {
+        ...stored,
+        slides: [
+          ...storedSlides,
+          ...DEFAULT_SLIDESHOW.slides.filter(slide => !ids.has(`${slide.type}:${slide.id}`))
+        ]
+      }
+    : DEFAULT_SLIDESHOW;
   res.json({ slideshow });
 });
 
@@ -2933,7 +3238,127 @@ router.patch('/slideshow-config', produccionAllowRoles('admin'), (req, res) => {
 
 // ─── KPI Snapshots ────────────────────────────────────────────────────────────
 
+function calculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
+  const isTL4 = linea === 'L4' && l4UsesTL4(pdb, targetDate);
+  if (isTL4 && turno !== 'TL4') return null;
+  if (!isTL4 && !TURNOS_DEF[turno]) return null;
+  if (!isTurnoActivo(pdb, linea, turno, targetDate)) return null;
+
+  let slots;
+  let plannedMinutes;
+  if (isTL4) {
+    slots = buildSlotsForL4TL4(pdb, config, targetDate);
+    const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
+    const diaConf = cfg.dias[getDiaSemana(targetDate)];
+    if (!diaConf || !diaConf.activo || slots.length === 0) return null;
+    plannedMinutes = toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada);
+  } else {
+    slots = linea === 'Baker'
+      ? buildSlotsForBaker(pdb, config, turno, targetDate)
+      : linea === 'L1'
+        ? buildSlotsForL1(pdb, config, turno, targetDate)
+        : buildSlotsForLinTur(pdb, config, linea, turno, targetDate);
+    plannedMinutes = TURNOS_DEF[turno].hours * 60;
+  }
+
+  const live = annotateLiveSlots(pdb, linea, turno, targetDate, slots);
+  const sum = (key, fallback) => slots.reduce((total, slot) =>
+    total + Number(slot[key] ?? (fallback ? slot[fallback] : 0) ?? 0), 0);
+  const ciclosTotales = sum('ciclos_totales');
+  const ciclosNoVacios = sum('ciclos_no_vacios');
+  const ciclosBuenos = sum('ciclos_buenos');
+  const ciclosNoVaciosCalidad = sum('ciclos_no_vacios_calidad', 'ciclos_no_vacios');
+  const ciclosBuenosCalidad = sum('ciclos_buenos_calidad', 'ciclos_buenos');
+  const piezasTotal = sum('piezas_total');
+  const piezasObjTotal = sum('piezas_obj_total');
+  const parosMinTotal = sum('paros_min');
+  const parosMinDisp = sum('paros_min_disp');
+  const parosMinRend = sum('paros_min_rend');
+  const availableMinutes = Math.max(0, plannedMinutes - parosMinDisp);
+  const completedMinutes = slots
+    .filter(slot => slot.estado_slot === 'completado')
+    .reduce((total, slot) => total + Number(slot.slotDuration || 60), 0);
+  const r3 = value => value == null ? null : Math.round(value * 1000) / 1000;
+
+  return {
+    id: `${targetDate}-${linea}-${turno}`,
+    fecha: targetDate,
+    semana: getISOWeek(new Date(targetDate + 'T12:00:00')),
+    turno,
+    linea,
+    estado_turno: live.status,
+    ciclos_totales: ciclosTotales,
+    ciclos_eficiencia: live.ciclos_eficiencia,
+    ciclos_no_vacios: ciclosNoVacios,
+    ciclos_buenos: ciclosBuenos,
+    ciclos_no_vacios_calidad: ciclosNoVaciosCalidad,
+    ciclos_buenos_calidad: ciclosBuenosCalidad,
+    piezas_total: piezasTotal,
+    piezas_obj_total: piezasObjTotal,
+    paros_min_total: r3(parosMinTotal),
+    paros_min_disp: r3(parosMinDisp),
+    paros_min_rend: r3(parosMinRend),
+    minutos_planificados: plannedMinutes,
+    horas_eficiencia: r3(completedMinutes / 60),
+    objetivo_eficiencia: r3(live.objetivo_eficiencia),
+    slots_completados: live.slots_completados,
+    hora_en_curso: live.hora_en_curso,
+    eficiencia: r3(live.eficiencia),
+    calidad: ciclosNoVaciosCalidad > 0 ? r3(ciclosBuenosCalidad / ciclosNoVaciosCalidad) : null,
+    capacidad: piezasObjTotal > 0 ? r3(piezasTotal / piezasObjTotal) : null,
+    disponibilidad: plannedMinutes > 0
+      ? r3((plannedMinutes - Math.min(parosMinDisp, plannedMinutes)) / plannedMinutes)
+      : null,
+    rendimiento: availableMinutes > 0
+      ? r3((availableMinutes - Math.min(parosMinRend, availableMinutes)) / availableMinutes)
+      : 1,
+    slots
+  };
+}
+
 router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
+  const { fecha, linea = 'ambas', turno = 'all' } = req.body || {};
+  const targetDate = fecha || getShiftDate(nowDateStr(), nowTimeStr());
+  if (!isValidDateStr(targetDate)) return res.status(400).json({ error: 'fecha debe tener formato YYYY-MM-DD válido' });
+
+  const pdb = dbProd.read();
+  const config = pdb.config || {};
+  if (!pdb.kpi_snapshots) pdb.kpi_snapshots = [];
+  const lineas = linea === 'ambas' ? ['L3', 'L4', 'Baker', 'L1'] : [linea];
+  const requestedTurnos = turno === 'all' ? ['T1', 'T2', 'T3'] : [turno];
+  const guardados = [];
+
+  for (const currentLine of lineas) {
+    const turnos = currentLine === 'L4' && l4UsesTL4(pdb, targetDate)
+      ? ((turno === 'all' || turno === 'TL4') ? ['TL4'] : [])
+      : requestedTurnos.filter(t => TURNOS_DEF[t]);
+    for (const currentTurno of turnos) {
+      const calculated = calculateKpiSnapshot(pdb, config, currentLine, currentTurno, targetDate);
+      // Los snapshots son cierres históricos. Guardar un turno abierto fijaría
+      // para siempre una eficiencia parcial; la vista en vivo ya se recalcula.
+      if (!calculated || calculated.estado_turno !== 'completado') continue;
+      const existIdx = pdb.kpi_snapshots.findIndex(k =>
+        k.fecha === targetDate && k.linea === currentLine && k.turno === currentTurno);
+      const snap = {
+        ...calculated,
+        id: existIdx >= 0 ? pdb.kpi_snapshots[existIdx].id : dbProd.nextId(pdb.kpi_snapshots),
+        guardado_at: new Date().toISOString(),
+        guardado_por: req.prodUser?.nombre || 'admin',
+        fuente: 'guardado'
+      };
+      if (existIdx >= 0) pdb.kpi_snapshots[existIdx] = snap;
+      else pdb.kpi_snapshots.push(snap);
+      guardados.push(snap);
+    }
+  }
+
+  dbProd.write(pdb);
+  res.json({ guardados: guardados.length, snapshots: guardados });
+});
+
+// Conservado temporalmente para facilitar la comparación durante la migración;
+// no es consumido por ninguna vista.
+router.post('/kpis/guardar-legacy-disabled', produccionAllowRoles('admin'), (req, res) => {
   const { fecha, linea = 'ambas', turno = 'all' } = req.body || {};
   const targetDate   = fecha || nowDateStr();
   const pdb          = dbProd.read();
@@ -3217,6 +3642,48 @@ router.post('/kpis/guardar', produccionAllowRoles('admin'), (req, res) => {
 });
 
 router.get('/kpis', (req, res) => {
+  const { linea, turno, desde, hasta } = req.query;
+  const pdb = dbProd.read();
+  const config = pdb.config || {};
+  const endDate = hasta || getShiftDate(nowDateStr(), nowTimeStr());
+  const startDate = desde || addDays(endDate, -6);
+  if (!isValidDateStr(startDate) || !isValidDateStr(endDate) || startDate > endDate) {
+    return res.status(400).json({ error: 'Rango de fechas inválido' });
+  }
+
+  const dates = [];
+  for (let date = startDate; date <= endDate && dates.length < 90; date = addDays(date, 1)) dates.push(date);
+  const lineas = (!linea || linea === 'ambas') ? ['L3', 'L4', 'Baker', 'L1'] : [linea];
+  const snapshots = [];
+
+  for (const date of dates) {
+    for (const currentLine of lineas) {
+      const usesTL4 = currentLine === 'L4' && l4UsesTL4(pdb, date);
+      const turnos = usesTL4
+        ? ((!turno || turno === 'TL4') ? ['TL4'] : [])
+        : (turno ? (TURNOS_DEF[turno] ? [turno] : []) : ['T1', 'T2', 'T3']);
+
+      for (const currentTurno of turnos) {
+        const calculated = calculateKpiSnapshot(pdb, config, currentLine, currentTurno, date);
+        if (!calculated || calculated.estado_turno === 'futuro' || calculated.estado_turno === 'inactivo') continue;
+        const saved = (pdb.kpi_snapshots || []).find(k =>
+          k.fecha === date && k.linea === currentLine && k.turno === currentTurno);
+        // Un turno cerrado usa el valor persistido. El turno en vivo siempre se
+        // recalcula para exponer el avance de la hora abierta.
+        const snap = saved && calculated.estado_turno === 'completado' && saved.estado_turno !== 'en_curso'
+          ? { ...calculated, ...saved, fuente: 'guardado' }
+          : { ...calculated, fuente: 'calculado' };
+        snapshots.push(snap);
+      }
+    }
+  }
+
+  snapshots.sort((a, b) =>
+    b.fecha.localeCompare(a.fecha) || a.linea.localeCompare(b.linea) || a.turno.localeCompare(b.turno));
+  res.json({ total: snapshots.length, snapshots });
+});
+
+router.get('/kpis-legacy-disabled', (req, res) => {
   const { linea, turno, desde, hasta } = req.query;
   const pdb    = dbProd.read();
   const config = pdb.config || {};
@@ -3670,7 +4137,7 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
       paros_min += overlapEf;
       if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlapEf;
-      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
+      if (afecRend) paros_min_rend += overlapEf;
     }
     paros_min      = Math.min(paros_min,      60);
     paros_min_prog = Math.min(paros_min_prog, 60);
@@ -3806,7 +4273,7 @@ function buildSlotsForL1(pdb, config, t, targetDate) {
       paros_min += overlapEf;
       if (afecEf)   paros_min_prog += overlapEf; // programado → reduce objetivo
       if (afecDisp) paros_min_disp += overlapEf;
-      if (afecRend && !afecDisp) paros_min_rend += overlapEf;
+      if (afecRend) paros_min_rend += overlapEf;
     }
     paros_min      = Math.min(paros_min,      60);
     paros_min_prog = Math.min(paros_min_prog, 60);
@@ -3866,11 +4333,16 @@ router.get('/l1/cargas/activas', (req, res) => {
 router.get('/l1/cargas', (req, res) => {
   const { fecha_ini, fecha_fin, turno, estado } = req.query;
   const pdb = dbProd.read();
-  let cargas = pdb.cargas_l1 || [];
-  const ft = c => c.fecha_turno || c.fecha_carga;
-  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
-  if (turno)  cargas = cargas.filter(c => c.turno === turno);
+  let cargas = (pdb.cargas_l1 || []).map(c => {
+    const ctx = getStoredOperationalContext({ ...c, _linea: 'L1' }, pdb);
+    return {
+      ...c, turno_captura: c.turno, turno: ctx.turno,
+      turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa
+    };
+  });
+  if (fecha_ini) cargas = cargas.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => c.fecha_operativa <= fecha_fin);
+  if (turno)  cargas = cargas.filter(c => c.turno_operativo === turno);
   if (estado) cargas = cargas.filter(c => c.estado === estado);
   cargas = cargas.sort((a, b) => {
     const ta = `${a.fecha_carga}T${a.hora_carga}`;
@@ -3884,10 +4356,15 @@ router.get('/l1/cargas', (req, res) => {
 router.get('/l1/cavidades', (req, res) => {
   const { fecha_ini, fecha_fin, turno, folio_barril } = req.query;
   const pdb = dbProd.read();
-  let cavs = pdb.cavidades_l1 || [];
-  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_carga >= fecha_ini);
-  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_carga <= fecha_fin);
-  if (turno)        cavs = cavs.filter(c => c.turno === turno);
+  const cargasById = new Map((pdb.cargas_l1 || []).map(c => [String(c.id), c]));
+  let cavs = (pdb.cavidades_l1 || []).map(c => {
+    const parent = cargasById.get(String(c.carga_id));
+    const ctx = getStoredOperationalContext({ ...(parent || c), _linea: 'L1' }, pdb);
+    return { ...c, turno_captura: c.turno, turno: ctx.turno, turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_operativa <= fecha_fin);
+  if (turno)        cavs = cavs.filter(c => c.turno_operativo === turno);
   if (folio_barril) cavs = cavs.filter(c => c.folio_barril === folio_barril);
   res.json(cavs);
 });
@@ -4075,7 +4552,8 @@ router.post('/l1/cargas/:id/descargar', (req, res) => {
   const body = req.body || {};
   const fecha = nowDateStr();
   const hora  = nowTimeStr();
-  const turno = getTurno(hora);
+  const descargaCtx = resolveTurnoContext(pdb, 'L1', fecha, hora);
+  const turno = descargaCtx.turno;
 
   if (carga.herramental_tipo === 'barril') {
     const cavResultados = Array.isArray(body.cavidades) ? body.cavidades : [];
@@ -4118,6 +4596,8 @@ router.post('/l1/cargas/:id/descargar', (req, res) => {
   carga.fecha_descarga = fecha;
   carga.hora_descarga  = hora;
   carga.turno          = turno;
+  carga.turno_descarga = turno;
+  carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_l1[idx] = carga;
   dbProd.write(pdb);
   res.json(carga);
@@ -4134,14 +4614,16 @@ router.post('/l1/cargas/:id/reprocesar', (req, res) => {
 
   if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
 
+  const _l1rCtx = resolveTurnoContext(pdb, 'L1', nowDateStr(), nowTimeStr());
+  if (!_l1rCtx.activo) return res.status(409).json({ error: `El turno ${_l1rCtx.turno} no está activo para L1 en esta fecha` });
+
   if (original.estado === 'activo') {
     original.estado = 'defecto';
     original.fecha_descarga = nowDateStr();
     original.hora_descarga  = nowTimeStr();
+    original.turno_descarga = _l1rCtx.turno;
+    original.fecha_operativa_descarga = _l1rCtx.fecha_turno;
   }
-
-  const _l1rCtx = resolveTurnoContext(pdb, 'L1', nowDateStr(), nowTimeStr());
-  if (!_l1rCtx.activo) return res.status(409).json({ error: `El turno ${_l1rCtx.turno} no está activo para L1 en esta fecha` });
 
   const activos = pdb.cargas_l1.filter(c => c.estado === 'activo');
   if (activos.length >= 8) return res.status(409).json({ error: 'Máximo de 8 herramentales activos en L1' });
@@ -4344,11 +4826,16 @@ router.get('/baker/cargas/activas', (req, res) => {
 router.get('/baker/cargas', (req, res) => {
   const { fecha_ini, fecha_fin, turno, estado } = req.query;
   const pdb = dbProd.read();
-  let cargas = pdb.cargas_baker || [];
-  const ft = c => c.fecha_turno || c.fecha_carga;
-  if (fecha_ini) cargas = cargas.filter(c => ft(c) >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => ft(c) <= fecha_fin);
-  if (turno)  cargas = cargas.filter(c => c.turno === turno);
+  let cargas = (pdb.cargas_baker || []).map(c => {
+    const ctx = getStoredOperationalContext({ ...c, _linea: 'Baker' }, pdb);
+    return {
+      ...c, turno_captura: c.turno, turno: ctx.turno,
+      turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa
+    };
+  });
+  if (fecha_ini) cargas = cargas.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => c.fecha_operativa <= fecha_fin);
+  if (turno)  cargas = cargas.filter(c => c.turno_operativo === turno);
   if (estado) cargas = cargas.filter(c => c.estado === estado);
   cargas = cargas.sort((a, b) => {
     const ta = `${a.fecha_carga}T${a.hora_carga}`;
@@ -4362,10 +4849,15 @@ router.get('/baker/cargas', (req, res) => {
 router.get('/baker/cavidades', (req, res) => {
   const { fecha_ini, fecha_fin, turno, folio_barril } = req.query;
   const pdb = dbProd.read();
-  let cavs = pdb.cavidades_baker || [];
-  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_carga >= fecha_ini);
-  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_carga <= fecha_fin);
-  if (turno)        cavs = cavs.filter(c => c.turno === turno);
+  const cargasById = new Map((pdb.cargas_baker || []).map(c => [String(c.id), c]));
+  let cavs = (pdb.cavidades_baker || []).map(c => {
+    const parent = cargasById.get(String(c.carga_id));
+    const ctx = getStoredOperationalContext({ ...(parent || c), _linea: 'Baker' }, pdb);
+    return { ...c, turno_captura: c.turno, turno: ctx.turno, turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (fecha_ini)    cavs = cavs.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin)    cavs = cavs.filter(c => c.fecha_operativa <= fecha_fin);
+  if (turno)        cavs = cavs.filter(c => c.turno_operativo === turno);
   if (folio_barril) cavs = cavs.filter(c => c.folio_barril === folio_barril);
   res.json(cavs);
 });
@@ -4575,7 +5067,8 @@ router.post('/baker/cargas/:id/descargar', (req, res) => {
   const body = req.body || {};
   const fecha = nowDateStr();
   const hora  = nowTimeStr();
-  const turno = getTurno(hora);
+  const descargaCtx = resolveTurnoContext(pdb, 'Baker', fecha, hora);
+  const turno = descargaCtx.turno;
 
   if (carga.herramental_tipo === 'barril') {
     // body.cavidades: [{num, estado:'buena'|'defecto'|'vacia', defecto_id, defecto}]
@@ -4623,6 +5116,8 @@ router.post('/baker/cargas/:id/descargar', (req, res) => {
   carga.fecha_descarga = fecha;
   carga.hora_descarga  = hora;
   carga.turno          = turno;
+  carga.turno_descarga = turno;
+  carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_baker[idx] = carga;
   dbProd.write(pdb);
   res.json(carga);
@@ -4647,6 +5142,8 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
     original.fecha_descarga = nowDateStr();
     original.hora_descarga  = nowTimeStr();
     original.turno          = _bkrCtx.turno;
+    original.turno_descarga = _bkrCtx.turno;
+    original.fecha_operativa_descarga = _bkrCtx.fecha_turno;
   }
 
   const activos = pdb.cargas_baker.filter(c => c.estado === 'activo');
@@ -4801,11 +5298,16 @@ router.get('/export/:linea', produccionAllowRoles('admin'), (req, res) => {
   const { fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
 
-  let cargas = (pdb.cargas || []).filter(c => c.linea === linea);
-  if (fecha_ini) cargas = cargas.filter(c => c.fecha_carga >= fecha_ini);
-  if (fecha_fin) cargas = cargas.filter(c => c.fecha_carga <= fecha_fin);
+  let cargas = (pdb.cargas || []).filter(c => c.linea === linea).map(c => {
+    const ctx = getStoredOperationalContext(c, pdb);
+    return { ...c, turno_operativo: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  });
+  if (fecha_ini) cargas = cargas.filter(c => c.fecha_operativa >= fecha_ini);
+  if (fecha_fin) cargas = cargas.filter(c => c.fecha_operativa <= fecha_fin);
 
   const rows = cargas.map(c => ({
+    fecha_operativa: c.fecha_operativa,
+    turno_operativo: c.turno_operativo,
     fecha_carga: c.fecha_carga,
     hora_carga: c.hora_carga,
     semana: c.semana,
@@ -4983,10 +5485,13 @@ router.post('/admin/migrate-t3-dates', produccionAllowRoles('admin'), (req, res)
 router.get('/scrap', produccionAllowRoles('admin', 'produccion', 'pizarron'), (req, res) => {
   const { linea, fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
-  let records = pdb.registros_scrap || [];
+  let records = (pdb.registros_scrap || []).map(r => {
+    const ctx = resolveTurnoContext(pdb, r.linea || '', r.fecha || nowDateStr(), r.hora || '06:30');
+    return { ...r, fecha_operativa: r.fecha_operativa || ctx.fecha_turno, turno: r.turno || ctx.turno };
+  });
   if (linea)     records = records.filter(r => r.linea === linea);
-  if (fecha_ini) records = records.filter(r => r.fecha >= fecha_ini);
-  if (fecha_fin) records = records.filter(r => r.fecha <= fecha_fin);
+  if (fecha_ini) records = records.filter(r => r.fecha_operativa >= fecha_ini);
+  if (fecha_fin) records = records.filter(r => r.fecha_operativa <= fecha_fin);
   res.json({ records: records.sort((a, b) => (b.fecha + b.hora).localeCompare(a.fecha + a.hora)) });
 });
 
@@ -4994,14 +5499,18 @@ router.get('/scrap', produccionAllowRoles('admin', 'produccion', 'pizarron'), (r
 router.post('/scrap', produccionAllowRoles('admin', 'produccion'), (req, res) => {
   const pdb = dbProd.read();
   if (!pdb.registros_scrap) pdb.registros_scrap = [];
+  const fechaRegistro = req.body.fecha || nowDateStr();
+  const horaRegistro = req.body.hora || nowTimeStr();
+  const scrapCtx = resolveTurnoContext(pdb, req.body.linea || '', fechaRegistro, horaRegistro);
   const folio = `SCRAP-${(req.body.linea || 'X').replace(/\s/g,'')}-${nowDateStr().replace(/-/g,'')}-${dbProd.nextId(pdb.registros_scrap)}`;
   const rec = {
     id:         dbProd.nextId(pdb.registros_scrap),
     folio,
     linea:      req.body.linea      || '',
-    fecha:      req.body.fecha      || nowDateStr(),
-    hora:       req.body.hora       || nowTimeStr(),
-    turno:      req.body.turno      || resolveTurnoContext(pdb, req.body.linea || '', req.body.fecha || nowDateStr(), req.body.hora || nowTimeStr()).turno,
+    fecha:      fechaRegistro,
+    fecha_operativa: scrapCtx.fecha_turno,
+    hora:       horaRegistro,
+    turno:      scrapCtx.turno,
     operador:   req.body.operador   || '',
     componente: req.body.componente || '',
     no_skf:     req.body.no_skf     || null,
@@ -5021,36 +5530,33 @@ router.get('/scrap/resumen', (req, res) => {
   const { linea, fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
 
-  let scrapRecs = pdb.registros_scrap || [];
+  let scrapRecs = (pdb.registros_scrap || []).map(r => {
+    const ctx = resolveTurnoContext(pdb, r.linea || '', r.fecha || nowDateStr(), r.hora || '06:30');
+    return { ...r, fecha_operativa: r.fecha_operativa || ctx.fecha_turno, turno: r.turno || ctx.turno };
+  });
   if (linea)     scrapRecs = scrapRecs.filter(r => r.linea === linea);
-  if (fecha_ini) scrapRecs = scrapRecs.filter(r => r.fecha >= fecha_ini);
-  if (fecha_fin) scrapRecs = scrapRecs.filter(r => r.fecha <= fecha_fin);
+  if (fecha_ini) scrapRecs = scrapRecs.filter(r => r.fecha_operativa >= fecha_ini);
+  if (fecha_fin) scrapRecs = scrapRecs.filter(r => r.fecha_operativa <= fecha_fin);
 
   // Agrupar scrap por linea+fecha
   const scrapByDay = {};
   for (const r of scrapRecs) {
-    const key = `${r.linea}|${r.fecha}`;
+    const key = `${r.linea}|${r.fecha_operativa}`;
     scrapByDay[key] = (scrapByDay[key] || 0) + (Number(r.piezas_scrap) || 0);
   }
 
   const resumen = Object.entries(scrapByDay).map(([key, scrap]) => {
     const [l, fecha] = key.split('|');
-    const nextDay = addDays(fecha, 1);
-    // Incluye cargas del día + cargas T3 nocturno (descargadas entre 00:00-06:29 del día siguiente)
-    const isShiftCarga = c => {
-      if (!c.fecha_descarga || c.estado === 'cancelado') return false;
-      if (c.fecha_descarga === fecha) return true;
-      if (c.fecha_descarga === nextDay && c.hora_descarga && toMins(c.hora_descarga) < 6 * 60 + 30) return true;
-      return false;
-    };
+    const isShiftCarga = (c, cargaLinea) => c.fecha_descarga && c.estado !== 'cancelado' &&
+      getStoredOperationalContext({ ...c, _linea: cargaLinea }, pdb).fecha_operativa === fecha;
     // Calcular piezas totales producidas en ese día desde cargas descargadas
     let cargas = [];
     if (l === 'Baker') {
-      cargas = (pdb.cargas_baker || []).filter(isShiftCarga);
+      cargas = (pdb.cargas_baker || []).filter(c => isShiftCarga(c, 'Baker'));
     } else if (l === 'L1') {
-      cargas = (pdb.cargas_l1 || []).filter(isShiftCarga);
+      cargas = (pdb.cargas_l1 || []).filter(c => isShiftCarga(c, 'L1'));
     } else {
-      cargas = (pdb.cargas || []).filter(c => c.linea === l && isShiftCarga(c));
+      cargas = (pdb.cargas || []).filter(c => c.linea === l && isShiftCarga(c, l));
     }
     let piezas_total = 0;
     for (const c of cargas) {
@@ -5075,12 +5581,17 @@ router.get('/scrap/resumen', (req, res) => {
 // ─── Operadores activos por línea/turno hoy (para reconocimientos) ───────────
 router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) => {
   const pdb = dbProd.read();
-  const fecha = req.query.fecha || new Date().toLocaleDateString('en-CA');
-  // Incluir cualquier carga del día (activo o descargado, excluir solo cancelado)
-  const cargas = (pdb.cargas || []).filter(c => {
-    const f = c.fecha_turno || c.fecha_carga || '';
-    return f && f.slice(0, 10) === fecha && c.estado !== 'cancelado';
-  });
+  const fecha = req.query.fecha || getShiftDate(nowDateStr(), nowTimeStr());
+  const cargas = [
+    ...(pdb.cargas || []).map(c => ({ ...c, _linea: c.linea })),
+    ...(pdb.cargas_baker || []).map(c => ({ ...c, _linea: 'Baker' })),
+    ...(pdb.cargas_l1 || []).map(c => ({ ...c, _linea: 'L1' }))
+  ].filter(c => c.estado !== 'cancelado').map(c => {
+    const ctx = c.fecha_descarga
+      ? getStoredOperationalContext(c, pdb)
+      : { fecha_operativa: c.fecha_turno || c.fecha_carga, turno: c.turno };
+    return { ...c, linea: c._linea, turno: ctx.turno, fecha_operativa: ctx.fecha_operativa };
+  }).filter(c => c.fecha_operativa === fecha);
   // Agrupar operadores únicos por linea → turno
   const operadores = {};
   for (const c of cargas) {
@@ -5235,14 +5746,10 @@ function resolveTurnoContext(pdb, linea, fecha, hora) {
 }
 
 // Resolver turno de una carga ya guardada (para stats/resumen).
-// Usa el campo turno almacenado; solo recalcula si falta.
+// La descarga manda; el turno almacenado al crear la carga puede pertenecer a
+// otro turno si el proceso terminó después de un cambio de turno.
 function resolveStoredTurno(carga, pdb) {
-  if (carga.turno === 'TL4') return 'TL4';
-  if (carga.turno && carga.turno.startsWith('T')) return carga.turno;
-  const linea = carga.linea || carga._linea;
-  const fecha = carga.fecha_descarga || carga.fecha_turno || carga.fecha_carga;
-  if (linea === 'L4' && fecha && l4UsesTL4(pdb, fecha)) return 'TL4';
-  return getTurno(carga.hora_descarga || carga.hora_carga || '06:30');
+  return getStoredOperationalContext(carga, pdb).turno;
 }
 
 // Horas de un turno: para TL4 usa config dinámica, para T1/T2/T3 usa TURNOS_DEF

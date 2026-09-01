@@ -585,8 +585,8 @@ body.ss-light .ss-no-data      { color: #94a3b8; }
 /* ── Diapositiva "Todas" — 3 columnas ───────────────────────────────────── */
 .ss-tres-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 20px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
 }
 
 /* ── Diapositiva día — subtotales por turno ─────────────────────────────── */
@@ -598,7 +598,7 @@ body.ss-light .ss-no-data      { color: #94a3b8; }
 }
 .ss-dia-row {
   display: grid;
-  grid-template-columns: 110px 1fr 1fr 1fr 1fr 110px;
+  grid-template-columns: 110px repeat(5, minmax(0, 1fr)) 110px;
   align-items: center;
   padding: 8px 16px;
   border-bottom: 1px solid #334155;

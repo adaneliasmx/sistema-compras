@@ -325,7 +325,8 @@ function escHtml(s) {
 
 function getCurrentTurno() {
   const now  = new Date();
-  const mins = now.getHours() * 60 + now.getMinutes();
+  const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const mins = mxNow.getHours() * 60 + mxNow.getMinutes();
   if (mins >= 6 * 60 + 30 && mins <= 14 * 60 + 29) return 'T1';
   if (mins >= 14 * 60 + 30 && mins <= 21 * 60 + 29) return 'T2';
   return 'T3';
@@ -382,7 +383,7 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
   const byFecha = {};
   for (const s of (statsData || [])) {
     if (!byFecha[s.fecha]) byFecha[s.fecha] = { ciclos: 0, objetivo: 0, paros_min_rend: 0 };
-    byFecha[s.fecha].ciclos        += s.ciclos;
+    byFecha[s.fecha].ciclos        += s.ciclos_eficiencia ?? s.ciclos;
     byFecha[s.fecha].objetivo      += s.objetivo;
     byFecha[s.fecha].paros_min_rend += s.paros_min_rend;
   }
@@ -422,10 +423,12 @@ function renderOpStatsSidebar(statsData, userName, linked = true) {
   const pastDays = Object.entries(byFecha).filter(([f]) => f <= today);
   if (pastDays.length > 0) {
     const totalParos = pastDays.reduce((s, [, d]) => s + d.paros_min_rend, 0);
-    const avgEfic    = pastDays.reduce((s, [, d]) => s + (d.eficiencia ?? 0), 0) / pastDays.length;
+    const totalObj   = pastDays.reduce((s, [, d]) => s + Number(d.objetivo || 0), 0);
+    const totalCiclos = pastDays.reduce((s, [, d]) => s + Number(d.ciclos || 0), 0);
+    const avgEfic    = totalObj > 0 ? totalCiclos / totalObj : null;
     if (totalParos > 90) {
       recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Llevas bastantes minutos de paro esta semana. Registrar y atender causas raíz ayuda a mejorar el rendimiento.</div>`;
-    } else if (avgEfic < 0.85) {
+    } else if (avgEfic != null && avgEfic < 0.85) {
       recHtml = `<div class="op-recommendation op-rec-warn"><span class="op-rec-icon">⚠️</span>Tu eficiencia ha estado por debajo del objetivo esta semana. Revisa tiempos de ciclo y herramentales.</div>`;
     } else {
       recHtml = `<div class="op-recommendation op-rec-good"><span class="op-rec-icon">✅</span>¡Buen trabajo esta semana! Mantén el ritmo.</div>`;
@@ -3173,19 +3176,24 @@ async function viewPizarron(el) {
             turnoNoTrabajado[key] = true;
           } else {
             for (const slot of turnoData.slots || []) {
-              // Solo incluir slots con al menos 1 ciclo o con paros
-              if (slot.ciclos_totales === 0 && slot.paros_min === 0) continue;
+              // La hora abierta siempre se muestra, aunque todavía no tenga ciclos.
+              if (slot.ciclos_totales === 0 && slot.paros_min === 0 && !slot.es_hora_en_curso) continue;
               rows.push({
                 turno: t,
                 hora:  slot.hora_inicio,
                 linea: l,
-                eficiencia:     pct(slot.eficiencia),
+                eficiencia:     pct(slot.es_hora_en_curso ? slot.eficiencia_avance : slot.eficiencia),
                 capacidad:      pct(slot.capacidad),
                 calidad:        pct(slot.calidad),
                 disponibilidad: pct(slot.disponibilidad),
                 rendimiento:    pct(slot.rendimiento),
                 ciclos:         slot.ciclos_totales,
-                ciclos_buenos:  slot.ciclos_buenos
+                ciclos_buenos:  slot.ciclos_buenos,
+                objetivo:       slot.ciclos_obj_adj ?? slot.ciclos_obj,
+                objetivo_transcurrido: slot.objetivo_transcurrido,
+                estado_slot:    slot.estado_slot,
+                es_hora_en_curso: !!slot.es_hora_en_curso,
+                progreso_pct:   slot.progreso_pct
               });
             }
           }
@@ -3198,7 +3206,8 @@ async function viewPizarron(el) {
               capacidad:      pct(tot.capacidad),
               calidad:        pct(tot.calidad),
               disponibilidad: pct(tot.disponibilidad),
-              rendimiento:    pct(tot.rendimiento)
+              rendimiento:    pct(tot.rendimiento),
+              hora_en_curso:  tot.hora_en_curso
             };
           }
         }
@@ -3211,7 +3220,8 @@ async function viewPizarron(el) {
             capacidad:      pct(td.capacidad),
             calidad:        pct(td.calidad),
             disponibilidad: pct(td.disponibilidad),
-            rendimiento:    pct(td.rendimiento)
+            rendimiento:    pct(td.rendimiento),
+            hora_en_curso:  td.hora_en_curso
           };
         }
       }
@@ -3298,6 +3308,20 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
     ? Object.keys(dayTotals)
     : [...new Set(rows.map(r => r.linea))].filter(Boolean);
 
+  function ciclosVsObjetivo(r) {
+    const objetivoComparacion = r.es_hora_en_curso ? Number(r.objetivo_transcurrido || 0) : Number(r.objetivo || 0);
+    const ciclos = Number(r.ciclos || 0);
+    const escala = Math.max(ciclos, objetivoComparacion, 1);
+    const realW = Math.min(100, ciclos / escala * 100);
+    const objW = Math.min(100, objetivoComparacion / escala * 100);
+    const estado = r.es_hora_en_curso
+      ? `<div style="font-size:10px;color:#2563eb;margin-top:3px">⏳ ${Number(r.progreso_pct || 0).toFixed(0)}% de la hora · objetivo transcurrido ${objetivoComparacion.toFixed(1)}</div>`
+      : `<div style="font-size:10px;color:#64748b;margin-top:3px">Objetivo ${objetivoComparacion.toFixed(1)}</div>`;
+    return `<div style="min-width:125px">
+      <div style="display:flex;align-items:center;gap:5px"><strong style="width:24px;text-align:right">${ciclos}</strong><div style="flex:1;position:relative;height:12px;background:#e2e8f0;border-radius:6px;overflow:hidden"><div style="width:${objW.toFixed(1)}%;height:100%;background:#cbd5e1"></div><div style="position:absolute;inset:2px auto 2px 0;width:${realW.toFixed(1)}%;background:${ciclos >= objetivoComparacion ? '#16a34a' : '#3b82f6'};border-radius:4px"></div></div></div>${estado}
+    </div>`;
+  }
+
   // Si solo hay una línea → tabla simple; si hay varias → una sección por línea
   function renderLineaSection(linea) {
     const lineaRows = rows.filter(r => r.linea === linea);
@@ -3324,9 +3348,9 @@ function renderPizarronTable(rows, turnoTotals, dayTotals, turnoNoTrabajado) {
         </tr>`;
       } else {
         for (const r of grupo) {
-          bodyHtml += `<tr>
-            <td>${escHtml(r.hora || '—')}</td>
-            <td style="text-align:center;font-weight:700">${r.ciclos != null ? r.ciclos : '—'}</td>
+          bodyHtml += `<tr${r.es_hora_en_curso ? ' style="background:#eff6ff"' : ''}>
+            <td>${escHtml(r.hora || '—')}${r.es_hora_en_curso ? '<div style="font-size:10px;color:#2563eb;font-weight:700">EN CURSO</div>' : ''}</td>
+            <td>${ciclosVsObjetivo(r)}</td>
             <td class="${kpiColor(r.eficiencia)}">${fmtPct(r.eficiencia)}</td>
             <td class="${kpiColor(r.rendimiento)}">${fmtPct(r.rendimiento)}</td>
             <td class="${kpiColor(r.capacidad)}">${fmtPct(r.capacidad)}</td>
@@ -3399,7 +3423,8 @@ async function viewMonitor(el) {
     return;
   }
 
-  function renderMonitorContent(cargasL3, cargasL4, cargasBaker, paroL3, paroL4, paroBaker, pizarronL4) {
+  function renderMonitorContent(cargasL3, cargasL4, cargasBaker, cargasL1,
+    paroL3, paroL4, paroBaker, paroL1, pizarronActual, pizarronL4) {
     const turno    = getCurrentTurno();
     const now      = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const hoy      = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -3407,18 +3432,25 @@ async function viewMonitor(el) {
     const turnoL4  = l4EsTL4 ? 'TL4' : turno;
 
     const cBakerNorm = cargasBaker.map(c => ({ ...c, linea: 'Baker' }));
-    const todas    = [...cargasL3, ...cargasL4, ...cBakerNorm].sort((a, b) => {
+    const cL1Norm = cargasL1.map(c => ({ ...c, linea: 'L1' }));
+    const todas    = [...cargasL3, ...cargasL4, ...cBakerNorm, ...cL1Norm].sort((a, b) => {
       const ta = `${a.fecha_carga}T${a.hora_carga || '00:00'}`;
       const tb = `${b.fecha_carga}T${b.hora_carga || '00:00'}`;
       return ta > tb ? -1 : ta < tb ? 1 : 0;
     });
 
-    const ciclosL3    = cargasL3.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosDesdePizarron = linea =>
+      pizarronActual?.data?.[linea]?.[turno]?.totals?.ciclos_totales;
+    const ciclosL3 = ciclosDesdePizarron('L3') ??
+      cargasL3.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
     const ciclosL4    = l4EsTL4
       ? (pizarronL4?.data?.L4?.TL4?.totals?.ciclos_totales ??
          cargasL4.filter(c => c.fecha_descarga === hoy && c.turno === 'TL4').length)
       : cargasL4.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
-    const ciclosBaker = cargasBaker.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosBaker = ciclosDesdePizarron('Baker') ??
+      cargasBaker.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
+    const ciclosL1 = ciclosDesdePizarron('L1') ??
+      cargasL1.filter(c => c.fecha_descarga && getTurnoDeHora(c.hora_descarga) === turno).length;
 
     const paroHtml = (paro, label) => paro
       ? `<div style="background:#dc2626;color:#fff;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700">
@@ -3451,6 +3483,7 @@ async function viewMonitor(el) {
           ${paroHtml(paroL3, 'L3')}
           ${paroHtml(paroL4, 'L4')}
           ${paroHtml(paroBaker, 'Baker')}
+          ${paroHtml(paroL1, 'L1')}
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
@@ -3461,6 +3494,9 @@ async function viewMonitor(el) {
           </div>
           <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
             Baker — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosBaker}</span>
+          </div>
+          <div style="background:#1e293b;color:#f8fafc;border-radius:8px;padding:6px 14px;font-size:13px;font-weight:700">
+            L1 — Ciclos ${turno}: <span style="color:#38bdf8">${ciclosL1}</span>
           </div>
           <span style="font-size:11px;color:var(--p-muted)">Actualizado: ${now}</span>
         </div>
@@ -3488,22 +3524,28 @@ async function viewMonitor(el) {
     if (!contenedor) return;
     try {
       const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
-      const [dL3, dL4, dBaker, paroL3Res, paroL4Res, paroBakerRes, pizarronL4] = await Promise.all([
+      const [dL3, dL4, dBaker, dL1, paroL3Res, paroL4Res, paroBakerRes, paroL1Res,
+        pizarronActual, pizarronL4] = await Promise.all([
         GET(`/cargas/L3?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET(`/cargas/L4?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET(`/baker/cargas?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
+        GET(`/l1/cargas?fecha_ini=${fecha_ini}&fecha_fin=${fecha_fin}`),
         GET('/paros/L3/activo').catch(() => null),
         GET('/paros/L4/activo').catch(() => null),
         GET('/baker/paros/activo').catch(() => null),
+        GET('/l1/paros/activo').catch(() => null),
+        GET(`/pizarron?linea=ambas&fecha=${fecha_ini}&turno=${getCurrentTurno()}`).catch(() => null),
         GET(`/pizarron?linea=L4&fecha=${hoy}&turno=all`).catch(() => null)
       ]);
       const cL3    = Array.isArray(dL3)    ? dL3    : [];
       const cL4    = Array.isArray(dL4)    ? dL4    : [];
       const cBaker = Array.isArray(dBaker) ? dBaker : [];
+      const cL1    = Array.isArray(dL1)    ? dL1    : [];
       contenedor.innerHTML = renderMonitorContent(
-        cL3, cL4, cBaker,
-        paroL3Res?.paro || null, paroL4Res?.paro || null, paroBakerRes?.paro || null,
-        pizarronL4
+        cL3, cL4, cBaker, cL1,
+        paroL3Res?.paro || null, paroL4Res?.paro || null,
+        paroBakerRes?.paro || null, paroL1Res?.paro || null,
+        pizarronActual, pizarronL4
       );
     } catch (e) {
       contenedor.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
@@ -3512,7 +3554,7 @@ async function viewMonitor(el) {
 
   el.innerHTML = `
     <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del turno actual (L3 + L4 + Baker)</span>
+      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del turno actual (L3 + L4 + Baker + L1)</span>
       <button class="btn btn-outline btn-sm" id="mon-refresh">↻ Actualizar</button>
     </div>
     <div id="monitor-contenido"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
@@ -3722,8 +3764,9 @@ async function viewMonitorGrafico(el) {
     // Filtrar paros
     let paros = allParos.filter(p => {
       const info = semanas.find(s => String(s.sem) === String(selSemana));
-      if (info && (p.fecha_inicio < info.minFecha || p.fecha_inicio > info.maxFecha)) return false;
-      if (selFecha && p.fecha_inicio !== selFecha) return false;
+      const fechaOp = p.fecha_operativa || p.fecha_inicio;
+      if (info && (fechaOp < info.minFecha || fechaOp > info.maxFecha)) return false;
+      if (selFecha && fechaOp !== selFecha) return false;
       if (selTurno && p.turno !== selTurno) return false;
       return true;
     });
@@ -6645,12 +6688,16 @@ async function viewConfiguracion(el) {
       5: 'Día acumulado · Línea 4',
       6: 'Día acumulado · Todas las líneas',
       7: 'Turno actual · Baker',
-      8: 'Día acumulado · Baker'
+      8: 'Día acumulado · Baker',
+      9: 'Tendencia semanal · Todas las líneas',
+      10: 'Reconocimientos · Todas las líneas',
+      11: 'Turno actual · Línea 1',
+      12: 'Día acumulado · Línea 1'
     };
 
     // KPI slides
     const kpiListEl = document.getElementById('ss-kpi-slides-list');
-    kpiListEl.innerHTML = [1,2,3,4,5,6,7,8].map(id => {
+    kpiListEl.innerHTML = [1,2,3,4,5,6,7,8,9,10,11,12].map(id => {
       const slide = ssCfg.slides.find(s => s.id === id && s.type === 'kpi') || {id, type:'kpi', activo:true, duracion_seg:null};
       return `
         <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--p-border)">
@@ -6717,11 +6764,17 @@ async function viewConfiguracion(el) {
 
     const defaultDur = Number(document.getElementById('ss-default-dur').value) || 120;
 
-    const SCOPES = {1:'turno',2:'turno',3:'turno',4:'dia',5:'dia',6:'dia'};
-    const LINEAS  = {1:'L3',2:'L4',3:'ambas',4:'L3',5:'L4',6:'ambas'};
+    const SCOPES = {
+      1:'turno',2:'turno',3:'turno',4:'dia',5:'dia',6:'dia',7:'turno',8:'dia',
+      9:'trend_semana',10:'reconocimientos',11:'turno',12:'dia'
+    };
+    const LINEAS = {
+      1:'L3',2:'L4',3:'ambas',4:'L3',5:'L4',6:'ambas',7:'Baker',8:'Baker',
+      9:'ambas',10:'ambas',11:'L1',12:'L1'
+    };
 
     // Collect KPI slides
-    const kpiSlides = [1,2,3,4,5,6].map(id => {
+    const kpiSlides = [1,2,3,4,5,6,7,8,9,10,11,12].map(id => {
       const activeEl  = document.querySelector(`.ss-kpi-active[data-id="${id}"]`);
       const durEl     = document.querySelector(`.ss-kpi-dur[data-id="${id}"]`);
       const ssCfg = el._ssCfg || {};
@@ -6993,10 +7046,49 @@ async function viewConfiguracion(el) {
 // VISTA: KPI HISTÓRICO
 // ══════════════════════════════════════════════════════════════════════════════
 
+function aggregateKpiSnapshots(snaps) {
+  const acc = { efN:0,efD:0,calN:0,calD:0,capN:0,capD:0,dispN:0,dispD:0,rendN:0,rendD:0 };
+  for (const s of (snaps || [])) {
+    const efDen = Number(s.objetivo_eficiencia || 0);
+    if (efDen > 0) {
+      acc.efD += efDen;
+      acc.efN += Number(s.ciclos_eficiencia ?? s.ciclos_totales ?? 0);
+    }
+    acc.calN += Number(s.ciclos_buenos_calidad ?? s.ciclos_buenos ?? 0);
+    acc.calD += Number(s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios ?? 0);
+    acc.capN += Number(s.piezas_total || 0);
+    acc.capD += Number(s.piezas_obj_total || 0);
+    const planned = Number(s.minutos_planificados || 0);
+    const dispStops = Number(s.paros_min_disp || 0);
+    const rendStops = Number(s.paros_min_rend || 0);
+    if (planned > 0) {
+      const available = Math.max(0, planned - dispStops);
+      acc.dispD += planned;
+      acc.dispN += available;
+      acc.rendD += available;
+      acc.rendN += Math.max(0, available - rendStops);
+    }
+  }
+  return {
+    eficiencia: acc.efD > 0 ? acc.efN / acc.efD : null,
+    calidad: acc.calD > 0 ? acc.calN / acc.calD : null,
+    capacidad: acc.capD > 0 ? acc.capN / acc.capD : null,
+    disponibilidad: acc.dispD > 0 ? acc.dispN / acc.dispD : null,
+    rendimiento: acc.rendD > 0 ? acc.rendN / acc.rendD : null,
+    ...acc
+  };
+}
+
+function aggregateKpiByDate(snaps) {
+  const groups = {};
+  for (const snap of (snaps || [])) (groups[snap.fecha] ||= []).push(snap);
+  return Object.fromEntries(Object.entries(groups).map(([fecha, items]) => [fecha, aggregateKpiSnapshots(items)]));
+}
+
 async function viewKpiHistorico(el) {
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   const lunes = (() => {
-    const d = new Date(); const day = d.getDay() || 7;
+    const d = new Date(today + 'T12:00:00'); const day = d.getDay() || 7;
     d.setDate(d.getDate() - day + 1);
     return d.toLocaleDateString('en-CA');
   })();
@@ -7411,7 +7503,7 @@ async function showParetoParo(linea, desde, hasta, tituloExtra, turno = '') {
     paros.forEach(p => { const k = p.motivo || 'Sin motivo'; motivoTiempo[k] = (motivoTiempo[k] || 0) + durEfectiva(p); });
     const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
     const paroPorDia = {};
-    paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + durEfectiva(p); });
+    paros.forEach(p => { const f = p.fecha_operativa || p.fecha_inicio; paroPorDia[f] = (paroPorDia[f] || 0) + durEfectiva(p); });
     const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
     const totalMin = paros.reduce((s, p) => s + durEfectiva(p), 0);
     overlay.querySelector('#paroModalBody').innerHTML = `
@@ -7473,7 +7565,7 @@ async function showSemanaPareto(linea, desde, hasta, titulo) {
 function showEficienciaDrilldown(snap) {
   const fmtPct = v => v != null ? (v * 100).toFixed(1) + '%' : '—';
   const fmtNum = v => v != null ? v : '—';
-  const totalObj = (snap.slots || []).reduce((s, x) => s + (x.ciclos_obj || 0), 0);
+  const totalObj = snap.objetivo_eficiencia ?? (snap.slots || []).filter(x => x.estado_slot !== 'en_curso' && x.estado_slot !== 'futuro').reduce((s, x) => s + (x.ciclos_obj_adj ?? x.ciclos_obj ?? 0), 0);
   const overlay = document.createElement('div');
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:center;justify-content:center;padding:16px';
   overlay.innerHTML = `<div style="background:#fff;border-radius:12px;padding:24px;width:560px;max-width:96vw;max-height:88vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2)">
@@ -7498,8 +7590,8 @@ function showEficienciaDrilldown(snap) {
         return `<tr style="border-bottom:1px solid #f3f4f6">
           <td style="padding:5px 8px;color:#374151">${escHtml(s.hora_inicio)}–${escHtml(s.hora_fin)}</td>
           <td style="padding:5px 8px;text-align:center;font-weight:600">${fmtNum(s.ciclos_totales)}</td>
-          <td style="padding:5px 8px;text-align:center;color:#6b7280">${fmtNum(s.ciclos_obj)}</td>
-          <td style="padding:5px 8px;text-align:center;${clr}">${fmtPct(ef)}</td>
+          <td style="padding:5px 8px;text-align:center;color:#6b7280">${fmtNum(s.es_hora_en_curso ? s.objetivo_transcurrido : (s.ciclos_obj_adj ?? s.ciclos_obj))}</td>
+          <td style="padding:5px 8px;text-align:center;${clr}">${s.es_hora_en_curso ? '⏳ avance ' + fmtPct(s.eficiencia_avance) : fmtPct(ef)}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>
@@ -7567,11 +7659,9 @@ function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
     overlay.querySelector('#efModalBody').innerHTML = '<div style="text-align:center;padding:24px;color:#6b7280">Sin datos para este período</div>';
     return;
   }
-  const efPorDia = {};
-  const efPorDiaCnt = {};
-  snaps.forEach(s => { efPorDia[s.fecha] = (efPorDia[s.fecha] || 0) + (s.eficiencia || 0); efPorDiaCnt[s.fecha] = (efPorDiaCnt[s.fecha] || 0) + 1; });
-  const dias = Object.keys(efPorDia).sort().map(f => {
-    const v = Math.round(efPorDia[f] / efPorDiaCnt[f] * 100);
+  const kpiPorDia = aggregateKpiByDate(snaps);
+  const dias = Object.keys(kpiPorDia).sort().map(f => {
+    const v = Math.round((kpiPorDia[f].eficiencia || 0) * 100);
     return { label: f, value: v, label2: v + '%' };
   });
   const tableRows = snaps.sort((a, b) => b.fecha.localeCompare(a.fecha) || a.turno.localeCompare(b.turno)).map(s => `
@@ -7582,7 +7672,7 @@ function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
       <td style="padding:4px 8px;text-align:center" class="${kpiColor(s.eficiencia != null ? s.eficiencia * 100 : null)}">${s.eficiencia != null ? (s.eficiencia * 100).toFixed(1) + '%' : '—'}</td>
     </tr>`).join('');
   overlay.querySelector('#efModalBody').innerHTML = `
-    <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Eficiencia promedio por día</h4>
+    <h4 style="font-size:13px;margin:0 0 8px;color:#374151">Eficiencia consolidada por día</h4>
     ${renderHBarChart(dias, d => d.value >= 90 ? '#16a34a' : d.value >= 70 ? '#f59e0b' : '#ef4444')}
     <h4 style="font-size:13px;margin:16px 0 8px;color:#374151">Detalle por turno</h4>
     <table style="width:100%;border-collapse:collapse;font-size:12px">
@@ -7601,7 +7691,7 @@ function showEficienciaDetalle(weekSnaps, linea, semanaLabel) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 async function viewResumenTurno(el) {
-  const today = new Date().toLocaleDateString('en-CA');
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   const currentYear = new Date().getFullYear();
   const { week: currentWeek } = getISOWeekFE(today);
 
@@ -7635,7 +7725,7 @@ async function viewResumenTurno(el) {
         </select>
       </div>
       <div><span class="flabel">Turno</span>
-        <select id="rt-turno"><option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option></select>
+        <select id="rt-turno"><option value="">Todos</option><option>T1</option><option>T2</option><option>T3</option><option>TL4</option></select>
       </div>
       <div><span class="flabel">Desde</span><input type="date" id="rt-desde" value="${initRange.desde}"/></div>
       <div><span class="flabel">Hasta</span><input type="date" id="rt-hasta" value="${initRange.hasta}"/></div>
@@ -7715,11 +7805,7 @@ async function viewResumenTurno(el) {
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
           if (snap) {
-            // T3 cruza medianoche: hasta = día siguiente para incluir descargas 00:00–06:30
-            const hasta = snap.turno === 'T3'
-              ? new Date(new Date(snap.fecha+'T12:00:00').getTime()+86400000).toISOString().slice(0,10)
-              : snap.fecha;
-            showDefectosDrilldown(snap.linea, snap.fecha, hasta, snap.turno);
+            showDefectosDrilldown(snap.linea, snap.fecha, snap.fecha, snap.turno);
           }
         });
       });
@@ -7736,11 +7822,7 @@ async function viewResumenTurno(el) {
         td.addEventListener('click', () => {
           const snap = lastSnaps.find(s => s.id === td.dataset.sid);
           if (snap) {
-            // T3 cruza medianoche: hasta = día siguiente para incluir paros 00:00–06:30
-            const hasta = snap.turno === 'T3'
-              ? new Date(new Date(snap.fecha+'T12:00:00').getTime()+86400000).toISOString().slice(0,10)
-              : snap.fecha;
-            showParetoParo(snap.linea, snap.fecha, hasta, snap.turno);
+            showParetoParo(snap.linea, snap.fecha, snap.fecha, 'Turno ' + snap.turno, snap.turno);
           }
         });
       });
@@ -7773,7 +7855,7 @@ async function viewResumenTurno(el) {
       const paretoParos = Object.entries(motivoTiempo).sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
 
       const paroPorDia = {};
-      paros.forEach(p => { paroPorDia[p.fecha_inicio] = (paroPorDia[p.fecha_inicio] || 0) + durEfAnal(p); });
+      paros.forEach(p => { const f = p.fecha_operativa || p.fecha_inicio; paroPorDia[f] = (paroPorDia[f] || 0) + durEfAnal(p); });
       const diasParos = Object.entries(paroPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value, label2: (value / 60).toFixed(1) + 'h' }));
 
       const defTipo = {};
@@ -7784,26 +7866,8 @@ async function viewResumenTurno(el) {
       defs.forEach(d => { defPorDia[d.fecha] = (defPorDia[d.fecha] || 0) + 1; });
       const diasDefs = Object.entries(defPorDia).sort((a, b) => a[0].localeCompare(b[0])).map(([label, value]) => ({ label, value }));
 
-      const efPorDia = {};
-      const efPorDiaCnt = {};
-      lastSnaps.forEach(s => { efPorDia[s.fecha] = (efPorDia[s.fecha] || 0) + (s.eficiencia || 0); efPorDiaCnt[s.fecha] = (efPorDiaCnt[s.fecha] || 0) + 1; });
-      const diasEf = Object.keys(efPorDia).sort().map(f => { const v = Math.round(efPorDia[f] / efPorDiaCnt[f] * 100); return { label: f, value: v, label2: v + '%' }; });
-
-      // Daily trend aggregation (weighted by turno hours)
-      const TURNO_H = {T1:8,T2:7,T3:9};
-      const dailyAgg = {};
-      lastSnaps.forEach(s => {
-        if (!dailyAgg[s.fecha]) dailyAgg[s.fecha] = {efNum:0,efDen:0,calB:0,calN:0,capNum:0,capDen:0,rendNum:0,rendDen:0,paroMin:0,tMin:0};
-        const d = dailyAgg[s.fecha];
-        const h = TURNO_H[s.turno] || 8;
-        if (s.eficiencia  != null) { d.efNum   += s.eficiencia  * h; d.efDen   += h; }
-        if (s.rendimiento != null) { d.rendNum  += s.rendimiento * h; d.rendDen += h; }
-        d.calB += s.ciclos_buenos_calidad ?? s.ciclos_buenos;
-        d.calN += s.ciclos_no_vacios_calidad ?? s.ciclos_no_vacios;
-        if (s.capacidad != null) { d.capNum += s.capacidad * h; d.capDen += h; }
-        d.paroMin += s.paros_min_total || 0;
-        d.tMin += h * 60;
-      });
+      const dailyAgg = aggregateKpiByDate(lastSnaps);
+      const diasEf = Object.keys(dailyAgg).sort().map(f => { const v = Math.round((dailyAgg[f].eficiencia || 0) * 100); return { label: f, value: v, label2: v + '%' }; });
       const trendDias = Object.keys(dailyAgg).sort();
 
       // Mapear cada fecha a índice de día de semana (0=Lun … 6=Dom) para eje X fijo
@@ -7818,11 +7882,11 @@ async function viewResumenTurno(el) {
       trendDias.forEach(f => {
         const idx = fechaToDiaSemana(f);
         const d   = dailyAgg[f];
-        kpiByDay.ef[idx]   = d.efDen  > 0 ? +(d.efNum  / d.efDen  * 100).toFixed(1) : null;
-        kpiByDay.cal[idx]  = d.calN   > 0 ? +(d.calB   / d.calN   * 100).toFixed(1) : null;
-        kpiByDay.cap[idx]  = d.capDen > 0 ? +(d.capNum / d.capDen * 100).toFixed(1) : null;
-        kpiByDay.disp[idx] = d.tMin   > 0 ? +((d.tMin  - d.paroMin) / d.tMin * 100).toFixed(1) : null;
-        kpiByDay.rend[idx] = d.rendDen > 0 ? +(d.rendNum / d.rendDen * 100).toFixed(1) : null;
+        kpiByDay.ef[idx]   = d.eficiencia != null ? +(d.eficiencia * 100).toFixed(1) : null;
+        kpiByDay.cal[idx]  = d.calidad != null ? +(d.calidad * 100).toFixed(1) : null;
+        kpiByDay.cap[idx]  = d.capacidad != null ? +(d.capacidad * 100).toFixed(1) : null;
+        kpiByDay.disp[idx] = d.disponibilidad != null ? +(d.disponibilidad * 100).toFixed(1) : null;
+        kpiByDay.rend[idx] = d.rendimiento != null ? +(d.rendimiento * 100).toFixed(1) : null;
       });
 
       const barOpts = (target) => ({ pct: true, minVal: 0, maxVal: 100, height: 150, target, targetColor: '#ef4444' });
@@ -7899,14 +7963,11 @@ async function viewResumenTurno(el) {
 
       const LINEAS = ['Baker','L1','L3','L4'];
       const LLAB   = { Baker:'Bk', L1:'L1', L3:'L3', L4:'L4' };
-      const TURNO_H = { T1:8, T2:7, T3:9 };
-
       function aggKPI(snaps, l, filterFn) {
         const s = snaps.filter(x => x.linea === l && (filterFn ? filterFn(x) : true));
         if (!s.length) return { ef:null, cal:null };
-        let efNum=0, efDen=0, buenos=0, noVacios=0;
-        s.forEach(x => { const h=TURNO_H[x.turno]||8; if(x.eficiencia!=null){efNum+=x.eficiencia*h;efDen+=h;} buenos+=(x.ciclos_buenos_calidad??x.ciclos_buenos); noVacios+=(x.ciclos_no_vacios_calidad??x.ciclos_no_vacios); });
-        return { ef:efDen>0?efNum/efDen:null, cal:noVacios>0?buenos/noVacios:null };
+        const agg = aggregateKpiSnapshots(s);
+        return { ef:agg.eficiencia, cal:agg.calidad };
       }
       function paroHrs(l, filterFn) {
         const arr = filterFn ? parosSrc[l].filter(filterFn) : parosSrc[l];
@@ -7933,7 +7994,7 @@ async function viewResumenTurno(el) {
       }));
       const seriesParo = LINEAS.map(l => ({
         label: LLAB[l], color: COLORS[l],
-        data: weeks.map((w, i) => { const r=weekRanges[i]; return +paroHrs(l, p=>p.fecha_inicio>=r.desde&&p.fecha_inicio<=r.hasta).toFixed(1); })
+        data: weeks.map((w, i) => { const r=weekRanges[i]; return +paroHrs(l, p=>(p.fecha_operativa||p.fecha_inicio)>=r.desde&&(p.fecha_operativa||p.fecha_inicio)<=r.hasta).toFixed(1); })
       }));
 
       // Month totals for summary header
@@ -7962,7 +8023,7 @@ async function viewResumenTurno(el) {
       // Build inverted-axis table: rows = linea/KPI, columns = Mes + weeks
       const periods = [
         { label: mesCapTitle.split(' ')[0], filter: () => true, pFilter: () => true },
-        ...weeks.map((w, i) => { const r = weekRanges[i]; return { label: 'S' + w, filter: s => s.semana === w, pFilter: p => p.fecha_inicio >= r.desde && p.fecha_inicio <= r.hasta }; })
+        ...weeks.map((w, i) => { const r = weekRanges[i]; return { label: 'S' + w, filter: s => s.semana === w, pFilter: p => (p.fecha_operativa || p.fecha_inicio) >= r.desde && (p.fecha_operativa || p.fecha_inicio) <= r.hasta }; })
       ];
       const thStyle = 'padding:6px 8px;text-align:center;font-size:11px;white-space:nowrap';
       const tdStyle = 'padding:5px 8px;text-align:center;font-size:12px';
@@ -8089,22 +8150,13 @@ function renderResumenTurnoTable(snaps, linea) {
     const ciclosTot    = ws.reduce((s,x)=>s+x.ciclos_totales,0);
     const ciclosBuenos = ws.reduce((s,x)=>s+x.ciclos_buenos,0);
     const ciclosNoV    = ws.reduce((s,x)=>s+x.ciclos_no_vacios,0);
-    const paroMin      = ws.reduce((s,x)=>s+x.paros_min_total,0);
-    const TURNO_H = {T1:8,T2:7,T3:9};
-    let efNum=0,efDen=0,capNum=0,capDen=0,rendNum=0,rendDen=0;
-    ws.forEach(x=>{
-      const h=TURNO_H[x.turno]||8;
-      if(x.eficiencia  !=null){efNum  +=x.eficiencia  *h;efDen  +=h;}
-      if(x.capacidad   !=null){capNum +=x.capacidad   *h;capDen +=h;}
-      if(x.rendimiento !=null){rendNum+=x.rendimiento *h;rendDen+=h;}
-    });
-    const ef   = efDen>0?efNum/efDen:null;
-    const cal  = ciclosNoV>0?ciclosBuenos/ciclosNoV:null;
-    const cap  = capDen>0?capNum/capDen:null;
-    const rend = rendDen>0?rendNum/rendDen:null;
-    const totalMin = ws.reduce((s,x)=>s+(TURNO_H[x.turno]||8)*60,0);
-    const paroDispMin = ws.reduce((s,x)=>s+(x.paros_min_disp ?? x.paros_min_total),0);
-    const disp = totalMin>0?(totalMin-paroDispMin)/totalMin:null;
+    const paroMin      = ws.reduce((s,x)=>s+Number(x.paros_min_total||0),0);
+    const agg = aggregateKpiSnapshots(ws);
+    const ef = agg.eficiencia;
+    const cal = agg.calidad;
+    const cap = agg.capacidad;
+    const rend = agg.rendimiento;
+    const disp = agg.disponibilidad;
     const wkFechas = ws.map(x=>x.fecha).sort();
     const wkDesde = wkFechas[0];
     const wkHasta = wkFechas[wkFechas.length-1];

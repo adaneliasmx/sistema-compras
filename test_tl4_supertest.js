@@ -366,14 +366,14 @@ async function runTests() {
     for (const d of DIAS) schedule[d] = { T1: true, T2: true, T3: false }; // T3 disabled all week
     resetDb({
       turno_schedules: [{
-        id: 1, linea: 'L3', week_start: '2026-09-07', schedule,
+        id: 1, linea: 'L3', week_start: '2026-08-31', schedule,
         created_by: 'test', created_at: '2026-09-01'
       }]
     });
     const app = createApp();
     const res = await req(app)
       .post('/api/produccion/kpis/guardar')
-      .send({ fecha: '2026-09-08', linea: 'L3', turno: 'all' });
+      .send({ fecha: '2026-08-31', linea: 'L3', turno: 'all' });
     assertEqual(res.status, 200, 'Should succeed');
     const snaps = res.body.snapshots || [];
     const turnos = snaps.map(s => s.turno);
@@ -389,7 +389,7 @@ async function runTests() {
     const DIAS = ['lunes','martes','miercoles','jueves','viernes','sabado','domingo'];
     const dias = {};
     for (const d of DIAS) dias[d] = { activo: d !== 'sabado' && d !== 'domingo', hora_entrada: '08:00', hora_salida: '17:00' };
-    // Create 10 cargas for L4 on 2026-09-08 (Tuesday), descargadas at different hours
+    // Create 10 historical loads on the TL4 cutover day.
     // First 6 are arranque, last 4 count for efficiency
     const cargas = [];
     for (let i = 0; i < 10; i++) {
@@ -399,8 +399,8 @@ async function runTests() {
         herramental_id: 1, herramental_no: `H-${i}`, componente_id: 1, componente: 'Comp',
         proceso_id: 1, acabado_id: 1, varillas: 10, piezas_por_varilla: 5,
         cantidad: 50, operador_id: 1, operador: 'Op',
-        fecha_carga: '2026-09-08', hora_carga: hora,
-        fecha_descarga: '2026-09-08', hora_descarga: hora,
+        fecha_carga: '2026-08-31', hora_carga: hora,
+        fecha_descarga: '2026-08-31', hora_descarga: hora,
         turno: 'TL4', estado: 'descargado', es_vacia: false,
         semana: 37
       });
@@ -408,14 +408,14 @@ async function runTests() {
     resetDb({
       cargas,
       turno_l4_config: [{
-        id: 1, week_start: '2026-09-07', dias, arranque_ciclos: 6,
+        id: 1, week_start: '2026-08-31', dias, arranque_ciclos: 6,
         created_by: 'test', created_at: '2026-09-01'
       }]
     });
     const app = createApp();
     const res = await req(app)
       .post('/api/produccion/kpis/guardar')
-      .send({ fecha: '2026-09-08', linea: 'L4' });
+      .send({ fecha: '2026-08-31', linea: 'L4' });
     assertEqual(res.status, 200, 'Should succeed');
     const snap = (res.body.snapshots || []).find(s => s.turno === 'TL4');
     assert(snap, 'Should have TL4 snapshot');
@@ -440,18 +440,18 @@ async function runTests() {
       cargas: [{
         id: 1, folio: 'L4-1', linea: 'L4', herramental_id: 1, componente_id: 1,
         proceso_id: 1, acabado_id: 1, varillas: 10, piezas_por_varilla: 5,
-        cantidad: 50, operador_id: 1, fecha_carga: '2026-09-08', hora_carga: '10:00',
-        fecha_descarga: '2026-09-08', hora_descarga: '10:30', turno: 'TL4',
+        cantidad: 50, operador_id: 1, fecha_carga: '2026-08-31', hora_carga: '10:00',
+        fecha_descarga: '2026-08-31', hora_descarga: '10:30', turno: 'TL4',
         estado: 'descargado', es_vacia: false, semana: 37
       }],
       turno_l4_config: [{
-        id: 1, week_start: '2026-09-07', dias, arranque_ciclos: 6,
+        id: 1, week_start: '2026-08-31', dias, arranque_ciclos: 6,
         created_by: 'test', created_at: '2026-09-01'
       }]
     });
     const app = createApp();
     const res = await req(app)
-      .get('/api/produccion/kpis?linea=L4&desde=2026-09-08&hasta=2026-09-08');
+      .get('/api/produccion/kpis?linea=L4&desde=2026-08-31&hasta=2026-08-31');
     assertEqual(res.status, 200);
     const snaps = res.body.snapshots || [];
     const tl4Snap = snaps.find(s => s.turno === 'TL4');
@@ -721,22 +721,22 @@ async function runTests() {
         id: i + 1, folio: `L4-EQ-${i + 1}`, linea: 'L4',
         herramental_id: 1, componente_id: 1, varillas: 10, piezas_por_varilla: 5,
         cantidad: 50, operador_id: 1, operador: 'Op-L4',
-        fecha_carga: '2026-09-08', hora_carga: hora,
-        fecha_descarga: '2026-09-08', hora_descarga: hora,
+        fecha_carga: '2026-08-31', hora_carga: hora,
+        fecha_descarga: '2026-08-31', hora_descarga: hora,
         turno: 'TL4', estado: 'descargado', es_vacia: false, semana: 37
       });
     }
     resetDb({
       cargas,
-      turno_l4_config: [{ id: 1, week_start: '2026-09-07', dias, arranque_ciclos: 6 }]
+      turno_l4_config: [{ id: 1, week_start: '2026-08-31', dias, arranque_ciclos: 6 }]
     });
     const app = createApp();
     const kpiRes = await req(app)
-      .get('/api/produccion/kpis?linea=L4&desde=2026-09-08&hasta=2026-09-08');
+      .get('/api/produccion/kpis?linea=L4&desde=2026-08-31&hasta=2026-08-31');
     const statsRes = await req(app)
-      .get('/api/produccion/stats/semana-linea?linea=L4&fecha_ini=2026-09-08&fecha_fin=2026-09-08');
+      .get('/api/produccion/stats/semana-linea?linea=L4&fecha_ini=2026-08-31&fecha_fin=2026-08-31');
     const operatorRes = await req(app)
-      .get('/api/produccion/stats/operador-semana?operador_id=1&fecha_ini=2026-09-08&fecha_fin=2026-09-08');
+      .get('/api/produccion/stats/operador-semana?operador_id=1&fecha_ini=2026-08-31&fecha_fin=2026-08-31');
     assertEqual(kpiRes.status, 200);
     assertEqual(statsRes.status, 200);
     assertEqual(operatorRes.status, 200);
@@ -771,6 +771,264 @@ async function runTests() {
     const dbAfter = JSON.parse(fs.readFileSync(tmpDbPath, 'utf8'));
     assertEqual(dbAfter.paros_baker.length, 0, 'Baker should not create a stop');
     assertEqual(dbAfter.paros_l1.length, 0, 'L1 should not create a stop');
+  });
+
+  await test('26. T3 early-morning events use the shift-start operational date', async () => {
+    resetDb({
+      cargas: [{
+        id: 1, folio: 'L3-T3-1', linea: 'L3', herramental_id: 1, componente_id: 1,
+        cantidad: 50, operador_id: 1, operador: 'Op-L3', fecha_carga: '2026-08-03', hora_carga: '22:00',
+        fecha_descarga: '2026-08-04', hora_descarga: '02:00', turno: 'T3', estado: 'defecto',
+        defecto_id: 1, defecto: 'Def-L3', es_vacia: false
+      }],
+      paros: [{
+        id: 1, linea: 'L3', motivo_id: 1, motivo: 'Paro-L3', turno: 'T3',
+        fecha_inicio: '2026-08-04', hora_inicio: '02:00', fecha_fin: '2026-08-04', hora_fin: '02:30', duracion_min: 30
+      }]
+    });
+    const app = createApp();
+    const stats = await req(app).get('/api/produccion/stats/semana-linea?linea=L3&fecha_ini=2026-08-03&fecha_fin=2026-08-03');
+    const defects = await req(app).get('/api/produccion/resumen/defectos?linea=L3&desde=2026-08-03&hasta=2026-08-03&turno=T3');
+    const stops = await req(app).get('/api/produccion/resumen/paros?linea=L3&desde=2026-08-03&hasta=2026-08-03&turno=T3');
+    assert(stats.body.some(x => x.fecha === '2026-08-03' && x.turno === 'T3'), 'Stats must use shift-start date');
+    assertEqual(defects.body.total, 1, 'Defect must use shift-start date');
+    assertEqual(stops.body.total, 1, 'Stop must use shift-start date');
+    assertEqual(stops.body.paros[0].fecha_operativa, '2026-08-03');
+  });
+
+  await test('27. T3 stop crossing midnight is counted in slots and Pareto', async () => {
+    resetDb({ paros: [{
+      id: 1, linea: 'L3', motivo_id: 1, motivo: 'Paro-L3', turno: 'T3',
+      fecha_inicio: '2026-08-03', hora_inicio: '23:45', fecha_fin: '2026-08-04', hora_fin: '00:15', duracion_min: 30
+    }] });
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/pizarron?linea=L3&fecha=2026-08-03&turno=T3');
+    const turn = res.body.data.L3.T3;
+    const slotMinutes = turn.slots.reduce((s, x) => s + Number(x.paros_min || 0), 0);
+    const paretoMinutes = turn.pareto_paros.reduce((s, x) => s + Number(x.duracion_min || 0), 0);
+    assertEqual(slotMinutes, 30, 'Slots must count the whole cross-midnight stop');
+    assertEqual(paretoMinutes, 30, 'Pareto must match slot total');
+  });
+
+  await test('28. Pizarron and GET kpis share adjusted efficiency and availability', async () => {
+    const cargas = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1, folio: `L3-K-${i}`, linea: 'L3', herramental_id: 1, componente_id: 1,
+      cantidad: 50, operador_id: 1, fecha_carga: '2026-08-04', hora_carga: `${String(7 + i).padStart(2,'0')}:00`,
+      fecha_descarga: '2026-08-04', hora_descarga: `${String(7 + i).padStart(2,'0')}:15`, turno: 'T1', estado: 'procesado', es_vacia: false
+    }));
+    resetDb({
+      cargas,
+      motivos_paro_l3: [{ id: 1, nombre: 'Programado', afecta_eficiencia: true, afecta_disponibilidad: false, afecta_rendimiento: false }],
+      paros: [{ id: 1, linea: 'L3', motivo_id: 1, motivo: 'Programado', turno: 'T1', fecha_inicio: '2026-08-04', hora_inicio: '10:00', fecha_fin: '2026-08-04', hora_fin: '11:00', duracion_min: 60 }]
+    });
+    const app = createApp();
+    const board = await req(app).get('/api/produccion/pizarron?linea=L3&fecha=2026-08-04&turno=T1');
+    const history = await req(app).get('/api/produccion/kpis?linea=L3&turno=T1&desde=2026-08-04&hasta=2026-08-04');
+    const a = board.body.data.L3.T1.totals;
+    const b = history.body.snapshots[0];
+    assertEqual(a.eficiencia, b.eficiencia, 'Efficiency must match');
+    assertEqual(a.disponibilidad, b.disponibilidad, 'Availability must match');
+    assertEqual(b.paros_min_disp, 0, 'Programmed stop must not affect availability');
+  });
+
+  await test('29. GET kpis reads persisted snapshots for closed shifts', async () => {
+    resetDb({ kpi_snapshots: [{
+      id: 77, fecha: '2026-08-04', semana: 32, turno: 'T1', linea: 'L3',
+      eficiencia: 0.777, calidad: 0.888, capacidad: 0.666, disponibilidad: 0.999,
+      rendimiento: 0.555, ciclos_totales: 12, paros_min_total: 3, slots: []
+    }] });
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/kpis?linea=L3&turno=T1&desde=2026-08-04&hasta=2026-08-04');
+    assertEqual(res.body.snapshots[0].id, 77);
+    assertEqual(res.body.snapshots[0].eficiencia, 0.777);
+    assertEqual(res.body.snapshots[0].fuente, 'guardado');
+  });
+
+  await test('30. Active empty historical shifts remain visible with zero efficiency', async () => {
+    resetDb();
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/kpis?linea=Baker&turno=T1&desde=2026-08-04&hasta=2026-08-04');
+    assertEqual(res.body.total, 1);
+    assertEqual(res.body.snapshots[0].ciclos_totales, 0);
+    assertEqual(res.body.snapshots[0].eficiencia, 0);
+  });
+
+  await test('31. TL4 respects the requested turno filter', async () => {
+    resetDb({ turno_l4_config: [{ id: 1, week_start: '2026-08-31', dias: makeTL4Dias(), arranque_ciclos: 6 }] });
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/kpis?linea=L4&turno=T1&desde=2026-08-31&hasta=2026-08-31');
+    assertEqual(res.body.total, 0, 'T1 filter must not return TL4');
+    const board = await req(app).get('/api/produccion/pizarron?linea=L4&turno=T1&fecha=2026-08-31');
+    assert(!board.body.data.L4, 'Pizarron T1 filter must not return TL4 totals');
+  });
+
+  await test('32. Scrap after midnight is grouped into the T3 operational date', async () => {
+    resetDb({ registros_scrap: [{ id: 1, linea: 'L3', fecha: '2026-08-04', hora: '02:00', turno: 'T3', piezas_scrap: 5 }] });
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/scrap/resumen?linea=L3&fecha_ini=2026-08-03&fecha_fin=2026-08-03');
+    assertEqual(res.body.resumen.length, 1);
+    assertEqual(res.body.resumen[0].fecha, '2026-08-03');
+  });
+
+  await test('33. Live current hour is exposed as progress and excluded from total efficiency', async () => {
+    const now = new Date();
+    const fechaMx = now.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+    const horaMx = now.toLocaleTimeString('en-GB', {
+      timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hour12: false
+    }).slice(0, 5);
+    const mins = Number(horaMx.slice(0, 2)) * 60 + Number(horaMx.slice(3, 5));
+    const turno = mins >= 390 && mins < 870 ? 'T1' : mins >= 870 && mins < 1290 ? 'T2' : 'T3';
+    const opDateObj = new Date(fechaMx + 'T12:00:00');
+    if (mins < 390) opDateObj.setDate(opDateObj.getDate() - 1);
+    const opDate = opDateObj.toLocaleDateString('en-CA');
+    const schedule = {};
+    for (const dia of DIAS) schedule[dia] = { T1: true, T2: true, T3: true };
+    resetDb({
+      turno_schedules: [{ id: 1, linea: 'L3', week_start: getMonday(opDate), schedule }],
+      cargas: [{
+        id: 1, folio: 'L3-LIVE', linea: 'L3', herramental_id: 1, componente_id: 1,
+        cantidad: 50, operador_id: 1, fecha_carga: opDate, hora_carga: horaMx,
+        fecha_descarga: fechaMx, hora_descarga: horaMx, turno, estado: 'procesado', es_vacia: false
+      }]
+    });
+    const app = createApp();
+    const res = await req(app).get(`/api/produccion/pizarron?linea=L3&fecha=${opDate}&turno=${turno}`);
+    const data = res.body.data.L3[turno];
+    const current = data.slots.find(s => s.es_hora_en_curso);
+    assert(current, 'A current-hour slot must be marked');
+    assertEqual(current.ciclos_totales, 1, 'Current-hour cycle must be visible');
+    assert(data.totals.hora_en_curso, 'Turn total must expose current-hour metric');
+    assertEqual(data.totals.ciclos_eficiencia, 0, 'Current hour must not enter total efficiency numerator');
+    const completedObjective = data.slots
+      .filter(s => s.estado_slot === 'completado')
+      .reduce((sum, s) => sum + Number(s.ciclos_obj_adj ?? s.ciclos_obj ?? 0), 0);
+    assertEqual(data.totals.objetivo_eficiencia, completedObjective,
+      'Total denominator must contain only completed hours');
+    assert(Number(current.objetivo_transcurrido) >= 0,
+      'Current hour must expose its separate elapsed objective');
+  });
+
+  await test('34. KPI formulas honor stop and quality catalog flags', async () => {
+    resetDb({
+      herramentales_l3: [
+        { id: 1, numero: 'H-NORMAL', activo: true, excluir_calidad: false },
+        { id: 2, numero: 'H-EXCLUIDO', activo: true, excluir_calidad: true }
+      ],
+      motivos_paro_l3: [{
+        id: 1, nombre: 'Programado', activo: true,
+        afecta_eficiencia: true, afecta_disponibilidad: false, afecta_rendimiento: false
+      }],
+      cargas: [
+        {
+          id: 1, linea: 'L3', herramental_id: 2, componente_id: 1,
+          cantidad: 50, fecha_carga: '2026-08-04', hora_carga: '07:00',
+          fecha_descarga: '2026-08-04', hora_descarga: '07:10', turno: 'T1',
+          estado: 'defecto', defecto_id: 1, es_vacia: false
+        },
+        {
+          id: 2, linea: 'L3', herramental_id: 1, componente_id: 1,
+          cantidad: 50, fecha_carga: '2026-08-04', hora_carga: '07:10',
+          fecha_descarga: '2026-08-04', hora_descarga: '07:20', turno: 'T1',
+          estado: 'descargado', defecto_id: null, es_vacia: false
+        }
+      ],
+      paros: [{
+        id: 1, linea: 'L3', motivo_id: 1, motivo: 'Programado',
+        fecha_inicio: '2026-08-04', hora_inicio: '06:30',
+        fecha_fin: '2026-08-04', hora_fin: '07:30', duracion_min: 60, deduccion_min: 0
+      }]
+    });
+    const app = createApp();
+    const res = await req(app)
+      .get('/api/produccion/kpis?linea=L3&turno=T1&desde=2026-08-04&hasta=2026-08-04');
+    const snap = res.body.snapshots[0];
+    assertEqual(snap.objetivo_eficiencia, 14,
+      'A programmed stop must reduce the efficiency target');
+    assertEqual(snap.disponibilidad, 1,
+      'A stop disabled for availability must not reduce availability');
+    assertEqual(snap.calidad, 1,
+      'A tool excluded from quality must leave both quality numerator and denominator');
+  });
+
+  await test('35. Availability and performance catalog flags act independently', async () => {
+    resetDb({
+      motivos_paro_l3: [{
+        id: 1, nombre: 'Afecta ambos', activo: true,
+        afecta_eficiencia: false, afecta_disponibilidad: true, afecta_rendimiento: true
+      }],
+      paros: [{
+        id: 1, linea: 'L3', motivo_id: 1, motivo: 'Afecta ambos',
+        fecha_inicio: '2026-08-04', hora_inicio: '06:30',
+        fecha_fin: '2026-08-04', hora_fin: '07:30', duracion_min: 60, deduccion_min: 0
+      }]
+    });
+    const app = createApp();
+    const res = await req(app)
+      .get('/api/produccion/kpis?linea=L3&turno=T1&desde=2026-08-04&hasta=2026-08-04');
+    const snap = res.body.snapshots[0];
+    assertEqual(snap.objetivo_eficiencia, 16,
+      'A non-programmed stop must keep the full efficiency target');
+    assertEqual(snap.disponibilidad, 0.875,
+      'Availability flag must reduce availability');
+    assertEqual(snap.rendimiento, 0.857,
+      'Performance flag must reduce performance even when availability is also enabled');
+  });
+
+  await test('36. Completed-load listings filter by discharge operational date', async () => {
+    resetDb({
+      cargas: [{
+        id: 1, linea: 'L3', fecha_carga: '2026-08-03', hora_carga: '23:30',
+        fecha_descarga: '2026-08-04', hora_descarga: '02:00', turno: 'T3',
+        estado: 'descargado'
+      }]
+    });
+    const app = createApp();
+    const res = await req(app)
+      .get('/api/produccion/cargas/L3?fecha_ini=2026-08-03&fecha_fin=2026-08-03&turno=T3');
+    assertEqual(res.body.length, 1);
+    assertEqual(res.body[0].fecha_operativa, '2026-08-03');
+    assertEqual(res.body[0].turno_operativo, 'T3');
+  });
+
+  await test('37. Admin discharge edits recalculate operational date and turno', async () => {
+    resetDb({
+      cargas: [{
+        id: 1, linea: 'L3', fecha_carga: '2026-08-03', hora_carga: '20:00',
+        fecha_descarga: '2026-08-03', hora_descarga: '20:30', turno: 'T2',
+        estado: 'descargado'
+      }]
+    });
+    const app = createApp();
+    const res = await req(app)
+      .patch('/api/produccion/cargas/1/admin-editar')
+      .send({ _linea_hint: 'L3', fecha_descarga: '2026-08-04', hora_descarga: '02:00' });
+    assertEqual(res.status, 200);
+    assertEqual(res.body.turno_descarga, 'T3');
+    assertEqual(res.body.fecha_operativa_descarga, '2026-08-03');
+  });
+
+  await test('38. Existing slideshow config receives new KPI slide definitions', async () => {
+    resetDb({
+      config: {
+        ...SEED_DB.config,
+        slideshow: {
+          default_duracion_seg: 90,
+          slides: [
+            { id: 1, type: 'kpi', scope: 'turno', linea: 'L3', activo: false },
+            { id: 11, type: 'imagen', activo: true, imagen_b64: 'data:image/png;base64,AA==' }
+          ]
+        }
+      }
+    });
+    const app = createApp();
+    const res = await req(app).get('/api/produccion/slideshow-config');
+    const slides = res.body.slideshow.slides;
+    assert(slides.some(s => s.type === 'kpi' && s.id === 11 && s.linea === 'L1'),
+      'L1 shift slide must be merged even if an image has the same numeric id');
+    assert(slides.some(s => s.type === 'kpi' && s.id === 12 && s.linea === 'L1'),
+      'L1 day slide must be merged');
+    assertEqual(slides.find(s => s.type === 'kpi' && s.id === 1).activo, false,
+      'Existing slide preferences must be preserved');
   });
 
   // ────────────────────────────────────────────────────────────────────────────
