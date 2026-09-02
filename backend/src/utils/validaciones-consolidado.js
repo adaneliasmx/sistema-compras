@@ -90,20 +90,20 @@ function aggregateFromEmbarques(embarques, flujo, desde, hasta, search) {
       : new Set();
 
     for (const it of items) {
-      const rawPart = String(getPartNumber(it, esSKF) || SIN_PARTE).trim() || SIN_PARTE;
-      const key = rawPart.toLocaleUpperCase('es-MX');
+      const rawComp = String(getComponente(it, esSKF) || 'SIN COMPONENTE').trim() || 'SIN COMPONENTE';
+      const key = rawComp.toLocaleUpperCase('es-MX');
       if (!grouped.has(key)) {
         grouped.set(key, {
-          numero_parte: rawPart,
-          _componentes: new Set(),
+          componente: rawComp,
+          _skfs: new Set(),
           cantidad_enviada: 0,
           cantidad_recibida: 0,
         });
       }
 
       const entry = grouped.get(key);
-      const comp = getComponente(it, esSKF);
-      if (comp) entry._componentes.add(comp);
+      const part = String(getPartNumber(it, esSKF) || '').trim();
+      if (part) entry._skfs.add(part);
 
       const qty = getQty(it, esSKF);
       entry.cantidad_enviada += qty;
@@ -119,18 +119,18 @@ function aggregateFromEmbarques(embarques, flujo, desde, hasta, search) {
   }
 
   const items = Array.from(grouped.values()).map(entry => ({
-    numero_parte: entry.numero_parte,
-    componente: Array.from(entry._componentes).sort((a, b) => a.localeCompare(b, 'es-MX', { numeric: true })).join(' / '),
+    componente: entry.componente,
+    numeros_skf: Array.from(entry._skfs).sort((a, b) => a.localeCompare(b, 'es-MX', { numeric: true })).join(' / '),
     cantidad_enviada: entry.cantidad_enviada,
     cantidad_recibida: entry.cantidad_recibida,
     diferencia: entry.cantidad_recibida - entry.cantidad_enviada,
-  })).sort((a, b) => a.numero_parte.localeCompare(b.numero_parte, 'es-MX', { numeric: true }));
+  })).sort((a, b) => a.componente.localeCompare(b.componente, 'es-MX', { numeric: true }));
 
   const totals = items.reduce((acc, item) => {
     acc.cantidad_enviada += item.cantidad_enviada;
     acc.cantidad_recibida += item.cantidad_recibida;
     return acc;
-  }, { numeros_parte: items.length, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 });
+  }, { componentes: items.length, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 });
   totals.diferencia = totals.cantidad_recibida - totals.cantidad_enviada;
 
   return { titulo, items, totals };
@@ -164,15 +164,15 @@ function appendFlowSheet(workbook, flow, summary) {
     [`Periodo: ${period}${summary.busqueda ? ` | Filtro: ${summary.busqueda}` : ''}`],
     [`Criterio: ${summary.criterio_fecha}`],
     [],
-    ['Numero de parte', 'Componente', 'Cantidad enviada', 'Cantidad recibida', 'Diferencia (recibida - enviada)'],
+    ['Componente', 'Numeros SKF', 'Cantidad enviada', 'Cantidad recibida', 'Diferencia (recibida - enviada)'],
     ...flow.items.map(item => [
-      item.numero_parte,
       item.componente,
+      item.numeros_skf,
       item.cantidad_enviada,
       item.cantidad_recibida,
       item.diferencia,
     ]),
-    ['TOTAL', `${flow.totals.numeros_parte} numeros de parte`, flow.totals.cantidad_enviada, flow.totals.cantidad_recibida, flow.totals.diferencia],
+    ['TOTAL', `${flow.totals.componentes} componentes`, flow.totals.cantidad_enviada, flow.totals.cantidad_recibida, flow.totals.diferencia],
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
   worksheet['!cols'] = [{ wch: 22 }, { wch: 38 }, { wch: 19 }, { wch: 19 }, { wch: 31 }];

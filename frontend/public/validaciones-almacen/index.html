@@ -161,7 +161,7 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
   <nav>
     <button class="active" onclick="switchTab('resumen')">Dashboard</button>
     <button onclick="switchTab('trazabilidad')">Trazabilidad Online</button>
-    <button onclick="switchTab('embarques')">Embarques (Sync)</button>
+    <button onclick="switchTab('embarques')" id="tabEmbarques">Embarques (Sync)</button>
     <button onclick="switchTab('pendientes')">Pendientes</button>
     <button onclick="switchTab('consolidado')">Resumen Consolidado</button>
     <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
@@ -263,6 +263,7 @@ function startApp(user) {
     : user.role;
   document.getElementById('headerUser').textContent = user.nombre + ' (' + roleLabel + ')';
   if (user.role === 'admin') document.getElementById('tabSync').style.display = '';
+  if (user.role === 'skf') document.getElementById('tabEmbarques').style.display = 'none';
   startPCPolling();
   switchTab('resumen');
 }
@@ -477,12 +478,12 @@ async function loadConsolidatedResults() {
 
 function consolidatedTable(flow) {
   const rows = flow?.items || [];
-  const totals = flow?.totals || { numeros_parte: 0, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 };
+  const totals = flow?.totals || { componentes: 0, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 };
   const body = rows.length ? rows.map(item => {
     const diffClass = item.diferencia === 0 ? 'diff-zero' : item.diferencia < 0 ? 'diff-negative' : 'diff-positive';
     return `<tr>
-      <td><strong>${escapeHtml(item.numero_parte)}</strong></td>
-      <td>${escapeHtml(item.componente || '—')}</td>
+      <td><strong>${escapeHtml(item.componente)}</strong></td>
+      <td>${escapeHtml(item.numeros_skf || '—')}</td>
       <td class="num">${formatQuantity(item.cantidad_enviada)}</td>
       <td class="num">${formatQuantity(item.cantidad_recibida)}</td>
       <td class="num ${diffClass}">${formatQuantity(item.diferencia)}</td>
@@ -493,18 +494,18 @@ function consolidatedTable(flow) {
   return `<section class="tabla-wrap consolidado-section">
     <div class="tabla-header">
       <h3>${escapeHtml(flow?.titulo || '')}</h3>
-      <span class="tabla-count">${formatQuantity(totals.numeros_parte)} números de parte</span>
+      <span class="tabla-count">${formatQuantity(totals.componentes)} componentes</span>
     </div>
     <div class="tabla-scroll">
       <table>
         <thead><tr>
-          <th>Número de parte</th><th>Componente</th>
+          <th>Componente</th><th>Números SKF</th>
           <th class="num">Cantidad enviada</th><th class="num">Cantidad recibida</th>
           <th class="num">Diferencia (recibida − enviada)</th>
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr>
-          <td>TOTAL</td><td>${formatQuantity(totals.numeros_parte)} números de parte</td>
+          <td>TOTAL</td><td>${formatQuantity(totals.componentes)} componentes</td>
           <td class="num">${formatQuantity(totals.cantidad_enviada)}</td>
           <td class="num">${formatQuantity(totals.cantidad_recibida)}</td>
           <td class="num ${totalDiffClass}">${formatQuantity(totals.diferencia)}</td>
