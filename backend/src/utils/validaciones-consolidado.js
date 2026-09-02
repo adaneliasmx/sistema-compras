@@ -1,76 +1,6 @@
 const XLSX = require('xlsx');
 
-const SIN_PARTE = 'SIN NÚMERO DE PARTE';
-const SEARCH_FIELDS = [
-  'NO. SKF', 'NO_SKF', 'skf', 'SKF', 'QR SKF', 'QR_SKF', 'qr_skf',
-  'DISPACH', 'DISPATCH', 'dispatch', 'dispach',
-  'NUMERO EMBARQUE', 'numero_embarque', 'CODIGO ENVIO', 'codigo_envio',
-];
-
-const FLUJOS = {
-  skf_a_cuesto: {
-    titulo: 'SKF a CUESTO',
-    enviados: 'val_skf_envios',
-    recibidos: 'val_cuesto_ingresos',
-    camposEnvio: {
-      parte: ['NO. SKF', 'NO_SKF', 'skf', 'SKF'],
-      componente: ['COMPONENTE', 'componente'],
-      cantidad: ['QTY', 'cantidad'],
-      fecha: ['FECHA ENVIO', 'fecha_envio', 'fecha'],
-    },
-    camposRecepcion: {
-      parte: ['NO. SKF', 'NO_SKF', 'skf', 'SKF'],
-      componente: ['COMPONENTE', 'componente'],
-      cantidad: ['QTY', 'cantidad'],
-      fecha: ['FECHA DE ESCANEO', 'fecha_recepcion', 'fecha'],
-    },
-  },
-  cuesto_a_skf: {
-    titulo: 'CUESTO a SKF',
-    enviados: 'val_cuesto_envios',
-    recibidos: 'val_skf_recepciones',
-    camposEnvio: {
-      parte: ['skf', 'SKF', 'NO. SKF', 'NO_SKF'],
-      componente: ['componente', 'COMPONENTE'],
-      cantidad: ['cantidad', 'QTY'],
-      fecha: ['fecha_envio', 'FECHA ENVIO', 'fecha'],
-    },
-    camposRecepcion: {
-      parte: ['skf', 'SKF', 'NO. SKF', 'NO_SKF'],
-      componente: ['componente', 'COMPONENTE'],
-      cantidad: ['cantidad', 'QTY'],
-      fecha: ['fecha_recepcion', 'FECHA DE ESCANEO', 'fecha'],
-    },
-  },
-};
-
-function firstValue(row, fields) {
-  for (const field of fields) {
-    const value = row?.[field];
-    if (value !== undefined && value !== null && String(value).trim() !== '') return value;
-  }
-  return '';
-}
-
-function normalizeDate(value) {
-  const raw = String(value ?? '').trim();
-  if (!raw) return '';
-
-  let match = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
-  if (match) return `${match[1]}-${match[2].padStart(2, '0')}-${match[3].padStart(2, '0')}`;
-
-  match = raw.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
-  if (match) return `${match[3]}-${match[2].padStart(2, '0')}-${match[1].padStart(2, '0')}`;
-
-  if (/^\d{10,13}$/.test(raw)) {
-    const millis = raw.length === 10 ? Number(raw) * 1000 : Number(raw);
-    const parsed = new Date(millis);
-    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString().slice(0, 10);
-  }
-
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? '' : parsed.toISOString().slice(0, 10);
-}
+const SIN_PARTE = 'SIN NUMERO DE PARTE';
 
 function isValidIsoDate(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -84,8 +14,8 @@ function isValidIsoDate(value) {
 function validateDateRange(desde = '', hasta = '') {
   const start = String(desde || '').trim();
   const end = String(hasta || '').trim();
-  if (start && !isValidIsoDate(start)) throw new Error('La fecha inicial no es válida (AAAA-MM-DD)');
-  if (end && !isValidIsoDate(end)) throw new Error('La fecha final no es válida (AAAA-MM-DD)');
+  if (start && !isValidIsoDate(start)) throw new Error('La fecha inicial no es valida (AAAA-MM-DD)');
+  if (end && !isValidIsoDate(end)) throw new Error('La fecha final no es valida (AAAA-MM-DD)');
   if (start && end && start > end) throw new Error('La fecha inicial no puede ser posterior a la fecha final');
   return { desde: start, hasta: end };
 }
@@ -96,34 +26,71 @@ function normalizeQuantity(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
-function isWithinRange(row, fields, desde, hasta) {
-  if (!desde && !hasta) return true;
-  const date = normalizeDate(firstValue(row, fields));
-  if (!date) return false;
-  if (desde && date < desde) return false;
-  if (hasta && date > hasta) return false;
+// Item field accessors per direction
+function getPartNumber(item, esSKF) {
+  if (esSKF) return item['NO. SKF'] || item['NO_SKF'] || item.skf || item.SKF || '';
+  return item.skf || item.SKF || item['NO. SKF'] || item['NO_SKF'] || '';
+}
+
+function getComponente(item, esSKF) {
+  return String((esSKF ? item.COMPONENTE : item.componente) || '').trim();
+}
+
+function getQty(item, esSKF) {
+  return normalizeQuantity(esSKF ? (item.QTY ?? item.cantidad) : (item.cantidad ?? item.QTY));
+}
+
+function getItemId(item, esSKF) {
+  return String(esSKF ? (item.DISPACH || '') : (item.codigo || '')).trim();
+}
+
+function embarqueMatchesDate(embarque, desde, hasta) {
+  const fecha = embarque.fecha_envio || '';
+  if (!fecha) return !desde && !hasta;
+  if (desde && fecha < desde) return false;
+  if (hasta && fecha > hasta) return false;
   return true;
 }
 
-function matchesSearch(row, search) {
+function embarqueMatchesSearch(embarque, search) {
   if (!search) return true;
   const term = search.toLocaleUpperCase('es-MX');
-  return SEARCH_FIELDS.some(field => {
-    const value = row?.[field];
-    return value !== undefined && value !== null
-      && String(value).toLocaleUpperCase('es-MX').includes(term);
+  const fields = [
+    embarque.numero_embarque, embarque.uuid,
+    embarque.operador_envio, embarque.operador_recepcion,
+  ];
+  if (fields.some(f => f && String(f).toLocaleUpperCase('es-MX').includes(term))) return true;
+  // Search in items
+  const items = embarque.items || [];
+  const esSKF = embarque.flujo === 'skf_a_cuesto';
+  return items.some(it => {
+    const part = getPartNumber(it, esSKF);
+    const comp = getComponente(it, esSKF);
+    const id = getItemId(it, esSKF);
+    return [part, comp, id].some(v => v && String(v).toLocaleUpperCase('es-MX').includes(term));
   });
 }
 
-function aggregateFlow(db, config, desde, hasta, search) {
+function aggregateFromEmbarques(embarques, flujo, desde, hasta, search) {
+  const esSKF = flujo === 'skf_a_cuesto';
+  const titulo = esSKF ? 'SKF a CUESTO' : 'CUESTO a SKF';
   const grouped = new Map();
 
-  const addRows = (rows, fields, quantityField) => {
-    for (const row of rows || []) {
-      if (!isWithinRange(row, fields.fecha, desde, hasta)) continue;
-      if (!matchesSearch(row, search)) continue;
+  const relevant = (embarques || []).filter(e =>
+    e.flujo === flujo
+    && embarqueMatchesDate(e, desde, hasta)
+    && embarqueMatchesSearch(e, search)
+  );
 
-      const rawPart = String(firstValue(row, fields.parte) || SIN_PARTE).trim() || SIN_PARTE;
+  for (const emb of relevant) {
+    const items = emb.items || [];
+    const isValidado = emb.estado === 'VALIDADO';
+    const coincidenSet = isValidado
+      ? new Set((emb.validacion_detalle?.coinciden || []))
+      : new Set();
+
+    for (const it of items) {
+      const rawPart = String(getPartNumber(it, esSKF) || SIN_PARTE).trim() || SIN_PARTE;
       const key = rawPart.toLocaleUpperCase('es-MX');
       if (!grouped.has(key)) {
         grouped.set(key, {
@@ -134,22 +101,29 @@ function aggregateFlow(db, config, desde, hasta, search) {
         });
       }
 
-      const item = grouped.get(key);
-      const component = String(firstValue(row, fields.componente) || '').trim();
-      if (component) item._componentes.add(component);
-      item[quantityField] += normalizeQuantity(firstValue(row, fields.cantidad));
+      const entry = grouped.get(key);
+      const comp = getComponente(it, esSKF);
+      if (comp) entry._componentes.add(comp);
+
+      const qty = getQty(it, esSKF);
+      entry.cantidad_enviada += qty;
+
+      // Recibido = item confirmed in validacion coinciden
+      if (isValidado) {
+        const itemId = getItemId(it, esSKF);
+        if (coincidenSet.has(itemId)) {
+          entry.cantidad_recibida += qty;
+        }
+      }
     }
-  };
+  }
 
-  addRows(db?.[config.enviados], config.camposEnvio, 'cantidad_enviada');
-  addRows(db?.[config.recibidos], config.camposRecepcion, 'cantidad_recibida');
-
-  const items = Array.from(grouped.values()).map(item => ({
-    numero_parte: item.numero_parte,
-    componente: Array.from(item._componentes).sort((a, b) => a.localeCompare(b, 'es-MX', { numeric: true })).join(' / '),
-    cantidad_enviada: item.cantidad_enviada,
-    cantidad_recibida: item.cantidad_recibida,
-    diferencia: item.cantidad_recibida - item.cantidad_enviada,
+  const items = Array.from(grouped.values()).map(entry => ({
+    numero_parte: entry.numero_parte,
+    componente: Array.from(entry._componentes).sort((a, b) => a.localeCompare(b, 'es-MX', { numeric: true })).join(' / '),
+    cantidad_enviada: entry.cantidad_enviada,
+    cantidad_recibida: entry.cantidad_recibida,
+    diferencia: entry.cantidad_recibida - entry.cantidad_enviada,
   })).sort((a, b) => a.numero_parte.localeCompare(b.numero_parte, 'es-MX', { numeric: true }));
 
   const totals = items.reduce((acc, item) => {
@@ -159,21 +133,24 @@ function aggregateFlow(db, config, desde, hasta, search) {
   }, { numeros_parte: items.length, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 });
   totals.diferencia = totals.cantidad_recibida - totals.cantidad_enviada;
 
-  return { titulo: config.titulo, items, totals };
+  return { titulo, items, totals };
 }
 
 function buildConsolidatedSummary(db, range = {}) {
   const { desde, hasta } = validateDateRange(range.desde, range.hasta);
   const busqueda = String(range.busqueda || '').trim();
-  if (busqueda.length > 120) throw new Error('El filtro de búsqueda no puede exceder 120 caracteres');
+  if (busqueda.length > 120) throw new Error('El filtro de busqueda no puede exceder 120 caracteres');
+
+  const embarques = db.val_embarques || [];
+
   return {
     desde: desde || null,
     hasta: hasta || null,
     busqueda: busqueda || null,
-    criterio_fecha: 'Cada movimiento se filtra por su propia fecha de envío o recepción.',
+    criterio_fecha: 'Cada embarque se filtra por su fecha de envio.',
     flujos: {
-      skf_a_cuesto: aggregateFlow(db, FLUJOS.skf_a_cuesto, desde, hasta, busqueda),
-      cuesto_a_skf: aggregateFlow(db, FLUJOS.cuesto_a_skf, desde, hasta, busqueda),
+      skf_a_cuesto: aggregateFromEmbarques(embarques, 'skf_a_cuesto', desde, hasta, busqueda),
+      cuesto_a_skf: aggregateFromEmbarques(embarques, 'cuesto_a_skf', desde, hasta, busqueda),
     },
   };
 }
@@ -187,7 +164,7 @@ function appendFlowSheet(workbook, flow, summary) {
     [`Periodo: ${period}${summary.busqueda ? ` | Filtro: ${summary.busqueda}` : ''}`],
     [`Criterio: ${summary.criterio_fecha}`],
     [],
-    ['Número de parte', 'Componente', 'Cantidad enviada', 'Cantidad recibida', 'Diferencia (recibida - enviada)'],
+    ['Numero de parte', 'Componente', 'Cantidad enviada', 'Cantidad recibida', 'Diferencia (recibida - enviada)'],
     ...flow.items.map(item => [
       item.numero_parte,
       item.componente,
@@ -195,7 +172,7 @@ function appendFlowSheet(workbook, flow, summary) {
       item.cantidad_recibida,
       item.diferencia,
     ]),
-    ['TOTAL', `${flow.totals.numeros_parte} números de parte`, flow.totals.cantidad_enviada, flow.totals.cantidad_recibida, flow.totals.diferencia],
+    ['TOTAL', `${flow.totals.numeros_parte} numeros de parte`, flow.totals.cantidad_enviada, flow.totals.cantidad_recibida, flow.totals.diferencia],
   ];
   const worksheet = XLSX.utils.aoa_to_sheet(rows);
   worksheet['!cols'] = [{ wch: 22 }, { wch: 38 }, { wch: 19 }, { wch: 19 }, { wch: 31 }];
@@ -206,11 +183,11 @@ function appendFlowSheet(workbook, flow, summary) {
 
 function buildConsolidatedWorkbookBuffer(summary, direction = 'ambas') {
   const validDirections = ['ambas', 'skf_a_cuesto', 'cuesto_a_skf'];
-  if (!validDirections.includes(direction)) throw new Error('Dirección de reporte no válida');
+  if (!validDirections.includes(direction)) throw new Error('Direccion de reporte no valida');
   const workbook = XLSX.utils.book_new();
   workbook.Props = {
     Title: 'Resumen consolidado SKF - CUESTO',
-    Subject: 'Cantidades enviadas y recibidas por número de parte',
+    Subject: 'Cantidades enviadas y recibidas por numero de parte',
     Company: 'Corporativo Cuesto',
     CreatedDate: new Date(),
   };
@@ -226,6 +203,5 @@ function buildConsolidatedWorkbookBuffer(summary, direction = 'ambas') {
 module.exports = {
   buildConsolidatedSummary,
   buildConsolidatedWorkbookBuffer,
-  normalizeDate,
   validateDateRange,
 };
