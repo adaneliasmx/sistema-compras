@@ -53,6 +53,9 @@ main{flex:1;padding:24px;max-width:1400px;margin:0 auto;width:100%}
 .filtros .btn-buscar{background:#1a3a5c;color:#fff;border:none;padding:8px 20px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.88rem}
 .filtros .btn-buscar:hover{background:#2c5f8a}
 .filtros .btn-clear{background:#f0f2f5;color:#555;border:1px solid #ccd;padding:8px 14px;border-radius:6px;cursor:pointer;font-size:.85rem}
+.filtros .btn-excel{background:#1f7a4d;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.88rem}
+.filtros .btn-excel:hover{background:#17603c}
+.filtros button:disabled{opacity:.6;cursor:wait}
 
 /* ── TABLA ── */
 .tabla-wrap{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);overflow:hidden}
@@ -111,6 +114,13 @@ tr:hover td{background:#fafbff}
 .traz-badge-count{font-size:.75rem;font-weight:600;padding:2px 10px;border-radius:12px;background:#e8f0fe;color:#1a5276}
 .scan-nums{font-size:.75rem;color:#555;font-family:'Consolas','Courier New',monospace;word-break:break-all;max-width:400px}
 .resumen-total td{font-weight:700;background:#f5f8ff;border-top:2px solid #1a3a5c}
+.tabla-scroll{overflow-x:auto}
+.consolidado-section{margin-bottom:20px}
+.consolidado-section td.num,.consolidado-section th.num{text-align:right;font-variant-numeric:tabular-nums}
+.consolidado-section tfoot td{font-weight:700;background:#f5f8ff;border-top:2px solid #1a3a5c}
+.diff-zero{color:#1e8449;font-weight:700}
+.diff-negative{color:#c0392b;font-weight:700}
+.diff-positive{color:#b7770d;font-weight:700}
 .collapsible-toggle{background:none;border:1px solid #ccd;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:.8rem;color:#555;margin-top:12px}
 .collapsible-toggle:hover{background:#f0f4ff}
 
@@ -153,6 +163,7 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
     <button onclick="switchTab('trazabilidad')">Trazabilidad Online</button>
     <button onclick="switchTab('embarques')">Embarques (Sync)</button>
     <button onclick="switchTab('pendientes')">Pendientes</button>
+    <button onclick="switchTab('consolidado')">Resumen Consolidado</button>
     <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
   </nav>
 
@@ -182,6 +193,15 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
 <script>
 // ── CONFIGURACION ──────────────────────────────────────────────────────────────
 const API = '';  // mismo origen
+
+function escapeHtml(value) {
+  const chars = { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' };
+  return String(value ?? '').replace(/[&<>"']/g, char => chars[char]);
+}
+
+function formatQuantity(value) {
+  return Number(value || 0).toLocaleString('es-MX', { maximumFractionDigits: 3 });
+}
 
 function apiFetch(path, opts = {}) {
   const token = localStorage.getItem('val_token');
@@ -238,7 +258,10 @@ function startApp(user) {
   document.getElementById('loginPage').style.display = 'none';
   document.getElementById('appPage').style.display = 'flex';
   document.getElementById('appPage').style.flexDirection = 'column';
-  document.getElementById('headerUser').textContent = user.nombre + ' (' + user.role + ')';
+  const roleLabel = user.role === 'skf' ? 'SKF · solo consulta'
+    : user.role === 'viewer' ? 'Viewer · solo lectura'
+    : user.role;
+  document.getElementById('headerUser').textContent = user.nombre + ' (' + roleLabel + ')';
   if (user.role === 'admin') document.getElementById('tabSync').style.display = '';
   startPCPolling();
   switchTab('resumen');
@@ -268,6 +291,7 @@ function switchTab(tab) {
   if (tab === 'trazabilidad')  renderTrazabilidad();
   if (tab === 'embarques')     renderEmbarques();
   if (tab === 'pendientes')    renderPendientes();
+  if (tab === 'consolidado')   renderConsolidado();
   if (tab === 'syncstatus')    renderSyncStatus();
 }
 
@@ -393,6 +417,155 @@ async function renderResumen() {
         </table>
       </div>
     </div>`;
+}
+
+// ── RESUMEN CONSOLIDADO SKF / CUESTO ──────────────────────────────────────────
+let _consolidadoData = null;
+
+async function renderConsolidado() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div class="alert info">
+      Resumen por número de parte, sin separar por embarque. El periodo se aplica a la fecha propia de cada movimiento: envío o recepción.
+    </div>
+    <div class="filtros">
+      <div><label>Desde</label><input type="date" id="conDesde"></div>
+      <div><label>Hasta</label><input type="date" id="conHasta"></div>
+      <div><label>Número de parte, dispatch o SKF</label><input type="text" id="conBusqueda" maxlength="120" placeholder="Teclear para buscar" onkeydown="if(event.key==='Enter') loadConsolidatedResults()"></div>
+      <div>
+        <label>Dirección</label>
+        <select id="conDireccion" onchange="paintConsolidatedResults()">
+          <option value="ambas">Ambas direcciones</option>
+          <option value="skf_a_cuesto">SKF → CUESTO</option>
+          <option value="cuesto_a_skf">CUESTO → SKF</option>
+        </select>
+      </div>
+      <button class="btn-buscar" onclick="loadConsolidatedResults()">Consultar</button>
+      <button class="btn-clear" onclick="clearConsolidatedFilters()">Limpiar</button>
+      <button class="btn-excel" onclick="downloadConsolidatedExcel(this)">Exportar Excel</button>
+    </div>
+    <div id="consolidadoResult"><div class="spinner"></div></div>`;
+  await loadConsolidatedResults();
+}
+
+function consolidatedFilters() {
+  const desde = document.getElementById('conDesde')?.value || '';
+  const hasta = document.getElementById('conHasta')?.value || '';
+  const busqueda = document.getElementById('conBusqueda')?.value.trim() || '';
+  const direccion = document.getElementById('conDireccion')?.value || 'ambas';
+  if (desde && hasta && desde > hasta) throw new Error('La fecha inicial no puede ser posterior a la fecha final.');
+  const params = new URLSearchParams();
+  if (desde) params.set('desde', desde);
+  if (hasta) params.set('hasta', hasta);
+  if (busqueda) params.set('busqueda', busqueda);
+  params.set('direccion', direccion);
+  return { params, direccion };
+}
+
+async function loadConsolidatedResults() {
+  const result = document.getElementById('consolidadoResult');
+  if (!result) return;
+  result.innerHTML = '<div class="spinner"></div>';
+  try {
+    const { params } = consolidatedFilters();
+    _consolidadoData = await apiFetch('/resumen-consolidado?' + params.toString());
+    if (_consolidadoData) paintConsolidatedResults();
+  } catch (error) {
+    result.innerHTML = `<div class="alert warn">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function consolidatedTable(flow) {
+  const rows = flow?.items || [];
+  const totals = flow?.totals || { numeros_parte: 0, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 };
+  const body = rows.length ? rows.map(item => {
+    const diffClass = item.diferencia === 0 ? 'diff-zero' : item.diferencia < 0 ? 'diff-negative' : 'diff-positive';
+    return `<tr>
+      <td><strong>${escapeHtml(item.numero_parte)}</strong></td>
+      <td>${escapeHtml(item.componente || '—')}</td>
+      <td class="num">${formatQuantity(item.cantidad_enviada)}</td>
+      <td class="num">${formatQuantity(item.cantidad_recibida)}</td>
+      <td class="num ${diffClass}">${formatQuantity(item.diferencia)}</td>
+    </tr>`;
+  }).join('') : '<tr><td colspan="5" class="empty">No hay movimientos en el periodo seleccionado.</td></tr>';
+  const totalDiffClass = totals.diferencia === 0 ? 'diff-zero' : totals.diferencia < 0 ? 'diff-negative' : 'diff-positive';
+
+  return `<section class="tabla-wrap consolidado-section">
+    <div class="tabla-header">
+      <h3>${escapeHtml(flow?.titulo || '')}</h3>
+      <span class="tabla-count">${formatQuantity(totals.numeros_parte)} números de parte</span>
+    </div>
+    <div class="tabla-scroll">
+      <table>
+        <thead><tr>
+          <th>Número de parte</th><th>Componente</th>
+          <th class="num">Cantidad enviada</th><th class="num">Cantidad recibida</th>
+          <th class="num">Diferencia (recibida − enviada)</th>
+        </tr></thead>
+        <tbody>${body}</tbody>
+        <tfoot><tr>
+          <td>TOTAL</td><td>${formatQuantity(totals.numeros_parte)} números de parte</td>
+          <td class="num">${formatQuantity(totals.cantidad_enviada)}</td>
+          <td class="num">${formatQuantity(totals.cantidad_recibida)}</td>
+          <td class="num ${totalDiffClass}">${formatQuantity(totals.diferencia)}</td>
+        </tr></tfoot>
+      </table>
+    </div>
+  </section>`;
+}
+
+function paintConsolidatedResults() {
+  const result = document.getElementById('consolidadoResult');
+  if (!result || !_consolidadoData) return;
+  const direction = document.getElementById('conDireccion')?.value || 'ambas';
+  const flows = _consolidadoData.flujos || {};
+  let html = '';
+  if (direction === 'ambas' || direction === 'skf_a_cuesto') html += consolidatedTable(flows.skf_a_cuesto);
+  if (direction === 'ambas' || direction === 'cuesto_a_skf') html += consolidatedTable(flows.cuesto_a_skf);
+  result.innerHTML = html;
+}
+
+function clearConsolidatedFilters() {
+  document.getElementById('conDesde').value = '';
+  document.getElementById('conHasta').value = '';
+  document.getElementById('conBusqueda').value = '';
+  document.getElementById('conDireccion').value = 'ambas';
+  loadConsolidatedResults();
+}
+
+async function downloadConsolidatedExcel(button) {
+  const originalText = button.textContent;
+  try {
+    const { params } = consolidatedFilters();
+    button.disabled = true;
+    button.textContent = 'Generando...';
+    const token = localStorage.getItem('val_token');
+    const response = await fetch('/api/val/resumen-consolidado/excel?' + params.toString(), {
+      headers: token ? { Authorization: 'Bearer ' + token } : {}
+    });
+    if (response.status === 401) { doLogout(); return; }
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.error || 'No se pudo generar el archivo Excel.');
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || 'resumen-skf-cuesto.xlsx';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
 }
 
 // ── TRAZABILIDAD ONLINE ─────────────────────────────────────────────────────────

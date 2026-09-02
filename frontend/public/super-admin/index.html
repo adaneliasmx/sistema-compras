@@ -377,6 +377,7 @@
         </label>
         <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Modulo independiente (SKF/Cuesto)</small>
         <select class="modal-input" id="cm-val-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="skf">SKF (solo consulta)</option>
           <option value="viewer">Viewer (solo lectura)</option>
           <option value="admin">Admin (acceso total)</option>
         </select>
@@ -642,6 +643,7 @@ function renderUsersTable() {
              onchange="changeValRole('${esc(u.email)}', this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
              <option value="admin"  ${valR==='admin' ?'selected':''}>Admin</option>
+             <option value="skf"    ${valR==='skf'   ?'selected':''}>SKF (solo consulta)</option>
              <option value="viewer" ${valR==='viewer'?'selected':''}>Viewer</option>
            </select>
          </div>`;

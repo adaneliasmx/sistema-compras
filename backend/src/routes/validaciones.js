@@ -7,6 +7,10 @@ const { read, write, nextId } = require('../db-validaciones');
 const { valAuthRequired, valAllowRoles, syncKeyRequired } = require('../middleware/validaciones-auth');
 const JWT_SECRET = require('../jwt-secret');
 const { createRateLimiter } = require('../rate-limit');
+const {
+  buildConsolidatedSummary,
+  buildConsolidatedWorkbookBuffer,
+} = require('../utils/validaciones-consolidado');
 const _rl = createRateLimiter();
 
 function nowMxDate() {
@@ -282,6 +286,32 @@ router.get('/resumen', valAuthRequired, (req, res) => {
       pendientes_sin_qry:  cuestoPend.filter(r => r.tipo === 'SIN_QRY').length,
     }
   });
+});
+
+// Resumen bidireccional agrupado por numero de parte, sin separar por embarque.
+// Disponible para todos los usuarios autenticados, incluido el perfil SKF.
+router.get('/resumen-consolidado/excel', valAuthRequired, (req, res) => {
+  try {
+    const summary = buildConsolidatedSummary(read(), req.query);
+    const direction = req.query.direccion || 'ambas';
+    const workbook = buildConsolidatedWorkbookBuffer(summary, direction);
+    const period = summary.desde || summary.hasta
+      ? `${summary.desde || 'inicio'}_${summary.hasta || 'hoy'}`
+      : 'todas-las-fechas';
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="resumen-skf-cuesto_${period}.xlsx"`);
+    res.send(workbook);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/resumen-consolidado', valAuthRequired, (req, res) => {
+  try {
+    res.json(buildConsolidatedSummary(read(), req.query));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

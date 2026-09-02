@@ -642,13 +642,13 @@ router.get('/val-users', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/val-role
 // Asignar/revocar acceso a Validaciones Almacen.
 // Crea el usuario en usuarios_val si no existe (reutiliza password hash de compras o rhh).
-// Roles validos: admin | viewer | null (null = revocar)
+// Roles validos: admin | viewer | skf | null (null = revocar)
 router.patch('/unified-users/val-role', superAdminRequired, (req, res) => {
   const { email, val_role } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email requerido' });
-  const validRoles = ['admin', 'viewer'];
+  const validRoles = ['admin', 'viewer', 'skf'];
   if (val_role && !validRoles.includes(val_role))
-    return res.status(400).json({ error: 'Rol invalido. Use: admin, viewer o null' });
+    return res.status(400).json({ error: 'Rol invalido. Use: admin, viewer, skf o null' });
 
   const emailLow = email.toLowerCase();
   const valDb = readVal();
