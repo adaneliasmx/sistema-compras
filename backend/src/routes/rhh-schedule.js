@@ -1,7 +1,8 @@
 const express = require('express');
-const { read, write, nextId, calcVacBalance, getSystemEmpIds } = require('../db-rhh');
+const { read, write, writeAsync, nextId, calcVacBalance, getSystemEmpIds } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
+const { ensureUnionAgreementHolidays } = require('../utils/rhh-holidays');
 const router = express.Router();
 
 function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
@@ -908,9 +909,13 @@ router.post('/request-te', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
 });
 
 // ── GET /api/rhh/schedule/holidays?year=2026 ──────────────────────────────────
-router.get('/holidays', rhhAuthRequired, (req, res) => {
+router.get('/holidays', rhhAuthRequired, async (req, res) => {
   const db = read();
   const year = req.query.year || String(new Date().getFullYear());
+  if (ensureUnionAgreementHolidays(db, Number(year))) {
+    try { await writeAsync(db); }
+    catch (err) { return res.status(500).json({ error: 'No fue posible materializar los feriados sindicales' }); }
+  }
   const list = (db.rhh_holidays || []).filter(h => h.date && h.date.startsWith(year));
   res.json(list);
 });

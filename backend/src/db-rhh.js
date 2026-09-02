@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { mergeEmployeesFromSeed } = require('./utils/rhh-data-integrity');
+const { ensureUnionAgreementHolidays } = require('./utils/rhh-holidays');
 
 // ── Rutas JSON ─────────────────────────────────────────────────────────────────
 // seedPath: JSON comprometido en git, SIEMPRE disponible en cualquier entorno
@@ -53,6 +54,7 @@ const EMPTY_DB = {
   rhh_doc_templates: [],
   rhh_attendance: [],
   rhh_holidays: [],
+  rhh_recurring_holidays: [],
   rhh_attendance_log: [],
   rhh_vacation_rules: [],
   rhh_lft_rules: [],         // Tabla LFT: [{ years, dias }] — días de vacaciones por antigüedad
@@ -82,7 +84,12 @@ const EMPTY_DB = {
   // Catálogos editables de razones TE (Fase 5)
   rhh_te_catalogos: [],
   // Candidatos a baja detectados por import CONTPAQ (Fase 1D — 2026-08-13)
-  rhh_baja_candidatos: []
+  rhh_baja_candidatos: [],
+  // Eventos operativos de Control de Asistencias.
+  rhh_txt_deudas: [],
+  rhh_txt_pagos: [],
+  rhh_bono_vales: [],
+  rhh_cumpleanos_incidencias: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)
@@ -111,6 +118,9 @@ async function initDb() {
       console.warn('[db-rhh] seedPath NO ENCONTRADO:', seedPath, '— usando EMPTY_DB como seed');
     }
 
+    const currentYear = Number(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric' }));
+    ensureUnionAgreementHolidays(seed, [2026, currentYear, currentYear + 1]);
+
     const { rows } = await pool.query('SELECT data FROM rhh_data WHERE id = 1');
     if (rows.length === 0) {
       // Primera vez: insertar seed completo
@@ -126,6 +136,7 @@ async function initDb() {
         seed.rhh_employees || []
       );
       existing.rhh_employees = mergedEmps;
+      ensureUnionAgreementHolidays(existing, [2026, currentYear, currentYear + 1]);
 
       _cache = existing;
       await pool.query('UPDATE rhh_data SET data=$1 WHERE id=1', [JSON.stringify(existing)]);
@@ -141,6 +152,10 @@ async function initDb() {
       ...structuredClone(EMPTY_DB),
       ...JSON.parse(fs.readFileSync(dbPath, 'utf8')),
     };
+    const currentYear = Number(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric' }));
+    if (ensureUnionAgreementHolidays(_cache, [2026, currentYear, currentYear + 1])) {
+      await persistSnapshot(_cache);
+    }
     console.log('[db-rhh] Datos cargados desde JSON local:', dbPath);
   }
 }

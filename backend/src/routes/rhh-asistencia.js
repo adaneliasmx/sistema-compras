@@ -152,6 +152,34 @@ function getTotalHorasPendientes(db, employeeId) {
   return getActiveDeudas(db, employeeId).reduce((s, d) => s + (d.horas_pendientes || 0), 0);
 }
 
+function pagoAplicadoADeuda(pago, deudaId) {
+  if (Array.isArray(pago.aplicaciones)) {
+    return pago.aplicaciones
+      .filter(a => Number(a.deuda_id) === Number(deudaId))
+      .reduce((sum, a) => sum + (Number(a.horas) || 0), 0);
+  }
+  return Number(pago.deuda_id) === Number(deudaId) ? (Number(pago.horas_aplicadas) || 0) : 0;
+}
+
+function getTxtBalanceAsOf(db, employeeId, cutoffDate) {
+  const pagos = getTxtPagos(db).filter(p =>
+    p.employee_id === Number(employeeId) && (!cutoffDate || p.fecha_pago <= cutoffDate)
+  );
+  return getTxtDeudas(db)
+    .filter(d =>
+      d.employee_id === Number(employeeId) &&
+      d.status !== 'cancelado' &&
+      (!cutoffDate || (
+        d.origen_fecha <= cutoffDate &&
+        (!d.created_at || String(d.created_at).slice(0, 10) <= cutoffDate)
+      ))
+    )
+    .reduce((sum, deuda) => {
+      const pagado = pagos.reduce((s, pago) => s + pagoAplicadoADeuda(pago, deuda.id), 0);
+      return sum + Math.max(0, (Number(deuda.horas_deuda_original) || 0) - pagado);
+    }, 0);
+}
+
 /* Horas de turno por shift_id */
 function shiftHours(db, shiftId) {
   const s = (db.rhh_shifts || []).find(sh => sh.id === Number(shiftId));
@@ -161,6 +189,34 @@ function shiftHours(db, shiftId) {
   let mins = (h2 * 60 + m2) - (h1 * 60 + m1);
   if (mins <= 0) mins += 24 * 60; // turno nocturno
   return Math.round(mins / 6) / 10;
+}
+
+function shiftForEmployeeDate(db, employeeId, fecha) {
+  const rol = findAttendanceRol(db, weekMonday(fecha));
+  const assignment = rol
+    ? (db.rhh_rol_assignments || []).find(a => a.rol_id === rol.id && Number(a.employee_id) === Number(employeeId))
+    : null;
+  const emp = (db.rhh_employees || []).find(e => Number(e.id) === Number(employeeId));
+  const shiftId = assignment?.shift_id ?? emp?.shift_id ?? null;
+  return (db.rhh_shifts || []).find(s => Number(s.id) === Number(shiftId)) || null;
+}
+
+function employeeDayContext(db, employeeId, fecha) {
+  const emp = (db.rhh_employees || []).find(e => Number(e.id) === Number(employeeId));
+  const shift = shiftForEmployeeDate(db, employeeId, fecha);
+  const jsDay = new Date(fecha + 'T12:00:00').getDay();
+  const workDay = jsDay === 0 ? 7 : jsDay;
+  const worksDay = Array.isArray(shift?.work_days) ? shift.work_days.includes(workDay) : workDay <= 5;
+  const holiday = (db.rhh_holidays || []).find(h => h.date === fecha) || null;
+  const isBirthday = !!(emp?.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+  return {
+    emp,
+    shift,
+    isRestDay: !worksDay,
+    holiday,
+    isBirthday,
+    birthdayHolidayConflict: !!holiday && isBirthday,
+  };
 }
 
 const OVERTIME_RAZONES = [
@@ -305,7 +361,7 @@ function upsertOvertimeVale(db, attRec, solicitado_por) {
   const vales = db.rhh_overtime_vales;
 
   // Si ya existe un vale para este attendance id, actualizar (si sigue pendiente)
-  const existing = vales.find(v => v.attendance_id === attRec.id);
+  const existing = vales.find(v => v.attendance_id === attRec.id && v.origen !== 'txt_excedente');
   if (existing) {
     if (existing.status === 'pendiente') {
       existing.te_hora_entrada = attRec.te_hora_entrada;
@@ -900,7 +956,7 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/rhh/asistencia/diaria?week=YYYY-MM-DD&shift_id=X
-router.get('/diaria', rhhAuthRequired, (req, res) => {
+router.get('/diaria', rhhAuthRequired, async (req, res) => {
   const week  = weekMonday(req.query.week);
   const dates = weekDates(week);
   const today = nowMxDate();
@@ -911,6 +967,16 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
 
   const template = employeesForWeek(db, week, assignments);
+  // Un cumpleaños en domingo genera por sí mismo la gratificación de la
+  // semana siguiente. Si además es festivo, prevalece la regla de no laborar
+  // y no se genera el beneficio para evitar acumulaciones incompatibles.
+  if (ensureAutomaticSundayBirthdayGratifications(db, template.employees, dates)) {
+    try {
+      await writeAsync(db);
+    } catch (err) {
+      return res.status(500).json({ error: 'No fue posible actualizar las gratificaciones de cumpleaños' });
+    }
+  }
   // Los tres submenús consumen la misma plantilla. Quien aún no tiene turno se
   // muestra como "Sin turno" en vez de desaparecer de Capturar/Lista.
   let employees = template.employees;
@@ -934,7 +1000,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
 
   // Pre-cargar datos TxT y cumpleaños para enriquecer grid
   const allDeudas  = getTxtDeudas(db);
+  const allPagos   = getTxtPagos(db);
   const allBonos   = getBonoVales(db);
+  const cumpleIncs = getCumpleIncidencias(db);
 
   const grid = employees
     .map(emp => {
@@ -944,8 +1012,7 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
         ? { id: null, name: 'BAJA' }
         : positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
-      const empDeudas = allDeudas.filter(d => d.employee_id === emp.id && d.status === 'pendiente_pago');
-      const txtHorasPend = empDeudas.reduce((s, d) => s + (d.horas_pendientes || 0), 0);
+      const txtHorasPend = getTxtBalanceAsOf(db, emp.id, dates[6]);
 
       const days = dates.map((fecha, di) => {
         const rec      = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
@@ -970,8 +1037,16 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
 
         // Cumpleaños
         const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+        const cumpleRegistro = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match === fecha);
         // Bonos del día
         const dayBonos = allBonos.filter(b => b.employee_id === emp.id && b.fecha === fecha);
+        // Pagos TxT del día (se conservan separados de la incidencia base)
+        const dayTxtPagos = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago === fecha);
+        const txtPagadoHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+        const txtExcedenteHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_extra_sobrante) || 0), 0);
+        const origenTxtDeuda = rec
+          ? allDeudas.find(d => d.origen_attendance_id === rec.id && d.status !== 'cancelado')
+          : null;
 
         return {
           fecha,
@@ -999,6 +1074,23 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
           is_locked:          locked,
           // Cumpleaños
           is_birthday:        isBirthday,
+          cumpleanos_laborado: !!cumpleRegistro?.laboro,
+          is_holiday:         isFest,
+          holiday_name:       isFest ? ((db.rhh_holidays || []).find(h => h.date === fecha)?.name || 'Festivo') : null,
+          birthday_holiday_conflict: isBirthday && isFest,
+          festivo_laborado:    isFest && rec?.incidencia_type === 'labora',
+          // Tiempo por Tiempo pagado en esta fecha
+          txt_pagado_horas:    txtPagadoHoras,
+          txt_excedente_horas: txtExcedenteHoras,
+          txt_pagos:           dayTxtPagos.map(p => ({
+            id: p.id,
+            horas_aplicadas: p.horas_aplicadas,
+            horas_extra_sobrante: p.horas_extra_sobrante || 0,
+            tipo_pago: p.tipo_pago,
+          })),
+          txt_deuda_id:        origenTxtDeuda?.id || null,
+          txt_deuda_status:    origenTxtDeuda?.status || null,
+          txt_deuda_horas:     origenTxtDeuda?.horas_deuda_original || null,
           // Bonos
           bonos:              dayBonos.map(b => ({ id: b.id, type: b.bono_type, status: b.status })),
           // Audit trail (para modal RHH/Admin)
@@ -1045,6 +1137,9 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     unlocks:         unlocks.filter(u => u.active !== false),
     overtime_razones: OVERTIME_RAZONES,
     incidencia_types: INCIDENCIA_LABELS,
+    bonos_week: allBonos
+      .filter(b => b.fecha >= dates[0] && b.fecha <= dates[6] && b.status !== 'rechazado')
+      .map(b => ({ id: b.id, employee_id: b.employee_id, bono_type: b.bono_type, fecha: b.fecha, status: b.status })),
     grid,
     user_role:       role,
     template_source: template.source,
@@ -1053,6 +1148,49 @@ router.get('/diaria', rhhAuthRequired, (req, res) => {
     catalog_reconciled_count: template.catalog_reconciled_count || 0,
   });
 });
+
+function syncDeudaTurnoIncompleto(db, attRec, userLabel) {
+  const deudas = getTxtDeudas(db);
+  const existing = deudas.find(d => d.origen_attendance_id === attRec.id && d.origen_tipo === 'turno_incompleto' && d.status !== 'cancelado');
+  const horas = attRec.incidencia_type === 'turno_incompleto'
+    ? Number(attRec.horas_pendientes_turno) || 0
+    : 0;
+
+  if (!existing && horas > 0) {
+    deudas.push({
+      id: nextId(deudas),
+      employee_id: attRec.employee_id,
+      origen_attendance_id: attRec.id,
+      origen_fecha: attRec.fecha,
+      origen_tipo: 'turno_incompleto',
+      horas_deuda_original: horas,
+      horas_pagadas: 0,
+      horas_pendientes: horas,
+      status: 'pendiente_pago',
+      created_at: nowMxDateTime(),
+      created_by: userLabel,
+      updated_at: null,
+    });
+    return;
+  }
+  if (!existing) return;
+
+  const pagadas = Number(existing.horas_pagadas) || 0;
+  if (horas <= 0) {
+    // Conserva pagos históricos; cancela únicamente el saldo no liquidado.
+    existing.horas_deuda_original = pagadas;
+    existing.horas_pendientes = 0;
+    existing.status = pagadas > 0 ? 'pagado' : 'cancelado';
+    existing.ajuste_motivo = 'Incidencia turno incompleto eliminada';
+  } else {
+    existing.horas_deuda_original = Math.max(horas, pagadas);
+    existing.horas_pendientes = Math.max(0, existing.horas_deuda_original - pagadas);
+    existing.status = existing.horas_pendientes > 0 ? 'pendiente_pago' : 'pagado';
+    existing.ajuste_motivo = horas < pagadas ? 'Horas ajustadas al mínimo ya pagado' : null;
+  }
+  existing.updated_at = nowMxDateTime();
+  existing.updated_by = userLabel;
+}
 
 // ── Función interna de upsert para bulk y single ──────────────────────────────
 function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db) {
@@ -1066,6 +1204,15 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
   if (!employee_id || !fecha || !incidencia_type) return { error: 'Campos requeridos faltantes', skip: true };
   if (!INCIDENCIA_TYPES.includes(incidencia_type)) return { error: `incidencia_type inválido: ${incidencia_type}`, skip: true };
   if (incidencia_type === 'paro_tecnico' && !['rh','admin'].includes(role)) return { error: 'Paro técnico solo RHH/Admin', skip: true };
+  if (incidencia_type === 'turno_incompleto' && !(Number(horas_pendientes_turno) > 0)) {
+    return { error: 'Turno incompleto requiere horas pendientes mayores que cero', skip: true };
+  }
+
+  const dayContext = db ? employeeDayContext(db, employee_id, fecha) : null;
+  const workIncidences = ['labora', 'retardo', 'turno_incompleto', 'paro_tecnico'];
+  if (dayContext?.birthdayHolidayConflict && (workIncidences.includes(incidencia_type) || te_activo)) {
+    return { error: 'El trabajador no puede laborar: su cumpleaños coincide con un festivo', skip: true };
+  }
 
   // Bloqueo TE si hay deuda TxT activa
   if (te_activo && db) {
@@ -1119,10 +1266,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
       registrado_por:     userLabel,
       updated_at:         nowMxDateTime(),
     };
-    // Auto-crear deuda TxT para turno_incompleto
-    if (incidencia_type === 'turno_incompleto' && hpTurno && db) {
-      autoCrearDeudaTurnoIncompleto(db, att[idx], userLabel);
-    }
+    if (db) syncDeudaTurnoIncompleto(db, att[idx], userLabel);
     return { rec: att[idx], isNew: false };
   }
 
@@ -1147,38 +1291,12 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
     created_at:         nowMxDateTime(),
   };
   att.push(rec);
-  // Auto-crear deuda TxT para turno_incompleto
-  if (incidencia_type === 'turno_incompleto' && hpTurno && db) {
-    autoCrearDeudaTurnoIncompleto(db, rec, userLabel);
-  }
+  if (db) syncDeudaTurnoIncompleto(db, rec, userLabel);
   return { rec, isNew: true };
 }
 
-/* Auto-crea deuda TxT cuando se registra turno_incompleto */
-function autoCrearDeudaTurnoIncompleto(db, attRec, createdBy) {
-  const deudas = getTxtDeudas(db);
-  // Evitar duplicado por attendance_id
-  if (deudas.some(d => d.origen_attendance_id === attRec.id && d.status !== 'cancelado')) return;
-  const horas = attRec.horas_pendientes_turno || 0;
-  if (horas <= 0) return;
-  deudas.push({
-    id: nextId(deudas),
-    employee_id: attRec.employee_id,
-    origen_attendance_id: attRec.id,
-    origen_fecha: attRec.fecha,
-    origen_tipo: 'turno_incompleto',
-    horas_deuda_original: horas,
-    horas_pagadas: 0,
-    horas_pendientes: horas,
-    status: 'pendiente_pago',
-    created_at: nowMxDateTime(),
-    created_by: createdBy,
-    updated_at: null,
-  });
-}
-
 // POST /api/rhh/asistencia/diaria — guardar un registro individual (per-row)
-router.post('/diaria', rhhAuthRequired, (req, res) => {
+router.post('/diaria', rhhAuthRequired, async (req, res) => {
   const db      = read();
   const att     = db.rhh_attendance || [];
   const role    = req.rhhUser.role;
@@ -1199,12 +1317,16 @@ router.post('/diaria', rhhAuthRequired, (req, res) => {
   }
 
   db.rhh_attendance = att;
-  write(db);
-  res.status(result.isNew ? 201 : 200).json(result.rec);
+  try {
+    await writeAsync(db);
+    res.status(result.isNew ? 201 : 200).json(result.rec);
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar la asistencia' });
+  }
 });
 
 // POST /api/rhh/asistencia/diaria/bulk — guardar múltiples registros (compatibilidad)
-router.post('/diaria/bulk', rhhAuthRequired, (req, res) => {
+router.post('/diaria/bulk', rhhAuthRequired, async (req, res) => {
   const { records = [] } = req.body || {};
   if (!records.length) return res.json({ ok: true, saved: 0 });
 
@@ -1228,12 +1350,16 @@ router.post('/diaria/bulk', rhhAuthRequired, (req, res) => {
   }
 
   db.rhh_attendance = att;
-  write(db);
-  res.json({ ok: true, saved, locked });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, saved, locked });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar las asistencias' });
+  }
 });
 
 // PUT /api/rhh/asistencia/diaria/:id/rh-editar — RHH/Admin override con trazabilidad
-router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
   const id      = Number(req.params.id);
   const { incidencia_type, proyecto, notas, motivo } = req.body || {};
 
@@ -1246,6 +1372,15 @@ router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin
   const att = db.rhh_attendance || [];
   const idx = att.findIndex(r => r.id === id);
   if (idx === -1) return res.status(404).json({ error: 'Registro no encontrado' });
+  if (incidencia_type === 'turno_incompleto' && !(Number(att[idx].horas_pendientes_turno) > 0)) {
+    return res.status(400).json({ error: 'Turno incompleto requiere horas pendientes mayores que cero' });
+  }
+  if (incidencia_type && ['labora', 'retardo', 'turno_incompleto', 'paro_tecnico'].includes(incidencia_type)) {
+    const ctx = employeeDayContext(db, att[idx].employee_id, att[idx].fecha);
+    if (ctx.birthdayHolidayConflict) {
+      return res.status(400).json({ error: 'El trabajador no puede laborar: su cumpleaños coincide con un festivo' });
+    }
+  }
 
   const old = { ...att[idx] };
   const userLbl = req.rhhUser.full_name || req.rhhUser.email;
@@ -1286,21 +1421,37 @@ router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin
   if (notas !== undefined) att[idx].notas = notas || null;
   att[idx].editado_por_rh = userLbl;
   att[idx].editado_at_rh  = nowMxDateTime();
+  syncDeudaTurnoIncompleto(db, att[idx], userLbl);
 
   db.rhh_attendance       = att;
   db.rhh_attendance_audit = audits;
-  write(db);
-  res.json({ ok: true, rec: att[idx], audit_entries: fields.length });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, rec: att[idx], audit_entries: fields.length });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar la edición de asistencia' });
+  }
 });
 
 // DELETE /api/rhh/asistencia/diaria/:id
-router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
+router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
   const db  = read();
   const idx = (db.rhh_attendance || []).findIndex(r => r.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+  const rec = db.rhh_attendance[idx];
+  const hasLinkedPayment = getTxtPagos(db).some(p => p.attendance_id === rec.id);
+  const hasLinkedBonus = getBonoVales(db).some(b => b.attendance_id === rec.id && b.status !== 'rechazado');
+  if (hasLinkedPayment || hasLinkedBonus) {
+    return res.status(409).json({ error: 'No se puede eliminar: la asistencia tiene pagos TXT o bonos vinculados' });
+  }
+  syncDeudaTurnoIncompleto(db, { ...rec, incidencia_type: null, horas_pendientes_turno: null }, req.rhhUser.full_name || req.rhhUser.email);
   db.rhh_attendance.splice(idx, 1);
-  write(db);
-  res.json({ ok: true });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible eliminar la asistencia' });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1418,18 +1569,25 @@ router.post('/overtime-vales/:id/rechazar', rhhAuthRequired, rhhRequireRole('rh'
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /api/rhh/asistencia/semana?week=YYYY-MM-DD&shift_id=X
-router.get('/semana', rhhAuthRequired, (req, res) => {
+router.get('/semana', rhhAuthRequired, async (req, res) => {
   const week  = weekMonday(req.query.week);
   const dates = weekDates(week);
   const db    = read();
 
   const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
-  const records     = (db.rhh_attendance    || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[5]);
+  const records     = (db.rhh_attendance    || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[6]);
   const holidays    = (db.rhh_holidays      || []).map(h => h.date);
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
 
   const template = employeesForWeek(db, week, assignments);
+  if (ensureAutomaticSundayBirthdayGratifications(db, template.employees, dates)) {
+    try {
+      await writeAsync(db);
+    } catch (err) {
+      return res.status(500).json({ error: 'No fue posible actualizar las gratificaciones de cumpleaños' });
+    }
+  }
   let employees = template.employees;
   if (req.query.shift_id) {
     const sid = Number(req.query.shift_id);
@@ -1441,7 +1599,7 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
 
   const positions  = db.rhh_positions || [];
   const shifts     = db.rhh_shifts    || [];
-  const allDeudas  = getTxtDeudas(db);
+  const allPagos   = getTxtPagos(db);
   const allBonos   = getBonoVales(db);
   const cumpleIncs = getCumpleIncidencias(db);
 
@@ -1464,6 +1622,10 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
       if (isVac)  autoType = 'vacacion';
       if (emp.template_status === 'baja') autoType = 'baja';
       if (rec?.te_horas) teHorasWeek += rec.te_horas;
+      const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+      const dayTxtPagos = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago === fecha);
+      const txtPagadoHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+      const cumpleRegistro = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match === fecha && c.laboro);
 
       return {
         fecha,
@@ -1475,15 +1637,26 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
         is_auto:            !rec && !!autoType,
         te_activo:          rec?.te_activo       ?? false,
         te_horas:           rec?.te_horas        ?? null,
+        is_holiday:         isFest,
+        holiday_name:       isFest ? ((db.rhh_holidays || []).find(h => h.date === fecha)?.name || 'Festivo') : null,
+        is_birthday:        isBirthday,
+        birthday_holiday_conflict: isBirthday && isFest,
+        festivo_laborado:   isFest && rec?.incidencia_type === 'labora',
+        cumpleanos_laborado: !!cumpleRegistro,
+        txt_pagado_horas:   txtPagadoHoras,
+        txt_excedente_horas: dayTxtPagos.reduce((s, p) => s + (Number(p.horas_extra_sobrante) || 0), 0),
       };
     });
 
     // Comentarios enriquecidos
     const empBonos = allBonos.filter(b => b.employee_id === emp.id && b.week_start === week);
-    const empDeudas = allDeudas.filter(d => d.employee_id === emp.id && d.status === 'pendiente_pago');
-    const txtPend = empDeudas.reduce((s, d) => s + (d.horas_pendientes || 0), 0);
+    const txtPend = getTxtBalanceAsOf(db, emp.id, dates[6]);
+    const empPagosWeek = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago >= dates[0] && p.fecha_pago <= dates[6]);
+    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
     const empCumple = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match >= dates[0] && c.birth_date_match <= dates[6] && c.laboro);
     const vacDays = days.filter(d => d.incidencia_type === 'vacacion').length;
+    const festivosLaborados = days.filter(d => d.festivo_laborado).length;
+    const specialConflicts = days.filter(d => d.birthday_holiday_conflict).length;
 
     const comentarios = [];
     for (const b of empBonos) {
@@ -1491,8 +1664,11 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
       comentarios.push({ text: `${lbl}: ${b.status}`, type: 'bono', status: b.status });
     }
     if (empCumple) comentarios.push({ text: 'Cumple. laborado', type: 'cumpleanos' });
-    if (teHorasWeek > 0) comentarios.push({ text: `+${teHorasWeek}h`, type: 'te' });
-    if (txtPend > 0) comentarios.push({ text: `-${txtPend}h`, type: 'deuda' });
+    if (festivosLaborados > 0) comentarios.push({ text: `Festivo laborado: ${festivosLaborados} día${festivosLaborados > 1 ? 's' : ''}`, type: 'festivo' });
+    if (specialConflicts > 0) comentarios.push({ text: 'Festivo + cumpleaños: no labora', type: 'especial_no_labora' });
+    if (teHorasWeek > 0) comentarios.push({ text: `Tiempo extra: ${teHorasWeek} h`, type: 'te' });
+    if (txtPagadoWeek > 0) comentarios.push({ text: `Pagó ${txtPagadoWeek} h TXT${txtPend > 0 ? `; resta ${txtPend} h` : '; deuda liquidada'}`, type: 'txt_pago' });
+    if (txtPend > 0) comentarios.push({ text: `Debe ${txtPend} h de Tiempo por Tiempo`, type: 'deuda' });
     if (vacDays > 0) comentarios.push({ text: `Vac: ${vacDays}d`, type: 'vacacion' });
 
     return {
@@ -1508,6 +1684,7 @@ router.get('/semana', rhhAuthRequired, (req, res) => {
       comentarios,
       te_horas_week:   teHorasWeek,
       txt_horas_pend:  txtPend,
+      txt_horas_pagadas_week: txtPagadoWeek,
     };
   }).sort((a, b) => {
     if (a.shift_sort !== b.shift_sort) return a.shift_sort.localeCompare(b.shift_sort);
@@ -1540,15 +1717,21 @@ router.get('/overtime-razones', rhhAuthRequired, (req, res) => res.json(OVERTIME
 // ══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/rhh/asistencia/txt/crear-deuda — crea deuda desde un día con falta
-router.post('/txt/crear-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+router.post('/txt/crear-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
   const { employee_id, attendance_id, fecha, horas } = req.body || {};
-  if (!employee_id || !fecha) return res.status(400).json({ error: 'employee_id y fecha requeridos' });
+  if (!employee_id || !attendance_id || !fecha) return res.status(400).json({ error: 'employee_id, attendance_id y fecha requeridos' });
   const db = read();
   const deudas = getTxtDeudas(db);
 
-  // Verificar que el attendance existe y es falta
+  // La deuda sólo puede originarse en la falta exacta que RHH está autorizando.
   const att = (db.rhh_attendance || []).find(r => r.id === Number(attendance_id));
-  if (attendance_id && !att) return res.status(404).json({ error: 'Registro de asistencia no encontrado' });
+  if (!att) return res.status(404).json({ error: 'Registro de asistencia no encontrado' });
+  if (att.employee_id !== Number(employee_id) || att.fecha !== fecha) {
+    return res.status(400).json({ error: 'La falta no corresponde al empleado o fecha indicados' });
+  }
+  if (att.incidencia_type !== 'falta') {
+    return res.status(400).json({ error: 'TXT sólo puede autorizarse desde una incidencia Falta' });
+  }
 
   // Evitar duplicado
   if (attendance_id && deudas.some(d => d.origen_attendance_id === Number(attendance_id) && d.status !== 'cancelado')) {
@@ -1556,8 +1739,9 @@ router.post('/txt/crear-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), 
   }
 
   // Determinar horas de deuda: si viene del front, usar esas; sino calcular por turno
-  const empShiftId = att?.shift_id;
+  const empShiftId = att.shift_id || shiftForEmployeeDate(db, employee_id, fecha)?.id;
   const horasDeuda = Number(horas) || (empShiftId ? shiftHours(db, empShiftId) : 8);
+  if (!(horasDeuda > 0 && horasDeuda <= 24)) return res.status(400).json({ error: 'Horas de deuda inválidas' });
 
   const deuda = {
     id: nextId(deudas),
@@ -1571,19 +1755,24 @@ router.post('/txt/crear-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), 
     status: 'pendiente_pago',
     created_at: nowMxDateTime(),
     created_by: req.rhhUser.full_name || req.rhhUser.email,
+    autorizado_por: req.rhhUser.full_name || req.rhhUser.email,
+    autorizado_at: nowMxDateTime(),
     updated_at: null,
   };
   deudas.push(deuda);
-  write(db);
-  res.status(201).json(deuda);
+  try {
+    await writeAsync(db);
+    res.status(201).json(deuda);
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar la deuda TXT' });
+  }
 });
 
 // POST /api/rhh/asistencia/txt/pagar — pagar deuda (turno completo o parcial)
-router.post('/txt/pagar', rhhAuthRequired, (req, res) => {
+router.post('/txt/pagar', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
   const { deuda_id, attendance_id, fecha_pago, tipo_pago, shift_id_pagado, horas_aplicadas } = req.body || {};
-  if (!deuda_id) return res.status(400).json({ error: 'deuda_id requerido' });
-  const role = req.rhhUser.role;
-  if (!['supervisor','rh','admin'].includes(role)) return res.status(403).json({ error: 'Sin permisos' });
+  if (!deuda_id || !fecha_pago) return res.status(400).json({ error: 'deuda_id y fecha_pago requeridos' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha_pago)) return res.status(400).json({ error: 'fecha_pago inválida' });
 
   const db = read();
   const deudas = getTxtDeudas(db);
@@ -1592,43 +1781,136 @@ router.post('/txt/pagar', rhhAuthRequired, (req, res) => {
   if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
   if (deuda.status !== 'pendiente_pago') return res.status(400).json({ error: 'Deuda ya saldada o cancelada' });
 
+  const ctx = employeeDayContext(db, deuda.employee_id, fecha_pago);
+  if (!ctx.emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  if (ctx.birthdayHolidayConflict) {
+    return res.status(400).json({ error: 'No puede registrar TXT: cumpleaños y festivo coinciden' });
+  }
+
+  let attendance = attendance_id
+    ? (db.rhh_attendance || []).find(a => a.id === Number(attendance_id))
+    : (db.rhh_attendance || []).find(a => a.employee_id === deuda.employee_id && a.fecha === fecha_pago);
+  if (attendance && (attendance.employee_id !== deuda.employee_id || attendance.fecha !== fecha_pago)) {
+    return res.status(400).json({ error: 'El registro de asistencia no corresponde al empleado o fecha de pago' });
+  }
+  if (!ctx.isRestDay && (!attendance || !['labora', 'retardo', 'turno_incompleto'].includes(attendance.incidencia_type))) {
+    return res.status(400).json({ error: 'En un día laborable primero debe registrar que el trabajador se presentó' });
+  }
+  if (attendance?.incidencia_type === 'falta') {
+    return res.status(400).json({ error: 'No se puede pagar TXT sobre un día marcado como falta' });
+  }
+
   let horasAplicar;
   if (tipo_pago === 'turno_completo') {
-    horasAplicar = shift_id_pagado ? shiftHours(db, shift_id_pagado) : 8;
-  } else {
+    const paidShift = (db.rhh_shifts || []).find(s => Number(s.id) === Number(shift_id_pagado));
+    if (!paidShift) return res.status(400).json({ error: 'Selecciona el turno realmente trabajado' });
+    horasAplicar = shiftHours(db, paidShift.id);
+  } else if (tipo_pago === 'parcial') {
     horasAplicar = Number(horas_aplicadas) || 0;
+  } else {
+    return res.status(400).json({ error: 'tipo_pago inválido' });
   }
-  if (horasAplicar <= 0) return res.status(400).json({ error: 'Horas a aplicar deben ser > 0' });
+  if (!(horasAplicar > 0 && horasAplicar <= 24)) return res.status(400).json({ error: 'Horas a aplicar deben estar entre 0 y 24' });
 
-  const horasSobrante = Math.max(0, horasAplicar - deuda.horas_pendientes);
-  const horasEfectivas = Math.min(horasAplicar, deuda.horas_pendientes);
+  // Registrar la presencia TXT sin convertir el descanso en jornada ordinaria.
+  if (!attendance) {
+    if (!db.rhh_attendance) db.rhh_attendance = [];
+    attendance = {
+      id: nextId(db.rhh_attendance),
+      employee_id: deuda.employee_id,
+      fecha: fecha_pago,
+      incidencia_type: ctx.holiday ? 'festivo' : 'descanso',
+      shift_id: ctx.shift?.id || null,
+      txt_presento: true,
+      registrado_por: req.rhhUser.full_name || req.rhhUser.email,
+      created_at: nowMxDateTime(),
+    };
+    db.rhh_attendance.push(attendance);
+  } else {
+    attendance.txt_presento = true;
+    attendance.txt_confirmado_por = req.rhhUser.full_name || req.rhhUser.email;
+    attendance.txt_confirmado_at = nowMxDateTime();
+  }
 
-  deuda.horas_pagadas   += horasEfectivas;
-  deuda.horas_pendientes -= horasEfectivas;
-  if (deuda.horas_pendientes <= 0) deuda.status = 'pagado';
-  deuda.updated_at = nowMxDateTime();
+  // Distribuir contra las deudas más antiguas; sólo el remanente total será TE.
+  let restante = horasAplicar;
+  const aplicaciones = [];
+  const deudasActivas = deudas
+    .filter(d => d.employee_id === deuda.employee_id && d.status === 'pendiente_pago')
+    .sort((a, b) => String(a.origen_fecha).localeCompare(String(b.origen_fecha)) || a.id - b.id);
+  for (const item of deudasActivas) {
+    if (restante <= 0) break;
+    const aplicadas = Math.min(restante, Number(item.horas_pendientes) || 0);
+    if (aplicadas <= 0) continue;
+    item.horas_pagadas = (Number(item.horas_pagadas) || 0) + aplicadas;
+    item.horas_pendientes = Math.max(0, (Number(item.horas_pendientes) || 0) - aplicadas);
+    item.status = item.horas_pendientes > 0 ? 'pendiente_pago' : 'pagado';
+    item.updated_at = nowMxDateTime();
+    aplicaciones.push({ deuda_id: item.id, horas: aplicadas });
+    restante -= aplicadas;
+  }
+  const horasEfectivas = aplicaciones.reduce((s, a) => s + a.horas, 0);
+  const horasSobrante = Math.max(0, restante);
 
   const pago = {
     id: nextId(pagos),
-    deuda_id: deuda.id,
+    deuda_id: aplicaciones[0]?.deuda_id || deuda.id,
     employee_id: deuda.employee_id,
-    attendance_id: attendance_id ? Number(attendance_id) : null,
-    fecha_pago: fecha_pago || nowMxDate(),
-    tipo_pago: tipo_pago || 'parcial',
+    attendance_id: attendance.id,
+    fecha_pago,
+    tipo_pago,
     shift_id_pagado: shift_id_pagado ? Number(shift_id_pagado) : null,
     horas_aplicadas: horasEfectivas,
     horas_extra_sobrante: horasSobrante,
+    horas_trabajadas: horasAplicar,
+    aplicaciones,
+    presento_a_pagar: true,
+    confirmado_por: req.rhhUser.full_name || req.rhhUser.email,
     created_at: nowMxDateTime(),
     created_by: req.rhhUser.full_name || req.rhhUser.email,
   };
   pagos.push(pago);
 
-  write(db);
-  res.json({ ok: true, deuda, pago, horas_sobrante: horasSobrante });
+  if (horasSobrante > 0) {
+    if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
+    db.rhh_overtime_vales.push({
+      id: nextId(db.rhh_overtime_vales),
+      attendance_id: attendance.id,
+      employee_id: deuda.employee_id,
+      fecha: fecha_pago,
+      te_hora_entrada: null,
+      te_hora_salida: null,
+      te_horas: horasSobrante,
+      te_razon: 'Excedente de pago Tiempo por Tiempo',
+      te_proyecto: attendance.proyecto || null,
+      status: 'pendiente',
+      origen: 'txt_excedente',
+      txt_pago_id: pago.id,
+      solicitado_por: req.rhhUser.full_name || req.rhhUser.email,
+      creado_at: nowMxDateTime(),
+      autorizado_por: null,
+      autorizado_at: null,
+      notas_rechazo: null,
+    });
+  }
+
+  try {
+    await writeAsync(db);
+    res.json({
+      ok: true,
+      deuda,
+      pago,
+      horas_sobrante: horasSobrante,
+      horas_pendientes_total: getTotalHorasPendientes(db, deuda.employee_id),
+      mensaje: horasSobrante > 0 ? `Se generó un vale por ${horasSobrante} h de tiempo extra pendiente de autorización` : null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar el pago TXT' });
+  }
 });
 
 // GET /api/rhh/asistencia/txt/deudas?employee_id=X
-router.get('/txt/deudas', rhhAuthRequired, (req, res) => {
+router.get('/txt/deudas', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
   const db = read();
   const deudas = getTxtDeudas(db);
   let list = [...deudas];
@@ -1647,7 +1929,7 @@ router.get('/txt/deudas', rhhAuthRequired, (req, res) => {
 });
 
 // GET /api/rhh/asistencia/txt/deudas-semana?week=YYYY-MM-DD
-router.get('/txt/deudas-semana', rhhAuthRequired, (req, res) => {
+router.get('/txt/deudas-semana', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
   const db = read();
   const deudas = getTxtDeudas(db).filter(d => d.status === 'pendiente_pago');
   const emps = db.rhh_employees || [];
@@ -1658,7 +1940,7 @@ router.get('/txt/deudas-semana', rhhAuthRequired, (req, res) => {
 });
 
 // POST /api/rhh/asistencia/txt/cancelar-deuda — cancelar deuda (solo rh/admin)
-router.post('/txt/cancelar-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+router.post('/txt/cancelar-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
   const { deuda_id } = req.body || {};
   const db = read();
   const deudas = getTxtDeudas(db);
@@ -1666,8 +1948,12 @@ router.post('/txt/cancelar-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
   deuda.status = 'cancelado';
   deuda.updated_at = nowMxDateTime();
-  write(db);
-  res.json({ ok: true, deuda });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, deuda });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible cancelar la deuda TXT' });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1675,42 +1961,48 @@ router.post('/txt/cancelar-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'
 // ══════════════════════════════════════════════════════════════════════════════
 
 // POST /api/rhh/asistencia/bonos — crear solicitud
-router.post('/bonos', rhhAuthRequired, (req, res) => {
-  const { attendance_id, employee_id, fecha, bono_type } = req.body || {};
+router.post('/bonos', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
+  const { attendance_id, employee_id, fecha, bono_type, shift_worked_id } = req.body || {};
   if (!employee_id || !fecha || !bono_type) return res.status(400).json({ error: 'Campos requeridos' });
   if (!['limpieza','encendido_resistencias'].includes(bono_type)) return res.status(400).json({ error: 'bono_type inválido' });
 
   const db = read();
   const bonos = getBonoVales(db);
 
-  // Validar día: sábado con turno 3 O domingo (cualquier turno)
+  const ctx = employeeDayContext(db, employee_id, fecha);
+  if (!ctx.emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  if (ctx.birthdayHolidayConflict) {
+    return res.status(400).json({ error: 'No se puede solicitar bono: cumpleaños y festivo coinciden' });
+  }
+
+  // Validar día: sábado con turno realmente trabajado T3 O domingo (cualquier turno)
   const d = new Date(fecha + 'T12:00:00');
   const dow = d.getDay(); // 0=dom, 6=sáb
-
-  // Obtener turno del empleado
-  const rol = findAttendanceRol(db, weekMonday(fecha));
-  const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
-  const ra = assignments.find(a => Number(a.employee_id) === Number(employee_id));
-  const emp = (db.rhh_employees || []).find(e => e.id === Number(employee_id));
-  const empShiftId = ra?.shift_id ?? emp?.shift_id;
+  const workedShift = (db.rhh_shifts || []).find(s => Number(s.id) === Number(shift_worked_id));
+  if (!workedShift) return res.status(400).json({ error: 'Selecciona el turno realmente trabajado' });
 
   if (dow === 6) {
-    // Sábado: solo si turno 3
-    if (Number(empShiftId) !== 3) return res.status(400).json({ error: 'Bono en sábado solo aplica para Turno 3' });
+    const isT3 = String(workedShift.code || '').toUpperCase() === 'T3' || /turno\s*3/i.test(workedShift.name || '');
+    if (!isT3) return res.status(400).json({ error: 'Bono en sábado solo aplica cuando el turno realmente trabajado es Turno 3' });
   } else if (dow !== 0) {
     return res.status(400).json({ error: 'Bonos solo aplican en sábado (T3) o domingo' });
   }
 
-  // Máximo 1 por operador por semana por tipo
+  // Limpieza: una vez por empleado/semana. Resistencias: un trabajador en toda la semana.
   const ws = weekMonday(fecha);
   const wDates = weekDates(ws);
   const existing = bonos.find(b =>
-    b.employee_id === Number(employee_id) &&
     b.bono_type === bono_type &&
+    (bono_type === 'limpieza' ? b.employee_id === Number(employee_id) : true) &&
     b.fecha >= wDates[0] && b.fecha <= wDates[6] &&
     b.status !== 'rechazado'
   );
-  if (existing) return res.status(400).json({ error: `Ya existe un bono ${bono_type} esta semana` });
+  if (existing) {
+    const error = bono_type === 'limpieza'
+      ? 'El trabajador ya tiene un Bono Limpieza esta semana'
+      : 'Ya existe un trabajador propuesto para Encendido de Resistencias esta semana';
+    return res.status(400).json({ error });
+  }
 
   const bono = {
     id: nextId(bonos),
@@ -1718,6 +2010,10 @@ router.post('/bonos', rhhAuthRequired, (req, res) => {
     employee_id: Number(employee_id),
     fecha,
     bono_type,
+    scheduled_shift_id: ctx.shift?.id || null,
+    shift_worked_id: workedShift.id,
+    presencia_confirmada: true,
+    presencia_confirmada_por: req.rhhUser.full_name || req.rhhUser.email,
     week_start: ws,
     status: 'pendiente',
     solicitado_por: req.rhhUser.full_name || req.rhhUser.email,
@@ -1727,12 +2023,16 @@ router.post('/bonos', rhhAuthRequired, (req, res) => {
     notas_rechazo: null,
   };
   bonos.push(bono);
-  write(db);
-  res.status(201).json(bono);
+  try {
+    await writeAsync(db);
+    res.status(201).json(bono);
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar la solicitud de bono' });
+  }
 });
 
 // GET /api/rhh/asistencia/bonos?week=&status=
-router.get('/bonos', rhhAuthRequired, (req, res) => {
+router.get('/bonos', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), (req, res) => {
   const db = read();
   let bonos = [...getBonoVales(db)];
   if (req.query.week) {
@@ -1743,14 +2043,22 @@ router.get('/bonos', rhhAuthRequired, (req, res) => {
     bonos = bonos.filter(b => b.status === req.query.status);
   }
   const emps = db.rhh_employees || [];
+  const shifts = db.rhh_shifts || [];
   res.json(bonos.map(b => {
     const emp = emps.find(e => e.id === b.employee_id);
-    return { ...b, employee_name: emp?.full_name || '?' };
+    const scheduledShift = shifts.find(s => s.id === b.scheduled_shift_id);
+    const workedShift = shifts.find(s => s.id === b.shift_worked_id);
+    return {
+      ...b,
+      employee_name: emp?.full_name || '?',
+      scheduled_shift_name: scheduledShift?.name || null,
+      shift_worked_name: workedShift?.name || null,
+    };
   }));
 });
 
 // POST /api/rhh/asistencia/bonos/:id/autorizar
-router.post('/bonos/:id/autorizar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+router.post('/bonos/:id/autorizar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
   const db = read();
   const bonos = getBonoVales(db);
   const bono = bonos.find(b => b.id === Number(req.params.id));
@@ -1759,12 +2067,16 @@ router.post('/bonos/:id/autorizar', rhhAuthRequired, rhhRequireRole('rh', 'admin
   bono.status = 'autorizado';
   bono.autorizado_por = req.rhhUser.full_name || req.rhhUser.email;
   bono.autorizado_at = nowMxDateTime();
-  write(db);
-  res.json({ ok: true, bono });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, bono });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible autorizar el bono' });
+  }
 });
 
 // POST /api/rhh/asistencia/bonos/:id/rechazar
-router.post('/bonos/:id/rechazar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+router.post('/bonos/:id/rechazar', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
   const db = read();
   const bonos = getBonoVales(db);
   const bono = bonos.find(b => b.id === Number(req.params.id));
@@ -1774,43 +2086,181 @@ router.post('/bonos/:id/rechazar', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   bono.autorizado_por = req.rhhUser.full_name || req.rhhUser.email;
   bono.autorizado_at = nowMxDateTime();
   bono.notas_rechazo = req.body.notas_rechazo || null;
-  write(db);
-  res.json({ ok: true, bono });
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, bono });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible rechazar el bono' });
+  }
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
 // CUMPLEAÑOS LABORADO
 // ══════════════════════════════════════════════════════════════════════════════
 
+function syncBirthdayGratification(db, employeeId, birthdayDate, semanaPago, laboro) {
+  if (!db.rhh_incidencias_semanales) db.rhh_incidencias_semanales = [];
+  const period = isoWeekPeriod(semanaPago);
+  if (!period) return null;
+  const rows = db.rhh_incidencias_semanales;
+  let rec = rows.find(r => Number(r.employee_id) === Number(employeeId) && r.period_key === period.period_key);
+  if (!rec && !laboro) return null;
+  if (!rec) {
+    rec = {
+      id: nextId(rows),
+      employee_id: Number(employeeId),
+      no_periodo: period.no_periodo,
+      year: period.year,
+      period_key: period.period_key,
+      dias_pagados: 7,
+      faltas: 0,
+      horas_extras_total: 0,
+      despensa: 1,
+      prima_dominical: 0,
+      vacaciones_dias: null,
+      gratificacion: null,
+      notas: '',
+    };
+    rows.push(rec);
+  }
+
+  const emp = (db.rhh_employees || []).find(e => Number(e.id) === Number(employeeId));
+  const snapshot = (db.rhh_employee_period_snapshots || []).find(s =>
+    Number(s.employee_id) === Number(employeeId) && s.period_key === period.period_key
+  );
+  const dailySalary = Number(snapshot?.sal_diario ?? snapshot?.salary_daily ?? emp?.sal_diario ?? emp?.salary_daily) || 0;
+  const previousComponent = Number(rec.gratificacion_cumpleanos_importe) || 0;
+  const otherGratification = Math.max(0, (Number(rec.gratificacion) || 0) - previousComponent);
+  const newComponent = laboro ? dailySalary : 0;
+  const newTotal = otherGratification + newComponent || null;
+  const changed =
+    Number(rec.gratificacion_cumpleanos_importe || 0) !== newComponent ||
+    (rec.gratificacion_cumpleanos_fecha || null) !== (laboro ? birthdayDate : null) ||
+    (rec.gratificacion || null) !== newTotal;
+  rec.gratificacion_cumpleanos_importe = newComponent;
+  rec.gratificacion_cumpleanos_fecha = laboro ? birthdayDate : null;
+  rec.gratificacion = newTotal;
+  if (changed) rec.updated_at = nowMxDateTime();
+  return { period, dailySalary, record: rec, changed };
+}
+
+/*
+ * El cumpleaños que cae en domingo concede un día de salario en la semana
+ * siguiente sin exigir que el trabajador marque "laboró". Se materializa al
+ * consultar Captura o Lista para que el registro quede persistido e idempotente.
+ * Un festivo en la misma fecha cancela únicamente el beneficio automático: el
+ * trabajador no puede laborar ni acumular ambos conceptos.
+ */
+function ensureAutomaticSundayBirthdayGratifications(db, employees, dates) {
+  const incs = getCumpleIncidencias(db);
+  const holidays = new Set((db.rhh_holidays || []).map(h => h.date));
+  let changed = false;
+
+  for (const fecha of dates || []) {
+    if (new Date(fecha + 'T12:00:00').getDay() !== 0) continue;
+    const nextWeek = new Date(weekMonday(fecha) + 'T12:00:00');
+    nextWeek.setDate(nextWeek.getDate() + 7);
+    const semanaPago = nextWeek.toLocaleDateString('en-CA', { timeZone: 'UTC' });
+
+    for (const emp of employees || []) {
+      if (emp.template_status && emp.template_status !== 'included') continue;
+      if (!emp.birth_date || emp.birth_date.slice(5) !== fecha.slice(5)) continue;
+
+      let existing = incs.find(i =>
+        Number(i.employee_id) === Number(emp.id) && i.birth_date_match === fecha
+      );
+
+      if (holidays.has(fecha)) {
+        if (existing?.automatico === true && existing.status !== 'bloqueado_festivo') {
+          existing.laboro = false;
+          existing.status = 'bloqueado_festivo';
+          existing.semana_pago = null;
+          existing.gratificacion_tipo = null;
+          existing.updated_at = nowMxDateTime();
+          syncBirthdayGratification(db, emp.id, fecha, semanaPago, false);
+          changed = true;
+        }
+        continue;
+      }
+
+      if (!existing) {
+        existing = {
+          id: nextId(incs),
+          employee_id: Number(emp.id),
+          birth_date_match: fecha,
+          semana_pago: semanaPago,
+          laboro: false,
+          status: 'gratificacion_programada',
+          gratificacion_tipo: 'domingo_cumpleanos',
+          automatico: true,
+          created_at: nowMxDateTime(),
+          created_by: 'Sistema',
+        };
+        incs.push(existing);
+        changed = true;
+      } else if (!existing.laboro && (
+        existing.semana_pago !== semanaPago ||
+        existing.status !== 'gratificacion_programada' ||
+        existing.gratificacion_tipo !== 'domingo_cumpleanos' ||
+        existing.automatico !== true
+      )) {
+        existing.semana_pago = semanaPago;
+        existing.status = 'gratificacion_programada';
+        existing.gratificacion_tipo = 'domingo_cumpleanos';
+        existing.automatico = true;
+        existing.updated_at = nowMxDateTime();
+        changed = true;
+      }
+
+      const grant = syncBirthdayGratification(db, emp.id, fecha, semanaPago, true);
+      if (grant?.changed) changed = true;
+    }
+  }
+
+  return changed;
+}
+
 // POST /api/rhh/asistencia/cumpleanos-laboro — marcar/desmarcar
-router.post('/cumpleanos-laboro', rhhAuthRequired, (req, res) => {
+router.post('/cumpleanos-laboro', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'admin'), async (req, res) => {
   const { employee_id, fecha, laboro } = req.body || {};
   if (!employee_id || !fecha) return res.status(400).json({ error: 'Campos requeridos' });
   const db = read();
   const incs = getCumpleIncidencias(db);
+  const ctx = employeeDayContext(db, employee_id, fecha);
+  if (!ctx.emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  if (!ctx.isBirthday) return res.status(400).json({ error: 'La fecha no corresponde al cumpleaños del trabajador' });
+  if (laboro && ctx.birthdayHolidayConflict) {
+    return res.status(400).json({ error: 'El trabajador no puede laborar cuando su cumpleaños coincide con un festivo' });
+  }
+  const attendance = (db.rhh_attendance || []).find(a => a.employee_id === Number(employee_id) && a.fecha === fecha);
+  if (laboro && !ctx.isRestDay && attendance?.incidencia_type !== 'labora') {
+    return res.status(400).json({ error: 'Primero debe registrar la asistencia como Labora' });
+  }
+
+  const nextWeek = new Date(weekMonday(fecha) + 'T12:00:00');
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  const semanaPago = nextWeek.toLocaleDateString('en-CA', { timeZone: 'UTC' });
 
   const existing = incs.find(i => i.employee_id === Number(employee_id) && i.birth_date_match === fecha);
   if (existing) {
     existing.laboro = !!laboro;
     existing.status = laboro ? 'cumpleanos_laborado' : 'pendiente';
     existing.updated_at = nowMxDateTime();
-    // Si laboró en cumpleaños que cae en domingo, crear gratificación para semana siguiente
     if (laboro) {
       const d = new Date(fecha + 'T12:00:00');
-      const nextMon = new Date(d);
-      nextMon.setDate(d.getDate() + (7 - d.getDay() + 1));
-      existing.semana_pago = nextMon.toLocaleDateString('en-CA', { timeZone: 'UTC' });
+      existing.semana_pago = semanaPago;
       existing.gratificacion_tipo = d.getDay() === 0 ? 'domingo_cumpleanos' : 'cumpleanos_laborado';
+    } else {
+      existing.semana_pago = null;
+      existing.gratificacion_tipo = null;
     }
   } else {
     const d = new Date(fecha + 'T12:00:00');
-    const nextMon = new Date(d);
-    nextMon.setDate(d.getDate() + (7 - d.getDay() + 1));
     incs.push({
       id: nextId(incs),
       employee_id: Number(employee_id),
       birth_date_match: fecha,
-      semana_pago: laboro ? nextMon.toLocaleDateString('en-CA', { timeZone: 'UTC' }) : null,
+      semana_pago: laboro ? semanaPago : null,
       laboro: !!laboro,
       status: laboro ? 'cumpleanos_laborado' : 'pendiente',
       gratificacion_tipo: laboro ? (d.getDay() === 0 ? 'domingo_cumpleanos' : 'cumpleanos_laborado') : null,
@@ -1818,8 +2268,16 @@ router.post('/cumpleanos-laboro', rhhAuthRequired, (req, res) => {
       created_by: req.rhhUser.full_name || req.rhhUser.email,
     });
   }
-  write(db);
-  res.json({ ok: true });
+  const gratificacion = syncBirthdayGratification(db, employee_id, fecha, semanaPago, !!laboro);
+  try {
+    await writeAsync(db);
+    res.json({ ok: true, gratificacion: gratificacion ? {
+      period_key: gratificacion.period.period_key,
+      importe: gratificacion.dailySalary,
+    } : null });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible guardar el cumpleaños laborado' });
+  }
 });
 
 // GET /api/rhh/asistencia/cumpleanos?week=
@@ -1852,10 +2310,10 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
 
   const rol         = findAttendanceRol(db, week);
   const assignments = rol ? (db.rhh_rol_assignments || []).filter(a => a.rol_id === rol.id) : [];
-  const records     = (db.rhh_attendance || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[5]);
+  const records     = (db.rhh_attendance || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[6]);
   const holidays    = (db.rhh_holidays   || []).map(h => h.date);
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
-  const allDeudas   = getTxtDeudas(db);
+  const allPagos    = getTxtPagos(db);
   const allBonos    = getBonoVales(db);
   const cumpleIncs  = getCumpleIncidencias(db);
 
@@ -1871,7 +2329,7 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
       : positions.find(p => p.id === (ra?.position_id ?? emp.position_id));
 
     let asistencias = 0, faltas = 0, teHorasWeek = 0, vacDays = 0;
-    const daysData = dates.slice(0, 6).map(fecha => {
+    const daysData = dates.map(fecha => {
       const rec  = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
       const dow  = new Date(fecha + 'T12:00:00').getDay();
       const works = shift?.work_days ? shift.work_days.includes(dow === 0 ? 7 : dow) : dow >= 1 && dow <= 5;
@@ -1892,12 +2350,23 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
       const lbl = b.bono_type === 'limpieza' ? 'Bono Limpieza' : 'Bono Enc. Resistencias';
       comentarios.push(`${lbl}: ${b.status}`);
     }
-    const empDeudas = allDeudas.filter(d => d.employee_id === emp.id && d.status === 'pendiente_pago');
-    const txtPend = empDeudas.reduce((s, d) => s + (d.horas_pendientes || 0), 0);
-    if (txtPend > 0) comentarios.push(`Debe: -${txtPend}h`);
+    const txtPend = getTxtBalanceAsOf(db, emp.id, dates[6]);
+    const empPagosWeek = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago >= dates[0] && p.fecha_pago <= dates[6]);
+    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+    if (txtPagadoWeek > 0) comentarios.push(`TXT pagado: ${txtPagadoWeek}h${txtPend > 0 ? `; resta ${txtPend}h` : '; deuda liquidada'}`);
+    if (txtPend > 0) comentarios.push(`Debe ${txtPend}h de Tiempo por Tiempo`);
     if (teHorasWeek > 0) comentarios.push(`TE: +${teHorasWeek}h`);
     const empCumple = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match >= dates[0] && c.birth_date_match <= dates[6] && c.laboro);
     if (empCumple) comentarios.push('Cumpleaños laborado');
+    const specialDays = dates.map(fecha => {
+      const rec = records.find(r => r.employee_id === emp.id && r.fecha === fecha);
+      const holiday = (db.rhh_holidays || []).some(h => h.date === fecha);
+      const birthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+      if (holiday && birthday) return 'Festivo + cumpleaños (no labora)';
+      if (holiday && rec?.incidencia_type === 'labora') return 'Festivo laborado';
+      return null;
+    }).filter(Boolean);
+    comentarios.push(...specialDays);
     if (vacDays > 0) comentarios.push(`Vacaciones: ${vacDays}d`);
 
     return {
@@ -1907,6 +2376,8 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
       asistencias,
       faltas,
       tiempo_extra: teHorasWeek,
+      txt_pagado: txtPagadoWeek,
+      saldo_txt: txtPend,
       vacaciones: vacDays,
       comentarios: comentarios.join('; '),
     };
@@ -1915,15 +2386,16 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   try {
     const XLSX = require('xlsx');
     const ws = XLSX.utils.json_to_sheet(rows, {
-      header: ['nomina','nombre','proyecto','asistencias','faltas','tiempo_extra','vacaciones','comentarios'],
+      header: ['nomina','nombre','proyecto','asistencias','faltas','tiempo_extra','txt_pagado','saldo_txt','vacaciones','comentarios'],
     });
     ws['!cols'] = [
-      { wch: 10 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 50 },
+      { wch: 10 }, { wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 8 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 60 },
     ];
     // Renombrar headers
     ws.A1.v = 'Nómina'; ws.B1.v = 'Nombre'; ws.C1.v = 'Proyecto';
     ws.D1.v = 'Asistencias'; ws.E1.v = 'Faltas'; ws.F1.v = 'Tiempo Extra (h)';
-    ws.G1.v = 'Vacaciones (d)'; ws.H1.v = 'Comentarios';
+    ws.G1.v = 'TXT pagado (h)'; ws.H1.v = 'Saldo TXT (h)';
+    ws.I1.v = 'Vacaciones (d)'; ws.J1.v = 'Comentarios';
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asistencia');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
@@ -1935,5 +2407,13 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
     res.status(500).json({ error: 'Error generando Excel' });
   }
 });
+
+router._test = {
+  employeeDayContext,
+  ensureAutomaticSundayBirthdayGratifications,
+  getTxtBalanceAsOf,
+  shiftHours,
+  syncDeudaTurnoIncompleto,
+};
 
 module.exports = router;

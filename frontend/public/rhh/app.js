@@ -2537,13 +2537,14 @@ async function autorizacionesView() {
   el.innerHTML = shell('<div class="loading-overlay">Cargando autorizaciones...</div>', 'autorizaciones');
   try {
     const isRhAdmin = ['rh','admin'].includes(state.user?.role);
-    const fetchResumen = (autTabIdx === 4) ? api('/api/rhh/nomina/vac-solicitudes/resumen') : Promise.resolve(null);
+    const fetchResumen = (autTabIdx === 5) ? api('/api/rhh/nomina/vac-solicitudes/resumen') : Promise.resolve(null);
 
-    const [vacAll, teSols, incidences, ovVales, vacResumen] = await Promise.all([
+    const [vacAll, teSols, incidences, ovVales, bonoVales, vacResumen] = await Promise.all([
       api('/api/rhh/nomina/vac-solicitudes?estado=pendiente,aprobada'),
       api('/api/rhh/nomina/te-solicitudes'),
       api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
       isRhAdmin ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
+      isRhAdmin ? api('/api/rhh/asistencia/bonos?status=pendiente') : Promise.resolve([]),
       fetchResumen,
     ]);
 
@@ -2647,10 +2648,27 @@ async function autorizacionesView() {
         </td>
       </tr>`).join('');
 
+    const bonoPend = bonoVales || [];
+    const bonoRows = bonoPend.map(b => {
+      const tipo = b.bono_type === 'limpieza' ? 'Bono Limpieza' : 'Encendido de Resistencias';
+      return `<tr>
+        <td><strong>${escHtml(b.employee_name || '—')}</strong></td>
+        <td>${escHtml(tipo)}</td>
+        <td style="text-align:center;">${escHtml(b.fecha || '—')}</td>
+        <td>${escHtml(b.scheduled_shift_name || 'Sin turno')}</td>
+        <td><strong>${escHtml(b.shift_worked_name || '—')}</strong></td>
+        <td>${escHtml(b.solicitado_por || '—')}</td>
+        <td>
+          <button class="btn-primary" style="font-size:11px;padding:4px 9px;" onclick="autorizarBonoAsistencia(${b.id})">Autorizar</button>
+          <button class="btn-ghost" style="font-size:11px;padding:4px 9px;color:#b91c1c;" onclick="rechazarBonoAsistencia(${b.id})">Rechazar</button>
+        </td>
+      </tr>`;
+    }).join('');
+
     // ── Tab 4: Vacaciones aprobadas — agrupado por empleado ──
     const cambiosPendOnly = vacAprobadas.filter(s => s.cambio_solicitado && !s.cambio_resuelto);
     let vacAprobContent = '';
-    if (autTabIdx === 4 && _autVacResumen && _autVacResumen.length > 0) {
+    if (autTabIdx === 5 && _autVacResumen && _autVacResumen.length > 0) {
       const resumen = _autVacResumen.sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
       vacAprobContent = resumen.map(emp => {
         const empSols = vacAprobadas.filter(s => s.employee_id === emp.employee_id);
@@ -2703,6 +2721,7 @@ async function autorizacionesView() {
       `T.Extra (nomina) <span class="badge" style="background:${tePend.length>0?'#d97706':'#6b7280'};font-size:10px;">${tePend.length}</span>`,
       `Incidencias antiguas <span class="badge" style="background:${(incidences||[]).length>0?'#7c3aed':'#6b7280'};font-size:10px;">${(incidences||[]).length}</span>`,
       `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
+      `Bonos <span class="badge" style="background:${bonoPend.length>0?'#7c3aed':'#6b7280'};font-size:10px;">${bonoPend.length}</span>`,
       `Vac. aprobadas <span class="badge" style="background:${cambiosPendOnly.length>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobadas.length}${cambiosPendOnly.length>0?' !':''}</span>`,
     ];
     const tabBar = tabs.map((t, i) =>
@@ -2754,6 +2773,13 @@ async function autorizacionesView() {
         ? `<div style="font-size:12px;color:#9a3412;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:12px;">Vales de tiempo extra generados desde Captura de Asistencia — pendientes de autorizacion.</div>
            <table><thead><tr><th>Empleado</th><th>Fecha</th><th>Horas</th><th>Horario TE</th><th>Razon</th><th>Proyecto</th><th>Solicita</th><th>Accion</th></tr></thead><tbody>${ovRows}</tbody></table>`
         : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin vales de tiempo extra pendientes</p></div>';
+    } else if (autTabIdx === 4) {
+      tabContent = isRhAdmin
+        ? (bonoRows
+          ? `<div style="font-size:12px;color:#5b21b6;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:8px 12px;margin-bottom:12px;">Bonos solicitados desde Capturar Asistencia. Solo RHH/Admin puede autorizarlos.</div>
+             <table><thead><tr><th>Empleado</th><th>Bono</th><th>Fecha</th><th>Turno programado</th><th>Turno trabajado</th><th>Solicita</th><th>Acción</th></tr></thead><tbody>${bonoRows}</tbody></table>`
+          : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin bonos pendientes</p></div>')
+        : '<div class="empty-state"><p>La autorización de bonos corresponde a RHH/Admin.</p></div>';
     } else {
       const cambiosPendCount = cambiosPendOnly.length;
       tabContent = vacAprobContent
@@ -2897,6 +2923,28 @@ async function rechazarOvVale(id) {
       body: JSON.stringify({ notas_rechazo: notas })
     });
     toast('Vale rechazado');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function autorizarBonoAsistencia(id) {
+  if (!confirm('¿Autorizar este bono?')) return;
+  try {
+    await api(`/api/rhh/asistencia/bonos/${id}/autorizar`, { method: 'POST' });
+    toast('Bono autorizado');
+    autorizacionesView();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+async function rechazarBonoAsistencia(id) {
+  const notas = prompt('Motivo del rechazo (opcional):');
+  if (notas === null) return;
+  try {
+    await api(`/api/rhh/asistencia/bonos/${id}/rechazar`, {
+      method: 'POST',
+      body: JSON.stringify({ notas_rechazo: notas })
+    });
+    toast('Bono rechazado');
     autorizacionesView();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -9254,10 +9302,14 @@ async function asisCaptureView() {
     const proyectos       = data.proyectos       || ['SKF','AMSTED','TENNECO'];
     const overtimeRazones = data.overtime_razones || [];
     const dataUnlocks     = data.unlocks         || [];
+    const bonosWeek       = data.bonos_week      || [];
     const today           = data.today           || '';
     const role            = state.user?.role;
     const isRHHAdmin      = ['rh','admin'].includes(role);
+    const canCaptureBonos = ['supervisor','rh','admin'].includes(role);
     const canParoTecnico  = isRHHAdmin;
+    // /diaria incluye las horas reales de cada turno; reutilizarlas en el modal TXT.
+    state.shifts = shifts;
 
     // Al cambiar de semana (o abrir por primera vez), auto-saltar al día de hoy si aplica
     if (_asisLastWeek !== asisWeek) {
@@ -9335,11 +9387,12 @@ async function asisCaptureView() {
 
         // Incidencia actual (puede ser null/undefined si no hay registro)
         const inc      = dayData.incidencia_type || '';
+        const specialConflict = !!dayData.birthday_holiday_conflict;
 
         // Día de descanso: domingo O auto-descanso (sábado para L-V, etc.)
         // En descanso: incidencia fija, solo TE y TXT disponibles
         const isRestDay = isBaja ? false : (isSundayDay || (isAuto && inc === 'descanso'));
-        const editable = isBaja ? false : (isRestDay ? true : (!isLocked || noRec));
+        const editable = (isBaja || specialConflict) ? false : (isRestDay ? true : (!isLocked || noRec));
 
         const incType  = inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null;
         const selStyle = incType ? `background:${incType.bg};color:${incType.fg};` : 'background:#f8fafc;color:#9ca3af;';
@@ -9393,7 +9446,9 @@ async function asisCaptureView() {
 
         // Boton por fila
         let rowBtn = '';
-        if (isRestDay && !teActivo) {
+        if (specialConflict) {
+          rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#fee2e2;color:#991b1b;font-size:10px;cursor:not-allowed;">No puede laborar</button>`;
+        } else if (isRestDay && !teActivo) {
           rowBtn = `<button disabled style="padding:4px 10px;border:none;border-radius:6px;background:#fff7ed;color:#ea580c;font-size:11px;cursor:default;">Descanso</button>`;
         } else if (isRestDay && teActivo) {
           rowBtn = `<button onclick="asisGuardarFilaDom(${emp.employee_id},'${selFecha}')"
@@ -9417,36 +9472,39 @@ async function asisCaptureView() {
         // TxT: deuda activa
         const txtHorasPend = emp.txt_horas_pendientes || 0;
         const teBlockedByTxt = txtHorasPend > 0;
-        const disTE_final = isRestDay ? (!teActivo || teBlockedByTxt) : (!editable || !teActivo || teBlockedByTxt);
+        const disTE_final = specialConflict || (isRestDay ? (!teActivo || teBlockedByTxt) : (!editable || !teActivo || teBlockedByTxt));
 
         // Cumpleaños
         const isBirthday = !!dayData.is_birthday;
         // Bonos del día
         const dayBonos = dayData.bonos || [];
+        const empBonosWeek = bonosWeek.filter(b => Number(b.employee_id) === Number(emp.employee_id));
+        const resistenciaWeek = bonosWeek.find(b => b.bono_type === 'encendido_resistencias');
 
         // Turno incompleto: horas pendientes
         const hpTurno = dayData.horas_pendientes_turno || '';
         const isIncTurnoInc = inc === 'turno_incompleto';
 
-        // Bono: habilitar solo sábado T3 o domingo
+        // Bono: sábado/domingo. El turno realmente trabajado se valida al solicitar.
         const dow = new Date(selFecha + 'T12:00:00').getDay();
-        const empShiftId = emp.shift_id;
-        const canBono = (dow === 6 && Number(empShiftId) === 3) || dow === 0;
+        const canBono = dow === 6 || dow === 0;
 
         const rowStyle = teActivo ? 'background:#fffbf5;' : (isBirthday ? 'background:#fdf2f8;' : '');
-        const incDisabled  = isRestDay ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const incDisabled  = (isRestDay || specialConflict) ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
         const disabledAttr = isRestDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
         const onChangeInc = (!isRestDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisOnIncChange(${emp.employee_id},this.value);asisMarkDirty(${emp.employee_id})"` : '';
 
         // TxT buttons
         let txtBtn = '';
         if (isRHHAdmin && inc === 'falta' && hasRec) {
-          txtBtn = `<button onclick="asisTxtCrearDeuda(${emp.employee_id},${dayData.id},'${selFecha}')"
-            style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;cursor:pointer;font-weight:600;white-space:nowrap;">TXT pend.</button>`;
+          txtBtn = dayData.txt_deuda_status
+            ? `<span style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;font-weight:700;white-space:nowrap;">TXT ${dayData.txt_deuda_status === 'pagado' ? 'liquidado' : `pendiente -${dayData.txt_deuda_horas} h`}</span>`
+            : `<button onclick="asisTxtCrearDeuda(${emp.employee_id},${dayData.id},'${selFecha}')"
+              style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;cursor:pointer;font-weight:600;white-space:nowrap;">Autorizar TXT pendiente</button>`;
         }
-        if (txtHorasPend > 0 && !isBaja) {
+        if (txtHorasPend > 0 && !isBaja && !specialConflict) {
           txtBtn += `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
-            style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">TXT PAGAR</button>`;
+            style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">Registrar TXT pagado</button>`;
         }
 
         rowsHtml += `<tr style="${rowStyle}">
@@ -9462,6 +9520,10 @@ async function asisCaptureView() {
               style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}">
               ${incSelOpts}
             </select>
+            ${dayData.txt_pagado_horas > 0 ? `<div style="margin-top:3px;font-size:10px;font-weight:700;color:#047857;background:#ecfdf5;padding:2px 5px;border-radius:4px;">TXT PAGADO · ${dayData.txt_pagado_horas} h</div>` : ''}
+            ${dayData.festivo_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#c2410c;">Festivo laborado</div>' : ''}
+            ${dayData.cumpleanos_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#be185d;">Cumpleaños laborado</div>' : ''}
+            ${specialConflict ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#991b1b;">Festivo + cumpleaños: no puede laborar</div>' : ''}
             <div id="asis-hp-wrap-${emp.employee_id}" style="margin-top:3px;${isIncTurnoInc?'':'display:none;'}">
               <input type="number" id="asis-hp-${emp.employee_id}" value="${hpTurno}" min="0.5" max="12" step="0.5" placeholder="Hrs pend."
                 onchange="asisMarkDirty(${emp.employee_id})"
@@ -9478,7 +9540,9 @@ async function asisCaptureView() {
           <!-- TE columns -->
           <td style="padding:4px 6px;text-align:center;border-left:2px solid #fed7aa;">
             ${teBlockedByTxt
-              ? `<span style="font-size:9px;color:#dc2626;font-weight:700;" title="No puede hacer TE: debe ${txtHorasPend}h">&#10007;</span>`
+              ? `<span style="display:inline-block;font-size:9px;color:#dc2626;font-weight:700;max-width:130px;line-height:1.2;" title="No puede hacer TE: debe ${txtHorasPend}h">No puede registrar TE: debe ${txtHorasPend} h TXT</span>`
+              : specialConflict
+                ? '<span style="font-size:9px;color:#991b1b;font-weight:700;">No puede laborar</span>'
               : `<input type="checkbox" id="asis-te-${emp.employee_id}" ${teActivo?'checked':''}
               ${(!editable || isLocked && !noRec)?'disabled':''}
               onchange="asisToggleTE(${emp.employee_id})"
@@ -9521,17 +9585,20 @@ async function asisCaptureView() {
               ${rowBtn}
               ${lockInfo}
               ${txtBtn}
-              ${isBirthday ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
-                <input type="checkbox" id="asis-cumple-${emp.employee_id}" onchange="asisCumpleLaboroToggle(${emp.employee_id},'${selFecha}',this.checked)"
+              ${isBirthday && !specialConflict ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
+                <input type="checkbox" id="asis-cumple-${emp.employee_id}" ${dayData.cumpleanos_laborado?'checked':''} onchange="asisCumpleLaboroToggle(${emp.employee_id},'${selFecha}',this.checked)"
                   style="accent-color:#ec4899;width:12px;height:12px;" /> Cumple. lab.
-              </label>` : ''}
-              ${canBono && isRHHAdmin ? `<div style="display:flex;gap:3px;margin-top:2px;">
+              </label>` : (specialConflict ? '<span style="font-size:9px;color:#991b1b;font-weight:600;">Cumpleaños en festivo</span>' : '')}
+              ${canBono && canCaptureBonos && !specialConflict ? `<div style="display:flex;gap:3px;margin-top:2px;">
                 ${['limpieza','encendido_resistencias'].map(bt => {
-                  const existing = dayBonos.find(b => b.type === bt);
+                  const existing = dayBonos.find(b => b.type === bt) || empBonosWeek.find(b => b.bono_type === bt);
                   const lbl = bt === 'limpieza' ? 'B.Limp' : 'B.Enc.Res';
                   if (existing) {
                     const sc = existing.status === 'autorizado' ? '#16a34a' : (existing.status === 'rechazado' ? '#dc2626' : '#d97706');
                     return `<span style="font-size:9px;padding:2px 5px;border-radius:4px;background:${sc}15;color:${sc};font-weight:600;">${lbl}: ${existing.status.slice(0,4)}</span>`;
+                  }
+                  if (bt === 'encendido_resistencias' && resistenciaWeek) {
+                    return `<span title="Ya fue asignado a otro trabajador esta semana" style="font-size:9px;padding:2px 5px;border-radius:4px;background:#f1f5f9;color:#64748b;font-weight:600;">B.Enc.Res: asignado</span>`;
                   }
                   return `<button onclick="asisCrearBono(${emp.employee_id},'${selFecha}','${bt}',${dayData.id||'null'})"
                     style="padding:2px 6px;font-size:9px;border:1px solid #a78bfa;border-radius:4px;background:#f5f3ff;color:#7c3aed;cursor:pointer;font-weight:600;white-space:nowrap;">${lbl}</button>`;
@@ -9563,7 +9630,7 @@ async function asisCaptureView() {
         ${activeUnlockDates.has(selFecha) ? '<span style="font-size:11px;color:#16a34a;font-weight:600;">Desbloqueado</span>' : ''}
       </div>` : ''}
       <div class="tab-bar" style="margin-bottom:12px;">${dayTabsHtml||'<span style="color:var(--muted);font-size:13px;">Sin dias</span>'}</div>
-      ${selFecha && new Date(selFecha+'T12:00:00').getDay()===0 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Domingo — dia de descanso. Solo se puede registrar tiempo extra.</div>' : ''}
+      ${selFecha && new Date(selFecha+'T12:00:00').getDay()===0 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Domingo — día de descanso. Se puede registrar TE, pago TXT y bonos permitidos.</div>' : ''}
       ${selFecha && new Date(selFecha+'T12:00:00').getDay()===6 ? '<div style="font-size:12px;color:#ea580c;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-weight:600;">Sabado — los turnos con descanso solo pueden registrar tiempo extra o TXT.</div>' : ''}
       <div style="overflow-x:auto;">
         <table style="width:100%;border-collapse:collapse;min-width:900px;">
@@ -9875,7 +9942,9 @@ async function asisTxtPagarConfirm(deudaId, empId, fecha, attendanceId) {
   const modal = document.getElementById('txt-pagar-modal');
   if (modal) modal.remove();
   if (r) {
-    const msg = r.horas_sobrante > 0 ? `Pagado. Sobrante: ${r.horas_sobrante}h (TE extra)` : 'Deuda pagada';
+    const msg = r.horas_sobrante > 0
+      ? `TXT registrado. ${r.horas_sobrante} h generaron un vale de TE pendiente de autorización.`
+      : (r.horas_pendientes_total > 0 ? `TXT registrado. Restan ${r.horas_pendientes_total} h.` : 'TXT registrado. Deuda liquidada.');
     toast(msg, 'success');
     asisCaptureView();
   }
@@ -9893,12 +9962,37 @@ async function asisCumpleLaboroToggle(empId, fecha, checked) {
 /* ── Bonos ────────────────────────────────────────────────────────────────── */
 async function asisCrearBono(empId, fecha, bonoType, attendanceId) {
   const lbl = bonoType === 'limpieza' ? 'Bono Limpieza' : 'Bono Enc. Resistencias';
-  if (!confirm(`Solicitar ${lbl}?`)) return;
+  const shifts = state.shifts || [];
+  if (!shifts.length) { toast('No se encontró el catálogo de turnos', 'error'); return; }
+  const shiftOpts = shifts.map(s => `<option value="${s.id}">${escHtml(s.name)} (${s.hours || '?'} h)</option>`).join('');
+  const html = `<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:grid;place-items:center;" id="bono-asistencia-modal">
+    <div style="background:#fff;border-radius:14px;width:min(420px,94vw);padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.25);">
+      <div style="font-size:16px;font-weight:800;margin-bottom:4px;">Solicitar ${lbl}</div>
+      <div style="font-size:12px;color:#64748b;margin-bottom:14px;">${fecha} · confirma el turno realmente trabajado. Esto no cambia el Rol Semanal.</div>
+      <label style="font-size:12px;font-weight:700;">Turno realmente trabajado</label>
+      <select id="bono-shift-worked" style="width:100%;padding:8px;margin-top:4px;border:1px solid #cbd5e1;border-radius:7px;">${shiftOpts}</select>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn-ghost" onclick="document.getElementById('bono-asistencia-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="asisConfirmarBono(${empId},'${fecha}','${bonoType}',${attendanceId||'null'})">Enviar a autorización</button>
+      </div>
+    </div>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function asisConfirmarBono(empId, fecha, bonoType, attendanceId) {
+  const shiftWorkedId = Number(document.getElementById('bono-shift-worked')?.value);
+  if (!shiftWorkedId) { toast('Selecciona el turno realmente trabajado', 'warning'); return; }
+  const lbl = bonoType === 'limpieza' ? 'Bono Limpieza' : 'Bono Enc. Resistencias';
   const r = await api('/api/rhh/asistencia/bonos', {
     method: 'POST',
-    body: JSON.stringify({ employee_id: empId, fecha, bono_type: bonoType, attendance_id: attendanceId })
+    body: JSON.stringify({ employee_id: empId, fecha, bono_type: bonoType, attendance_id: attendanceId, shift_worked_id: shiftWorkedId })
   });
-  if (r) { toast(`${lbl} solicitado`, 'success'); asisCaptureView(); }
+  if (r) {
+    document.getElementById('bono-asistencia-modal')?.remove();
+    toast(`${lbl} enviado a autorización`, 'success');
+    asisCaptureView();
+  }
 }
 
 /* Autoguardado con debounce por empleado */
@@ -10198,11 +10292,17 @@ async function asisListaView() {
       const dayCells = dates.map(fecha => {
         const rec = (emp.days||[]).find(dr => dr.fecha === fecha);
         const inc = rec?.incidencia_type || 'descanso';
-        const t   = ASIST_INC_TYPES.find(x => x.v === inc) || { l: inc, bg:'#f9fafb', fg:'#9ca3af' };
+        let t = ASIST_INC_TYPES.find(x => x.v === inc) || { l: inc, bg:'#f9fafb', fg:'#9ca3af' };
+        if (rec?.birthday_holiday_conflict) t = { l:'Festivo + Cumpleaños', bg:'#fee2e2', fg:'#991b1b' };
+        else if (rec?.festivo_laborado) t = { l:'Festivo laborado', bg:'#ffedd5', fg:'#9a3412' };
+        else if (rec?.cumpleanos_laborado) t = { l:'Cumpleaños laborado', bg:'#fce7f3', fg:'#9d174d' };
         // TE y deuda junto a la incidencia
         const teH = rec?.te_horas;
         const teBadge = teH ? `<span style="font-size:9px;color:#ea580c;font-weight:700;margin-left:2px;">+${teH}</span>` : '';
-        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}</td>`;
+        const txtBadge = rec?.txt_pagado_horas > 0 ? `<span style="display:block;font-size:9px;color:#047857;font-weight:700;margin-top:2px;">TXT pagado ${rec.txt_pagado_horas} h</span>` : '';
+        const birthdayBadge = rec?.is_birthday && !rec?.birthday_holiday_conflict && !rec?.cumpleanos_laborado
+          ? '<span style="display:block;font-size:9px;color:#be185d;font-weight:700;margin-top:2px;">Cumpleaños</span>' : '';
+        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}${txtBadge}${birthdayBadge}</td>`;
       }).join('');
 
       // Comentarios
@@ -10210,7 +10310,10 @@ async function asisListaView() {
         let color = '#64748b';
         if (c.type === 'te') color = '#ea580c';
         if (c.type === 'deuda') color = '#dc2626';
+        if (c.type === 'txt_pago') color = '#047857';
         if (c.type === 'cumpleanos') color = '#ec4899';
+        if (c.type === 'festivo') color = '#c2410c';
+        if (c.type === 'especial_no_labora') color = '#991b1b';
         if (c.type === 'bono') color = c.status === 'autorizado' ? '#16a34a' : (c.status === 'rechazado' ? '#dc2626' : '#d97706');
         if (c.type === 'vacacion') color = '#1e40af';
         return `<span style="font-size:10px;color:${color};font-weight:600;white-space:nowrap;">${escHtml(c.text)}</span>`;
