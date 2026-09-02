@@ -268,7 +268,9 @@ router.post('/:id/send', (req, res) => {
   const buyerEmail = buyerEmails[0] || req.body.email_to || db.settings?.buyer_email || 'compras@demo.com';
   const buyerCc = buyerEmails.slice(1).join(',');
   const requesterEmail = (db.users.find(u => u.id === reqRow.requester_user_id) || {}).email || req.user.email || '';
-  const subject = req.body.email_subject || `Requisición ${reqRow.folio}`;
+  const isUrgent = (reqRow.urgency || '').toLowerCase() === 'alto';
+  const urgPrefix = isUrgent ? '🔴 URGENTE · ' : '';
+  const subject = req.body.email_subject || `${urgPrefix}Requisición ${reqRow.folio}`;
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
   const previewUrl = `${(process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '')}#/requisiciones/${reqRow.id}`;
   const itemLines = lines.map(item => {
@@ -281,10 +283,15 @@ router.post('/:id/send', (req, res) => {
     if (item.web_link) line += `\n     Referencia: ${item.web_link}`;
     return line;
   }).join('\n');
+  const urgencyNotice = isUrgent
+    ? `\n⚠⚠⚠ REQUISICIÓN URGENTE — Se requiere atención inmediata ⚠⚠⚠\nUrgencia: ${reqRow.urgency}   Fecha programada: ${reqRow.programmed_date || 'Lo antes posible'}\n`
+    : '';
   const body = [
+    urgencyNotice,
     `Se generó la requisición ${reqRow.folio}.`,
     `Solicitante: ${req.user.name || req.user.full_name || ''}`,
     `Departamento: ${reqRow.department}`,
+    `Urgencia: ${reqRow.urgency || 'Medio'}`,
     `Fecha: ${new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' })}`,
     ``,
     `── Materiales solicitados ──────────────────────`,
@@ -306,7 +313,9 @@ router.post('/:id/send', (req, res) => {
     const authEmails = authorizers.map(u => u.email).filter(Boolean).join(',');
     const buyerCcAuth = buyers.map(u => u.email).filter(Boolean).join(',');
     const requesterName = (db.users.find(u => u.id === reqRow.requester_user_id)||{}).full_name || '';
-    const authSubject = `⚠ AUTORIZACIÓN REQUERIDA · ${reqRow.folio} · ${authItems.length} ítem(s)`;
+    const authSubject = isUrgent
+      ? `🔴 URGENTE · ⚠ AUTORIZACIÓN REQUERIDA · ${reqRow.folio} · ${authItems.length} ítem(s)`
+      : `⚠ AUTORIZACIÓN REQUERIDA · ${reqRow.folio} · ${authItems.length} ítem(s)`;
     const authItemLines = authItems.map((item, idx) => {
       const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
       const cc = (db.cost_centers.find(c => c.id === item.cost_center_id)||{}).name || '';
@@ -315,6 +324,7 @@ router.post('/:id/send', (req, res) => {
     }).join('\n\n');
     const authUrl = previewUrl.replace('requisiciones','autorizaciones');
     const authBody = [
+      isUrgent ? `⚠⚠⚠ REQUISICIÓN URGENTE — Se requiere autorización inmediata ⚠⚠⚠\n` : '',
       `Estimado(a) autorizador(a),`,
       ``,
       `Se requiere su autorización para la siguiente requisición. Por favor ingrese al sistema para aprobar o rechazar.`,
@@ -323,6 +333,7 @@ router.post('/:id/send', (req, res) => {
       `Folio:        ${reqRow.folio}`,
       `Solicitante:  ${requesterName}`,
       `Departamento: ${reqRow.department || '-'}`,
+      `Urgencia:     ${reqRow.urgency || 'Medio'}`,
       `Fecha:        ${new Date().toLocaleDateString('es-MX')}`,
       ``,
       `── Ítems que requieren autorización (${authItems.length}) ─────────`,

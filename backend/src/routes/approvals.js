@@ -387,7 +387,7 @@ router.get('/request-auth-mailto', allowRoles('comprador', 'autorizador', 'pagos
     if (!reqRow) return;
     if (!groups.has(reqRow.id)) {
       const requester = db.users.find(u => u.id === reqRow.requester_user_id);
-      groups.set(reqRow.id, { folio: reqRow.folio, requester: requester?.full_name || '', total: reqRow.total_amount, currency: reqRow.currency || 'MXN', items: [] });
+      groups.set(reqRow.id, { folio: reqRow.folio, requester: requester?.full_name || '', total: reqRow.total_amount, currency: reqRow.currency || 'MXN', urgency: reqRow.urgency || 'Medio', items: [] });
     }
     const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
     const cc = (db.cost_centers.find(c => c.id === item.cost_center_id) || {}).name || '';
@@ -395,12 +395,15 @@ router.get('/request-auth-mailto', allowRoles('comprador', 'autorizador', 'pagos
     groups.get(reqRow.id).items.push(`  • ${name}   ×${item.quantity} ${item.unit || ''}   @$${Number(item.unit_cost).toFixed(2)} ${item.currency||'MXN'}   Subtotal: $${subtotal}\n    CC: ${cc}`);
   });
 
+  const hasUrgent = [...groups.values()].some(g => g.urgency === 'Alto');
   const groupLines = [...groups.values()].map(g => [
-    `📋 ${g.folio}  ·  Solicitante: ${g.requester}  ·  Total REQ: $${Number(g.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${g.currency}`,
+    `${g.urgency === 'Alto' ? '🔴 URGENTE · ' : ''}📋 ${g.folio}  ·  Solicitante: ${g.requester}  ·  Urgencia: ${g.urgency}  ·  Total REQ: $${Number(g.total||0).toLocaleString('es-MX',{minimumFractionDigits:2})} ${g.currency}`,
     ...g.items
   ].join('\n')).join('\n\n');
 
-  const subject = `⚠ Recordatorio: ${pendingItems.length} ítem(s) pendiente(s) de autorización`;
+  const subject = hasUrgent
+    ? `🔴 URGENTE · ⚠ Recordatorio: ${pendingItems.length} ítem(s) pendiente(s) de autorización`
+    : `⚠ Recordatorio: ${pendingItems.length} ítem(s) pendiente(s) de autorización`;
   const body = [
     `Estimado(a) autorizador(a),`,
     ``,

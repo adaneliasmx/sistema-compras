@@ -3134,6 +3134,25 @@ async function purchasesView() {
     doc.save(`PO-${po.folio}.pdf`);
   };
 
+  const URGENCY_ORDER = { 'Alto': 0, 'Medio': 1, 'Bajo': 2, 'Entrega programada': 3 };
+  const urgencyBadge = (u) => {
+    const colors = { 'Alto': 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5', 'Medio': 'background:#fffbeb;color:#d97706;border:1px solid #fde68a', 'Bajo': 'background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0', 'Entrega programada': 'background:#eff6ff;color:#2563eb;border:1px solid #bfdbfe' };
+    return `<span style="font-size:10px;padding:1px 6px;border-radius:8px;font-weight:600;${colors[u]||colors['Medio']}">${u||'Medio'}</span>`;
+  };
+  const sortByUrgencyAndAge = (items, sortMode) => {
+    const copy = [...items];
+    copy.sort((a, b) => {
+      if (sortMode === 'urgency_desc') return (URGENCY_ORDER[a.urgency]??1) - (URGENCY_ORDER[b.urgency]??1) || String(a.request_date||'').localeCompare(String(b.request_date||''));
+      if (sortMode === 'urgency_asc') return (URGENCY_ORDER[b.urgency]??1) - (URGENCY_ORDER[a.urgency]??1) || String(b.request_date||'').localeCompare(String(a.request_date||''));
+      if (sortMode === 'date_asc') return String(a.request_date||'').localeCompare(String(b.request_date||''));
+      if (sortMode === 'date_desc') return String(b.request_date||'').localeCompare(String(a.request_date||''));
+      return 0;
+    });
+    return copy;
+  };
+  const URGENCY_FILTER_HTML = `<select class="urgency-filter" style="min-width:120px"><option value="">Todas las urgencias</option><option value="Alto">Alto</option><option value="Medio">Medio</option><option value="Bajo">Bajo</option><option value="Entrega programada">Entrega programada</option></select>`;
+  const SORT_OPTIONS_HTML = `<select class="sort-select" style="min-width:150px"><option value="date_desc">Más reciente</option><option value="date_asc">Más antigua</option><option value="urgency_desc">Mayor urgencia</option><option value="urgency_asc">Menor urgencia</option></select>`;
+
   const THEAD = `<thead><tr>
     <th style="width:32px"><input type="checkbox" id="selectAllCheck"/></th>
     <th>Req.</th><th>Ítem</th><th>Proveedor</th>
@@ -3147,7 +3166,7 @@ async function purchasesView() {
     const gMap = new Map();
     items.forEach(i => {
       const key = i.requisition_folio || 'Sin requisición';
-      if (!gMap.has(key)) gMap.set(key, { folio: key, requester: i.requester_name, date: i.request_date, items: [] });
+      if (!gMap.has(key)) gMap.set(key, { folio: key, requester: i.requester_name, date: i.request_date, urgency: i.urgency || 'Medio', items: [] });
       gMap.get(key).items.push(i);
     });
     return [...gMap.values()].map(g => {
@@ -3157,6 +3176,7 @@ async function purchasesView() {
           <td colspan="15" style="padding:5px 10px">
             <b style="font-size:13px">📋 ${escapeHtml(g.folio)}</b>
             <span class="muted" style="font-size:12px"> · ${escapeHtml(g.requester || '-')}</span>
+            <span style="margin-left:6px">${urgencyBadge(g.urgency)}</span>
             <span style="font-size:11px;color:#9ca3af;margin-left:6px">${g.items.length} ítem(s)</span>
             <b style="float:right;font-size:12px">$${gTotal.toLocaleString('es-MX',{minimumFractionDigits:2})}</b>
           </td>
@@ -3184,7 +3204,11 @@ async function purchasesView() {
       const authCount = itemsPendientePO.filter(x => x.status === 'Autorizado').length;
       const waitingAuthCount = itemsPendientePO.filter(x => x.status === 'En autorización').length;
       tabContent.innerHTML = `
-        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap"><input id="filterItemsTab" placeholder="Buscar ítem, proveedor..." style="flex:1;min-width:150px"/></div>
+        <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center">
+          <input id="filterItemsTab" placeholder="Buscar ítem, proveedor..." style="flex:1;min-width:150px"/>
+          ${URGENCY_FILTER_HTML.replace('class="urgency-filter"','id="pendUrgFilter" class="urgency-filter"')}
+          ${SORT_OPTIONS_HTML.replace('class="sort-select"','id="pendSortSelect" class="sort-select"')}
+        </div>
         <div style="margin-bottom:8px;font-size:13px">
           ${itemsPendientePO.length} ítem(s) con proveedor y costo · <b>${authCount}</b> autorizado(s)
           ${waitingAuthCount > 0 ? `<span style="margin-left:8px;color:#f59e0b">⏳ ${waitingAuthCount} esperando autorización — usa el botón <b>✔ Autorizar</b> en "Todos los ítems" o ve a <b>Autorizaciones</b></span>` : ''}
@@ -3206,19 +3230,28 @@ async function purchasesView() {
           const a = document.createElement('a'); a.href = out.mailto; a.click();
         } catch(e) { alert('Error al generar el correo.'); }
       });
-      document.getElementById('filterItemsTab').oninput = e => {
-        const val = e.target.value.toLowerCase();
-        const filtered = itemsPendientePO.filter(x => !val ||
-          (x.item_name||'').toLowerCase().includes(val) ||
-          (x.supplier_name||'').toLowerCase().includes(val) ||
-          (x.requisition_folio||'').toLowerCase().includes(val) ||
-          (x.cost_center_name||'').toLowerCase().includes(val) ||
-          (x.requester_name||'').toLowerCase().includes(val) ||
-          (x.status||'').toLowerCase().includes(val));
+      const applyPendFilters = () => {
+        const val = (document.getElementById('filterItemsTab')?.value || '').toLowerCase();
+        const urgVal = document.getElementById('pendUrgFilter')?.value || '';
+        const sortVal = document.getElementById('pendSortSelect')?.value || 'date_desc';
+        let filtered = itemsPendientePO.filter(x =>
+          (!val ||
+            (x.item_name||'').toLowerCase().includes(val) ||
+            (x.supplier_name||'').toLowerCase().includes(val) ||
+            (x.requisition_folio||'').toLowerCase().includes(val) ||
+            (x.cost_center_name||'').toLowerCase().includes(val) ||
+            (x.requester_name||'').toLowerCase().includes(val) ||
+            (x.status||'').toLowerCase().includes(val)) &&
+          (!urgVal || x.urgency === urgVal)
+        );
+        filtered = sortByUrgencyAndAge(filtered, sortVal);
         const wrap = document.getElementById('pendientesTableWrap');
         wrap.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${filtered.length ? renderGrouped(filtered) : '<tr><td colspan="15" class="muted" style="text-align:center;padding:16px">Sin resultados</td></tr>'}</tbody></table></div>`;
         bindTableActions(wrap, itemsPendientePO);
       };
+      document.getElementById('filterItemsTab').oninput = applyPendFilters;
+      document.getElementById('pendUrgFilter').onchange = applyPendFilters;
+      document.getElementById('pendSortSelect').onchange = applyPendFilters;
 
     } else if (tab === 'cotizacion') {
       poActions.style.display = 'none';
@@ -3240,18 +3273,28 @@ async function purchasesView() {
 
       let expandedCotizId = null;
       let cotizFilterText = '';
+      let cotizUrgFilter = '';
+      let cotizSortMode = 'date_desc';
 
       const renderCotizTab = async () => {
-        const rows = itemsEnCotizacion.filter(i => !cotizFilterText ||
-          (i.item_name||'').toLowerCase().includes(cotizFilterText) ||
-          (i.requisition_folio||'').toLowerCase().includes(cotizFilterText) ||
-          (i.quote_sub_status||'').toLowerCase().includes(cotizFilterText));
+        let rows = itemsEnCotizacion.filter(i =>
+          (!cotizFilterText ||
+            (i.item_name||'').toLowerCase().includes(cotizFilterText) ||
+            (i.requisition_folio||'').toLowerCase().includes(cotizFilterText) ||
+            (i.quote_sub_status||'').toLowerCase().includes(cotizFilterText)) &&
+          (!cotizUrgFilter || i.urgency === cotizUrgFilter)
+        );
+        rows = sortByUrgencyAndAge(rows, cotizSortMode);
         tabContent.innerHTML = `
-          <div style="display:flex;gap:8px;margin-bottom:10px"><input id="filterCotizTab" placeholder="Buscar ítem, folio de req..." value="${cotizFilterText}" style="flex:1;min-width:150px"/></div>` +
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+            <input id="filterCotizTab" placeholder="Buscar ítem, folio de req..." value="${cotizFilterText}" style="flex:1;min-width:150px"/>
+            ${URGENCY_FILTER_HTML.replace('class="urgency-filter"','id="cotizUrgFilter" class="urgency-filter"')}
+            ${SORT_OPTIONS_HTML.replace('class="sort-select"','id="cotizSortSelect" class="sort-select"')}
+          </div>` +
           (rows.length ? `
           <div class="table-wrap"><table>
             <thead><tr>
-              <th>Req.</th><th>Ítem</th><th>Cant.</th><th>Unidad</th><th>Estatus solicitud</th><th>Acciones</th>
+              <th>Req.</th><th>Ítem</th><th>Urgencia</th><th>Cant.</th><th>Unidad</th><th>Estatus solicitud</th><th>Acciones</th>
             </tr></thead>
             <tbody id="cotizTbody">
               ${rows.map(i => {
@@ -3260,6 +3303,7 @@ async function purchasesView() {
                 return `<tr class="cotiz-row" data-id="${i.id}" style="cursor:pointer">
                   <td style="font-size:11px">${i.requisition_folio||'-'}</td>
                   <td><b>${escapeHtml(i.item_name)}</b></td>
+                  <td>${urgencyBadge(i.urgency)}</td>
                   <td>${Number(i.quantity||0)}</td>
                   <td>${i.unit||'-'}</td>
                   <td><span style="color:${ssc};font-weight:600;font-size:12px">● ${ssl}</span></td>
@@ -3272,7 +3316,7 @@ async function purchasesView() {
                     <button class="btn-danger cancel-item" data-id="${i.id}" style="padding:2px 8px;font-size:12px">✖</button>
                   </td>
                 </tr>
-                <tr id="cotiz-detail-${i.id}" style="display:none"><td colspan="6" style="padding:0;background:#f8fafc;border-top:1px solid #e5e7eb"></td></tr>`;
+                <tr id="cotiz-detail-${i.id}" style="display:none"><td colspan="7" style="padding:0;background:#f8fafc;border-top:1px solid #e5e7eb"></td></tr>`;
               }).join('')}
             </tbody>
           </table></div>` :
@@ -3280,6 +3324,10 @@ async function purchasesView() {
 
         const filterCotizEl = document.getElementById('filterCotizTab');
         if (filterCotizEl) filterCotizEl.oninput = e => { cotizFilterText = e.target.value.toLowerCase(); renderCotizTab(); };
+        const cotizUrgEl = document.getElementById('cotizUrgFilter');
+        if (cotizUrgEl) { cotizUrgEl.value = cotizUrgFilter; cotizUrgEl.onchange = e => { cotizUrgFilter = e.target.value; renderCotizTab(); }; }
+        const cotizSortEl = document.getElementById('cotizSortSelect');
+        if (cotizSortEl) { cotizSortEl.value = cotizSortMode; cotizSortEl.onchange = e => { cotizSortMode = e.target.value; renderCotizTab(); }; }
 
         tabContent.querySelectorAll('.re-quote-item').forEach(btn => {
           btn.onclick = () => openQuotationRequest(itemsEnCotizacion.find(x => Number(x.id) === Number(btn.dataset.id)));
@@ -3570,6 +3618,8 @@ async function purchasesView() {
           <input id="filterTextItems" placeholder="🔍 Buscar ítem, proveedor, folio, C. costo..." style="flex:2;min-width:200px"/>
           <select id="filterSupplierItems"><option value="">Todos los proveedores</option>${suppliers.map(s=>`<option value="${s.id}">${s.business_name}</option>`).join('')}</select>
           <select id="filterStatusItems"><option value="">Todos los estatus</option><option>En cotización</option><option>En autorización</option><option>Autorizado</option><option>En proceso</option><option>Entregado</option><option>Facturado</option></select>
+          ${URGENCY_FILTER_HTML.replace('class="urgency-filter"','id="filterUrgItems" class="urgency-filter"')}
+          ${SORT_OPTIONS_HTML.replace('class="sort-select"','id="sortItems" class="sort-select"')}
           <label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer">
             <input type="checkbox" id="toggleCancelled" ${showCancelled?'checked':''}/>
             Mostrar cancelados
@@ -3587,19 +3637,25 @@ async function purchasesView() {
         const sid = Number(document.getElementById('filterSupplierItems')?.value || 0);
         const statusVal = document.getElementById('filterStatusItems')?.value || '';
         const textVal = (document.getElementById('filterTextItems')?.value || '').toLowerCase();
+        const urgVal = document.getElementById('filterUrgItems')?.value || '';
+        const sortVal = document.getElementById('sortItems')?.value || 'date_desc';
         const inclCanc = document.getElementById('toggleCancelled')?.checked;
         const src = inclCanc ? allItems : itemsSolicitados;
-        const filtered = src.filter(x =>
+        let filtered = src.filter(x =>
           (!sid || Number(x.supplier_id) === sid) &&
           (!statusVal || x.status === statusVal) &&
+          (!urgVal || x.urgency === urgVal) &&
           (!textVal || (x.item_name||'').toLowerCase().includes(textVal) || (x.supplier_name||'').toLowerCase().includes(textVal) || (x.requisition_folio||'').toLowerCase().includes(textVal) || (x.cost_center_name||'').toLowerCase().includes(textVal) || (x.requester_name||'').toLowerCase().includes(textVal))
         );
+        filtered = sortByUrgencyAndAge(filtered, sortVal);
         allItemsTable.innerHTML = `<div class="table-wrap"><table>${THEAD}<tbody>${renderGrouped(filtered)}</tbody></table></div>`;
         bindTableActions(allItemsTable, src);
       };
       document.getElementById('filterTextItems').oninput = applyFilters;
       document.getElementById('filterSupplierItems').onchange = applyFilters;
       document.getElementById('filterStatusItems').onchange = applyFilters;
+      document.getElementById('filterUrgItems').onchange = applyFilters;
+      document.getElementById('sortItems').onchange = applyFilters;
       document.getElementById('toggleCancelled').onchange = async (e) => {
         showCancelled = e.target.checked;
         // Recargar ítems con/sin cancelados
@@ -3622,9 +3678,18 @@ async function purchasesView() {
           <input id="poFiltCC" placeholder="🔍 Centro de costo" style="flex:1;min-width:130px"/>
           <input id="poFiltDesde" type="date" title="Desde" style="width:130px"/>
           <input id="poFiltHasta" type="date" title="Hasta" style="width:130px"/>
+          <select id="poFiltUrgencia" style="min-width:120px">
+            <option value="">Todas las urgencias</option>
+            <option value="Alto">Alto</option>
+            <option value="Medio">Medio</option>
+            <option value="Bajo">Bajo</option>
+            <option value="Entrega programada">Entrega programada</option>
+          </select>
           <select id="poFiltOrden" style="min-width:140px">
             <option value="date_desc">Fecha más reciente</option>
             <option value="date_asc">Fecha más antigua</option>
+            <option value="urgency_desc">Mayor urgencia</option>
+            <option value="urgency_asc">Menor urgencia</option>
             <option value="requester">Solicitante A-Z</option>
             <option value="cc">C. Costo A-Z</option>
           </select>
@@ -3637,17 +3702,21 @@ async function purchasesView() {
         const txt = document.getElementById('poFiltTexto')?.value.trim().toLowerCase();
         const sol = document.getElementById('poFiltSolicitante')?.value.trim().toLowerCase();
         const cc  = document.getElementById('poFiltCC')?.value.trim().toLowerCase();
+        const urgFilt = document.getElementById('poFiltUrgencia')?.value || '';
         if (txt)   filtered = filtered.filter(p => (p.folio||'').toLowerCase().includes(txt) || (p.supplier_name||'').toLowerCase().includes(txt));
         const desde = document.getElementById('poFiltDesde')?.value;
         const hasta = document.getElementById('poFiltHasta')?.value;
         if (sol)   filtered = filtered.filter(p => (p.requester_name||'').toLowerCase().includes(sol));
         if (cc)    filtered = filtered.filter(p => (p.cost_center_name||'').toLowerCase().includes(cc));
+        if (urgFilt) filtered = filtered.filter(p => (p.urgency||'Medio') === urgFilt);
         if (desde) filtered = filtered.filter(p => String(p.created_at||'').slice(0,10) >= desde);
         if (hasta) filtered = filtered.filter(p => String(p.created_at||'').slice(0,10) <= hasta);
         const orden = document.getElementById('poFiltOrden')?.value || 'date_desc';
         filtered.sort((a,b) => {
           if (orden === 'date_asc')  return String(a.created_at||'').localeCompare(String(b.created_at||''));
           if (orden === 'date_desc') return String(b.created_at||'').localeCompare(String(a.created_at||''));
+          if (orden === 'urgency_desc') return (URGENCY_ORDER[a.urgency]??1) - (URGENCY_ORDER[b.urgency]??1) || String(a.created_at||'').localeCompare(String(b.created_at||''));
+          if (orden === 'urgency_asc') return (URGENCY_ORDER[b.urgency]??1) - (URGENCY_ORDER[a.urgency]??1) || String(b.created_at||'').localeCompare(String(a.created_at||''));
           if (orden === 'requester') return (a.requester_name||'').localeCompare(b.requester_name||'');
           if (orden === 'cc')        return (a.cost_center_name||'').localeCompare(b.cost_center_name||'');
           return 0;
@@ -3681,6 +3750,7 @@ async function purchasesView() {
                 ${p.requester_name ? `👤 ${escapeHtml(p.requester_name)}` : ''}
                 ${p.cost_center_name ? ` · 🏷 ${escapeHtml(p.cost_center_name)}` : ''}
                 ${p.request_date ? ` · 📅 ${p.request_date}` : ''}
+                <span style="margin-left:6px">${urgencyBadge(p.urgency)}</span>
               </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">

@@ -104,6 +104,8 @@ router.get('/pending-items', allowRoles('comprador', 'admin'), (req, res) => {
       requester_name: requester ? requester.full_name : '',
       cost_center_name: cc ? cc.name : '',
       request_date: String(reqRow.request_date || reqRow.created_at || '').slice(0, 10),
+      urgency: reqRow.urgency || 'Medio',
+      programmed_date: reqRow.programmed_date || null,
       supplier_name: (db.suppliers.find(s => s.id === i.supplier_id) || {}).business_name || '-',
       item_name: (db.catalog_items.find(c => c.id === i.catalog_item_id) || {}).name || i.manual_item_name || '',
       po_folio: i.purchase_order_id ? (db.purchase_orders.find(p => p.id === i.purchase_order_id) || {}).folio || '' : '',
@@ -271,8 +273,13 @@ router.post('/items/:id/request-quotation', allowRoles('comprador', 'admin'), (r
   addHistory(db, { module: 'quotations', requisition_id: line.requisition_id, requisition_item_id: line.id, old_status: null, new_status: 'En cotización', changed_by_user_id: req.user.id, comment: 'Solicitud de cotización enviada' });
   recalcRequisition(db, line.requisition_id);
   write(db);
-  const subject = `Solicitud de cotización · ${(db.requisitions.find(r => r.id === line.requisition_id) || {}).folio || ''}`;
-  const body = `Favor de registrar cotización para el ítem: ${(db.catalog_items.find(c => c.id === line.catalog_item_id) || {}).name || line.manual_item_name}.`;
+  const cotizReq = db.requisitions.find(r => r.id === line.requisition_id) || {};
+  const cotizUrgent = (cotizReq.urgency || '').toLowerCase() === 'alto';
+  const cotizUrgPrefix = cotizUrgent ? '🔴 URGENTE · ' : '';
+  const subject = `${cotizUrgPrefix}Solicitud de cotización · ${cotizReq.folio || ''}`;
+  const itemName = (db.catalog_items.find(c => c.id === line.catalog_item_id) || {}).name || line.manual_item_name;
+  const cotizUrgNotice = cotizUrgent ? `⚠ SOLICITUD URGENTE — Se requiere cotización a la brevedad.\nUrgencia: Alto   Fecha programada: ${cotizReq.programmed_date || 'Lo antes posible'}\n\n` : '';
+  const body = `${cotizUrgNotice}Favor de registrar cotización para el ítem: ${itemName}.`;
   res.json({ ok: true, mailto: `mailto:${encodeURIComponent(emails.join(';'))}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}` });
 });
 
@@ -540,16 +547,30 @@ router.post('/generate-po', allowRoles('comprador', 'admin'), (req, res) => {
     const requester = reqRow ? db.users.find(u => u.id === reqRow.requester_user_id) : null;
     const allCc = [...new Set([...ccEmails, requester?.email].filter(Boolean))].join(',');
 
-    const subject = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
+    // Determinar la mayor urgencia entre las requisiciones de esta PO
+    const poReqIds = [...new Set(poLines.map(l => {
+      const ri = db.requisition_items.find(ri => ri.id === l.requisition_item_id);
+      return ri ? ri.requisition_id : null;
+    }).filter(Boolean))];
+    const poUrgencies = poReqIds.map(rid => (db.requisitions.find(r => r.id === rid) || {}).urgency || 'Medio');
+    const urgOrder = { 'Alto': 0, 'Medio': 1, 'Bajo': 2, 'Entrega programada': 3 };
+    const maxUrgency = poUrgencies.sort((a, b) => (urgOrder[a]??1) - (urgOrder[b]??1))[0] || 'Medio';
+    const poIsUrgent = maxUrgency === 'Alto';
+
+    const subject = poIsUrgent
+      ? `🔴 URGENTE · Orden de Compra ${po.folio} · ${supplier.business_name || ''}`
+      : `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
     const token = poToken(po);
     const poViewUrl = `${baseUrl}/po-view?token=${token}`;
 
     const body = [
+      poIsUrgent ? `⚠⚠⚠ ORDEN DE COMPRA URGENTE — Se requiere atención inmediata ⚠⚠⚠\n` : '',
       `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
       ``,
       `Le enviamos la Orden de Compra ${po.folio} para su revisión y confirmación.`,
       ``,
       `Proveedor : ${supplier.business_name || '—'}`,
+      `Urgencia  : ${maxUrgency}`,
       `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
       ``,
       `── Ítems solicitados ────────────────────────────`,
@@ -712,7 +733,9 @@ router.get('/purchase-orders', allowRoles('comprador', 'proveedor', 'admin'), (r
         po_items: poItems,
         requester_name: requester ? requester.full_name : '',
         cost_center_name: cc ? cc.name : '',
-        request_date: reqRow ? String(reqRow.request_date || reqRow.created_at || '').slice(0, 10) : ''
+        request_date: reqRow ? String(reqRow.request_date || reqRow.created_at || '').slice(0, 10) : '',
+        urgency: reqRow ? (reqRow.urgency || 'Medio') : 'Medio',
+        programmed_date: reqRow ? (reqRow.programmed_date || null) : null
       };
     });
   res.json(rows);
@@ -770,14 +793,29 @@ router.get('/purchase-orders/:id/mailto', allowRoles('comprador', 'admin'), (req
   const baseUrl  = getBaseUrl(req);
   const token    = poToken(po);
   const poViewUrl = `${baseUrl}/po-view?token=${token}`;
-  const subject  = `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
+
+  // Determinar urgencia máxima de las requisiciones vinculadas
+  const resendReqIds = [...new Set(poLines.map(l => {
+    const ri = db.requisition_items.find(ri => ri.id === l.requisition_item_id);
+    return ri ? ri.requisition_id : null;
+  }).filter(Boolean))];
+  const resendUrgencies = resendReqIds.map(rid => (db.requisitions.find(r => r.id === rid) || {}).urgency || 'Medio');
+  const resendUrgOrder = { 'Alto': 0, 'Medio': 1, 'Bajo': 2, 'Entrega programada': 3 };
+  const resendMaxUrg = resendUrgencies.sort((a, b) => (resendUrgOrder[a]??1) - (resendUrgOrder[b]??1))[0] || 'Medio';
+  const resendIsUrgent = resendMaxUrg === 'Alto';
+
+  const subject = resendIsUrgent
+    ? `🔴 URGENTE · Orden de Compra ${po.folio} · ${supplier.business_name || ''}`
+    : `Orden de Compra ${po.folio} · ${supplier.business_name || ''}`;
 
   const body = [
+    resendIsUrgent ? `⚠⚠⚠ ORDEN DE COMPRA URGENTE — Se requiere atención inmediata ⚠⚠⚠\n` : '',
     `Estimado ${supplier.contact_name || supplier.business_name || 'Proveedor'},`,
     ``,
     `Le enviamos la Orden de Compra ${po.folio} para su revisión y confirmación.`,
     ``,
     `Proveedor : ${supplier.business_name || '—'}`,
+    `Urgencia  : ${resendMaxUrg}`,
     `Fecha PO  : ${String(po.created_at||'').slice(0,10)}`,
     ``,
     `── Ítems solicitados ────────────────────────────`,
