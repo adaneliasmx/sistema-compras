@@ -1157,7 +1157,7 @@ async function viewLinea(el, linea) {
       ? '<div class="empty-state"><div class="icon">📭</div><p>No hay cargas activas en esta línea.</p></div>'
       : `<div class="tarjetero-grid">${cargas.map(c => renderTarjeta(c)).join('')}</div>`;
     const overtimeCaptureBanner = isTL4 && Number(turnoData?.minutos_adicionales || 0) > 0
-      ? `<div style="margin-bottom:12px;padding:10px 14px;border:1.5px solid #8b5cf6;border-radius:9px;background:#f5f3ff;color:#6d28d9;font-weight:800">⏱ TIEMPO ADICIONAL TL4${turnoData?.tiempo_extra_activo ? ' · ACTIVO' : ''} — estas horas cuentan en el KPI del día hasta descargar la línea. Durante la extensión sólo se permite terminar y descargar las cargas ya activas.</div>`
+      ? `<div style="margin-bottom:12px;padding:10px 14px;border:1.5px solid #8b5cf6;border-radius:9px;background:#f5f3ff;color:#6d28d9;font-weight:800">⏱ TIEMPO ADICIONAL TL4${turnoData?.tiempo_extra_activo ? ' · ACTIVO' : ''} — estas horas cuentan como tiempo extra en el KPI del día.${turnoData?.tiempo_extra_activo && Number(turnoData?.cargas_activas || 0) > 0 ? ` ${turnoData.cargas_activas} carga(s) activa(s) — se permite registrar y descargar.` : ''}</div>`
       : '';
 
     el.innerHTML = `
@@ -1182,12 +1182,12 @@ async function viewLinea(el, linea) {
         ${opSidebarHtml}
       </div>`;
 
-    if (turnoData?.tiempo_extra_activo) {
+    if (turnoData?.tiempo_extra_activo && Number(turnoData?.cargas_activas || 0) === 0) {
       for (const id of ['btn-nueva-carga', 'btn-carga-vacia']) {
         const btn = el.querySelector(`#${id}`);
         if (btn) {
           btn.disabled = true;
-          btn.title = 'Durante tiempo adicional TL4 sólo se descargan las cargas ya activas';
+          btn.title = 'Tiempo adicional TL4 finalizado — todas las cargas fueron descargadas';
         }
       }
     }
