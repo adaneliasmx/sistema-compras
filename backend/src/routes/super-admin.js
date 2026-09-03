@@ -184,7 +184,7 @@ router.get('/overview', superAdminRequired, (req, res) => {
       total_users: (compras.users || []).filter(u => u.mant_role).length
     },
     {
-      id: 'validaciones', name: 'Validaciones Almacen (SKF/CUESTO)', icon: '📦', status: 'active', url: '/validaciones-almacen',
+      id: 'validaciones', name: 'Validaciones Almacen (SKF/CUESTO)', icon: '📦', status: 'active', url: '/clientes/c7m4q9/validaciones-almacen',
       users: (() => { try { const v = readVal(); return (v.usuarios_val || []).filter(u => u.activo !== false).map(u => ({ id: u.id, name: u.nombre, email: u.email, role: u.role, active: u.activo !== false })); } catch(_) { return []; } })(),
       total_users: (() => { try { return (readVal().usuarios_val || []).length; } catch(_) { return 0; } })()
     }

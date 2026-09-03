@@ -328,9 +328,12 @@ app.get('/pizarron/vista', (req, res) => res.sendFile(path.resolve(process.cwd()
 app.get('/mantenimiento', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
 app.get('/mantenimiento/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
 
-// Módulo Validaciones Almacen
-app.get('/validaciones-almacen', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
-app.get('/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+// Módulo Validaciones Almacen — ruta opaca para clientes
+app.get('/clientes/c7m4q9/validaciones-almacen', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+app.get('/clientes/c7m4q9/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
+// Redirect legacy → nueva ruta
+app.get('/validaciones-almacen', (req, res) => res.redirect(302, '/clientes/c7m4q9/validaciones-almacen' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '')));
+app.get('/validaciones-almacen/*', (req, res) => res.redirect(302, '/clientes/c7m4q9/validaciones-almacen' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '')));
 
 // Portal Empleados (autoservicio)
 app.get('/empleados', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
