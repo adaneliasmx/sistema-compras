@@ -234,57 +234,71 @@ router.get('/pendientes', valAuthRequired, (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/resumen', valAuthRequired, (req, res) => {
-  const { desde, hasta } = req.query;
+  const { periodo } = req.query; // 'hoy' | 'semana' | undefined (todo)
   const db = read();
+  const embarques = db.val_embarques || [];
 
-  const filtrarFecha = (arr, campoFecha) => {
-    let rows = arr || [];
-    if (desde) rows = rows.filter(r => (r[campoFecha] || '') >= desde);
-    if (hasta) rows = rows.filter(r => (r[campoFecha] || '') <= hasta);
-    return rows;
-  };
+  // Rango de fechas segun periodo
+  const hoy = nowMxDate();
+  let desde = '', hasta = '';
+  if (periodo === 'hoy') {
+    desde = hasta = hoy;
+  } else if (periodo === 'semana') {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const day = now.getDay();
+    const diff = day === 0 ? 6 : day - 1;
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - diff);
+    desde = monday.toISOString().slice(0, 10);
+    hasta = hoy;
+  }
 
-  const skfEnvios     = filtrarFecha(db.val_skf_envios,      'FECHA ENVIO');
-  const skfRecep      = filtrarFecha(db.val_skf_recepciones,  'fecha_recepcion');
-  const cuestoEnvios  = filtrarFecha(db.val_cuesto_envios,    'fecha_envio');
-  const cuestoIngreso = filtrarFecha(db.val_cuesto_ingresos,  'FECHA DE ESCANEO');
+  let filtered = embarques;
+  if (desde) filtered = filtered.filter(e => (e.fecha_envio || '') >= desde);
+  if (hasta) filtered = filtered.filter(e => (e.fecha_envio || '') <= hasta);
 
-  const skfPend   = (db.val_skf_pendientes   || []).filter(r => r.estado === 'PENDIENTE');
+  const skfACuesto = filtered.filter(e => e.flujo === 'skf_a_cuesto');
+  const cuestoASkf = filtered.filter(e => e.flujo === 'cuesto_a_skf');
+
+  function flowStats(list, esSKF) {
+    const enviados = list.filter(e => e.estado === 'ENVIADO');
+    const validados = list.filter(e => e.estado === 'VALIDADO');
+    const pzasEnviadas = list.reduce((s, e) => s + (e.total_piezas || 0), 0);
+    let pzasRecibidas = 0;
+    for (const emb of validados) {
+      const coincidenSet = new Set(emb.validacion_detalle?.coinciden || []);
+      for (const it of (emb.items || [])) {
+        const itemId = String(esSKF ? (it.DISPACH || '') : (it.codigo || ''));
+        if (coincidenSet.has(itemId)) {
+          pzasRecibidas += Number(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
+        }
+      }
+    }
+    return {
+      embarques: list.length,
+      en_transito: enviados.length,
+      validados: validados.length,
+      pzas_enviadas: pzasEnviadas,
+      pzas_recibidas: pzasRecibidas,
+      diferencia: pzasRecibidas - pzasEnviadas,
+    };
+  }
+
+  const skfPend    = (db.val_skf_pendientes    || []).filter(r => r.estado === 'PENDIENTE');
   const cuestoPend = (db.val_cuesto_pendientes || []).filter(r => r.estado === 'PENDIENTE');
 
-  // Piezas enviadas por SKF al almacen CUESTO
-  const pzas_skf_enviadas = skfEnvios.reduce((s, r) => s + (Number(r.QTY) || 0), 0);
-  const peso_skf_enviado  = skfEnvios.reduce((s, r) => s + (Number(r.PESO) || 0), 0);
-
-  // Piezas PT recibidas en SKF de CUESTO
-  const pzas_skf_recibidas = skfRecep.reduce((s, r) => s + (Number(r.cantidad) || 0), 0);
-
-  // Piezas PT enviadas de CUESTO a SKF
-  const pzas_cuesto_enviadas = cuestoEnvios.reduce((s, r) => s + (Number(r.cantidad) || 0), 0);
-
-  // Piezas SKF ingresadas en CUESTO
-  const pzas_cuesto_ingresadas = cuestoIngreso.reduce((s, r) => s + (Number(r.QTY) || 0), 0);
-
-  // Embarques unicos
-  const embarques_skf = new Set(skfEnvios.map(r => r['NUMERO EMBARQUE']).filter(Boolean)).size;
-  const embarques_cuesto = new Set(cuestoEnvios.map(r => r.codigo_envio).filter(Boolean)).size;
-
   res.json({
-    skf: {
-      pzas_enviadas:   pzas_skf_enviadas,
-      peso_enviado_kg: Math.round(peso_skf_enviado * 100) / 100,
-      pzas_recibidas:  pzas_skf_recibidas,
-      embarques:       embarques_skf,
-      pendientes_faltante: skfPend.filter(r => r.tipo === 'FALTANTE').length,
-      pendientes_sin_qry:  skfPend.filter(r => r.tipo === 'SIN_QRY').length,
+    periodo: periodo || 'todo',
+    desde: desde || null,
+    hasta: hasta || null,
+    skf_a_cuesto: flowStats(skfACuesto, true),
+    cuesto_a_skf: flowStats(cuestoASkf, false),
+    pendientes: {
+      skf_faltante:    skfPend.filter(r => r.tipo === 'FALTANTE').length,
+      skf_sin_qry:     skfPend.filter(r => r.tipo === 'SIN_QRY').length,
+      cuesto_faltante: cuestoPend.filter(r => r.tipo === 'FALTANTE').length,
+      cuesto_sin_qry:  cuestoPend.filter(r => r.tipo === 'SIN_QRY').length,
     },
-    cuesto: {
-      pzas_enviadas:   pzas_cuesto_enviadas,
-      pzas_ingresadas: pzas_cuesto_ingresadas,
-      embarques:       embarques_cuesto,
-      pendientes_faltante: cuestoPend.filter(r => r.tipo === 'FALTANTE').length,
-      pendientes_sin_qry:  cuestoPend.filter(r => r.tipo === 'SIN_QRY').length,
-    }
   });
 });
 
@@ -309,6 +323,63 @@ router.get('/resumen-consolidado/excel', valAuthRequired, (req, res) => {
 router.get('/resumen-consolidado', valAuthRequired, (req, res) => {
   try {
     res.json(buildConsolidatedSummary(read(), req.query));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// Detalle de diferencias de un componente, desglosado por fecha/embarque
+router.get('/resumen-consolidado/detalle', valAuthRequired, (req, res) => {
+  try {
+    const { componente, flujo, desde, hasta } = req.query;
+    if (!componente || !flujo) return res.status(400).json({ error: 'componente y flujo requeridos' });
+    if (!['skf_a_cuesto', 'cuesto_a_skf'].includes(flujo)) return res.status(400).json({ error: 'flujo invalido' });
+
+    const db = read();
+    const embarques = db.val_embarques || [];
+    const esSKF = flujo === 'skf_a_cuesto';
+    const compKey = String(componente).trim().toLocaleUpperCase('es-MX');
+
+    const relevant = embarques.filter(e => {
+      if (e.flujo !== flujo) return false;
+      const f = e.fecha_envio || '';
+      if (desde && f < desde) return false;
+      if (hasta && f > hasta) return false;
+      // Check if this embarque has items of the requested component
+      return (e.items || []).some(it => {
+        const c = String((esSKF ? it.COMPONENTE : it.componente) || '').trim().toLocaleUpperCase('es-MX');
+        return c === compKey;
+      });
+    });
+
+    const rows = [];
+    for (const emb of relevant) {
+      const isValidado = emb.estado === 'VALIDADO';
+      const coincidenSet = isValidado ? new Set(emb.validacion_detalle?.coinciden || []) : new Set();
+      for (const it of (emb.items || [])) {
+        const c = String((esSKF ? it.COMPONENTE : it.componente) || '').trim().toLocaleUpperCase('es-MX');
+        if (c !== compKey) continue;
+        const itemId = String(esSKF ? (it.DISPACH || '') : (it.codigo || ''));
+        const qty = Number(esSKF ? (it.QTY || 0) : (it.cantidad || 0)) || 0;
+        const recibida = isValidado && coincidenSet.has(itemId) ? qty : 0;
+        rows.push({
+          fecha: emb.fecha_envio || '',
+          embarque: emb.numero_embarque || emb.uuid,
+          uuid: emb.uuid,
+          estado: emb.estado,
+          dispatch: itemId,
+          pzas_enviadas: qty,
+          pzas_recibidas: recibida,
+          diferencia: recibida - qty,
+        });
+      }
+    }
+
+    // Solo devolver filas con diferencia
+    const conDiff = rows.filter(r => r.diferencia !== 0);
+    conDiff.sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || (a.embarque || '').localeCompare(b.embarque || ''));
+
+    res.json({ componente, flujo, items: conDiff });
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

@@ -56,6 +56,11 @@ main{flex:1;padding:24px;max-width:1400px;margin:0 auto;width:100%}
 .filtros .btn-excel{background:#1f7a4d;color:#fff;border:none;padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:.88rem}
 .filtros .btn-excel:hover{background:#17603c}
 .filtros button:disabled{opacity:.6;cursor:wait}
+.btn-periodo{background:#e8edf2;color:#1a3a5c;border:1px solid #c0cad6;padding:7px 18px;border-radius:6px;cursor:pointer;font-size:.85rem;font-weight:600;transition:all .15s}
+.btn-periodo:hover{background:#d0d9e4}
+.btn-periodo.active{background:#1a3a5c;color:#fff;border-color:#1a3a5c}
+.btn-detalle-diff{background:#e67e22;color:#fff;border:none;padding:3px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;font-weight:600}
+.btn-detalle-diff:hover{background:#d35400}
 
 /* ── TABLA ── */
 .tabla-wrap{background:#fff;border-radius:10px;box-shadow:0 1px 4px rgba(0,0,0,.08);overflow:hidden}
@@ -297,123 +302,117 @@ function switchTab(tab) {
 }
 
 // ── DASHBOARD / RESUMEN ────────────────────────────────────────────────────────
+let _dashPeriodo = 'hoy';
+
 async function renderResumen() {
   const m = document.getElementById('mainContent');
-  const [d, embOnline] = await Promise.all([
-    apiFetch('/resumen'),
-    apiFetch('/embarques-online').catch(() => [])
+  m.innerHTML = `
+    <div class="alert info">Resumen de trazabilidad online — embarques registrados en tiempo real.</div>
+    <div style="display:flex;gap:8px;margin-bottom:18px;align-items:center">
+      <span style="font-weight:700;color:#1a3a5c;font-size:.88rem">Ver datos:</span>
+      <button id="btnDashHoy" class="btn-periodo ${_dashPeriodo === 'hoy' ? 'active' : ''}" onclick="cambiarPeriodoDash('hoy')">Hoy</button>
+      <button id="btnDashSemana" class="btn-periodo ${_dashPeriodo === 'semana' ? 'active' : ''}" onclick="cambiarPeriodoDash('semana')">Esta semana</button>
+    </div>
+    <div id="dashContent"><div class="spinner"></div></div>`;
+  await cargarDashboard();
+}
+
+async function cambiarPeriodoDash(periodo) {
+  _dashPeriodo = periodo;
+  document.querySelectorAll('.btn-periodo').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(periodo === 'hoy' ? 'btnDashHoy' : 'btnDashSemana');
+  if (btn) btn.classList.add('active');
+  const dc = document.getElementById('dashContent');
+  if (dc) dc.innerHTML = '<div class="spinner"></div>';
+  await cargarDashboard();
+}
+
+async function cargarDashboard() {
+  const dc = document.getElementById('dashContent');
+  if (!dc) return;
+
+  const [d, apps] = await Promise.all([
+    apiFetch('/resumen?periodo=' + _dashPeriodo),
+    apiFetch('/app/status').catch(() => [])
   ]);
   if (!d) return;
 
-  const skf = d.skf || {};
-  const cu  = d.cuesto || {};
-  const totalPend = (skf.pendientes_faltante||0)+(skf.pendientes_sin_qry||0)+(cu.pendientes_faltante||0)+(cu.pendientes_sin_qry||0);
-  const embEnviados = (embOnline||[]).filter(e => e.estado === 'ENVIADO').length;
-  const embValidados = (embOnline||[]).filter(e => e.estado === 'VALIDADO').length;
+  const s2c = d.skf_a_cuesto || {};
+  const c2s = d.cuesto_a_skf || {};
+  const pend = d.pendientes || {};
+  const totalPend = (pend.skf_faltante||0) + (pend.skf_sin_qry||0) + (pend.cuesto_faltante||0) + (pend.cuesto_sin_qry||0);
+  const periodoLabel = _dashPeriodo === 'hoy'
+    ? 'Hoy (' + (d.desde || '') + ')'
+    : 'Semana (' + (d.desde || '') + ' a ' + (d.hasta || '') + ')';
 
-  // Cargar estado de PCs para el dashboard
   let appsHtml = '';
-  try {
-    const apps = await apiFetch('/app/status');
-    if (apps && apps.length > 0) {
-      appsHtml = `
-        <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Apps Conectadas</h3>
-        <div class="kpi-grid" style="margin-bottom:28px">
-          ${apps.map(a => {
-            const color = a.online ? 'green' : 'red';
-            const dot   = a.online ? '🟢' : '🔴';
-            const st    = a.online ? 'Online' : 'Offline';
-            return `<div class="kpi ${color}">
-              <label>${a.side.toUpperCase()}</label>
-              <div class="val" style="font-size:1.4rem">${dot} ${st}</div>
-              <div class="sub">v${a.version} &nbsp;|&nbsp; ${a.operador || '—'} &nbsp;|&nbsp; ${a.hostname || '—'}</div>
-              <div class="sub" style="margin-top:2px;color:#aaa">${a.hace}</div>
-            </div>`;
-          }).join('')}
-        </div>`;
-    }
-  } catch(_) {}
+  if (apps && apps.length > 0) {
+    appsHtml = `
+      <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Apps Conectadas</h3>
+      <div class="kpi-grid" style="margin-bottom:28px">
+        ${apps.map(a => {
+          const color = a.online ? 'green' : 'red';
+          const dot   = a.online ? '&#x1F7E2;' : '&#x1F534;';
+          const st    = a.online ? 'Online' : 'Offline';
+          return `<div class="kpi ${color}">
+            <label>${escapeHtml(a.side.toUpperCase())}</label>
+            <div class="val" style="font-size:1.4rem">${dot} ${st}</div>
+            <div class="sub">v${escapeHtml(a.version)} &nbsp;|&nbsp; ${escapeHtml(a.operador || '\u2014')} &nbsp;|&nbsp; ${escapeHtml(a.hostname || '\u2014')}</div>
+            <div class="sub" style="margin-top:2px;color:#aaa">${escapeHtml(a.hace)}</div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  }
 
-  m.innerHTML = `
-    <div class="alert info">Datos sincronizados desde las apps de escritorio + embarques registrados en tiempo real.</div>
+  function flowKpis(label, f, arrow) {
+    const diffClass = f.diferencia === 0 ? '' : f.diferencia < 0 ? 'red' : 'green';
+    return `
+      <div class="tabla-wrap" style="flex:1">
+        <div class="tabla-header"><h3>${label}</h3><span class="tabla-count">${f.embarques} embarques</span></div>
+        <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin:0">
+          <div class="kpi blue"><label>Pzas enviadas</label><div class="val">${f.pzas_enviadas.toLocaleString()}</div><div class="sub">${arrow}</div></div>
+          <div class="kpi green"><label>Pzas recibidas</label><div class="val">${f.pzas_recibidas.toLocaleString()}</div></div>
+          <div class="kpi ${diffClass}"><label>Diferencia</label><div class="val">${f.diferencia.toLocaleString()}</div></div>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:8px">
+          <div class="kpi orange" style="flex:1"><label>En transito</label><div class="val">${f.en_transito}</div></div>
+          <div class="kpi green" style="flex:1"><label>Validados</label><div class="val">${f.validados}</div></div>
+        </div>
+      </div>`;
+  }
 
+  dc.innerHTML = `
     ${appsHtml}
-
-    <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Vista General</h3>
-    <div class="kpi-grid">
-      <div class="kpi blue">
-        <label>Pzas SKF enviadas</label>
-        <div class="val">${(skf.pzas_enviadas||0).toLocaleString()}</div>
-        <div class="sub">Almacen SKF &rarr; CUESTO</div>
-      </div>
-      <div class="kpi green">
-        <label>Pzas ingresadas CUESTO</label>
-        <div class="val">${(cu.pzas_ingresadas||0).toLocaleString()}</div>
-        <div class="sub">Recibidas en CUESTO de SKF</div>
-      </div>
-      <div class="kpi blue">
-        <label>Pzas PT CUESTO enviadas</label>
-        <div class="val">${(cu.pzas_enviadas||0).toLocaleString()}</div>
-        <div class="sub">CUESTO &rarr; SKF</div>
-      </div>
-      <div class="kpi green">
-        <label>Pzas PT recibidas SKF</label>
-        <div class="val">${(skf.pzas_recibidas||0).toLocaleString()}</div>
-        <div class="sub">Recibidas en SKF de CUESTO</div>
-      </div>
-      <div class="${totalPend > 0 ? 'kpi red' : 'kpi green'}">
-        <label>Pendientes totales</label>
-        <div class="val">${totalPend}</div>
-        <div class="sub">Faltantes + Sin QRY activos</div>
-      </div>
-      <div class="kpi">
-        <label>Embarques SKF</label>
-        <div class="val">${skf.embarques||0}</div>
-        <div class="sub">Numeros de embarque registrados</div>
-      </div>
-      <div class="kpi">
-        <label>Embarques CUESTO</label>
-        <div class="val">${cu.embarques||0}</div>
-        <div class="sub">Codigos de envio registrados</div>
-      </div>
-      <div class="kpi orange">
-        <label>Peso enviado SKF</label>
-        <div class="val">${(skf.peso_enviado_kg||0).toLocaleString()}</div>
-        <div class="sub">Kg totales de almacen SKF</div>
-      </div>
-    </div>
-
-    <h3 style="margin:20px 0 14px;color:#1a3a5c;font-size:1rem">Embarques Online (Trazabilidad)</h3>
-    <div class="kpi-grid">
-      <div class="kpi"><label>Total registrados</label><div class="val">${(embOnline||[]).length}</div><div class="sub">Embarques con UUID</div></div>
-      <div class="kpi ${embEnviados > 0 ? 'orange' : 'green'}"><label>En transito</label><div class="val">${embEnviados}</div><div class="sub">Pendientes de validar</div></div>
-      <div class="kpi green"><label>Validados</label><div class="val">${embValidados}</div><div class="sub">Recibidos y confirmados</div></div>
+    <h3 style="margin-bottom:14px;color:#1a3a5c;font-size:1rem">Trazabilidad Online &mdash; ${escapeHtml(periodoLabel)}</h3>
+    <div style="display:flex;gap:20px;margin-bottom:20px;flex-wrap:wrap">
+      ${flowKpis('SKF &rarr; CUESTO', s2c, 'Almacen SKF &rarr; CUESTO')}
+      ${flowKpis('CUESTO &rarr; SKF', c2s, 'CUESTO &rarr; SKF')}
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:8px">
       <div class="tabla-wrap">
         <div class="tabla-header">
           <h3>Pendientes SKF</h3>
-          <span class="tabla-count">${(skf.pendientes_faltante||0)+(skf.pendientes_sin_qry||0)} activos</span>
+          <span class="tabla-count">${(pend.skf_faltante||0)+(pend.skf_sin_qry||0)} activos</span>
         </div>
         <table>
           <thead><tr><th>Tipo</th><th>Cantidad</th></tr></thead>
           <tbody>
-            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${skf.pendientes_faltante||0}</td></tr>
-            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${skf.pendientes_sin_qry||0}</td></tr>
+            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${pend.skf_faltante||0}</td></tr>
+            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${pend.skf_sin_qry||0}</td></tr>
           </tbody>
         </table>
       </div>
       <div class="tabla-wrap">
         <div class="tabla-header">
           <h3>Pendientes CUESTO</h3>
-          <span class="tabla-count">${(cu.pendientes_faltante||0)+(cu.pendientes_sin_qry||0)} activos</span>
+          <span class="tabla-count">${(pend.cuesto_faltante||0)+(pend.cuesto_sin_qry||0)} activos</span>
         </div>
         <table>
           <thead><tr><th>Tipo</th><th>Cantidad</th></tr></thead>
           <tbody>
-            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${cu.pendientes_faltante||0}</td></tr>
-            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${cu.pendientes_sin_qry||0}</td></tr>
+            <tr><td><span class="badge faltante">FALTANTE</span></td><td>${pend.cuesto_faltante||0}</td></tr>
+            <tr><td><span class="badge sin_qry">SIN QRY</span></td><td>${pend.cuesto_sin_qry||0}</td></tr>
           </tbody>
         </table>
       </div>
@@ -425,20 +424,21 @@ let _consolidadoData = null;
 
 async function renderConsolidado() {
   const m = document.getElementById('mainContent');
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
   m.innerHTML = `
     <div class="alert info">
-      Resumen por número de parte, sin separar por embarque. El periodo se aplica a la fecha propia de cada movimiento: envío o recepción.
+      Resumen por n\u00famero de parte, sin separar por embarque. El periodo se aplica a la fecha propia de cada movimiento: env\u00edo o recepci\u00f3n.
     </div>
     <div class="filtros">
-      <div><label>Desde</label><input type="date" id="conDesde"></div>
-      <div><label>Hasta</label><input type="date" id="conHasta"></div>
-      <div><label>Número de parte, dispatch o SKF</label><input type="text" id="conBusqueda" maxlength="120" placeholder="Teclear para buscar" onkeydown="if(event.key==='Enter') loadConsolidatedResults()"></div>
+      <div><label>Desde</label><input type="date" id="conDesde" value="${hoy}"></div>
+      <div><label>Hasta</label><input type="date" id="conHasta" value="${hoy}"></div>
+      <div><label>N\u00famero de parte, dispatch o SKF</label><input type="text" id="conBusqueda" maxlength="120" placeholder="Teclear para buscar" onkeydown="if(event.key==='Enter') loadConsolidatedResults()"></div>
       <div>
-        <label>Dirección</label>
+        <label>Direcci\u00f3n</label>
         <select id="conDireccion" onchange="paintConsolidatedResults()">
           <option value="ambas">Ambas direcciones</option>
-          <option value="skf_a_cuesto">SKF → CUESTO</option>
-          <option value="cuesto_a_skf">CUESTO → SKF</option>
+          <option value="skf_a_cuesto">SKF \u2192 CUESTO</option>
+          <option value="cuesto_a_skf">CUESTO \u2192 SKF</option>
         </select>
       </div>
       <button class="btn-buscar" onclick="loadConsolidatedResults()">Consultar</button>
@@ -476,19 +476,25 @@ async function loadConsolidatedResults() {
   }
 }
 
-function consolidatedTable(flow) {
+function consolidatedTable(flow, flujoKey) {
   const rows = flow?.items || [];
   const totals = flow?.totals || { componentes: 0, cantidad_enviada: 0, cantidad_recibida: 0, diferencia: 0 };
+  const hasDiffs = rows.some(item => item.diferencia !== 0);
+  const cols = hasDiffs ? 6 : 5;
   const body = rows.length ? rows.map(item => {
     const diffClass = item.diferencia === 0 ? 'diff-zero' : item.diferencia < 0 ? 'diff-negative' : 'diff-positive';
+    const btnHtml = item.diferencia !== 0
+      ? `<td><button class="btn-detalle-diff" onclick="verDetalleDiff(decodeURIComponent('${encodeURIComponent(item.componente)}'),'${flujoKey}')">Ver detalles</button></td>`
+      : (hasDiffs ? '<td></td>' : '');
     return `<tr>
       <td><strong>${escapeHtml(item.componente)}</strong></td>
-      <td>${escapeHtml(item.numeros_skf || '—')}</td>
+      <td>${escapeHtml(item.numeros_skf || '\u2014')}</td>
       <td class="num">${formatQuantity(item.cantidad_enviada)}</td>
       <td class="num">${formatQuantity(item.cantidad_recibida)}</td>
       <td class="num ${diffClass}">${formatQuantity(item.diferencia)}</td>
+      ${btnHtml}
     </tr>`;
-  }).join('') : '<tr><td colspan="5" class="empty">No hay movimientos en el periodo seleccionado.</td></tr>';
+  }).join('') : `<tr><td colspan="${cols}" class="empty">No hay movimientos en el periodo seleccionado.</td></tr>`;
   const totalDiffClass = totals.diferencia === 0 ? 'diff-zero' : totals.diferencia < 0 ? 'diff-negative' : 'diff-positive';
 
   return `<section class="tabla-wrap consolidado-section">
@@ -499,9 +505,10 @@ function consolidatedTable(flow) {
     <div class="tabla-scroll">
       <table>
         <thead><tr>
-          <th>Componente</th><th>Números SKF</th>
+          <th>Componente</th><th>N\u00fameros SKF</th>
           <th class="num">Cantidad enviada</th><th class="num">Cantidad recibida</th>
-          <th class="num">Diferencia (recibida − enviada)</th>
+          <th class="num">Diferencia (recibida \u2212 enviada)</th>
+          ${hasDiffs ? '<th></th>' : ''}
         </tr></thead>
         <tbody>${body}</tbody>
         <tfoot><tr>
@@ -509,6 +516,7 @@ function consolidatedTable(flow) {
           <td class="num">${formatQuantity(totals.cantidad_enviada)}</td>
           <td class="num">${formatQuantity(totals.cantidad_recibida)}</td>
           <td class="num ${totalDiffClass}">${formatQuantity(totals.diferencia)}</td>
+          ${hasDiffs ? '<td></td>' : ''}
         </tr></tfoot>
       </table>
     </div>
@@ -521,14 +529,87 @@ function paintConsolidatedResults() {
   const direction = document.getElementById('conDireccion')?.value || 'ambas';
   const flows = _consolidadoData.flujos || {};
   let html = '';
-  if (direction === 'ambas' || direction === 'skf_a_cuesto') html += consolidatedTable(flows.skf_a_cuesto);
-  if (direction === 'ambas' || direction === 'cuesto_a_skf') html += consolidatedTable(flows.cuesto_a_skf);
+  if (direction === 'ambas' || direction === 'skf_a_cuesto') html += consolidatedTable(flows.skf_a_cuesto, 'skf_a_cuesto');
+  if (direction === 'ambas' || direction === 'cuesto_a_skf') html += consolidatedTable(flows.cuesto_a_skf, 'cuesto_a_skf');
   result.innerHTML = html;
 }
 
+async function verDetalleDiff(componente, flujo) {
+  const body = document.getElementById('modalBody');
+  const modal = document.getElementById('modalContent');
+  modal.classList.add('wide');
+  body.innerHTML = '<div class="spinner"></div>';
+  document.getElementById('modalOverlay').classList.add('open');
+
+  const params = new URLSearchParams({ componente, flujo });
+  const desde = document.getElementById('conDesde')?.value;
+  const hasta = document.getElementById('conHasta')?.value;
+  if (desde) params.set('desde', desde);
+  if (hasta) params.set('hasta', hasta);
+
+  try {
+    const d = await apiFetch('/resumen-consolidado/detalle?' + params.toString());
+    if (!d) return;
+    const items = d.items || [];
+    const flujoLabel = flujo === 'skf_a_cuesto' ? 'SKF \u2192 CUESTO' : 'CUESTO \u2192 SKF';
+
+    if (items.length === 0) {
+      body.innerHTML = `<h2 style="margin-bottom:12px">Detalle de diferencias</h2>
+        <p><strong>${escapeHtml(componente)}</strong> (${flujoLabel})</p>
+        <div class="alert info" style="margin-top:12px">No se encontraron diferencias para este componente.</div>`;
+      return;
+    }
+
+    // Agrupar por fecha
+    const byDate = {};
+    for (const row of items) {
+      const key = row.fecha || 'Sin fecha';
+      if (!byDate[key]) byDate[key] = [];
+      byDate[key].push(row);
+    }
+
+    let html = `<h2 style="margin-bottom:4px">Diferencias: ${escapeHtml(componente)}</h2>
+      <p style="color:#666;font-size:.85rem;margin-bottom:16px">${flujoLabel} &mdash; Solo piezas con diferencia</p>`;
+
+    for (const [fecha, rows] of Object.entries(byDate).sort((a, b) => a[0].localeCompare(b[0]))) {
+      html += `<h3 style="margin:14px 0 8px;color:#1a3a5c;font-size:.92rem">${escapeHtml(fecha)}</h3>`;
+      // Sub-agrupar por embarque
+      const byEmb = {};
+      for (const r of rows) {
+        const ek = r.embarque || 'Sin embarque';
+        if (!byEmb[ek]) byEmb[ek] = [];
+        byEmb[ek].push(r);
+      }
+      for (const [emb, embRows] of Object.entries(byEmb)) {
+        const estadoBadge = embRows[0]?.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
+        html += `<div style="margin-bottom:12px;padding:8px 12px;background:#f8f9fa;border-radius:6px;border-left:3px solid #e67e22">
+          <div style="font-weight:600;font-size:.85rem;margin-bottom:6px">Embarque: ${escapeHtml(emb)} <span class="badge ${estadoBadge}" style="margin-left:6px">${escapeHtml(embRows[0]?.estado || '')}</span></div>
+          <table style="width:100%;font-size:.82rem">
+            <thead><tr><th style="text-align:left">Dispatch</th><th class="num">Pzas enviadas</th><th class="num">Pzas recibidas</th><th class="num">Diferencia</th></tr></thead>
+            <tbody>${embRows.map(r => {
+              const dc = r.diferencia < 0 ? 'diff-negative' : 'diff-positive';
+              return `<tr>
+                <td style="font-family:monospace;font-size:.8rem">${escapeHtml(r.dispatch)}</td>
+                <td class="num">${formatQuantity(r.pzas_enviadas)}</td>
+                <td class="num">${formatQuantity(r.pzas_recibidas)}</td>
+                <td class="num ${dc}">${formatQuantity(r.diferencia)}</td>
+              </tr>`;
+            }).join('')}</tbody>
+          </table>
+        </div>`;
+      }
+    }
+
+    body.innerHTML = html;
+  } catch (e) {
+    body.innerHTML = `<div class="alert warn">${escapeHtml(e.message)}</div>`;
+  }
+}
+
 function clearConsolidatedFilters() {
-  document.getElementById('conDesde').value = '';
-  document.getElementById('conHasta').value = '';
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  document.getElementById('conDesde').value = hoy;
+  document.getElementById('conHasta').value = hoy;
   document.getElementById('conBusqueda').value = '';
   document.getElementById('conDireccion').value = 'ambas';
   loadConsolidatedResults();
