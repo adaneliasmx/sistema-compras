@@ -231,9 +231,9 @@ router.get('/incidencias', empAuthRequired, (req, res) => {
       id: `txt-pago-${p.id}`,
       date: p.fecha_pago,
       type: 'txt_pago',
-      title: 'TXT pagado',
-      detail: `${workedHours} h trabajadas${originDetail ? ` · ${originDetail}` : ''}${p.horas_extra_sobrante ? ` · ${p.horas_extra_sobrante} h enviadas a autorización como TE` : ''}`,
-      status: 'registrado',
+      title: p.status === 'anulado' ? 'Pago TXT anulado' : 'TXT pagado',
+      detail: `${workedHours} h trabajadas${originDetail ? ` · ${originDetail}` : ''}${p.horas_extra_sobrante ? ` · ${p.horas_extra_sobrante} h enviadas a autorización como TE` : ''}${p.status === 'anulado' && p.motivo_anulacion ? ` · Motivo: ${p.motivo_anulacion}` : ''}`,
+      status: p.status === 'anulado' ? 'anulado' : 'registrado',
     });
   }
   for (const b of (db.rhh_bono_vales || []).filter(b => b.employee_id === empId)) {
@@ -483,7 +483,7 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
   const holidays = db.rhh_holidays || [];
   const attendance = db.rhh_attendance || [];
   const incidences = db.rhh_incidences || [];
-  const txtPagos = db.rhh_txt_pagos || [];
+  const txtPagos = (db.rhh_txt_pagos || []).filter(p => p.status !== 'anulado');
   const txtDeudas = db.rhh_txt_deudas || [];
   const bonoVales = db.rhh_bono_vales || [];
   const cumpleIncs = db.rhh_cumpleanos_incidencias || [];
@@ -561,7 +561,7 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
     // Condiciones derivadas: la falta queda como antecedente; TXT liquidado se
     // presenta y contabiliza como día pagado/trabajado.
     if (birthday && holiday) status = 'festivo_cumpleanos_no_labora';
-    else if (originTxtStatus) status = `txt_${originTxtStatus}`;
+    else if (originTxtStatus) status = 'txt_por_pagar';
     else if (dayTxtPagos.length) status = 'txt_pagado';
     else if (holiday && att?.incidencia_type === 'labora') status = 'festivo_laborado';
     else if (cumpleLaborado) status = 'cumpleanos_laborado';
@@ -585,6 +585,7 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
       birthday,
       birthday_holiday_conflict: birthday && !!holiday,
       txt_paid_hours,
+      txt_origin_status: originTxtStatus,
       txt_origin_paid_hours: originPaid,
       txt_origin_pending_hours: originPending,
       bonos: dayBonos.map(b => ({

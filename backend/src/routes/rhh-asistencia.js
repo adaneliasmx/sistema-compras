@@ -143,6 +143,8 @@ const INCIDENCIA_LABELS = {
 /* ── Helpers TxT ───────────────────────────────────────────────────────────── */
 function getTxtDeudas(db) { if (!db.rhh_txt_deudas) db.rhh_txt_deudas = []; return db.rhh_txt_deudas; }
 function getTxtPagos(db) { if (!db.rhh_txt_pagos) db.rhh_txt_pagos = []; return db.rhh_txt_pagos; }
+function isTxtPaymentActive(pago) { return pago?.status !== 'anulado'; }
+function getActiveTxtPagos(db) { return getTxtPagos(db).filter(isTxtPaymentActive); }
 function getBonoVales(db) { if (!db.rhh_bono_vales) db.rhh_bono_vales = []; return db.rhh_bono_vales; }
 function getCumpleIncidencias(db) { if (!db.rhh_cumpleanos_incidencias) db.rhh_cumpleanos_incidencias = []; return db.rhh_cumpleanos_incidencias; }
 
@@ -163,7 +165,7 @@ function pagoAplicadoADeuda(pago, deudaId) {
 }
 
 function getTxtBalanceAsOf(db, employeeId, cutoffDate) {
-  const pagos = getTxtPagos(db).filter(p =>
+  const pagos = getActiveTxtPagos(db).filter(p =>
     p.employee_id === Number(employeeId) && (!cutoffDate || p.fecha_pago <= cutoffDate)
   );
   return getTxtDeudas(db)
@@ -191,12 +193,56 @@ function getTxtDebtSnapshot(db, deuda, cutoffDate) {
   if (cancelledAsOf) return null;
 
   const originalHours = Number(deuda.horas_deuda_original) || 0;
-  const paidHours = getTxtPagos(db)
+  const paidHours = getActiveTxtPagos(db)
     .filter(p => Number(p.employee_id) === Number(deuda.employee_id) && (!cutoffDate || p.fecha_pago <= cutoffDate))
     .reduce((sum, pago) => sum + pagoAplicadoADeuda(pago, deuda.id), 0);
   const pendingHours = Math.max(0, originalHours - paidHours);
   const displayStatus = pendingHours <= 0 ? 'pagado' : (paidHours > 0 ? 'parcial' : 'por_pagar');
   return { originalHours, paidHours, pendingHours, displayStatus };
+}
+
+function getTxtDayPresentation(enrichedPayments, debtSnapshot) {
+  const payments = Array.isArray(enrichedPayments) ? enrichedPayments : [];
+  if (payments.length) {
+    const workedHours = payments.reduce((sum, pago) => sum + (Number(pago.horas_trabajadas) || 0), 0);
+    return { status: 'pagado', label: `TXT pagado · ${workedHours} h`, kind: 'payment' };
+  }
+  if (!debtSnapshot) return { status: null, label: null, kind: null };
+  if (debtSnapshot.displayStatus === 'pagado') {
+    return {
+      status: 'pagado',
+      label: `TXT por pagar · liquidado (${debtSnapshot.paidHours} h)`,
+      kind: 'debt',
+    };
+  }
+  if (debtSnapshot.displayStatus === 'parcial') {
+    return {
+      status: 'parcial',
+      label: `TXT por pagar · ${debtSnapshot.paidHours} h pagadas · ${debtSnapshot.pendingHours} h pendientes`,
+      kind: 'debt',
+    };
+  }
+  return {
+    status: 'por_pagar',
+    label: `TXT por pagar · ${debtSnapshot.pendingHours} h`,
+    kind: 'debt',
+  };
+}
+
+function recomputeTxtDebt(db, deuda) {
+  if (!deuda || deuda.status === 'cancelado') {
+    syncTxtOriginAttendance(db, deuda);
+    return deuda;
+  }
+  const originalHours = Number(deuda.horas_deuda_original) || 0;
+  const paidHours = getActiveTxtPagos(db)
+    .reduce((sum, pago) => sum + pagoAplicadoADeuda(pago, deuda.id), 0);
+  deuda.horas_pagadas = Math.min(originalHours, paidHours);
+  deuda.horas_pendientes = Math.max(0, originalHours - paidHours);
+  deuda.status = deuda.horas_pendientes > 0 ? 'pendiente_pago' : 'pagado';
+  deuda.updated_at = nowMxDateTime();
+  syncTxtOriginAttendance(db, deuda);
+  return deuda;
 }
 
 function txtDateLabel(fecha) {
@@ -1092,7 +1138,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
 
   // Pre-cargar datos TxT y cumpleaños para enriquecer grid
   const allDeudas  = getTxtDeudas(db);
-  const allPagos   = getTxtPagos(db);
+  const allPagos   = getActiveTxtPagos(db);
   const allBonos   = getBonoVales(db);
   const cumpleIncs = getCumpleIncidencias(db);
 
@@ -1144,18 +1190,9 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
         // El estado de una falta TXT es acumulativo: al pagarse en una semana
         // posterior, la falta de origen debe quedar marcada como día pagado.
         const deudaSnapshot = getTxtDebtSnapshot(db, origenTxtDeuda);
-        const txtDisplayStatus = enrichedDayTxtPagos.length
-          ? 'pagado'
-          : deudaSnapshot?.displayStatus || null;
-        const txtDisplayLabel = enrichedDayTxtPagos.length
-          ? `TXT pagado · ${txtPagadoHoras} h`
-          : deudaSnapshot?.displayStatus === 'por_pagar'
-            ? `TXT por pagar · ${deudaSnapshot.pendingHours} h`
-            : deudaSnapshot?.displayStatus === 'parcial'
-              ? `TXT parcial · ${deudaSnapshot.paidHours} h pagadas · ${deudaSnapshot.pendingHours} h pendientes`
-              : deudaSnapshot?.displayStatus === 'pagado'
-                ? `TXT pagado · ${deudaSnapshot.paidHours} h`
-                : null;
+        const txtPresentation = getTxtDayPresentation(enrichedDayTxtPagos, deudaSnapshot);
+        const txtDisplayStatus = txtPresentation.status;
+        const txtDisplayLabel = txtPresentation.label;
 
         return {
           fecha,
@@ -1196,6 +1233,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
           txt_pagos:           enrichedDayTxtPagos,
           txt_display_status:  txtDisplayStatus,
           txt_display_label:   txtDisplayLabel,
+          txt_display_kind:    txtPresentation.kind,
           txt_counts_as_paid_day: rec?.incidencia_type === 'falta' && deudaSnapshot?.displayStatus === 'pagado',
           txt_deuda_id:        deudaSnapshot ? origenTxtDeuda?.id || null : null,
           txt_deuda_status:    deudaSnapshot?.displayStatus || null,
@@ -1339,7 +1377,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
     const linkedDebt = getTxtDeudas(db).some(d =>
       Number(d.origen_attendance_id) === Number(att[idx].id) && d.status !== 'cancelado'
     );
-    const linkedPayment = getTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
+    const linkedPayment = getActiveTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
     if (linkedDebt || linkedPayment) {
       return { error: 'La incidencia está vinculada a TXT y no puede cambiarse sin cancelar o corregir el movimiento', conflict: true, skip: true };
     }
@@ -1505,7 +1543,7 @@ router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin
     const linkedDebt = getTxtDeudas(db).some(d =>
       Number(d.origen_attendance_id) === Number(att[idx].id) && d.status !== 'cancelado'
     );
-    const linkedPayment = getTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
+    const linkedPayment = getActiveTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
     if (linkedDebt || linkedPayment) {
       return res.status(409).json({ error: 'La incidencia está vinculada a TXT y no puede cambiarse sin cancelar o corregir el movimiento' });
     }
@@ -1568,7 +1606,7 @@ router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh',
   const idx = (db.rhh_attendance || []).findIndex(r => r.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
   const rec = db.rhh_attendance[idx];
-  const hasLinkedPayment = getTxtPagos(db).some(p => p.attendance_id === rec.id);
+  const hasLinkedPayment = getActiveTxtPagos(db).some(p => p.attendance_id === rec.id);
   const hasLinkedBonus = getBonoVales(db).some(b => b.attendance_id === rec.id && b.status !== 'rechazado');
   const hasLinkedDebt = getTxtDeudas(db).some(d => d.origen_attendance_id === rec.id && d.status !== 'cancelado');
   if (hasLinkedPayment || hasLinkedBonus || hasLinkedDebt) {
@@ -1732,7 +1770,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
   const positions  = db.rhh_positions || [];
   const shifts     = db.rhh_shifts    || [];
   const allDeudas  = getTxtDeudas(db);
-  const allPagos   = getTxtPagos(db);
+  const allPagos   = getActiveTxtPagos(db);
   const allBonos   = getBonoVales(db);
   const cumpleIncs = getCumpleIncidencias(db);
 
@@ -1763,16 +1801,9 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
       const cumpleRegistro = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match === fecha && c.laboro);
       const origenTxtDeuda = rec ? allDeudas.find(d => d.origen_attendance_id === rec.id) : null;
       const deudaSnapshot = getTxtDebtSnapshot(db, origenTxtDeuda);
-      const txtDisplayStatus = enrichedDayTxtPagos.length ? 'pagado' : deudaSnapshot?.displayStatus || null;
-      const txtDisplayLabel = enrichedDayTxtPagos.length
-        ? `TXT pagado · ${txtPagadoHoras} h`
-        : deudaSnapshot?.displayStatus === 'por_pagar'
-          ? `TXT por pagar · ${deudaSnapshot.pendingHours} h`
-          : deudaSnapshot?.displayStatus === 'parcial'
-            ? `TXT parcial · ${deudaSnapshot.paidHours} h pagadas · ${deudaSnapshot.pendingHours} h pendientes`
-            : deudaSnapshot?.displayStatus === 'pagado'
-              ? `TXT pagado · ${deudaSnapshot.paidHours} h`
-              : null;
+      const txtPresentation = getTxtDayPresentation(enrichedDayTxtPagos, deudaSnapshot);
+      const txtDisplayStatus = txtPresentation.status;
+      const txtDisplayLabel = txtPresentation.label;
 
       return {
         fecha,
@@ -1796,6 +1827,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
         txt_pagos:          enrichedDayTxtPagos,
         txt_display_status: txtDisplayStatus,
         txt_display_label:  txtDisplayLabel,
+        txt_display_kind:   txtPresentation.kind,
         txt_counts_as_paid_day: rec?.incidencia_type === 'falta' && deudaSnapshot?.displayStatus === 'pagado',
         txt_deuda_id:       deudaSnapshot ? origenTxtDeuda?.id || null : null,
         txt_deuda_horas:    deudaSnapshot?.originalHours ?? null,
@@ -2024,6 +2056,7 @@ router.post('/txt/pagar', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'a
     horas_trabajadas: horasAplicar,
     aplicaciones,
     presento_a_pagar: true,
+    status: 'registrado',
     confirmado_por: req.rhhUser.full_name || req.rhhUser.email,
     created_at: nowMxDateTime(),
     created_by: req.rhhUser.full_name || req.rhhUser.email,
@@ -2069,6 +2102,69 @@ router.post('/txt/pagar', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'a
     });
   } catch (err) {
     res.status(500).json({ error: 'No fue posible guardar el pago TXT' });
+  }
+});
+
+// POST /api/rhh/asistencia/txt/pagos/:id/anular — revierte un pago sin borrar su bitácora
+router.post('/txt/pagos/:id/anular', rhhAuthRequired, rhhRequireRole('rh', 'admin'), async (req, res) => {
+  const pagoId = Number(req.params.id);
+  const motivo = String(req.body?.motivo || '').trim();
+  if (!motivo) return res.status(400).json({ error: 'Indica el motivo de la corrección' });
+
+  const db = read();
+  const pagos = getTxtPagos(db);
+  const deudas = getTxtDeudas(db);
+  const pago = pagos.find(p => Number(p.id) === pagoId);
+  if (!pago) return res.status(404).json({ error: 'Pago TXT no encontrado' });
+  if (!isTxtPaymentActive(pago)) return res.status(409).json({ error: 'El pago TXT ya fue anulado' });
+
+  const rawApplications = Array.isArray(pago.aplicaciones) && pago.aplicaciones.length
+    ? pago.aplicaciones
+    : [{ deuda_id: pago.deuda_id, horas: pago.horas_aplicadas }];
+  const affectedDebtIds = [...new Set(rawApplications.map(a => Number(a.deuda_id)).filter(Boolean))];
+
+  pago.status = 'anulado';
+  pago.anulado_at = nowMxDateTime();
+  pago.anulado_por = req.rhhUser.full_name || req.rhhUser.email;
+  pago.motivo_anulacion = motivo;
+
+  const cancelledVales = [];
+  for (const vale of (db.rhh_overtime_vales || []).filter(v => Number(v.txt_pago_id) === pagoId)) {
+    if (vale.status === 'cancelado') continue;
+    vale.status_anterior_anulacion = vale.status;
+    vale.status = 'cancelado';
+    vale.cancelado_at = nowMxDateTime();
+    vale.cancelado_por = pago.anulado_por;
+    vale.motivo_cancelacion = `Pago TXT #${pagoId} anulado: ${motivo}`;
+    cancelledVales.push(vale.id);
+  }
+
+  const affectedDebts = affectedDebtIds
+    .map(id => deudas.find(d => Number(d.id) === id))
+    .filter(Boolean)
+    .map(deuda => recomputeTxtDebt(db, deuda));
+
+  const attendance = (db.rhh_attendance || []).find(a => Number(a.id) === Number(pago.attendance_id));
+  const stillHasTxtPayment = getActiveTxtPagos(db).some(p => Number(p.attendance_id) === Number(pago.attendance_id));
+  if (attendance && !stillHasTxtPayment) {
+    attendance.txt_presento = false;
+    attendance.txt_confirmado_por = null;
+    attendance.txt_confirmado_at = null;
+    attendance.txt_pago_anulado_at = pago.anulado_at;
+    attendance.txt_pago_anulado_por = pago.anulado_por;
+  }
+
+  try {
+    await writeAsync(db);
+    res.json({
+      ok: true,
+      pago,
+      deudas: affectedDebts,
+      vales_cancelados: cancelledVales,
+      horas_pendientes_total: getTotalHorasPendientes(db, pago.employee_id),
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'No fue posible anular el pago TXT' });
   }
 });
 
@@ -2478,7 +2574,7 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   const holidays    = (db.rhh_holidays   || []).map(h => h.date);
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
   const allDeudas   = getTxtDeudas(db);
-  const allPagos    = getTxtPagos(db);
+  const allPagos    = getActiveTxtPagos(db);
   const allBonos    = getBonoVales(db);
   const cumpleIncs  = getCumpleIncidencias(db);
 

@@ -162,6 +162,7 @@ test('flujo TXT muestra por pagar, parcial y pagado con relación entre pago y f
   const paidView = await request(app).get('/semana?week=2026-08-03').set('x-test-role', 'supervisor');
   const paidEmployee = paidView.body.grid.find(e => e.employee_id === 1);
   assert.equal(paidEmployee.days.find(d => d.fecha === '2026-08-03').txt_display_status, 'pagado');
+  assert.match(paidEmployee.days.find(d => d.fecha === '2026-08-03').txt_display_label, /TXT por pagar · liquidado/);
   assert.equal(paidEmployee.days.find(d => d.fecha === '2026-08-03').txt_counts_as_paid_day, true);
   assert.equal(paidEmployee.days.find(d => d.fecha === '2026-08-09').txt_pagado_horas, 8);
 
@@ -203,6 +204,40 @@ test('pago TXT en descanso registra presencia y convierte excedente en vale pend
   assert.equal(attendance.txt_presento, true);
   assert.equal(db.rhh_overtime_vales[0].status, 'pendiente');
   assert.equal(db.rhh_overtime_vales[0].te_horas, 1);
+});
+
+test('RHH puede anular un pago TXT y se revierten deuda, presencia y vale excedente sin borrar la bitácora', async () => {
+  db.rhh_txt_deudas.push({
+    id: 1, employee_id: 1, origen_attendance_id: 1, origen_fecha: '2026-08-03',
+    origen_tipo: 'falta', horas_deuda_original: 8, horas_pagadas: 0,
+    horas_pendientes: 8, status: 'pendiente_pago', created_at: '2026-08-03 10:00',
+  });
+  const paid = await request(app).post('/txt/pagar').set('x-test-role', 'supervisor').send({
+    deuda_id: 1, fecha_pago: '2026-08-09', tipo_pago: 'turno_completo', shift_id_pagado: 3,
+  });
+  assert.equal(paid.status, 200);
+
+  const denied = await request(app).post(`/txt/pagos/${paid.body.pago.id}/anular`)
+    .set('x-test-role', 'supervisor').send({ motivo: 'Captura incorrecta' });
+  assert.equal(denied.status, 403);
+
+  const undone = await request(app).post(`/txt/pagos/${paid.body.pago.id}/anular`)
+    .set('x-test-role', 'rh').send({ motivo: 'Captura incorrecta' });
+  assert.equal(undone.status, 200);
+  assert.equal(undone.body.horas_pendientes_total, 8);
+  assert.equal(db.rhh_txt_pagos[0].status, 'anulado');
+  assert.equal(db.rhh_txt_pagos[0].motivo_anulacion, 'Captura incorrecta');
+  assert.equal(db.rhh_txt_deudas[0].status, 'pendiente_pago');
+  assert.equal(db.rhh_txt_deudas[0].horas_pagadas, 0);
+  assert.equal(db.rhh_txt_deudas[0].horas_pendientes, 8);
+  assert.equal(db.rhh_attendance.find(a => a.id === 1).txt_pagado_como_trabajado, false);
+  assert.equal(db.rhh_attendance.find(a => a.fecha === '2026-08-09').txt_presento, false);
+  assert.equal(db.rhh_overtime_vales[0].status, 'cancelado');
+
+  const view = await request(app).get('/semana?week=2026-08-03').set('x-test-role', 'supervisor');
+  const employee = view.body.grid.find(e => e.employee_id === 1);
+  assert.match(employee.days.find(d => d.fecha === '2026-08-03').txt_display_label, /TXT por pagar · 8 h/);
+  assert.equal(employee.days.find(d => d.fecha === '2026-08-09').txt_pagado_horas, 0);
 });
 
 test('deuda TXT bloquea captura, autorización y asignación de tiempo extra por todas las rutas', async () => {

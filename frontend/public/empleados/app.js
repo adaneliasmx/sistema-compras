@@ -497,15 +497,19 @@ async function mi_rol(el) {
 
   const dayRows = days.map(d => {
     const label = _rolStatusLabel[d.status] || d.status;
-    const color = _rolStatusColor[d.status] || '#64748b';
+    const color = d.status === 'txt_por_pagar' && d.txt_origin_status === 'pagado'
+      ? '#047857'
+      : (_rolStatusColor[d.status] || '#64748b');
     const isRed = d.status === 'falta';
     const teInfo = d.te_hours ? `<span style="color:#059669;font-weight:700;margin-left:6px">+${d.te_hours}h TE</span>` : '';
     const holidayTag = d.is_holiday ? `<span style="font-size:10px;color:#ea580c;margin-left:4px">(${esc(d.holiday_name||'Festivo')})</span>` : '';
     const bdayTag = d.birthday ? '<span style="font-size:10px;margin-left:4px">🎂</span>' : '';
     const txtTag = d.txt_paid_hours > 0 ? `<span style="font-size:10px;color:#047857;font-weight:700;margin-left:6px">TXT pagado ${d.txt_paid_hours} h</span>` : '';
-    const txtOriginTag = d.status === 'txt_parcial'
-      ? `<span style="font-size:10px;color:#c2410c;font-weight:700;margin-left:6px">${d.txt_origin_paid_hours} h pagadas · faltan ${d.txt_origin_pending_hours} h</span>`
-      : (d.status === 'txt_por_pagar' ? `<span style="font-size:10px;color:#92400e;font-weight:700;margin-left:6px">Faltan ${d.txt_origin_pending_hours} h</span>` : '');
+    const txtOriginTag = d.status === 'txt_por_pagar' && d.txt_origin_status === 'pagado'
+      ? `<span style="font-size:10px;color:#047857;font-weight:700;margin-left:6px">Liquidado · ${d.txt_origin_paid_hours} h pagadas</span>`
+      : (d.status === 'txt_por_pagar' && d.txt_origin_status === 'parcial'
+        ? `<span style="font-size:10px;color:#c2410c;font-weight:700;margin-left:6px">${d.txt_origin_paid_hours} h pagadas · faltan ${d.txt_origin_pending_hours} h</span>`
+        : (d.status === 'txt_por_pagar' ? `<span style="font-size:10px;color:#92400e;font-weight:700;margin-left:6px">Faltan ${d.txt_origin_pending_hours} h</span>` : ''));
     const bonoTags = (d.bonos || []).map(b => {
       const label = b.type === 'limpieza' ? 'Bono Limpieza' : 'Bono Resistencias';
       return `<span style="font-size:10px;color:${b.status==='autorizado'?'#047857':'#7c3aed'};font-weight:600;margin-left:5px">${label}: ${esc(b.status)}</span>`;

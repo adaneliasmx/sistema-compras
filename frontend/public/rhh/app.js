@@ -9518,6 +9518,12 @@ async function asisCaptureView() {
           txtBtn += `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
             style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">Registrar TXT pagado</button>`;
         }
+        if (isRHHAdmin && (dayData.txt_pagos || []).length > 0) {
+          txtBtn += (dayData.txt_pagos || []).map(pago =>
+            `<button onclick="asisTxtAnularPago(${pago.id},${Number(pago.horas_trabajadas)||0})"
+              style="padding:2px 6px;font-size:9px;border:1px solid #fca5a5;border-radius:4px;background:#fff1f2;color:#be123c;cursor:pointer;font-weight:600;white-space:nowrap;">Quitar TXT pagado (${Number(pago.horas_trabajadas)||0} h)</button>`
+          ).join('');
+        }
 
         rowsHtml += `<tr style="${rowStyle}">
           <td style="padding:7px 10px;font-size:13px;font-weight:600;">
@@ -9959,6 +9965,24 @@ async function asisTxtPagarConfirm(deudaId, empId, fecha, attendanceId) {
       : (r.horas_pendientes_total > 0 ? `TXT registrado. Restan ${r.horas_pendientes_total} h.` : 'TXT registrado. Deuda liquidada.');
     toast(msg, 'success');
     asisCaptureView();
+  }
+}
+
+async function asisTxtAnularPago(pagoId, horas) {
+  if (!confirm(`¿Quitar este pago TXT de ${horas} h?\n\nLa deuda se abrirá nuevamente y cualquier vale de tiempo extra generado por el excedente será cancelado.`)) return;
+  const motivo = prompt('Motivo de la corrección:');
+  if (motivo === null) return;
+  if (!motivo.trim()) { toast('Debes indicar el motivo de la corrección', 'error'); return; }
+  try {
+    const r = await api(`/api/rhh/asistencia/txt/pagos/${pagoId}/anular`, {
+      method: 'POST', body: JSON.stringify({ motivo: motivo.trim() })
+    });
+    toast(r.horas_pendientes_total > 0
+      ? `Pago TXT retirado. El trabajador vuelve a deber ${r.horas_pendientes_total} h.`
+      : 'Pago TXT retirado.', 'success');
+    asisCaptureView();
+  } catch (err) {
+    toast(err.message, 'error');
   }
 }
 
