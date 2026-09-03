@@ -4633,7 +4633,7 @@ async function viewReportes(el) {
 
     function calRow(b, d) {
       const t = b + d; const p = t > 0 ? ((b / t) * 100).toFixed(1) : null;
-      return `<td class="${kpiColor(p ? Number(p) : null, 'calidad', activeTab)}">${p !== null ? p+'%' : '—'}</td>`;
+      return `<td class="${kpiColor(p ? Number(p) : null, 'calidad', activeRptTab)}">${p !== null ? p+'%' : '—'}</td>`;
     }
     function defCell(n) {
       return `<td style="text-align:center;${n>0?'color:#ef4444;font-weight:700':''}">${n}</td>`;
@@ -4659,7 +4659,7 @@ async function viewReportes(el) {
             <span>Buenas: <strong style="color:#22c55e">${buenas}</strong></span>
             <span>Con defecto: <strong style="color:#ef4444">${defecto}</strong></span>
             ${vacias ? `<span>Vacías: <strong>${vacias}</strong></span>` : ''}
-            <span>Calidad: <strong class="${kpiColor(calidad ? Number(calidad) : null, 'calidad', activeTab)}">${calidad !== null ? calidad+'%' : '—'}</strong></span>
+            <span>Calidad: <strong class="${kpiColor(calidad ? Number(calidad) : null, 'calidad', activeRptTab)}">${calidad !== null ? calidad+'%' : '—'}</strong></span>
           </div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px">
