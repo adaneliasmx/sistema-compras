@@ -8,6 +8,7 @@ const { read, write, writeAsync, nextId, getSystemEmpIds } = require('../db-rhh'
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { canonicalPeriod, comparePeriods, getEmployeeTemplateForWeek, isoWeekPeriod } = require('../utils/rhh-periods');
 const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
+const { getTxtPendingHours, assertNoTxtDebt } = require('../utils/rhh-txt');
 const router = express.Router();
 
 // ── Diagnóstico temporal (eliminar después) ──────────────────────────────────
@@ -149,7 +150,7 @@ function getActiveDeudas(db, employeeId) {
   return getTxtDeudas(db).filter(d => d.employee_id === Number(employeeId) && d.status === 'pendiente_pago');
 }
 function getTotalHorasPendientes(db, employeeId) {
-  return getActiveDeudas(db, employeeId).reduce((s, d) => s + (d.horas_pendientes || 0), 0);
+  return getTxtPendingHours(db, employeeId);
 }
 
 function pagoAplicadoADeuda(pago, deudaId) {
@@ -168,7 +169,7 @@ function getTxtBalanceAsOf(db, employeeId, cutoffDate) {
   return getTxtDeudas(db)
     .filter(d =>
       d.employee_id === Number(employeeId) &&
-      d.status !== 'cancelado' &&
+      (d.status !== 'cancelado' || (cutoffDate && d.updated_at && String(d.updated_at).slice(0, 10) > cutoffDate)) &&
       (!cutoffDate || (
         d.origen_fecha <= cutoffDate &&
         (!d.created_at || String(d.created_at).slice(0, 10) <= cutoffDate)
@@ -178,6 +179,97 @@ function getTxtBalanceAsOf(db, employeeId, cutoffDate) {
       const pagado = pagos.reduce((s, pago) => s + pagoAplicadoADeuda(pago, deuda.id), 0);
       return sum + Math.max(0, (Number(deuda.horas_deuda_original) || 0) - pagado);
     }, 0);
+}
+
+function getTxtDebtSnapshot(db, deuda, cutoffDate) {
+  if (!deuda) return null;
+  const createdDate = deuda.created_at ? String(deuda.created_at).slice(0, 10) : deuda.origen_fecha;
+  if (cutoffDate && createdDate && createdDate > cutoffDate) return null;
+  const cancelledAsOf = deuda.status === 'cancelado' && (
+    !cutoffDate || !deuda.updated_at || String(deuda.updated_at).slice(0, 10) <= cutoffDate
+  );
+  if (cancelledAsOf) return null;
+
+  const originalHours = Number(deuda.horas_deuda_original) || 0;
+  const paidHours = getTxtPagos(db)
+    .filter(p => Number(p.employee_id) === Number(deuda.employee_id) && (!cutoffDate || p.fecha_pago <= cutoffDate))
+    .reduce((sum, pago) => sum + pagoAplicadoADeuda(pago, deuda.id), 0);
+  const pendingHours = Math.max(0, originalHours - paidHours);
+  const displayStatus = pendingHours <= 0 ? 'pagado' : (paidHours > 0 ? 'parcial' : 'por_pagar');
+  return { originalHours, paidHours, pendingHours, displayStatus };
+}
+
+function txtDateLabel(fecha) {
+  if (!fecha) return '';
+  const dayNames = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const date = new Date(fecha + 'T12:00:00');
+  return `${dayNames[date.getDay()]} ${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`;
+}
+
+function enrichTxtPayment(db, pago) {
+  const rawApplications = Array.isArray(pago.aplicaciones) && pago.aplicaciones.length
+    ? pago.aplicaciones
+    : [{ deuda_id: pago.deuda_id, horas: pago.horas_aplicadas }];
+  const aplicaciones = rawApplications.map(aplicacion => {
+    const deuda = getTxtDeudas(db).find(d => Number(d.id) === Number(aplicacion.deuda_id));
+    const snapshot = getTxtDebtSnapshot(db, deuda, pago.fecha_pago);
+    return {
+      deuda_id: Number(aplicacion.deuda_id),
+      horas: Number(aplicacion.horas) || 0,
+      origen_fecha: deuda?.origen_fecha || null,
+      origen_tipo: deuda?.origen_tipo || null,
+      saldo_al_cierre: snapshot?.pendingHours ?? null,
+    };
+  });
+  const horasAplicadas = Number(pago.horas_aplicadas) || 0;
+  const horasExtra = Number(pago.horas_extra_sobrante) || 0;
+  return {
+    id: pago.id,
+    fecha_pago: pago.fecha_pago,
+    tipo_pago: pago.tipo_pago,
+    shift_id_pagado: pago.shift_id_pagado || null,
+    horas_aplicadas: horasAplicadas,
+    horas_extra_sobrante: horasExtra,
+    horas_trabajadas: Number(pago.horas_trabajadas) || horasAplicadas + horasExtra,
+    aplicaciones,
+  };
+}
+
+function txtPaymentComment(db, pago) {
+  const detail = enrichTxtPayment(db, pago);
+  const allocations = detail.aplicaciones
+    .filter(a => a.origen_fecha)
+    .map(a => {
+      const origin = a.origen_tipo === 'turno_incompleto' ? 'turno incompleto' : 'falta';
+      const balance = a.saldo_al_cierre != null ? `; saldo ${a.saldo_al_cierre} h` : '';
+      return `${a.horas} h a cuenta de ${origin} del ${txtDateLabel(a.origen_fecha)}${balance}`;
+    })
+    .join('; ');
+  const worked = `${detail.horas_trabajadas} h trabajadas el ${txtDateLabel(detail.fecha_pago)}`;
+  const applied = allocations || `${detail.horas_aplicadas} h aplicadas a TXT`;
+  const surplus = detail.horas_extra_sobrante > 0
+    ? `; ${detail.horas_extra_sobrante} h excedentes enviadas a autorización de TE`
+    : '';
+  return `TXT pagado: ${worked}; ${applied}${surplus}`;
+}
+
+function syncTxtOriginAttendance(db, deuda) {
+  if (!deuda?.origen_attendance_id) return;
+  const attendance = (db.rhh_attendance || []).find(a => Number(a.id) === Number(deuda.origen_attendance_id));
+  if (!attendance) return;
+  const paidHours = Number(deuda.horas_pagadas) || 0;
+  const pendingHours = Number(deuda.horas_pendientes) || 0;
+  const displayStatus = deuda.status === 'cancelado'
+    ? null
+    : (pendingHours <= 0 ? 'pagado' : (paidHours > 0 ? 'parcial' : 'por_pagar'));
+  attendance.txt_deuda_id = deuda.status === 'cancelado' ? null : deuda.id;
+  attendance.txt_status = displayStatus;
+  attendance.txt_horas_pagadas = deuda.status === 'cancelado' ? 0 : paidHours;
+  attendance.txt_horas_pendientes = deuda.status === 'cancelado' ? 0 : pendingHours;
+  // La falta sigue disponible como antecedente, pero al liquidar la deuda el
+  // día se considera pagado como trabajado en listas y reportes.
+  attendance.txt_pagado_como_trabajado = deuda.origen_tipo === 'falta' && displayStatus === 'pagado';
+  attendance.txt_updated_at = nowMxDateTime();
 }
 
 /* Horas de turno por shift_id */
@@ -1042,11 +1134,28 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
         const dayBonos = allBonos.filter(b => b.employee_id === emp.id && b.fecha === fecha);
         // Pagos TxT del día (se conservan separados de la incidencia base)
         const dayTxtPagos = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago === fecha);
-        const txtPagadoHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+        const enrichedDayTxtPagos = dayTxtPagos.map(p => enrichTxtPayment(db, p));
+        const txtAplicadasHoras = enrichedDayTxtPagos.reduce((s, p) => s + p.horas_aplicadas, 0);
+        const txtPagadoHoras = enrichedDayTxtPagos.reduce((s, p) => s + p.horas_trabajadas, 0);
         const txtExcedenteHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_extra_sobrante) || 0), 0);
         const origenTxtDeuda = rec
-          ? allDeudas.find(d => d.origen_attendance_id === rec.id && d.status !== 'cancelado')
+          ? allDeudas.find(d => d.origen_attendance_id === rec.id)
           : null;
+        // El estado de una falta TXT es acumulativo: al pagarse en una semana
+        // posterior, la falta de origen debe quedar marcada como día pagado.
+        const deudaSnapshot = getTxtDebtSnapshot(db, origenTxtDeuda);
+        const txtDisplayStatus = enrichedDayTxtPagos.length
+          ? 'pagado'
+          : deudaSnapshot?.displayStatus || null;
+        const txtDisplayLabel = enrichedDayTxtPagos.length
+          ? `TXT pagado · ${txtPagadoHoras} h`
+          : deudaSnapshot?.displayStatus === 'por_pagar'
+            ? `TXT por pagar · ${deudaSnapshot.pendingHours} h`
+            : deudaSnapshot?.displayStatus === 'parcial'
+              ? `TXT parcial · ${deudaSnapshot.paidHours} h pagadas · ${deudaSnapshot.pendingHours} h pendientes`
+              : deudaSnapshot?.displayStatus === 'pagado'
+                ? `TXT pagado · ${deudaSnapshot.paidHours} h`
+                : null;
 
         return {
           fecha,
@@ -1071,6 +1180,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
           te_vale_status:     vale?.status            ?? null,
           // Sunday / Lock
           is_sunday:          isSunday,
+          is_rest_day:        !worksDay,
           is_locked:          locked,
           // Cumpleaños
           is_birthday:        isBirthday,
@@ -1081,16 +1191,17 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
           festivo_laborado:    isFest && rec?.incidencia_type === 'labora',
           // Tiempo por Tiempo pagado en esta fecha
           txt_pagado_horas:    txtPagadoHoras,
+          txt_aplicado_horas:  txtAplicadasHoras,
           txt_excedente_horas: txtExcedenteHoras,
-          txt_pagos:           dayTxtPagos.map(p => ({
-            id: p.id,
-            horas_aplicadas: p.horas_aplicadas,
-            horas_extra_sobrante: p.horas_extra_sobrante || 0,
-            tipo_pago: p.tipo_pago,
-          })),
-          txt_deuda_id:        origenTxtDeuda?.id || null,
-          txt_deuda_status:    origenTxtDeuda?.status || null,
-          txt_deuda_horas:     origenTxtDeuda?.horas_deuda_original || null,
+          txt_pagos:           enrichedDayTxtPagos,
+          txt_display_status:  txtDisplayStatus,
+          txt_display_label:   txtDisplayLabel,
+          txt_counts_as_paid_day: rec?.incidencia_type === 'falta' && deudaSnapshot?.displayStatus === 'pagado',
+          txt_deuda_id:        deudaSnapshot ? origenTxtDeuda?.id || null : null,
+          txt_deuda_status:    deudaSnapshot?.displayStatus || null,
+          txt_deuda_horas:     deudaSnapshot?.originalHours ?? null,
+          txt_deuda_pagadas:   deudaSnapshot?.paidHours ?? null,
+          txt_deuda_pendientes: deudaSnapshot?.pendingHours ?? null,
           // Bonos
           bonos:              dayBonos.map(b => ({ id: b.id, type: b.bono_type, status: b.status })),
           // Audit trail (para modal RHH/Admin)
@@ -1224,6 +1335,15 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
 
   const today = nowMxDate();
   const idx   = att.findIndex(r => r.employee_id === Number(employee_id) && r.fecha === fecha);
+  if (idx !== -1 && incidencia_type !== att[idx].incidencia_type && db) {
+    const linkedDebt = getTxtDeudas(db).some(d =>
+      Number(d.origen_attendance_id) === Number(att[idx].id) && d.status !== 'cancelado'
+    );
+    const linkedPayment = getTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
+    if (linkedDebt || linkedPayment) {
+      return { error: 'La incidencia está vinculada a TXT y no puede cambiarse sin cancelar o corregir el movimiento', conflict: true, skip: true };
+    }
+  }
 
   // Lock check para supervisores (respeta desbloqueos vigentes)
   if (!skipLockCheck && role === 'supervisor' && fecha < today && idx !== -1 && att[idx].incidencia_type) {
@@ -1306,7 +1426,7 @@ router.post('/diaria', rhhAuthRequired, async (req, res) => {
   const result = upsertAttendance(att, req.body || {}, userLbl, role, false, unlocks, db);
 
   if (result.skip) {
-    const code = result.locked ? 403 : 400;
+    const code = result.locked ? 403 : (result.conflict ? 409 : 400);
     return res.status(code).json({ error: result.error });
   }
 
@@ -1381,6 +1501,15 @@ router.put('/diaria/:id/rh-editar', rhhAuthRequired, rhhRequireRole('rh', 'admin
       return res.status(400).json({ error: 'El trabajador no puede laborar: su cumpleaños coincide con un festivo' });
     }
   }
+  if (incidencia_type && incidencia_type !== att[idx].incidencia_type) {
+    const linkedDebt = getTxtDeudas(db).some(d =>
+      Number(d.origen_attendance_id) === Number(att[idx].id) && d.status !== 'cancelado'
+    );
+    const linkedPayment = getTxtPagos(db).some(p => Number(p.attendance_id) === Number(att[idx].id));
+    if (linkedDebt || linkedPayment) {
+      return res.status(409).json({ error: 'La incidencia está vinculada a TXT y no puede cambiarse sin cancelar o corregir el movimiento' });
+    }
+  }
 
   const old = { ...att[idx] };
   const userLbl = req.rhhUser.full_name || req.rhhUser.email;
@@ -1441,8 +1570,9 @@ router.delete('/diaria/:id', rhhAuthRequired, rhhRequireRole('supervisor', 'rh',
   const rec = db.rhh_attendance[idx];
   const hasLinkedPayment = getTxtPagos(db).some(p => p.attendance_id === rec.id);
   const hasLinkedBonus = getBonoVales(db).some(b => b.attendance_id === rec.id && b.status !== 'rechazado');
-  if (hasLinkedPayment || hasLinkedBonus) {
-    return res.status(409).json({ error: 'No se puede eliminar: la asistencia tiene pagos TXT o bonos vinculados' });
+  const hasLinkedDebt = getTxtDeudas(db).some(d => d.origen_attendance_id === rec.id && d.status !== 'cancelado');
+  if (hasLinkedPayment || hasLinkedBonus || hasLinkedDebt) {
+    return res.status(409).json({ error: 'No se puede eliminar: la asistencia tiene deuda, pagos TXT o bonos vinculados' });
   }
   syncDeudaTurnoIncompleto(db, { ...rec, incidencia_type: null, horas_pendientes_turno: null }, req.rhhUser.full_name || req.rhhUser.email);
   db.rhh_attendance.splice(idx, 1);
@@ -1536,6 +1666,8 @@ router.post('/overtime-vales/:id/autorizar', rhhAuthRequired, rhhRequireRole('rh
   const vale = db.rhh_overtime_vales.find(v => v.id === id);
   if (!vale) return res.status(404).json({ error: 'Vale no encontrado' });
   if (vale.status !== 'pendiente') return res.status(400).json({ error: 'El vale ya fue procesado' });
+  const txtCheck = assertNoTxtDebt(db, vale.employee_id);
+  if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
 
   vale.status        = 'autorizado';
   vale.autorizado_por = req.rhhUser.full_name || req.rhhUser.email;
@@ -1599,6 +1731,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
 
   const positions  = db.rhh_positions || [];
   const shifts     = db.rhh_shifts    || [];
+  const allDeudas  = getTxtDeudas(db);
   const allPagos   = getTxtPagos(db);
   const allBonos   = getBonoVales(db);
   const cumpleIncs = getCumpleIncidencias(db);
@@ -1624,8 +1757,22 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
       if (rec?.te_horas) teHorasWeek += rec.te_horas;
       const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
       const dayTxtPagos = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago === fecha);
-      const txtPagadoHoras = dayTxtPagos.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+      const enrichedDayTxtPagos = dayTxtPagos.map(p => enrichTxtPayment(db, p));
+      const txtPagadoHoras = enrichedDayTxtPagos.reduce((s, p) => s + p.horas_trabajadas, 0);
+      const txtAplicadoHoras = enrichedDayTxtPagos.reduce((s, p) => s + p.horas_aplicadas, 0);
       const cumpleRegistro = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match === fecha && c.laboro);
+      const origenTxtDeuda = rec ? allDeudas.find(d => d.origen_attendance_id === rec.id) : null;
+      const deudaSnapshot = getTxtDebtSnapshot(db, origenTxtDeuda);
+      const txtDisplayStatus = enrichedDayTxtPagos.length ? 'pagado' : deudaSnapshot?.displayStatus || null;
+      const txtDisplayLabel = enrichedDayTxtPagos.length
+        ? `TXT pagado · ${txtPagadoHoras} h`
+        : deudaSnapshot?.displayStatus === 'por_pagar'
+          ? `TXT por pagar · ${deudaSnapshot.pendingHours} h`
+          : deudaSnapshot?.displayStatus === 'parcial'
+            ? `TXT parcial · ${deudaSnapshot.paidHours} h pagadas · ${deudaSnapshot.pendingHours} h pendientes`
+            : deudaSnapshot?.displayStatus === 'pagado'
+              ? `TXT pagado · ${deudaSnapshot.paidHours} h`
+              : null;
 
       return {
         fecha,
@@ -1644,7 +1791,16 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
         festivo_laborado:   isFest && rec?.incidencia_type === 'labora',
         cumpleanos_laborado: !!cumpleRegistro,
         txt_pagado_horas:   txtPagadoHoras,
+        txt_aplicado_horas: txtAplicadoHoras,
         txt_excedente_horas: dayTxtPagos.reduce((s, p) => s + (Number(p.horas_extra_sobrante) || 0), 0),
+        txt_pagos:          enrichedDayTxtPagos,
+        txt_display_status: txtDisplayStatus,
+        txt_display_label:  txtDisplayLabel,
+        txt_counts_as_paid_day: rec?.incidencia_type === 'falta' && deudaSnapshot?.displayStatus === 'pagado',
+        txt_deuda_id:       deudaSnapshot ? origenTxtDeuda?.id || null : null,
+        txt_deuda_horas:    deudaSnapshot?.originalHours ?? null,
+        txt_deuda_pagadas:  deudaSnapshot?.paidHours ?? null,
+        txt_deuda_pendientes: deudaSnapshot?.pendingHours ?? null,
       };
     });
 
@@ -1652,7 +1808,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
     const empBonos = allBonos.filter(b => b.employee_id === emp.id && b.week_start === week);
     const txtPend = getTxtBalanceAsOf(db, emp.id, dates[6]);
     const empPagosWeek = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago >= dates[0] && p.fecha_pago <= dates[6]);
-    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
+    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_trabajadas) || Number(p.horas_aplicadas) || 0), 0);
     const empCumple = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match >= dates[0] && c.birth_date_match <= dates[6] && c.laboro);
     const vacDays = days.filter(d => d.incidencia_type === 'vacacion').length;
     const festivosLaborados = days.filter(d => d.festivo_laborado).length;
@@ -1667,8 +1823,10 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
     if (festivosLaborados > 0) comentarios.push({ text: `Festivo laborado: ${festivosLaborados} día${festivosLaborados > 1 ? 's' : ''}`, type: 'festivo' });
     if (specialConflicts > 0) comentarios.push({ text: 'Festivo + cumpleaños: no labora', type: 'especial_no_labora' });
     if (teHorasWeek > 0) comentarios.push({ text: `Tiempo extra: ${teHorasWeek} h`, type: 'te' });
-    if (txtPagadoWeek > 0) comentarios.push({ text: `Pagó ${txtPagadoWeek} h TXT${txtPend > 0 ? `; resta ${txtPend} h` : '; deuda liquidada'}`, type: 'txt_pago' });
-    if (txtPend > 0) comentarios.push({ text: `Debe ${txtPend} h de Tiempo por Tiempo`, type: 'deuda' });
+    for (const pago of empPagosWeek) {
+      comentarios.push({ text: txtPaymentComment(db, pago), type: 'txt_pago' });
+    }
+    if (txtPend > 0) comentarios.push({ text: `Horas por pagar: ${txtPend} h de Tiempo por Tiempo`, type: 'deuda' });
     if (vacDays > 0) comentarios.push({ text: `Vac: ${vacDays}d`, type: 'vacacion' });
 
     return {
@@ -1760,6 +1918,7 @@ router.post('/txt/crear-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'), 
     updated_at: null,
   };
   deudas.push(deuda);
+  syncTxtOriginAttendance(db, deuda);
   try {
     await writeAsync(db);
     res.status(201).json(deuda);
@@ -1870,6 +2029,10 @@ router.post('/txt/pagar', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', 'a
     created_by: req.rhhUser.full_name || req.rhhUser.email,
   };
   pagos.push(pago);
+  for (const aplicacion of aplicaciones) {
+    const deudaAplicada = deudas.find(d => Number(d.id) === Number(aplicacion.deuda_id));
+    syncTxtOriginAttendance(db, deudaAplicada);
+  }
 
   if (horasSobrante > 0) {
     if (!db.rhh_overtime_vales) db.rhh_overtime_vales = [];
@@ -1948,6 +2111,7 @@ router.post('/txt/cancelar-deuda', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   if (!deuda) return res.status(404).json({ error: 'Deuda no encontrada' });
   deuda.status = 'cancelado';
   deuda.updated_at = nowMxDateTime();
+  syncTxtOriginAttendance(db, deuda);
   try {
     await writeAsync(db);
     res.json({ ok: true, deuda });
@@ -2313,6 +2477,7 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
   const records     = (db.rhh_attendance || []).filter(r => r.fecha >= dates[0] && r.fecha <= dates[6]);
   const holidays    = (db.rhh_holidays   || []).map(h => h.date);
   const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
+  const allDeudas   = getTxtDeudas(db);
   const allPagos    = getTxtPagos(db);
   const allBonos    = getBonoVales(db);
   const cumpleIncs  = getCumpleIncidencias(db);
@@ -2336,8 +2501,11 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
       const isFest = holidays.includes(fecha);
       const isVac  = vacSols.some(v => v.employee_id === emp.id && fecha >= v.fecha_inicio && fecha <= v.fecha_fin);
       const inc = rec?.incidencia_type || (!works ? 'descanso' : (isFest ? 'festivo' : (isVac ? 'vacacion' : null)));
-      if (inc === 'labora' || inc === 'retardo' || inc === 'turno_incompleto') asistencias++;
-      if (inc === 'falta') faltas++;
+      const originDebt = rec ? allDeudas.find(d => Number(d.origen_attendance_id) === Number(rec.id)) : null;
+      const debtSnapshot = getTxtDebtSnapshot(db, originDebt);
+      const paidAsWorked = inc === 'falta' && debtSnapshot?.displayStatus === 'pagado';
+      if (inc === 'labora' || inc === 'retardo' || inc === 'turno_incompleto' || paidAsWorked) asistencias++;
+      if (inc === 'falta' && !paidAsWorked) faltas++;
       if (inc === 'vacacion') vacDays++;
       if (rec?.te_horas) teHorasWeek += rec.te_horas;
       return inc;
@@ -2352,9 +2520,9 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
     }
     const txtPend = getTxtBalanceAsOf(db, emp.id, dates[6]);
     const empPagosWeek = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago >= dates[0] && p.fecha_pago <= dates[6]);
-    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_aplicadas) || 0), 0);
-    if (txtPagadoWeek > 0) comentarios.push(`TXT pagado: ${txtPagadoWeek}h${txtPend > 0 ? `; resta ${txtPend}h` : '; deuda liquidada'}`);
-    if (txtPend > 0) comentarios.push(`Debe ${txtPend}h de Tiempo por Tiempo`);
+    const txtPagadoWeek = empPagosWeek.reduce((s, p) => s + (Number(p.horas_trabajadas) || Number(p.horas_aplicadas) || 0), 0);
+    for (const pago of empPagosWeek) comentarios.push(txtPaymentComment(db, pago));
+    if (txtPend > 0) comentarios.push(`Horas por pagar: ${txtPend} h de Tiempo por Tiempo`);
     if (teHorasWeek > 0) comentarios.push(`TE: +${teHorasWeek}h`);
     const empCumple = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match >= dates[0] && c.birth_date_match <= dates[6] && c.laboro);
     if (empCumple) comentarios.push('Cumpleaños laborado');
@@ -2410,10 +2578,14 @@ router.get('/semana/export-excel', rhhAuthRequired, rhhRequireRole('rh', 'admin'
 
 router._test = {
   employeeDayContext,
+  enrichTxtPayment,
   ensureAutomaticSundayBirthdayGratifications,
+  getTxtDebtSnapshot,
   getTxtBalanceAsOf,
   shiftHours,
+  syncTxtOriginAttendance,
   syncDeudaTurnoIncompleto,
+  txtPaymentComment,
 };
 
 module.exports = router;

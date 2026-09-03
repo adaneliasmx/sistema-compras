@@ -207,7 +207,69 @@ router.get('/incidencias', empAuthRequired, (req, res) => {
       return { ...r, fecha_inicio: p.fecha_inicio, fecha_fin: p.fecha_fin };
     });
   const vac_info = emp ? calcVacInfo(emp, db, nowMxDate()) : null;
-  res.json({ rows, vac_info });
+  const movimientos = [];
+  for (const d of (db.rhh_txt_deudas || []).filter(d => d.employee_id === empId)) {
+    movimientos.push({
+      id: `txt-deuda-${d.id}`,
+      date: d.origen_fecha,
+      type: 'txt_deuda',
+      title: 'Tiempo por Tiempo',
+      detail: `Deuda original: ${d.horas_deuda_original || 0} h · saldo: ${d.horas_pendientes || 0} h`,
+      status: d.status,
+    });
+  }
+  for (const p of (db.rhh_txt_pagos || []).filter(p => p.employee_id === empId)) {
+    const applications = Array.isArray(p.aplicaciones) && p.aplicaciones.length
+      ? p.aplicaciones
+      : [{ deuda_id: p.deuda_id, horas: p.horas_aplicadas }];
+    const originDetail = applications.map(a => {
+      const deuda = (db.rhh_txt_deudas || []).find(d => Number(d.id) === Number(a.deuda_id));
+      return deuda?.origen_fecha ? `${a.horas || 0} h a cuenta de la ${deuda.origen_tipo === 'turno_incompleto' ? 'jornada incompleta' : 'falta'} del ${deuda.origen_fecha}` : null;
+    }).filter(Boolean).join(' · ');
+    const workedHours = Number(p.horas_trabajadas) || (Number(p.horas_aplicadas) || 0) + (Number(p.horas_extra_sobrante) || 0);
+    movimientos.push({
+      id: `txt-pago-${p.id}`,
+      date: p.fecha_pago,
+      type: 'txt_pago',
+      title: 'TXT pagado',
+      detail: `${workedHours} h trabajadas${originDetail ? ` · ${originDetail}` : ''}${p.horas_extra_sobrante ? ` · ${p.horas_extra_sobrante} h enviadas a autorización como TE` : ''}`,
+      status: 'registrado',
+    });
+  }
+  for (const b of (db.rhh_bono_vales || []).filter(b => b.employee_id === empId)) {
+    movimientos.push({
+      id: `bono-${b.id}`,
+      date: b.fecha,
+      type: 'bono',
+      title: b.bono_type === 'limpieza' ? 'Bono Limpieza' : 'Bono Encendido de Resistencias',
+      detail: 'Solicitud generada desde Control de Asistencias',
+      status: b.status,
+    });
+  }
+  for (const c of (db.rhh_cumpleanos_incidencias || []).filter(c =>
+    c.employee_id === empId && (
+      c.laboro || c.status === 'gratificacion_programada' || c.status === 'bloqueado_festivo'
+    )
+  )) {
+    const bloqueadoFestivo = c.status === 'bloqueado_festivo';
+    const gratificacionDomingo = c.status === 'gratificacion_programada' && !c.laboro;
+    movimientos.push({
+      id: `cumple-${c.id}`,
+      date: c.birth_date_match,
+      type: bloqueadoFestivo
+        ? 'cumpleanos_festivo'
+        : (gratificacionDomingo ? 'gratificacion_cumpleanos' : 'cumpleanos_laborado'),
+      title: bloqueadoFestivo
+        ? 'Cumpleaños en día festivo'
+        : (gratificacionDomingo ? 'Gratificación de cumpleaños' : 'Cumpleaños laborado'),
+      detail: bloqueadoFestivo
+        ? 'No labora y no acumula gratificación de cumpleaños con el festivo'
+        : (c.semana_pago ? `Gratificación programada para la semana ${c.semana_pago}` : 'Registrado'),
+      status: c.status,
+    });
+  }
+  movimientos.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  res.json({ rows, vac_info, movimientos });
 });
 
 // ── GET /api/empleados/evaluaciones ──────────────────────────────────────────
@@ -421,6 +483,10 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
   const holidays = db.rhh_holidays || [];
   const attendance = db.rhh_attendance || [];
   const incidences = db.rhh_incidences || [];
+  const txtPagos = db.rhh_txt_pagos || [];
+  const txtDeudas = db.rhh_txt_deudas || [];
+  const bonoVales = db.rhh_bono_vales || [];
+  const cumpleIncs = db.rhh_cumpleanos_incidencias || [];
   const vacSols = (db.rhh_vac_solicitudes || []).filter(v =>
     v.employee_id === empId && v.estado === 'aprobada' && v.fecha_inicio && v.fecha_fin
   );
@@ -478,6 +544,29 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
     let birthday = false;
     if (emp.birth_date && emp.birth_date.slice(5) === dateStr.slice(5)) birthday = true;
 
+    const dayTxtPagos = txtPagos.filter(p => p.employee_id === empId && p.fecha_pago === dateStr);
+    const txt_paid_hours = dayTxtPagos.reduce((sum, p) => sum + (Number(p.horas_trabajadas) || Number(p.horas_aplicadas) || 0), 0);
+    const dayBonos = bonoVales.filter(b => b.employee_id === empId && b.fecha === dateStr);
+    const cumpleRegistro = cumpleIncs.find(c => c.employee_id === empId && c.birth_date_match === dateStr);
+    const cumpleLaborado = !!cumpleRegistro?.laboro;
+    const gratificacionCumpleanos = cumpleRegistro?.status === 'gratificacion_programada';
+
+    const originDebt = att ? txtDeudas.find(d => Number(d.origen_attendance_id) === Number(att.id) && d.status !== 'cancelado') : null;
+    const originPaid = Number(originDebt?.horas_pagadas) || 0;
+    const originPending = Number(originDebt?.horas_pendientes) || 0;
+    const originTxtStatus = originDebt
+      ? (originPending <= 0 ? 'pagado' : (originPaid > 0 ? 'parcial' : 'por_pagar'))
+      : null;
+
+    // Condiciones derivadas: la falta queda como antecedente; TXT liquidado se
+    // presenta y contabiliza como día pagado/trabajado.
+    if (birthday && holiday) status = 'festivo_cumpleanos_no_labora';
+    else if (originTxtStatus) status = `txt_${originTxtStatus}`;
+    else if (dayTxtPagos.length) status = 'txt_pagado';
+    else if (holiday && att?.incidencia_type === 'labora') status = 'festivo_laborado';
+    else if (cumpleLaborado) status = 'cumpleanos_laborado';
+    else if (gratificacionCumpleanos) status = 'cumpleanos_gratificacion';
+
     // Pending clarification for this day
     const hasClarif = (db.rhh_attendance_clarifications || []).some(
       c => c.employee_id === empId && c.date === dateStr && c.status === 'pendiente'
@@ -494,13 +583,26 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
       is_holiday: !!holiday,
       holiday_name: holiday ? holiday.name : null,
       birthday,
+      birthday_holiday_conflict: birthday && !!holiday,
+      txt_paid_hours,
+      txt_origin_paid_hours: originPaid,
+      txt_origin_pending_hours: originPending,
+      bonos: dayBonos.map(b => ({
+        type: b.bono_type,
+        status: b.status,
+      })),
       has_clarification: hasClarif,
     });
   }
 
+  const txt_pending_hours = txtDeudas
+    .filter(d => d.employee_id === empId && d.status === 'pendiente_pago')
+    .reduce((sum, d) => sum + (Number(d.horas_pendientes) || 0), 0);
+
   res.json({
     week_start: weekStart,
     shift_name: shift ? shift.name : null,
+    txt_pending_hours,
     days,
   });
 });

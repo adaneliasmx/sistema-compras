@@ -471,6 +471,10 @@ const _rolStatusLabel = {
   vacacion: 'Vacacion', vacaciones: 'Vacacion', incapacidad: 'Incapacidad',
   permiso: 'Permiso', permiso_cg: 'Permiso c/goce', permiso_sg: 'Permiso s/goce',
   descanso: 'Descanso', festivo: 'Festivo', baja: 'Baja',
+  festivo_laborado: 'Festivo laborado', cumpleanos_laborado: 'Cumpleaños laborado',
+  txt_por_pagar: 'TXT por pagar', txt_parcial: 'TXT parcial', txt_pagado: 'TXT pagado',
+  cumpleanos_gratificacion: 'Cumpleaños · Gratificación programada',
+  festivo_cumpleanos_no_labora: 'Festivo + cumpleaños · No labora',
   paro_tecnico: 'Paro tecnico', programado: 'Programado', pendiente: '—', vacio: '—',
 };
 const _rolStatusColor = {
@@ -478,6 +482,10 @@ const _rolStatusColor = {
   vacacion: '#2563eb', vacaciones: '#2563eb', incapacidad: '#7c3aed',
   permiso: '#0891b2', permiso_cg: '#0891b2', permiso_sg: '#64748b',
   descanso: '#94a3b8', festivo: '#ea580c', baja: '#991b1b',
+  festivo_laborado: '#c2410c', cumpleanos_laborado: '#be185d',
+  txt_por_pagar: '#92400e', txt_parcial: '#c2410c', txt_pagado: '#047857',
+  cumpleanos_gratificacion: '#9d174d',
+  festivo_cumpleanos_no_labora: '#991b1b',
   paro_tecnico: '#6b7280', programado: '#94a3b8', pendiente: '#cbd5e1', vacio: '#cbd5e1',
 };
 
@@ -485,7 +493,7 @@ async function mi_rol(el) {
   el.innerHTML = '<p class="emp-page-title">Mi ROL</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
   const r = await api('GET', '/mi-rol');
   if (!r || !r.ok) { el.innerHTML = `<p class="emp-page-title">Mi ROL</p><div class="emp-empty"><p>Error al cargar</p></div>`; return; }
-  const { week_start, shift_name, days } = r.data;
+  const { week_start, shift_name, days, txt_pending_hours = 0 } = r.data;
 
   const dayRows = days.map(d => {
     const label = _rolStatusLabel[d.status] || d.status;
@@ -494,8 +502,19 @@ async function mi_rol(el) {
     const teInfo = d.te_hours ? `<span style="color:#059669;font-weight:700;margin-left:6px">+${d.te_hours}h TE</span>` : '';
     const holidayTag = d.is_holiday ? `<span style="font-size:10px;color:#ea580c;margin-left:4px">(${esc(d.holiday_name||'Festivo')})</span>` : '';
     const bdayTag = d.birthday ? '<span style="font-size:10px;margin-left:4px">🎂</span>' : '';
+    const txtTag = d.txt_paid_hours > 0 ? `<span style="font-size:10px;color:#047857;font-weight:700;margin-left:6px">TXT pagado ${d.txt_paid_hours} h</span>` : '';
+    const txtOriginTag = d.status === 'txt_parcial'
+      ? `<span style="font-size:10px;color:#c2410c;font-weight:700;margin-left:6px">${d.txt_origin_paid_hours} h pagadas · faltan ${d.txt_origin_pending_hours} h</span>`
+      : (d.status === 'txt_por_pagar' ? `<span style="font-size:10px;color:#92400e;font-weight:700;margin-left:6px">Faltan ${d.txt_origin_pending_hours} h</span>` : '');
+    const bonoTags = (d.bonos || []).map(b => {
+      const label = b.type === 'limpieza' ? 'Bono Limpieza' : 'Bono Resistencias';
+      return `<span style="font-size:10px;color:${b.status==='autorizado'?'#047857':'#7c3aed'};font-weight:600;margin-left:5px">${label}: ${esc(b.status)}</span>`;
+    }).join('');
     const clarifTag = d.has_clarification ? '<span style="font-size:10px;color:#d97706;margin-left:4px">Aclaracion pendiente</span>' : '';
-    const canClarif = !d.is_future && !d.has_clarification && !['descanso','programado','pendiente','festivo','vacio'].includes(d.status);
+    const canClarif = !d.is_future && !d.has_clarification && ![
+      'descanso', 'programado', 'pendiente', 'festivo', 'vacio',
+      'cumpleanos_gratificacion', 'festivo_cumpleanos_no_labora',
+    ].includes(d.status);
 
     return `<tr style="${d.is_future ? 'opacity:.5' : ''}">
       <td style="padding:10px 12px;white-space:nowrap">
@@ -504,7 +523,7 @@ async function mi_rol(el) {
       </td>
       <td style="padding:10px 8px">
         <span style="display:inline-block;padding:4px 10px;border-radius:6px;font-size:12px;font-weight:700;color:#fff;background:${color}${isRed ? ';animation:pulse-red 1.5s infinite' : ''}">${label}</span>
-        ${teInfo}${holidayTag}${bdayTag}${clarifTag}
+        ${teInfo}${txtTag}${txtOriginTag}${holidayTag}${bdayTag}${bonoTags}${clarifTag}
         ${d.notes ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${esc(d.notes)}</div>` : ''}
       </td>
       <td style="padding:10px 8px;text-align:center">
@@ -529,6 +548,7 @@ async function mi_rol(el) {
       </div>
     </div>
   </div>
+  ${txt_pending_hours > 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;color:#991b1b;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:12px;font-weight:700;">Debe ${txt_pending_hours} h de Tiempo por Tiempo. No puede registrar tiempo extra hasta liquidarlas.</div>` : ''}
   <div class="emp-card" style="padding:0;overflow-x:auto">
     <table style="width:100%;border-collapse:collapse">
       <thead><tr style="background:#f8fafc;border-bottom:2px solid #e2e8f0">
@@ -575,9 +595,10 @@ async function incidencias(el) {
   ]);
   if (!rInc || !rInc.ok) { el.innerHTML = `<div class="emp-empty"><p>Error al cargar incidencias</p></div>`; return; }
   const rows    = Array.isArray(rInc.data) ? rInc.data : (rInc.data?.rows || []);
+  const movimientos = Array.isArray(rInc.data) ? [] : (rInc.data?.movimientos || []);
   const vacInfo = Array.isArray(rInc.data) ? null : (rInc.data?.vac_info || null);
   const vacList = (rVac && rVac.ok && Array.isArray(rVac.data)) ? rVac.data : [];
-  if (!rows.length) {
+  if (!rows.length && !movimientos.length) {
     el.innerHTML = `<p class="emp-page-title">Mis Incidencias</p><div class="emp-empty"><div class="empty-icon">📋</div><p>Sin registros de incidencias</p></div>`;
     return;
   }
@@ -625,8 +646,23 @@ async function incidencias(el) {
     </div>`;
   }).join('');
 
+  const movimientosHtml = movimientos.map(m => {
+    const statusColor = m.status === 'autorizado' || m.status === 'pagado' || m.status === 'registrado'
+      ? '#047857' : (m.status === 'rechazado' || m.status === 'cancelado' ? '#b91c1c' : '#92400e');
+    return `<div class="emp-card" style="padding:11px 14px;margin-bottom:7px;border-left:3px solid ${statusColor};">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;">
+        <strong style="font-size:13px;">${esc(m.title || m.type)}</strong>
+        <span style="font-size:10px;color:#64748b;">${esc(m.date || '')}</span>
+      </div>
+      <div style="font-size:11px;color:#64748b;margin-top:3px;">${esc(m.detail || '')}</div>
+      <div style="font-size:10px;color:${statusColor};font-weight:700;margin-top:3px;text-transform:uppercase;">${esc(m.status || '')}</div>
+    </div>`;
+  }).join('');
+
   el.innerHTML = `
   <p class="emp-page-title">Mis Incidencias</p>
+
+  ${movimientosHtml ? `<div style="font-size:12px;font-weight:800;color:#334155;margin-bottom:7px;">Registros de asistencia, TXT, bonos y cumpleaños</div>${movimientosHtml}${rows.length ? '<div style="font-size:12px;font-weight:800;color:#334155;margin:14px 0 7px;">Incidencias de nómina</div>' : ''}` : ''}
 
   <!-- Resumen vacaciones -->
   ${vacInfo ? `<div class="emp-card" style="padding:0;overflow:hidden;margin-bottom:10px">

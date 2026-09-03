@@ -3,6 +3,7 @@ const { read, write, writeAsync, nextId, calcVacBalance, getSystemEmpIds } = req
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
 const { ensureUnionAgreementHolidays } = require('../utils/rhh-holidays');
+const { assertNoTxtDebt } = require('../utils/rhh-txt');
 const router = express.Router();
 
 function weeklyEmployees(db, weekStart, extraEmployeeIds = []) {
@@ -393,6 +394,8 @@ router.post('/te-applications', rhhAuthRequired, (req, res) => {
   // Verificar que el empleado tenga algún puesto requerido
   const emp = (db.rhh_employees || []).find(e => e.id === empId);
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const txtCheck = assertNoTxtDebt(db, empId);
+  if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
 
   const positionIds = auth.positions || [];
   if (positionIds.length > 0) {
@@ -466,6 +469,8 @@ router.patch('/te-applications/:id', rhhAuthRequired, rhhRequireRole('supervisor
   if (notes !== undefined) app.notes = notes;
 
   if (status === 'selected') {
+    const txtCheck = assertNoTxtDebt(db, app.employee_id);
+    if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
     app.selected_by = req.rhhUser.id;
     app.selected_at = new Date().toISOString();
 
@@ -886,6 +891,8 @@ router.post('/request-te', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
   if (!employee_id || !date || !te_hours) {
     return res.status(400).json({ error: 'employee_id, date y te_hours son requeridos' });
   }
+  const txtCheck = assertNoTxtDebt(db, employee_id);
+  if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
 
   const teAuths = db.rhh_te_authorizations || [];
   const auth = {

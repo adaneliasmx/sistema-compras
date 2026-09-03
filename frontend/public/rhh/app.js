@@ -9388,20 +9388,31 @@ async function asisCaptureView() {
         // Incidencia actual (puede ser null/undefined si no hay registro)
         const inc      = dayData.incidencia_type || '';
         const specialConflict = !!dayData.birthday_holiday_conflict;
+        const txtDisplayStatus = dayData.txt_display_status || null;
+        const txtProtected = !!dayData.txt_deuda_id || (dayData.txt_pagos || []).length > 0;
+        const txtVisual = txtDisplayStatus === 'por_pagar'
+          ? { bg:'#fef3c7', fg:'#92400e' }
+          : txtDisplayStatus === 'parcial'
+            ? { bg:'#ffedd5', fg:'#c2410c' }
+            : txtDisplayStatus === 'pagado'
+              ? { bg:'#dcfce7', fg:'#166534' }
+              : null;
 
         // Día de descanso: domingo O auto-descanso (sábado para L-V, etc.)
         // En descanso: incidencia fija, solo TE y TXT disponibles
-        const isRestDay = isBaja ? false : (isSundayDay || (isAuto && inc === 'descanso'));
-        const editable = (isBaja || specialConflict) ? false : (isRestDay ? true : (!isLocked || noRec));
+        const isRestDay = isBaja ? false : (dayData.is_rest_day ?? (isSundayDay || (isAuto && inc === 'descanso')));
+        const editable = (isBaja || specialConflict || txtProtected) ? false : (isRestDay ? true : (!isLocked || noRec));
 
-        const incType  = inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null;
+        const incType  = txtVisual || (inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null);
         const selStyle = incType ? `background:${incType.bg};color:${incType.fg};` : 'background:#f8fafc;color:#9ca3af;';
 
-        const incSelOpts = `<option value="" ${!inc?'selected':''} style="background:#f8fafc;color:#9ca3af;">— Sin asignar —</option>` +
-          ASIST_INC_TYPES
-            .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
-            .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
-            .join('');
+        const incSelOpts = txtDisplayStatus
+          ? `<option value="${inc}" selected>${escHtml(dayData.txt_display_label || 'TXT')}</option>`
+          : `<option value="" ${!inc?'selected':''} style="background:#f8fafc;color:#9ca3af;">— Sin asignar —</option>` +
+            ASIST_INC_TYPES
+              .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
+              .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
+              .join('');
 
         // Multi-proyecto: array [{name,pct}] o fallback a proyecto simple
         const empProyectos = dayData.proyectos || (dayData.proyecto ? [{ name: dayData.proyecto, pct: 100 }] : []);
@@ -9489,8 +9500,8 @@ async function asisCaptureView() {
         const dow = new Date(selFecha + 'T12:00:00').getDay();
         const canBono = dow === 6 || dow === 0;
 
-        const rowStyle = teActivo ? 'background:#fffbf5;' : (isBirthday ? 'background:#fdf2f8;' : '');
-        const incDisabled  = (isRestDay || specialConflict) ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
+        const rowStyle = txtDisplayStatus ? `background:${txtVisual.bg}35;` : (teActivo ? 'background:#fffbf5;' : (isBirthday ? 'background:#fdf2f8;' : ''));
+        const incDisabled  = (isRestDay || specialConflict || txtProtected) ? 'disabled' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
         const disabledAttr = isRestDay ? '' : ((!editable || isLocked && !noRec) ? 'disabled' : '');
         const onChangeInc = (!isRestDay && editable) ? `onchange="var t=ASIST_INC_TYPES.find(x=>x.v===this.value)||{bg:'#f8fafc',fg:'#9ca3af'};this.style.background=t.bg;this.style.color=t.fg;asisOnIncChange(${emp.employee_id},this.value);asisMarkDirty(${emp.employee_id})"` : '';
 
@@ -9498,11 +9509,12 @@ async function asisCaptureView() {
         let txtBtn = '';
         if (isRHHAdmin && inc === 'falta' && hasRec) {
           txtBtn = dayData.txt_deuda_status
-            ? `<span style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;font-weight:700;white-space:nowrap;">TXT ${dayData.txt_deuda_status === 'pagado' ? 'liquidado' : `pendiente -${dayData.txt_deuda_horas} h`}</span>`
+            ? `<span style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;font-weight:700;white-space:nowrap;">${escHtml(dayData.txt_display_label || 'TXT autorizado')}</span>`
             : `<button onclick="asisTxtCrearDeuda(${emp.employee_id},${dayData.id},'${selFecha}')"
               style="padding:2px 6px;font-size:9px;border:1px solid #fbbf24;border-radius:4px;background:#fefce8;color:#92400e;cursor:pointer;font-weight:600;white-space:nowrap;">Autorizar TXT pendiente</button>`;
         }
-        if (txtHorasPend > 0 && !isBaja && !specialConflict) {
+        const canPayTxtHere = isRestDay || ['labora','retardo','turno_incompleto'].includes(inc);
+        if (txtHorasPend > 0 && canPayTxtHere && !isBaja && !specialConflict) {
           txtBtn += `<button onclick="asisTxtPagarModal(${emp.employee_id},'${selFecha}',${dayData.id||'null'})"
             style="padding:2px 6px;font-size:9px;border:1px solid #34d399;border-radius:4px;background:#ecfdf5;color:#065f46;cursor:pointer;font-weight:600;white-space:nowrap;">Registrar TXT pagado</button>`;
         }
@@ -9520,7 +9532,7 @@ async function asisCaptureView() {
               style="width:100%;padding:5px 6px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;${selStyle}">
               ${incSelOpts}
             </select>
-            ${dayData.txt_pagado_horas > 0 ? `<div style="margin-top:3px;font-size:10px;font-weight:700;color:#047857;background:#ecfdf5;padding:2px 5px;border-radius:4px;">TXT PAGADO · ${dayData.txt_pagado_horas} h</div>` : ''}
+            ${dayData.txt_excedente_horas > 0 ? `<div style="margin-top:3px;font-size:9px;font-weight:700;color:#047857;">${dayData.txt_aplicado_horas} h a TXT + ${dayData.txt_excedente_horas} h a TE</div>` : ''}
             ${dayData.festivo_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#c2410c;">Festivo laborado</div>' : ''}
             ${dayData.cumpleanos_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#be185d;">Cumpleaños laborado</div>' : ''}
             ${specialConflict ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#991b1b;">Festivo + cumpleaños: no puede laborar</div>' : ''}
@@ -10294,12 +10306,16 @@ async function asisListaView() {
         const inc = rec?.incidencia_type || 'descanso';
         let t = ASIST_INC_TYPES.find(x => x.v === inc) || { l: inc, bg:'#f9fafb', fg:'#9ca3af' };
         if (rec?.birthday_holiday_conflict) t = { l:'Festivo + Cumpleaños', bg:'#fee2e2', fg:'#991b1b' };
+        else if (rec?.txt_display_status === 'por_pagar') t = { l:rec.txt_display_label || 'TXT por pagar', bg:'#fef3c7', fg:'#92400e' };
+        else if (rec?.txt_display_status === 'parcial') t = { l:rec.txt_display_label || 'TXT parcial', bg:'#ffedd5', fg:'#c2410c' };
+        else if (rec?.txt_display_status === 'pagado') t = { l:rec.txt_display_label || 'TXT pagado', bg:'#dcfce7', fg:'#166534' };
         else if (rec?.festivo_laborado) t = { l:'Festivo laborado', bg:'#ffedd5', fg:'#9a3412' };
         else if (rec?.cumpleanos_laborado) t = { l:'Cumpleaños laborado', bg:'#fce7f3', fg:'#9d174d' };
         // TE y deuda junto a la incidencia
         const teH = rec?.te_horas;
         const teBadge = teH ? `<span style="font-size:9px;color:#ea580c;font-weight:700;margin-left:2px;">+${teH}</span>` : '';
-        const txtBadge = rec?.txt_pagado_horas > 0 ? `<span style="display:block;font-size:9px;color:#047857;font-weight:700;margin-top:2px;">TXT pagado ${rec.txt_pagado_horas} h</span>` : '';
+        const txtBadge = rec?.txt_pagado_horas > 0 && !rec?.txt_display_status
+          ? `<span style="display:block;font-size:9px;color:#047857;font-weight:700;margin-top:2px;">TXT pagado ${rec.txt_pagado_horas} h</span>` : '';
         const birthdayBadge = rec?.is_birthday && !rec?.birthday_holiday_conflict && !rec?.cumpleanos_laborado
           ? '<span style="display:block;font-size:9px;color:#be185d;font-weight:700;margin-top:2px;">Cumpleaños</span>' : '';
         return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}${txtBadge}${birthdayBadge}</td>`;

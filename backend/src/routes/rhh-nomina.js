@@ -15,6 +15,7 @@ const {
   comparePeriods,
   effectivePeriodYear,
   getEmployeeTemplateForWeek,
+  isoWeekPeriod,
   parsePeriodDate,
   periodKey,
   resolveRequestedYear,
@@ -22,6 +23,7 @@ const {
   upsertCanonicalPeriod,
   upsertEmployeePeriodSnapshot,
 } = require('../utils/rhh-periods');
+const { assertNoTxtDebt } = require('../utils/rhh-txt');
 const router = express.Router();
 
 // Multer — solo memoria (no guarda en disco)
@@ -154,6 +156,26 @@ function payrollEmployeesForPeriod(db, noPeriodo, year) {
   return { ...template, period, employees };
 }
 
+function applyTxtPaidDays(db, employeeId, period, incidence = {}) {
+  const paidDates = [...new Set((db.rhh_txt_deudas || [])
+    .filter(debt =>
+      Number(debt.employee_id) === Number(employeeId) &&
+      debt.origen_tipo === 'falta' &&
+      debt.status === 'pagado' &&
+      isoWeekPeriod(debt.origen_fecha)?.period_key === period?.period_key
+    )
+    .map(debt => debt.origen_fecha))];
+  const originalPaidDays = Number(incidence.dias_pagados ?? 7) || 0;
+  const originalAbsences = Number(incidence.faltas ?? 0) || 0;
+  const appliedDays = Math.min(paidDates.length, originalAbsences);
+  return {
+    dias_pagados: Math.min(7, originalPaidDays + appliedDays),
+    faltas: Math.max(0, originalAbsences - appliedDays),
+    txt_dias_pagados: paidDates,
+    txt_ajustes_aplicados: appliedDays,
+  };
+}
+
 // ── Períodos ──────────────────────────────────────────────────────────────────
 
 // GET /api/rhh/nomina/periodos
@@ -238,14 +260,17 @@ router.get('/incidencias', rhhAuthRequired, (req, res) => {
   const result = employees.map(emp => {
     const inc = lista.find(i => samePeriod(i, no_periodo, year) && i.employee_id === emp.id) || {};
     const dept = depts.find(d => d.id === emp.department_id);
+    const txtPaid = applyTxtPaidDays(db, emp.id, template.period, inc);
     return {
       id:                  inc.id || null,
       no_periodo,
       year,
       period_key: periodKey(year, no_periodo),
       employee_id:         emp.id,
-      dias_pagados:        inc.dias_pagados        ?? 7,
-      faltas:              inc.faltas              ?? 0,
+      dias_pagados:        txtPaid.dias_pagados,
+      faltas:              txtPaid.faltas,
+      txt_dias_pagados:    txtPaid.txt_dias_pagados,
+      txt_ajustes_aplicados: txtPaid.txt_ajustes_aplicados,
       horas_extras_total:  inc.horas_extras_total  ?? 0,
       despensa:            inc.despensa            ?? 1,
       bono_puntualidad_dias: inc.bono_puntualidad_dias ?? null,
@@ -303,6 +328,14 @@ router.post('/incidencias/bulk', rhhAuthRequired, rhhRequireRole('rh', 'admin', 
     const idx = lista.findIndex(i => samePeriod(i, Number(no_periodo), year) && i.employee_id === empId);
 
     const existing = idx !== -1 ? lista[idx] : null;
+    const currentOvertime = Number(existing?.horas_extras_total) || 0;
+    const requestedOvertime = Number(row.horas_extras_total) || 0;
+    if (requestedOvertime > currentOvertime) {
+      const txtCheck = assertNoTxtDebt(db, empId);
+      if (!txtCheck.ok) {
+        return res.status(409).json({ error: txtCheck.error, employee_id: empId, txt_pending_hours: txtCheck.pendingHours });
+      }
+    }
     const record = mergeWeeklyIncident(existing, row, {
       no_periodo: Number(no_periodo),
       year,
@@ -351,6 +384,8 @@ router.post('/he-detalle', rhhAuthRequired, rhhRequireRole('rh', 'admin', 'super
   if (!no_periodo || !employee_id || !fecha || !total_horas) {
     return res.status(400).json({ error: 'no_periodo, employee_id, fecha y total_horas son requeridos' });
   }
+  const txtCheck = assertNoTxtDebt(db, employee_id);
+  if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
   const lista = db.rhh_he_detalle || [];
   const year = resolveRequestedYear(db, no_periodo, req.body.year);
   const template = payrollEmployeesForPeriod(db, Number(no_periodo), year);
@@ -903,6 +938,8 @@ router.post('/te-solicitudes', rhhAuthRequired, rhhRequireRole('supervisor', 'rh
   if (!employee_id || !no_periodo || !horas) {
     return res.status(400).json({ error: 'employee_id, no_periodo y horas son requeridos' });
   }
+  const txtCheck = assertNoTxtDebt(db, employee_id);
+  if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
 
   const year = resolveRequestedYear(db, no_periodo, req.body.year);
   const template = payrollEmployeesForPeriod(db, Number(no_periodo), year);
@@ -966,6 +1003,10 @@ router.patch('/te-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor'
   if (!['aprobada', 'rechazada'].includes(estado)) {
     return res.status(400).json({ error: 'estado debe ser aprobada o rechazada' });
   }
+  if (estado === 'aprobada') {
+    const txtCheck = assertNoTxtDebt(db, s.employee_id);
+    if (!txtCheck.ok) return res.status(409).json({ error: txtCheck.error, txt_pending_hours: txtCheck.pendingHours });
+  }
 
   s.estado        = estado;
   s.autorizado_por = req.rhhUser.id;
@@ -1024,25 +1065,29 @@ router.get('/export', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
       return (a.full_name || '').localeCompare(b.full_name || '');
     })
     .map(emp => {
-      const inc  = lista.find(i => i.employee_id === emp.id);
+      const inc  = lista.find(i => i.employee_id === emp.id) || {};
       const dept = depts.find(d => d.id === emp.department_id);
       const pos  = positions.find(p => p.id === emp.position_id);
+      const txtPaid = applyTxtPaidDays(db, emp.id, template.period, inc);
+      const txtNote = txtPaid.txt_dias_pagados.length
+        ? `TXT pagado como día trabajado: ${txtPaid.txt_dias_pagados.join(', ')}`
+        : '';
       return {
         no_empleado:          emp.employee_number || emp.id,
         nombre:               emp.full_name,
         departamento:         emp._snapshot?.department_name || dept?.name || '',
         puesto:               emp._snapshot?.position_name || pos?.name  || '',
-        dias_pagados:         inc?.dias_pagados        ?? 7,
-        faltas:               inc?.faltas              ?? 0,
-        horas_extras:         inc?.horas_extras_total  ?? 0,
-        despensa:             inc?.despensa  ? 'SÍ' : 'NO',
-        bono_puntualidad_dias: inc?.bono_puntualidad_dias ?? '',
-        bono_eficiencia_dias:  inc?.bono_eficiencia_dias  ?? '',
-        bono_instructor:      inc?.bono_instructor        ?? '',
-        prima_dominical:      inc?.prima_dominical ? 'SÍ' : 'NO',
-        vacaciones_dias:      inc?.vacaciones_dias  ?? '',
-        gratificacion:        inc?.gratificacion    ?? '',
-        notas:                inc?.notas            || '',
+        dias_pagados:         txtPaid.dias_pagados,
+        faltas:               txtPaid.faltas,
+        horas_extras:         inc.horas_extras_total  ?? 0,
+        despensa:             inc.despensa  ? 'SÍ' : 'NO',
+        bono_puntualidad_dias: inc.bono_puntualidad_dias ?? '',
+        bono_eficiencia_dias:  inc.bono_eficiencia_dias  ?? '',
+        bono_instructor:      inc.bono_instructor        ?? '',
+        prima_dominical:      inc.prima_dominical ? 'SÍ' : 'NO',
+        vacaciones_dias:      inc.vacaciones_dias  ?? '',
+        gratificacion:        inc.gratificacion    ?? '',
+        notas:                [inc.notas || '', txtNote].filter(Boolean).join(' · '),
       };
     });
 
@@ -1835,20 +1880,26 @@ router.get('/kpis', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) =
   const totalEmp = snapshotEmployeeIds.size || (db.rhh_employees || [])
     .filter(e => e.status === 'active' && !_sysIds.has(Number(e.id))).length;
   const capturados = lista.length;
+  const currentPeriod = (db.rhh_periodos || []).find(p => samePeriod(p, no_periodo, year))
+    || canonicalPeriod({ no_periodo, year });
+  const effectiveList = lista.map(inc => ({
+    ...inc,
+    ...applyTxtPaidDays(db, inc.employee_id, currentPeriod, inc),
+  }));
 
-  const sum = (key, dflt = 0) => lista.reduce((a, i) => a + (Number(i[key]) || dflt), 0);
+  const sum = (key, dflt = 0) => effectiveList.reduce((a, i) => a + (Number(i[key]) || dflt), 0);
 
   const totalFaltas        = sum('faltas');
   const totalHE            = sum('horas_extras_total');
-  const conDespensa        = lista.filter(i => i.despensa).length;
-  const conPrimaDominical  = lista.filter(i => i.prima_dominical).length;
+  const conDespensa        = effectiveList.filter(i => i.despensa).length;
+  const conPrimaDominical  = effectiveList.filter(i => i.prima_dominical).length;
   const totalVacDias       = sum('vacaciones_dias');
-  const conBonoPuntual     = lista.filter(i => (i.bono_puntualidad_dias || 0) > 0).length;
-  const conBonoEficiencia  = lista.filter(i => (i.bono_eficiencia_dias  || 0) > 0).length;
+  const conBonoPuntual     = effectiveList.filter(i => (i.bono_puntualidad_dias || 0) > 0).length;
+  const conBonoEficiencia  = effectiveList.filter(i => (i.bono_eficiencia_dias  || 0) > 0).length;
 
   // Distribución de faltas (0, 1, 2, 3+)
   const distFaltas = { 0: 0, 1: 0, 2: 0, '3+': 0 };
-  lista.forEach(i => {
+  effectiveList.forEach(i => {
     const f = i.faltas || 0;
     if (f === 0)      distFaltas[0]++;
     else if (f === 1) distFaltas[1]++;
