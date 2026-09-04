@@ -1104,7 +1104,7 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
         });
       }).length;
     }
-    const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : null;
+    const eficiencia = objetivo > 0 ? ciclosEficiencia / objetivo : (ciclosEficiencia === 0 ? 1 : null);
 
     // Paros que afectan rendimiento en este (linea, turno, fecha)
     const motivosLinea = pdb[`motivos_paro_${linea.toLowerCase()}`] || [];
@@ -2483,7 +2483,7 @@ function annotateLiveSlots(pdb, linea, turno, targetDate, slots) {
   const objetivo = completed.reduce((s, slot) => s + Number(slot.ciclos_obj_adj ?? slot.ciclos_obj ?? 0), 0);
   let eficiencia = null;
   if (objetivo > 0) eficiencia = ciclos / objetivo;
-  else if (progress.status === 'completado' && ciclos === 0) eficiencia = 1;
+  else if (ciclos === 0) eficiencia = 1; // obj=0 y ciclos=0 → 100%
 
   return {
     status: progress.status,
@@ -2606,35 +2606,34 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
     curMins += 60;
   }
 
-  // ── Fase 2: arranque diario — descontar primeros 6 ciclos REALES ──
-  // "Los primeros 6 ciclos reales completados no cuentan para eficiencia"
-  // Se restan de AMBOS numerador (ciclos) Y denominador (objetivo).
-  // Calidad y capacidad incluyen TODOS los ciclos (arranque no afecta material).
-  let arranqueLeft = arranqueCiclos;
+  // ── Fase 2: arranque diario — tolerancia en el objetivo del PRIMER slot ──
+  // La tolerancia de arranque (6 ciclos) solo reduce el OBJETIVO del primer slot.
+  // Todos los ciclos reales siempre cuentan para eficiencia (no se restan del numerador).
+  // Calidad y capacidad incluyen TODOS los ciclos.
   const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
 
-  for (const s of slots) {
-    // Cuántos ciclos de este slot caen en arranque
-    const arranqueEnSlot = Math.min(arranqueLeft, s.ciclos_totales);
-    arranqueLeft -= arranqueEnSlot;
+  for (let i = 0; i < slots.length; i++) {
+    const s = slots[i];
 
-    s.ciclos_arranque    = arranqueEnSlot;
-    s.ciclos_eficiencia  = s.ciclos_totales - arranqueEnSlot; // numerador de eficiencia
+    // Todos los ciclos reales cuentan para eficiencia
+    s.ciclos_eficiencia = s.ciclos_totales;
 
-    // Objetivo: reducir por arranque (misma cantidad que se resta del numerador)
-    s.ciclos_obj = Math.max(0, s.ciclos_obj_base - arranqueEnSlot);
+    // Solo el primer slot tiene reduccion de objetivo por tolerancia de arranque
+    s.ciclos_obj = i === 0
+      ? Math.max(0, s.ciclos_obj_base - arranqueCiclos)
+      : s.ciclos_obj_base;
 
     // Ajustar objetivo por paros programados
     const efectivoMin = Math.max(0, s.slotDuration - s.paros_min_prog);
     s.ciclos_obj_adj = r3(s.ciclos_obj * (efectivoMin / s.slotDuration));
 
     // Eficiencia = ciclos_eficiencia / ciclos_obj_adj
-    // Arranque: ambos son 0 → eficiencia = 1 (no penaliza)
+    // Si objetivo=0 y ciclos=0 → eficiencia = 1 (no penaliza)
     s.eficiencia = s.ciclos_obj_adj > 0
       ? r3(s.ciclos_eficiencia / s.ciclos_obj_adj)
       : (s.ciclos_eficiencia === 0 ? 1 : null);
 
-    // Calidad y capacidad usan TODOS los ciclos (incl. arranque)
+    // Calidad y capacidad usan TODOS los ciclos
     s.calidad = s.ciclos_no_vacios_calidad > 0 ? r3(s.ciclos_buenos_calidad / s.ciclos_no_vacios_calidad) : null;
     s.capacidad = s.piezas_obj_total > 0 ? r3(s.piezas_total / s.piezas_obj_total) : null;
     s.disponibilidad = r3(Math.max(0, s.slotDuration - Math.min(s.paros_min_disp, s.slotDuration)) / s.slotDuration);
@@ -2653,8 +2652,8 @@ function buildSlotsForL4TL4(pdb, config, targetDate) {
 }
 
 // Fuente común para la eficiencia TL4 usada por pizarrón, KPI y estadísticas.
-// Los primeros seis ciclos completados del día se excluyen del numerador y del
-// objetivo; calidad y capacidad conservan todos los ciclos.
+// La tolerancia de arranque solo reduce el objetivo del primer slot;
+// todos los ciclos reales cuentan para eficiencia.
 function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
   const slots = buildSlotsForL4TL4(pdb, config, targetDate);
   const window = getTL4EffectiveWindow(pdb, targetDate);
@@ -2662,38 +2661,39 @@ function getTL4EfficiencySummary(pdb, config, targetDate, operadorId = null) {
     return { ciclos_eficiencia: 0, objetivo: 0, eficiencia: null };
   }
 
+  const live = annotateLiveSlots(pdb, 'L4', 'TL4', targetDate, slots);
+  const objetivo = live.objetivo_eficiencia;
+
+  // Sin filtro de operador: usar totales de slots ya anotados
+  if (operadorId == null) {
+    return {
+      ciclos_eficiencia: live.ciclos_eficiencia,
+      objetivo,
+      eficiencia: objetivo > 0 ? live.ciclos_eficiencia / objetivo : (live.ciclos_eficiencia === 0 ? 1 : null)
+    };
+  }
+
+  // Con filtro de operador: contar cargas individuales en ventanas completadas
   const entMins = window.inicio_min;
   const salMins = window.fin_render_min;
-  const completadas = (pdb.cargas || [])
-    .filter(c => {
-      if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
-      if (c.estado === 'cancelado' || c.fecha_descarga !== targetDate) return false;
-      const mins = toMins(c.hora_descarga);
-      return mins >= entMins && mins <= salMins;
-    })
-    .sort((a, b) =>
-      (a.hora_descarga || '').localeCompare(b.hora_descarga || '') ||
-      Number(a.id || 0) - Number(b.id || 0)
-    );
-
-  const live = annotateLiveSlots(pdb, 'L4', 'TL4', targetDate, slots);
   const completedWindows = slots.filter(s => s.estado_slot === 'completado');
-  const despuesArranque = completadas.slice(L4_ARRANQUE_CICLOS).filter(c => {
+  const cargasEnCompletadas = (pdb.cargas || []).filter(c => {
+    if (c.linea !== 'L4' || !c.fecha_descarga || !c.hora_descarga) return false;
+    if (c.estado === 'cancelado' || c.fecha_descarga !== targetDate) return false;
+    if (String(c.operador_id) !== String(operadorId)) return false;
     const mins = toMins(c.hora_descarga);
+    if (mins < entMins || mins > salMins) return false;
     return completedWindows.some((s, index) => {
       const end = toMins(s.hora_fin);
       return mins >= toMins(s.hora_inicio) && (mins < end || (index === completedWindows.length - 1 && mins === end));
     });
   });
-  const ciclosEficiencia = operadorId == null
-    ? despuesArranque.length
-    : despuesArranque.filter(c => String(c.operador_id) === String(operadorId)).length;
-  const objetivo = live.objetivo_eficiencia;
+  const ciclosEficiencia = cargasEnCompletadas.length;
 
   return {
     ciclos_eficiencia: ciclosEficiencia,
     objetivo,
-    eficiencia: objetivo > 0 ? ciclosEficiencia / objetivo : null
+    eficiencia: objetivo > 0 ? ciclosEficiencia / objetivo : (ciclosEficiencia === 0 ? 1 : null)
   };
 }
 
@@ -3931,7 +3931,7 @@ router.get('/kpis-legacy-disabled', (req, res) => {
           const totalMins        = diaConf && diaConf.activo ? (toMins(diaConf.hora_salida) - toMins(diaConf.hora_entrada)) : 0;
           const elapHours        = diaConf && diaConf.activo ? elapsedHoursForTL4(date, diaConf.hora_entrada, diaConf.hora_salida) : 0;
           const objElap          = computeObjElapsedAdj(slots, elapHours);
-          const eficiencia       = ciclos_eficiencia_total > 0 && objElap > 0 ? ciclos_eficiencia_total / objElap : null;
+          const eficiencia       = objElap > 0 ? ciclos_eficiencia_total / objElap : (ciclos_eficiencia_total === 0 ? 1 : null);
           const calidad          = nv_calidad > 0 ? bq_calidad / nv_calidad : null;
           const capacidad        = piezas_obj_total > 0 ? piezas_total / piezas_obj_total : null;
           const disponibilidad   = totalMins > 0 ? (totalMins - Math.min(paros_min_disp_t, totalMins)) / totalMins : 1;
