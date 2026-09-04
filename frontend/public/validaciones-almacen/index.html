@@ -136,6 +136,7 @@ tr:hover td{background:#fafbff}
 
 footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align:center;padding:8px;margin-top:auto}
 </style>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -169,6 +170,7 @@ footer{background:#1a3a5c;color:rgba(255,255,255,.5);font-size:.72rem;text-align
     <button onclick="switchTab('embarques')" id="tabEmbarques">Embarques (Sync)</button>
     <button onclick="switchTab('pendientes')">Pendientes</button>
     <button onclick="switchTab('consolidado')">Resumen Consolidado</button>
+    <button onclick="switchTab('recuperar')" id="tabRecuperar" style="display:none">Recuperar Embarque</button>
     <button onclick="switchTab('syncstatus')" id="tabSync" style="display:none">Estado Sync</button>
   </nav>
 
@@ -267,7 +269,10 @@ function startApp(user) {
     : user.role === 'viewer' ? 'Viewer · solo lectura'
     : user.role;
   document.getElementById('headerUser').textContent = user.nombre + ' (' + roleLabel + ')';
-  if (user.role === 'admin') document.getElementById('tabSync').style.display = '';
+  if (user.role === 'admin') {
+    document.getElementById('tabSync').style.display = '';
+    document.getElementById('tabRecuperar').style.display = '';
+  }
   if (user.role === 'skf') document.getElementById('tabEmbarques').style.display = 'none';
   startPCPolling();
   switchTab('resumen');
@@ -298,6 +303,7 @@ function switchTab(tab) {
   if (tab === 'embarques')     renderEmbarques();
   if (tab === 'pendientes')    renderPendientes();
   if (tab === 'consolidado')   renderConsolidado();
+  if (tab === 'recuperar')      renderRecuperar();
   if (tab === 'syncstatus')    renderSyncStatus();
 }
 
@@ -1378,6 +1384,199 @@ function startPCPolling() {
   refreshPCStatus();
   if (_pcInterval) clearInterval(_pcInterval);
   _pcInterval = setInterval(refreshPCStatus, 15000);  // cada 15s
+}
+
+// ── RECUPERAR EMBARQUE (solo admin) ──────────────────────────────────────────
+function renderRecuperar() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div style="max-width:960px;margin:0 auto">
+      <h2 style="font-size:1.2rem;color:#1a3a5c;margin-bottom:4px">Recuperar Embarque desde Excel</h2>
+      <p style="font-size:.85rem;color:#888;margin-bottom:20px">Suba el archivo QRY Excel (.xlsx) de un embarque que no se cargo a la plataforma. El sistema detectara automaticamente el flujo, embarque y operador desde el nombre del archivo.</p>
+
+      <div class="filtros" style="flex-direction:column;align-items:stretch;gap:16px">
+        <div>
+          <label>Archivo Excel QRY (.xlsx)</label>
+          <input type="file" id="recXlsx" accept=".xlsx" style="width:100%;padding:10px;border:2px dashed #ccd;border-radius:8px;cursor:pointer">
+        </div>
+        <div style="display:flex;gap:10px">
+          <button class="btn-buscar" onclick="validarRecuperar()" id="btnValidarRec">Validar archivo</button>
+          <button class="btn-excel" onclick="cargarRecuperar()" id="btnCargarRec" disabled style="opacity:.5">Cargar a plataforma</button>
+        </div>
+      </div>
+
+      <div id="recResultado" style="margin-top:20px"></div>
+    </div>
+  `;
+}
+
+let _recUploadData = null;
+
+async function validarRecuperar() {
+  const fileInput = document.getElementById('recXlsx');
+  const resultado = document.getElementById('recResultado');
+  const btnCargar = document.getElementById('btnCargarRec');
+  _recUploadData = null;
+  btnCargar.disabled = true;
+  btnCargar.style.opacity = '.5';
+  resultado.innerHTML = '';
+
+  if (!fileInput.files.length) {
+    resultado.innerHTML = '<div style="color:#c0392b;font-weight:600">Seleccione un archivo Excel.</div>';
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const fname = file.name;
+
+  // Detectar flujo desde nombre: QRY_SalidaCuesto_... o QRY_SalidaSKF_...
+  let flujo, side_origen, side_destino, flujo_txt;
+  if (fname.includes('SalidaCuesto')) {
+    flujo = 'cuesto_a_skf'; side_origen = 'cuesto'; side_destino = 'skf'; flujo_txt = 'Cuesto → SKF';
+  } else if (fname.includes('SalidaSKF')) {
+    flujo = 'skf_a_cuesto'; side_origen = 'skf'; side_destino = 'cuesto'; flujo_txt = 'SKF → Cuesto';
+  } else {
+    resultado.innerHTML = '<div style="color:#c0392b;font-weight:600">No se reconoce el tipo de archivo. El nombre debe contener "SalidaCuesto" o "SalidaSKF".</div>';
+    return;
+  }
+
+  // Parsear nombre: QRY_SalidaCuesto_2026-09-03_2.1_MIGUEL VILLANUEVA.xlsx
+  const base = fname.replace('.xlsx', '');
+  const parts = base.split('_');
+  const fechaExcel = parts.length >= 3 ? parts[2] : '';  // 2026-09-03
+  const embarque = parts.length >= 4 ? parts[3] : '?';
+  const operador = parts.length >= 5 ? parts.slice(4).join(' ') : '?';
+
+  // Leer Excel con SheetJS
+  try {
+    const data = await file.arrayBuffer();
+    const wb = XLSX.read(data, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 });
+
+    if (rows.length < 2) {
+      resultado.innerHTML = '<div style="color:#c0392b;font-weight:600">El archivo no contiene datos.</div>';
+      return;
+    }
+
+    const headers = rows[0];
+    const dataRows = rows.slice(1).filter(r => r[0]);
+    let items = [];
+    let totalPiezas = 0;
+
+    if (flujo === 'cuesto_a_skf') {
+      for (const r of dataRows) {
+        const qty = parseInt(r[6]) || 0;
+        items.push({
+          codigo: String(r[0]||''), lote: String(r[1]||''), skf: String(r[2]||''),
+          componente: String(r[3]||''), peso: r[4], p_u: r[5], cantidad: qty,
+          operador_empaque: String(r[7]||''), proceso: String(r[8]||''),
+          acabado: String(r[9]||''), fecha: String(r[10]||''), hora: String(r[11]||'')
+        });
+        totalPiezas += qty;
+      }
+    } else {
+      for (const r of dataRows) {
+        const qty = parseInt(r[6]) || 0;
+        items.push({
+          QR_SKF: String(r[0]||''), NO_SKF: String(r[1]||''), COMPONENTE: String(r[2]||''),
+          PESO_UNITARIO: r[3], ORDEN: String(r[4]||''), LOTE: String(r[5]||''),
+          QTY: qty, PESO: r[7], DISPACH: String(r[8]||''),
+          FECHA_ESCANEO: String(r[9]||''), HORA_ESCANEO: String(r[10]||''), OPERADOR: String(r[11]||'')
+        });
+        totalPiezas += qty;
+      }
+    }
+
+    // Hora de envio de la primera fila (col 15)
+    const horaEnvioPreview = dataRows[0] && dataRows[0][15] ? String(dataRows[0][15]) : '?';
+
+    // Validaciones
+    const checks = [
+      { label: 'Formato de archivo reconocido', ok: true, detail: flujo_txt },
+      { label: 'No. Embarque detectado', ok: embarque !== '?', detail: embarque },
+      { label: 'Operador detectado', ok: operador !== '?', detail: operador },
+      { label: 'Fecha/hora original', ok: fechaExcel.length >= 10, detail: fechaExcel + ' ' + horaEnvioPreview },
+      { label: 'Datos del Excel', ok: items.length > 0, detail: `${items.length} items | ${totalPiezas.toLocaleString()} piezas` }
+    ];
+
+    let checksHtml = '<div style="margin-bottom:16px">';
+    checksHtml += '<h3 style="font-size:.95rem;color:#1a3a5c;margin-bottom:8px">Resultado de validacion</h3>';
+    for (const c of checks) {
+      const color = c.ok ? '#27ae60' : '#c0392b';
+      const icon = c.ok ? '✓' : '✗';
+      checksHtml += `<div style="padding:4px 0;font-size:.88rem"><span style="color:${color};font-weight:700">${icon} ${c.label}:</span> <span style="color:#333">${c.detail}</span></div>`;
+    }
+    checksHtml += '</div>';
+
+    // Resumen
+    checksHtml += `<div style="background:#ecf0f1;padding:12px 16px;border-radius:8px;font-weight:600;font-size:.9rem;margin-bottom:16px">
+      Flujo: ${flujo_txt} &nbsp;|&nbsp; Embarque: ${embarque} &nbsp;|&nbsp; Operador: ${operador} &nbsp;|&nbsp; Piezas: ${totalPiezas.toLocaleString()}
+    </div>`;
+
+    // Preview tabla (primeros 20 items)
+    const colKeys = flujo === 'cuesto_a_skf'
+      ? ['codigo','componente','cantidad','lote','peso']
+      : ['QR_SKF','COMPONENTE','QTY','LOTE','PESO'];
+    const colLabels = flujo === 'cuesto_a_skf'
+      ? ['Codigo','Componente','Cantidad','Lote','Peso']
+      : ['QR SKF','Componente','QTY','Lote','Peso'];
+
+    checksHtml += '<div class="tabla-wrap"><div class="tabla-header"><h3>Vista previa</h3><span class="tabla-count">Mostrando ' + Math.min(items.length,20) + ' de ' + items.length + '</span></div>';
+    checksHtml += '<table><thead><tr>' + colLabels.map(h => '<th>'+h+'</th>').join('') + '</tr></thead><tbody>';
+    for (let i = 0; i < Math.min(items.length, 20); i++) {
+      checksHtml += '<tr>' + colKeys.map(k => '<td>' + (items[i][k] ?? '') + '</td>').join('') + '</tr>';
+    }
+    if (items.length > 20) checksHtml += '<tr><td colspan="5" style="text-align:center;color:#888;padding:10px">... y ' + (items.length-20) + ' items mas</td></tr>';
+    checksHtml += '</tbody></table></div>';
+
+    resultado.innerHTML = checksHtml;
+
+    const allOk = checks.every(c => c.ok);
+    if (allOk) {
+      // Extraer hora de envio de la primera fila (col 15 = Hora Envio)
+      const horaEnvio = dataRows[0] && dataRows[0][15] ? String(dataRows[0][15]) : '';
+      _recUploadData = { side_origen, side_destino, flujo, numero_embarque: embarque, operador_envio: operador, items, total_piezas: totalPiezas, fecha_original: fechaExcel, hora_original: horaEnvio };
+      btnCargar.disabled = false;
+      btnCargar.style.opacity = '1';
+    }
+  } catch (err) {
+    resultado.innerHTML = '<div style="color:#c0392b;font-weight:600">Error al leer el Excel: ' + err.message + '</div>';
+  }
+}
+
+async function cargarRecuperar() {
+  if (!_recUploadData) return;
+  if (!confirm(`Se cargara el embarque ${_recUploadData.numero_embarque} (${_recUploadData.flujo.replace(/_/g,' → ')}) con ${_recUploadData.items.length} items y ${_recUploadData.total_piezas.toLocaleString()} piezas.\n\n¿Continuar?`)) return;
+
+  const btn = document.getElementById('btnCargarRec');
+  btn.disabled = true;
+  btn.textContent = 'Cargando...';
+
+  try {
+    const data = await apiFetch('/embarque/registrar-admin', {
+      method: 'POST',
+      body: JSON.stringify(_recUploadData)
+    });
+    if (data && data.uuid) {
+      document.getElementById('recResultado').innerHTML += `
+        <div style="margin-top:16px;padding:16px;background:#d5f5e3;border-radius:8px;border-left:4px solid #27ae60">
+          <div style="font-weight:700;font-size:1rem;color:#1e8449">Embarque cargado exitosamente</div>
+          <div style="margin-top:6px;font-size:.9rem">UUID: <b>${data.uuid}</b></div>
+          <div style="margin-top:4px;font-size:.85rem;color:#666">Ya aparece en la plataforma de trazabilidad.</div>
+        </div>`;
+      _recUploadData = null;
+      btn.textContent = 'Cargado';
+    } else {
+      alert('Error: No se pudo cargar');
+      btn.disabled = false;
+      btn.textContent = 'Cargar a plataforma';
+    }
+  } catch (err) {
+    alert('Error: ' + err.message);
+    btn.disabled = false;
+    btn.textContent = 'Cargar a plataforma';
+  }
 }
 
 // ── MODAL ──────────────────────────────────────────────────────────────────────

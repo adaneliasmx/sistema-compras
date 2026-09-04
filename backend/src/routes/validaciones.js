@@ -477,6 +477,52 @@ router.post('/embarque/registrar', syncKeyRequired, (req, res) => {
   res.json({ ok: true, uuid, id });
 });
 
+// Registrar embarque desde dashboard admin (recuperacion manual con Excel)
+router.post('/embarque/registrar-admin', valAuthRequired, valAllowRoles('admin'), (req, res) => {
+  const { side_origen, side_destino, flujo, numero_embarque, operador_envio, items, total_piezas,
+          fecha_original, hora_original } = req.body;
+  if (!side_origen || !side_destino || !numero_embarque || !operador_envio || !Array.isArray(items) || !items.length) {
+    return res.status(400).json({ error: 'Campos requeridos: side_origen, side_destino, numero_embarque, operador_envio, items[]' });
+  }
+
+  const db = read();
+  db.val_embarques = db.val_embarques || [];
+  const id = nextId(db.val_embarques);
+  const uuid = generarUUID(side_origen, db);
+  const now = new Date().toLocaleString('en-CA', { timeZone: 'America/Mexico_City', hour12: false });
+  const [fechaNow, horaNow] = now.split(', ');
+  // Usar fecha/hora original del correo si se proporcionan
+  const fecha = fecha_original || fechaNow;
+  const hora = hora_original || horaNow;
+
+  const embarque = {
+    id,
+    uuid,
+    side_origen,
+    side_destino,
+    flujo: flujo || `${side_origen}_a_${side_destino}`,
+    numero_embarque,
+    operador_envio,
+    fecha_envio: fecha,
+    hora_envio: hora,
+    items,
+    total_piezas: total_piezas || items.length,
+    total_items: items.length,
+    estado: 'ENVIADO',
+    fecha_recepcion: null,
+    operador_recepcion: null,
+    resultado_validacion: null,
+    anomalias: [],
+    created_at: `${fecha}T${hora}`,
+    recuperado_por: req.valUser.nombre || req.valUser.email,
+    recuperado_en: `${fechaNow}T${horaNow}`
+  };
+
+  db.val_embarques.push(embarque);
+  write(db);
+  res.json({ ok: true, uuid, id, mensaje: 'Embarque recuperado exitosamente' });
+});
+
 // Listar embarques pendientes de recibir (filtrado por side_destino)
 router.get('/embarque/pendientes', syncKeyRequired, (req, res) => {
   const { side_destino } = req.query;
