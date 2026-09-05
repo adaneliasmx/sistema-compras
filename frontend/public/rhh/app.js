@@ -397,15 +397,26 @@ async function dashboardView() {
 
     const kpis = data.kpis || {};
     const absences = data.absences_today || [];
-    const birthdays = data.birthdays || [];
     const byShift = data.by_shift || [];
+    const byDept = data.by_department || [];
+    const ws = data.weekly_summary || {};
+    const ms = data.monthly_summary || {};
+    const trends = data.trends || [];
+    const teDept = data.te_by_department || [];
+    const topTE = data.top_te_employees || [];
+    const birthdaysToday = data.birthdays || [];
+    const birthdaysMonth = data.birthdays_month || [];
+    const holidaysUp = data.holidays_upcoming || [];
+    const holidaysMonth = data.holidays_month || [];
+    const vacationsMonth = data.vacations_month || [];
+    const vacPayWeekly = data.vac_pay_weekly || [];
+    const currentPeriod = data.current_period || '—';
 
     // Nómina KPIs (solo admin/rh)
     let nominaKpisHtml = '';
     const userRole = state.user?.role || '';
     if (userRole === 'admin' || userRole === 'rh') {
       try {
-        // Cargar períodos si hace falta
         if (incSemPeriodos.length === 0) {
           incSemPeriodos = await api('/api/rhh/nomina/periodos') || [];
         }
@@ -421,8 +432,8 @@ async function dashboardView() {
             nominaKpisHtml = `
               <div class="card section" style="margin-top:20px;">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-                  <h3 style="margin:0;">💰 Nómina — S${ultimoPeriodo}${p ? ` · ${p.fecha_inicio} al ${p.fecha_fin}` : ''}</h3>
-                  <button class="btn-ghost" onclick="location.hash='#lista-raya'" style="font-size:12px;">Ver lista de raya →</button>
+                  <h3 style="margin:0;">Nomina — S${ultimoPeriodo}${p ? ` · ${p.fecha_inicio} al ${p.fecha_fin}` : ''}</h3>
+                  <button class="btn-ghost" onclick="location.hash='#lista-raya'" style="font-size:12px;">Ver lista de raya</button>
                 </div>
                 <div class="grid grid-4" style="margin-bottom:12px;">
                   <div class="card kpi" style="background:#f0fdf4;">
@@ -441,17 +452,17 @@ async function dashboardView() {
                     <div style="font-size:11px;color:#6b7280;">prom. ${s.promedio_he}h/emp</div>
                   </div>
                   <div class="card kpi" style="background:#fffbeb;">
-                    <div class="muted small">Días vacaciones</div>
-                    <div class="n" style="color:#b45309;font-size:26px;">${s.total_vac_dias}</div>
+                    <div class="muted small">Pago vacaciones</div>
+                    <div class="n" style="color:#b45309;font-size:26px;">$${Number(s.total_vac_dias||0).toLocaleString()}</div>
                     <div style="font-size:11px;color:#6b7280;">&nbsp;</div>
                   </div>
                 </div>
                 <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:#374151;">
-                  <span>🎁 Despensa: <strong>${s.con_despensa}</strong></span>
-                  <span>⭐ Bono puntualidad: <strong>${s.con_bono_puntualidad}</strong></span>
-                  <span>🏆 Bono eficiencia: <strong>${s.con_bono_eficiencia}</strong></span>
-                  <span>☀️ Prima dominical: <strong>${s.con_prima_dominical}</strong></span>
-                  <span>📋 Pendientes de captura: <strong style="color:${s.pendientes_captura>0?'#b91c1c':'#15803d'}">${s.pendientes_captura}</strong></span>
+                  <span>Despensa: <strong>${s.con_despensa}</strong></span>
+                  <span>Bono puntualidad: <strong>${s.con_bono_puntualidad}</strong></span>
+                  <span>Bono eficiencia: <strong>${s.con_bono_eficiencia}</strong></span>
+                  <span>Prima dominical: <strong>${s.con_prima_dominical}</strong></span>
+                  <span>Pendientes: <strong style="color:${s.pendientes_captura>0?'#b91c1c':'#15803d'}">${s.pendientes_captura}</strong></span>
                 </div>
               </div>`;
           }
@@ -459,59 +470,205 @@ async function dashboardView() {
       } catch (_) { /* silencioso */ }
     }
 
+    // ── Tendencia TE — mini bar chart ──
+    const maxTE = Math.max(...trends.map(t => t.te_hours), 1);
+    const trendBars = trends.map(t => {
+      const pct = Math.round((t.te_hours / maxTE) * 100);
+      return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:40px;">
+        <span style="font-size:10px;color:#6b7280;margin-bottom:2px;">${t.te_hours}h</span>
+        <div style="width:100%;max-width:36px;background:#e5e7eb;border-radius:4px;height:80px;position:relative;overflow:hidden;">
+          <div style="position:absolute;bottom:0;width:100%;height:${pct}%;background:linear-gradient(180deg,#3b82f6,#1d4ed8);border-radius:4px;transition:height .3s;"></div>
+        </div>
+        <span style="font-size:10px;font-weight:600;margin-top:4px;">${t.period}</span>
+      </div>`;
+    }).join('');
+
+    // ── TE por departamento — barras horizontales ──
+    const maxTEDept = Math.max(...teDept.map(d => d.hours), 1);
+    const teDeptBars = teDept.map(d => {
+      const pct = Math.round((d.hours / maxTEDept) * 100);
+      return `<div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;">
+          <span>${escHtml(d.department)}</span><strong>${d.hours}h</strong>
+        </div>
+        <div style="background:#e5e7eb;border-radius:4px;height:14px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#3b82f6,#1d4ed8);border-radius:4px;transition:width .3s;"></div>
+        </div>
+      </div>`;
+    }).join('');
+
+    // ── Distribución por departamento — barras horizontales ──
+    const maxDept = Math.max(...byDept.map(d => d.count), 1);
+    const deptBars = byDept.map(d => {
+      const pct = Math.round((d.count / maxDept) * 100);
+      return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <span style="min-width:120px;font-size:12px;text-align:right;">${escHtml(d.department)}</span>
+        <div style="flex:1;background:#e5e7eb;border-radius:4px;height:18px;overflow:hidden;">
+          <div style="height:100%;width:${pct}%;background:#6366f1;border-radius:4px;"></div>
+        </div>
+        <strong style="font-size:12px;min-width:24px;">${d.count}</strong>
+      </div>`;
+    }).join('');
+
     const content = `
-      <h2>📊 Dashboard RHH</h2>
-      <div class="grid grid-4" style="margin-bottom:20px;">
-        <div class="card kpi kpi-rhh">
-          <div class="muted small">Total empleados</div>
-          <div class="n">${kpis.total_employees ?? 0}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2 style="margin:0;">Dashboard RHH</h2>
+        <span class="cell-chip" style="background:#eff6ff;color:#1d4ed8;font-weight:600;font-size:13px;">Semana ${currentPeriod} · ${ws.total_employees || 0} empleados</span>
+      </div>
+
+      <!-- KPIs principales -->
+      <div class="grid" style="grid-template-columns:repeat(6,1fr);margin-bottom:20px;gap:12px;">
+        <div class="card kpi kpi-rhh" style="background:#f0fdf4;">
+          <div class="muted small">Plantilla activa</div>
+          <div class="n" style="color:#15803d;">${kpis.total_employees ?? 0}</div>
         </div>
-        <div class="card kpi kpi-rhh">
-          <div class="muted small">Ausencias hoy</div>
-          <div class="n" style="color:#b91c1c;">${kpis.absences_today ?? 0}</div>
+        <div class="card kpi kpi-rhh" style="background:#fef2f2;">
+          <div class="muted small">Faltas (semana)</div>
+          <div class="n" style="color:#b91c1c;">${kpis.weekly_faltas ?? 0}</div>
         </div>
-        <div class="card kpi kpi-rhh">
-          <div class="muted small">Solicitudes pendientes</div>
+        <div class="card kpi kpi-rhh" style="background:#eff6ff;">
+          <div class="muted small">TE horas (semana)</div>
+          <div class="n" style="color:#1d4ed8;">${kpis.overtime_hours_week ?? 0}h</div>
+        </div>
+        <div class="card kpi kpi-rhh" style="background:#faf5ff;">
+          <div class="muted small">Vacaciones (semana)</div>
+          <div class="n" style="color:#7c3aed;">${kpis.weekly_vac_count ?? 0}</div>
+        </div>
+        <div class="card kpi kpi-rhh" style="background:#fffbeb;">
+          <div class="muted small">Solicitudes pend.</div>
           <div class="n" style="color:#b45309;">${kpis.pending_requests ?? 0}</div>
         </div>
-        <div class="card kpi kpi-rhh">
-          <div class="muted small">Horas extra (semana)</div>
-          <div class="n" style="color:#1d4ed8;">${kpis.overtime_hours_week ?? 0}h</div>
+        <div class="card kpi kpi-rhh" style="background:#fef2f2;">
+          <div class="muted small">Ausencias hoy</div>
+          <div class="n" style="color:#dc2626;">${kpis.absences_today ?? 0}</div>
         </div>
       </div>
 
-      <div class="grid grid-2">
+      <!-- Control de asistencia semanal + Resumen mensual -->
+      <div class="grid grid-2" style="margin-bottom:20px;">
         <div class="card section">
-          <h3>🚨 Ausencias de hoy</h3>
-          ${absences.length === 0
-            ? '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin ausencias registradas hoy</p></div>'
-            : `<table class="table-wrap"><thead><tr><th>Empleado</th><th>Tipo</th><th>Turno</th><th>Depto</th></tr></thead>
-               <tbody>${absences.map(a => `
-                 <tr>
-                   <td>${a.employee_name}</td>
-                   <td>${incTypePill(a.type)}</td>
-                   <td>${a.shift_name || '—'}</td>
-                   <td>${a.department_name || '—'}</td>
-                 </tr>`).join('')}
-               </tbody></table>`
-          }
+          <h3 style="margin-top:0;">Control de Asistencia — ${currentPeriod}</h3>
+          <div class="grid grid-2" style="gap:8px;margin-bottom:12px;">
+            <div style="padding:10px;background:#f9fafb;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Despensa</div>
+              <div style="font-size:22px;font-weight:700;color:#15803d;">${ws.despensa ?? 0}<span style="font-size:12px;color:#9ca3af;">/${ws.total_employees||0}</span></div>
+            </div>
+            <div style="padding:10px;background:#f9fafb;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Prima dominical</div>
+              <div style="font-size:22px;font-weight:700;color:#b45309;">${ws.prima_dominical ?? 0}</div>
+            </div>
+            <div style="padding:10px;background:#f9fafb;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Bono puntualidad</div>
+              <div style="font-size:22px;font-weight:700;color:#0891b2;">${ws.bono_puntualidad ?? 0}</div>
+            </div>
+            <div style="padding:10px;background:#f9fafb;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Bono eficiencia</div>
+              <div style="font-size:22px;font-weight:700;color:#7c3aed;">${ws.bono_eficiencia ?? 0}</div>
+            </div>
+          </div>
+          ${absences.length > 0 ? `
+            <h4 style="margin:12px 0 8px;font-size:13px;">Ausencias de hoy</h4>
+            <table class="table-wrap"><thead><tr><th>Empleado</th><th>Tipo</th><th>Depto</th></tr></thead>
+            <tbody>${absences.map(a => `<tr><td>${escHtml(a.employee_name)}</td><td>${incTypePill(a.type)}</td><td>${escHtml(a.department_name||'—')}</td></tr>`).join('')}</tbody></table>` : ''}
         </div>
-
         <div class="card section">
-          <h3>⏱️ Plantilla por turno</h3>
+          <h3 style="margin-top:0;">Resumen Mensual (${ms.periods ? ms.periods.join(', ') : '—'})</h3>
+          <div class="grid grid-2" style="gap:8px;margin-bottom:16px;">
+            <div style="padding:10px;background:#fef2f2;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Faltas del mes</div>
+              <div style="font-size:22px;font-weight:700;color:#b91c1c;">${ms.total_faltas ?? 0}</div>
+            </div>
+            <div style="padding:10px;background:#eff6ff;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">TE total mes</div>
+              <div style="font-size:22px;font-weight:700;color:#1d4ed8;">${ms.total_te_hours ?? 0}h</div>
+            </div>
+            <div style="padding:10px;background:#f0fdf4;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Promedio TE/emp</div>
+              <div style="font-size:22px;font-weight:700;color:#15803d;">${ms.avg_te_per_employee ?? 0}h</div>
+            </div>
+            <div style="padding:10px;background:#faf5ff;border-radius:8px;">
+              <div style="font-size:11px;color:#6b7280;">Emp. con vacaciones</div>
+              <div style="font-size:22px;font-weight:700;color:#7c3aed;">${ms.vac_count ?? 0}</div>
+            </div>
+          </div>
+          <h4 style="margin:0 0 8px;font-size:13px;">Tendencia Tiempo Extra</h4>
+          <div style="display:flex;gap:4px;align-items:flex-end;padding:4px;">
+            ${trendBars || '<span class="muted small">Sin datos</span>'}
+          </div>
+        </div>
+      </div>
+
+      <!-- TE por departamento + Top empleados TE -->
+      <div class="grid grid-2" style="margin-bottom:20px;">
+        <div class="card section">
+          <h3 style="margin-top:0;">Tiempo Extra por Departamento — ${currentPeriod}</h3>
+          ${teDept.length > 0 ? teDeptBars : '<div class="empty-state"><p>Sin tiempo extra registrado</p></div>'}
+        </div>
+        <div class="card section">
+          <h3 style="margin-top:0;">Top 10 Empleados con TE — ${currentPeriod}</h3>
+          ${topTE.length > 0 ? `
+            <table class="table-wrap"><thead><tr><th>Empleado</th><th>Depto</th><th style="text-align:right;">Horas</th></tr></thead>
+            <tbody>${topTE.map(e => `<tr><td>${escHtml(e.employee_name)}</td><td style="font-size:11px;">${escHtml(e.department)}</td><td style="text-align:right;font-weight:600;color:#1d4ed8;">${e.hours}h</td></tr>`).join('')}</tbody></table>`
+            : '<div class="empty-state"><p>Sin tiempo extra</p></div>'}
+        </div>
+      </div>
+
+      <!-- Distribución por Depto + Turno -->
+      <div class="grid grid-2" style="margin-bottom:20px;">
+        <div class="card section">
+          <h3 style="margin-top:0;">Distribucion por Departamento / Cliente</h3>
+          ${deptBars || '<span class="muted">Sin datos</span>'}
+        </div>
+        <div class="card section">
+          <h3 style="margin-top:0;">Plantilla por Turno</h3>
           ${byShift.map(s => `
             <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line);">
               <div><span class="shift-dot" style="background:${(state.shifts.find(x=>x.name===s.shift)||{}).color||'#999'}"></span>${s.shift}</div>
               <strong>${s.count}</strong>
             </div>
           `).join('')}
-          ${birthdays.length > 0 ? `
-            <div style="margin-top:16px;padding:12px;background:#fce7f3;border-radius:12px;">
-              <strong>🎂 Cumpleaños hoy</strong>
-              ${birthdays.map(b => `<div style="margin-top:4px;">${b.full_name}</div>`).join('')}
+          ${vacPayWeekly.length > 0 ? `
+            <div style="margin-top:12px;padding:10px;background:#faf5ff;border-radius:8px;">
+              <strong style="font-size:12px;">Empleados con pago vacaciones (${currentPeriod})</strong>
+              ${vacPayWeekly.map(v => `<div style="margin-top:4px;font-size:12px;">${escHtml(v.employee_name)}</div>`).join('')}
             </div>` : ''}
         </div>
       </div>
+
+      <!-- Feriados + Vacaciones + Cumpleanios -->
+      <div class="grid" style="grid-template-columns:1fr 1fr 1fr;margin-bottom:20px;gap:16px;">
+        <div class="card section">
+          <h3 style="margin-top:0;">Feriados Proximos</h3>
+          ${holidaysUp.length > 0 ? holidaysUp.map(h => `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;">
+              <span>${escHtml(h.name)}</span>
+              <span class="muted">${fmtDateDisplay(h.date)}</span>
+            </div>`).join('') : '<div class="empty-state"><p>Sin feriados proximos</p></div>'}
+          ${holidaysMonth.length > 0 ? `<div style="margin-top:8px;padding:8px;background:#fef3c7;border-radius:8px;font-size:12px;"><strong>Este mes:</strong> ${holidaysMonth.map(h=>escHtml(h.name)).join(', ')}</div>` : ''}
+        </div>
+        <div class="card section">
+          <h3 style="margin-top:0;">Vacaciones del Mes</h3>
+          ${vacationsMonth.length > 0 ? vacationsMonth.map(v => `
+            <div style="padding:6px 0;border-bottom:1px solid var(--line);font-size:13px;">
+              <div><strong>${escHtml(v.employee_name)}</strong></div>
+              <div class="muted small">${fmtDateDisplay(v.date)}${v.date_end && v.date_end !== v.date ? ' al ' + fmtDateDisplay(v.date_end) : ''} · ${v.status}</div>
+            </div>`).join('') : '<div class="empty-state"><p>Sin vacaciones programadas</p></div>'}
+        </div>
+        <div class="card section">
+          <h3 style="margin-top:0;">Cumpleanios</h3>
+          ${birthdaysToday.length > 0 ? `
+            <div style="padding:8px;background:#fce7f3;border-radius:8px;margin-bottom:8px;">
+              <strong style="font-size:12px;">Hoy</strong>
+              ${birthdaysToday.map(b => `<div style="margin-top:4px;font-size:13px;">${escHtml(b.full_name)}</div>`).join('')}
+            </div>` : ''}
+          ${birthdaysMonth.length > 0 ? birthdaysMonth.map(b => `
+            <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid var(--line);">
+              <span>${escHtml(b.full_name)}</span>
+              <span class="muted">${b.day}/${MONTHS[Number(b.birth_date?.slice(5,7))-1]?.slice(0,3) || ''}</span>
+            </div>`).join('') : '<div class="empty-state"><p>Sin datos de cumpleanios</p></div>'}
+        </div>
+      </div>
+
       ${nominaKpisHtml}
     `;
 

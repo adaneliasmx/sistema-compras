@@ -340,12 +340,17 @@
 }
 
 /* Responsive tweaks */
+@media (max-width: 1000px) {
+  .grid[style*="repeat(6"] { grid-template-columns: repeat(3, 1fr) !important; }
+  .grid[style*="1fr 1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
 @media (max-width: 768px) {
   .cal-week-table { font-size: 11px; }
   .month-cal { grid-template-columns: repeat(7, 1fr); gap: 2px; }
   .month-cal-day { min-height: 44px; padding: 3px; }
   .filter-bar { flex-direction: column; }
   .filter-bar select, .filter-bar input { min-width: unset; width: 100%; }
+  .grid[style*="repeat(6"] { grid-template-columns: repeat(2, 1fr) !important; }
 }
 
 /* ── Lista de asistencia semanal ─────────────────────────────────────────────── */
