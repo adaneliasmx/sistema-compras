@@ -2723,8 +2723,8 @@ function buildPizarronResult(pdb, config, lineas, turnos, targetDate) {
     let dayC = 0, dayCEff = 0, dayNV = 0, dayB = 0, dayNVQ = 0, dayBQ = 0, dayPz = 0, dayPzObj = 0, dayParos = 0, dayParosDisp = 0, dayParosRend = 0, daySlots = 0, dayCompletedSlots = 0, dayElapHours = 0, dayObjElap = 0, dayCurrentHour = null;
 
     for (const t of turnos) {
-      // Filtrar turnos desactivados en el calendario
-      if (!isTurnoActivo(pdb, l, t, targetDate)) continue;
+      // Filtrar turnos desactivados en el calendario (solo L4)
+      if (l === 'L4' && !isTurnoActivo(pdb, l, t, targetDate)) continue;
 
       const tDef  = TURNOS_DEF[t];
       const slots = buildSlotsForLinTur(pdb, config, l, t, targetDate);
@@ -2934,8 +2934,8 @@ router.get('/pizarron', (req, res) => {
     const turnData = {};
     let dC = 0, dCEff = 0, dNV = 0, dB = 0, dNVQ = 0, dBQ = 0, dPz = 0, dPzO = 0, dParos = 0, dParosDisp = 0, dParosRend = 0, dSlots = 0, dCompletedSlots = 0, dElapHours = 0, dObjElap = 0, dCurrentHour = null;
     for (const t of targetTurnos) {
-      // Filtrar turnos desactivados en el calendario
-      if (!isTurnoActivo(pdb, lineaLabel, t, targetDate)) continue;
+      // Baker/L1 pueden operar en cualquier turno (sin restricción de calendario)
+
 
       const tDef  = TURNOS_DEF[t];
       const slots = buildFn(pdb, config, t, targetDate);
@@ -3370,7 +3370,8 @@ function calculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
   const isTL4 = linea === 'L4' && l4UsesTL4(pdb, targetDate);
   if (isTL4 && turno !== 'TL4') return null;
   if (!isTL4 && !TURNOS_DEF[turno]) return null;
-  if (!isTurnoActivo(pdb, linea, turno, targetDate)) return null;
+  // Restricción de calendario solo para L4; Baker/L3/L1 calculan KPIs en cualquier turno
+  if (linea === 'L4' && !isTurnoActivo(pdb, linea, turno, targetDate)) return null;
 
   let slots;
   let plannedMinutes;
@@ -3515,7 +3516,7 @@ router.post('/kpis/guardar-legacy-disabled', produccionAllowRoles('admin'), (req
   // L3 (siempre usa T1/T2/T3)
   for (const l of lineasL3Only) {
     for (const t of turnos) {
-      if (!isTurnoActivo(pdb, l, t, targetDate)) continue; // No guardar snapshot de turno desactivado
+      if (l === 'L4' && !isTurnoActivo(pdb, l, t, targetDate)) continue; // No guardar snapshot de turno desactivado
       const slots                    = buildSlotsForLinTur(pdb, config, l, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -3676,7 +3677,6 @@ router.post('/kpis/guardar-legacy-disabled', produccionAllowRoles('admin'), (req
 
   if (includeBakerG) {
     for (const t of turnos) {
-      if (!isTurnoActivo(pdb, 'Baker', t, targetDate)) continue;
       const slots                    = buildSlotsForBaker(pdb, config, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -3727,7 +3727,6 @@ router.post('/kpis/guardar-legacy-disabled', produccionAllowRoles('admin'), (req
 
   if (includeL1G) {
     for (const t of turnos) {
-      if (!isTurnoActivo(pdb, 'L1', t, targetDate)) continue;
       const slots                    = buildSlotsForL1(pdb, config, t, targetDate);
       const r3                       = v => v != null ? Math.round(v * 1000) / 1000 : null;
       const ciclos_totales           = slots.reduce((s, x) => s + x.ciclos_totales, 0);
@@ -3861,7 +3860,7 @@ router.get('/kpis-legacy-disabled', (req, res) => {
       const ciclos_obj = config.ciclos_objetivo_l3 ?? 2;
 
       for (const t of turnos) {
-        if (!isTurnoActivo(pdb, l, t, date)) continue;
+        if (l === 'L4' && !isTurnoActivo(pdb, l, t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForLinTur(pdb, config, l, t, date);
 
@@ -4035,7 +4034,6 @@ router.get('/kpis-legacy-disabled', (req, res) => {
     if (includeBaker) {
       const ciclos_obj_baker = config.ciclos_objetivo_baker ?? 2;
       for (const t of turnos) {
-        if (!isTurnoActivo(pdb, 'Baker', t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForBaker(pdb, config, t, date);
 
@@ -4095,7 +4093,6 @@ router.get('/kpis-legacy-disabled', (req, res) => {
     if (includeL1) {
       const ciclos_obj_l1 = config.ciclos_objetivo_l1 ?? 2;
       for (const t of turnos) {
-        if (!isTurnoActivo(pdb, 'L1', t, date)) continue;
         const tDef  = TURNOS_DEF[t];
         const slots = buildSlotsForL1(pdb, config, t, date);
 
