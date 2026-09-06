@@ -633,8 +633,11 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
 
   // Resolver turno con validación completa (TL4 ventana, calendario)
   const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
-  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
-  if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  // Restricción de horario solo para L4 (TL4); Baker/L3/L1 pueden registrar en cualquier horario
+  if (linea === 'L4') {
+    if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
+    if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  }
   const fecha_turno = ctx.fecha_turno;
   const turno = ctx.turno;
 
@@ -759,8 +762,10 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
 
   // Resolver turno correctamente: L4 post-cutover → TL4
   const ctx = resolveTurnoContext(pdb, linea, fecha_carga, hora_carga);
-  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
-  if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  if (linea === 'L4') {
+    if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para ${linea} en esta fecha` });
+    if (!(ctx.en_ventana_programada ?? ctx.en_ventana)) return res.status(409).json({ error: `Fuera del horario de ${ctx.turno} (${ctx.hora_entrada}–${ctx.hora_salida})` });
+  }
 
   const fecha_turno = ctx.fecha_turno;
   const turno = ctx.turno;
@@ -1282,7 +1287,8 @@ router.post('/paros/admin-crear', produccionAllowRoles('admin'), (req, res) => {
   // Resolver turno: L4 post-cutover → TL4
   const ctx = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
   const turno = ctx.turno;
-  const fueraDeTurno = !ctx.activo || !ctx.en_ventana;
+  // Restricción de horario solo para L4; Baker/L3/L1 pueden registrar en cualquier horario
+  const fueraDeTurno = linea === 'L4' ? (!ctx.activo || !ctx.en_ventana) : false;
   if (fueraDeTurno && override_turno !== true) {
     return res.status(409).json({
       error: ctx.activo
@@ -1511,12 +1517,14 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
   const fecha_turno_paro = ctxParo.fecha_turno;
   const turno = ctxParo.turno;
 
-  // Validar que el turno/día está activo en el calendario
-  if (!ctxParo.activo) {
-    return res.status(409).json({ error: `El turno ${turno} no está activo para ${linea} en esta fecha` });
-  }
-  if (!ctxParo.en_ventana) {
-    return res.status(409).json({ error: `Fuera del horario de ${turno} (${ctxParo.hora_entrada}–${ctxParo.hora_salida})` });
+  // Validar que el turno/día está activo en el calendario (solo L4)
+  if (linea === 'L4') {
+    if (!ctxParo.activo) {
+      return res.status(409).json({ error: `El turno ${turno} no está activo para ${linea} en esta fecha` });
+    }
+    if (!ctxParo.en_ventana) {
+      return res.status(409).json({ error: `Fuera del horario de ${turno} (${ctxParo.hora_entrada}–${ctxParo.hora_salida})` });
+    }
   }
 
   const id = dbProd.nextId(pdb.paros || []);
@@ -1588,12 +1596,14 @@ router.post('/paros/:linea/pendiente-motivo', produccionAuthRequired, (req, res)
   // L4 post-cutover: usar TL4
   const ctx = resolveTurnoContext(pdb, linea, _fecha, _hora);
   const turno = ctx.turno;
-  if (!ctx.activo || !ctx.en_ventana) {
+  if (linea === 'L4' && (!ctx.activo || !ctx.en_ventana)) {
     return res.json({ skipped: true, reason: ctx.activo ? 'fuera_horario' : 'turno_inactivo' });
   }
   const currentCtx = resolveTurnoContext(pdb, linea, nowDateStr(), nowTimeStr());
-  if (!currentCtx.activo || !currentCtx.en_ventana ||
-      currentCtx.fecha_turno !== ctx.fecha_turno || currentCtx.turno !== ctx.turno) {
+  if (linea === 'L4' && (!currentCtx.activo || !currentCtx.en_ventana)) {
+    return res.json({ skipped: true, reason: 'fuera_turno_actual' });
+  }
+  if (currentCtx.fecha_turno !== ctx.fecha_turno || currentCtx.turno !== ctx.turno) {
     return res.json({ skipped: true, reason: 'fuera_turno_actual' });
   }
 
@@ -4558,7 +4568,6 @@ router.post('/l1/cargas', (req, res) => {
   const hora          = nowTimeStr();
   const fecha         = nowDateStr();
   const _l1Ctx        = resolveTurnoContext(pdb, 'L1', fecha, hora);
-  if (!_l1Ctx.activo) return res.status(409).json({ error: `El turno ${_l1Ctx.turno} no está activo para L1 en esta fecha` });
   const fecha_turno_l1 = _l1Ctx.fecha_turno;
   const turno         = _l1Ctx.turno;
   const semana        = getISOWeek(new Date(fecha_turno_l1 + 'T12:00:00'));
@@ -4743,7 +4752,6 @@ router.post('/l1/cargas/:id/reprocesar', (req, res) => {
   if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
 
   const _l1rCtx = resolveTurnoContext(pdb, 'L1', nowDateStr(), nowTimeStr());
-  if (!_l1rCtx.activo) return res.status(409).json({ error: `El turno ${_l1rCtx.turno} no está activo para L1 en esta fecha` });
 
   if (original.estado === 'activo') {
     original.estado = 'defecto';
@@ -4800,7 +4808,6 @@ router.post('/l1/paros', (req, res) => {
   const fecha_inicio = body.fecha_inicio || nowDateStr();
   const hora_inicio  = body.hora_inicio  || nowTimeStr();
   const _l1PCtx = resolveTurnoContext(pdb, 'L1', fecha_inicio, hora_inicio);
-  if (!_l1PCtx.activo) return res.status(409).json({ error: `El turno ${_l1PCtx.turno} no está activo para L1 en esta fecha` });
   const turno        = _l1PCtx.turno;
 
   let motivo_id = body.motivo_id, motivo = body.motivo;
@@ -4917,7 +4924,6 @@ router.post('/l1/paros/antes-de-tiempo', produccionAllowRoles('produccion'), (re
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
   const _l1atCtx = resolveTurnoContext(pdb, 'L1', fecha_inicio, hora_inicio);
-  if (!_l1atCtx.activo) return res.status(409).json({ error: `El turno ${_l1atCtx.turno} no está activo para L1 en esta fecha` });
   const turno = _l1atCtx.turno;
   const id    = dbProd.nextId(pdb.paros_l1 || []);
   const paro  = {
@@ -5059,7 +5065,6 @@ router.post('/baker/cargas', (req, res) => {
   const hora       = nowTimeStr();
   const fecha      = nowDateStr();
   const ctx        = resolveTurnoContext(pdb, 'Baker', fecha, hora);
-  if (!ctx.activo) return res.status(409).json({ error: `El turno ${ctx.turno} no está activo para Baker en esta fecha` });
   const fecha_turno_b = ctx.fecha_turno;
   const turno      = ctx.turno;
   const semana     = getISOWeek(new Date(fecha_turno_b + 'T12:00:00'));
@@ -5263,7 +5268,6 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
   if (!['activo', 'defecto'].includes(original.estado)) return res.status(409).json({ error: 'Solo se pueden reprocesar cargas activas o con defecto' });
 
   const _bkrCtx = resolveTurnoContext(pdb, 'Baker', nowDateStr(), nowTimeStr());
-  if (!_bkrCtx.activo) return res.status(409).json({ error: `El turno ${_bkrCtx.turno} no está activo para Baker en esta fecha` });
 
   if (original.estado === 'activo') {
     original.estado = 'defecto';
@@ -5321,7 +5325,6 @@ router.post('/baker/paros', (req, res) => {
   const fecha_inicio = body.fecha_inicio || nowDateStr();
   const hora_inicio  = body.hora_inicio  || nowTimeStr();
   const _bkrPCtx = resolveTurnoContext(pdb, 'Baker', fecha_inicio, hora_inicio);
-  if (!_bkrPCtx.activo) return res.status(409).json({ error: `El turno ${_bkrPCtx.turno} no está activo para Baker en esta fecha` });
   const turno        = _bkrPCtx.turno;
 
   let motivo_id = body.motivo_id, motivo = body.motivo;
@@ -5492,11 +5495,13 @@ router.post('/paros/:linea/antes-de-tiempo', produccionAllowRoles('produccion'),
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
   const ctxPAT = resolveTurnoContext(pdb, linea, fecha_inicio, hora_inicio);
-  if (!ctxPAT.activo) {
-    return res.status(409).json({ error: `El turno ${ctxPAT.turno} no está activo para ${linea} en esta fecha` });
-  }
-  if (!ctxPAT.en_ventana) {
-    return res.status(409).json({ error: `Fuera del horario de ${ctxPAT.turno} (${ctxPAT.hora_entrada}–${ctxPAT.hora_salida})` });
+  if (linea === 'L4') {
+    if (!ctxPAT.activo) {
+      return res.status(409).json({ error: `El turno ${ctxPAT.turno} no está activo para ${linea} en esta fecha` });
+    }
+    if (!ctxPAT.en_ventana) {
+      return res.status(409).json({ error: `Fuera del horario de ${ctxPAT.turno} (${ctxPAT.hora_entrada}–${ctxPAT.hora_salida})` });
+    }
   }
   if (ctxPAT.turno === 'TL4' && toMins(hora_fin) > toMins(ctxPAT.hora_salida)) {
     return res.status(409).json({ error: `hora_fin excede la salida de TL4 (${ctxPAT.hora_salida})` });
@@ -5535,7 +5540,6 @@ router.post('/baker/paros/antes-de-tiempo', produccionAllowRoles('produccion'), 
   if (yaExiste) return res.json({ skipped: true, paro: yaExiste });
 
   const _bkratCtx = resolveTurnoContext(pdb, 'Baker', fecha_inicio, hora_inicio);
-  if (!_bkratCtx.activo) return res.status(409).json({ error: `El turno ${_bkratCtx.turno} no está activo para Baker en esta fecha` });
   const turno = _bkratCtx.turno;
   const id    = dbProd.nextId(pdb.paros_baker || []);
   const paro  = {
