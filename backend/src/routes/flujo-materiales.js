@@ -757,4 +757,16 @@ router.get('/app-status', flujoAllowRoles('supervisor', 'calidad'), (req, res) =
   res.json(read().flujo_app_status || []);
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// APP VERSION (auto-update check desde Python app)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
+  res.json({
+    version: '1.0.0',
+    download_url: '',
+    changelog: 'Release inicial'
+  });
+});
+
 module.exports = router;
