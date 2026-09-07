@@ -160,7 +160,8 @@ router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
       ? rec.altura_axial.reduce((a, b) => a + b, 0) / 3 : null;
 
     let rugOk = true, altOk = true;
-    if (specs && rugProm != null) {
+    const rugNA = specs && specs.rugosidad_min === 0 && specs.rugosidad_max === 0;
+    if (specs && rugProm != null && !rugNA) {
       rugOk = rugProm >= specs.rugosidad_min && rugProm <= specs.rugosidad_max;
     }
     if (specs && altProm != null) {
