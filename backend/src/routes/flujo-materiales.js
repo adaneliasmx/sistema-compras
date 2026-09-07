@@ -76,6 +76,136 @@ router.post('/auth/change-password', flujoAuthRequired, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// SYNC — APP PYTHON (API key, no JWT) — antes del middleware JWT global
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.post('/sync/heartbeat', flujoSyncKeyRequired, (req, res) => {
+  const db = read();
+  const b = req.body || {};
+  const side = b.side || 'tenneco';
+  db.flujo_app_status = db.flujo_app_status || [];
+  const existing = db.flujo_app_status.find(s => s.side === side && s.hostname === (b.hostname || ''));
+  const entry = {
+    side,
+    version: b.version || '',
+    operador: b.operador || '',
+    hostname: b.hostname || '',
+    last_seen: new Date().toISOString()
+  };
+  if (existing) {
+    Object.assign(existing, entry);
+  } else {
+    db.flujo_app_status.push(entry);
+  }
+  write(db);
+  res.json({ ok: true });
+});
+
+router.get('/sync/lotes-pendientes', flujoSyncKeyRequired, (req, res) => {
+  const db = read();
+  const lotes = (db.lotes_tenneco || []).filter(l => l.estado === 'abierto');
+  res.json(lotes);
+});
+
+router.get('/sync/catalogos', flujoSyncKeyRequired, (req, res) => {
+  const db = read();
+  res.json({
+    partes: db.cat_tenneco_partes || [],
+    specs: db.cat_tenneco_specs || [],
+    defectos: db.cat_tenneco_defectos || []
+  });
+});
+
+router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
+  const { records } = req.body;
+  if (!Array.isArray(records)) return res.status(400).json({ error: 'records[] requerido' });
+
+  const db = read();
+  let added = 0, updated = 0;
+
+  for (const rec of records) {
+    if (!rec.lote_id || rec.num_muestra == null) continue;
+
+    const lote = (db.lotes_tenneco || []).find(l => l.id === Number(rec.lote_id));
+    if (!lote) continue;
+
+    const specs = (db.cat_tenneco_specs || []).find(s =>
+      String(s.numero_parte).trim() === String(lote.numero_parte).trim()
+    );
+
+    const rugProm = Array.isArray(rec.rugosidad) && rec.rugosidad.length === 3
+      ? rec.rugosidad.reduce((a, b) => a + b, 0) / 3 : null;
+    const altProm = Array.isArray(rec.altura_axial) && rec.altura_axial.length === 3
+      ? rec.altura_axial.reduce((a, b) => a + b, 0) / 3 : null;
+
+    let rugOk = true, altOk = true;
+    if (specs && rugProm != null) {
+      rugOk = rugProm >= specs.rugosidad_min && rugProm <= specs.rugosidad_max;
+    }
+    if (specs && altProm != null) {
+      altOk = altProm >= specs.altura_axial_min && altProm <= specs.altura_axial_max;
+    }
+
+    const parte = (db.cat_tenneco_partes || []).find(p =>
+      String(p.numero_parte).trim() === String(lote.numero_parte).trim()
+    );
+    const tamMuestra = parte ? parte.tamano_muestra : 100;
+    const rechazosTotal = Array.isArray(rec.rechazos)
+      ? rec.rechazos.reduce((s, r) => s + (r.cantidad || 0), 0) : 0;
+    const scrap = parseInt(rec.scrap) || 0;
+    const aceptadas = parseInt(rec.piezas_aceptadas) || 0;
+    const totalMuestra = aceptadas + rechazosTotal + scrap;
+    const scrapMaxPct = tamMuestra * 0.03;
+
+    const muestra = {
+      lote_id: Number(rec.lote_id),
+      num_muestra: parseInt(rec.num_muestra),
+      rugosidad: rec.rugosidad || [],
+      rugosidad_prom: rugProm != null ? Math.round(rugProm * 100) / 100 : null,
+      rugosidad_ok: rugOk,
+      altura_axial: rec.altura_axial || [],
+      altura_axial_prom: altProm != null ? Math.round(altProm * 100) / 100 : null,
+      altura_axial_ok: altOk,
+      piezas_aceptadas: aceptadas,
+      rechazos: rec.rechazos || [],
+      scrap,
+      total_muestra: totalMuestra,
+      tamano_muestra: tamMuestra,
+      scrap_excedido: scrap > scrapMaxPct,
+      qc_liberado: rugOk && altOk && !rec.hold,
+      synced_at: nowMxDate() + ' ' + nowMxTime()
+    };
+
+    db.muestras_tenneco = db.muestras_tenneco || [];
+    const existing = db.muestras_tenneco.find(m =>
+      m.lote_id === muestra.lote_id && m.num_muestra === muestra.num_muestra
+    );
+    if (existing) {
+      Object.assign(existing, muestra);
+      updated++;
+    } else {
+      muestra.id = nextId(db.muestras_tenneco);
+      muestra.created_at = nowMxDate() + ' ' + nowMxTime();
+      db.muestras_tenneco.push(muestra);
+      added++;
+    }
+
+    recalcLote(lote, db);
+  }
+
+  write(db);
+  res.json({ ok: true, added, updated });
+});
+
+router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
+  res.json({
+    version: '1.0.0',
+    download_url: '',
+    changelog: 'Release inicial'
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CATALOGOS TENNECO — PARTES
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -622,151 +752,11 @@ router.get('/tenneco/muestras/:id', flujoAllowRoles('calidad'), (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// SYNC — APP PYTHON (API key, no JWT)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-router.post('/sync/heartbeat', flujoSyncKeyRequired, (req, res) => {
-  const db = read();
-  const b = req.body || {};
-  const side = b.side || 'tenneco';
-  db.flujo_app_status = db.flujo_app_status || [];
-  const existing = db.flujo_app_status.find(s => s.side === side && s.hostname === (b.hostname || ''));
-  const entry = {
-    side,
-    version: b.version || '',
-    operador: b.operador || '',
-    hostname: b.hostname || '',
-    last_seen: new Date().toISOString()
-  };
-  if (existing) {
-    Object.assign(existing, entry);
-  } else {
-    db.flujo_app_status.push(entry);
-  }
-  write(db);
-  res.json({ ok: true });
-});
-
-router.get('/sync/lotes-pendientes', flujoSyncKeyRequired, (req, res) => {
-  const db = read();
-  const lotes = (db.lotes_tenneco || []).filter(l => l.estado === 'abierto');
-  res.json(lotes);
-});
-
-router.get('/sync/catalogos', flujoSyncKeyRequired, (req, res) => {
-  const db = read();
-  res.json({
-    partes: db.cat_tenneco_partes || [],
-    specs: db.cat_tenneco_specs || [],
-    defectos: db.cat_tenneco_defectos || []
-  });
-});
-
-router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
-  const { records } = req.body;
-  if (!Array.isArray(records)) return res.status(400).json({ error: 'records[] requerido' });
-
-  const db = read();
-  let added = 0, updated = 0;
-
-  for (const rec of records) {
-    if (!rec.lote_id || rec.num_muestra == null) continue;
-
-    // Buscar lote
-    const lote = (db.lotes_tenneco || []).find(l => l.id === Number(rec.lote_id));
-    if (!lote) continue;
-
-    // Buscar specs para validar
-    const specs = (db.cat_tenneco_specs || []).find(s =>
-      String(s.numero_parte).trim() === String(lote.numero_parte).trim()
-    );
-
-    const rugProm = Array.isArray(rec.rugosidad) && rec.rugosidad.length === 3
-      ? rec.rugosidad.reduce((a, b) => a + b, 0) / 3 : null;
-    const altProm = Array.isArray(rec.altura_axial) && rec.altura_axial.length === 3
-      ? rec.altura_axial.reduce((a, b) => a + b, 0) / 3 : null;
-
-    let rugOk = true, altOk = true;
-    if (specs && rugProm != null) {
-      rugOk = rugProm >= specs.rugosidad_min && rugProm <= specs.rugosidad_max;
-    }
-    if (specs && altProm != null) {
-      altOk = altProm >= specs.altura_axial_min && altProm <= specs.altura_axial_max;
-    }
-
-    // Validar empaque: a+b+c = tamano_muestra
-    const parte = (db.cat_tenneco_partes || []).find(p =>
-      String(p.numero_parte).trim() === String(lote.numero_parte).trim()
-    );
-    const tamMuestra = parte ? parte.tamano_muestra : 100;
-    const rechazosTotal = Array.isArray(rec.rechazos)
-      ? rec.rechazos.reduce((s, r) => s + (r.cantidad || 0), 0) : 0;
-    const scrap = parseInt(rec.scrap) || 0;
-    const aceptadas = parseInt(rec.piezas_aceptadas) || 0;
-    const totalMuestra = aceptadas + rechazosTotal + scrap;
-
-    // Scrap <= 3% del tamano de muestra
-    const scrapMaxPct = tamMuestra * 0.03;
-
-    const muestra = {
-      lote_id: Number(rec.lote_id),
-      num_muestra: parseInt(rec.num_muestra),
-      rugosidad: rec.rugosidad || [],
-      rugosidad_prom: rugProm != null ? Math.round(rugProm * 100) / 100 : null,
-      rugosidad_ok: rugOk,
-      altura_axial: rec.altura_axial || [],
-      altura_axial_prom: altProm != null ? Math.round(altProm * 100) / 100 : null,
-      altura_axial_ok: altOk,
-      piezas_aceptadas: aceptadas,
-      rechazos: rec.rechazos || [],
-      scrap,
-      total_muestra: totalMuestra,
-      tamano_muestra: tamMuestra,
-      scrap_excedido: scrap > scrapMaxPct,
-      qc_liberado: rugOk && altOk && !rec.hold,
-      synced_at: new Date().toISOString()
-    };
-
-    // Upsert
-    const existing = (db.muestras_tenneco || []).find(m =>
-      m.lote_id === muestra.lote_id && m.num_muestra === muestra.num_muestra
-    );
-    if (existing) {
-      Object.assign(existing, muestra);
-      updated++;
-    } else {
-      muestra.id = nextId(db.muestras_tenneco);
-      muestra.created_at = new Date().toISOString();
-      db.muestras_tenneco.push(muestra);
-      added++;
-    }
-
-    // Recalc lote
-    recalcLote(lote, db);
-  }
-
-  write(db);
-  res.json({ ok: true, added, updated });
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // APP STATUS (consulta desde web)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/app-status', flujoAllowRoles('supervisor', 'calidad'), (req, res) => {
   res.json(read().flujo_app_status || []);
-});
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// APP VERSION (auto-update check desde Python app)
-// ═══════════════════════════════════════════════════════════════════════════════
-
-router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
-  res.json({
-    version: '1.0.0',
-    download_url: '',
-    changelog: 'Release inicial'
-  });
 });
 
 module.exports = router;
