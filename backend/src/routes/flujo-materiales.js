@@ -158,22 +158,42 @@ router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
     const totalMuestra = aceptadas + rechazosTotal + scrap;
     const scrapMaxPct = tamMuestra * 0.03;
 
+    // Status: fuera de spec → retenida (HOLD), no cuenta como aceptada
+    const fueraDeSpec = !(rugOk && altOk);
+    const status = rec.status || (fueraDeSpec ? 'retenida' : 'aceptada');
+
+    // Si fuera de spec, rechazos incluyen motivo "Fuera de especificacion"
+    let rechazos = rec.rechazos || [];
+    let pzAceptadas = aceptadas;
+    if (fueraDeSpec && status === 'retenida') {
+      pzAceptadas = 0;
+      const fdeTotal = aceptadas + rechazosTotal;
+      rechazos = [{ defecto: 'Fuera de especificacion', cantidad: fdeTotal }, ...rechazos.filter(r => r.defecto !== 'Fuera de especificacion')];
+    }
+
     const muestra = {
       lote_id: Number(rec.lote_id),
       num_muestra: parseInt(rec.num_muestra),
+      numero_parte: lote.numero_parte || '',
+      diametro: lote.diametro || '',
+      lote: lote.lote || '',
       rugosidad: rec.rugosidad || [],
       rugosidad_prom: rugProm != null ? Math.round(rugProm * 100) / 100 : null,
       rugosidad_ok: rugOk,
       altura_axial: rec.altura_axial || [],
       altura_axial_prom: altProm != null ? Math.round(altProm * 100) / 100 : null,
       altura_axial_ok: altOk,
-      piezas_aceptadas: aceptadas,
-      rechazos: rec.rechazos || [],
+      piezas_aceptadas: pzAceptadas,
+      rechazos,
       scrap,
-      total_muestra: totalMuestra,
+      total_muestra: pzAceptadas + rechazos.reduce((s, r) => s + (r.cantidad || 0), 0) + scrap,
       tamano_muestra: tamMuestra,
       scrap_excedido: scrap > scrapMaxPct,
-      qc_liberado: rugOk && altOk && !rec.hold,
+      status,
+      qc_liberado: status === 'aceptada' && rugOk && altOk,
+      fecha: rec.fecha || nowMxDate(),
+      hora: rec.hora || nowMxTime(),
+      analista: rec.analista || '',
       synced_at: nowMxDate() + ' ' + nowMxTime()
     };
 
@@ -585,9 +605,13 @@ function recalcLote(lote, db) {
   }
   lote.material_terminado = terminado;
   lote.scrap_total = scrap;
+  // Rechazos NO descuentan inventario (se reprocesan)
+  // Solo aceptadas + scrap reducen material_por_procesar
   const procesado = terminado + scrap;
-  lote.material_por_procesar = Math.max(0, lote.cantidad_recibida - procesado - rechazos);
-  lote.material_procesando = rechazos;
+  lote.material_por_procesar = Math.max(0, lote.cantidad_recibida - procesado);
+  lote.material_procesando = rechazos; // pendientes de reproceso
+  lote.total_rechazos = rechazos;
+  lote.total_registros = muestras.length;
   lote.progreso = lote.cantidad_recibida > 0 ? Math.round((procesado / lote.cantidad_recibida) * 100) / 100 : 0;
   lote.pct_scrap = lote.cantidad_recibida > 0 ? Math.round((scrap / lote.cantidad_recibida) * 10000) / 100 : 0;
   if (procesado >= lote.cantidad_recibida && lote.estado === 'abierto') {
@@ -787,10 +811,28 @@ router.get('/tenneco/kpi', (req, res) => {
 router.get('/tenneco/muestras', flujoAllowRoles('calidad'), (req, res) => {
   const db = read();
   let muestras = db.muestras_tenneco || [];
-  if (req.query.lote_id) {
-    muestras = muestras.filter(m => m.lote_id === Number(req.query.lote_id));
+  const lotes = db.lotes_tenneco || [];
+  const { lote_id, proyecto, diametro, lote } = req.query;
+  if (lote_id) muestras = muestras.filter(m => m.lote_id === Number(lote_id));
+  if (diametro) muestras = muestras.filter(m => m.diametro === diametro);
+  if (lote) muestras = muestras.filter(m => String(m.lote || '').includes(lote));
+  if (proyecto) {
+    const loteIds = lotes.filter(l => l.cliente_int === proyecto).map(l => l.id);
+    muestras = muestras.filter(m => loteIds.includes(m.lote_id));
   }
-  res.json(muestras);
+  // Enrich with lote info for display
+  const enriched = muestras.map(m => {
+    const lt = lotes.find(l => l.id === m.lote_id);
+    return {
+      ...m,
+      numero_parte: m.numero_parte || (lt ? lt.numero_parte : ''),
+      diametro: m.diametro || (lt ? lt.diametro : ''),
+      lote: m.lote || (lt ? lt.lote : ''),
+      proyecto: lt ? lt.cliente_int : '',
+      cantidad_lote: lt ? lt.cantidad_recibida : 0
+    };
+  });
+  res.json(enriched);
 });
 
 router.get('/tenneco/muestras/:id', flujoAllowRoles('calidad'), (req, res) => {

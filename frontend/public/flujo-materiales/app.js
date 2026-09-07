@@ -783,9 +783,11 @@ async function viewKpiTenneco(el) {
 // EMPAQUE TENNECO
 // ═══════════════════════════════════════════════════════════════════════════════
 async function viewEmpaqueTenneco(el) {
-  const [muestras, status] = await Promise.all([
+  const [muestras, status, proyectos, lotes] = await Promise.all([
     GET('/tenneco/muestras'),
-    GET('/app-status')
+    GET('/app-status'),
+    GET('/cat/tenneco/proyectos'),
+    GET('/tenneco/lotes')
   ]);
   S.muestras = muestras;
   S.appStatus = status;
@@ -793,46 +795,113 @@ async function viewEmpaqueTenneco(el) {
   const tenStatus = (status || []).find(s => s.side === 'tenneco');
   const online = tenStatus && (Date.now() - new Date(tenStatus.last_seen).getTime()) < 120000;
 
+  // Collect unique defect names for column headers
+  const allDefectos = new Set();
+  muestras.forEach(m => (m.rechazos || []).forEach(r => { if (r.defecto) allDefectos.add(r.defecto); }));
+  const defectoNames = [...allDefectos].sort();
+
+  // Unique values for filters
+  const proyNames = proyectos.map(p => p.nombre);
+  const diams = [...new Set(muestras.map(m => m.diametro).filter(Boolean))].sort();
+
   el.innerHTML = `
     <div class="fm-card">
-      <div class="fm-toolbar">
+      <div class="fm-toolbar" style="flex-wrap:wrap;gap:8px">
         <span class="app-status-dot ${online ? 'online' : 'offline'}"></span>
         <span style="font-size:13px;font-weight:600">${online ? 'App conectada' : 'App desconectada'}</span>
-        ${tenStatus ? `<span style="font-size:11px;color:var(--fm-muted);margin-left:8px">Operador: ${esc(tenStatus.operador || '?')} | v${esc(tenStatus.version || '?')}</span>` : ''}
+        ${tenStatus ? `<span style="font-size:11px;color:var(--fm-muted)">Op: ${esc(tenStatus.operador || '?')} | v${esc(tenStatus.version || '?')}</span>` : ''}
         <div style="flex:1"></div>
-        <input class="fm-input" id="emp-buscar" placeholder="Buscar lote..." style="width:160px"/>
+        <select class="fm-input" id="emp-proy" style="width:140px"><option value="">Proyecto</option>${proyNames.map(n => `<option>${esc(n)}</option>`).join('')}</select>
+        <select class="fm-input" id="emp-diam" style="width:110px"><option value="">Diametro</option>${diams.map(d => `<option>${esc(d)}</option>`).join('')}</select>
+        <input class="fm-input" id="emp-lote" placeholder="Buscar lote..." style="width:130px"/>
       </div>
-      <div class="fm-table-wrap"><table class="fm-table">
-        <thead><tr><th>Lote</th><th class="text-center">Muestra</th><th class="text-right">Rugosidad</th><th class="text-right">Alt. Axial</th><th class="text-right">Aceptadas</th><th class="text-right">Rechazos</th><th class="text-right">Scrap</th><th class="text-center">QC</th><th>Fecha</th></tr></thead>
+      <div class="fm-table-wrap"><table class="fm-table fm-table-sm">
+        <thead><tr>
+          <th>Diametro</th><th>N/P</th><th>Lote</th><th class="text-center">#</th>
+          <th class="text-center">Muestra</th>
+          <th class="text-right">Rug. Prom</th><th class="text-right">Alt. Ax. Prom</th>
+          <th class="text-right">Acept.</th>
+          ${defectoNames.map(d => `<th class="text-right" title="${esc(d)}" style="font-size:10px;max-width:70px;overflow:hidden;text-overflow:ellipsis">${esc(d.length > 10 ? d.slice(0, 10) + '..' : d)}</th>`).join('')}
+          <th class="text-right">Scrap</th><th class="text-center">QC</th>
+          <th>Fecha</th><th>Hora</th><th>Analista</th>
+        </tr></thead>
         <tbody id="tbody-muestras"></tbody>
       </table></div>
     </div>`;
 
   const renderMuestras = () => {
-    const buscar = ($('#emp-buscar')?.value || '').toLowerCase();
+    const fProy = ($('#emp-proy')?.value || '');
+    const fDiam = ($('#emp-diam')?.value || '');
+    const fLote = ($('#emp-lote')?.value || '').toLowerCase();
     let data = [...S.muestras];
-    if (buscar) data = data.filter(m => String(m.lote_id).includes(buscar) || String(m.num_muestra).includes(buscar));
-    data.sort((a, b) => (b.synced_at || '').localeCompare(a.synced_at || ''));
+    if (fProy) data = data.filter(m => m.proyecto === fProy);
+    if (fDiam) data = data.filter(m => m.diametro === fDiam);
+    if (fLote) data = data.filter(m => String(m.lote || '').toLowerCase().includes(fLote));
+
+    // Sort by lote, then num_muestra
+    data.sort((a, b) => {
+      const cmp = String(a.lote || '').localeCompare(String(b.lote || ''));
+      return cmp !== 0 ? cmp : (a.num_muestra || 0) - (b.num_muestra || 0);
+    });
+
     const tbody = $('#tbody-muestras');
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="9" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros de empaque</td></tr>'; return; }
+    const colSpan = 9 + defectoNames.length + 4;
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros de empaque</td></tr>`; return; }
+
+    // Group by lote for accumulated count
+    const loteAccum = {};
+    data.forEach(m => {
+      const key = m.lote_id;
+      if (!loteAccum[key]) loteAccum[key] = { count: 0, total: m.cantidad_lote || 0, tamano: m.tamano_muestra || 100 };
+      loteAccum[key].count++;
+    });
+    const loteCounters = {};
+
+    let prevLote = null;
     tbody.innerHTML = data.map(m => {
-      const rechTotal = (m.rechazos || []).reduce((s, r) => s + (r.cantidad || 0), 0);
-      const rechDesc = (m.rechazos || []).map(r => `${r.defecto || '?'}(${r.cantidad})`).join(', ');
-      return `<tr>
-        <td class="mono">${m.lote_id}</td>
+      const loteKey = m.lote_id;
+      if (!loteCounters[loteKey]) loteCounters[loteKey] = 0;
+      loteCounters[loteKey]++;
+      const acum = loteCounters[loteKey] * (m.tamano_muestra || 100);
+      const total = loteAccum[loteKey].total;
+
+      // Lote group header
+      let groupRow = '';
+      if (m.lote !== prevLote) {
+        prevLote = m.lote;
+        groupRow = `<tr style="background:#e2e8f0"><td colspan="${colSpan}" style="font-weight:700;font-size:12px;padding:6px 10px">Lote: ${esc(m.lote)} — N/P: ${esc(m.numero_parte)} — Diametro: ${esc(m.diametro)} — Proyecto: ${esc(m.proyecto || '')}</td></tr>`;
+      }
+
+      const rechByDef = {};
+      (m.rechazos || []).forEach(r => { rechByDef[r.defecto] = (rechByDef[r.defecto] || 0) + (r.cantidad || 0); });
+
+      const rugStyle = m.rugosidad_ok === false ? 'color:var(--fm-danger);font-weight:700' : '';
+      const altStyle = m.altura_axial_ok === false ? 'color:var(--fm-danger);font-weight:700' : '';
+      const statusBadge = m.qc_liberado ? 'badge-cerrado' : 'badge-abierto';
+      const statusText = (m.status || (m.qc_liberado ? 'aceptada' : 'retenida')).toUpperCase();
+      const qcLabel = statusText === 'ACEPTADA' ? 'OK' : statusText === 'RETENIDA' ? 'HOLD' : statusText;
+
+      return groupRow + `<tr${m.status === 'retenida' ? ' style="background:#fff8e1"' : ''}>
+        <td>${esc(m.diametro)}</td>
+        <td class="mono">${esc(m.numero_parte)}</td>
+        <td class="mono">${esc(m.lote)}</td>
         <td class="text-center">${m.num_muestra}</td>
-        <td class="text-right ${m.rugosidad_ok === false ? 'style="color:var(--fm-danger);font-weight:700"' : ''}">${m.rugosidad_prom != null ? m.rugosidad_prom : '-'}</td>
-        <td class="text-right ${m.altura_axial_ok === false ? 'style="color:var(--fm-danger);font-weight:700"' : ''}">${m.altura_axial_prom != null ? m.altura_axial_prom : '-'}</td>
+        <td class="text-center" style="font-size:11px">${fmtNum(acum)}/${fmtNum(total)}</td>
+        <td class="text-right" style="${rugStyle}">${m.rugosidad_prom != null ? m.rugosidad_prom : '-'}</td>
+        <td class="text-right" style="${altStyle}">${m.altura_axial_prom != null ? m.altura_axial_prom : '-'}</td>
         <td class="text-right">${fmtNum(m.piezas_aceptadas)}</td>
-        <td class="text-right" title="${esc(rechDesc)}">${fmtNum(rechTotal)}</td>
+        ${defectoNames.map(d => `<td class="text-right">${rechByDef[d] ? fmtNum(rechByDef[d]) : ''}</td>`).join('')}
         <td class="text-right">${fmtNum(m.scrap)}</td>
-        <td class="text-center"><span class="badge-status ${m.qc_liberado ? 'badge-cerrado' : 'badge-abierto'}">${m.qc_liberado ? 'OK' : 'HOLD'}</span></td>
-        <td>${(m.synced_at || '').slice(0, 10)}</td>
+        <td class="text-center"><span class="badge-status ${statusBadge}">${qcLabel}</span></td>
+        <td>${(m.fecha || m.synced_at || '').slice(0, 10)}</td>
+        <td>${esc(m.hora || '')}</td>
+        <td style="font-size:11px">${esc(m.analista || '')}</td>
       </tr>`;
     }).join('');
   };
   renderMuestras();
-  if ($('#emp-buscar')) $('#emp-buscar').addEventListener('input', renderMuestras);
+  ['emp-proy', 'emp-diam'].forEach(id => { if ($('#' + id)) $('#' + id).addEventListener('change', renderMuestras); });
+  if ($('#emp-lote')) $('#emp-lote').addEventListener('input', renderMuestras);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

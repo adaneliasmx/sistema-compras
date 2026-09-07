@@ -79,6 +79,8 @@ table.fm-table{width:100%;border-collapse:collapse;font-size:13px}
 .fm-table .text-right{text-align:right}
 .fm-table .text-center{text-align:center}
 .fm-table .mono{font-family:'Cascadia Code',monospace;font-size:12px}
+.fm-table-sm th{padding:6px 8px;font-size:11px}
+.fm-table-sm td{padding:5px 8px;font-size:12px}
 
 /* Progress bar inline */
 .progress-bar{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600}
