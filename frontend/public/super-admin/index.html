@@ -202,11 +202,12 @@
                 <th style="min-width:170px;">🔧 Mantenimiento</th>
                 <th style="min-width:190px;">📦 Inventarios</th>
                 <th style="min-width:180px;">🚛 Validaciones</th>
+                <th style="min-width:180px;">📦 Flujo Materiales</th>
                 <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="9" class="empty">Cargando...</td></tr>
+              <tr><td colspan="10" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -382,6 +383,19 @@
           <option value="admin">Admin (acceso total)</option>
         </select>
       </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-flujo-chk" onchange="document.getElementById('cm-flujo-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          📦 Flujo de Materiales
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Modulo independiente (Tenneco/ASM)</small>
+        <select class="modal-input" id="cm-flujo-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="admin">Admin (acceso total)</option>
+          <option value="supervisor">Supervisor</option>
+          <option value="calidad">Calidad</option>
+          <option value="aux.calidad">Aux. Calidad</option>
+        </select>
+      </div>
     </div>
     <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
@@ -466,6 +480,7 @@ const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin
 const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
 const ROLE_LABELS_MANT       = { supervisor_mant:'Supervisor', tecnico_mant:'Técnico', admin:'Admin', superadmin_mant:'⭐ Super Admin' };
 const ROLE_LABELS_INV        = { admin:'Admin', inventarios:'Inventarios', recepcion:'Recepción', comprador:'Comprador' };
+const ROLE_LABELS_FLUJO      = { admin:'Admin', supervisor:'Supervisor', calidad:'Calidad', 'aux.calidad':'Aux. Calidad' };
 const INV_TYPES_LIST = [
   { key:'quimicos_proceso',    label:'Quimicos Proceso' },
   { key:'epp',                 label:'EPP' },
@@ -476,6 +491,7 @@ const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', pro
 
 let _invUsers = []; // cache de usuarios_inv
 let _valUsers = []; // cache de usuarios_val
+let _flujoUsers = []; // cache de usuarios_flujo
 
 let _unifiedData = { internal: [], external: [] };
 let _currentPageTab = 'users';
@@ -530,15 +546,16 @@ function switchPageTab(tab) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    [_unifiedData, _invUsers, _valUsers] = await Promise.all([
+    [_unifiedData, _invUsers, _valUsers, _flujoUsers] = await Promise.all([
       api('/api/super-admin/unified-users'),
       api('/api/super-admin/inv-users').catch(() => []),
-      api('/api/super-admin/val-users').catch(() => [])
+      api('/api/super-admin/val-users').catch(() => []),
+      api('/api/super-admin/flujo-users').catch(() => [])
     ]);
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="9" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="10" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -551,7 +568,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="9" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="10" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -648,6 +665,20 @@ function renderUsersTable() {
            </select>
          </div>`;
 
+    const flujoUser = _flujoUsers.find(fu => fu.email === (u.email||'').toLowerCase() && fu.activo);
+    const flR = flujoUser?.role || null;
+    const flujoCell = `<div class="mod-cell">
+           <span class="dot ${flR ? 'dot-on' : 'dot-off'}" id="dot-flujo-${uidKey}"></span>
+           <select class="role-sel" style="color:${flR ? '#0d9488' : '#9ca3af'}"
+             onchange="changeFlujoRole('${esc(u.email)}', this.value, this, '${uidKey}')">
+             <option value="">— Sin acceso —</option>
+             <option value="admin"       ${flR==='admin'       ?'selected':''}>Admin</option>
+             <option value="supervisor"  ${flR==='supervisor'  ?'selected':''}>Supervisor</option>
+             <option value="calidad"     ${flR==='calidad'     ?'selected':''}>Calidad</option>
+             <option value="aux.calidad" ${flR==='aux.calidad' ?'selected':''}>Aux. Calidad</option>
+           </select>
+         </div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
         <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'},'${esc(u.email)}')">🔑 Reset</button>
@@ -667,6 +698,7 @@ function renderUsersTable() {
       <td>${mantCell}</td>
       <td>${invCell}</td>
       <td>${valCell}</td>
+      <td>${flujoCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -793,6 +825,22 @@ async function changeValRole(email, valRole, sel, dotKey) {
   }
 }
 
+async function changeFlujoRole(email, flujoRole, sel, dotKey) {
+  try {
+    sel.style.borderColor = '#f59e0b';
+    await api('/api/super-admin/unified-users/flujo-role', { method:'PATCH', body: JSON.stringify({ email, flujo_role: flujoRole || null }) });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = flujoRole ? '#0d9488' : '#9ca3af';
+    const dot = document.getElementById('dot-flujo-' + dotKey);
+    if (dot) dot.className = 'dot ' + (flujoRole ? 'dot-on' : 'dot-off');
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
 let _invPermisosData = {};
 function openInvPermisosModal(email, name, invUserId) {
   _invPermisosData = { email, name, invUserId };
@@ -860,11 +908,17 @@ async function savePwd() {
         body: JSON.stringify({ compras_user_id: _pwdComprasId, rhh_user_id: _pwdRhhId, new_password: pwd })
       })
     ];
-    // También resetear en Inventarios si tiene cuenta ahí
+    // También resetear en Inventarios y Flujo si tiene cuenta ahí
     if (_pwdEmail) {
       const invUser = _invUsers.find(u => u.email === _pwdEmail.toLowerCase() && u.activo);
       if (invUser) {
         calls.push(api('/api/super-admin/inv-users/password', {
+          method:'PATCH', body: JSON.stringify({ email: _pwdEmail, new_password: pwd })
+        }).catch(() => {}));
+      }
+      const flujoUser = _flujoUsers.find(u => u.email === _pwdEmail.toLowerCase() && u.activo);
+      if (flujoUser) {
+        calls.push(api('/api/super-admin/flujo-users/password', {
           method:'PATCH', body: JSON.stringify({ email: _pwdEmail, new_password: pwd })
         }).catch(() => {}));
       }
@@ -887,12 +941,14 @@ function openCreateModal(forceRole) {
   document.getElementById('cm-produccion-chk').checked = false;
   document.getElementById('cm-mant-chk').checked = false;
   document.getElementById('cm-val-chk').checked = false;
+  document.getElementById('cm-flujo-chk').checked = false;
   document.getElementById('cm-compras-role').disabled = true;
   document.getElementById('cm-rhh-role').disabled = true;
   document.getElementById('cm-calidad-role').disabled = true;
   document.getElementById('cm-produccion-role').disabled = true;
   document.getElementById('cm-mant-role').disabled = true;
   document.getElementById('cm-val-role').disabled = true;
+  document.getElementById('cm-flujo-role').disabled = true;
   if (forceRole === 'proveedor') {
     document.getElementById('cm-compras-chk').checked = true;
     document.getElementById('cm-compras-role').disabled = false;
@@ -912,10 +968,11 @@ async function saveCreateUser() {
   const produccionChk = document.getElementById('cm-produccion-chk').checked;
   const mantChk = document.getElementById('cm-mant-chk').checked;
   const valChk = document.getElementById('cm-val-chk').checked;
+  const flujoChk = document.getElementById('cm-flujo-chk').checked;
   const errEl = document.getElementById('cmErr');
   errEl.textContent = '';
   if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
-  if (!comprasChk && !rhhChk && !valChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
+  if (!comprasChk && !rhhChk && !valChk && !flujoChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
   if (calidadChk && !comprasChk) { errEl.textContent = 'Registros de Calidad requiere activar también Compras'; return; }
   if (produccionChk && !comprasChk) { errEl.textContent = 'Registros de Producción requiere activar también Compras'; return; }
   if (mantChk && !comprasChk) { errEl.textContent = 'Órdenes de Mantenimiento requiere activar también Compras'; return; }
@@ -937,6 +994,12 @@ async function saveCreateUser() {
       await api('/api/super-admin/unified-users/val-role', {
         method: 'PATCH',
         body: JSON.stringify({ email, val_role: document.getElementById('cm-val-role').value })
+      });
+    }
+    if (flujoChk) {
+      await api('/api/super-admin/unified-users/flujo-role', {
+        method: 'PATCH',
+        body: JSON.stringify({ email, flujo_role: document.getElementById('cm-flujo-role').value })
       });
     }
     closeCreateModal();
@@ -1158,6 +1221,7 @@ function renderModulePanel(m) {
       m.id === 'calidad'      ? ROLE_LABELS_CALIDAD :
       m.id === 'produccion'   ? ROLE_LABELS_PRODUCCION :
       m.id === 'mantenimiento'? ROLE_LABELS_MANT :
+      m.id === 'flujo'        ? ROLE_LABELS_FLUJO :
       ROLE_LABELS_COMPRAS;
     const rows = m.users.map(u => `
       <tr>

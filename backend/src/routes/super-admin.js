@@ -710,6 +710,15 @@ router.patch('/val-users/password', superAdminRequired, (req, res) => {
   res.json({ ok: true });
 });
 
+// GET /api/super-admin/flujo-users
+router.get('/flujo-users', superAdminRequired, (req, res) => {
+  const db = readFlujo();
+  res.json((db.usuarios_flujo || []).map(u => ({
+    id: u.id, nombre: u.nombre, email: u.email,
+    role: u.role, activo: u.activo !== false
+  })));
+});
+
 // PATCH /api/super-admin/unified-users/flujo-role
 // Asignar/revocar acceso a Flujo de Materiales.
 // Crea el usuario en usuarios_flujo si no existe (reutiliza password hash de compras o rhh).
