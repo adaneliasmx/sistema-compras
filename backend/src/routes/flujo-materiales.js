@@ -110,6 +110,7 @@ router.get('/sync/lotes-pendientes', flujoSyncKeyRequired, (req, res) => {
 router.get('/sync/catalogos', flujoSyncKeyRequired, (req, res) => {
   const db = read();
   res.json({
+    proyectos: db.cat_tenneco_proyectos || [],
     partes: db.cat_tenneco_partes || [],
     specs: db.cat_tenneco_specs || [],
     defectos: db.cat_tenneco_defectos || []
@@ -206,10 +207,57 @@ router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CATALOGOS TENNECO — PARTES
+// CATALOGOS TENNECO — PROYECTOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 router.use(flujoAuthRequired);
+
+router.get('/cat/tenneco/proyectos', (req, res) => {
+  res.json(read().cat_tenneco_proyectos || []);
+});
+
+router.post('/cat/tenneco/proyectos', flujoAllowRoles('calidad'), (req, res) => {
+  const db = read();
+  const b = sanitize(req.body);
+  const nombre = (b.nombre || '').trim();
+  if (!nombre) return res.status(400).json({ error: 'Nombre de proyecto requerido' });
+  const dup = (db.cat_tenneco_proyectos || []).find(p =>
+    p.nombre.toLowerCase() === nombre.toLowerCase()
+  );
+  if (dup) return res.status(409).json({ error: 'Ya existe ese proyecto' });
+  const row = {
+    id: nextId(db.cat_tenneco_proyectos),
+    nombre,
+    created_at: nowMxDate()
+  };
+  db.cat_tenneco_proyectos = db.cat_tenneco_proyectos || [];
+  db.cat_tenneco_proyectos.push(row);
+  write(db);
+  res.status(201).json(row);
+});
+
+router.patch('/cat/tenneco/proyectos/:id', flujoAllowRoles('calidad'), (req, res) => {
+  const db = read();
+  const row = (db.cat_tenneco_proyectos || []).find(p => p.id === Number(req.params.id));
+  if (!row) return res.status(404).json({ error: 'No encontrado' });
+  const b = sanitize(req.body);
+  if (b.nombre !== undefined) row.nombre = (b.nombre || '').trim();
+  write(db);
+  res.json(row);
+});
+
+router.delete('/cat/tenneco/proyectos/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.cat_tenneco_proyectos || []).findIndex(p => p.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'No encontrado' });
+  db.cat_tenneco_proyectos.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CATALOGOS TENNECO — PARTES
+// ═══════════════════════════════════════════════════════════════════════════════
 
 router.get('/cat/tenneco/partes', (req, res) => {
   res.json(read().cat_tenneco_partes || []);

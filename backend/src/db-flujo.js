@@ -23,6 +23,7 @@ const EMPTY_DB = {
   usuarios_flujo: [],
 
   // Catalogos Tenneco
+  cat_tenneco_proyectos: [],
   cat_tenneco_partes: [],
   cat_tenneco_specs: [],
   cat_tenneco_defectos: [],

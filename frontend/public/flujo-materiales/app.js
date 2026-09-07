@@ -92,6 +92,7 @@ const MENU = [
     { id: 'empaque-asm',      icon: '🔍', label: 'Empaque Amsted', disabled: true },
   ]},
   { group: 'Catalogos', items: [
+    { id: 'cat-tenneco-proyectos', icon: '📁', label: 'Proyectos Tenneco' },
     { id: 'cat-tenneco-partes',   icon: '⚙', label: 'N/P Tenneco' },
     { id: 'cat-tenneco-specs',    icon: '📏', label: 'Especificaciones' },
     { id: 'cat-tenneco-defectos', icon: '⚠', label: 'Defectos Tenneco' },
@@ -184,7 +185,7 @@ function renderNavActive() {
 const SECTION_TITLES = {
   'tenneco-ingreso': 'Ingreso Tenneco', 'tenneco-salida': 'Salida Tenneco', 'tenneco-kpi': 'KPI Tenneco',
   'empaque-tenneco': 'Empaque Tenneco', 'empaque-asm': 'Empaque Amsted',
-  'cat-tenneco-partes': 'Catalogo N/P Tenneco', 'cat-tenneco-specs': 'Especificaciones Tenneco',
+  'cat-tenneco-proyectos': 'Proyectos Tenneco', 'cat-tenneco-partes': 'Catalogo N/P Tenneco', 'cat-tenneco-specs': 'Especificaciones Tenneco',
   'cat-tenneco-defectos': 'Catalogo Defectos Tenneco',
   'cat-asm-partes': 'Catalogo N/P Amsted', 'cat-asm-defectos': 'Catalogo Defectos Amsted'
 };
@@ -200,6 +201,7 @@ async function renderMain() {
       case 'tenneco-salida':       await viewSalidaTenneco(el); break;
       case 'tenneco-kpi':          await viewKpiTenneco(el); break;
       case 'empaque-tenneco':      await viewEmpaqueTenneco(el); break;
+      case 'cat-tenneco-proyectos': await viewCatProyectos(el); break;
       case 'cat-tenneco-partes':   await viewCatPartes(el, 'tenneco'); break;
       case 'cat-tenneco-specs':    await viewCatSpecs(el); break;
       case 'cat-tenneco-defectos': await viewCatDefectos(el, 'tenneco'); break;
@@ -834,6 +836,67 @@ async function viewEmpaqueTenneco(el) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CATALOGO — PROYECTOS TENNECO
+// ═══════════════════════════════════════════════════════════════════════════════
+async function viewCatProyectos(el) {
+  const data = await GET('/cat/tenneco/proyectos');
+  const canEdit = can('edit-catalogos');
+  el.innerHTML = `
+    <div class="fm-card">
+      <div class="fm-toolbar">${canEdit ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-add-proy">+ Agregar Proyecto</button>' : ''}</div>
+      <div class="fm-table-wrap"><table class="fm-table">
+        <thead><tr><th>Proyecto</th><th>Fecha</th>${canEdit ? '<th></th>' : ''}</tr></thead>
+        <tbody>${data.map(p => `<tr>
+          <td style="font-weight:600">${esc(p.nombre)}</td>
+          <td>${esc(p.created_at || '')}</td>
+          ${canEdit ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-proy" data-id="${p.id}">Editar</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-proy" data-id="${p.id}">X</button></td>` : ''}
+        </tr>`).join('')}</tbody>
+      </table></div>
+      ${data.length === 0 ? '<p style="color:var(--fm-muted);font-size:13px;margin-top:10px">Sin proyectos registrados</p>' : ''}
+    </div>`;
+  if (canEdit) {
+    if ($('#btn-add-proy')) $('#btn-add-proy').addEventListener('click', () => showModalProyecto(null, el));
+    $$('.btn-edit-proy').forEach(b => {
+      const p = data.find(x => x.id === Number(b.dataset.id));
+      b.addEventListener('click', () => showModalProyecto(p, el));
+    });
+    $$('.btn-del-proy').forEach(b => {
+      b.addEventListener('click', async () => {
+        if (!confirm('Eliminar proyecto?')) return;
+        await DEL('/cat/tenneco/proyectos/' + b.dataset.id);
+        viewCatProyectos(el);
+      });
+    });
+  }
+}
+
+function showModalProyecto(existing, parentEl) {
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal">
+    <h3>${existing ? 'Editar' : 'Agregar'} Proyecto</h3>
+    <div class="fm-form-group"><label>Nombre del Proyecto</label><input class="fm-input" id="mpr-nombre" value="${existing ? esc(existing.nombre) : ''}"/></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="mpr-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="mpr-save">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  $('#mpr-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  $('#mpr-nombre').focus();
+  $('#mpr-save').addEventListener('click', async () => {
+    try {
+      const body = { nombre: $('#mpr-nombre').value };
+      if (existing) await PATCH('/cat/tenneco/proyectos/' + existing.id, body);
+      else await POST('/cat/tenneco/proyectos', body);
+      overlay.remove();
+      viewCatProyectos(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CATALOGO — PARTES TENNECO
 // ═══════════════════════════════════════════════════════════════════════════════
 async function viewCatPartes(el, tipo) {
@@ -883,9 +946,14 @@ async function viewCatPartes(el, tipo) {
   }
 }
 
-function showModalParte(existing, tipo, parentEl) {
+async function showModalParte(existing, tipo, parentEl) {
   const isTenneco = tipo === 'tenneco';
   const endpoint = isTenneco ? '/cat/tenneco/partes' : '/cat/asm/partes';
+  let proyOpts = '';
+  if (isTenneco) {
+    const proyectos = await GET('/cat/tenneco/proyectos');
+    proyOpts = proyectos.map(p => `<option value="${esc(p.nombre)}"${existing && existing.proyecto === p.nombre ? ' selected' : ''}>${esc(p.nombre)}</option>`).join('');
+  }
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
   overlay.innerHTML = `<div class="fm-modal">
@@ -894,7 +962,7 @@ function showModalParte(existing, tipo, parentEl) {
     <div class="fm-form-group"><label>Numero de Parte</label><input class="fm-input" id="mp-np" value="${existing ? esc(existing.numero_parte) : ''}"/></div>
     ${isTenneco
       ? `<div class="fm-form-row">
-           <div class="fm-form-group"><label>Proyecto</label><input class="fm-input" id="mp-proy" value="${existing ? esc(existing.proyecto || '') : ''}"/></div>
+           <div class="fm-form-group"><label>Proyecto</label><select class="fm-input" id="mp-proy"><option value="">— Seleccionar —</option>${proyOpts}</select></div>
            <div class="fm-form-group"><label>Tamano Muestra</label><input class="fm-input" type="number" id="mp-tam" value="${existing ? existing.tamano_muestra : 100}"/></div>
          </div>`
       : `<div class="fm-form-row">
@@ -932,48 +1000,76 @@ async function viewCatPartesAsm(el) {
 // CATALOGO — ESPECIFICACIONES
 // ═══════════════════════════════════════════════════════════════════════════════
 async function viewCatSpecs(el) {
-  const data = await GET('/cat/tenneco/specs');
+  const [data, proyectos] = await Promise.all([
+    GET('/cat/tenneco/specs'),
+    GET('/cat/tenneco/proyectos')
+  ]);
   const canEdit = can('edit-catalogos');
+  const proyNames = proyectos.map(p => p.nombre);
 
   el.innerHTML = `
     <div class="fm-card">
-      <div class="fm-toolbar">${canEdit ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-add-spec">+ Agregar</button>' : ''}</div>
+      <div class="fm-toolbar">
+        <label style="font-size:13px;font-weight:600;margin-right:6px">Proyecto:</label>
+        <select class="fm-input" id="spec-proy-filter" style="width:200px;display:inline-block">
+          <option value="">— Todos —</option>
+          ${proyNames.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('')}
+        </select>
+        <div style="flex:1"></div>
+        ${canEdit ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-add-spec">+ Agregar</button>' : ''}
+      </div>
       <div class="fm-table-wrap"><table class="fm-table">
         <thead><tr><th>N/P</th><th>Proyecto</th><th class="text-right">Rug. Min</th><th class="text-right">Rug. Max</th><th class="text-right">Alt. Ax. Min</th><th class="text-right">Alt. Ax. Max</th>${canEdit ? '<th></th>' : ''}</tr></thead>
-        <tbody>${data.map(s => `<tr>
-          <td class="mono">${esc(s.numero_parte)}</td><td>${esc(s.proyecto || '')}</td>
-          <td class="text-right">${s.rugosidad_min}</td><td class="text-right">${s.rugosidad_max}</td>
-          <td class="text-right">${s.altura_axial_min}</td><td class="text-right">${s.altura_axial_max}</td>
-          ${canEdit ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-spec" data-id="${s.id}">Editar</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-spec" data-id="${s.id}">X</button></td>` : ''}
-        </tr>`).join('')}</tbody>
+        <tbody id="tbody-specs"></tbody>
       </table></div>
-      ${data.length === 0 ? '<p style="color:var(--fm-muted);font-size:13px;margin-top:10px">Sin especificaciones registradas</p>' : ''}
+      <p id="specs-empty" style="color:var(--fm-muted);font-size:13px;margin-top:10px;display:none">Sin especificaciones registradas</p>
     </div>`;
 
-  if (canEdit) {
-    if ($('#btn-add-spec')) $('#btn-add-spec').addEventListener('click', () => showModalSpec(null, el));
-    $$('.btn-edit-spec').forEach(b => {
-      const s = data.find(x => x.id === Number(b.dataset.id));
-      b.addEventListener('click', () => showModalSpec(s, el));
-    });
-    $$('.btn-del-spec').forEach(b => {
-      b.addEventListener('click', async () => {
-        if (!confirm('Eliminar especificacion?')) return;
-        await DEL('/cat/tenneco/specs/' + b.dataset.id);
-        viewCatSpecs(el);
+  const renderSpecs = () => {
+    const filtro = ($('#spec-proy-filter')?.value || '');
+    const filtered = filtro ? data.filter(s => s.proyecto === filtro) : data;
+    const tbody = $('#tbody-specs');
+    tbody.innerHTML = filtered.map(s => `<tr>
+      <td class="mono">${esc(s.numero_parte)}</td><td>${esc(s.proyecto || '')}</td>
+      <td class="text-right">${s.rugosidad_min}</td><td class="text-right">${s.rugosidad_max}</td>
+      <td class="text-right">${s.altura_axial_min}</td><td class="text-right">${s.altura_axial_max}</td>
+      ${canEdit ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-spec" data-id="${s.id}">Editar</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-spec" data-id="${s.id}">X</button></td>` : ''}
+    </tr>`).join('');
+    $('#specs-empty').style.display = filtered.length === 0 ? 'block' : 'none';
+    if (canEdit) {
+      $$('.btn-edit-spec').forEach(b => {
+        const s = data.find(x => x.id === Number(b.dataset.id));
+        b.addEventListener('click', () => showModalSpec(s, el, proyNames));
       });
-    });
-  }
+      $$('.btn-del-spec').forEach(b => {
+        b.addEventListener('click', async () => {
+          if (!confirm('Eliminar especificacion?')) return;
+          await DEL('/cat/tenneco/specs/' + b.dataset.id);
+          viewCatSpecs(el);
+        });
+      });
+    }
+  };
+  renderSpecs();
+  if ($('#spec-proy-filter')) $('#spec-proy-filter').addEventListener('change', renderSpecs);
+  if (canEdit && $('#btn-add-spec')) $('#btn-add-spec').addEventListener('click', () => showModalSpec(null, el, proyNames));
 }
 
-function showModalSpec(existing, parentEl) {
+async function showModalSpec(existing, parentEl, proyNames) {
+  if (!proyNames) {
+    const proyectos = await GET('/cat/tenneco/proyectos');
+    proyNames = proyectos.map(p => p.nombre);
+  }
+  const proyOpts = proyNames.map(n => `<option value="${esc(n)}"${existing && existing.proyecto === n ? ' selected' : ''}>${esc(n)}</option>`).join('');
+  const partes = await GET('/cat/tenneco/partes');
+
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
   overlay.innerHTML = `<div class="fm-modal">
     <h3>${existing ? 'Editar' : 'Agregar'} Especificacion</h3>
     <div class="fm-form-row">
-      <div class="fm-form-group"><label>Numero de Parte</label><input class="fm-input" id="ms-np" value="${existing ? esc(existing.numero_parte) : ''}"/></div>
-      <div class="fm-form-group"><label>Proyecto</label><input class="fm-input" id="ms-proy" value="${existing ? esc(existing.proyecto || '') : ''}"/></div>
+      <div class="fm-form-group"><label>Proyecto</label><select class="fm-input" id="ms-proy"><option value="">— Seleccionar —</option>${proyOpts}</select></div>
+      <div class="fm-form-group"><label>Numero de Parte</label><select class="fm-input" id="ms-np"><option value="">— Seleccionar —</option></select></div>
     </div>
     <div class="fm-form-row">
       <div class="fm-form-group"><label>Rugosidad Min</label><input class="fm-input" type="number" step="0.01" id="ms-rmin" value="${existing ? existing.rugosidad_min : ''}"/></div>
@@ -989,6 +1085,17 @@ function showModalSpec(existing, parentEl) {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+
+  const fillNP = (proy) => {
+    const npSel = $('#ms-np');
+    const filtered = proy ? partes.filter(p => p.proyecto === proy) : partes;
+    npSel.innerHTML = '<option value="">— Seleccionar —</option>' + filtered.map(p =>
+      `<option value="${esc(p.numero_parte)}"${existing && existing.numero_parte === p.numero_parte ? ' selected' : ''}>${esc(p.numero_parte)} (${esc(p.diametro_mm)} mm)</option>`
+    ).join('');
+  };
+  fillNP(existing ? existing.proyecto : '');
+  $('#ms-proy').addEventListener('change', () => fillNP($('#ms-proy').value));
+
   $('#ms-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   $('#ms-save').addEventListener('click', async () => {
