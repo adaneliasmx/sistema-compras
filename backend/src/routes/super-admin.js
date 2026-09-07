@@ -6,6 +6,7 @@ const { read: readRhh, write: writeRhh, nextId: nextIdRhh, forceSeedFromJson } =
 const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = require('../db-produccion');
 const { read: readInv, write: writeInv, nextId: nextIdInv } = require('../db-inventarios');
 const { read: readVal, write: writeVal, nextId: nextIdVal } = require('../db-validaciones');
+const { read: readFlujo, write: writeFlujo, nextId: nextIdFlujo } = require('../db-flujo');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -187,6 +188,11 @@ router.get('/overview', superAdminRequired, (req, res) => {
       id: 'validaciones', name: 'Validaciones Almacen (SKF/CUESTO)', icon: '📦', status: 'active', url: '/clientes/c7m4q9/validaciones-almacen',
       users: (() => { try { const v = readVal(); return (v.usuarios_val || []).filter(u => u.activo !== false).map(u => ({ id: u.id, name: u.nombre, email: u.email, role: u.role, active: u.activo !== false })); } catch(_) { return []; } })(),
       total_users: (() => { try { return (readVal().usuarios_val || []).length; } catch(_) { return 0; } })()
+    },
+    {
+      id: 'flujo', name: 'Flujo de Materiales', icon: '📦', status: 'active', url: '/flujo-materiales',
+      users: (() => { try { const f = readFlujo(); return (f.usuarios_flujo || []).filter(u => u.activo !== false).map(u => ({ id: u.id, name: u.nombre, email: u.email, role: u.role, active: u.activo !== false })); } catch(_) { return []; } })(),
+      total_users: (() => { try { return (readFlujo().usuarios_flujo || []).length; } catch(_) { return 0; } })()
     }
   ];
   res.json({ modules });
@@ -701,6 +707,70 @@ router.patch('/val-users/password', superAdminRequired, (req, res) => {
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado en Validaciones' });
   user.password_hash = bcrypt.hashSync(String(new_password), 10);
   writeVal(db);
+  res.json({ ok: true });
+});
+
+// PATCH /api/super-admin/unified-users/flujo-role
+// Asignar/revocar acceso a Flujo de Materiales.
+// Crea el usuario en usuarios_flujo si no existe (reutiliza password hash de compras o rhh).
+// Roles validos: admin | supervisor | calidad | aux.calidad | null (null = revocar)
+router.patch('/unified-users/flujo-role', superAdminRequired, (req, res) => {
+  const { email, flujo_role } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'email requerido' });
+  const validRoles = ['admin', 'supervisor', 'calidad', 'aux.calidad'];
+  if (flujo_role && !validRoles.includes(flujo_role))
+    return res.status(400).json({ error: 'Rol invalido. Use: admin, supervisor, calidad, aux.calidad o null' });
+
+  const emailLow = email.toLowerCase();
+  const flujoDb = readFlujo();
+  flujoDb.usuarios_flujo = flujoDb.usuarios_flujo || [];
+
+  if (!flujo_role) {
+    const u = flujoDb.usuarios_flujo.find(u => u.email === emailLow);
+    if (u) { u.activo = false; writeFlujo(flujoDb); }
+    return res.json({ ok: true });
+  }
+
+  let passwordHash = bcrypt.hashSync('0000', 10);
+  let nombre = emailLow;
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+  const comprasUser = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  const rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (comprasUser) { passwordHash = comprasUser.password_hash; nombre = comprasUser.full_name; }
+  else if (rhhUser) { passwordHash = rhhUser.password_hash; nombre = rhhUser.full_name; }
+
+  const existing = flujoDb.usuarios_flujo.find(u => u.email === emailLow);
+  if (existing) {
+    existing.role = flujo_role;
+    existing.activo = true;
+    writeFlujo(flujoDb);
+    return res.json({ ok: true });
+  }
+
+  const newUser = {
+    id: nextIdFlujo(flujoDb.usuarios_flujo),
+    nombre, email: emailLow,
+    password_hash: passwordHash,
+    role: flujo_role,
+    activo: true,
+    created_at: new Date().toISOString()
+  };
+  flujoDb.usuarios_flujo.push(newUser);
+  writeFlujo(flujoDb);
+  res.json({ ok: true, created: true, id: newUser.id });
+});
+
+// PATCH /api/super-admin/flujo-users/password
+router.patch('/flujo-users/password', superAdminRequired, (req, res) => {
+  const { email, new_password } = req.body || {};
+  if (!email || !new_password || new_password.length < 4)
+    return res.status(400).json({ error: 'email y contrasena (min 4 chars) requeridos' });
+  const db = readFlujo();
+  const user = (db.usuarios_flujo || []).find(u => u.email === email.toLowerCase());
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado en Flujo' });
+  user.password_hash = bcrypt.hashSync(String(new_password), 10);
+  writeFlujo(db);
   res.json({ ok: true });
 });
 

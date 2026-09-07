@@ -65,6 +65,9 @@ const inventariosRoutes = require('./routes/inventarios');
 const mantAuthRoutes  = require('./routes/mant-auth');
 const mantRoutes      = require('./routes/mantenimiento');
 
+// ── Módulo Flujo de Materiales (Tenneco/ASM) ─────────────────────────────────
+const flujoRoutes = require('./routes/flujo-materiales');
+
 // ── Módulo Validaciones Almacen (SKF/CUESTO sync) ─────────────────────────────
 const validacionesRoutes = require('./routes/validaciones');
 
@@ -78,6 +81,7 @@ const { initDb: initProduccionDb } = require('./db-produccion');
 const { initDb: initInventariosDb } = require('./db-inventarios');
 const { initDb: initMantDb } = require('./db-mantenimiento');
 const { initDb: initValDb } = require('./db-validaciones');
+const { initDb: initFlujoDb } = require('./db-flujo');
 
 const app = express();
 
@@ -186,6 +190,9 @@ app.use('/api/inv', inventariosRoutes);
 // ── API Mantenimiento ─────────────────────────────────────────────────────────
 app.use('/api/mant/auth', mantAuthRoutes);
 app.use('/api/mant',      mantRoutes);
+
+// ── API Flujo de Materiales ──────────────────────────────────────────────────
+app.use('/api/flujo', flujoRoutes);
 
 // ── API Validaciones Almacen ──────────────────────────────────────────────────
 app.use('/api/val', validacionesRoutes);
@@ -324,6 +331,10 @@ app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 
 app.get('/pizarron', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/pizarron.html')));
 app.get('/pizarron/vista', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/slideshow.html')));
 
+// Módulo Flujo de Materiales
+app.get('/flujo-materiales', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/flujo-materiales/index.html')));
+app.get('/flujo-materiales/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/flujo-materiales/index.html')));
+
 // Módulo Mantenimiento
 app.get('/mantenimiento', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
 app.get('/mantenimiento/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
@@ -360,7 +371,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port}`);
