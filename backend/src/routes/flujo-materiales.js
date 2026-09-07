@@ -7,7 +7,27 @@ const { read, write, nextId } = require('../db-flujo');
 const { flujoAuthRequired, flujoAllowRoles, flujoSyncKeyRequired } = require('../middleware/flujo-auth');
 const JWT_SECRET = require('../jwt-secret');
 const { createRateLimiter } = require('../rate-limit');
+const path = require('path');
+const multer = require('multer');
 const _rl = createRateLimiter();
+
+// ── Multer — PO PDF uploads ─────────────────────────────────────────────────
+const poStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const dir = path.resolve(process.cwd(), 'storage/flujo-pos');
+    require('fs').mkdirSync(dir, { recursive: true });
+    cb(null, dir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+  }
+});
+const poUpload = multer({
+  storage: poStorage,
+  fileFilter: (req, file, cb) => cb(null, path.extname(file.originalname).toLowerCase() === '.pdf'),
+  limits: { fileSize: 10 * 1024 * 1024 }
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 const MX_TZ = 'America/Mexico_City';
@@ -679,15 +699,36 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
   const db = read();
   const b = sanitize(req.body);
   const loteIds = b.lote_ids;
+  const poAssign = b.po_assignments || {}; // { lote_id: po_id }
   if (!Array.isArray(loteIds) || loteIds.length === 0)
     return res.status(400).json({ error: 'Selecciona al menos un lote' });
 
   const fecha = nowMxDate();
   const lotesData = [];
+
+  // Validate PO assignments if provided
   for (const lid of loteIds) {
     const lote = (db.lotes_tenneco || []).find(l => l.id === Number(lid));
     if (!lote) return res.status(404).json({ error: `Lote ID ${lid} no encontrado` });
     if (lote.estado === 'enviado') return res.status(400).json({ error: `Lote ${lote.lote} ya fue enviado` });
+
+    let poId = poAssign[String(lid)] ? Number(poAssign[String(lid)]) : null;
+    if (poId) {
+      const po = (db.pos_tenneco || []).find(p => p.id === poId);
+      if (!po) return res.status(400).json({ error: `PO ID ${poId} no encontrada` });
+      if (po.estado !== 'activa') return res.status(400).json({ error: `PO ${po.no_po} no esta activa` });
+      // Verify PO has available capacity
+      let yaEnviada = 0;
+      for (const rem of (db.remisiones_tenneco || [])) {
+        for (const rl of (rem.lotes || [])) {
+          if (rl.po_id === poId) yaEnviada += (rl.cantidad || 0);
+        }
+      }
+      const disponible = po.cantidad_po - yaEnviada;
+      if (lote.material_terminado > disponible)
+        return res.status(400).json({ error: `PO ${po.no_po}: disponible ${disponible} pzas, lote requiere ${lote.material_terminado}` });
+    }
+
     lotesData.push({
       lote_id: lote.id,
       lote: lote.lote,
@@ -695,7 +736,8 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
       diametro: lote.diametro,
       cliente_int: lote.cliente_int,
       cantidad: lote.material_terminado,
-      caja_id: `TEN${lote.lote}.1`
+      caja_id: `TEN${lote.lote}.1`,
+      po_id: poId
     });
   }
 
@@ -709,23 +751,52 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
     fecha,
     lotes: lotesData,
     observaciones: (b.observaciones || '').trim(),
+    factura_numero: null,
+    factura_fecha: null,
+    facturado: false,
+    historial: [{ fecha, hora: nowMxTime(), usuario: req.flujoUser.nombre, accion: 'Remision creada' }],
     created_by: req.flujoUser.nombre,
     created_at: fecha
   };
   db.remisiones_tenneco.push(remision);
 
-  // Marcar lotes como enviados
-  for (const lid of loteIds) {
-    const lote = db.lotes_tenneco.find(l => l.id === Number(lid));
+  // Marcar lotes como enviados y asignar PO
+  for (const entry of lotesData) {
+    const lote = db.lotes_tenneco.find(l => l.id === entry.lote_id);
     if (lote) {
       lote.estado = 'enviado';
       lote.enviado = lote.material_terminado;
       lote.remision_id = remision.id;
       lote.fecha_envio = fecha;
+      if (entry.po_id) lote.po_id = entry.po_id;
     }
   }
   write(db);
   res.status(201).json(remision);
+});
+
+// Facturacion de remision
+router.patch('/tenneco/remisiones/:id/factura', flujoAllowRoles('supervisor'), (req, res) => {
+  const db = read();
+  const rem = (db.remisiones_tenneco || []).find(r => r.id === Number(req.params.id));
+  if (!rem) return res.status(404).json({ error: 'Remision no encontrada' });
+
+  const b = sanitize(req.body);
+  if (!b.factura_numero) return res.status(400).json({ error: 'Numero de factura requerido' });
+
+  rem.factura_numero = String(b.factura_numero).trim();
+  rem.factura_fecha = b.factura_fecha || nowMxDate();
+  rem.facturado = true;
+
+  rem.historial = rem.historial || [];
+  rem.historial.push({
+    fecha: nowMxDate(), hora: nowMxTime(),
+    usuario: req.flujoUser.nombre,
+    accion: `Factura registrada: ${rem.factura_numero}`
+  });
+
+  write(db);
+  res.json(rem);
 });
 
 // Datos para generar certificado de un lote
@@ -802,6 +873,185 @@ router.get('/tenneco/kpi', (req, res) => {
     result[comp][key] += (l.material_terminado || 0);
   }
   res.json({ anio, agrupacion, data: result });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// PO TENNECO — CONTROL DE ORDENES DE COMPRA
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/tenneco/pos', (req, res) => {
+  const db = read();
+  const pos = db.pos_tenneco || [];
+  const remisiones = db.remisiones_tenneco || [];
+  const lotes = db.lotes_tenneco || [];
+
+  const enriched = pos.map(po => {
+    let enviada = 0;
+    for (const rem of remisiones) {
+      for (const l of (rem.lotes || [])) {
+        if (l.po_id === po.id) enviada += (l.cantidad || 0);
+      }
+    }
+    let enProceso = 0;
+    for (const lt of lotes) {
+      if (lt.po_id === po.id && lt.estado !== 'enviado') {
+        enProceso += (lt.material_terminado || 0);
+      }
+    }
+    return {
+      ...po,
+      cantidad_enviada: enviada,
+      cantidad_en_proceso: enProceso,
+      pct_disponible: po.cantidad_po > 0
+        ? Math.round(((po.cantidad_po - enviada) / po.cantidad_po) * 10000) / 100
+        : 0
+    };
+  });
+  res.json(enriched);
+});
+
+router.get('/tenneco/pos/:id', (req, res) => {
+  const db = read();
+  const po = (db.pos_tenneco || []).find(p => p.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+
+  const remisiones = (db.remisiones_tenneco || []).filter(r =>
+    (r.lotes || []).some(l => l.po_id === po.id)
+  ).map(r => ({
+    ...r,
+    lotes_po: (r.lotes || []).filter(l => l.po_id === po.id),
+    cantidad_po_rem: (r.lotes || []).filter(l => l.po_id === po.id).reduce((s, l) => s + (l.cantidad || 0), 0)
+  }));
+
+  const porDiametro = {};
+  for (const rem of remisiones) {
+    for (const l of rem.lotes_po) {
+      const key = l.diametro || 'Sin diametro';
+      if (!porDiametro[key]) porDiametro[key] = { diametro: key, enviada: 0 };
+      porDiametro[key].enviada += (l.cantidad || 0);
+    }
+  }
+
+  let totalEnviada = remisiones.reduce((s, r) => s + r.cantidad_po_rem, 0);
+
+  res.json({
+    ...po,
+    cantidad_enviada: totalEnviada,
+    pct_disponible: po.cantidad_po > 0
+      ? Math.round(((po.cantidad_po - totalEnviada) / po.cantidad_po) * 10000) / 100
+      : 0,
+    resumen_diametros: Object.values(porDiametro),
+    remisiones_detalle: remisiones
+  });
+});
+
+router.post('/tenneco/pos', flujoAllowRoles('supervisor'), poUpload.single('pdf'), (req, res) => {
+  const db = read();
+  const b = req.body;
+
+  const no_po = (b.no_po || '').trim();
+  const cantidad_po = parseInt(b.cantidad_po) || 0;
+  const tipo = b.tipo === 'cerrada' ? 'cerrada' : 'abierta';
+  const fecha_po = b.fecha_po || nowMxDate();
+
+  if (!no_po) return res.status(400).json({ error: 'Numero de PO requerido' });
+  if (cantidad_po <= 0) return res.status(400).json({ error: 'Cantidad debe ser mayor a 0' });
+
+  let partes = [];
+  try { partes = JSON.parse(b.partes || '[]'); } catch (_) {}
+  if (!Array.isArray(partes) || partes.length === 0)
+    return res.status(400).json({ error: 'Al menos un numero de parte es requerido' });
+
+  for (const p of partes) {
+    if (!p.diametro) return res.status(400).json({ error: 'Diametro requerido en todas las partes' });
+    if (tipo === 'cerrada' && (!p.cantidad || parseInt(p.cantidad) <= 0))
+      return res.status(400).json({ error: 'Cantidad requerida para cada parte en PO cerrada' });
+  }
+
+  if (tipo === 'cerrada') {
+    const sum = partes.reduce((s, p) => s + (parseInt(p.cantidad) || 0), 0);
+    if (sum !== cantidad_po)
+      return res.status(400).json({ error: `Suma de cantidades (${sum}) no coincide con cantidad PO (${cantidad_po})` });
+  }
+
+  const dup = (db.pos_tenneco || []).find(p => p.no_po === no_po);
+  if (dup) return res.status(409).json({ error: 'Ya existe una PO con ese numero' });
+
+  const cleanPartes = partes.map(p => ({
+    diametro: String(p.diametro).trim(),
+    numero_parte: (p.numero_parte || '').trim(),
+    proyecto: (p.proyecto || '').trim(),
+    cantidad: tipo === 'cerrada' ? parseInt(p.cantidad) : (parseInt(p.cantidad) || null)
+  }));
+
+  const row = {
+    id: nextId(db.pos_tenneco),
+    no_po,
+    cantidad_po,
+    tipo,
+    fecha_po,
+    partes: cleanPartes,
+    pdf_filename: req.file ? req.file.filename : null,
+    estado: 'activa',
+    historial: [{ fecha: nowMxDate(), hora: nowMxTime(), usuario: req.flujoUser.nombre, accion: 'PO creada' }],
+    created_at: nowMxDate(),
+    created_by: req.flujoUser.nombre
+  };
+
+  db.pos_tenneco = db.pos_tenneco || [];
+  db.pos_tenneco.push(row);
+  write(db);
+  res.status(201).json(row);
+});
+
+router.patch('/tenneco/pos/:id', flujoAllowRoles('supervisor'), (req, res) => {
+  const db = read();
+  const po = (db.pos_tenneco || []).find(p => p.id === Number(req.params.id));
+  if (!po) return res.status(404).json({ error: 'PO no encontrada' });
+
+  const b = sanitize(req.body);
+  const cambios = [];
+
+  if (b.no_po !== undefined && b.no_po !== po.no_po) {
+    cambios.push(`No. PO: ${po.no_po} -> ${b.no_po}`);
+    po.no_po = String(b.no_po).trim();
+  }
+  if (b.cantidad_po !== undefined) {
+    const c = parseInt(b.cantidad_po);
+    if (c > 0 && c !== po.cantidad_po) {
+      cambios.push(`Cantidad: ${po.cantidad_po} -> ${c}`);
+      po.cantidad_po = c;
+    }
+  }
+  if (b.fecha_po !== undefined && b.fecha_po !== po.fecha_po) {
+    cambios.push(`Fecha: ${po.fecha_po} -> ${b.fecha_po}`);
+    po.fecha_po = b.fecha_po;
+  }
+  if (b.tipo !== undefined && (b.tipo === 'abierta' || b.tipo === 'cerrada') && b.tipo !== po.tipo) {
+    cambios.push(`Tipo: ${po.tipo} -> ${b.tipo}`);
+    po.tipo = b.tipo;
+  }
+  if (b.partes !== undefined) {
+    let partes;
+    try { partes = typeof b.partes === 'string' ? JSON.parse(b.partes) : b.partes; } catch (_) { partes = null; }
+    if (Array.isArray(partes)) {
+      cambios.push('Partes actualizadas');
+      po.partes = partes.map(p => ({
+        diametro: String(p.diametro || '').trim(),
+        numero_parte: (p.numero_parte || '').trim(),
+        proyecto: (p.proyecto || '').trim(),
+        cantidad: parseInt(p.cantidad) || null
+      }));
+    }
+  }
+
+  if (cambios.length > 0) {
+    po.historial = po.historial || [];
+    po.historial.push({ fecha: nowMxDate(), hora: nowMxTime(), usuario: req.flujoUser.nombre, accion: cambios.join('; ') });
+  }
+
+  write(db);
+  res.json(po);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

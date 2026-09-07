@@ -32,6 +32,9 @@ const EMPTY_DB = {
   cat_asm_partes: [],
   cat_asm_defectos: [],
 
+  // PO Tenneco
+  pos_tenneco: [],
+
   // Lotes Tenneco
   lotes_tenneco: [],
   muestras_tenneco: [],

@@ -8,7 +8,7 @@ const S = {
   user: null, token: null, section: 'tenneco-ingreso',
   // caches
   partes: [], specs: [], defectos: [], asmPartes: [], asmDefectos: [],
-  lotes: [], muestras: [], remisiones: [], lotesListos: [],
+  lotes: [], muestras: [], remisiones: [], lotesListos: [], pos: [],
   appStatus: [],
   // sort
   sortCol: null, sortDir: 'asc'
@@ -32,6 +32,16 @@ const GET   = p       => api('GET', p);
 const POST  = (p, b)  => api('POST', p, b);
 const PATCH = (p, b)  => api('PATCH', p, b);
 const DEL   = p       => api('DELETE', p);
+
+async function apiUpload(path, formData) {
+  const opts = { method: 'POST', headers: {}, body: formData };
+  if (S.token) opts.headers.Authorization = 'Bearer ' + S.token;
+  const res = await fetch('/api/flujo' + path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (res.status === 401) { logout(); return; }
+  if (!res.ok) throw new Error(data.error || 'Error ' + res.status);
+  return data;
+}
 
 // ── SESSION ──────────────────────────────────────────────────────────────────
 function tryRestore() {
@@ -80,6 +90,7 @@ function can(action) {
 // ── MENU ─────────────────────────────────────────────────────────────────────
 const MENU = [
   { group: 'Inventarios', items: [
+    { id: 'tenneco-pos',      icon: '📋', label: 'Control PO Tenneco' },
     { id: 'tenneco-ingreso',  icon: '📥', label: 'Ingreso Tenneco' },
     { id: 'tenneco-salida',   icon: '📤', label: 'Salida Tenneco' },
     { id: 'tenneco-kpi',      icon: '📊', label: 'KPI Tenneco' },
@@ -183,7 +194,7 @@ function renderNavActive() {
 }
 
 const SECTION_TITLES = {
-  'tenneco-ingreso': 'Ingreso Tenneco', 'tenneco-salida': 'Salida Tenneco', 'tenneco-kpi': 'KPI Tenneco',
+  'tenneco-pos': 'Control PO Tenneco', 'tenneco-ingreso': 'Ingreso Tenneco', 'tenneco-salida': 'Salida Tenneco', 'tenneco-kpi': 'KPI Tenneco',
   'empaque-tenneco': 'Empaque Tenneco', 'empaque-asm': 'Empaque Amsted',
   'cat-tenneco-proyectos': 'Proyectos Tenneco', 'cat-tenneco-partes': 'Catalogo N/P Tenneco', 'cat-tenneco-specs': 'Especificaciones Tenneco',
   'cat-tenneco-defectos': 'Catalogo Defectos Tenneco',
@@ -197,6 +208,7 @@ async function renderMain() {
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
   try {
     switch (S.section) {
+      case 'tenneco-pos':          await viewControlPOs(el); break;
       case 'tenneco-ingreso':      await viewIngresoTenneco(el); break;
       case 'tenneco-salida':       await viewSalidaTenneco(el); break;
       case 'tenneco-kpi':          await viewKpiTenneco(el); break;
@@ -421,11 +433,276 @@ function showModalRecepcion(onSave) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CONTROL PO TENNECO
+// ═══════════════════════════════════════════════════════════════════════════════
+async function viewControlPOs(el) {
+  S.pos = await GET('/tenneco/pos');
+  const canEdit = can('edit-inventarios');
+
+  el.innerHTML = `
+    <div class="fm-card">
+      <div class="fm-toolbar">
+        ${canEdit ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-add-po">+ Registrar PO</button>' : ''}
+        <input class="fm-input" id="po-buscar" placeholder="Buscar No. PO..." style="min-width:150px"/>
+      </div>
+      <div class="fm-table-wrap"><table class="fm-table">
+        <thead><tr>
+          <th>No. PO</th><th class="text-right">Cantidad PO</th><th>Tipo</th><th>Diametros</th>
+          <th class="text-right">En proceso</th><th class="text-right">Enviada</th>
+          <th class="text-right">% Disponible</th><th>Fecha</th><th>PDF</th><th></th>
+        </tr></thead>
+        <tbody id="tbody-pos"></tbody>
+      </table></div>
+      ${S.pos.length === 0 ? '<p style="color:var(--fm-muted);font-size:13px;margin-top:10px">Sin POs registradas</p>' : ''}
+    </div>`;
+
+  const renderPOs = () => {
+    const q = ($('#po-buscar')?.value || '').toLowerCase();
+    const filtered = q ? S.pos.filter(p => p.no_po.toLowerCase().includes(q)) : S.pos;
+    const tbody = $('#tbody-pos');
+    tbody.innerHTML = filtered.map(p => {
+      const diams = (p.partes || []).map(pt => pt.diametro).join(', ');
+      const pctClass = p.pct_disponible > 50 ? 'color:var(--fm-success)' : p.pct_disponible > 10 ? 'color:var(--fm-warn)' : 'color:var(--fm-danger)';
+      return `<tr>
+        <td class="mono" style="font-weight:700">${esc(p.no_po)}</td>
+        <td class="text-right">${fmtNum(p.cantidad_po)}</td>
+        <td><span class="badge-status ${p.tipo === 'cerrada' ? 'badge-cerrado' : 'badge-abierto'}">${p.tipo}</span></td>
+        <td style="font-size:12px">${esc(diams)}</td>
+        <td class="text-right">${fmtNum(p.cantidad_en_proceso)}</td>
+        <td class="text-right">${fmtNum(p.cantidad_enviada)}</td>
+        <td class="text-right" style="${pctClass};font-weight:700">${p.pct_disponible}%</td>
+        <td>${esc(p.fecha_po || '')}</td>
+        <td>${p.pdf_filename ? '<a href="/storage/flujo-pos/' + encodeURIComponent(p.pdf_filename) + '" target="_blank" style="color:var(--fm-primary)">Ver PDF</a>' : '-'}</td>
+        <td>
+          <button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-po" data-id="${p.id}">Detalles</button>
+          ${canEdit ? `<button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-po" data-id="${p.id}">Editar</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('');
+    if (filtered.length === 0 && S.pos.length > 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="color:var(--fm-muted);padding:20px">Sin resultados</td></tr>';
+    }
+    $$('.btn-ver-po').forEach(b => b.addEventListener('click', () => showPODetail(Number(b.dataset.id))));
+    if (canEdit) {
+      $$('.btn-edit-po').forEach(b => {
+        const po = S.pos.find(x => x.id === Number(b.dataset.id));
+        b.addEventListener('click', () => showModalPO(po, el));
+      });
+    }
+  };
+  renderPOs();
+  if ($('#po-buscar')) $('#po-buscar').addEventListener('input', renderPOs);
+  if (canEdit && $('#btn-add-po')) $('#btn-add-po').addEventListener('click', () => showModalPO(null, el));
+}
+
+async function showModalPO(existing, parentEl) {
+  const partes = await GET('/cat/tenneco/partes');
+  const proyectos = await GET('/cat/tenneco/proyectos');
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:620px">
+    <h3>${existing ? 'Editar' : 'Registrar'} PO</h3>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>No. PO</label><input class="fm-input" type="text" id="po-no" value="${existing ? esc(existing.no_po) : ''}" placeholder="Ej: 12345"/></div>
+      <div class="fm-form-group"><label>Cantidad PO</label><input class="fm-input" type="number" id="po-cant" value="${existing ? existing.cantidad_po : ''}" min="1"/></div>
+    </div>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>Tipo</label><select class="fm-input" id="po-tipo">
+        <option value="abierta"${existing && existing.tipo === 'abierta' ? ' selected' : ''}>Abierta</option>
+        <option value="cerrada"${existing && existing.tipo === 'cerrada' ? ' selected' : ''}>Cerrada</option>
+      </select></div>
+      <div class="fm-form-group"><label>Fecha PO</label><input class="fm-input" type="date" id="po-fecha" value="${existing ? existing.fecha_po : new Date().toISOString().slice(0, 10)}"/></div>
+    </div>
+    <div style="margin:14px 0 8px;font-weight:700;font-size:13px">Numeros de Parte</div>
+    <div id="po-partes-list"></div>
+    <button class="fm-btn fm-btn-outline fm-btn-sm" id="po-add-parte" style="margin-top:8px">+ Agregar numero de parte</button>
+    ${!existing ? '<div class="fm-form-group" style="margin-top:14px"><label>PDF de PO (opcional)</label><input type="file" accept=".pdf" id="po-pdf" class="fm-input"/></div>' : ''}
+    <div id="po-tipo-help" class="fm-alert fm-alert-warn" style="margin-top:10px;display:none"></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="po-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="po-save">${existing ? 'Actualizar' : 'Guardar'}</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  let parteIdx = 0;
+  const addParteRow = (data) => {
+    const idx = parteIdx++;
+    const div = document.createElement('div');
+    div.className = 'fm-form-row';
+    div.style.cssText = 'margin-bottom:8px;align-items:end;gap:8px';
+    div.dataset.parteIdx = idx;
+
+    const diamOpts = partes.map(p => `<option value="${esc(p.diametro_mm)}"${data && data.diametro === p.diametro_mm ? ' selected' : ''}>${esc(p.diametro_mm)} mm</option>`).join('');
+
+    div.innerHTML = `
+      <div class="fm-form-group" style="flex:1"><label>Diametro</label>
+        <select class="fm-input po-diam" data-idx="${idx}"><option value="">— Seleccionar —</option>${diamOpts}</select></div>
+      <div class="fm-form-group" style="flex:1"><label>N/P</label>
+        <input class="fm-input fm-auto-filled po-np" data-idx="${idx}" value="${data ? esc(data.numero_parte) : ''}" readonly/></div>
+      <div class="fm-form-group" style="flex:1"><label>Proyecto</label>
+        <input class="fm-input fm-auto-filled po-proy" data-idx="${idx}" value="${data ? esc(data.proyecto) : ''}" readonly/></div>
+      <div class="fm-form-group" style="width:100px"><label>Cantidad</label>
+        <input class="fm-input po-pcant" data-idx="${idx}" type="number" min="0" value="${data && data.cantidad ? data.cantidad : ''}" placeholder="—"/></div>
+      ${idx > 0 ? `<button class="fm-btn fm-btn-danger fm-btn-sm po-remove-parte" data-idx="${idx}" style="margin-bottom:1px" title="Quitar">X</button>` : '<div style="width:32px"></div>'}`;
+
+    $('#po-partes-list').appendChild(div);
+
+    div.querySelector('.po-diam').addEventListener('change', (e) => {
+      const val = e.target.value;
+      const parte = partes.find(p => p.diametro_mm === val);
+      div.querySelector('.po-np').value = parte ? parte.numero_parte : '';
+      div.querySelector('.po-proy').value = parte ? parte.proyecto : '';
+    });
+
+    if (idx > 0) {
+      div.querySelector('.po-remove-parte').addEventListener('click', () => div.remove());
+    }
+  };
+
+  // Initial partes
+  if (existing && existing.partes && existing.partes.length > 0) {
+    existing.partes.forEach(p => addParteRow(p));
+  } else {
+    addParteRow(null);
+  }
+
+  $('#po-add-parte').addEventListener('click', () => addParteRow(null));
+
+  // Tipo help text
+  const updateTipoHelp = () => {
+    const h = $('#po-tipo-help');
+    const tipo = $('#po-tipo').value;
+    if (tipo === 'cerrada') {
+      h.textContent = 'PO Cerrada: la suma de cantidades de cada parte debe ser igual a la cantidad total de la PO.';
+      h.style.display = 'block';
+    } else {
+      h.textContent = 'PO Abierta: las cantidades por parte son opcionales, el total no puede exceder la PO.';
+      h.style.display = 'block';
+    }
+  };
+  $('#po-tipo').addEventListener('change', updateTipoHelp);
+  updateTipoHelp();
+
+  $('#po-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $('#po-save').addEventListener('click', async () => {
+    const partesRows = [...$$('#po-partes-list > div')];
+    const partesArr = partesRows.map(row => ({
+      diametro: row.querySelector('.po-diam').value,
+      numero_parte: row.querySelector('.po-np').value,
+      proyecto: row.querySelector('.po-proy').value,
+      cantidad: parseInt(row.querySelector('.po-pcant').value) || null
+    })).filter(p => p.diametro);
+
+    if (partesArr.length === 0) { alert('Selecciona al menos un diametro'); return; }
+
+    try {
+      if (existing) {
+        await PATCH('/tenneco/pos/' + existing.id, {
+          no_po: $('#po-no').value,
+          cantidad_po: parseInt($('#po-cant').value),
+          tipo: $('#po-tipo').value,
+          fecha_po: $('#po-fecha').value,
+          partes: partesArr
+        });
+      } else {
+        const fd = new FormData();
+        fd.append('no_po', $('#po-no').value);
+        fd.append('cantidad_po', $('#po-cant').value);
+        fd.append('tipo', $('#po-tipo').value);
+        fd.append('fecha_po', $('#po-fecha').value);
+        fd.append('partes', JSON.stringify(partesArr));
+        const pdfInput = $('#po-pdf');
+        if (pdfInput && pdfInput.files[0]) fd.append('pdf', pdfInput.files[0]);
+        await apiUpload('/tenneco/pos', fd);
+      }
+      overlay.remove();
+      viewControlPOs(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+
+async function showPODetail(poId) {
+  const data = await GET('/tenneco/pos/' + poId);
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+
+  const diamsHtml = (data.resumen_diametros || []).map(d =>
+    `<tr><td>${esc(d.diametro)} mm</td><td class="text-right">${fmtNum(d.enviada)}</td></tr>`
+  ).join('');
+
+  const remsHtml = (data.remisiones_detalle || []).map(r =>
+    `<tr>
+      <td class="text-right">${fmtNum(r.cantidad_po_rem)}</td>
+      <td>${esc(r.fecha)}</td>
+      <td class="mono">${esc(r.folio)}</td>
+      <td>${r.facturado ? '<span class="badge-status badge-cerrado">' + esc(r.factura_numero) + '</span>' : '<span style="color:var(--fm-muted)">—</span>'}</td>
+      <td>${r.factura_fecha ? esc(r.factura_fecha) : '—'}</td>
+      <td><button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-rem-po" data-id="${r.id}">Ver</button></td>
+    </tr>`
+  ).join('');
+
+  const partesHtml = (data.partes || []).map(p =>
+    `<span style="display:inline-block;background:var(--fm-primary-light);color:var(--fm-primary-dark);padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;margin:2px">${esc(p.diametro)} mm — ${esc(p.numero_parte)}${p.cantidad ? ' (' + fmtNum(p.cantidad) + ' pzas)' : ''}</span>`
+  ).join('');
+
+  overlay.innerHTML = `<div class="fm-modal" style="width:720px">
+    <h3>PO #${esc(data.no_po)}</h3>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin-bottom:14px">
+      <div><strong>Cantidad:</strong> ${fmtNum(data.cantidad_po)}</div>
+      <div><strong>Tipo:</strong> ${data.tipo}</div>
+      <div><strong>Fecha:</strong> ${esc(data.fecha_po)}</div>
+      <div><strong>Enviada:</strong> ${fmtNum(data.cantidad_enviada)}</div>
+      <div><strong>Disponible:</strong> <span style="font-weight:700;color:${data.pct_disponible > 50 ? 'var(--fm-success)' : data.pct_disponible > 10 ? 'var(--fm-warn)' : 'var(--fm-danger)'}">${data.pct_disponible}%</span></div>
+    </div>
+    <div style="margin-bottom:12px">${partesHtml}</div>
+    ${data.pdf_filename ? `<p style="margin-bottom:12px"><a href="/storage/flujo-pos/${encodeURIComponent(data.pdf_filename)}" target="_blank" style="color:var(--fm-primary);font-weight:600">Descargar PDF de PO</a></p>` : ''}
+
+    ${(data.resumen_diametros || []).length > 0 ? `<h4 style="font-size:14px;margin:14px 0 8px">Resumen por Diametro</h4>
+    <div class="fm-table-wrap"><table class="fm-table fm-table-sm">
+      <thead><tr><th>Diametro</th><th class="text-right">Enviada</th></tr></thead>
+      <tbody>${diamsHtml}</tbody>
+    </table></div>` : ''}
+
+    <h4 style="font-size:14px;margin:14px 0 8px">Remisiones</h4>
+    ${(data.remisiones_detalle || []).length === 0
+      ? '<p style="color:var(--fm-muted);font-size:13px">Sin remisiones vinculadas</p>'
+      : `<div class="fm-table-wrap"><table class="fm-table fm-table-sm">
+        <thead><tr><th class="text-right">Cant. Enviada</th><th>Fecha envio</th><th>No. Remision</th><th>Factura</th><th>Fecha factura</th><th></th></tr></thead>
+        <tbody>${remsHtml}</tbody>
+      </table></div>`}
+
+    ${(data.historial || []).length > 0 ? `<details style="margin-top:14px"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--fm-muted)">Historial de cambios (${data.historial.length})</summary>
+      <div style="margin-top:8px;font-size:12px;color:var(--fm-muted)">${data.historial.map(h => `<div style="margin-bottom:4px">${esc(h.fecha)} ${esc(h.hora || '')} — ${esc(h.usuario)}: ${esc(h.accion)}</div>`).join('')}</div>
+    </details>` : ''}
+
+    <div class="fm-modal-footer"><button class="fm-btn fm-btn-outline fm-btn-sm" id="pod-close">Cerrar</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  $('#pod-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $$('.btn-ver-rem-po').forEach(b => {
+    b.addEventListener('click', () => { overlay.remove(); showRemisionDetail(Number(b.dataset.id)); });
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // SALIDA TENNECO
 // ═══════════════════════════════════════════════════════════════════════════════
 async function viewSalidaTenneco(el) {
-  S.lotesListos = await GET('/tenneco/lotes-listos');
-  S.remisiones = await GET('/tenneco/remisiones');
+  const [lotesListos, remisiones, pos] = await Promise.all([
+    GET('/tenneco/lotes-listos'),
+    GET('/tenneco/remisiones'),
+    GET('/tenneco/pos')
+  ]);
+  S.lotesListos = lotesListos;
+  S.remisiones = remisiones;
+  S.pos = pos;
 
   el.innerHTML = `
     <div class="fm-card">
@@ -453,11 +730,14 @@ async function viewSalidaTenneco(el) {
       ${S.remisiones.length === 0
         ? '<p style="color:var(--fm-muted);font-size:13px">Sin remisiones</p>'
         : `<div class="fm-table-wrap"><table class="fm-table">
-          <thead><tr><th>Folio</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>Creado por</th><th></th></tr></thead>
+          <thead><tr><th>Folio</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>Factura</th><th>Creado por</th><th></th></tr></thead>
           <tbody>${S.remisiones.map(r => `<tr>
             <td class="mono">${esc(r.folio)}</td><td>${esc(r.fecha)}</td>
             <td>${r.lotes.length}</td>
             <td class="text-right">${fmtNum(r.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</td>
+            <td>${r.facturado
+              ? '<span class="badge-status badge-cerrado">' + esc(r.factura_numero) + '</span>'
+              : (can('edit-inventarios') ? '<button class="fm-btn fm-btn-outline fm-btn-sm btn-facturar" data-id="' + r.id + '">Confirmar factura</button>' : '<span style="color:var(--fm-muted)">Pendiente</span>')}</td>
             <td>${esc(r.created_by || '')}</td>
             <td><button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-rem" data-id="${r.id}">Ver</button>
                 <button class="fm-btn fm-btn-outline fm-btn-sm btn-pdf-rem" data-id="${r.id}">PDF</button></td>
@@ -473,16 +753,27 @@ async function viewSalidaTenneco(el) {
     });
   }
 
-  // Generar remision
+  // Generar remision (con asignacion PO)
   if ($('#btn-gen-rem')) {
     $('#btn-gen-rem').addEventListener('click', async () => {
       const ids = [...$$('.chk-lote:checked')].map(c => Number(c.value));
       if (!ids.length) { alert('Selecciona al menos un lote'); return; }
-      if (!confirm(`Generar remision con ${ids.length} lote(s)?`)) return;
-      try {
-        await POST('/tenneco/remisiones', { lote_ids: ids });
-        await viewSalidaTenneco(el);
-      } catch (e) { alert('Error: ' + e.message); }
+
+      // Get active POs
+      const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
+
+      if (activePOs.length === 0) {
+        // No POs — proceed without assignment
+        if (!confirm(`No hay POs activas. Generar remision sin asignar PO?`)) return;
+        try {
+          await POST('/tenneco/remisiones', { lote_ids: ids });
+          await viewSalidaTenneco(el);
+        } catch (e) { alert('Error: ' + e.message); }
+        return;
+      }
+
+      // Show PO assignment modal
+      showPOAssignModal(ids, activePOs, el);
     });
   }
 
@@ -497,29 +788,148 @@ async function viewSalidaTenneco(el) {
     });
   }
 
+  // Facturar remision
+  $$('.btn-facturar').forEach(b => {
+    b.addEventListener('click', () => showFacturaModal(Number(b.dataset.id), el));
+  });
+
   // Ver / PDF remision
   $$('.btn-ver-rem').forEach(b => b.addEventListener('click', () => showRemisionDetail(Number(b.dataset.id))));
   $$('.btn-pdf-rem').forEach(b => b.addEventListener('click', () => generarRemisionPDF(Number(b.dataset.id))));
+}
+
+function showPOAssignModal(loteIds, activePOs, parentEl) {
+  const lotes = loteIds.map(id => S.lotesListos.find(l => l.id === id)).filter(Boolean);
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+
+  const rows = lotes.map(l => {
+    // Find applicable POs (matching diametro/NP)
+    const applicable = activePOs.filter(po =>
+      (po.partes || []).some(p => p.diametro === l.diametro || p.numero_parte === l.numero_parte)
+    );
+    const opts = applicable.map(po => {
+      const disp = po.cantidad_po - po.cantidad_enviada;
+      return `<option value="${po.id}">PO ${esc(po.no_po)} — ${fmtNum(disp)}/${fmtNum(po.cantidad_po)} disp. (${po.pct_disponible}%)</option>`;
+    }).join('');
+    return `<tr>
+      <td class="mono">${esc(l.lote)}</td>
+      <td class="mono">${esc(l.numero_parte)}</td>
+      <td>${esc(l.diametro)}</td>
+      <td class="text-right">${fmtNum(l.material_terminado)}</td>
+      <td><select class="fm-input po-assign-sel" data-lote="${l.id}" style="font-size:12px">
+        <option value="">— Sin PO —</option>${opts}
+      </select></td>
+    </tr>`;
+  }).join('');
+
+  overlay.innerHTML = `<div class="fm-modal" style="width:700px">
+    <h3>Asignar PO a lotes</h3>
+    <p style="font-size:13px;color:var(--fm-muted);margin-bottom:14px">Selecciona la PO para cada lote. Solo se muestran POs con disponibilidad.</p>
+    <div class="fm-table-wrap"><table class="fm-table fm-table-sm">
+      <thead><tr><th>Lote</th><th>N/P</th><th>Diam.</th><th class="text-right">Cantidad</th><th>PO</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="poa-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="poa-confirm">Confirmar y generar remision</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  $('#poa-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $('#poa-confirm').addEventListener('click', async () => {
+    const poAssignments = {};
+    $$('.po-assign-sel').forEach(sel => {
+      if (sel.value) poAssignments[sel.dataset.lote] = Number(sel.value);
+    });
+
+    if (!confirm(`Generar remision con ${loteIds.length} lote(s)?`)) return;
+
+    try {
+      await POST('/tenneco/remisiones', {
+        lote_ids: loteIds,
+        po_assignments: poAssignments
+      });
+      overlay.remove();
+      await viewSalidaTenneco(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+
+function showFacturaModal(remId, parentEl) {
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:400px">
+    <h3>Confirmar Facturacion</h3>
+    <div class="fm-form-group"><label>Numero de Factura</label><input class="fm-input" id="fac-num" placeholder="Ej: FAC-001"/></div>
+    <div class="fm-form-group"><label>Fecha de Factura</label><input class="fm-input" type="date" id="fac-fecha" value="${new Date().toISOString().slice(0, 10)}"/></div>
+    <div class="fm-confirm-box">
+      <p>Al confirmar, la remision se marcara como facturada y cerrada.</p>
+    </div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="fac-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="fac-save">Confirmar factura</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  $('#fac-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $('#fac-save').addEventListener('click', async () => {
+    const num = $('#fac-num').value.trim();
+    if (!num) { alert('Ingresa el numero de factura'); return; }
+    try {
+      await PATCH('/tenneco/remisiones/' + remId + '/factura', {
+        factura_numero: num,
+        factura_fecha: $('#fac-fecha').value
+      });
+      overlay.remove();
+      await viewSalidaTenneco(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
 }
 
 async function showRemisionDetail(remId) {
   const rem = await GET('/tenneco/remisiones/' + remId);
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
-  overlay.innerHTML = `<div class="fm-modal">
+
+  // Find PO info for lotes
+  const poNums = {};
+  if (S.pos && S.pos.length) {
+    for (const l of (rem.lotes || [])) {
+      if (l.po_id) {
+        const po = S.pos.find(p => p.id === l.po_id);
+        poNums[l.lote_id] = po ? po.no_po : '?';
+      }
+    }
+  }
+
+  overlay.innerHTML = `<div class="fm-modal" style="width:600px">
     <h3>Remision ${esc(rem.folio)}</h3>
-    <p><strong>Fecha:</strong> ${esc(rem.fecha)} | <strong>Creado por:</strong> ${esc(rem.created_by || '')}</p>
+    <p style="font-size:13px"><strong>Fecha:</strong> ${esc(rem.fecha)} | <strong>Creado por:</strong> ${esc(rem.created_by || '')}</p>
+    ${rem.facturado
+      ? `<div class="fm-alert fm-alert-success" style="margin-top:10px"><strong>Facturado:</strong> ${esc(rem.factura_numero)} — ${esc(rem.factura_fecha || '')}</div>`
+      : '<div class="fm-alert fm-alert-warn" style="margin-top:10px">Pendiente de facturacion</div>'}
     <div class="fm-table-wrap" style="margin-top:14px"><table class="fm-table">
-      <thead><tr><th>Caja</th><th>Componente</th><th>Medida</th><th class="text-right">Cantidad</th></tr></thead>
+      <thead><tr><th>Caja</th><th>Componente</th><th>Medida</th><th class="text-right">Cantidad</th><th>PO</th></tr></thead>
       <tbody>${rem.lotes.map(l => `<tr>
         <td class="mono">${esc(l.caja_id || '')}</td><td class="mono">${esc(l.numero_parte)}</td>
         <td>${esc(l.diametro)} mm</td><td class="text-right">${fmtNum(l.cantidad)}</td>
+        <td class="mono">${poNums[l.lote_id] ? esc(poNums[l.lote_id]) : '<span style="color:var(--fm-muted)">—</span>'}</td>
       </tr>`).join('')}
       <tr class="kpi-total"><td colspan="3" class="text-right"><strong>TOTAL</strong></td>
-        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</strong></td></tr>
+        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</strong></td><td></td></tr>
       </tbody>
     </table></div>
     ${rem.observaciones ? '<p style="margin-top:12px;font-size:13px;color:var(--fm-muted)"><strong>Obs:</strong> ' + esc(rem.observaciones) + '</p>' : ''}
+    ${(rem.historial || []).length > 0 ? `<details style="margin-top:12px"><summary style="font-size:12px;font-weight:600;cursor:pointer;color:var(--fm-muted)">Historial (${rem.historial.length})</summary>
+      <div style="margin-top:6px;font-size:12px;color:var(--fm-muted)">${rem.historial.map(h => `<div style="margin-bottom:3px">${esc(h.fecha)} ${esc(h.hora || '')} — ${esc(h.usuario)}: ${esc(h.accion)}</div>`).join('')}</div>
+    </details>` : ''}
     <div class="fm-modal-footer"><button class="fm-btn fm-btn-outline fm-btn-sm" id="m-close">Cerrar</button>
       <button class="fm-btn fm-btn-primary fm-btn-sm" id="m-pdf-rem">Descargar PDF</button></div>
   </div>`;
