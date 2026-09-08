@@ -208,7 +208,10 @@ const MENU = {
     ['---', '', 'Titulaciones'],
     ['titulaciones',       '🔬', 'Registrar'],
     ['tit-reporte',        '📊', 'Reporte'],
-    ['tit-estadisticas',   '📈', 'Estadísticas']
+    ['tit-estadisticas',   '📈', 'Estadísticas'],
+    ['---', '', 'KPI Procesos'],
+    ['kpi-procesos',       '📊', 'Pizarrón CPK'],
+    ['kpi-sixpack',        '🔬', 'Capability Sixpack']
   ],
   admin: [
     ['crear-vale',         '➕', 'Crear Vale'],
@@ -223,6 +226,9 @@ const MENU = {
     ['tit-reporte',        '📊', 'Reporte'],
     ['tit-estadisticas',   '📈', 'Estadísticas'],
     ['tit-catalogo',       '⚙️', 'Catálogo Parámetros'],
+    ['---', '', 'KPI Procesos'],
+    ['kpi-procesos',       '📊', 'Pizarrón CPK'],
+    ['kpi-sixpack',        '🔬', 'Capability Sixpack'],
     ['---', '', 'Certificados'],
     ['cert-calidad',       '📄', 'Certificados SKF'],
     ['---', '', 'Catálogos'],
@@ -255,7 +261,9 @@ const SECTION_TITLES = {
   'tit-reporte':       'Reporte de Titulaciones',
   'tit-estadisticas':  'Estadísticas SPC',
   'tit-catalogo':      'Catálogo de Parámetros',
-  'cert-calidad':      'Certificados de Calidad SKF'
+  'cert-calidad':      'Certificados de Calidad SKF',
+  'kpi-procesos':      'Pizarrón CPK por Proceso',
+  'kpi-sixpack':       'Capability Sixpack'
 };
 
 // ── API helpers ───────────────────────────────────────────────────────────────
@@ -473,6 +481,8 @@ async function renderMain() {
       case 'tit-reporte':       el.innerHTML = await viewTitReporte(); bindTitReporte(); return;
       case 'tit-estadisticas':  el.innerHTML = await viewTitEstadisticas(); bindTitEstadisticas(); return;
       case 'tit-catalogo':      el.innerHTML = await viewTitCatalogo(); bindTitCatalogo(); return;
+      case 'kpi-procesos':      el.innerHTML = await viewKpiProcesos(); bindKpiProcesos(); return;
+      case 'kpi-sixpack':       el.innerHTML = await viewKpiSixpack(); bindKpiSixpack(); return;
       case 'cert-calidad':      el.innerHTML = await viewCertCalidad(); bindCertCalidad(); return;
       default: el.innerHTML = '<p>Sección no encontrada</p>';
     }
@@ -4959,6 +4969,527 @@ function erfinvApprox(x) {
   }
   const q = p - 0.5, r = q*q;
   return (((((a[4]*r+a[3])*r+a[2])*r+a[1])*r+1)*q) / ((((b[4]*r+b[3])*r+b[2])*r+b[1])*r+1) * (x<0?-1:1);
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KPI PROCESOS — Pizarrón CPK + Capability Sixpack
+// ══════════════════════════════════════════════════════════════════════════════
+
+const KPI_TANQUES = [
+  { no: 'T16: MACRO',   linea: 'BAKER',   label: 'T16: MACRO (Baker)' },
+  { no: 'T18: MICRO',   linea: 'BAKER',   label: 'T18: MICRO (Baker)' },
+  { no: 'T16: MICRO 2', linea: 'LINEA 3', label: 'T16: MICRO 2 (Línea 3)' }
+];
+
+function getWeekRanges(count) {
+  const weeks = [];
+  const now = new Date();
+  const day = now.getDay();
+  const diffMon = day === 0 ? -6 : 1 - day;
+  const thisMon = new Date(now); thisMon.setDate(now.getDate() + diffMon);
+  for (let i = 0; i < count; i++) {
+    const mon = new Date(thisMon); mon.setDate(thisMon.getDate() - i * 7);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const fmt = d => d.toISOString().slice(0, 10);
+    const oneJan = new Date(mon.getFullYear(), 0, 1);
+    const wn = Math.ceil(((mon - oneJan) / 86400000 + oneJan.getDay() + 1) / 7);
+    weeks.unshift({ ini: fmt(mon), fin: fmt(sun), label: 'S' + wn, year: mon.getFullYear() });
+  }
+  return weeks;
+}
+
+function getMonthRanges(count) {
+  const months = [];
+  const now = new Date();
+  for (let i = 0; i < count; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    const fmt = dt => dt.toISOString().slice(0, 10);
+    const label = d.toLocaleDateString('es-MX', { month: 'short' }).replace('.', '');
+    months.unshift({ ini: fmt(d), fin: fmt(last), label: label.charAt(0).toUpperCase() + label.slice(1), year: d.getFullYear() });
+  }
+  return months;
+}
+
+async function loadKpiTanqueParams() {
+  const tanques = await Promise.all([
+    GET('/tanques?linea=BAKER'),
+    GET('/tanques?linea=LINEA%203')
+  ]).then(([b, l]) => [...b, ...l]);
+  const params = await GET('/parametros-titulacion?activo=true');
+  return KPI_TANQUES.map(cfg => {
+    const tk = tanques.find(t => t.no_tanque === cfg.no && t.linea === cfg.linea);
+    if (!tk) return { ...cfg, tanque_id: null, params: [] };
+    const tkParams = params.filter(p => p.tanque_id === tk.id).sort((a, b) => (a.orden || 0) - (b.orden || 0));
+    return { ...cfg, tanque_id: tk.id, params: tkParams };
+  });
+}
+
+// ── Pizarrón CPK ────────────────────────────────────────────────────────────
+
+async function viewKpiProcesos() {
+  return `
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
+    <div style="display:flex;gap:4px">
+      <button class="btn kpi-period-btn active" data-period="semanal">Por Semana</button>
+      <button class="btn kpi-period-btn" data-period="mensual">Por Mes</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <label style="font-size:12px;color:#6b7280">Periodos:</label>
+      <select id="kpi-count" style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+        <option value="6">6</option><option value="8" selected>8</option><option value="12">12</option><option value="16">16</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="btn-kpi-load" style="font-size:13px;padding:6px 16px">Cargar</button>
+    <span style="font-size:11px;color:#9ca3af;margin-left:auto">
+      Leyenda: <span style="color:#dc2626">&#9679; &lt;1.0</span> &nbsp;
+      <span style="color:#d97706">&#9679; 1.0–1.33</span> &nbsp;
+      <span style="color:#16a34a">&#9679; 1.33–1.67</span> &nbsp;
+      <span style="color:#14532d">&#9679; &ge;1.67</span>
+    </span>
+  </div>
+  <div id="kpi-grid" style="overflow-x:auto">
+    <div class="empty-state"><div class="icon">📊</div><p>Presiona "Cargar" para generar el pizarrón CPK</p></div>
+  </div>`;
+}
+
+function bindKpiProcesos() {
+  let currentPeriod = 'semanal';
+  document.querySelectorAll('.kpi-period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.kpi-period-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      currentPeriod = btn.dataset.period;
+    });
+  });
+  document.getElementById('btn-kpi-load').addEventListener('click', () => loadKpiGrid(currentPeriod));
+
+  async function loadKpiGrid(period) {
+    const el = document.getElementById('kpi-grid');
+    const count = Number(document.getElementById('kpi-count').value) || 8;
+    el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Calculando CPK...</p></div>';
+    try {
+      const tanqueData = await loadKpiTanqueParams();
+      const ranges = period === 'semanal' ? getWeekRanges(count) : getMonthRanges(count);
+
+      // Fetch all param+period combos in parallel
+      const allFetches = [];
+      for (const tk of tanqueData) {
+        for (const p of tk.params) {
+          for (const r of ranges) {
+            allFetches.push(
+              GET(`/titulaciones/estadisticas/valores?parametro_id=${p.id}&fecha_ini=${r.ini}&fecha_fin=${r.fin}`)
+                .then(d => ({ tanque: tk.no, paramId: p.id, range: r.label, data: d }))
+                .catch(() => ({ tanque: tk.no, paramId: p.id, range: r.label, data: null }))
+            );
+          }
+        }
+      }
+      const results = await Promise.all(allFetches);
+
+      // Build lookup: key = `tanque|paramId|rangeLabel`
+      const lookup = {};
+      results.forEach(r => { lookup[`${r.tanque}|${r.paramId}|${r.range}`] = r.data; });
+
+      // Build table
+      let html = `<table style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead><tr style="background:#f8fafc">
+          <th style="padding:8px 12px;text-align:left;border:1px solid #e2e8f0;min-width:220px;position:sticky;left:0;background:#f8fafc;z-index:1">Proceso / Parámetro</th>
+          ${ranges.map(r => `<th style="padding:8px 6px;text-align:center;border:1px solid #e2e8f0;min-width:75px;font-size:12px">${r.label}<br><span style="font-size:10px;color:#9ca3af">${r.year}</span></th>`).join('')}
+        </tr></thead><tbody>`;
+
+      for (const tk of tanqueData) {
+        // Tank header row
+        html += `<tr style="background:#1e293b"><td colspan="${ranges.length + 1}" style="padding:8px 12px;color:#f1f5f9;font-weight:700;font-size:13px;border:1px solid #334155">${tk.label}</td></tr>`;
+        if (!tk.params.length) {
+          html += `<tr><td colspan="${ranges.length + 1}" style="padding:6px 24px;color:#9ca3af;font-size:12px;border:1px solid #e2e8f0">Sin parámetros activos</td></tr>`;
+          continue;
+        }
+        for (const p of tk.params) {
+          html += `<tr>
+            <td style="padding:6px 12px 6px 24px;border:1px solid #e2e8f0;font-weight:500;position:sticky;left:0;background:#fff;z-index:1">
+              ${esc(p.nombre_parametro)} <span style="font-size:10px;color:#9ca3af">(${esc(p.unidad || '')})</span>
+            </td>`;
+          for (const r of ranges) {
+            const d = lookup[`${tk.no}|${p.id}|${r.label}`];
+            const vals = d?.valores?.map(v => v.valor).filter(v => v != null) || [];
+            const lsl = p.valor_min, usl = p.valor_max;
+            let cellHtml = '', cellBg = '#fff';
+            if (vals.length < 2) {
+              cellHtml = `<span style="color:#cbd5e1">—</span>`;
+              cellBg = '#f8fafc';
+            } else if (lsl == null && usl == null) {
+              // No spec limits (e.g. Peso Fosfato) — show mean ± sigma
+              const st = spcStats(vals);
+              cellHtml = `<span style="font-size:11px;color:#475569" title="μ=${st.mean.toFixed(2)} σ=${st.sigma.toFixed(2)} n=${st.n}">${st.mean.toFixed(1)}<span style="font-size:9px;color:#9ca3af">±${st.sigma.toFixed(1)}</span></span>`;
+              cellBg = '#f0f9ff';
+            } else {
+              const st = spcStats(vals);
+              const { cpk } = spcCpCpk(st.mean, st.sigma, lsl, usl);
+              const cpkVal = cpk != null && isFinite(cpk) ? cpk : null;
+              const c = cpkColorInfo(cpkVal);
+              cellHtml = cpkVal !== null
+                ? `<span style="font-weight:700;color:${c.text}">${cpkVal.toFixed(2)}</span>`
+                : `<span style="color:#cbd5e1">—</span>`;
+              cellBg = c.bg;
+            }
+            html += `<td style="padding:4px 6px;text-align:center;border:1px solid #e2e8f0;background:${cellBg};cursor:pointer"
+              onclick="window._openSixpack('${esc(tk.no)}','${esc(tk.linea)}',${p.id},'${r.ini}','${r.fin}','${esc(r.label)}')"
+              title="Click para Capability Sixpack">${cellHtml}</td>`;
+          }
+          html += '</tr>';
+        }
+      }
+      html += '</tbody></table>';
+      el.innerHTML = html;
+    } catch (e) {
+      el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`;
+    }
+  }
+
+  window._openSixpack = (tanqueNo, linea, paramId, ini, fin, label) => {
+    window._sixpackPreset = { tanqueNo, linea, paramId, ini, fin, label };
+    navigate('kpi-sixpack');
+  };
+}
+
+// ── Capability Sixpack ──────────────────────────────────────────────────────
+
+async function viewKpiSixpack() {
+  const tanqueData = await loadKpiTanqueParams();
+  const preset = window._sixpackPreset || null;
+  let paramOptions = '';
+  if (preset) {
+    const tk = tanqueData.find(t => t.no === preset.tanqueNo);
+    if (tk) paramOptions = tk.params.map(p => `<option value="${p.id}" ${p.id===preset.paramId?'selected':''}>${esc(p.nombre_parametro)} (${esc(p.unidad||'')})</option>`).join('');
+  }
+  return `
+  <div class="filters-bar" style="flex-wrap:wrap;gap:10px;margin-bottom:16px">
+    <div><label class="flabel">Proceso</label><br>
+      <select id="sp-tanque" style="min-width:220px">
+        <option value="">-- Seleccionar --</option>
+        ${tanqueData.map(t => `<option value="${esc(JSON.stringify({no:t.no,linea:t.linea}))}" ${preset&&t.no===preset.tanqueNo?'selected':''}>${esc(t.label)}</option>`).join('')}
+      </select>
+    </div>
+    <div><label class="flabel">Parámetro</label><br>
+      <select id="sp-param" style="min-width:180px">
+        <option value="">-- Seleccionar proceso --</option>
+        ${paramOptions}
+      </select>
+    </div>
+    <div><label class="flabel">Desde</label><br><input type="date" id="sp-ini" value="${preset ? preset.ini : monthStart()}" /></div>
+    <div><label class="flabel">Hasta</label><br><input type="date" id="sp-fin" value="${preset ? preset.fin : today()}" /></div>
+    <div style="align-self:flex-end"><button class="btn btn-primary" id="btn-sp-go">Analizar</button></div>
+  </div>
+  <div id="sp-result">${preset ? '<div class="empty-state"><div class="icon">⏳</div><p>Cargando análisis...</p></div>' : '<div class="empty-state"><div class="icon">🔬</div><p>Selecciona proceso, parámetro y periodo</p></div>'}</div>`;
+}
+
+function bindKpiSixpack() {
+  const tanqueDataPromise = loadKpiTanqueParams();
+
+  document.getElementById('sp-tanque').addEventListener('change', async function() {
+    const selP = document.getElementById('sp-param');
+    selP.innerHTML = '<option value="">-- Seleccionar --</option>';
+    if (!this.value) return;
+    const cfg = JSON.parse(this.value);
+    const tanqueData = await tanqueDataPromise;
+    const tk = tanqueData.find(t => t.no === cfg.no && t.linea === cfg.linea);
+    if (!tk) return;
+    tk.params.forEach(p => selP.add(new Option(`${p.nombre_parametro} (${p.unidad||''})`, p.id)));
+  });
+
+  document.getElementById('btn-sp-go').addEventListener('click', runSixpack);
+
+  const preset = window._sixpackPreset;
+  if (preset) {
+    window._sixpackPreset = null;
+    setTimeout(runSixpack, 100);
+  }
+
+  async function runSixpack() {
+    const paramId = Number(document.getElementById('sp-param').value);
+    if (!paramId) { alert('Selecciona proceso y parámetro'); return; }
+    const ini = document.getElementById('sp-ini').value;
+    const fin = document.getElementById('sp-fin').value;
+    const el = document.getElementById('sp-result');
+    el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Calculando...</p></div>';
+    try {
+      const data = await GET(`/titulaciones/estadisticas/valores?parametro_id=${paramId}&fecha_ini=${ini}&fecha_fin=${fin}`);
+      if (!data.valores?.length) { el.innerHTML = '<div class="empty-state"><div class="icon">📈</div><p>Sin datos en el período</p></div>'; return; }
+      renderSixpack(el, data, ini, fin);
+    } catch(e) { el.innerHTML = `<div class="alert alert-warn">Error: ${e.message}</div>`; }
+  }
+}
+
+function renderSixpack(el, data, ini, fin) {
+  const { param, valores } = data;
+  const vals = valores.map(v => v.valor).filter(v => v != null);
+  if (vals.length < 2) { el.innerHTML = '<div class="empty-state"><div class="icon">📈</div><p>Datos insuficientes (n < 2)</p></div>'; return; }
+
+  const labels = valores.map(v => `${v.fecha} T${v.turno}`);
+  const lsl = param.valor_min, usl = param.valor_max, obj = param.objetivo;
+  const stats = spcStats(vals);
+  const { cp, cpk } = spcCpCpk(stats.mean, stats.sigma, lsl, usl);
+  const c = cpkColorInfo(cpk);
+  const ucl = stats.mean + 3 * stats.sigma;
+  const lcl = stats.mean - 3 * stats.sigma;
+  const mrl = stats.rangos;
+  const mrBar = stats.mrBar;
+  const mrcl = mrBar * 3.267;
+
+  // Pp, Ppk (same as Cp/Cpk for individual data but using overall sigma)
+  const pp = (lsl != null && usl != null) ? (usl - lsl) / (6 * stats.sigma) : null;
+  const ppkU = usl != null ? (usl - stats.mean) / (3 * stats.sigma) : null;
+  const ppkL = lsl != null ? (stats.mean - lsl) / (3 * stats.sigma) : null;
+  const ppk = ppkU != null && ppkL != null ? Math.min(ppkU, ppkL) : (ppkU ?? ppkL);
+
+  const statCards = [
+    ['μ (Media)', stats.mean.toFixed(3), '#dbeafe'],
+    ['σ (Desv.Est)', stats.sigma.toFixed(3), '#f3e8ff'],
+    ['n', stats.n, '#f1f5f9'],
+    ...(cp != null ? [['Cp', cp.toFixed(3), cp>=1.33?'#dcfce7':cp>=1?'#fef3c7':'#fee2e2']] : []),
+    ...(cpk != null ? [['Cpk', cpk.toFixed(3), cpk>=1.33?'#dcfce7':cpk>=1?'#fef3c7':'#fee2e2']] : []),
+    ...(pp != null ? [['Pp', pp.toFixed(3), pp>=1.33?'#dcfce7':pp>=1?'#fef3c7':'#fee2e2']] : []),
+    ...(ppk != null ? [['Ppk', ppk.toFixed(3), ppk>=1.33?'#dcfce7':ppk>=1?'#fef3c7':'#fee2e2']] : []),
+  ];
+
+  const specInfo = lsl != null && usl != null ? `Spec: ${lsl} – ${usl} ${param.unidad||''}` : lsl != null ? `LSL: ${lsl}` : usl != null ? `USL: ${usl}` : 'Sin límites de spec';
+
+  el.innerHTML = `
+  <div class="table-card" style="margin-bottom:16px;padding:16px">
+    <h3 style="margin:0 0 4px;font-size:16px">${esc(param.no_tanque)} — ${esc(param.nombre_parametro)}</h3>
+    <p style="margin:0 0 12px;font-size:12px;color:#78716c">${specInfo} &middot; ${ini} a ${fin}</p>
+    ${cpk != null ? `<div style="background:${c.bg};border:1px solid ${c.border};border-radius:8px;padding:8px 14px;font-size:13px;color:${c.text};font-weight:600;margin-bottom:14px">
+      ${c.emoji} ${c.label} — Cpk = ${cpk.toFixed(2)} ${cpk>=1.67?'Proceso altamente capaz':cpk>=1.33?'Proceso capaz':cpk>=1?'Proceso marginalmente capaz':'Proceso NO capaz — requiere mejora'}
+    </div>` : ''}
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      ${statCards.map(([lab, val, bg]) => `
+        <div style="background:${bg};border-radius:8px;padding:8px 14px;text-align:center;min-width:80px">
+          <div style="font-size:11px;font-weight:600;color:#6b7280">${lab}</div>
+          <div style="font-size:22px;font-weight:800;color:#1e293b">${val}</div>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="table-card"><div class="table-header"><h3>I-Chart (Valores Individuales)</h3></div>
+      <div style="padding:12px;height:260px;position:relative"><canvas id="sp-ichart"></canvas></div></div>
+    <div class="table-card"><div class="table-header"><h3>MR-Chart (Rangos Móviles)</h3></div>
+      <div style="padding:12px;height:260px;position:relative"><canvas id="sp-mrchart"></canvas></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="table-card"><div class="table-header"><h3>Histograma + Curva Normal</h3></div>
+      <div style="padding:12px;height:280px;position:relative"><canvas id="sp-hist"></canvas></div></div>
+    <div class="table-card"><div class="table-header"><h3>Probabilidad Normal (Q-Q)</h3></div>
+      <div style="padding:12px;height:280px;position:relative"><canvas id="sp-qq"></canvas></div></div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+    <div class="table-card"><div class="table-header"><h3>Tendencia Cpk por Semana</h3></div>
+      <div style="padding:12px;height:260px;position:relative"><canvas id="sp-trend"></canvas></div></div>
+    <div class="table-card"><div class="table-header"><h3>Últimas Observaciones</h3></div>
+      <div style="padding:12px;height:260px;position:relative"><canvas id="sp-last"></canvas></div></div>
+  </div>
+
+  <div class="table-card" style="margin-bottom:16px">
+    <div class="table-header"><h3>Registros de Titulación (${valores.length})</h3></div>
+    <div style="overflow-x:auto;max-height:350px;overflow-y:auto">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="background:#f8fafc;position:sticky;top:0">
+          <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Turno</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Tit.</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Valor (${esc(param.unidad||'')})</th>
+          <th style="padding:6px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Estado</th>
+          <th style="padding:6px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Analista</th>
+        </tr></thead>
+        <tbody>${valores.map(v => {
+          const ec = estadoColor(v.estado);
+          return `<tr style="border-bottom:1px solid #f1f5f9">
+            <td style="padding:5px 10px">${v.fecha||'—'}</td>
+            <td style="padding:5px 8px;text-align:center">T${v.turno||'?'}</td>
+            <td style="padding:5px 8px;text-align:center">${v.clave||'—'}</td>
+            <td style="padding:5px 8px;text-align:center;font-weight:600;color:${ec}">${v.valor != null ? v.valor : '—'}</td>
+            <td style="padding:5px 8px;text-align:center">${estadoBadge(v.estado)}</td>
+            <td style="padding:5px 10px;font-size:11px">${v.analista||'—'}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // --- Render charts ---
+  setTimeout(() => {
+    // 1) I-Chart
+    const ptColors = vals.map(v => {
+      if (usl != null && v > usl) return '#ef4444';
+      if (lsl != null && v < lsl) return '#ef4444';
+      return '#3b82f6';
+    });
+    new Chart(document.getElementById('sp-ichart'), {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          { label: param.nombre_parametro, data: vals, borderColor:'#3b82f6', pointBackgroundColor: ptColors, tension:0.3, fill:false, pointRadius:3 },
+          { label: `UCL (${ucl.toFixed(2)})`, data: Array(vals.length).fill(ucl), borderColor:'#f59e0b', borderDash:[4,4], pointRadius:0 },
+          { label: `LCL (${lcl.toFixed(2)})`, data: Array(vals.length).fill(lcl), borderColor:'#f59e0b', borderDash:[4,4], pointRadius:0 },
+          { label: `X̄ (${stats.mean.toFixed(2)})`, data: Array(vals.length).fill(stats.mean), borderColor:'#16a34a', borderDash:[2,2], pointRadius:0 },
+          ...(usl!=null?[{ label:`USL (${usl})`, data:Array(vals.length).fill(usl), borderColor:'#ef4444', borderDash:[6,3], pointRadius:0 }]:[]),
+          ...(lsl!=null?[{ label:`LSL (${lsl})`, data:Array(vals.length).fill(lsl), borderColor:'#ef4444', borderDash:[6,3], pointRadius:0 }]:[]),
+        ]
+      },
+      options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}, scales:{x:{display:false},y:{title:{display:true,text:param.unidad||''}}} }
+    });
+
+    // 2) MR-Chart
+    new Chart(document.getElementById('sp-mrchart'), {
+      type: 'bar',
+      data: {
+        labels: labels.slice(1),
+        datasets: [
+          { label: 'Rango Móvil', data: mrl, backgroundColor:'#a78bfa' },
+          { label: `MR̄ (${mrBar.toFixed(2)})`, data: Array(mrl.length).fill(mrBar), type:'line', borderColor:'#16a34a', borderDash:[2,2], pointRadius:0 },
+          { label: `UCL_MR (${mrcl.toFixed(2)})`, data: Array(mrl.length).fill(mrcl), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 }
+        ]
+      },
+      options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}, scales:{x:{display:false}} }
+    });
+
+    // 3) Histogram + Gaussian curve
+    const sorted = [...vals].sort((a,b)=>a-b);
+    const bins = Math.max(6, Math.min(15, Math.ceil(Math.sqrt(vals.length))));
+    const minV = sorted[0], maxV = sorted[sorted.length-1];
+    const range = maxV - minV || 1;
+    const step = range / bins;
+    const buckets = Array.from({length:bins}, (_,i) => {
+      const lo = minV + i * step;
+      return { label: lo.toFixed(2), lo, hi: lo + step, count: 0 };
+    });
+    vals.forEach(v => { const idx = Math.min(Math.floor((v - minV) / step), bins - 1); if (buckets[idx]) buckets[idx].count++; });
+
+    // Gaussian overlay: for each bucket midpoint, calc normal PDF scaled to histogram
+    const gaussData = buckets.map(b => {
+      const mid = b.lo + step / 2;
+      const z = (mid - stats.mean) / stats.sigma;
+      const pdf = Math.exp(-0.5 * z * z) / (stats.sigma * Math.sqrt(2 * Math.PI));
+      return pdf * vals.length * step;
+    });
+
+    const histDatasets = [
+      { label: 'Frecuencia', data: buckets.map(b=>b.count), backgroundColor:'#60a5fa', order:2 },
+      { label: 'Curva Normal', data: gaussData, type:'line', borderColor:'#7c3aed', borderWidth:2, pointRadius:0, tension:0.4, fill:false, order:1 }
+    ];
+    if (lsl != null) histDatasets.push({ label:`LSL (${lsl})`, data:buckets.map(()=>0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 });
+    if (usl != null) histDatasets.push({ label:`USL (${usl})`, data:buckets.map(()=>0), type:'line', borderColor:'#ef4444', borderDash:[4,4], pointRadius:0 });
+
+    const histChart = new Chart(document.getElementById('sp-hist'), {
+      type: 'bar',
+      data: { labels: buckets.map(b=>b.label), datasets: histDatasets },
+      options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10}}},
+        annotation: undefined
+      }, scales:{y:{title:{display:true,text:'Frecuencia'}}} }
+    });
+    // Draw LSL/USL as vertical lines using plugin
+    if (lsl != null || usl != null) {
+      const origDraw = histChart.draw.bind(histChart);
+      histChart.draw = function() {
+        origDraw();
+        const ctx = histChart.ctx;
+        const xScale = histChart.scales.x;
+        const yScale = histChart.scales.y;
+        ctx.save();
+        [lsl, usl].forEach((spec, si) => {
+          if (spec == null) return;
+          // Find pixel x for spec value
+          const frac = (spec - minV) / range;
+          const px = xScale.left + frac * (xScale.right - xScale.left);
+          ctx.strokeStyle = '#ef4444';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6,3]);
+          ctx.beginPath(); ctx.moveTo(px, yScale.top); ctx.lineTo(px, yScale.bottom); ctx.stroke();
+          ctx.fillStyle = '#ef4444'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+          ctx.fillText((si===0?'LSL ':'USL ') + spec, px, yScale.top - 4);
+        });
+        ctx.restore();
+      };
+      histChart.draw();
+    }
+
+    // 4) Normal Probability Plot (Q-Q)
+    const npData = sorted.map((v, i) => {
+      const p = (i + 0.5) / sorted.length;
+      const z = Math.sqrt(2) * erfinvApprox(2 * p - 1);
+      return { x: z, y: v };
+    });
+    new Chart(document.getElementById('sp-qq'), {
+      type: 'scatter',
+      data: { datasets: [{ label:'Datos', data:npData, backgroundColor:'#3b82f6', pointRadius:3 }] },
+      options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{title:{display:true,text:'Cuantil Normal (z)'}},y:{title:{display:true,text:param.nombre_parametro}}} }
+    });
+
+    // 5) Cpk trend by week
+    renderCpkTrend(document.getElementById('sp-trend'), param, valores);
+
+    // 6) Last 20 observations run chart
+    const last20 = vals.slice(-20);
+    const last20Labels = labels.slice(-20);
+    new Chart(document.getElementById('sp-last'), {
+      type: 'line',
+      data: {
+        labels: last20Labels,
+        datasets: [
+          { label: 'Valor', data: last20, borderColor:'#3b82f6', pointBackgroundColor:'#3b82f6', tension:0.2, fill:false, pointRadius:4 },
+          ...(usl!=null?[{label:`USL`,data:Array(last20.length).fill(usl),borderColor:'#ef4444',borderDash:[4,4],pointRadius:0}]:[]),
+          ...(lsl!=null?[{label:`LSL`,data:Array(last20.length).fill(lsl),borderColor:'#ef4444',borderDash:[4,4],pointRadius:0}]:[]),
+          ...(obj!=null?[{label:`Obj`,data:Array(last20.length).fill(obj),borderColor:'#16a34a',borderDash:[2,2],pointRadius:0}]:[]),
+        ]
+      },
+      options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}, scales:{x:{display:false}} }
+    });
+  }, 50);
+}
+
+function renderCpkTrend(canvas, param, valores) {
+  // Group by week, compute Cpk per week
+  const lsl = param.valor_min, usl = param.valor_max;
+  const weekMap = {};
+  valores.forEach(v => {
+    if (v.valor == null) return;
+    const d = new Date(v.fecha);
+    const day = d.getDay();
+    const diffMon = day === 0 ? -6 : 1 - day;
+    const mon = new Date(d); mon.setDate(d.getDate() + diffMon);
+    const key = mon.toISOString().slice(0, 10);
+    if (!weekMap[key]) weekMap[key] = [];
+    weekMap[key].push(v.valor);
+  });
+  const weeks = Object.keys(weekMap).sort();
+  const cpks = weeks.map(w => {
+    const vs = weekMap[w];
+    if (vs.length < 2 || (lsl == null && usl == null)) return null;
+    const st = spcStats(vs);
+    const { cpk } = spcCpCpk(st.mean, st.sigma, lsl, usl);
+    return cpk != null && isFinite(cpk) ? cpk : null;
+  });
+  const wLabels = weeks.map(w => {
+    const d = new Date(w);
+    const oneJan = new Date(d.getFullYear(), 0, 1);
+    const wn = Math.ceil(((d - oneJan) / 86400000 + oneJan.getDay() + 1) / 7);
+    return 'S' + wn;
+  });
+  const colors = cpks.map(v => v == null ? '#cbd5e1' : v < 1 ? '#ef4444' : v < 1.33 ? '#f59e0b' : '#16a34a');
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: wLabels,
+      datasets: [
+        { label: 'Cpk', data: cpks.map(v => v ?? 0), backgroundColor: colors },
+        { label: 'Meta (1.33)', data: Array(weeks.length).fill(1.33), type:'line', borderColor:'#16a34a', borderDash:[4,4], pointRadius:0 },
+        { label: 'Mínimo (1.0)', data: Array(weeks.length).fill(1.0), type:'line', borderColor:'#f59e0b', borderDash:[4,4], pointRadius:0 }
+      ]
+    },
+    options: { animation:false, responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'bottom',labels:{font:{size:10}}}}, scales:{y:{min:0}} }
+  });
 }
 
 // ── Lectura de Excel y carga directa ─────────────────────────────────────────

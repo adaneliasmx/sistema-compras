@@ -271,6 +271,13 @@ tbody tr:hover { background: #fafaf9; }
 }
 .rpt-tipo-btn.active,
 .rpt-tipo-btn:hover { background: var(--v-primary); color: #fff; border-color: var(--v-primary); }
+.kpi-period-btn {
+  padding: 6px 16px; border: 1px solid #e7e5e4; border-radius: 20px;
+  background: #fafaf9; cursor: pointer; font-size: 13px; font-weight: 600;
+  color: #78716c; transition: all .15s;
+}
+.kpi-period-btn.active,
+.kpi-period-btn:hover { background: var(--v-primary); color: #fff; border-color: var(--v-primary); }
 .rpt-period-nav { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: center; }
 .rpt-arrow {
   width: 32px; height: 32px; border: 1px solid #e7e5e4; border-radius: 8px;
