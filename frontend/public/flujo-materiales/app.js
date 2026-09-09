@@ -1260,21 +1260,20 @@ async function generarRemisionPDF(remId) {
       2: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
       3: { cellWidth: 28, halign: 'right' }
     },
-    theme: 'plain',
-    didDrawPage: (data) => {
-      const tbl = data.table;
-      const tblW = cw;
-      // Borde exterior de toda la tabla (enmarcado)
-      doc.setDrawColor(0); doc.setLineWidth(0.3);
-      doc.rect(ML, tblY, tblW, tbl.finalY - tblY);
-      // Linea bajo el header
-      const hdrBot = tbl.head[0].cells[0].y + tbl.head[0].cells[0].height;
-      doc.setLineWidth(0.2);
-      doc.line(ML, hdrBot, ML + tblW, hdrBot);
-    }
+    theme: 'plain'
   });
 
-  let y = doc.lastAutoTable.finalY + 8;
+  // Borde exterior enmarcado + linea bajo header (despues de generar tabla)
+  const finalTbl = doc.lastAutoTable;
+  const tblW = cw;
+  doc.setDrawColor(0); doc.setLineWidth(0.3);
+  doc.rect(ML, tblY, tblW, finalTbl.finalY - tblY);
+  // Linea bajo el header
+  const hdrBotY = tblY + finalTbl.head[0].height;
+  doc.setLineWidth(0.2);
+  doc.line(ML, hdrBotY, ML + tblW, hdrBotY);
+
+  let y = finalTbl.finalY + 8;
 
   // ── Comentarios box ──
   const poId = (rem.lotes || []).find(l => l.po_id)?.po_id;
