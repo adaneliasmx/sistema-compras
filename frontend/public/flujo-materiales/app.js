@@ -229,9 +229,29 @@ async function renderMain() {
 // ═══════════════════════════════════════════════════════════════════════════════
 // INGRESO TENNECO
 // ═══════════════════════════════════════════════════════════════════════════════
+function estadoDisplay(l, remisiones) {
+  if (l.estado === 'enviado' && l.remision_id) {
+    const rem = (remisiones || []).find(r => r.id === l.remision_id);
+    if (rem && rem.facturado) return 'facturado';
+    return 'enviado';
+  }
+  if (l.estado === 'cerrado') return 'empacado';
+  if ((l.material_terminado || 0) > 0 || (l.material_procesando || 0) > 0) return 'en_proceso';
+  return 'recibido';
+}
+const ESTADO_CFG = {
+  recibido:   { label: 'Recibido',   color: '#6b7280', bg: '#f3f4f6' },
+  en_proceso: { label: 'En proceso', color: '#d97706', bg: '#fef3c7' },
+  empacado:   { label: 'Empacado',   color: '#2563eb', bg: '#dbeafe' },
+  enviado:    { label: 'Enviado',    color: '#059669', bg: '#d1fae5' },
+  facturado:  { label: 'Facturado',  color: '#7c3aed', bg: '#ede9fe' }
+};
+
 async function viewIngresoTenneco(el) {
-  S.lotes = await GET('/tenneco/lotes');
-  S.partes = await GET('/cat/tenneco/partes');
+  const [lotes, partes, remisiones] = await Promise.all([
+    GET('/tenneco/lotes'), GET('/cat/tenneco/partes'), GET('/tenneco/remisiones')
+  ]);
+  S.lotes = lotes; S.partes = partes; S.remisionesAll = remisiones;
 
   // Default: ultimo mes + pendientes
   const hoy = new Date();
@@ -243,7 +263,7 @@ async function viewIngresoTenneco(el) {
       <div class="fm-toolbar">
         <label>Desde <input class="fm-input" type="date" id="f-desde" value="${desdeDefault}"/></label>
         <label>Hasta <input class="fm-input" type="date" id="f-hasta"/></label>
-        <label>Estado <select class="fm-input" id="f-estado"><option value="">Todos</option><option value="abierto">Abierto</option><option value="cerrado">Cerrado</option><option value="enviado">Enviado</option></select></label>
+        <label>Estado <select class="fm-input" id="f-estado"><option value="">Todos</option><option value="recibido">Recibido</option><option value="en_proceso">En proceso</option><option value="empacado">Empacado</option><option value="enviado">Enviado</option><option value="facturado">Facturado</option></select></label>
         <input class="fm-input" id="f-buscar" placeholder="Buscar..." style="min-width:160px"/>
         <div style="flex:1"></div>
         ${can('edit-inventarios') ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-nueva-recep">+ Registrar recepcion</button>' : ''}
@@ -263,6 +283,7 @@ async function viewIngresoTenneco(el) {
           <th data-col="enviado" class="text-right">Enviado</th>
           <th data-col="progreso">Progreso</th>
           <th data-col="pct_scrap" class="text-right">% Scrap</th>
+          <th data-col="_estadoDisplay">Estado</th>
           ${S.user?.role === 'admin' ? '<th></th>' : ''}
         </tr></thead>
         <tbody id="tbody-lotes"></tbody>
@@ -270,14 +291,14 @@ async function viewIngresoTenneco(el) {
     </div>`;
 
   const renderRows = () => {
-    let data = [...S.lotes];
+    let data = S.lotes.map(l => ({ ...l, _estadoDisplay: estadoDisplay(l, S.remisionesAll) }));
     const desde = $('#f-desde').value;
     const hasta = $('#f-hasta').value;
     const estado = $('#f-estado').value;
     const buscar = $('#f-buscar').value.toLowerCase();
     if (desde) data = data.filter(l => l.fecha_recepcion >= desde);
     if (hasta) data = data.filter(l => l.fecha_recepcion <= hasta);
-    if (estado) data = data.filter(l => l.estado === estado);
+    if (estado) data = data.filter(l => l._estadoDisplay === estado);
     if (buscar) data = data.filter(l =>
       (l.numero_parte || '').toLowerCase().includes(buscar) ||
       (l.lote || '').toLowerCase().includes(buscar) ||
@@ -285,20 +306,28 @@ async function viewIngresoTenneco(el) {
       (l.enviado_por || '').toLowerCase().includes(buscar) ||
       (l.folio_salida_tenneco || '').toLowerCase().includes(buscar)
     );
-    // Sort
+    // Sort — lotes 100% al fondo, luego por columna o fecha
     if (S.sortCol) {
       data.sort((a, b) => {
+        const a100 = (a.progreso || 0) >= 1 ? 1 : 0;
+        const b100 = (b.progreso || 0) >= 1 ? 1 : 0;
+        if (a100 !== b100) return a100 - b100;
         let va = a[S.sortCol] ?? '', vb = b[S.sortCol] ?? '';
         if (typeof va === 'number' && typeof vb === 'number') return S.sortDir === 'asc' ? va - vb : vb - va;
         return S.sortDir === 'asc' ? String(va).localeCompare(String(vb)) : String(vb).localeCompare(String(va));
       });
     } else {
-      data.sort((a, b) => (a.fecha_recepcion || '').localeCompare(b.fecha_recepcion || ''));
+      data.sort((a, b) => {
+        const a100 = (a.progreso || 0) >= 1 ? 1 : 0;
+        const b100 = (b.progreso || 0) >= 1 ? 1 : 0;
+        if (a100 !== b100) return a100 - b100;
+        return (a.fecha_recepcion || '').localeCompare(b.fecha_recepcion || '');
+      });
     }
 
     const tbody = $('#tbody-lotes');
     const isAdm = S.user?.role === 'admin';
-    const cols = isAdm ? 17 : 16;
+    const cols = isAdm ? 18 : 17;
     if (!data.length) { tbody.innerHTML = `<tr><td colspan="${cols}" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros</td></tr>`; return; }
     tbody.innerHTML = data.map(l => `<tr>
       <td>${esc(l.fecha_recepcion || '')}</td><td class="text-center">${l.semana || ''}</td>
@@ -313,6 +342,7 @@ async function viewIngresoTenneco(el) {
       <td class="text-right">${fmtNum(l.enviado)}</td>
       <td><div class="progress-bar"><div class="bar"><div class="bar-fill" style="width:${(l.progreso || 0) * 100}%"></div></div>${fmtPct(l.progreso)}</div></td>
       <td class="text-right">${l.pct_scrap != null ? l.pct_scrap.toFixed(2) + '%' : '0%'}</td>
+      <td><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;color:${ESTADO_CFG[l._estadoDisplay].color};background:${ESTADO_CFG[l._estadoDisplay].bg}">${ESTADO_CFG[l._estadoDisplay].label}</span></td>
       ${isAdm ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-lote" data-id="${l.id}" title="Editar">E</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-lote" data-id="${l.id}" title="Eliminar">X</button></td>` : ''}
     </tr>`).join('');
     if (isAdm) {
