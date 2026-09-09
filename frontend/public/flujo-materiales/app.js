@@ -313,9 +313,13 @@ async function viewIngresoTenneco(el) {
       <td class="text-right">${fmtNum(l.enviado)}</td>
       <td><div class="progress-bar"><div class="bar"><div class="bar-fill" style="width:${(l.progreso || 0) * 100}%"></div></div>${fmtPct(l.progreso)}</div></td>
       <td class="text-right">${l.pct_scrap != null ? l.pct_scrap.toFixed(2) + '%' : '0%'}</td>
-      ${isAdm ? `<td><button class="fm-btn fm-btn-danger fm-btn-sm btn-del-lote" data-id="${l.id}" title="Eliminar">X</button></td>` : ''}
+      ${isAdm ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-lote" data-id="${l.id}" title="Editar">E</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-lote" data-id="${l.id}" title="Eliminar">X</button></td>` : ''}
     </tr>`).join('');
     if (isAdm) {
+      $$('.btn-edit-lote').forEach(b => b.addEventListener('click', () => {
+        const lote = S.lotes.find(x => x.id === Number(b.dataset.id));
+        if (lote) showModalEditLote(lote, renderRows);
+      }));
       $$('.btn-del-lote').forEach(b => b.addEventListener('click', async () => {
         if (!confirm('Eliminar lote y sus muestras asociadas?')) return;
         try { await DEL('/tenneco/lotes/' + b.dataset.id); S.lotes = await GET('/tenneco/lotes'); renderRows(); } catch(e) { alert('Error: ' + e.message); }
@@ -440,6 +444,47 @@ function showModalRecepcion(onSave) {
       onSave();
     } catch (e) { alert('Error: ' + e.message); }
   }
+}
+
+function showModalEditLote(lote, onSave) {
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal">
+    <h3>Editar Lote</h3>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>Folio Salida Tenneco</label><input class="fm-input" id="el-folio" value="${esc(lote.folio_salida_tenneco || '')}" maxlength="5"/></div>
+      <div class="fm-form-group"><label>Enviado por</label><input class="fm-input" id="el-enviado" value="${esc(lote.enviado_por || '')}"/></div>
+    </div>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>Lote</label><input class="fm-input" id="el-lote" value="${esc(lote.lote || '')}" maxlength="8"/></div>
+      <div class="fm-form-group"><label>Cantidad recibida</label><input class="fm-input" id="el-cant" type="number" min="1" value="${lote.cantidad_recibida || 0}"/></div>
+    </div>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>Diametro</label><input class="fm-input fm-auto-filled" id="el-diam" value="${esc(lote.diametro || '')}" readonly/></div>
+      <div class="fm-form-group"><label>N/P</label><input class="fm-input fm-auto-filled" id="el-np" value="${esc(lote.numero_parte || '')}" readonly/></div>
+    </div>
+    <div class="fm-form-group"><label>Cliente</label><input class="fm-input fm-auto-filled" id="el-cli" value="${esc(lote.cliente_int || '')}" readonly/></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="el-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="el-save">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  $('#el-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  $('#el-save').addEventListener('click', async () => {
+    try {
+      await PATCH('/tenneco/lotes/' + lote.id, {
+        folio_salida_tenneco: $('#el-folio').value,
+        enviado_por: $('#el-enviado').value,
+        lote: $('#el-lote').value,
+        cantidad_recibida: parseInt($('#el-cant').value) || 0
+      });
+      overlay.remove();
+      S.lotes = await GET('/tenneco/lotes');
+      onSave();
+    } catch (e) { alert('Error: ' + e.message); }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -758,7 +803,7 @@ async function viewSalidaTenneco(el) {
             <td>${esc(r.created_by || '')}</td>
             <td><button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-rem" data-id="${r.id}">Ver</button>
                 <button class="fm-btn fm-btn-outline fm-btn-sm btn-pdf-rem" data-id="${r.id}">PDF</button>
-                ${S.user?.role === 'admin' ? `<button class="fm-btn fm-btn-danger fm-btn-sm btn-del-rem" data-id="${r.id}" title="Eliminar">X</button>` : ''}</td>
+                ${S.user?.role === 'admin' ? `<button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-rem" data-id="${r.id}" title="Editar">E</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-rem" data-id="${r.id}" title="Eliminar">X</button>` : ''}</td>
           </tr>`).join('')}</tbody>
         </table></div>`
       }
@@ -815,6 +860,10 @@ async function viewSalidaTenneco(el) {
   $$('.btn-ver-rem').forEach(b => b.addEventListener('click', () => showRemisionDetail(Number(b.dataset.id))));
   $$('.btn-pdf-rem').forEach(b => b.addEventListener('click', () => generarRemisionPDF(Number(b.dataset.id))));
   if (S.user?.role === 'admin') {
+    $$('.btn-edit-rem').forEach(b => b.addEventListener('click', () => {
+      const rem = S.remisiones.find(x => x.id === Number(b.dataset.id));
+      if (rem) showModalEditRemision(rem, el);
+    }));
     $$('.btn-del-rem').forEach(b => b.addEventListener('click', async () => {
       if (!confirm('Eliminar remision? Los lotes volveran a estado previo.')) return;
       try { await DEL('/tenneco/remisiones/' + b.dataset.id); await viewSalidaTenneco(el); } catch(e) { alert('Error: ' + e.message); }
@@ -961,6 +1010,33 @@ async function showRemisionDetail(remId) {
   $('#m-close').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   $('#m-pdf-rem').addEventListener('click', () => generarRemisionPDF(remId));
+}
+
+function showModalEditRemision(rem, parentEl) {
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:450px">
+    <h3>Editar Remision</h3>
+    <div class="fm-form-group"><label>Folio</label><input class="fm-input" id="er-folio" value="${esc(rem.folio || '')}"/></div>
+    <div class="fm-form-group"><label>Observaciones</label><textarea class="fm-input" id="er-obs" rows="3" style="resize:vertical">${esc(rem.observaciones || '')}</textarea></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="er-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="er-save">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+  $('#er-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  $('#er-save').addEventListener('click', async () => {
+    try {
+      await PATCH('/tenneco/remisiones/' + rem.id, {
+        folio: $('#er-folio').value,
+        observaciones: $('#er-obs').value
+      });
+      overlay.remove();
+      await viewSalidaTenneco(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1331,10 +1407,14 @@ async function viewEmpaqueTenneco(el) {
         <td>${(m.fecha || m.synced_at || '').slice(0, 10)}</td>
         <td>${esc(m.hora || '')}</td>
         <td style="font-size:11px">${esc(m.analista || '')}</td>
-        ${S.user?.role === 'admin' ? `<td><button class="fm-btn fm-btn-danger fm-btn-sm btn-del-muestra" data-id="${m.id}" title="Eliminar">X</button></td>` : ''}
+        ${S.user?.role === 'admin' ? `<td><button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-muestra" data-id="${m.id}" title="Editar">E</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-muestra" data-id="${m.id}" title="Eliminar">X</button></td>` : ''}
       </tr>`;
     }).join('');
     if (S.user?.role === 'admin') {
+      $$('.btn-edit-muestra').forEach(b => b.addEventListener('click', () => {
+        const mu = S.muestras.find(x => x.id === Number(b.dataset.id));
+        if (mu) showModalEditMuestra(mu, renderMuestras);
+      }));
       $$('.btn-del-muestra').forEach(b => b.addEventListener('click', async () => {
         if (!confirm('Eliminar esta muestra?')) return;
         try {
@@ -1348,6 +1428,96 @@ async function viewEmpaqueTenneco(el) {
   renderMuestras();
   ['emp-proy', 'emp-diam'].forEach(id => { if ($('#' + id)) $('#' + id).addEventListener('change', renderMuestras); });
   if ($('#emp-lote')) $('#emp-lote').addEventListener('input', renderMuestras);
+}
+
+async function showModalEditMuestra(mu, onSave) {
+  const defectos = await GET('/cat/tenneco/defectos');
+  const rug = mu.rugosidad || [null, null, null];
+  const alt = mu.altura_axial || [null, null, null];
+  const rechMap = {};
+  (mu.rechazos || []).forEach(r => { if (r.defecto && r.defecto !== 'Fuera de especificacion') rechMap[r.defecto] = r.cantidad || 0; });
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:550px">
+    <h3>Editar Muestra #${mu.num_muestra}</h3>
+    <p style="font-size:12px;color:var(--fm-muted);margin-bottom:12px">Lote: ${esc(mu.lote)} — N/P: ${esc(mu.numero_parte)} — Diam: ${esc(mu.diametro)}</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div>
+        <label style="font-weight:700;font-size:13px">Rugosidad (3 tomas)</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <input class="fm-input" id="em-r1" type="number" step="0.01" value="${rug[0] != null ? rug[0] : ''}" placeholder="R1" style="width:70px"/>
+          <input class="fm-input" id="em-r2" type="number" step="0.01" value="${rug[1] != null ? rug[1] : ''}" placeholder="R2" style="width:70px"/>
+          <input class="fm-input" id="em-r3" type="number" step="0.01" value="${rug[2] != null ? rug[2] : ''}" placeholder="R3" style="width:70px"/>
+        </div>
+        <div id="em-rug-prom" style="font-size:12px;color:var(--fm-muted);margin-top:4px">Prom: ${mu.rugosidad_prom ?? '-'}</div>
+      </div>
+      <div>
+        <label style="font-weight:700;font-size:13px">Altura Axial (3 tomas)</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <input class="fm-input" id="em-a1" type="number" step="0.01" value="${alt[0] != null ? alt[0] : ''}" placeholder="A1" style="width:70px"/>
+          <input class="fm-input" id="em-a2" type="number" step="0.01" value="${alt[1] != null ? alt[1] : ''}" placeholder="A2" style="width:70px"/>
+          <input class="fm-input" id="em-a3" type="number" step="0.01" value="${alt[2] != null ? alt[2] : ''}" placeholder="A3" style="width:70px"/>
+        </div>
+        <div id="em-alt-prom" style="font-size:12px;color:var(--fm-muted);margin-top:4px">Prom: ${mu.altura_axial_prom ?? '-'}</div>
+      </div>
+    </div>
+    <hr style="border:0;border-top:1px solid var(--fm-line);margin:14px 0"/>
+    <div class="fm-form-row">
+      <div class="fm-form-group"><label>Piezas aceptadas</label><input class="fm-input" id="em-acept" type="number" min="0" value="${mu.piezas_aceptadas || 0}"/></div>
+      <div class="fm-form-group"><label>Scrap</label><input class="fm-input" id="em-scrap" type="number" min="0" value="${mu.scrap || 0}"/></div>
+    </div>
+    <div style="margin-top:10px">
+      <label style="font-weight:700;font-size:13px">Rechazos por defecto</label>
+      <div id="em-rechazos" style="margin-top:6px">
+        ${defectos.map(d => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:12px;flex:1">${esc(d.defecto)}</span>
+          <input class="fm-input em-rech-qty" data-defecto="${esc(d.defecto)}" type="number" min="0" value="${rechMap[d.defecto] || 0}" style="width:70px"/>
+        </div>`).join('')}
+      </div>
+    </div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="em-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="em-save">Guardar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  // Live prom calc
+  const calcProm = () => {
+    const r = [parseFloat($('#em-r1').value), parseFloat($('#em-r2').value), parseFloat($('#em-r3').value)];
+    const a = [parseFloat($('#em-a1').value), parseFloat($('#em-a2').value), parseFloat($('#em-a3').value)];
+    const rValid = r.filter(v => !isNaN(v));
+    const aValid = a.filter(v => !isNaN(v));
+    $('#em-rug-prom').textContent = 'Prom: ' + (rValid.length === 3 ? (rValid.reduce((s, v) => s + v, 0) / 3).toFixed(2) : '-');
+    $('#em-alt-prom').textContent = 'Prom: ' + (aValid.length === 3 ? (aValid.reduce((s, v) => s + v, 0) / 3).toFixed(2) : '-');
+  };
+  ['em-r1', 'em-r2', 'em-r3', 'em-a1', 'em-a2', 'em-a3'].forEach(id => $('#' + id).addEventListener('input', calcProm));
+
+  $('#em-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  $('#em-save').addEventListener('click', async () => {
+    const r1 = parseFloat($('#em-r1').value), r2 = parseFloat($('#em-r2').value), r3 = parseFloat($('#em-r3').value);
+    const a1 = parseFloat($('#em-a1').value), a2 = parseFloat($('#em-a2').value), a3 = parseFloat($('#em-a3').value);
+    const rugArr = [r1, r2, r3].some(isNaN) ? (mu.rugosidad || []) : [r1, r2, r3];
+    const altArr = [a1, a2, a3].some(isNaN) ? (mu.altura_axial || []) : [a1, a2, a3];
+    const rechazos = [...$$('.em-rech-qty')].map(inp => ({
+      defecto: inp.dataset.defecto,
+      cantidad: parseInt(inp.value) || 0
+    })).filter(r => r.cantidad > 0);
+    try {
+      await PATCH('/tenneco/muestras/' + mu.id, {
+        rugosidad: rugArr,
+        altura_axial: altArr,
+        piezas_aceptadas: parseInt($('#em-acept').value) || 0,
+        scrap: parseInt($('#em-scrap').value) || 0,
+        rechazos
+      });
+      overlay.remove();
+      S.muestras = await GET('/tenneco/muestras');
+      onSave();
+    } catch (e) { alert('Error: ' + e.message); }
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

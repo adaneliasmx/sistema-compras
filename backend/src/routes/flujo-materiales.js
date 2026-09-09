@@ -812,6 +812,32 @@ router.patch('/tenneco/remisiones/:id/factura', flujoAllowRoles('supervisor'), (
   res.json(rem);
 });
 
+router.patch('/tenneco/remisiones/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const rem = (db.remisiones_tenneco || []).find(r => r.id === Number(req.params.id));
+  if (!rem) return res.status(404).json({ error: 'Remision no encontrada' });
+  const b = sanitize(req.body);
+  const cambios = [];
+  if (b.observaciones !== undefined && b.observaciones !== rem.observaciones) {
+    cambios.push(`Observaciones: "${rem.observaciones || ''}" → "${b.observaciones}"`);
+    rem.observaciones = String(b.observaciones).trim();
+  }
+  if (b.folio !== undefined && b.folio !== rem.folio) {
+    cambios.push(`Folio: "${rem.folio}" → "${b.folio}"`);
+    rem.folio = String(b.folio).trim();
+  }
+  if (cambios.length) {
+    rem.historial = rem.historial || [];
+    rem.historial.push({
+      fecha: nowMxDate(), hora: nowMxTime(),
+      usuario: req.flujoUser.nombre,
+      accion: 'Editado: ' + cambios.join('; ')
+    });
+  }
+  write(db);
+  res.json(rem);
+});
+
 router.delete('/tenneco/remisiones/:id', flujoAllowRoles('admin'), (req, res) => {
   const db = read();
   const idx = (db.remisiones_tenneco || []).findIndex(r => r.id === Number(req.params.id));
@@ -1131,6 +1157,56 @@ router.get('/tenneco/muestras', flujoAllowRoles('calidad'), (req, res) => {
 router.get('/tenneco/muestras/:id', flujoAllowRoles('calidad'), (req, res) => {
   const m = (read().muestras_tenneco || []).find(m => m.id === Number(req.params.id));
   if (!m) return res.status(404).json({ error: 'Muestra no encontrada' });
+  res.json(m);
+});
+
+router.patch('/tenneco/muestras/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const m = (db.muestras_tenneco || []).find(x => x.id === Number(req.params.id));
+  if (!m) return res.status(404).json({ error: 'Muestra no encontrada' });
+  const b = sanitize(req.body);
+
+  // Editable fields
+  if (Array.isArray(b.rugosidad) && b.rugosidad.length === 3) {
+    m.rugosidad = b.rugosidad.map(Number);
+    const allNull = m.rugosidad.every(v => v == null || isNaN(v));
+    m.rugosidad_prom = allNull ? null : Math.round((m.rugosidad.reduce((a, v) => a + (v || 0), 0) / 3) * 100) / 100;
+  }
+  if (Array.isArray(b.altura_axial) && b.altura_axial.length === 3) {
+    m.altura_axial = b.altura_axial.map(Number);
+    m.altura_axial_prom = Math.round((m.altura_axial.reduce((a, v) => a + (v || 0), 0) / 3) * 100) / 100;
+  }
+  if (b.piezas_aceptadas !== undefined) m.piezas_aceptadas = parseInt(b.piezas_aceptadas) || 0;
+  if (Array.isArray(b.rechazos)) m.rechazos = b.rechazos;
+  if (b.scrap !== undefined) m.scrap = parseInt(b.scrap) || 0;
+
+  // Recalculate spec validation
+  const lote = (db.lotes_tenneco || []).find(l => l.id === m.lote_id);
+  const specs = lote ? (db.cat_tenneco_specs || []).find(s =>
+    String(s.numero_parte).trim() === String(lote.numero_parte).trim()
+  ) : null;
+  let rugOk = true, altOk = true;
+  const rugNA = specs && specs.rugosidad_min === 0 && specs.rugosidad_max === 0;
+  if (specs && m.rugosidad_prom != null && !rugNA) {
+    rugOk = m.rugosidad_prom >= specs.rugosidad_min && m.rugosidad_prom <= specs.rugosidad_max;
+  }
+  if (specs && m.altura_axial_prom != null) {
+    altOk = m.altura_axial_prom >= specs.altura_axial_min && m.altura_axial_prom <= specs.altura_axial_max;
+  }
+  m.rugosidad_ok = rugOk;
+  m.altura_axial_ok = altOk;
+
+  const rechazosTotal = (m.rechazos || []).reduce((s, r) => s + (r.cantidad || 0), 0);
+  m.total_muestra = m.piezas_aceptadas + rechazosTotal + m.scrap;
+  const fueraDeSpec = !(rugOk && altOk);
+  m.status = fueraDeSpec ? 'retenida' : 'aceptada';
+  m.qc_liberado = m.status === 'aceptada';
+  m.edited_at = nowMxDate() + ' ' + nowMxTime();
+  m.edited_by = req.flujoUser.nombre;
+
+  // Recalculate parent lote
+  if (lote) recalcLote(lote, db);
+  write(db);
   res.json(m);
 });
 
