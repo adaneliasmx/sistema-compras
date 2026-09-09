@@ -810,11 +810,15 @@ async function viewSalidaTenneco(el) {
       ${S.remisiones.length === 0
         ? '<p style="color:var(--fm-muted);font-size:13px">Sin remisiones</p>'
         : `<div class="fm-table-wrap"><table class="fm-table">
-          <thead><tr><th>Folio</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>Factura</th><th>Creado por</th><th></th></tr></thead>
-          <tbody>${S.remisiones.map(r => `<tr>
+          <thead><tr><th>Folio</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>PO</th><th>Factura</th><th>Creado por</th><th></th></tr></thead>
+          <tbody>${S.remisiones.map(r => {
+            const _poId = (r.lotes || []).find(l => l.po_id)?.po_id;
+            const _po = _poId && S.pos ? S.pos.find(p => p.id === _poId) : null;
+            return `<tr>
             <td class="mono">${esc(r.folio)}</td><td>${esc(r.fecha)}</td>
             <td>${r.lotes.length}</td>
             <td class="text-right">${fmtNum(r.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</td>
+            <td class="mono" style="font-size:11px">${_po ? esc(_po.no_po) : '<span style="color:var(--fm-muted)">—</span>'}</td>
             <td>${r.facturado
               ? '<span class="badge-status badge-cerrado">' + esc(r.factura_numero) + '</span>'
               : (can('edit-inventarios') ? '<button class="fm-btn fm-btn-outline fm-btn-sm btn-facturar" data-id="' + r.id + '">Confirmar factura</button>' : '<span style="color:var(--fm-muted)">Pendiente</span>')}</td>
@@ -822,7 +826,7 @@ async function viewSalidaTenneco(el) {
             <td><button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-rem" data-id="${r.id}">Ver</button>
                 <button class="fm-btn fm-btn-outline fm-btn-sm btn-pdf-rem" data-id="${r.id}">PDF</button>
                 ${S.user?.role === 'admin' ? `<button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-rem" data-id="${r.id}" title="Editar">E</button> <button class="fm-btn fm-btn-danger fm-btn-sm btn-del-rem" data-id="${r.id}" title="Eliminar">X</button>` : ''}</td>
-          </tr>`).join('')}</tbody>
+          </tr>`;}).join('')}</tbody>
         </table></div>`
       }
     </div>`;
@@ -963,6 +967,16 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
   const diam = lotes[0]?.diametro || '';
   const np = lotes[0]?.numero_parte || '';
 
+  // POs activas con partes que coincidan
+  const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
+  const applicablePOs = activePOs.filter(po =>
+    (po.partes || []).some(p => p.diametro === diam || p.numero_parte === np)
+  );
+  const poOpts = applicablePOs.map(po => {
+    const disp = po.cantidad_po - po.cantidad_enviada;
+    return `<option value="${po.id}">PO ${esc(po.no_po)} — ${fmtNum(disp)}/${fmtNum(po.cantidad_po)} disp.</option>`;
+  }).join('');
+
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
   overlay.innerHTML = `<div class="fm-modal" style="width:550px">
@@ -975,12 +989,18 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
     <div class="fm-form-group">
       <label style="font-weight:700">Numero de Remision</label>
       <input class="fm-input" id="fc-folio" value="${esc(folioSugerido)}" style="font-size:16px;font-weight:700;letter-spacing:1px"/>
-      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: TEN YYYYMMDD.CC — Puedes editar el consecutivo u otro valor</div>
+      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: TEN YYYYMMDD.CC — Puedes editar el consecutivo</div>
+    </div>
+    <div class="fm-form-group">
+      <label style="font-weight:700">PO asignada (una por remision)</label>
+      <select class="fm-input" id="fc-po" style="font-size:13px">
+        <option value="">— Sin PO —</option>${poOpts}
+      </select>
     </div>
     <div id="fc-error" style="display:none;color:var(--fm-danger);font-size:13px;font-weight:600;margin-top:8px"></div>
     <div class="fm-modal-footer">
       <button class="fm-btn fm-btn-outline fm-btn-sm" id="fc-cancel">Cancelar</button>
-      <button class="fm-btn fm-btn-primary fm-btn-sm" id="fc-next">Continuar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="fc-confirm">Generar remision</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
@@ -988,11 +1008,11 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
   $('#fc-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 
-  $('#fc-next').addEventListener('click', () => {
+  $('#fc-confirm').addEventListener('click', async () => {
     const folio = $('#fc-folio').value.trim();
     if (!folio) { $('#fc-error').style.display = 'block'; $('#fc-error').textContent = 'Ingresa un numero de remision'; return; }
 
-    // Validar duplicado contra remisiones existentes
+    // Validar duplicado
     const dup = S.remisiones.find(r => r.folio === folio);
     if (dup) {
       $('#fc-error').style.display = 'block';
@@ -1000,23 +1020,23 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
       return;
     }
 
-    overlay.remove();
+    const poId = $('#fc-po').value ? Number($('#fc-po').value) : null;
 
-    // Verificar POs activas
-    const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
-    if (activePOs.length === 0) {
-      if (!confirm(`No hay POs activas. Generar remision "${folio}" sin asignar PO?`)) return;
-      (async () => {
-        try {
-          await POST('/tenneco/remisiones', { lote_ids: loteIds, folio });
-          await viewSalidaTenneco(parentEl);
-        } catch (e) { alert('Error: ' + e.message); }
-      })();
-      return;
+    // Armar po_assignments: misma PO para todos los lotes
+    const poAssignments = {};
+    if (poId) {
+      for (const id of loteIds) poAssignments[String(id)] = poId;
     }
 
-    // Pasar a modal de asignacion PO con folio ya confirmado
-    showPOAssignModal(loteIds, activePOs, parentEl, folio);
+    try {
+      await POST('/tenneco/remisiones', {
+        lote_ids: loteIds,
+        folio,
+        po_assignments: poAssignments
+      });
+      overlay.remove();
+      await viewSalidaTenneco(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
   });
 }
 
@@ -1059,32 +1079,25 @@ async function showRemisionDetail(remId) {
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
 
-  // Find PO info for lotes
-  const poNums = {};
-  if (S.pos && S.pos.length) {
-    for (const l of (rem.lotes || [])) {
-      if (l.po_id) {
-        const po = S.pos.find(p => p.id === l.po_id);
-        poNums[l.lote_id] = po ? po.no_po : '?';
-      }
-    }
-  }
+  // Find PO (una por remision)
+  const poId = (rem.lotes || []).find(l => l.po_id)?.po_id;
+  const po = poId && S.pos ? S.pos.find(p => p.id === poId) : null;
+  const poLabel = po ? `PO ${po.no_po}` : '';
 
   overlay.innerHTML = `<div class="fm-modal" style="width:600px">
     <h3>Remision ${esc(rem.folio)}</h3>
-    <p style="font-size:13px"><strong>Fecha:</strong> ${esc(rem.fecha)} | <strong>Creado por:</strong> ${esc(rem.created_by || '')}</p>
+    <p style="font-size:13px"><strong>Fecha:</strong> ${esc(rem.fecha)} | <strong>Creado por:</strong> ${esc(rem.created_by || '')}${poLabel ? ` | <strong>PO:</strong> ${esc(poLabel)}` : ''}</p>
     ${rem.facturado
       ? `<div class="fm-alert fm-alert-success" style="margin-top:10px"><strong>Facturado:</strong> ${esc(rem.factura_numero)} — ${esc(rem.factura_fecha || '')}</div>`
       : '<div class="fm-alert fm-alert-warn" style="margin-top:10px">Pendiente de facturacion</div>'}
     <div class="fm-table-wrap" style="margin-top:14px"><table class="fm-table">
-      <thead><tr><th>Caja</th><th>Componente</th><th>Medida</th><th class="text-right">Cantidad</th><th>PO</th></tr></thead>
+      <thead><tr><th>Caja</th><th>Componente</th><th>Medida</th><th class="text-right">Cantidad</th></tr></thead>
       <tbody>${rem.lotes.map(l => `<tr>
         <td class="mono">${esc(l.caja_id || '')}</td><td class="mono">${esc(l.numero_parte)}</td>
         <td>${esc(l.diametro)} mm</td><td class="text-right">${fmtNum(l.cantidad)}</td>
-        <td class="mono">${poNums[l.lote_id] ? esc(poNums[l.lote_id]) : '<span style="color:var(--fm-muted)">—</span>'}</td>
       </tr>`).join('')}
-      <tr class="kpi-total"><td colspan="3" class="text-right"><strong>TOTAL</strong></td>
-        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</strong></td><td></td></tr>
+      <tr class="kpi-total"><td colspan="2"></td><td class="text-right"><strong>TOTAL</strong></td>
+        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))} Piezas</strong></td></tr>
       </tbody>
     </table></div>
     ${rem.observaciones ? '<p style="margin-top:12px;font-size:13px;color:var(--fm-muted)"><strong>Obs:</strong> ' + esc(rem.observaciones) + '</p>' : ''}
@@ -1128,66 +1141,186 @@ function showModalEditRemision(rem, parentEl) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PDF — REMISION (formato exacto del Excel)
+// PDF — REMISION (formato Cuesto — referencia Excel)
 // ═══════════════════════════════════════════════════════════════════════════════
 async function generarRemisionPDF(remId) {
   const rem = S.remisiones.find(r => r.id === remId) || await GET('/tenneco/remisiones/' + remId);
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF('p', 'mm', 'letter');
 
-  const W = 216, H = 279, M = 18;
-  const cw = W - M * 2;
+  const W = 216, H = 279, ML = 22, MR = 22;
+  const cw = W - ML - MR;
+  const colLeft = cw * 0.48; // ancho col izq header
+  const colRight = cw * 0.52;
+  const C_LINK = [41, 128, 185]; // azul links
 
-  // Header
-  doc.setFontSize(18); doc.setFont(undefined, 'bold');
-  doc.text('REMISION', W / 2, 28, { align: 'center' });
-  doc.setFontSize(11); doc.setFont(undefined, 'normal');
-  doc.text(`No: ${rem.folio}`, W - M, 20, { align: 'right' });
-  doc.text(`Fecha: ${rem.fecha}`, W - M, 26, { align: 'right' });
+  // ── Logo Cuesto sutil (top-left) ──
+  try {
+    const logoImg = new Image();
+    logoImg.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      logoImg.onload = resolve;
+      logoImg.onerror = reject;
+      logoImg.src = '/img/logo.png';
+    });
+    doc.setGState(new doc.GState({ opacity: 0.12 }));
+    doc.addImage(logoImg, 'PNG', ML, 12, 38, 14);
+    doc.setGState(new doc.GState({ opacity: 1 }));
+  } catch(e) { /* logo no disponible, continuar sin el */ }
 
-  // Remitente
-  let y = 38;
+  // ── Fecha (top-left, debajo del logo) ──
+  const fechaParts = (rem.fecha || '').split('-');
+  const fechaDD = fechaParts.length === 3 ? `${fechaParts[2]}/${fechaParts[1]}/${fechaParts[0]}` : rem.fecha;
+  doc.setFontSize(10); doc.setFont(undefined, 'normal');
+  doc.text(fechaDD, ML, 34);
+
+  // ── Titulo: REMISION FOLIO ──
+  doc.setFontSize(16); doc.setFont(undefined, 'bold');
+  doc.text(`REMISI\u00D3N ${rem.folio}`, W / 2, 44, { align: 'center' });
+
+  // ── Header table (ENVIA | Cliente) ──
+  const hdrY = 50;
+  const hdrH = 60;
+  const xL = ML, xR = ML + colLeft, xEnd = ML + cw;
+
+  // Bordes exteriores + linea central
+  doc.setDrawColor(0); doc.setLineWidth(0.3);
+  doc.rect(xL, hdrY, cw, hdrH);
+  doc.line(xR, hdrY, xR, hdrY + hdrH);
+
+  // --- Columna izquierda: ENVIA ---
+  let ly = hdrY + 6;
   doc.setFontSize(10); doc.setFont(undefined, 'bold');
-  doc.text('Remitente:', M, y); y += 5;
-  doc.setFont(undefined, 'normal'); doc.setFontSize(9);
-  doc.text('Corporativo Cuesto, S. de R.L de C.V', M, y); y += 4;
-  doc.text('Carretera a Garcia Km 2.5, Santa Catarina, N.L.', M, y); y += 4;
-  doc.text('C.P. 66350', M, y); y += 8;
+  doc.text('ENVIA', xL + 3, ly); ly += 6;
+  doc.setFontSize(9); doc.setFont(undefined, 'normal');
+  doc.text('Corporativo Cuesto, S de RL de CV', xL + 3, ly); ly += 4.5;
+  doc.text('Calle 28 No2565', xL + 3, ly); ly += 4.5;
+  doc.text('Zona Industrial 44940', xL + 3, ly); ly += 4.5;
+  doc.text('Guadalajara, Jal. M\u00E9xico', xL + 3, ly); ly += 4.5;
+  doc.text('RFC: CCU090911RCA', xL + 3, ly); ly += 6;
+  doc.text('33 3145-3426', xL + 3, ly); ly += 4.5;
+  doc.setTextColor(...C_LINK);
+  doc.text('Info@cuesto.mx', xL + 3, ly);
+  doc.setTextColor(0);
 
-  // Cliente
-  doc.setFont(undefined, 'bold'); doc.setFontSize(10);
-  doc.text('Cliente:', M, y); y += 5;
-  doc.setFont(undefined, 'normal'); doc.setFontSize(9);
-  doc.text('Federal Mogul, S. de R.L de C.V (TENNECO)', M, y); y += 4;
-  doc.text('Monterrey, N.L.', M, y); y += 10;
+  // --- Columna derecha: Cliente ---
+  let ry = hdrY + 6;
+  doc.setFontSize(9); doc.setFont(undefined, 'bold');
+  doc.text('Cliente:', xR + 3, ry);
+  doc.setFont(undefined, 'normal');
+  doc.text(' Federal Mogul, S. de R.L de C.V', xR + 3 + doc.getTextWidth('Cliente:'), ry); ry += 8;
 
-  // Tabla
+  doc.setFont(undefined, 'bold');
+  doc.text('NO. FACTURA:', xR + 3, ry);
+  doc.setFont(undefined, 'normal');
+  const facTxt = rem.facturado ? (rem.factura_numero || '') : 'PENDIENTE';
+  doc.text(` ${facTxt}`, xR + 3 + doc.getTextWidth('NO. FACTURA:'), ry); ry += 5;
+
+  doc.setFont(undefined, 'bold');
+  doc.text('TIPO DE PAGO:', xR + 3, ry);
+  doc.setFont(undefined, 'normal');
+  doc.text(' POR DEFINIR', xR + 3 + doc.getTextWidth('TIPO DE PAGO:'), ry); ry += 8;
+
+  doc.setFont(undefined, 'bold');
+  doc.text('ENTREGA', xR + 3, ry); ry += 5;
+  doc.setFont(undefined, 'normal');
+  doc.text(' En domicilio', xR + 3, ry);
+
+  // ── Tabla de items ──
+  const tblY = hdrY + hdrH + 8;
   const total = rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0);
-  const tblBody = rem.lotes.map(l => [l.caja_id || '', l.numero_parte, l.diametro + ' mm', fmtNum(l.cantidad)]);
-  tblBody.push([{ content: '', colSpan: 2 }, { content: 'TOTAL:', styles: { fontStyle: 'bold', halign: 'right' } }, { content: fmtNum(total), styles: { fontStyle: 'bold', halign: 'right' } }]);
+  const nCajas = rem.lotes.length;
+
+  // Filas de datos
+  const tblBody = rem.lotes.map(l => [
+    l.caja_id || '', l.numero_parte || '',
+    { content: l.diametro || '', styles: { fontStyle: 'bold' } },
+    { content: fmtNum(l.cantidad), styles: { halign: 'right' } }
+  ]);
+
+  // Filas vacias para dar espacio (como el original)
+  const emptyRows = Math.max(0, 6 - rem.lotes.length);
+  for (let i = 0; i < emptyRows; i++) tblBody.push(['', '', '', '']);
+
+  // Fila Total
+  tblBody.push([
+    '', '',
+    { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
+    { content: `${fmtNum(total)} Piezas`, styles: { fontStyle: 'bold', halign: 'right' } }
+  ]);
+  tblBody.push([
+    '', '', '',
+    { content: `${nCajas} NIVELES`, styles: { halign: 'right', fontSize: 8 } }
+  ]);
+  tblBody.push([
+    '', '', '',
+    { content: `${nCajas} CAJAS`, styles: { halign: 'right', fontSize: 8 } }
+  ]);
 
   doc.autoTable({
-    startY: y,
-    margin: { left: M, right: M },
-    head: [['Caja', 'Componente', 'Medida (mm)', 'Cantidad']],
+    startY: tblY,
+    margin: { left: ML, right: MR },
+    head: [['Caja', 'Componente', 'Medida\n(mm)', 'Cantidad']],
     body: tblBody,
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [15, 118, 110], textColor: 255, fontStyle: 'bold' },
-    columnStyles: { 3: { halign: 'right' } },
-    theme: 'grid'
+    styles: { fontSize: 9, cellPadding: 2.5, lineColor: [0, 0, 0], lineWidth: 0.2 },
+    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center', lineWidth: 0.3 },
+    columnStyles: {
+      0: { cellWidth: colLeft * 0.55 },
+      1: { cellWidth: colLeft * 0.55 },
+      2: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
+      3: { cellWidth: 28, halign: 'right' }
+    },
+    theme: 'grid',
+    didParseCell: (data) => {
+      // Quitar bordes de filas total/niveles/cajas
+      const rowIdx = data.row.index;
+      const totalRowStart = rem.lotes.length + emptyRows;
+      if (rowIdx >= totalRowStart && data.column.index < 2) {
+        data.cell.styles.lineWidth = 0;
+      }
+    }
   });
 
-  y = doc.lastAutoTable.finalY + 20;
+  let y = doc.lastAutoTable.finalY + 8;
 
-  // Firmas
-  doc.setFontSize(9);
-  const fLeft = M + 20, fRight = W - M - 60;
-  doc.line(fLeft - 10, y, fLeft + 50, y);
-  doc.line(fRight - 10, y, fRight + 50, y);
-  doc.text('Entrego', fLeft + 15, y + 5, { align: 'center' });
-  doc.text('Recibio', fRight + 15, y + 5, { align: 'center' });
+  // ── Comentarios box ──
+  // Buscar PO asignada
+  const poId = (rem.lotes || []).find(l => l.po_id)?.po_id;
+  const po = poId && S.pos ? S.pos.find(p => p.id === poId) : null;
+  const poNum = po ? po.no_po : '';
+  // Buscar proyecto del lote
+  const proyecto = (rem.lotes[0]?.cliente_int) || '';
 
-  doc.save(`Remision_${rem.folio}.pdf`);
+  const boxW = cw * 0.45;
+  doc.setDrawColor(0); doc.setLineWidth(0.3);
+  doc.rect(ML, y, boxW, poNum ? 16 : 10);
+  doc.setFontSize(9); doc.setFont(undefined, 'bold');
+  doc.text('Comentarios:', ML + 2, y + 5);
+  if (poNum) {
+    doc.setFont(undefined, 'normal');
+    doc.text(`PO ${poNum}`, ML + 2 + doc.getTextWidth('Comentarios: '), y + 5);
+    doc.text(proyecto, ML + 22, y + 11);
+  }
+
+  y += (poNum ? 22 : 16);
+
+  // ── Email ──
+  doc.setTextColor(...C_LINK);
+  doc.setFontSize(9); doc.setFont(undefined, 'normal');
+  doc.text('produccion@cuesto.mx', ML, y);
+  doc.setTextColor(0);
+
+  // ── Footer ──
+  // Bottom-left: control de revision
+  doc.setFontSize(8); doc.setFont(undefined, 'normal');
+  doc.text('4-CA-125 Rev. 1  09-septiembre-2026', ML, H - 16);
+
+  // Bottom-right
+  doc.text('Tra: En activo', W - MR, H - 24, { align: 'right' });
+  doc.text('Tram: NA', W - MR, H - 19, { align: 'right' });
+  doc.text(`P\u00E1gina 1 de 1`, W - MR, H - 12, { align: 'right' });
+
+  doc.save(`Remision_${rem.folio.replace(/\s/g, '_')}.pdf`);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
