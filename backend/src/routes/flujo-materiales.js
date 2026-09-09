@@ -640,6 +640,18 @@ function recalcLote(lote, db) {
   }
 }
 
+router.delete('/tenneco/lotes/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.lotes_tenneco || []).findIndex(l => l.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Lote no encontrado' });
+  const lote = db.lotes_tenneco[idx];
+  // Eliminar muestras asociadas
+  db.muestras_tenneco = (db.muestras_tenneco || []).filter(m => m.lote_id !== lote.id);
+  db.lotes_tenneco.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
+});
+
 router.get('/tenneco/lotes/export', flujoAllowRoles('supervisor'), (req, res) => {
   const db = read();
   let lotes = db.lotes_tenneco || [];
@@ -798,6 +810,27 @@ router.patch('/tenneco/remisiones/:id/factura', flujoAllowRoles('supervisor'), (
 
   write(db);
   res.json(rem);
+});
+
+router.delete('/tenneco/remisiones/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.remisiones_tenneco || []).findIndex(r => r.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Remision no encontrada' });
+  const rem = db.remisiones_tenneco[idx];
+  // Revertir lotes a estado previo
+  for (const entry of (rem.lotes || [])) {
+    const lote = (db.lotes_tenneco || []).find(l => l.id === entry.lote_id);
+    if (lote && lote.estado === 'enviado' && lote.remision_id === rem.id) {
+      lote.estado = 'cerrado';
+      lote.enviado = 0;
+      lote.remision_id = null;
+      lote.fecha_envio = null;
+      if (entry.po_id) lote.po_id = null;
+    }
+  }
+  db.remisiones_tenneco.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
 });
 
 // Datos para generar certificado de un lote
@@ -1055,6 +1088,15 @@ router.patch('/tenneco/pos/:id', flujoAllowRoles('supervisor'), (req, res) => {
   res.json(po);
 });
 
+router.delete('/tenneco/pos/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.pos_tenneco || []).findIndex(p => p.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'PO no encontrada' });
+  db.pos_tenneco.splice(idx, 1);
+  write(db);
+  res.json({ ok: true });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // EMPAQUE / MUESTRAS — CONSULTA
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1090,6 +1132,19 @@ router.get('/tenneco/muestras/:id', flujoAllowRoles('calidad'), (req, res) => {
   const m = (read().muestras_tenneco || []).find(m => m.id === Number(req.params.id));
   if (!m) return res.status(404).json({ error: 'Muestra no encontrada' });
   res.json(m);
+});
+
+router.delete('/tenneco/muestras/:id', flujoAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const idx = (db.muestras_tenneco || []).findIndex(m => m.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Muestra no encontrada' });
+  const muestra = db.muestras_tenneco[idx];
+  db.muestras_tenneco.splice(idx, 1);
+  // Recalcular lote
+  const lote = (db.lotes_tenneco || []).find(l => l.id === muestra.lote_id);
+  if (lote) recalcLote(lote, db);
+  write(db);
+  res.json({ ok: true });
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════

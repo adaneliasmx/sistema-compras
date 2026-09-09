@@ -263,6 +263,7 @@ async function viewIngresoTenneco(el) {
           <th data-col="enviado" class="text-right">Enviado</th>
           <th data-col="progreso">Progreso</th>
           <th data-col="pct_scrap" class="text-right">% Scrap</th>
+          ${S.user?.role === 'admin' ? '<th></th>' : ''}
         </tr></thead>
         <tbody id="tbody-lotes"></tbody>
       </table></div>
@@ -296,7 +297,9 @@ async function viewIngresoTenneco(el) {
     }
 
     const tbody = $('#tbody-lotes');
-    if (!data.length) { tbody.innerHTML = '<tr><td colspan="16" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros</td></tr>'; return; }
+    const isAdm = S.user?.role === 'admin';
+    const cols = isAdm ? 17 : 16;
+    if (!data.length) { tbody.innerHTML = `<tr><td colspan="${cols}" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros</td></tr>`; return; }
     tbody.innerHTML = data.map(l => `<tr>
       <td>${esc(l.fecha_recepcion || '')}</td><td class="text-center">${l.semana || ''}</td>
       <td class="mono">${esc(l.folio_salida_tenneco || '')}</td><td>${esc(l.enviado_por || '')}</td>
@@ -310,7 +313,14 @@ async function viewIngresoTenneco(el) {
       <td class="text-right">${fmtNum(l.enviado)}</td>
       <td><div class="progress-bar"><div class="bar"><div class="bar-fill" style="width:${(l.progreso || 0) * 100}%"></div></div>${fmtPct(l.progreso)}</div></td>
       <td class="text-right">${l.pct_scrap != null ? l.pct_scrap.toFixed(2) + '%' : '0%'}</td>
+      ${isAdm ? `<td><button class="fm-btn fm-btn-danger fm-btn-sm btn-del-lote" data-id="${l.id}" title="Eliminar">X</button></td>` : ''}
     </tr>`).join('');
+    if (isAdm) {
+      $$('.btn-del-lote').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Eliminar lote y sus muestras asociadas?')) return;
+        try { await DEL('/tenneco/lotes/' + b.dataset.id); S.lotes = await GET('/tenneco/lotes'); renderRows(); } catch(e) { alert('Error: ' + e.message); }
+      }));
+    }
   };
 
   renderRows();
@@ -476,6 +486,7 @@ async function viewControlPOs(el) {
         <td>
           <button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-po" data-id="${p.id}">Detalles</button>
           ${canEdit ? `<button class="fm-btn fm-btn-outline fm-btn-sm btn-edit-po" data-id="${p.id}">Editar</button>` : ''}
+          ${S.user?.role === 'admin' ? `<button class="fm-btn fm-btn-danger fm-btn-sm btn-del-po" data-id="${p.id}" title="Eliminar">X</button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -488,6 +499,12 @@ async function viewControlPOs(el) {
         const po = S.pos.find(x => x.id === Number(b.dataset.id));
         b.addEventListener('click', () => showModalPO(po, el));
       });
+    }
+    if (S.user?.role === 'admin') {
+      $$('.btn-del-po').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Eliminar esta PO?')) return;
+        try { await DEL('/tenneco/pos/' + b.dataset.id); viewControlPOs(el); } catch(e) { alert('Error: ' + e.message); }
+      }));
     }
   };
   renderPOs();
@@ -740,7 +757,8 @@ async function viewSalidaTenneco(el) {
               : (can('edit-inventarios') ? '<button class="fm-btn fm-btn-outline fm-btn-sm btn-facturar" data-id="' + r.id + '">Confirmar factura</button>' : '<span style="color:var(--fm-muted)">Pendiente</span>')}</td>
             <td>${esc(r.created_by || '')}</td>
             <td><button class="fm-btn fm-btn-outline fm-btn-sm btn-ver-rem" data-id="${r.id}">Ver</button>
-                <button class="fm-btn fm-btn-outline fm-btn-sm btn-pdf-rem" data-id="${r.id}">PDF</button></td>
+                <button class="fm-btn fm-btn-outline fm-btn-sm btn-pdf-rem" data-id="${r.id}">PDF</button>
+                ${S.user?.role === 'admin' ? `<button class="fm-btn fm-btn-danger fm-btn-sm btn-del-rem" data-id="${r.id}" title="Eliminar">X</button>` : ''}</td>
           </tr>`).join('')}</tbody>
         </table></div>`
       }
@@ -796,6 +814,12 @@ async function viewSalidaTenneco(el) {
   // Ver / PDF remision
   $$('.btn-ver-rem').forEach(b => b.addEventListener('click', () => showRemisionDetail(Number(b.dataset.id))));
   $$('.btn-pdf-rem').forEach(b => b.addEventListener('click', () => generarRemisionPDF(Number(b.dataset.id))));
+  if (S.user?.role === 'admin') {
+    $$('.btn-del-rem').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Eliminar remision? Los lotes volveran a estado previo.')) return;
+      try { await DEL('/tenneco/remisiones/' + b.dataset.id); await viewSalidaTenneco(el); } catch(e) { alert('Error: ' + e.message); }
+    }));
+  }
 }
 
 function showPOAssignModal(loteIds, activePOs, parentEl) {
@@ -1234,6 +1258,7 @@ async function viewEmpaqueTenneco(el) {
           ${defectoNames.map(d => `<th class="text-right" title="${esc(d)}" style="font-size:10px;max-width:70px;overflow:hidden;text-overflow:ellipsis">${esc(d.length > 10 ? d.slice(0, 10) + '..' : d)}</th>`).join('')}
           <th class="text-right">Scrap</th><th class="text-center">QC</th>
           <th>Fecha</th><th>Hora</th><th>Analista</th>
+          ${S.user?.role === 'admin' ? '<th></th>' : ''}
         </tr></thead>
         <tbody id="tbody-muestras"></tbody>
       </table></div>
@@ -1255,7 +1280,7 @@ async function viewEmpaqueTenneco(el) {
     });
 
     const tbody = $('#tbody-muestras');
-    const colSpan = 9 + defectoNames.length + 4;
+    const colSpan = 9 + defectoNames.length + 4 + (S.user?.role === 'admin' ? 1 : 0);
     if (!data.length) { tbody.innerHTML = `<tr><td colspan="${colSpan}" class="text-center" style="color:var(--fm-muted);padding:30px">Sin registros de empaque</td></tr>`; return; }
 
     // Group by lote for accumulated count
@@ -1306,8 +1331,19 @@ async function viewEmpaqueTenneco(el) {
         <td>${(m.fecha || m.synced_at || '').slice(0, 10)}</td>
         <td>${esc(m.hora || '')}</td>
         <td style="font-size:11px">${esc(m.analista || '')}</td>
+        ${S.user?.role === 'admin' ? `<td><button class="fm-btn fm-btn-danger fm-btn-sm btn-del-muestra" data-id="${m.id}" title="Eliminar">X</button></td>` : ''}
       </tr>`;
     }).join('');
+    if (S.user?.role === 'admin') {
+      $$('.btn-del-muestra').forEach(b => b.addEventListener('click', async () => {
+        if (!confirm('Eliminar esta muestra?')) return;
+        try {
+          await DEL('/tenneco/muestras/' + b.dataset.id);
+          S.muestras = await GET('/tenneco/muestras');
+          renderMuestras();
+        } catch(e) { alert('Error: ' + e.message); }
+      }));
+    }
   };
   renderMuestras();
   ['emp-proy', 'emp-diam'].forEach(id => { if ($('#' + id)) $('#' + id).addEventListener('change', renderMuestras); });
