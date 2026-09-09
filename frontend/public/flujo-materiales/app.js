@@ -883,15 +883,18 @@ async function viewSalidaTenneco(el) {
 
       const ids = checked.map(c => Number(c.value));
 
-      // Generar folio sugerido: TEN YYYYMMDD.CC
+      // Generar folio sugerido: TEN YYYYMMDD.CC (sin espacio)
       const now = new Date();
-      const y = now.getFullYear();
-      const m = String(now.getMonth() + 1).padStart(2, '0');
-      const d = String(now.getDate()).padStart(2, '0');
-      const dateStr = `${y}${m}${d}`;
-      // Contar remisiones del mismo dia para consecutivo
-      const todayPrefix = `TEN ${dateStr}.`;
-      const todayCount = S.remisiones.filter(r => (r.folio || '').startsWith(todayPrefix)).length;
+      const yr = now.getFullYear();
+      const mo = String(now.getMonth() + 1).padStart(2, '0');
+      const dy = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${yr}${mo}${dy}`;
+      // Contar remisiones del mismo dia para consecutivo (busca con y sin espacio)
+      const todayPrefix = `TEN${dateStr}.`;
+      const todayCount = S.remisiones.filter(r => {
+        const f = (r.folio || '').replace(/\s/g, '');
+        return f.startsWith(todayPrefix);
+      }).length;
       const consec = String(todayCount + 1).padStart(2, '0');
       const folioSugerido = `${todayPrefix}${consec}`;
 
@@ -1019,7 +1022,7 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
     <div class="fm-form-group">
       <label style="font-weight:700">Numero de Remision</label>
       <input class="fm-input" id="fc-folio" value="${esc(folioSugerido)}" style="font-size:16px;font-weight:700;letter-spacing:1px"/>
-      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: TEN YYYYMMDD.CC — Puedes editar el consecutivo</div>
+      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: TENYYYYMMDD.CC — Puedes editar el consecutivo</div>
     </div>
     <div class="fm-form-group">
       <label style="font-weight:700">PO asignada (una por remision)</label>
@@ -1042,8 +1045,9 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
     const folio = $('#fc-folio').value.trim();
     if (!folio) { $('#fc-error').style.display = 'block'; $('#fc-error').textContent = 'Ingresa un numero de remision'; return; }
 
-    // Validar duplicado
-    const dup = S.remisiones.find(r => r.folio === folio);
+    // Validar duplicado (normalizar espacios)
+    const folioNorm = folio.replace(/\s/g, '');
+    const dup = S.remisiones.find(r => (r.folio || '').replace(/\s/g, '') === folioNorm);
     if (dup) {
       $('#fc-error').style.display = 'block';
       $('#fc-error').textContent = `El folio "${folio}" ya existe. Cambia el consecutivo.`;
@@ -1340,7 +1344,9 @@ async function generarRemisionPDF(remId) {
   doc.text('Tram: NA', W - MR, H - 19, { align: 'right' });
   doc.text(`P\u00E1gina 1 de 1`, W - MR, H - 12, { align: 'right' });
 
-  doc.save(`Remision_${rem.folio.replace(/\s/g, '_')}.pdf`);
+  const pdfBlob = doc.output('blob');
+  const blobUrl = URL.createObjectURL(pdfBlob);
+  window.open(blobUrl, '_blank');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
