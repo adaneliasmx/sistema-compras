@@ -1154,7 +1154,7 @@ async function generarRemisionPDF(remId) {
   const colRight = cw * 0.52;
   const C_LINK = [41, 128, 185]; // azul links
 
-  // ── Logo Cuesto sutil (top-left) ──
+  // ── Logo Cuesto (top-left) ──
   try {
     const logoImg = new Image();
     logoImg.crossOrigin = 'anonymous';
@@ -1163,9 +1163,7 @@ async function generarRemisionPDF(remId) {
       logoImg.onerror = reject;
       logoImg.src = '/img/logo.png';
     });
-    doc.setGState(new doc.GState({ opacity: 0.12 }));
-    doc.addImage(logoImg, 'PNG', ML, 12, 38, 14);
-    doc.setGState(new doc.GState({ opacity: 1 }));
+    doc.addImage(logoImg, 'PNG', ML, 10, 36, 13);
   } catch(e) { /* logo no disponible, continuar sin el */ }
 
   // ── Fecha (top-left, debajo del logo) ──
@@ -1174,9 +1172,9 @@ async function generarRemisionPDF(remId) {
   doc.setFontSize(10); doc.setFont(undefined, 'normal');
   doc.text(fechaDD, ML, 34);
 
-  // ── Titulo: REMISION FOLIO ──
+  // ── Titulo: REMISION FOLIO (alineado izquierda) ──
   doc.setFontSize(16); doc.setFont(undefined, 'bold');
-  doc.text(`REMISI\u00D3N ${rem.folio}`, W / 2, 44, { align: 'center' });
+  doc.text(`REMISI\u00D3N ${rem.folio}`, ML, 44);
 
   // ── Header table (ENVIA | Cliente) ──
   const hdrY = 50;
@@ -1248,61 +1246,54 @@ async function generarRemisionPDF(remId) {
     { content: 'Total', styles: { fontStyle: 'bold', halign: 'right' } },
     { content: `${fmtNum(total)} Piezas`, styles: { fontStyle: 'bold', halign: 'right' } }
   ]);
-  tblBody.push([
-    '', '', '',
-    { content: `${nCajas} NIVELES`, styles: { halign: 'right', fontSize: 8 } }
-  ]);
-  tblBody.push([
-    '', '', '',
-    { content: `${nCajas} CAJAS`, styles: { halign: 'right', fontSize: 8 } }
-  ]);
 
   doc.autoTable({
     startY: tblY,
     margin: { left: ML, right: MR },
-    head: [['Caja', 'Componente', 'Medida\n(mm)', 'Cantidad']],
+    head: [['Caja', 'Componente', 'Medida (mm)', 'Cantidad']],
     body: tblBody,
-    styles: { fontSize: 9, cellPadding: 2.5, lineColor: [0, 0, 0], lineWidth: 0.2 },
-    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center', lineWidth: 0.3 },
+    styles: { fontSize: 8, cellPadding: 1.2, lineColor: [0, 0, 0], lineWidth: 0 },
+    headStyles: { fillColor: [255, 255, 255], textColor: [0, 0, 0], fontStyle: 'bold', halign: 'center', lineWidth: 0 },
     columnStyles: {
       0: { cellWidth: colLeft * 0.55 },
       1: { cellWidth: colLeft * 0.55 },
       2: { cellWidth: 22, halign: 'center', fontStyle: 'bold' },
       3: { cellWidth: 28, halign: 'right' }
     },
-    theme: 'grid',
-    didParseCell: (data) => {
-      // Quitar bordes de filas total/niveles/cajas
-      const rowIdx = data.row.index;
-      const totalRowStart = rem.lotes.length + emptyRows;
-      if (rowIdx >= totalRowStart && data.column.index < 2) {
-        data.cell.styles.lineWidth = 0;
-      }
+    theme: 'plain',
+    didDrawPage: (data) => {
+      const tbl = data.table;
+      const tblW = cw;
+      // Borde exterior de toda la tabla (enmarcado)
+      doc.setDrawColor(0); doc.setLineWidth(0.3);
+      doc.rect(ML, tblY, tblW, tbl.finalY - tblY);
+      // Linea bajo el header
+      const hdrBot = tbl.head[0].cells[0].y + tbl.head[0].cells[0].height;
+      doc.setLineWidth(0.2);
+      doc.line(ML, hdrBot, ML + tblW, hdrBot);
     }
   });
 
   let y = doc.lastAutoTable.finalY + 8;
 
   // ── Comentarios box ──
-  // Buscar PO asignada
   const poId = (rem.lotes || []).find(l => l.po_id)?.po_id;
   const po = poId && S.pos ? S.pos.find(p => p.id === poId) : null;
   const poNum = po ? po.no_po : '';
-  // Buscar proyecto del lote
   const proyecto = (rem.lotes[0]?.cliente_int) || '';
 
-  const boxW = cw * 0.45;
-  doc.setDrawColor(0); doc.setLineWidth(0.3);
-  doc.rect(ML, y, boxW, poNum ? 16 : 10);
-  doc.setFontSize(9); doc.setFont(undefined, 'bold');
-  doc.text('Comentarios:', ML + 2, y + 5);
-  if (poNum) {
-    doc.setFont(undefined, 'normal');
-    doc.text(`PO ${poNum}`, ML + 2 + doc.getTextWidth('Comentarios: '), y + 5);
-    doc.text(proyecto, ML + 22, y + 11);
-  }
+  const boxW = cw * 0.55;
+  const boxH = 14;
+  doc.setDrawColor(180); doc.setLineWidth(0.25);
+  doc.setFillColor(248, 248, 248);
+  doc.rect(ML, y, boxW, boxH, 'FD');
+  doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(80);
+  doc.text('Comentarios', ML + 3, y + 4.5);
+  doc.setFont(undefined, 'normal'); doc.setTextColor(0); doc.setFontSize(8);
+  const comments = [poNum ? `PO: ${poNum}` : '', proyecto].filter(Boolean).join('  |  ');
+  if (comments) doc.text(comments, ML + 3, y + 10);
 
-  y += (poNum ? 22 : 16);
+  y += boxH + 6;
 
   // ── Email ──
   doc.setTextColor(...C_LINK);
