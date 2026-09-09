@@ -754,9 +754,20 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
     });
   }
 
-  // Generar folio remision
-  const count = (db.remisiones_tenneco || []).length;
-  const folio = `REM-${fecha.replace(/-/g, '')}-${String(count + 1).padStart(3, '0')}`;
+  // Folio: usar el enviado por frontend o generar uno por defecto
+  let folio;
+  if (b.folio && String(b.folio).trim()) {
+    folio = String(b.folio).trim();
+    // Validar duplicado
+    const dup = (db.remisiones_tenneco || []).find(r => r.folio === folio);
+    if (dup) return res.status(400).json({ error: `El folio "${folio}" ya existe` });
+  } else {
+    const count = (db.remisiones_tenneco || []).length;
+    const dateStr = fecha.replace(/-/g, '');
+    const todayPrefix = `TEN ${dateStr}.`;
+    const todayCount = (db.remisiones_tenneco || []).filter(r => (r.folio || '').startsWith(todayPrefix)).length;
+    folio = `${todayPrefix}${String(todayCount + 1).padStart(2, '0')}`;
+  }
 
   const remision = {
     id: nextId(db.remisiones_tenneco),

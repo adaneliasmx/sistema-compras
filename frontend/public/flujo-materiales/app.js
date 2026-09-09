@@ -766,25 +766,43 @@ async function viewSalidaTenneco(el) {
   S.remisiones = remisiones;
   S.pos = pos;
 
+  // Agrupar lotes por diametro
+  const lotesByDiam = {};
+  S.lotesListos.forEach(l => {
+    const d = l.diametro || 'Sin diametro';
+    if (!lotesByDiam[d]) lotesByDiam[d] = [];
+    lotesByDiam[d].push(l);
+  });
+  const diamKeys = Object.keys(lotesByDiam).sort();
+
+  let lotesHtml = '';
+  if (S.lotesListos.length > 0) {
+    lotesHtml = `<div class="fm-table-wrap"><table class="fm-table">
+      <thead><tr><th><input type="checkbox" id="chk-all"/></th><th>Lote</th><th>N/P</th><th>Diam.</th><th>Cliente</th><th>Cantidad</th><th>Fecha ingreso</th></tr></thead>
+      <tbody>${diamKeys.map(d => {
+        const groupHeader = `<tr style="background:#e2e8f0"><td colspan="7" style="font-weight:700;font-size:12px;padding:6px 10px">Diametro: ${esc(d)} mm — N/P: ${esc(lotesByDiam[d][0].numero_parte)} (${lotesByDiam[d].length} lote${lotesByDiam[d].length > 1 ? 's' : ''})</td></tr>`;
+        const rows = lotesByDiam[d].map(l => `<tr>
+          <td><input type="checkbox" class="chk-lote" value="${l.id}" data-diam="${esc(l.diametro)}"/></td>
+          <td class="mono">${esc(l.lote)}</td><td class="mono">${esc(l.numero_parte)}</td>
+          <td>${esc(l.diametro)}</td><td>${esc(l.cliente_int)}</td>
+          <td class="text-right">${fmtNum(l.material_terminado)}</td>
+          <td>${esc(l.fecha_recepcion)}</td>
+        </tr>`).join('');
+        return groupHeader + rows;
+      }).join('')}</tbody>
+    </table></div>
+    <div style="margin-top:14px;display:flex;gap:10px">
+      ${can('edit-inventarios') ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-gen-rem">Generar remision</button>' : ''}
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="btn-print-etiq">Imprimir etiquetas</button>
+    </div>`;
+  }
+
   el.innerHTML = `
     <div class="fm-card">
       <h3>Lotes listos para enviar</h3>
       ${S.lotesListos.length === 0
         ? '<div class="empty-state"><div class="icon">📭</div><p>No hay lotes listos para enviar</p></div>'
-        : `<div class="fm-table-wrap"><table class="fm-table">
-          <thead><tr><th><input type="checkbox" id="chk-all"/></th><th>Lote</th><th>N/P</th><th>Diam.</th><th>Cliente</th><th>Cantidad</th><th>Fecha ingreso</th></tr></thead>
-          <tbody>${S.lotesListos.map(l => `<tr>
-            <td><input type="checkbox" class="chk-lote" value="${l.id}"/></td>
-            <td class="mono">${esc(l.lote)}</td><td class="mono">${esc(l.numero_parte)}</td>
-            <td>${esc(l.diametro)}</td><td>${esc(l.cliente_int)}</td>
-            <td class="text-right">${fmtNum(l.material_terminado)}</td>
-            <td>${esc(l.fecha_recepcion)}</td>
-          </tr>`).join('')}</tbody>
-        </table></div>
-        <div style="margin-top:14px;display:flex;gap:10px">
-          ${can('edit-inventarios') ? '<button class="fm-btn fm-btn-primary fm-btn-sm" id="btn-gen-rem">Generar remision</button>' : ''}
-          <button class="fm-btn fm-btn-outline fm-btn-sm" id="btn-print-etiq">Imprimir etiquetas</button>
-        </div>`
+        : lotesHtml
       }
     </div>
     <div class="fm-card">
@@ -819,24 +837,32 @@ async function viewSalidaTenneco(el) {
   // Generar remision (con asignacion PO)
   if ($('#btn-gen-rem')) {
     $('#btn-gen-rem').addEventListener('click', async () => {
-      const ids = [...$$('.chk-lote:checked')].map(c => Number(c.value));
-      if (!ids.length) { alert('Selecciona al menos un lote'); return; }
+      const checked = [...$$('.chk-lote:checked')];
+      if (!checked.length) { alert('Selecciona al menos un lote'); return; }
 
-      // Get active POs
-      const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
-
-      if (activePOs.length === 0) {
-        // No POs — proceed without assignment
-        if (!confirm(`No hay POs activas. Generar remision sin asignar PO?`)) return;
-        try {
-          await POST('/tenneco/remisiones', { lote_ids: ids });
-          await viewSalidaTenneco(el);
-        } catch (e) { alert('Error: ' + e.message); }
+      // Validar que todos sean del mismo diametro
+      const diams = new Set(checked.map(c => c.dataset.diam));
+      if (diams.size > 1) {
+        alert('Solo puedes generar una remision por numero de parte (diametro).\nSelecciona lotes del mismo diametro.');
         return;
       }
 
-      // Show PO assignment modal
-      showPOAssignModal(ids, activePOs, el);
+      const ids = checked.map(c => Number(c.value));
+
+      // Generar folio sugerido: TEN YYYYMMDD.CC
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const dateStr = `${y}${m}${d}`;
+      // Contar remisiones del mismo dia para consecutivo
+      const todayPrefix = `TEN ${dateStr}.`;
+      const todayCount = S.remisiones.filter(r => (r.folio || '').startsWith(todayPrefix)).length;
+      const consec = String(todayCount + 1).padStart(2, '0');
+      const folioSugerido = `${todayPrefix}${consec}`;
+
+      // Mostrar modal de confirmacion de folio
+      showFolioConfirmModal(ids, folioSugerido, el);
     });
   }
 
@@ -871,7 +897,7 @@ async function viewSalidaTenneco(el) {
   }
 }
 
-function showPOAssignModal(loteIds, activePOs, parentEl) {
+function showPOAssignModal(loteIds, activePOs, parentEl, folio) {
   const lotes = loteIds.map(id => S.lotesListos.find(l => l.id === id)).filter(Boolean);
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
@@ -919,16 +945,78 @@ function showPOAssignModal(loteIds, activePOs, parentEl) {
       if (sel.value) poAssignments[sel.dataset.lote] = Number(sel.value);
     });
 
-    if (!confirm(`Generar remision con ${loteIds.length} lote(s)?`)) return;
+    if (!confirm(`Generar remision "${folio || ''}" con ${loteIds.length} lote(s)?`)) return;
 
     try {
-      await POST('/tenneco/remisiones', {
-        lote_ids: loteIds,
-        po_assignments: poAssignments
-      });
+      const payload = { lote_ids: loteIds, po_assignments: poAssignments };
+      if (folio) payload.folio = folio;
+      await POST('/tenneco/remisiones', payload);
       overlay.remove();
       await viewSalidaTenneco(parentEl);
     } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+
+function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
+  const lotes = loteIds.map(id => S.lotesListos.find(l => l.id === id)).filter(Boolean);
+  const totalPzas = lotes.reduce((s, l) => s + (l.material_terminado || 0), 0);
+  const diam = lotes[0]?.diametro || '';
+  const np = lotes[0]?.numero_parte || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:550px">
+    <h3>Confirmar Remision</h3>
+    <div style="background:#f1f5f9;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px">
+      <div><strong>Diametro:</strong> ${esc(diam)} mm — <strong>N/P:</strong> ${esc(np)}</div>
+      <div><strong>Lotes:</strong> ${lotes.map(l => esc(l.lote)).join(', ')}</div>
+      <div><strong>Total piezas:</strong> ${fmtNum(totalPzas)}</div>
+    </div>
+    <div class="fm-form-group">
+      <label style="font-weight:700">Numero de Remision</label>
+      <input class="fm-input" id="fc-folio" value="${esc(folioSugerido)}" style="font-size:16px;font-weight:700;letter-spacing:1px"/>
+      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: TEN YYYYMMDD.CC — Puedes editar el consecutivo u otro valor</div>
+    </div>
+    <div id="fc-error" style="display:none;color:var(--fm-danger);font-size:13px;font-weight:600;margin-top:8px"></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="fc-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-primary fm-btn-sm" id="fc-next">Continuar</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  $('#fc-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $('#fc-next').addEventListener('click', () => {
+    const folio = $('#fc-folio').value.trim();
+    if (!folio) { $('#fc-error').style.display = 'block'; $('#fc-error').textContent = 'Ingresa un numero de remision'; return; }
+
+    // Validar duplicado contra remisiones existentes
+    const dup = S.remisiones.find(r => r.folio === folio);
+    if (dup) {
+      $('#fc-error').style.display = 'block';
+      $('#fc-error').textContent = `El folio "${folio}" ya existe. Cambia el consecutivo.`;
+      return;
+    }
+
+    overlay.remove();
+
+    // Verificar POs activas
+    const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
+    if (activePOs.length === 0) {
+      if (!confirm(`No hay POs activas. Generar remision "${folio}" sin asignar PO?`)) return;
+      (async () => {
+        try {
+          await POST('/tenneco/remisiones', { lote_ids: loteIds, folio });
+          await viewSalidaTenneco(parentEl);
+        } catch (e) { alert('Error: ' + e.message); }
+      })();
+      return;
+    }
+
+    // Pasar a modal de asignacion PO con folio ya confirmado
+    showPOAssignModal(loteIds, activePOs, parentEl, folio);
   });
 }
 
