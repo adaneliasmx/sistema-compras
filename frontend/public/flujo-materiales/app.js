@@ -1000,15 +1000,29 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
   const diam = lotes[0]?.diametro || '';
   const np = lotes[0]?.numero_parte || '';
 
-  // POs activas con partes que coincidan
+  // POs activas con partes que coincidan con el diametro/NP
   const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
   const applicablePOs = activePOs.filter(po =>
     (po.partes || []).some(p => p.diametro === diam || p.numero_parte === np)
   );
-  const poOpts = applicablePOs.map(po => {
-    const disp = po.cantidad_po - po.cantidad_enviada;
-    return `<option value="${po.id}">PO ${esc(po.no_po)} — ${fmtNum(disp)}/${fmtNum(po.cantidad_po)} disp.</option>`;
-  }).join('');
+  // Separar empezadas (ya enviaron algo) vs nuevas
+  const empezadas = applicablePOs.filter(po => (po.cantidad_enviada || 0) > 0);
+  const nuevas = applicablePOs.filter(po => (po.cantidad_enviada || 0) === 0);
+  const poOpts = [
+    empezadas.length ? '<optgroup label="PO en curso (con envios previos)">' : '',
+    ...empezadas.map(po => {
+      const disp = po.cantidad_po - po.cantidad_enviada;
+      return `<option value="${po.id}">PO ${esc(po.no_po)} — ${fmtNum(disp)}/${fmtNum(po.cantidad_po)} disp. (${po.pct_disponible}%)</option>`;
+    }),
+    empezadas.length ? '</optgroup>' : '',
+    nuevas.length ? '<optgroup label="PO nuevas (sin envios)">' : '',
+    ...nuevas.map(po => {
+      return `<option value="${po.id}" data-nueva="1">PO ${esc(po.no_po)} — ${fmtNum(po.cantidad_po)} disp. (100%)</option>`;
+    }),
+    nuevas.length ? '</optgroup>' : ''
+  ].join('');
+  // Default: primera PO empezada si existe
+  const defaultPoId = empezadas.length ? empezadas[0].id : '';
 
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
@@ -1029,6 +1043,16 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
       <select class="fm-input" id="fc-po" style="font-size:13px">
         <option value="">— Sin PO —</option>${poOpts}
       </select>
+      ${!applicablePOs.length ? '<div style="font-size:11px;color:var(--fm-danger);margin-top:4px">No hay POs registradas para este diametro/N.P.</div>' : ''}
+    </div>
+    <div id="fc-po-warn" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px;margin-top:10px">
+      <div style="font-weight:700;color:#92400e;margin-bottom:8px">Atencion: Esta PO no tiene envios previos</div>
+      <div id="fc-po-warn-info" style="font-size:12px;color:#78350f;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="fm-btn fm-btn-primary fm-btn-sm" id="fc-po-accept-new">Aceptar PO nueva</button>
+        ${empezadas.length ? '<button class="fm-btn fm-btn-outline fm-btn-sm" id="fc-po-use-started">Cambiar a PO empezada</button>' : ''}
+        <button class="fm-btn fm-btn-outline fm-btn-sm" id="fc-po-warn-cancel">Cancelar</button>
+      </div>
     </div>
     <div id="fc-error" style="display:none;color:var(--fm-danger);font-size:13px;font-weight:600;margin-top:8px"></div>
     <div class="fm-modal-footer">
@@ -1037,6 +1061,48 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
     </div>
   </div>`;
   document.body.appendChild(overlay);
+
+  // Preseleccionar PO empezada
+  if (defaultPoId) $('#fc-po').value = String(defaultPoId);
+
+  let poNuevaAceptada = false;
+
+  // Detectar seleccion de PO nueva
+  $('#fc-po').addEventListener('change', () => {
+    poNuevaAceptada = false;
+    const selVal = $('#fc-po').value;
+    const selOpt = $('#fc-po').selectedOptions[0];
+    const warn = $('#fc-po-warn');
+    if (selVal && selOpt && selOpt.dataset.nueva === '1') {
+      const poSel = applicablePOs.find(p => p.id === Number(selVal));
+      const poEmp = empezadas[0];
+      let info = `<strong>PO seleccionada:</strong> ${esc(poSel.no_po)} — ${fmtNum(poSel.cantidad_po)} pzas (sin envios)`;
+      if (poEmp) {
+        const dispEmp = poEmp.cantidad_po - poEmp.cantidad_enviada;
+        info += `<br><strong>PO en curso:</strong> ${esc(poEmp.no_po)} — ${fmtNum(dispEmp)}/${fmtNum(poEmp.cantidad_po)} disponibles (${poEmp.pct_disponible}%)`;
+      }
+      $('#fc-po-warn-info').innerHTML = info;
+      warn.style.display = 'block';
+    } else {
+      warn.style.display = 'none';
+    }
+  });
+
+  // Botones del warning
+  document.getElementById('fc-po-accept-new')?.addEventListener('click', () => {
+    poNuevaAceptada = true;
+    $('#fc-po-warn').style.display = 'none';
+  });
+  document.getElementById('fc-po-use-started')?.addEventListener('click', () => {
+    $('#fc-po').value = String(defaultPoId);
+    poNuevaAceptada = false;
+    $('#fc-po-warn').style.display = 'none';
+  });
+  document.getElementById('fc-po-warn-cancel')?.addEventListener('click', () => {
+    $('#fc-po').value = '';
+    poNuevaAceptada = false;
+    $('#fc-po-warn').style.display = 'none';
+  });
 
   $('#fc-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
@@ -1051,6 +1117,13 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
     if (dup) {
       $('#fc-error').style.display = 'block';
       $('#fc-error').textContent = `El folio "${folio}" ya existe. Cambia el consecutivo.`;
+      return;
+    }
+
+    // Si selecciono PO nueva y no ha aceptado, mostrar warning
+    const selOpt = $('#fc-po').selectedOptions[0];
+    if ($('#fc-po').value && selOpt && selOpt.dataset.nueva === '1' && !poNuevaAceptada) {
+      $('#fc-po').dispatchEvent(new Event('change'));
       return;
     }
 
