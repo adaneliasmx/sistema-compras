@@ -650,7 +650,7 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
 
   const rows = cfg.map(item => {
     const cur    = itemsCur.find(i => i.item_key === item.item_key);
-    const curKg  = cur?.kg ?? null;
+    const curKg  = cur?.kg ?? cur?.cantidad ?? null;
     const pesoKg = item.peso_kg || null;
     const recibidoKg = recepciones
       .filter(r => r.item_key === item.item_key)

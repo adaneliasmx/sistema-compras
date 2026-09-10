@@ -764,7 +764,8 @@ async function renderComportamientosModal(inv_type, label) {
     const trs  = rows.map(c => {
       const cells = items_config.map(i => {
         const it = (c.items || []).find(x => x.item_key === i.item_key);
-        return `<td class="text-right">${it?.kg != null ? fmt(it.kg)+' kg' : '—'}</td>`;
+        const val = it?.kg ?? it?.cantidad ?? null;
+        return `<td class="text-right">${val != null ? fmt(val)+' '+(it?.unidad||'kg') : '—'}</td>`;
       }).join('');
       return `<tr><td>Sem ${c.week}</td><td>${esc(c.week_start)}</td>${cells}<td>${esc(c.usuario_nombre)}</td></tr>`;
     }).join('');
@@ -1017,8 +1018,8 @@ async function loadCompradorTab(tab, inv_type) {
           const penStr = row.pendiente_qty != null ? `${fmt(row.pendiente_qty)} ${row.pendiente_unit || ''}` : '—';
           return `<tr class="${statusClass}">
             <td><span class="stock-dot ${statusDot}"></span> ${esc(row.item_label)}</td>
-            <td class="text-right">${curVal != null ? fmt(curVal)+' kg' : '—'}</td>
-            <td class="text-right">${consumoVal != null ? fmt(consumoVal)+' kg' : '—'}</td>
+            <td class="text-right">${curVal != null ? fmt(curVal)+' '+(row.unidad||'kg') : '—'}</td>
+            <td class="text-right">${consumoVal != null ? fmt(consumoVal)+' '+(row.unidad||'kg') : '—'}</td>
             <td class="text-right">${recStr}</td>
             <td class="text-right">${penStr}</td>
             <td class="text-right">${row.min_val != null ? fmt(row.min_val, 0) : '—'}</td>
@@ -1036,7 +1037,7 @@ async function loadCompradorTab(tab, inv_type) {
         return `<div class="card">
           <div class="card-header"><div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div><div class="page-subtitle">Conteo actual: ${data.cur_fecha||'Sin conteo'}</div></div>
           ${data.rows.length ? `<div class="table-wrap"><table>
-            <thead><tr><th>Item</th><th>Stock actual (kg)</th><th>Consumo sem. ant.</th><th>Recibido sem.</th><th>Pendiente recibir</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
+            <thead><tr><th>Item</th><th>Stock actual</th><th>Consumo sem. ant.</th><th>Recibido sem.</th><th>Pendiente recibir</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
             <tbody>${rows}</tbody></table></div>` : '<div class="empty-msg">Sin datos de conteo</div>'}
           <div style="margin-top:12px"><button class="btn btn-outline btn-sm" onclick="window.print()">Imprimir</button></div>
         </div>`;
