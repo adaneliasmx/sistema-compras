@@ -240,11 +240,24 @@ router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
 });
 
 router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
-  res.json({
-    version: '1.0.0',
-    download_url: '',
-    changelog: 'Release inicial'
-  });
+  const db = read();
+  const versions = db.flujo_app_versions || {
+    version_empaque: '1.0.0',
+    changelog_empaque: 'Release inicial',
+    url_empaque: ''
+  };
+  res.json(versions);
+});
+
+router.patch('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
+  const db = read();
+  db.flujo_app_versions = db.flujo_app_versions || {};
+  const allowed = ['version_empaque', 'changelog_empaque', 'url_empaque'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) db.flujo_app_versions[key] = req.body[key];
+  }
+  write(db);
+  res.json(db.flujo_app_versions);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
