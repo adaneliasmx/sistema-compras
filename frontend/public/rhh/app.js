@@ -12449,11 +12449,21 @@ async function kpiRhhView() {
   const SEC_BG = '#1e3a8a';
   const TOT_BG = '#dbeafe';
 
-  // ── Build Costos RHH table ─────────────────────────────────────────────────
-  function buildCostosRhhTable(data, period) {
+  // ── Build Costos RHH table + tendencia + pareto ───────────────────────────
+  const COS_CONCEPTOS = [
+    { key: 'te',       label: 'Tiempo Extra',   color: '#ef4444' },
+    { key: 'vac',      label: 'Vacaciones',     color: '#f59e0b' },
+    { key: 'bonos',    label: 'Bonos',          color: '#8b5cf6' },
+    { key: 'nomina',   label: 'Nómina',         color: '#2563eb' },
+    { key: 'despensa', label: 'Despensa',       color: '#10b981' },
+  ];
+
+  function buildCostosRhhTable(data, period, filtroConcepto) {
     const items = period === 'week' ? data.by_week : data.by_month;
     const labels = period === 'week' ? data.weeks_labels : data.months_labels;
     if (!items || !items.length) return '<div class="empty-state"><p>Sin datos de costos</p></div>';
+
+    const visibleConceptos = filtroConcepto === 'todos' ? COS_CONCEPTOS : COS_CONCEPTOS.filter(c => c.key === filtroConcepto);
 
     const cols = 1 + items.length + 1;
     const thCols = labels.map(l => `<th style="text-align:right;padding:6px 8px;white-space:nowrap;background:${TH_BG};color:#111;font-size:11px">${escHtml(l)}</th>`).join('');
@@ -12468,10 +12478,12 @@ async function kpiRhhView() {
       </tr>`;
     }
 
-    const totalByPeriod = items.map(p => (p.te || 0) + (p.vac || 0) + (p.bonos || 0) + (p.nomina || 0) + (p.despensa || 0));
+    const totalByPeriod = items.map(p => visibleConceptos.reduce((s, c) => s + (p[c.key] || 0), 0));
     const grandTotal = totalByPeriod.reduce((s, t) => s + t, 0);
 
-    return `
+    // ── Tabla ──
+    const conceptRows = visibleConceptos.map((c, i) => row(c.label, c.key, i % 2 === 0 ? '#fff' : '#f8fafc')).join('');
+    let html = `
       <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
           <thead><tr>
@@ -12481,21 +12493,99 @@ async function kpiRhhView() {
           </tr></thead>
           <tbody>
             <tr><td colspan="${cols}" style="background:${SEC_BG};color:#fff;font-weight:700;padding:7px 12px;font-size:12px;letter-spacing:.5px">💰 COSTOS DE PERSONAL</td></tr>
-            ${row('Tiempo Extra', 'te', '#fff')}
-            ${row('Vacaciones', 'vac', '#f8fafc')}
-            ${row('Bonos', 'bonos', '#fff')}
-            ${row('Nómina (Sueldo + Séptimo + Prima)', 'nomina', '#f8fafc')}
-            ${row('Despensa', 'despensa', '#fff')}
+            ${conceptRows}
           </tbody>
           <tfoot>
             <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
-              <td style="padding:7px 12px;font-weight:700;font-size:12px;position:sticky;left:0;background:#1e3a5f;z-index:1">TOTAL SEMANAL</td>
+              <td style="padding:7px 12px;font-weight:700;font-size:12px;position:sticky;left:0;background:#1e3a5f;z-index:1">TOTAL</td>
               ${totalByPeriod.map(t => `<td style="text-align:right;padding:7px 8px;font-weight:700">${t > 0 ? fmt$(t) : '—'}</td>`).join('')}
               <td style="text-align:right;padding:7px 8px;font-weight:700;background:#0f172a">${grandTotal > 0 ? fmt$(grandTotal) : '—'}</td>
             </tr>
           </tfoot>
         </table>
       </div>`;
+
+    // ── Gráfica de tendencia (barras CSS) ──
+    const maxVal = Math.max(...totalByPeriod, 1);
+    html += `
+      <div style="margin-top:24px;padding-top:18px;border-top:2px solid #e5e7eb">
+        <h4 style="margin:0 0 12px;font-size:14px;color:#1e3a8a">📈 Tendencia ${period === 'week' ? 'Semanal' : 'Mensual'}</h4>
+        <div style="display:flex;align-items:flex-end;gap:3px;height:180px;padding:0 4px;border-bottom:2px solid #cbd5e1;position:relative">`;
+
+    // Si un solo concepto filtrado, barras simples; si todos, barras apiladas
+    if (filtroConcepto !== 'todos') {
+      const cc = visibleConceptos[0];
+      items.forEach((p, i) => {
+        const val = p[cc.key] || 0;
+        const h = maxVal > 0 ? (val / maxVal * 160) : 0;
+        html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0">
+          <div style="font-size:9px;color:#475569;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${val > 0 ? fmt$(val) : ''}</div>
+          <div style="width:80%;height:${Math.max(h, 2)}px;background:${cc.color};border-radius:3px 3px 0 0;transition:height .3s" title="${labels[i]}: ${fmt$(val)}"></div>
+          <div style="font-size:8px;color:#6b7280;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${labels[i]}</div>
+        </div>`;
+      });
+    } else {
+      // Barras apiladas
+      items.forEach((p, i) => {
+        const tot = totalByPeriod[i];
+        let stackHtml = '';
+        COS_CONCEPTOS.forEach(c => {
+          const val = p[c.key] || 0;
+          const h = maxVal > 0 ? (val / maxVal * 160) : 0;
+          if (h > 0) stackHtml += `<div style="width:100%;height:${h}px;background:${c.color}" title="${c.label}: ${fmt$(val)}"></div>`;
+        });
+        html += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;min-width:0">
+          <div style="font-size:9px;color:#475569;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${tot > 0 ? fmt$(tot) : ''}</div>
+          <div style="width:80%;display:flex;flex-direction:column-reverse;border-radius:3px 3px 0 0;overflow:hidden">${stackHtml}</div>
+          <div style="font-size:8px;color:#6b7280;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">${labels[i]}</div>
+        </div>`;
+      });
+    }
+
+    html += `</div>`;
+    // Leyenda
+    if (filtroConcepto === 'todos') {
+      html += `<div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">`;
+      COS_CONCEPTOS.forEach(c => {
+        html += `<div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#475569"><div style="width:12px;height:12px;background:${c.color};border-radius:2px"></div>${c.label}</div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // ── Pareto por concepto ──
+    const conceptTotals = COS_CONCEPTOS.map(c => ({
+      ...c,
+      total: items.reduce((s, p) => s + (p[c.key] || 0), 0),
+    })).filter(c => c.total > 0).sort((a, b) => b.total - a.total);
+
+    if (conceptTotals.length > 0) {
+      const allTotal = conceptTotals.reduce((s, c) => s + c.total, 0);
+      let cAccum = 0;
+      html += `
+        <div style="margin-top:24px;padding-top:18px;border-top:2px solid #e5e7eb">
+          <h4 style="margin:0 0 12px;font-size:14px;color:#1e3a8a">📊 Pareto de Costos por Concepto</h4>
+          <div style="display:flex;flex-direction:column;gap:8px">`;
+
+      conceptTotals.forEach(c => {
+        const pct = allTotal > 0 ? (c.total / allTotal * 100) : 0;
+        cAccum += pct;
+        html += `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:8px">
+            <div style="flex:0 0 200px;font-weight:700;font-size:13px;color:#111">${c.label}</div>
+            <div style="flex:0 0 90px;text-align:right;font-weight:700;font-size:13px;color:#111">${fmt$(c.total)}</div>
+            <div style="flex:0 0 50px;text-align:right;font-size:12px;color:#475569">${pct.toFixed(1)}%</div>
+            <div style="flex:1;height:14px;background:#e5e7eb;border-radius:6px;overflow:hidden">
+              <div style="width:${Math.min(pct, 100)}%;height:100%;background:${c.color};border-radius:6px"></div>
+            </div>
+            <div style="flex:0 0 70px;text-align:right;font-size:11px;color:#6b7280">Acum. ${cAccum.toFixed(0)}%</div>
+          </div>`;
+      });
+
+      html += `</div></div>`;
+    }
+
+    return html;
   }
 
   // ── Build Costos por Departamento table + Pareto ──────────────────────────
@@ -12541,13 +12631,14 @@ async function kpiRhhView() {
         </table>
       </div>`;
 
-    // ── Pareto por departamento con desglose de puestos ──
+    // ── Pareto por departamento con desglose de puestos (colapsable) ──
     const sorted = [...departments].filter(d => d.total > 0).sort((a, b) => b.total - a.total);
     if (sorted.length === 0) return html;
 
     const COLORS = ['#1e3a8a','#2563eb','#3b82f6','#60a5fa','#93c5fd','#6366f1','#8b5cf6','#a78bfa','#c084fc','#e879f9',
                     '#f472b6','#fb7185','#f87171','#fbbf24','#34d399','#2dd4bf','#22d3ee','#38bdf8','#818cf8','#a3a3a3'];
     let accum = 0;
+    const uid = Date.now();
 
     html += `
       <div style="margin-top:28px;padding-top:20px;border-top:2px solid #e5e7eb">
@@ -12558,11 +12649,13 @@ async function kpiRhhView() {
       const pct = grandTotal > 0 ? (dept.total / grandTotal * 100) : 0;
       accum += pct;
       const color = COLORS[idx % COLORS.length];
-
-      // Desglose de puestos
       const puestos = dept.puestos || [];
+      const detId = `pareto-det-${uid}-${idx}`;
+
+      let toggleBtn = '';
       let puestosHtml = '';
       if (puestos.length > 0) {
+        toggleBtn = `<button onclick="var d=document.getElementById('${detId}');var v=d.style.display==='none';d.style.display=v?'':'none';this.textContent=v?'Ocultar':'Ver detalle'" style="flex:0 0 auto;padding:2px 10px;font-size:10px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1d4ed8;cursor:pointer;white-space:nowrap">Ver detalle</button>`;
         const pRows = puestos.map(p => {
           const ppct = dept.total > 0 ? (p.total / dept.total * 100) : 0;
           return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;color:#475569">
@@ -12575,7 +12668,7 @@ async function kpiRhhView() {
             <span style="flex:0 0 45px;text-align:right;font-size:10px;color:#9ca3af">${p.employees} emp</span>
           </div>`;
         }).join('');
-        puestosHtml = `<div style="margin:6px 0 0 20px;padding:6px 10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb">${pRows}</div>`;
+        puestosHtml = `<div id="${detId}" style="display:none;margin:6px 0 0 20px;padding:6px 10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb">${pRows}</div>`;
       }
 
       html += `
@@ -12588,6 +12681,7 @@ async function kpiRhhView() {
               <div style="width:${Math.min(pct, 100)}%;height:100%;background:${color};border-radius:6px"></div>
             </div>
             <div style="flex:0 0 70px;text-align:right;font-size:11px;color:#6b7280">Acum. ${accum.toFixed(0)}%</div>
+            ${toggleBtn}
           </div>
           ${puestosHtml}
         </div>`;
@@ -12653,21 +12747,31 @@ async function kpiRhhView() {
 
   // ── Fetch data and render ──────────────────────────────────────────────────
   try {
-    const [costosData, _proyDataInit, incData] = await Promise.all([
+    const [_cosDataInit, _proyDataInit, incData] = await Promise.all([
       api('/api/rhh/kpi/costos-rhh'),
       api('/api/rhh/kpi/costos-proyecto'),
       api('/api/rhh/kpi/incidencias'),
     ]);
+    let costosData = _cosDataInit;
     let proyData = _proyDataInit;
 
     let cosPeriod = 'week';
     let proPeriod = 'week';
     let incPeriod = 'week';
+    let cosConcepto = 'todos';
 
     function renderCos() {
-      document.getElementById('kpi-rhh-cos-body').innerHTML = buildCostosRhhTable(costosData, cosPeriod);
+      document.getElementById('kpi-rhh-cos-body').innerHTML = buildCostosRhhTable(costosData, cosPeriod, cosConcepto);
       document.getElementById('kpi-rhh-cos-wk').className = cosPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
       document.getElementById('kpi-rhh-cos-mo').className = cosPeriod === 'month' ? 'btn-primary' : 'btn-secondary';
+    }
+    async function reloadCosData(semDesde, semHasta) {
+      const params = new URLSearchParams();
+      if (semDesde) params.set('semana_desde', semDesde);
+      if (semHasta) params.set('semana_hasta', semHasta);
+      const qs = params.toString();
+      costosData = await api('/api/rhh/kpi/costos-rhh' + (qs ? '?' + qs : ''));
+      renderCos();
     }
     function renderPro() {
       document.getElementById('kpi-rhh-pro-body').innerHTML = buildCostosProyTable(proyData, proPeriod);
@@ -12705,7 +12809,25 @@ async function kpiRhhView() {
             <button id="kpi-rhh-cos-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px">Por mes</button>
           </div>
         </div>
-        <p class="small muted" style="margin:0 0 12px">Datos del Consolidado CONTPAQ. Filas: Tiempo Extra, Vacaciones, Bonos, Nomina, Despensa. Columnas: semana o mes.</p>
+        <!-- Filtros Costos RHH -->
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:#f1f5f9;border-radius:8px">
+          <label style="font-size:12px;font-weight:600;color:#334155">Semana desde:</label>
+          <select id="kpi-cos-sem-desde" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px"></select>
+          <label style="font-size:12px;font-weight:600;color:#334155">hasta:</label>
+          <select id="kpi-cos-sem-hasta" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px"></select>
+          <label style="font-size:12px;font-weight:600;color:#334155;margin-left:8px">Concepto:</label>
+          <select id="kpi-cos-concepto" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px">
+            <option value="todos">Todos</option>
+            <option value="te">Tiempo Extra</option>
+            <option value="vac">Vacaciones</option>
+            <option value="bonos">Bonos</option>
+            <option value="nomina">Nómina</option>
+            <option value="despensa">Despensa</option>
+          </select>
+          <button id="kpi-cos-filter-btn" class="btn-primary" style="padding:4px 14px;font-size:12px">Filtrar</button>
+          <button id="kpi-cos-reset-btn" class="btn-secondary" style="padding:4px 14px;font-size:12px">Limpiar</button>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">Datos del Consolidado CONTPAQ. Tabla + Tendencia + Pareto por concepto.</p>
         <div id="kpi-rhh-cos-body"></div>
       </div>
 
@@ -12763,6 +12885,23 @@ async function kpiRhhView() {
     // Period toggles
     document.getElementById('kpi-rhh-cos-wk').onclick = () => { cosPeriod = 'week'; renderCos(); };
     document.getElementById('kpi-rhh-cos-mo').onclick = () => { cosPeriod = 'month'; renderCos(); };
+
+    // Poblar filtros de Costos RHH
+    const cosAllWeeks = costosData.all_weeks || [];
+    const cosSelDesde = document.getElementById('kpi-cos-sem-desde');
+    const cosSelHasta = document.getElementById('kpi-cos-sem-hasta');
+    const cosSelConc  = document.getElementById('kpi-cos-concepto');
+    cosSelDesde.innerHTML = '<option value="">Todas</option>' + cosAllWeeks.map(w => `<option value="${w.no_periodo}">${w.label}</option>`).join('');
+    cosSelHasta.innerHTML = '<option value="">Todas</option>' + cosAllWeeks.map(w => `<option value="${w.no_periodo}">${w.label}</option>`).join('');
+    document.getElementById('kpi-cos-filter-btn').onclick = () => {
+      cosConcepto = cosSelConc.value;
+      reloadCosData(cosSelDesde.value, cosSelHasta.value);
+    };
+    document.getElementById('kpi-cos-reset-btn').onclick = () => {
+      cosSelDesde.value = ''; cosSelHasta.value = ''; cosSelConc.value = 'todos';
+      cosConcepto = 'todos';
+      reloadCosData(null, null);
+    };
     document.getElementById('kpi-rhh-pro-wk').onclick = () => { proPeriod = 'week'; renderPro(); };
     document.getElementById('kpi-rhh-pro-mo').onclick = () => { proPeriod = 'month'; renderPro(); };
     document.getElementById('kpi-rhh-inc-wk').onclick = () => { incPeriod = 'week'; renderInc(); };

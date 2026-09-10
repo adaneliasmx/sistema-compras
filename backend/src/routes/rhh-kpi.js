@@ -97,6 +97,7 @@ function buildPeriodLabels(incidencias) {
 
 // ══════════════════════════════════════════════════════════════════════════════
 // GET /api/rhh/kpi/costos-rhh — Costos RHH por semana o mes
+// Query: ?semana_desde=N&semana_hasta=N
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
@@ -104,7 +105,21 @@ router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
   const emps = db.rhh_employees || [];
   const empMap = new Map(emps.map(e => [e.id, e]));
 
-  const { weeks, months } = buildPeriodLabels(incs);
+  const semDesde = req.query.semana_desde ? Number(req.query.semana_desde) : null;
+  const semHasta = req.query.semana_hasta ? Number(req.query.semana_hasta) : null;
+
+  const { weeks: allWeeks, months: allMonths } = buildPeriodLabels(incs);
+
+  // Filtrar semanas por rango
+  const weeks = allWeeks.filter(w => {
+    if (semDesde && w.no_periodo < semDesde) return false;
+    if (semHasta && w.no_periodo > semHasta) return false;
+    return true;
+  });
+  const months = allMonths.map(m => ({
+    ...m,
+    weeks: m.weeks.filter(w => weeks.some(fw => fw.key === w.key)),
+  })).filter(m => m.weeks.length > 0);
 
   // Por semana
   const byWeek = weeks.map(w => {
@@ -140,6 +155,7 @@ router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
   res.json({
     weeks_labels: weeks.map(w => w.label),
     months_labels: months.map(m => m.label),
+    all_weeks: allWeeks.map(w => ({ no_periodo: w.no_periodo, label: w.label })),
     by_week: byWeek,
     by_month: byMonth,
   });
