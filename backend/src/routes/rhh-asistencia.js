@@ -374,8 +374,9 @@ const OVERTIME_RAZONES_FALLBACK = [
 function getOvertimeRazones(db) {
   const cats = db.rhh_te_catalogos || [];
   if (cats.length === 0) return OVERTIME_RAZONES_FALLBACK;
-  // Flatten: nombre de cada clasificación como razón
-  return cats.map(c => c.nombre);
+  // Retornar motivos agrupados por clasificación
+  // Formato: [{ grupo: 'Producción', motivos: ['Horas extra por demanda', ...] }, ...]
+  return cats.map(c => ({ grupo: c.nombre, motivos: c.motivos || [] }));
 }
 
 /* Lunes de la semana que contiene dateStr (YYYY-MM-DD) */

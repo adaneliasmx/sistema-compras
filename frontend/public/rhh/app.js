@@ -9497,9 +9497,15 @@ async function asisCaptureView() {
       return `<button class="tab-btn ${i===asisDayIdx?'active':''}" style="${sunStyle}" onclick="asisDayIdx=${i};asisCaptureView()">${label}${isSunday?' (TE)':''}${dot}</button>`;
     }).join('');
 
-    const razOpts = overtimeRazones.map(r =>
-      `<option value="${escHtml(r)}">${escHtml(r)}</option>`
-    ).join('');
+    const razOpts = (Array.isArray(overtimeRazones) && overtimeRazones.length > 0 && typeof overtimeRazones[0] === 'object')
+      ? overtimeRazones.map(g =>
+          `<optgroup label="${escHtml(g.grupo)}">${(g.motivos||[]).map(m =>
+            `<option value="${escHtml(m)}">${escHtml(m)}</option>`
+          ).join('')}</optgroup>`
+        ).join('')
+      : overtimeRazones.map(r =>
+          `<option value="${escHtml(r)}">${escHtml(r)}</option>`
+        ).join('');
 
     // Estilos de encabezados TE (naranja)
     const thTE = 'padding:8px 8px;text-align:center;font-weight:600;background:#fff3e0;color:#c2410c;font-size:11px;border-left:2px solid #fed7aa;';
