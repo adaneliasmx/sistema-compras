@@ -534,7 +534,7 @@ async function viewControlPOs(el) {
         <thead><tr>
           <th>No. PO</th><th class="text-right">Cantidad PO</th><th>Tipo</th><th>Diametros</th>
           <th class="text-right">En proceso</th><th class="text-right">Enviada</th>
-          <th class="text-right">% Disponible</th><th>Fecha</th><th>PDF</th><th></th>
+          <th class="text-right">Disponible</th><th class="text-right">% Disp.</th><th>Fecha</th><th>PDF</th><th></th>
         </tr></thead>
         <tbody id="tbody-pos"></tbody>
       </table></div>
@@ -555,6 +555,7 @@ async function viewControlPOs(el) {
         <td style="font-size:12px">${esc(diams)}</td>
         <td class="text-right">${fmtNum(p.cantidad_en_proceso)}</td>
         <td class="text-right">${fmtNum(p.cantidad_enviada)}</td>
+        <td class="text-right" style="font-weight:700;${(p.cantidad_po - p.cantidad_enviada) <= 0 ? 'color:var(--fm-danger)' : ''}">${fmtNum(p.cantidad_po - p.cantidad_enviada)}</td>
         <td class="text-right" style="${pctClass};font-weight:700">${p.pct_disponible}%</td>
         <td>${esc(p.fecha_po || '')}</td>
         <td>${p.pdf_filename ? '<a href="/storage/flujo-pos/' + encodeURIComponent(p.pdf_filename) + '" target="_blank" style="color:var(--fm-primary)">Ver PDF</a>' : '-'}</td>
@@ -566,7 +567,7 @@ async function viewControlPOs(el) {
       </tr>`;
     }).join('');
     if (filtered.length === 0 && S.pos.length > 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="text-center" style="color:var(--fm-muted);padding:20px">Sin resultados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center" style="color:var(--fm-muted);padding:20px">Sin resultados</td></tr>';
     }
     $$('.btn-ver-po').forEach(b => b.addEventListener('click', () => showPODetail(Number(b.dataset.id))));
     if (canEdit) {
@@ -940,9 +941,9 @@ function showPOAssignModal(loteIds, activePOs, parentEl, folio) {
   overlay.className = 'fm-modal-overlay';
 
   const rows = lotes.map(l => {
-    // Find applicable POs (matching diametro/NP)
+    // Find applicable POs (matching diametro exacto)
     const applicable = activePOs.filter(po =>
-      (po.partes || []).some(p => p.diametro === l.diametro || p.numero_parte === l.numero_parte)
+      (po.partes || []).some(p => String(p.diametro).trim() === String(l.diametro).trim())
     );
     const opts = applicable.map(po => {
       const disp = po.cantidad_po - po.cantidad_enviada;
@@ -1000,10 +1001,10 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
   const diam = lotes[0]?.diametro || '';
   const np = lotes[0]?.numero_parte || '';
 
-  // POs activas con partes que coincidan con el diametro/NP
+  // POs activas con partes que coincidan con el diametro exacto
   const activePOs = S.pos.filter(p => p.estado === 'activa' && p.pct_disponible > 0);
   const applicablePOs = activePOs.filter(po =>
-    (po.partes || []).some(p => p.diametro === diam || p.numero_parte === np)
+    (po.partes || []).some(p => String(p.diametro).trim() === String(diam).trim())
   );
   // Separar empezadas (ya enviaron algo) vs nuevas
   const empezadas = applicablePOs.filter(po => (po.cantidad_enviada || 0) > 0);

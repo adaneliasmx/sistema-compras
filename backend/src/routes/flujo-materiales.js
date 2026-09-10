@@ -248,6 +248,70 @@ router.get('/sync/app-version', flujoSyncKeyRequired, (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// ESTADÍSTICAS EMPAQUE (público — consumido por módulo vales para CPK)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+router.get('/tenneco/muestras/estadisticas', (req, res) => {
+  const { variable, numero_parte, fecha_ini, fecha_fin, lote } = req.query;
+  if (!variable || !numero_parte) return res.status(400).json({ error: 'variable y numero_parte requeridos' });
+  if (!['rugosidad', 'altura_axial'].includes(variable)) return res.status(400).json({ error: 'variable debe ser rugosidad o altura_axial' });
+
+  const db = read();
+  const spec = (db.cat_tenneco_specs || []).find(s =>
+    String(s.numero_parte).trim() === String(numero_parte).trim()
+  );
+
+  let muestras = (db.muestras_tenneco || []).filter(m =>
+    String(m.numero_parte).trim() === String(numero_parte).trim()
+  );
+  if (fecha_ini) muestras = muestras.filter(m => m.fecha >= fecha_ini);
+  if (fecha_fin) muestras = muestras.filter(m => m.fecha <= fecha_fin);
+  if (lote) muestras = muestras.filter(m => String(m.lote_id) === String(lote) || m.lote === lote);
+
+  const promKey = variable === 'rugosidad' ? 'rugosidad_prom' : 'altura_axial_prom';
+  const valores = muestras
+    .filter(m => m[promKey] != null)
+    .sort((a, b) => (a.fecha || '').localeCompare(b.fecha || '') || a.num_muestra - b.num_muestra)
+    .map(m => ({
+      fecha: m.fecha,
+      lote: m.lote || '',
+      lote_id: m.lote_id,
+      num_muestra: m.num_muestra,
+      valor: m[promKey],
+      analista: m.analista || ''
+    }));
+
+  const lsl = variable === 'rugosidad' ? (spec?.rugosidad_min ?? null) : (spec?.altura_axial_min ?? null);
+  const usl = variable === 'rugosidad' ? (spec?.rugosidad_max ?? null) : (spec?.altura_axial_max ?? null);
+  const isNA = variable === 'rugosidad' && spec && spec.rugosidad_min === 0 && spec.rugosidad_max === 0;
+
+  res.json({ spec: { numero_parte, variable, lsl, usl, isNA }, valores });
+});
+
+router.get('/tenneco/numeros-parte-con-datos', (req, res) => {
+  const db = read();
+  const muestras = db.muestras_tenneco || [];
+  const specs = db.cat_tenneco_specs || [];
+  const lotes = db.lotes_tenneco || [];
+
+  const npSet = new Set(muestras.map(m => String(m.numero_parte).trim()).filter(Boolean));
+  const result = [...npSet].sort().map(np => {
+    const spec = specs.find(s => String(s.numero_parte).trim() === np);
+    const npLotes = lotes.filter(l => String(l.numero_parte).trim() === np);
+    return {
+      numero_parte: np,
+      rugosidad_min: spec?.rugosidad_min ?? null,
+      rugosidad_max: spec?.rugosidad_max ?? null,
+      altura_axial_min: spec?.altura_axial_min ?? null,
+      altura_axial_max: spec?.altura_axial_max ?? null,
+      rugosidad_na: spec ? spec.rugosidad_min === 0 && spec.rugosidad_max === 0 : false,
+      lotes: npLotes.map(l => ({ id: l.id, lote: l.lote, diametro: l.diametro }))
+    };
+  });
+  res.json(result);
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // CATALOGOS TENNECO — PROYECTOS
 // ═══════════════════════════════════════════════════════════════════════════════
 
