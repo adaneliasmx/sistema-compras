@@ -42,6 +42,7 @@ const MENU_BY_ROLE = {
     ['evaluaciones', '⭐ Evaluaciones'],
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['reportes', '📊 Reportes'],
+    ['kpi', '📈 KPI'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
   ],
@@ -58,6 +59,7 @@ const MENU_BY_ROLE = {
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
     ['reportes', '📊 Reportes'],
+    ['kpi', '📈 KPI'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
   ]
@@ -10646,7 +10648,8 @@ function render() {
     plantillas: plantillasView,
     checador: checadorView,
     asistencias: asistenciasView,
-    'catalogo-empleados': catalogoEmpleadosView
+    'catalogo-empleados': catalogoEmpleadosView,
+    kpi: kpiRhhView
   };
 
   const viewFn = views[hash];
@@ -12429,6 +12432,272 @@ async function checadorCrearTodasFaltas() {
   checadorState.absences = [];
   toast(fail > 0 ? `${ok} faltas creadas, ${fail} errores` : `${ok} faltas creadas`, fail > 0 ? 'warning' : 'success');
   renderChecador();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// KPI RHH — Costos RHH, Costos por Proyecto, Incidencias por Área
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function kpiRhhView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando KPIs...</div>', 'kpi');
+
+  const fmt$ = n => '$' + Math.round(Number(n || 0)).toLocaleString('es-MX');
+  const fmtN = n => n != null ? String(Math.round(n * 100) / 100) : '—';
+
+  const TH_BG  = '#f1f5f9';
+  const SEC_BG = '#1e3a8a';
+  const TOT_BG = '#dbeafe';
+
+  // ── Build Costos RHH table ─────────────────────────────────────────────────
+  function buildCostosRhhTable(data, period) {
+    const items = period === 'week' ? data.by_week : data.by_month;
+    const labels = period === 'week' ? data.weeks_labels : data.months_labels;
+    if (!items || !items.length) return '<div class="empty-state"><p>Sin datos de costos</p></div>';
+
+    const cols = 1 + items.length + 1;
+    const thCols = labels.map(l => `<th style="text-align:right;padding:6px 8px;white-space:nowrap;background:${TH_BG};color:#111;font-size:11px">${escHtml(l)}</th>`).join('');
+
+    function row(label, field, bg) {
+      const cells = items.map(p => `<td style="text-align:right;padding:6px 8px;background:${bg};color:#111;font-size:12px">${p[field] > 0 ? fmt$(p[field]) : '—'}</td>`).join('');
+      const total = items.reduce((s, p) => s + (p[field] || 0), 0);
+      return `<tr>
+        <td style="padding:6px 12px;font-size:12px;font-weight:600;color:#111;position:sticky;left:0;background:${bg};z-index:1">${label}</td>
+        ${cells}
+        <td style="text-align:right;padding:6px 8px;background:${TOT_BG};color:#111;font-weight:700;font-size:12px">${total > 0 ? fmt$(total) : '—'}</td>
+      </tr>`;
+    }
+
+    const totalByPeriod = items.map(p => (p.te || 0) + (p.vac || 0) + (p.bonos || 0) + (p.nomina || 0) + (p.despensa || 0));
+    const grandTotal = totalByPeriod.reduce((s, t) => s + t, 0);
+
+    return `
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:200px;position:sticky;left:0;z-index:2">Concepto</th>
+            ${thCols}
+            <th style="text-align:right;padding:6px 8px;background:${TOT_BG};color:#111;font-weight:700">TOTAL</th>
+          </tr></thead>
+          <tbody>
+            <tr><td colspan="${cols}" style="background:${SEC_BG};color:#fff;font-weight:700;padding:7px 12px;font-size:12px;letter-spacing:.5px">💰 COSTOS DE PERSONAL</td></tr>
+            ${row('Tiempo Extra', 'te', '#fff')}
+            ${row('Vacaciones', 'vac', '#f8fafc')}
+            ${row('Bonos', 'bonos', '#fff')}
+            ${row('Nómina (Sueldo + Séptimo + Prima)', 'nomina', '#f8fafc')}
+            ${row('Despensa', 'despensa', '#fff')}
+          </tbody>
+          <tfoot>
+            <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
+              <td style="padding:7px 12px;font-weight:700;font-size:12px;position:sticky;left:0;background:#1e3a5f;z-index:1">TOTAL SEMANAL</td>
+              ${totalByPeriod.map(t => `<td style="text-align:right;padding:7px 8px;font-weight:700">${t > 0 ? fmt$(t) : '—'}</td>`).join('')}
+              <td style="text-align:right;padding:7px 8px;font-weight:700;background:#0f172a">${grandTotal > 0 ? fmt$(grandTotal) : '—'}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  }
+
+  // ── Build Costos por Proyecto table ────────────────────────────────────────
+  function buildCostosProyTable(data, period) {
+    const labels = period === 'week' ? data.weeks_labels : data.months_labels;
+    const byKey = period === 'week' ? 'by_week' : 'by_month';
+    const projects = data.projects || [];
+    if (!projects.length) return '<div class="empty-state"><p>Sin datos de proyectos</p></div>';
+
+    const cols = 2 + labels.length;
+    const thCols = labels.map(l => `<th style="text-align:right;padding:6px 8px;white-space:nowrap;background:${TH_BG};color:#111;font-size:11px">${escHtml(l)}</th>`).join('');
+    const periodTotals = labels.map((_, i) => projects.reduce((sum, p) => sum + ((p[byKey] || [])[i]?.amount || 0), 0));
+    const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
+
+    const rows = projects.map((proj, idx) => {
+      const byP = proj[byKey] || [];
+      const rowTotal = byP.reduce((s, p) => s + (p.amount || 0), 0);
+      const bg = idx % 2 === 0 ? '#fff' : '#f8fafc';
+      return `<tr style="border-top:1px solid #e5e7eb">
+        <td style="padding:7px 12px;font-weight:600;color:#111;position:sticky;left:0;background:${bg};z-index:1">${escHtml(proj.name)} <span style="color:#9ca3af;font-weight:400;font-size:11px">(${proj.employees} emps)</span></td>
+        <td style="text-align:right;padding:7px 8px;font-weight:600;color:#111;background:${bg}">${rowTotal > 0 ? fmt$(rowTotal) : '—'}</td>
+        ${byP.map(p => `<td style="text-align:right;padding:7px 8px;color:#111;background:${bg}">${p.amount > 0 ? fmt$(p.amount) : '—'}</td>`).join('')}
+      </tr>`;
+    }).join('');
+
+    return `
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:2">Proyecto</th>
+            <th style="text-align:right;padding:6px 8px;background:${TH_BG};color:#111">Total período</th>
+            ${thCols}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="background:#1e3a5f;color:#fff;border-top:3px solid #1e3a5f">
+              <td style="padding:7px 12px;font-weight:700;font-size:12px;position:sticky;left:0;background:#1e3a5f;z-index:1">TOTAL</td>
+              <td style="text-align:right;padding:7px 8px;font-weight:700">${fmt$(grandTotal)}</td>
+              ${periodTotals.map(t => `<td style="text-align:right;padding:7px 8px;font-weight:700">${t > 0 ? fmt$(t) : '—'}</td>`).join('')}
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  }
+
+  // ── Build Incidencias table ────────────────────────────────────────────────
+  function buildIncidenciasTable(data, period) {
+    const labels = period === 'week' ? data.weeks_labels : data.months_labels;
+    const byKey = period === 'week' ? 'by_week' : 'by_month';
+    const departments = data.departments || [];
+    if (!departments.length) return '<div class="empty-state"><p>Sin datos de incidencias</p></div>';
+
+    // Cada departamento tiene 4 métricas por período: empleados, asistencias, faltas, vacaciones
+    // Mostramos una tabla donde cada fila es un depto, con sub-filas por métrica
+    const thCols = labels.map(l => `<th style="text-align:center;padding:6px 6px;white-space:nowrap;background:${TH_BG};color:#111;font-size:10px">${escHtml(l)}</th>`).join('');
+
+    function metricRow(dept, label, field, bg, icon) {
+      const items = dept[byKey] || [];
+      const cells = items.map(p => {
+        const v = p[field];
+        const style = field === 'faltas' && v > 0 ? 'color:#dc2626;font-weight:700;' : '';
+        return `<td style="text-align:center;padding:4px 6px;background:${bg};font-size:11px;${style}">${v > 0 ? fmtN(v) : '—'}</td>`;
+      }).join('');
+      const total = items.reduce((s, p) => s + (p[field] || 0), 0);
+      const totalStyle = field === 'faltas' && total > 0 ? 'color:#dc2626;font-weight:700;' : 'font-weight:600;';
+      return `<tr>
+        <td style="padding:4px 12px 4px 28px;font-size:11px;color:#475569;background:${bg}">${icon} ${label}</td>
+        <td style="text-align:center;padding:4px 6px;background:${TOT_BG};font-size:11px;${totalStyle}">${total > 0 ? fmtN(total) : '—'}</td>
+        ${cells}
+      </tr>`;
+    }
+
+    const rows = departments.map(dept => {
+      return `
+        <tr style="border-top:2px solid #e5e7eb">
+          <td colspan="${2 + labels.length}" style="background:${SEC_BG};color:#fff;font-weight:700;padding:7px 12px;font-size:12px">
+            ${escHtml(dept.name)} <span style="font-weight:400;font-size:11px;opacity:.8">(${dept.total_empleados} empleados)</span>
+          </td>
+        </tr>
+        ${metricRow(dept, 'Empleados', 'empleados', '#fff', '👥')}
+        ${metricRow(dept, 'Asistencias (días)', 'asistencias', '#f8fafc', '✅')}
+        ${metricRow(dept, 'Faltas', 'faltas', '#fff', '❌')}
+        ${metricRow(dept, 'Vacaciones (emps)', 'vacaciones', '#f8fafc', '🏖')}
+      `;
+    }).join('');
+
+    return `
+      <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+        <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
+          <thead><tr>
+            <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:2">Departamento / Métrica</th>
+            <th style="text-align:center;padding:6px 6px;background:${TOT_BG};color:#111;font-weight:700;font-size:11px">TOTAL</th>
+            ${thCols}
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+  }
+
+  // ── Fetch data and render ──────────────────────────────────────────────────
+  try {
+    const [costosData, proyData, incData] = await Promise.all([
+      api('/api/rhh/kpi/costos-rhh'),
+      api('/api/rhh/kpi/costos-proyecto'),
+      api('/api/rhh/kpi/incidencias'),
+    ]);
+
+    let cosPeriod = 'week';
+    let proPeriod = 'week';
+    let incPeriod = 'week';
+
+    function renderCos() {
+      document.getElementById('kpi-rhh-cos-body').innerHTML = buildCostosRhhTable(costosData, cosPeriod);
+      document.getElementById('kpi-rhh-cos-wk').className = cosPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('kpi-rhh-cos-mo').className = cosPeriod === 'month' ? 'btn-primary' : 'btn-secondary';
+    }
+    function renderPro() {
+      document.getElementById('kpi-rhh-pro-body').innerHTML = buildCostosProyTable(proyData, proPeriod);
+      document.getElementById('kpi-rhh-pro-wk').className = proPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('kpi-rhh-pro-mo').className = proPeriod === 'month' ? 'btn-primary' : 'btn-secondary';
+    }
+    function renderInc() {
+      document.getElementById('kpi-rhh-inc-body').innerHTML = buildIncidenciasTable(incData, incPeriod);
+      document.getElementById('kpi-rhh-inc-wk').className = incPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
+      document.getElementById('kpi-rhh-inc-mo').className = incPeriod === 'month' ? 'btn-primary' : 'btn-secondary';
+    }
+
+    el.innerHTML = shell(`
+      <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0;flex-wrap:wrap">
+        <button id="kpi-tab-cos" class="tab-btn tab-active" style="padding:10px 20px;font-size:13px;font-weight:700">💰 Costos RHH</button>
+        <button id="kpi-tab-pro" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">🏗️ Costos por Proyecto</button>
+        <button id="kpi-tab-inc" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">📋 Incidencias</button>
+      </div>
+
+      <!-- Panel Costos RHH -->
+      <div id="kpi-panel-cos">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">💰 Costos de Personal — RHH</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-rhh-cos-wk" class="btn-primary" style="padding:4px 14px;font-size:12px">Por semana</button>
+            <button id="kpi-rhh-cos-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px">Por mes</button>
+          </div>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">Datos del Consolidado CONTPAQ. Filas: Tiempo Extra, Vacaciones, Bonos, Nomina, Despensa. Columnas: semana o mes.</p>
+        <div id="kpi-rhh-cos-body"></div>
+      </div>
+
+      <!-- Panel Costos por Proyecto -->
+      <div id="kpi-panel-pro" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">🏗️ Costos por Proyecto</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-rhh-pro-wk" class="btn-primary" style="padding:4px 14px;font-size:12px">Por semana</button>
+            <button id="kpi-rhh-pro-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px">Por mes</button>
+          </div>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">Costo total por proyecto (Nomina + TE + Bonos + Vacaciones + Despensa). Proyectos detectados por departamento.</p>
+        <div id="kpi-rhh-pro-body"></div>
+      </div>
+
+      <!-- Panel Incidencias -->
+      <div id="kpi-panel-inc" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">📋 Incidencias por Departamento</h4>
+          <div style="display:flex;gap:4px">
+            <button id="kpi-rhh-inc-wk" class="btn-primary" style="padding:4px 14px;font-size:12px">Por semana</button>
+            <button id="kpi-rhh-inc-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px">Por mes</button>
+          </div>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">Total de empleados, asistencias (dias pagados), faltas y vacaciones por area y periodo.</p>
+        <div id="kpi-rhh-inc-body"></div>
+      </div>
+    `, 'kpi');
+
+    // Tab switching
+    const _kpiShowTab = (show, hide1, hide2, activeBtn, btn1, btn2) => {
+      document.getElementById(show).style.display = '';
+      document.getElementById(hide1).style.display = 'none';
+      document.getElementById(hide2).style.display = 'none';
+      document.getElementById(activeBtn).classList.add('tab-active');
+      document.getElementById(btn1).classList.remove('tab-active');
+      document.getElementById(btn2).classList.remove('tab-active');
+    };
+    document.getElementById('kpi-tab-cos').onclick = () => _kpiShowTab('kpi-panel-cos', 'kpi-panel-pro', 'kpi-panel-inc', 'kpi-tab-cos', 'kpi-tab-pro', 'kpi-tab-inc');
+    document.getElementById('kpi-tab-pro').onclick = () => _kpiShowTab('kpi-panel-pro', 'kpi-panel-cos', 'kpi-panel-inc', 'kpi-tab-pro', 'kpi-tab-cos', 'kpi-tab-inc');
+    document.getElementById('kpi-tab-inc').onclick = () => _kpiShowTab('kpi-panel-inc', 'kpi-panel-cos', 'kpi-panel-pro', 'kpi-tab-inc', 'kpi-tab-cos', 'kpi-tab-pro');
+
+    // Period toggles
+    document.getElementById('kpi-rhh-cos-wk').onclick = () => { cosPeriod = 'week'; renderCos(); };
+    document.getElementById('kpi-rhh-cos-mo').onclick = () => { cosPeriod = 'month'; renderCos(); };
+    document.getElementById('kpi-rhh-pro-wk').onclick = () => { proPeriod = 'week'; renderPro(); };
+    document.getElementById('kpi-rhh-pro-mo').onclick = () => { proPeriod = 'month'; renderPro(); };
+    document.getElementById('kpi-rhh-inc-wk').onclick = () => { incPeriod = 'week'; renderInc(); };
+    document.getElementById('kpi-rhh-inc-mo').onclick = () => { incPeriod = 'month'; renderInc(); };
+
+    renderCos();
+    renderPro();
+    renderInc();
+
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">Error al cargar KPIs: ${err.message}</div>`, 'kpi');
+  }
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

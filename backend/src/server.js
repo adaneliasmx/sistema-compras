@@ -50,6 +50,7 @@ const rhhChecadorRoutes = require('./routes/rhh-checador');
 const rhhNominaRoutes      = require('./routes/rhh-nomina');
 const rhhAsistenciaRoutes  = require('./routes/rhh-asistencia');
 const rhhCatalogoRoutes    = require('./routes/rhh-catalogo');
+const rhhKpiRoutes         = require('./routes/rhh-kpi');
 
 // ── Módulo Empleados (autoservicio) ──────────────────────────────────────────
 const empleadosAuthRoutes = require('./routes/empleados-auth');
@@ -278,6 +279,7 @@ app.use('/api/rhh/checador', rhhChecadorRoutes);
 app.use('/api/rhh/nomina',      rhhNominaRoutes);
 app.use('/api/rhh/asistencia', rhhAsistenciaRoutes);
 app.use('/api/rhh/catalogo',   rhhCatalogoRoutes);
+app.use('/api/rhh/kpi',        rhhKpiRoutes);
 
 // ── API Empleados (autoservicio) ──────────────────────────────────────────────
 app.use('/api/empleados/auth', empleadosAuthRoutes);
