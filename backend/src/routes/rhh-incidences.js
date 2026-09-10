@@ -197,7 +197,16 @@ router.get('/complaints/track/:code', rhhAuthRequired, (req, res) => {
 router.get('/complaints', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
   const complaints = (db.rhh_anonymous_complaints || [])
-    .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    .map(c => ({
+      ...c,
+      // Normalizar campos de quejas antiguas del portal empleado
+      date:        c.date        || c.created_at || null,
+      category:    c.category    || c.categoria  || 'general',
+      description: c.description || c.mensaje    || '',
+      status:      c.status === 'nuevo' ? 'new' : (c.status || 'new'),
+      response:    c.response    ?? null,
+    }))
+    .sort((a, b) => new Date(b.created_at || b.date || 0) - new Date(a.created_at || a.date || 0));
   res.json(complaints);
 });
 

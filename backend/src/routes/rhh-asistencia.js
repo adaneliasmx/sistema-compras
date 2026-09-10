@@ -357,7 +357,7 @@ function employeeDayContext(db, employeeId, fecha) {
   };
 }
 
-const OVERTIME_RAZONES = [
+const OVERTIME_RAZONES_FALLBACK = [
   'Producción urgente / pedido cliente',
   'Mantenimiento preventivo',
   'Mantenimiento correctivo',
@@ -369,6 +369,14 @@ const OVERTIME_RAZONES = [
   'Auditoría / visita cliente',
   'Otro',
 ];
+
+// Lee razones TE desde catálogos definidos en /rhh/#catalogos → Razones TE
+function getOvertimeRazones(db) {
+  const cats = db.rhh_te_catalogos || [];
+  if (cats.length === 0) return OVERTIME_RAZONES_FALLBACK;
+  // Flatten: nombre de cada clasificación como razón
+  return cats.map(c => c.nombre);
+}
 
 /* Lunes de la semana que contiene dateStr (YYYY-MM-DD) */
 function weekMonday(dateStr) {
@@ -1284,7 +1292,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
     shifts:          shiftsWithHours,
     proyectos:       PROYECTOS,
     unlocks:         unlocks.filter(u => u.active !== false),
-    overtime_razones: OVERTIME_RAZONES,
+    overtime_razones: getOvertimeRazones(db),
     incidencia_types: INCIDENCIA_LABELS,
     bonos_week: allBonos
       .filter(b => b.fecha >= dates[0] && b.fecha <= dates[6] && b.status !== 'rechazado')
@@ -1900,7 +1908,10 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
 router.get('/proyectos', rhhAuthRequired, (req, res) => res.json(PROYECTOS));
 
 // GET /api/rhh/asistencia/overtime-razones
-router.get('/overtime-razones', rhhAuthRequired, (req, res) => res.json(OVERTIME_RAZONES));
+router.get('/overtime-razones', rhhAuthRequired, (req, res) => {
+  const db = read();
+  res.json(getOvertimeRazones(db));
+});
 
 // ══════════════════════════════════════════════════════════════════════════════
 // TxT — Tiempo por Tiempo (deudas y pagos)

@@ -451,11 +451,14 @@ router.post('/queja', empAuthRequired, (req, res) => {
   const record = {
     id: nextId,
     // NO se guarda employee_id — queja anónima
-    categoria: String(categoria || 'general').trim(),
-    mensaje: String(mensaje).trim().slice(0, 1000),
-    status: 'nuevo',
-    created_at: nowMxDate(),
-    leido_at: null,
+    date: nowMxDate(),
+    category: String(categoria || 'general').trim(),
+    description: String(mensaje).trim().slice(0, 1000),
+    status: 'new',
+    response: null,
+    reviewed_by: null,
+    created_at: new Date().toISOString(),
+    source: 'portal_empleado',
   };
   db.rhh_anonymous_complaints.push(record);
   write(db);

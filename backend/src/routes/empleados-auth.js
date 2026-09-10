@@ -28,6 +28,7 @@ router.post('/login', (req, res) => {
     e.emp_login && e.emp_login.username === String(username).toUpperCase().trim()
   );
   if (!emp || emp.status !== 'active') { _rl.recordFail(rlKey); return res.status(401).json({ error: 'Credenciales inválidas' }); }
+  if (emp.emp_login.enabled === false) { _rl.recordFail(rlKey); return res.status(403).json({ error: 'Tu cuenta ha sido deshabilitada. Contacta a Recursos Humanos.' }); }
 
   const login = emp.emp_login;
 

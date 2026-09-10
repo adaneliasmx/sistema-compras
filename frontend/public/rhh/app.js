@@ -12495,6 +12495,12 @@ async function catCargar() {
     const portalBadge = e.has_portal
       ? `<span style="background:#eff6ff;color:#2563eb;padding:2px 6px;border-radius:20px;font-size:10px">🔑 ${e.portal_username}</span>`
       : '';
+    const enabledChk = e.has_portal
+      ? `<input type="checkbox" ${e.portal_enabled ? 'checked' : ''} onclick="event.stopPropagation();catTogglePortal(${e.id},this.checked)" style="accent-color:#16a34a;width:15px;height:15px;cursor:pointer;" title="${e.portal_enabled ? 'Cuenta habilitada' : 'Cuenta deshabilitada'}" />`
+      : '';
+    const waBtn = e.has_portal
+      ? `<button class="btn-ghost btn-sm" onclick="event.stopPropagation();catEnviarWhatsApp(${e.id},'${esc(e.portal_username || '')}','${esc(e.full_name || '')}','${esc(e.phone || '')}')" style="color:#25d366;font-size:11px" title="Enviar credenciales por WhatsApp">📱 WA</button>`
+      : '';
     return `
     <tr style="cursor:pointer" onclick="catVerDetalle(${e.id})">
       <td style="font-weight:600;color:#1e293b">#${e.employee_number}</td>
@@ -12503,8 +12509,10 @@ async function catCargar() {
       <td style="color:#64748b;font-size:13px">${esc(e.position_name || '—')}</td>
       <td>${statusBadge}</td>
       <td>${portalBadge}</td>
-      <td>
+      <td style="text-align:center">${enabledChk}</td>
+      <td style="white-space:nowrap">
         <button class="btn-ghost btn-sm" onclick="event.stopPropagation();catVerDetalle(${e.id})">Ver</button>
+        ${waBtn}
         ${e.status === 'active' ? `<a href="/empleados" target="_blank" class="btn-ghost btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">🏭 Portal</a>` : ''}
       </td>
     </tr>`;
@@ -12514,7 +12522,7 @@ async function catCargar() {
   <div style="font-size:13px;color:#64748b;margin-bottom:10px">${emps.length} empleado${emps.length !== 1 ? 's' : ''}</div>
   <div style="overflow-x:auto">
   <table class="data-table">
-    <thead><tr><th>#</th><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Estatus</th><th>Portal</th><th></th></tr></thead>
+    <thead><tr><th>#</th><th>Nombre</th><th>Departamento</th><th>Puesto</th><th>Estatus</th><th>Portal</th><th>Habilitado</th><th></th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   </div>`;
@@ -12651,8 +12659,16 @@ async function catVerDetalle(empId) {
     <div style="font-size:13px;font-weight:600;color:#1e40af;margin-bottom:6px">Acceso al Portal del Empleado</div>
     <div style="font-size:13px;color:#475569">Usuario: <strong>${esc(e.portal_username)}</strong></div>
     <div style="font-size:12px;color:#64748b;margin-top:4px">Contraseña: configurada por el empleado</div>
-    <div style="display:flex;gap:8px;margin-top:10px">
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px;">
+      <label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" ${e.portal_enabled ? 'checked' : ''} onchange="catTogglePortal(${e.id},this.checked)" style="accent-color:#16a34a;width:16px;height:16px;" />
+        Cuenta habilitada
+      </label>
+      ${!e.portal_enabled ? '<span style="font-size:11px;color:#dc2626;font-weight:600;">Acceso bloqueado</span>' : ''}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn-ghost btn-sm" onclick="catResetCredencial(${e.id})">🔄 Resetear contraseña</button>
+      <button class="btn-ghost btn-sm" style="color:#25d366" onclick="catEnviarWhatsApp(${e.id},'${esc(e.portal_username || '')}','${esc(e.full_name || '')}','${esc(e.phone || '')}')">📱 Enviar por WhatsApp</button>
       <a href="/empleados" target="_blank" class="btn-ghost btn-sm" style="text-decoration:none">🏭 Ir al portal</a>
     </div>
   </div>` : `<div style="color:#94a3b8;font-size:13px">Sin acceso al portal configurado</div>`;
@@ -12942,6 +12958,49 @@ async function catResetCredencial(empId) {
     toast(`Credenciales reseteadas. Usuario: ${r.username} / Pass inicial: ${r.password}`, 'success');
     catVerDetalle(empId);
   }
+}
+
+async function catTogglePortal(empId, enabled) {
+  const r = await api(`/api/rhh/catalogo/${empId}/portal-enabled`, {
+    method: 'PATCH', body: JSON.stringify({ enabled })
+  }).catch(() => null);
+  if (r && r.ok) {
+    toast(enabled ? 'Cuenta habilitada' : 'Cuenta deshabilitada');
+  } else {
+    toast('Error al cambiar estado', 'error');
+    catCargar();
+  }
+}
+
+async function catEnviarWhatsApp(empId, username, fullName, phone) {
+  // Resetear credenciales para obtener contraseña inicial
+  const r = await api(`/api/rhh/catalogo/${empId}/credenciales`, { method:'PATCH', body: JSON.stringify({}) }).catch(() => null);
+  if (!r || !r.ok) { toast('Error al obtener credenciales. Verifica que el empleado tenga RFC y CURP.', 'error'); return; }
+
+  const usuario = r.username;
+  const contrasena = r.password;
+  const link = 'https://cuestocompras.onrender.com/empleados/';
+
+  const msg = `Hola *${fullName}*,\n\n`
+    + `Te invitamos a consultar la plataforma de empleados, donde podras consultar tus incidencias, evaluaciones, nomina y solicitar vacaciones.\n\n`
+    + `*Tus credenciales de acceso:*\n`
+    + `Usuario: *${usuario}*\n`
+    + `Contraseña: *${contrasena}*\n\n`
+    + `*Como ingresar:*\n`
+    + `1. Abre el siguiente enlace en tu navegador:\n${link}\n`
+    + `2. Ingresa tu usuario y contraseña\n`
+    + `3. Al ingresar por primera vez se te pedira cambiar tu contraseña\n`
+    + `4. Puedes instalar la app en tu celular usando el boton "Instalar App" que aparece al iniciar sesion\n\n`
+    + `Si tienes dudas, contacta a Recursos Humanos.`;
+
+  const encoded = encodeURIComponent(msg);
+  // Si tiene teléfono, pre-llenar el número
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+  const waUrl = cleanPhone
+    ? `https://wa.me/52${cleanPhone.slice(-10)}?text=${encoded}`
+    : `https://wa.me/?text=${encoded}`;
+
+  window.open(waUrl, '_blank');
 }
 
 // Guardar dept/puesto individual

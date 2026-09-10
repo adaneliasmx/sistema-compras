@@ -251,6 +251,7 @@ function enrich(emp, db) {
     shift_name:      shift ? shift.name : null,
     has_portal:      !!(emp.emp_login && (emp.emp_login.password || emp.emp_login.password_hash)),
     portal_username: emp.emp_login ? emp.emp_login.username : null,
+    portal_enabled:  emp.emp_login ? (emp.emp_login.enabled !== false) : true,
   };
 }
 
@@ -651,6 +652,23 @@ router.patch('/:id/credenciales', rhhAuthRequired, rhhRequireRole('admin', 'rh')
 
   write(db);
   res.json({ ok: true, username: emp.emp_login.username, password: pass });
+});
+
+// ── PATCH /api/rhh/catalogo/:id/portal-enabled ───────────────────────────────
+// Habilitar/deshabilitar acceso al portal del empleado
+router.patch('/:id/portal-enabled', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!db) return res.status(500).json({ error: 'Error leyendo catálogo' });
+
+  const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  if (!emp.emp_login) return res.status(400).json({ error: 'Empleado sin credenciales configuradas' });
+
+  const { enabled } = req.body || {};
+  emp.emp_login.enabled = !!enabled;
+  emp.updated_at = nowMxDate();
+  write(db);
+  res.json({ ok: true, enabled: emp.emp_login.enabled });
 });
 
 // ── PATCH /api/rhh/catalogo/:id/aclaracion/:acid ─────────────────────────────
