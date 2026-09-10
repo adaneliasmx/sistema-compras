@@ -374,7 +374,7 @@ const port = Number(process.env.PORT || 3000);
 Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb()])
   .then(() => {
     app.listen(port, () => {
-      console.log(`Servidor listo en http://localhost:${port}`);
+      console.log(`Servidor listo en http://localhost:${port} [build 2026-09-10]`);
     });
   })
   .catch(err => {
