@@ -399,6 +399,61 @@ router.delete('/recepciones/:id', invAuthRequired, invAllowRoles('admin'), (req,
   res.json({ ok: true });
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// SALIDAS DE INVENTARIO
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function nowMxDate() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+function nowMxTime() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+}
+
+router.get('/salidas', invAuthRequired, (req, res) => {
+  const { inv_type, desde, hasta } = req.query;
+  const db = readInv();
+  let rows = db.inv_salidas || [];
+  if (inv_type) rows = rows.filter(r => r.inv_type === inv_type);
+  if (desde)    rows = rows.filter(r => r.fecha >= desde);
+  if (hasta)    rows = rows.filter(r => r.fecha <= hasta);
+  res.json(rows.sort((a, b) => b.created_at.localeCompare(a.created_at)));
+});
+
+router.post('/salidas', invAuthRequired, invAllowRoles('recepcion', 'admin', 'inventarios'), (req, res) => {
+  const { inv_type, item_key, item_label, cantidad, kg, retira, autoriza, lote, motivo } = req.body;
+  if (!inv_type || !item_key || !retira || !autoriza || !motivo) {
+    return res.status(400).json({ error: 'inv_type, item_key, retira, autoriza y motivo son requeridos' });
+  }
+  if (req.invUser.role === 'inventarios' && inv_type !== 'quimicos_proceso') {
+    return res.status(403).json({ error: 'El rol inventarios solo puede registrar salidas de Químicos Proceso' });
+  }
+  const db = readInv();
+  db.inv_salidas = db.inv_salidas || [];
+  const salida = {
+    id: nextId(db.inv_salidas),
+    inv_type, item_key, item_label: item_label || item_key,
+    cantidad: cantidad || null, kg: kg || null,
+    fecha: nowMxDate(), hora: nowMxTime(),
+    retira: retira.trim(), autoriza: autoriza.trim(),
+    lote: (lote || '').trim() || null,
+    motivo,
+    usuario_id: req.invUser.id, usuario_nombre: req.invUser.nombre,
+    created_at: new Date().toISOString()
+  };
+  db.inv_salidas.push(salida);
+  writeInv(db);
+  res.json(salida);
+});
+
+router.delete('/salidas/:id', invAuthRequired, invAllowRoles('admin'), (req, res) => {
+  const id = Number(req.params.id);
+  const db = readInv();
+  db.inv_salidas = (db.inv_salidas || []).filter(r => r.id !== id);
+  writeInv(db);
+  res.json({ ok: true });
+});
+
 // Resumen de entradas (recepciones) y salidas (vales) de la semana actual por item
 router.get('/resumen-semana/:inv_type', invAuthRequired, (req, res) => {
   const { inv_type } = req.params;
@@ -446,12 +501,21 @@ router.get('/resumen-semana/:inv_type', invAuthRequired, (req, res) => {
     } catch (_) {}
   }
 
+  // Salidas registradas (inv_salidas) de la semana actual — todos los tipos
+  const salidasInv = (db.inv_salidas || []).filter(s =>
+    s.inv_type === inv_type && s.fecha >= startStr && s.fecha <= endStr
+  );
+
   const items = {};
   for (const item of cfg) {
     const recibidoKg = recs
       .filter(r => r.item_key === item.item_key)
-      .reduce((s, r) => s + (Number(r.kg) || 0), 0);
-    const salidasKg = valesMap[item.item_key] || 0;
+      .reduce((s, r) => s + (Number(r.kg) || Number(r.cantidad) || 0), 0);
+    const valesKg = valesMap[item.item_key] || 0;
+    const invSalidasKg = salidasInv
+      .filter(s => s.item_key === item.item_key)
+      .reduce((s, r) => s + (Number(r.kg) || Number(r.cantidad) || 0), 0);
+    const salidasKg = valesKg + invSalidasKg;
     const p = item.peso_kg || null;
     items[item.item_key] = {
       recibido_kg:     recibidoKg || null,
@@ -630,6 +694,18 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
     } catch (_) {}
   }
 
+  // Salidas registradas (inv_salidas) semana anterior — todos los tipos
+  const salidasPrevMap = {};
+  {
+    const prevWeekStartD = isoWeekStart(prevYear, prevWeek);
+    const prevWeekEndD   = new Date(prevWeekStartD); prevWeekEndD.setDate(prevWeekEndD.getDate() + 6);
+    const pStartStr = prevWeekStartD.toISOString().slice(0, 10);
+    const pEndStr   = prevWeekEndD.toISOString().slice(0, 10);
+    for (const s of (db.inv_salidas || []).filter(s => s.inv_type === inv_type && s.fecha >= pStartStr && s.fecha <= pEndStr)) {
+      salidasPrevMap[s.item_key] = (salidasPrevMap[s.item_key] || 0) + (Number(s.kg) || Number(s.cantidad) || 0);
+    }
+  }
+
   // Pendiente de recibir — OCs en estado Enviada o Aprobada
   const pendienteMap = {};
   try {
@@ -654,7 +730,10 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
     const pesoKg = item.peso_kg || null;
     const recibidoKg = recepciones
       .filter(r => r.item_key === item.item_key)
-      .reduce((s, r) => s + (Number(r.kg) || 0), 0) || null;
+      .reduce((s, r) => s + (Number(r.kg) || Number(r.cantidad) || 0), 0) || null;
+    const valesConsumo   = valesConsumoMap[item.item_key] || 0;
+    const salidasConsumo = salidasPrevMap[item.item_key] || 0;
+    const totalConsumo   = valesConsumo + salidasConsumo;
     return {
       item_key:       item.item_key,
       item_label:     item.item_label,
@@ -667,7 +746,7 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
       cur_tambos:     (pesoKg && curKg !== null) ? Math.round((curKg / pesoKg) * 100) / 100 : null,
       cur_tambos_raw: cur?.tambos ?? null,
       cur_porrones:   cur?.porrones ?? null,
-      consumo_kg:     valesConsumoMap[item.item_key] ?? null,
+      consumo_kg:     totalConsumo || null,
       recibido_kg:    recibidoKg,
       pendiente_qty:  pendienteMap[item.item_key] ?? null,
       pendiente_unit: item.unidad || null

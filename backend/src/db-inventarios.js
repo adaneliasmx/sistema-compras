@@ -32,6 +32,7 @@ const EMPTY_DB = {
   inv_conteos: [],        // { id, inv_type, year, week, fecha, usuario_id, usuario_nombre, created_at }
   inv_conteo_items: [],   // { id, conteo_id, item_key, tambos, porrones, cantidad, kg, unidad }
   inv_recepciones: [],    // { id, inv_type, item_key, item_label, cantidad, kg, fecha, factura, usuario_id, usuario_nombre, created_at }
+  inv_salidas: [],        // { id, inv_type, item_key, item_label, cantidad, kg, fecha, hora, retira, autoriza, lote, motivo, usuario_id, usuario_nombre, created_at }
   inv_vales_epp: [],      // { id, folio, empleado_id, empleado_nombre, autorizador_nombre, fecha, notas, usuario_id, usuario_nombre, created_at }
   inv_vales_epp_items: [] // { id, vale_id, item_key, item_label, cantidad, unidad }
 };

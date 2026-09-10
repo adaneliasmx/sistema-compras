@@ -133,10 +133,16 @@ function buildNav() {
     addGroup('Recepcion');
     addLink('📥', 'Registrar Recepcion', 'recepcion');
     addLink('📋', 'Historial Recepciones', 'recepcion-hist');
+    addGroup('Salidas');
+    addLink('📤', 'Registrar Salida', 'salida');
+    addLink('📋', 'Historial Salidas', 'salida-hist');
   } else if (role === 'inventarios') {
     addGroup('Recepcion');
     addLink('📥', 'Registrar Recepcion', 'recepcion', { inv_type: 'quimicos_proceso' });
     addLink('📋', 'Historial Recepciones', 'recepcion-hist', { inv_type: 'quimicos_proceso' });
+    addGroup('Salidas');
+    addLink('📤', 'Registrar Salida', 'salida', { inv_type: 'quimicos_proceso' });
+    addLink('📋', 'Historial Salidas', 'salida-hist', { inv_type: 'quimicos_proceso' });
   }
 
   // Conteos: admin + inventarios (por permisos)
@@ -197,6 +203,8 @@ async function renderView(view, params) {
     switch (view) {
       case 'recepcion':       await renderRecepcion(main, params.inv_type || null); break;
       case 'recepcion-hist':  await renderRecepcionHist(main, params.inv_type || null); break;
+      case 'salida':          await renderSalida(main, params.inv_type || null); break;
+      case 'salida-hist':     await renderSalidaHist(main, params.inv_type || null); break;
       case 'cuarentena':      await renderCuarentena(main); break;
       case 'conteo':          await renderConteo(main, params.inv_type); break;
       case 'comprador':       await renderComprador(main, params.inv_type); break;
@@ -529,6 +537,188 @@ window.delRecepcion = async (id) => {
   if (!confirm('¿Eliminar esta recepcion?')) return;
   const r = await apiDel('/recepciones/' + id);
   if (r?.ok) navigate('recepcion-hist');
+};
+
+// ── SALIDA DE INVENTARIO ──────────────────────────────────────────────────────
+const MOTIVOS_SALIDA = [
+  'Venta a cliente',
+  'Préstamo a cliente',
+  'Rechazo',
+  'Disposición',
+  'Otros'
+];
+
+async function renderSalida(main, invTypeFilter = null) {
+  const rCfg = await apiGet('/items-config');
+  const itemsCfg = rCfg.ok ? await rCfg.json() : [];
+
+  main.innerHTML = `
+    <div class="page-title">📤 Registrar Salida</div>
+    <div class="card">
+      <div class="form-row cols-2" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Inventario</label>
+          <select class="form-input" id="sal-type" ${invTypeFilter ? 'disabled' : ''}>
+            ${(invTypeFilter ? INV_TYPES.filter(t => t.key === invTypeFilter) : INV_TYPES).map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Fecha y Hora</label>
+          <div style="display:flex;gap:8px">
+            <input type="date" class="form-input" id="sal-fecha" value="${today()}" readonly style="background:#f0f2f5;flex:1"/>
+            <input type="time" class="form-input" id="sal-hora" value="${new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})}" readonly style="background:#f0f2f5;width:100px"/>
+          </div>
+        </div>
+      </div>
+      <div class="form-row cols-2" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Item</label>
+          <select class="form-input" id="sal-item"></select>
+        </div>
+        <div class="form-group">
+          <label id="sal-qty-label">Cantidad</label>
+          <input type="number" class="form-input" id="sal-qty" min="0" step="0.01" placeholder="0"/>
+        </div>
+      </div>
+      <div class="form-row cols-2" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Nombre quien retira</label>
+          <input type="text" class="form-input" id="sal-retira" placeholder="Nombre completo"/>
+        </div>
+        <div class="form-group">
+          <label>Nombre quien autoriza</label>
+          <input type="text" class="form-input" id="sal-autoriza" placeholder="Nombre completo"/>
+        </div>
+      </div>
+      <div class="form-row cols-2" style="margin-bottom:12px">
+        <div class="form-group">
+          <label>Lote</label>
+          <input type="text" class="form-input" id="sal-lote" placeholder="Opcional"/>
+        </div>
+        <div class="form-group">
+          <label>Motivo de salida</label>
+          <select class="form-input" id="sal-motivo">
+            <option value="">— Seleccionar —</option>
+            ${MOTIVOS_SALIDA.map(m => `<option value="${esc(m)}">${esc(m)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div id="sal-err" class="alert alert-error" style="display:none"></div>
+      <button class="btn btn-primary" id="sal-save">Guardar Salida</button>
+    </div>
+  `;
+
+  function buildItemSelect() {
+    const inv_type = document.getElementById('sal-type').value;
+    const sel = document.getElementById('sal-item');
+    const opts = itemsCfg.filter(i => i.inv_type === inv_type && i.activo !== false);
+    sel.innerHTML = opts.map(i =>
+      `<option value="${esc(i.item_key)}" data-peso="${i.peso_kg||''}" data-label="${esc(i.item_label)}" data-unidad="${esc(i.unidad||'kg')}">${esc(i.item_label)}</option>`
+    ).join('');
+    updateLabel();
+  }
+  function updateLabel() {
+    const opt = document.getElementById('sal-item').selectedOptions[0];
+    const u = opt?.dataset.unidad || 'unidades';
+    document.getElementById('sal-qty-label').textContent = `Cantidad (${u})`;
+  }
+
+  document.getElementById('sal-type').onchange = buildItemSelect;
+  document.getElementById('sal-item').onchange = updateLabel;
+  buildItemSelect();
+
+  document.getElementById('sal-save').onclick = async () => {
+    const inv_type   = document.getElementById('sal-type').value;
+    const selOpt     = document.getElementById('sal-item').selectedOptions[0];
+    const item_key   = selOpt?.value;
+    const item_label = selOpt?.dataset.label || item_key;
+    const pesoKg     = Number(selOpt?.dataset.peso) || 0;
+    const cantidad   = Number(document.getElementById('sal-qty').value) || null;
+    const retira     = document.getElementById('sal-retira').value.trim();
+    const autoriza   = document.getElementById('sal-autoriza').value.trim();
+    const lote       = document.getElementById('sal-lote').value.trim();
+    const motivo     = document.getElementById('sal-motivo').value;
+    const errEl      = document.getElementById('sal-err');
+    errEl.style.display = 'none';
+    if (!inv_type || !item_key)  { errEl.textContent = 'Selecciona inventario e item'; errEl.style.display = ''; return; }
+    if (!cantidad)               { errEl.textContent = 'Indica la cantidad'; errEl.style.display = ''; return; }
+    if (!retira)                 { errEl.textContent = 'Indica quién retira'; errEl.style.display = ''; return; }
+    if (!autoriza)               { errEl.textContent = 'Indica quién autoriza'; errEl.style.display = ''; return; }
+    if (!motivo)                 { errEl.textContent = 'Selecciona el motivo de salida'; errEl.style.display = ''; return; }
+    const kg = pesoKg > 0 ? Math.round(cantidad * pesoKg * 100) / 100 : null;
+    const r = await apiPost('/salidas', { inv_type, item_key, item_label, cantidad, kg, retira, autoriza, lote, motivo });
+    if (!r) return;
+    const d = await r.json();
+    if (!r.ok) { errEl.textContent = d.error; errEl.style.display = ''; return; }
+    alert('✅ Salida registrada exitosamente.');
+    document.getElementById('sal-qty').value = '';
+    document.getElementById('sal-retira').value = '';
+    document.getElementById('sal-autoriza').value = '';
+    document.getElementById('sal-lote').value = '';
+    document.getElementById('sal-motivo').value = '';
+  };
+}
+
+// ── HISTORIAL SALIDAS ────────────────────────────────────────────────────────
+async function renderSalidaHist(main, invTypeFilter = null) {
+  main.innerHTML = `
+    <div class="page-title">📋 Historial de Salidas</div>
+    <div class="card">
+      <div class="toolbar">
+        <select class="form-input" id="sh-type" style="width:220px" ${invTypeFilter ? 'disabled' : ''}>
+          ${invTypeFilter
+            ? (INV_TYPES.filter(t => t.key === invTypeFilter).map(t => `<option value="${t.key}" selected>${esc(t.label)}</option>`).join(''))
+            : `<option value="">Todos los inventarios</option>${INV_TYPES.map(t => `<option value="${t.key}">${esc(t.label)}</option>`).join('')}`}
+        </select>
+        <input type="date" class="form-input" id="sh-desde" style="width:150px"/>
+        <input type="date" class="form-input" id="sh-hasta" style="width:150px"/>
+        <button class="btn btn-secondary" id="sh-search">Buscar</button>
+      </div>
+      <div id="sh-table"><div class="empty-msg">Selecciona filtros y presiona Buscar</div></div>
+    </div>
+  `;
+  const doSearch = async () => {
+    const inv_type = document.getElementById('sh-type').value;
+    const desde    = document.getElementById('sh-desde').value;
+    const hasta    = document.getElementById('sh-hasta').value;
+    let qs = '';
+    if (inv_type) qs += `&inv_type=${inv_type}`;
+    if (desde)    qs += `&desde=${desde}`;
+    if (hasta)    qs += `&hasta=${hasta}`;
+    const r = await apiGet('/salidas?' + qs.slice(1));
+    const rows = r.ok ? await r.json() : [];
+    const motivoColor = m => {
+      if (m === 'Rechazo') return '#dc2626';
+      if (m === 'Disposición') return '#d97706';
+      return '#374151';
+    };
+    const tbody = rows.map(row => `<tr>
+      <td>${esc(row.fecha)}</td>
+      <td>${esc(row.hora || '—')}</td>
+      <td>${esc(INV_TYPES.find(t=>t.key===row.inv_type)?.label || row.inv_type)}</td>
+      <td>${esc(row.item_label)}</td>
+      <td class="text-right">${fmt(row.cantidad)}</td>
+      <td>${esc(row.retira)}</td>
+      <td>${esc(row.autoriza)}</td>
+      <td>${esc(row.lote || '—')}</td>
+      <td><span style="color:${motivoColor(row.motivo)};font-weight:600">${esc(row.motivo)}</span></td>
+      <td>${esc(row.usuario_nombre)}</td>
+      ${ME.role === 'admin' ? `<td><button class="btn btn-danger btn-sm" onclick="delSalida(${row.id})">Eliminar</button></td>` : '<td></td>'}
+    </tr>`).join('');
+    document.getElementById('sh-table').innerHTML = rows.length ? `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Hora</th><th>Inventario</th><th>Item</th><th>Cantidad</th><th>Retira</th><th>Autoriza</th><th>Lote</th><th>Motivo</th><th>Registró</th><th></th></tr></thead>
+        <tbody>${tbody}</tbody>
+      </table></div>
+    ` : '<div class="empty-msg">Sin registros</div>';
+  };
+  document.getElementById('sh-search').onclick = doSearch;
+  if (invTypeFilter) doSearch();
+}
+window.delSalida = async (id) => {
+  if (!confirm('¿Eliminar esta salida?')) return;
+  const r = await apiDel('/salidas/' + id);
+  if (r?.ok) navigate('salida-hist');
 };
 
 // ── CUARENTENA ────────────────────────────────────────────────────────────────
