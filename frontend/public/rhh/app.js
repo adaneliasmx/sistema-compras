@@ -12498,34 +12498,35 @@ async function kpiRhhView() {
       </div>`;
   }
 
-  // ── Build Costos por Proyecto table ────────────────────────────────────────
+  // ── Build Costos por Departamento table + Pareto ──────────────────────────
   function buildCostosProyTable(data, period) {
     const labels = period === 'week' ? data.weeks_labels : data.months_labels;
     const byKey = period === 'week' ? 'by_week' : 'by_month';
-    const projects = data.projects || [];
-    if (!projects.length) return '<div class="empty-state"><p>Sin datos de proyectos</p></div>';
+    const departments = data.departments || [];
+    if (!departments.length) return '<div class="empty-state"><p>Sin datos de departamentos</p></div>';
 
     const cols = 2 + labels.length;
     const thCols = labels.map(l => `<th style="text-align:right;padding:6px 8px;white-space:nowrap;background:${TH_BG};color:#111;font-size:11px">${escHtml(l)}</th>`).join('');
-    const periodTotals = labels.map((_, i) => projects.reduce((sum, p) => sum + ((p[byKey] || [])[i]?.amount || 0), 0));
+    const periodTotals = labels.map((_, i) => departments.reduce((sum, d) => sum + ((d[byKey] || [])[i]?.amount || 0), 0));
     const grandTotal = periodTotals.reduce((s, t) => s + t, 0);
 
-    const rows = projects.map((proj, idx) => {
-      const byP = proj[byKey] || [];
+    const rows = departments.map((dept, idx) => {
+      const byP = dept[byKey] || [];
       const rowTotal = byP.reduce((s, p) => s + (p.amount || 0), 0);
       const bg = idx % 2 === 0 ? '#fff' : '#f8fafc';
       return `<tr style="border-top:1px solid #e5e7eb">
-        <td style="padding:7px 12px;font-weight:600;color:#111;position:sticky;left:0;background:${bg};z-index:1">${escHtml(proj.name)} <span style="color:#9ca3af;font-weight:400;font-size:11px">(${proj.employees} emps)</span></td>
+        <td style="padding:7px 12px;font-weight:600;color:#111;position:sticky;left:0;background:${bg};z-index:1">${escHtml(dept.name)} <span style="color:#9ca3af;font-weight:400;font-size:11px">(${dept.employees} emps)</span></td>
         <td style="text-align:right;padding:7px 8px;font-weight:600;color:#111;background:${bg}">${rowTotal > 0 ? fmt$(rowTotal) : '—'}</td>
         ${byP.map(p => `<td style="text-align:right;padding:7px 8px;color:#111;background:${bg}">${p.amount > 0 ? fmt$(p.amount) : '—'}</td>`).join('')}
       </tr>`;
     }).join('');
 
-    return `
+    // ── Tabla principal ──
+    let html = `
       <div class="table-wrap" style="overflow-x:auto;-webkit-overflow-scrolling:touch">
         <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
           <thead><tr>
-            <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:2">Proyecto</th>
+            <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:2">Departamento</th>
             <th style="text-align:right;padding:6px 8px;background:${TH_BG};color:#111">Total período</th>
             ${thCols}
           </tr></thead>
@@ -12539,6 +12540,61 @@ async function kpiRhhView() {
           </tfoot>
         </table>
       </div>`;
+
+    // ── Pareto por departamento con desglose de puestos ──
+    const sorted = [...departments].filter(d => d.total > 0).sort((a, b) => b.total - a.total);
+    if (sorted.length === 0) return html;
+
+    const COLORS = ['#1e3a8a','#2563eb','#3b82f6','#60a5fa','#93c5fd','#6366f1','#8b5cf6','#a78bfa','#c084fc','#e879f9',
+                    '#f472b6','#fb7185','#f87171','#fbbf24','#34d399','#2dd4bf','#22d3ee','#38bdf8','#818cf8','#a3a3a3'];
+    let accum = 0;
+
+    html += `
+      <div style="margin-top:28px;padding-top:20px;border-top:2px solid #e5e7eb">
+        <h4 style="margin:0 0 14px;font-size:14px;color:#1e3a8a">📊 Pareto de Gastos por Departamento</h4>
+        <div style="display:flex;flex-direction:column;gap:10px">`;
+
+    sorted.forEach((dept, idx) => {
+      const pct = grandTotal > 0 ? (dept.total / grandTotal * 100) : 0;
+      accum += pct;
+      const color = COLORS[idx % COLORS.length];
+
+      // Desglose de puestos
+      const puestos = dept.puestos || [];
+      let puestosHtml = '';
+      if (puestos.length > 0) {
+        const pRows = puestos.map(p => {
+          const ppct = dept.total > 0 ? (p.total / dept.total * 100) : 0;
+          return `<div style="display:flex;align-items:center;gap:8px;padding:3px 0;font-size:11px;color:#475569">
+            <span style="flex:0 0 180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(p.name)}">${escHtml(p.name)}</span>
+            <span style="flex:0 0 55px;text-align:right;font-weight:600;color:#111">${fmt$(p.total)}</span>
+            <span style="flex:0 0 40px;text-align:right">${ppct.toFixed(1)}%</span>
+            <div style="flex:1;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden">
+              <div style="width:${Math.min(ppct, 100)}%;height:100%;background:${color};border-radius:4px;opacity:.7"></div>
+            </div>
+            <span style="flex:0 0 45px;text-align:right;font-size:10px;color:#9ca3af">${p.employees} emp</span>
+          </div>`;
+        }).join('');
+        puestosHtml = `<div style="margin:6px 0 0 20px;padding:6px 10px;background:#f8fafc;border-radius:6px;border:1px solid #e5e7eb">${pRows}</div>`;
+      }
+
+      html += `
+        <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:0 0 170px;font-weight:700;font-size:13px;color:#111;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(dept.name)}">${escHtml(dept.name)}</div>
+            <div style="flex:0 0 90px;text-align:right;font-weight:700;font-size:13px;color:#111">${fmt$(dept.total)}</div>
+            <div style="flex:0 0 50px;text-align:right;font-size:12px;color:#475569">${pct.toFixed(1)}%</div>
+            <div style="flex:1;height:14px;background:#e5e7eb;border-radius:6px;overflow:hidden;position:relative">
+              <div style="width:${Math.min(pct, 100)}%;height:100%;background:${color};border-radius:6px"></div>
+            </div>
+            <div style="flex:0 0 70px;text-align:right;font-size:11px;color:#6b7280">Acum. ${accum.toFixed(0)}%</div>
+          </div>
+          ${puestosHtml}
+        </div>`;
+    });
+
+    html += `</div></div>`;
+    return html;
   }
 
   // ── Build Incidencias table ────────────────────────────────────────────────
@@ -12597,11 +12653,12 @@ async function kpiRhhView() {
 
   // ── Fetch data and render ──────────────────────────────────────────────────
   try {
-    const [costosData, proyData, incData] = await Promise.all([
+    const [costosData, _proyDataInit, incData] = await Promise.all([
       api('/api/rhh/kpi/costos-rhh'),
       api('/api/rhh/kpi/costos-proyecto'),
       api('/api/rhh/kpi/incidencias'),
     ]);
+    let proyData = _proyDataInit;
 
     let cosPeriod = 'week';
     let proPeriod = 'week';
@@ -12617,6 +12674,15 @@ async function kpiRhhView() {
       document.getElementById('kpi-rhh-pro-wk').className = proPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
       document.getElementById('kpi-rhh-pro-mo').className = proPeriod === 'month' ? 'btn-primary' : 'btn-secondary';
     }
+    async function reloadProData(semDesde, semHasta, deptId) {
+      const params = new URLSearchParams();
+      if (semDesde) params.set('semana_desde', semDesde);
+      if (semHasta) params.set('semana_hasta', semHasta);
+      if (deptId) params.set('dept_id', deptId);
+      const qs = params.toString();
+      proyData = await api('/api/rhh/kpi/costos-proyecto' + (qs ? '?' + qs : ''));
+      renderPro();
+    }
     function renderInc() {
       document.getElementById('kpi-rhh-inc-body').innerHTML = buildIncidenciasTable(incData, incPeriod);
       document.getElementById('kpi-rhh-inc-wk').className = incPeriod === 'week' ? 'btn-primary' : 'btn-secondary';
@@ -12626,7 +12692,7 @@ async function kpiRhhView() {
     el.innerHTML = shell(`
       <div style="display:flex;gap:8px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;padding-bottom:0;flex-wrap:wrap">
         <button id="kpi-tab-cos" class="tab-btn tab-active" style="padding:10px 20px;font-size:13px;font-weight:700">💰 Costos RHH</button>
-        <button id="kpi-tab-pro" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">🏗️ Costos por Proyecto</button>
+        <button id="kpi-tab-pro" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">🏗️ Costos por Departamento</button>
         <button id="kpi-tab-inc" class="tab-btn"            style="padding:10px 20px;font-size:13px;font-weight:700">📋 Incidencias</button>
       </div>
 
@@ -12643,16 +12709,27 @@ async function kpiRhhView() {
         <div id="kpi-rhh-cos-body"></div>
       </div>
 
-      <!-- Panel Costos por Proyecto -->
+      <!-- Panel Costos por Departamento -->
       <div id="kpi-panel-pro" style="display:none">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-          <h4 style="margin:0;font-size:15px;color:#1d4ed8">🏗️ Costos por Proyecto</h4>
+          <h4 style="margin:0;font-size:15px;color:#1d4ed8">🏗️ Costos por Departamento</h4>
           <div style="display:flex;gap:4px">
             <button id="kpi-rhh-pro-wk" class="btn-primary" style="padding:4px 14px;font-size:12px">Por semana</button>
             <button id="kpi-rhh-pro-mo" class="btn-secondary" style="padding:4px 14px;font-size:12px">Por mes</button>
           </div>
         </div>
-        <p class="small muted" style="margin:0 0 12px">Costo total por proyecto (Nomina + TE + Bonos + Vacaciones + Despensa). Proyectos detectados por departamento.</p>
+        <!-- Filtros -->
+        <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:#f1f5f9;border-radius:8px">
+          <label style="font-size:12px;font-weight:600;color:#334155">Semana desde:</label>
+          <select id="kpi-pro-sem-desde" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px"></select>
+          <label style="font-size:12px;font-weight:600;color:#334155">hasta:</label>
+          <select id="kpi-pro-sem-hasta" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px"></select>
+          <label style="font-size:12px;font-weight:600;color:#334155;margin-left:8px">Departamento:</label>
+          <select id="kpi-pro-dept" style="padding:4px 8px;font-size:12px;border:1px solid #cbd5e1;border-radius:4px;max-width:200px"></select>
+          <button id="kpi-pro-filter-btn" class="btn-primary" style="padding:4px 14px;font-size:12px">Filtrar</button>
+          <button id="kpi-pro-reset-btn" class="btn-secondary" style="padding:4px 14px;font-size:12px">Limpiar</button>
+        </div>
+        <p class="small muted" style="margin:0 0 12px">Costo total por departamento (Nomina + TE + Bonos + Vacaciones + Despensa) con desglose por puesto.</p>
         <div id="kpi-rhh-pro-body"></div>
       </div>
 
@@ -12690,6 +12767,23 @@ async function kpiRhhView() {
     document.getElementById('kpi-rhh-pro-mo').onclick = () => { proPeriod = 'month'; renderPro(); };
     document.getElementById('kpi-rhh-inc-wk').onclick = () => { incPeriod = 'week'; renderInc(); };
     document.getElementById('kpi-rhh-inc-mo').onclick = () => { incPeriod = 'month'; renderInc(); };
+
+    // Poblar filtros de costos por departamento
+    const allWeeks = proyData.all_weeks || [];
+    const allDepts = proyData.all_depts || [];
+    const selDesde = document.getElementById('kpi-pro-sem-desde');
+    const selHasta = document.getElementById('kpi-pro-sem-hasta');
+    const selDept  = document.getElementById('kpi-pro-dept');
+    selDesde.innerHTML = '<option value="">Todas</option>' + allWeeks.map(w => `<option value="${w.no_periodo}">${w.label}</option>`).join('');
+    selHasta.innerHTML = '<option value="">Todas</option>' + allWeeks.map(w => `<option value="${w.no_periodo}">${w.label}</option>`).join('');
+    selDept.innerHTML  = '<option value="">Todos</option>' + allDepts.map(d => `<option value="${d.id}">${escHtml(d.name)}</option>`).join('');
+    document.getElementById('kpi-pro-filter-btn').onclick = () => {
+      reloadProData(selDesde.value, selHasta.value, selDept.value);
+    };
+    document.getElementById('kpi-pro-reset-btn').onclick = () => {
+      selDesde.value = ''; selHasta.value = ''; selDept.value = '';
+      reloadProData(null, null, null);
+    };
 
     renderCos();
     renderPro();

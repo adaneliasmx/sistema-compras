@@ -146,42 +146,55 @@ router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// GET /api/rhh/kpi/costos-proyecto — Costos por proyecto
+// GET /api/rhh/kpi/costos-proyecto — Costos por departamento + desglose puesto
+// Query: ?semana_desde=N&semana_hasta=N&dept_id=N
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/costos-proyecto', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
   const incs = db.rhh_incidencias_semanales || [];
   const emps = db.rhh_employees || [];
   const depts = db.rhh_departments || [];
+  const positions = db.rhh_positions || [];
   const empMap = new Map(emps.map(e => [e.id, e]));
+  const deptMap = new Map(depts.map(d => [d.id, d.name]));
+  const posMap = new Map(positions.map(p => [p.id, p.name]));
+
+  // Filtros opcionales
+  const semDesde = req.query.semana_desde ? Number(req.query.semana_desde) : null;
+  const semHasta = req.query.semana_hasta ? Number(req.query.semana_hasta) : null;
+  const filtDept = req.query.dept_id ? Number(req.query.dept_id) : null;
 
   const { weeks, months } = buildPeriodLabels(incs);
 
-  // Detectar proyectos por departamento (Proyecto XXX) o por emp.project
-  // Agrupar: cada proyecto = grupo de empleados
-  const projectGroups = new Map(); // projectName → Set<employee_id>
+  // Filtrar semanas por rango
+  const filteredWeeks = weeks.filter(w => {
+    if (semDesde && w.no_periodo < semDesde) return false;
+    if (semHasta && w.no_periodo > semHasta) return false;
+    return true;
+  });
+  const filteredMonths = months.map(m => ({
+    ...m,
+    weeks: m.weeks.filter(w => filteredWeeks.some(fw => fw.key === w.key)),
+  })).filter(m => m.weeks.length > 0);
 
+  // Agrupar empleados por departamento
+  const deptGroups = new Map(); // dept_id → { name, empIds: Set }
   emps.forEach(emp => {
-    const dept = depts.find(d => d.id === emp.department_id);
-    const deptName = dept?.name || '';
-    let projName = null;
-    if (deptName.toLowerCase().startsWith('proyecto')) {
-      projName = deptName;
-    } else if (emp.project) {
-      projName = emp.project;
-    } else {
-      projName = 'Planta General';
-    }
-    if (!projectGroups.has(projName)) projectGroups.set(projName, new Set());
-    projectGroups.get(projName).add(emp.id);
+    const did = emp.department_id;
+    if (!did) return;
+    if (filtDept && did !== filtDept) return;
+    if (!deptGroups.has(did)) deptGroups.set(did, { name: deptMap.get(did) || `Dept ${did}`, empIds: new Set() });
+    deptGroups.get(did).empIds.add(emp.id);
   });
 
-  const projects = [...projectGroups.entries()].map(([name, empIds]) => {
-    const byWeek = weeks.map(w => {
+  // Para cada departamento: totales por semana + desglose por puesto
+  const departments = [...deptGroups.entries()].map(([deptId, grp]) => {
+    // Totales del departamento por semana filtrada
+    const byWeek = filteredWeeks.map(w => {
       const weekIncs = incs.filter(i =>
         i.no_periodo === w.no_periodo &&
         (i.year || 2026) === w.year &&
-        empIds.has(i.employee_id)
+        grp.empIds.has(i.employee_id)
       );
       let amount = 0;
       weekIncs.forEach(inc => {
@@ -191,23 +204,50 @@ router.get('/costos-proyecto', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (
       return { amount };
     });
 
-    const byMonth = months.map(m => {
+    const byMonth = filteredMonths.map(m => {
       let amount = 0;
-      m.weeks.forEach((w, wi) => {
-        const wIdx = weeks.findIndex(wk => wk.key === w.key);
+      m.weeks.forEach(w => {
+        const wIdx = filteredWeeks.findIndex(wk => wk.key === w.key);
         if (wIdx >= 0 && byWeek[wIdx]) amount += byWeek[wIdx].amount;
       });
       return { amount };
     });
 
     const total = byWeek.reduce((s, w) => s + w.amount, 0);
-    return { name, employees: empIds.size, by_week: byWeek, by_month: byMonth, total };
+
+    // Desglose por puesto dentro de este departamento
+    const posGroups = new Map(); // position_id → { name, empIds }
+    emps.filter(e => grp.empIds.has(e.id)).forEach(emp => {
+      const pid = emp.position_id || 0;
+      if (!posGroups.has(pid)) posGroups.set(pid, { name: posMap.get(pid) || 'Sin puesto', empIds: new Set() });
+      posGroups.get(pid).empIds.add(emp.id);
+    });
+
+    const puestos = [...posGroups.entries()].map(([posId, pg]) => {
+      let posTotal = 0;
+      const filtIncs = incs.filter(i => {
+        if (!pg.empIds.has(i.employee_id)) return false;
+        const np = i.no_periodo;
+        if (semDesde && np < semDesde) return false;
+        if (semHasta && np > semHasta) return false;
+        return true;
+      });
+      filtIncs.forEach(inc => {
+        const c = costos(inc, empMap.get(inc.employee_id));
+        posTotal += c.te + c.vac + c.bonos + c.nomina + c.despensa;
+      });
+      return { name: pg.name, employees: pg.empIds.size, total: posTotal };
+    }).filter(p => p.total > 0).sort((a, b) => b.total - a.total);
+
+    return { dept_id: deptId, name: grp.name, employees: grp.empIds.size, by_week: byWeek, by_month: byMonth, total, puestos };
   }).sort((a, b) => b.total - a.total);
 
   res.json({
-    weeks_labels: weeks.map(w => w.label),
-    months_labels: months.map(m => m.label),
-    projects,
+    weeks_labels: filteredWeeks.map(w => w.label),
+    months_labels: filteredMonths.map(m => m.label),
+    all_weeks: weeks.map(w => ({ no_periodo: w.no_periodo, label: w.label })),
+    all_depts: depts.map(d => ({ id: d.id, name: d.name })),
+    departments,
   });
 });
 
