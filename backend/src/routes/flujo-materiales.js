@@ -775,6 +775,15 @@ router.get('/tenneco/lotes-listos', flujoAllowRoles('supervisor'), (req, res) =>
   res.json(lotes);
 });
 
+// Lotes con scrap pendiente de enviar (para remision scrap)
+router.get('/tenneco/lotes-con-scrap', flujoAllowRoles('supervisor'), (req, res) => {
+  const db = read();
+  const lotes = (db.lotes_tenneco || []).filter(l => {
+    return (l.scrap_total || 0) > 0 && !l.scrap_enviado;
+  });
+  res.json(lotes);
+});
+
 router.get('/tenneco/remisiones', (req, res) => {
   res.json(read().remisiones_tenneco || []);
 });
@@ -790,24 +799,36 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
   const b = sanitize(req.body);
   const loteIds = b.lote_ids;
   const poAssign = b.po_assignments || {}; // { lote_id: po_id }
+  const tipo = b.tipo === 'scrap' ? 'scrap' : 'normal';
   if (!Array.isArray(loteIds) || loteIds.length === 0)
     return res.status(400).json({ error: 'Selecciona al menos un lote' });
 
   const fecha = nowMxDate();
   const lotesData = [];
 
-  // Validate PO assignments if provided
   for (const lid of loteIds) {
     const lote = (db.lotes_tenneco || []).find(l => l.id === Number(lid));
     if (!lote) return res.status(404).json({ error: `Lote ID ${lid} no encontrado` });
-    if (lote.estado === 'enviado') return res.status(400).json({ error: `Lote ${lote.lote} ya fue enviado` });
+
+    if (tipo === 'scrap') {
+      // Validaciones scrap
+      if ((lote.scrap_total || 0) <= 0)
+        return res.status(400).json({ error: `Lote ${lote.lote} no tiene scrap registrado` });
+      if (lote.scrap_enviado)
+        return res.status(400).json({ error: `Lote ${lote.lote} ya tiene remision de scrap` });
+    } else {
+      // Validaciones normales
+      if (lote.estado === 'enviado')
+        return res.status(400).json({ error: `Lote ${lote.lote} ya fue enviado` });
+    }
+
+    const cantidadRem = tipo === 'scrap' ? lote.scrap_total : lote.material_terminado;
 
     let poId = poAssign[String(lid)] ? Number(poAssign[String(lid)]) : null;
     if (poId) {
       const po = (db.pos_tenneco || []).find(p => p.id === poId);
       if (!po) return res.status(400).json({ error: `PO ID ${poId} no encontrada` });
       if (po.estado !== 'activa') return res.status(400).json({ error: `PO ${po.no_po} no esta activa` });
-      // Verify PO has available capacity
       let yaEnviada = 0;
       for (const rem of (db.remisiones_tenneco || [])) {
         for (const rl of (rem.lotes || [])) {
@@ -815,8 +836,8 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
         }
       }
       const disponible = po.cantidad_po - yaEnviada;
-      if (lote.material_terminado > disponible)
-        return res.status(400).json({ error: `PO ${po.no_po}: disponible ${disponible} pzas, lote requiere ${lote.material_terminado}` });
+      if (cantidadRem > disponible)
+        return res.status(400).json({ error: `PO ${po.no_po}: disponible ${disponible} pzas, lote requiere ${cantidadRem}` });
     }
 
     lotesData.push({
@@ -825,23 +846,22 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
       numero_parte: lote.numero_parte,
       diametro: lote.diametro,
       cliente_int: lote.cliente_int,
-      cantidad: lote.material_terminado,
-      caja_id: `TEN${lote.lote}.1`,
+      cantidad: cantidadRem,
+      caja_id: tipo === 'scrap' ? `SCRAP-${lote.lote}` : `TEN${lote.lote}.1`,
       po_id: poId
     });
   }
 
   // Folio: usar el enviado por frontend o generar uno por defecto
   let folio;
+  const folioPrefix = tipo === 'scrap' ? 'SCRAP' : 'TEN';
   if (b.folio && String(b.folio).trim()) {
     folio = String(b.folio).trim();
-    // Validar duplicado
     const dup = (db.remisiones_tenneco || []).find(r => r.folio === folio);
     if (dup) return res.status(400).json({ error: `El folio "${folio}" ya existe` });
   } else {
-    const count = (db.remisiones_tenneco || []).length;
     const dateStr = fecha.replace(/-/g, '');
-    const todayPrefix = `TEN ${dateStr}.`;
+    const todayPrefix = `${folioPrefix}${dateStr}.`;
     const todayCount = (db.remisiones_tenneco || []).filter(r => (r.folio || '').startsWith(todayPrefix)).length;
     folio = `${todayPrefix}${String(todayCount + 1).padStart(2, '0')}`;
   }
@@ -849,27 +869,33 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
   const remision = {
     id: nextId(db.remisiones_tenneco),
     folio,
+    tipo,
     fecha,
     lotes: lotesData,
     observaciones: (b.observaciones || '').trim(),
     factura_numero: null,
     factura_fecha: null,
     facturado: false,
-    historial: [{ fecha, hora: nowMxTime(), usuario: req.flujoUser.nombre, accion: 'Remision creada' }],
+    historial: [{ fecha, hora: nowMxTime(), usuario: req.flujoUser.nombre, accion: tipo === 'scrap' ? 'Remision SCRAP creada' : 'Remision creada' }],
     created_by: req.flujoUser.nombre,
     created_at: fecha
   };
   db.remisiones_tenneco.push(remision);
 
-  // Marcar lotes como enviados y asignar PO
+  // Marcar lotes
   for (const entry of lotesData) {
     const lote = db.lotes_tenneco.find(l => l.id === entry.lote_id);
     if (lote) {
-      lote.estado = 'enviado';
-      lote.enviado = lote.material_terminado;
-      lote.remision_id = remision.id;
-      lote.fecha_envio = fecha;
-      if (entry.po_id) lote.po_id = entry.po_id;
+      if (tipo === 'scrap') {
+        lote.scrap_enviado = true;
+        lote.scrap_remision_id = remision.id;
+      } else {
+        lote.estado = 'enviado';
+        lote.enviado = lote.material_terminado;
+        lote.remision_id = remision.id;
+        lote.fecha_envio = fecha;
+        if (entry.po_id) lote.po_id = entry.po_id;
+      }
     }
   }
   write(db);
@@ -934,7 +960,11 @@ router.delete('/tenneco/remisiones/:id', flujoAllowRoles('admin'), (req, res) =>
   // Revertir lotes a estado previo
   for (const entry of (rem.lotes || [])) {
     const lote = (db.lotes_tenneco || []).find(l => l.id === entry.lote_id);
-    if (lote && lote.estado === 'enviado' && lote.remision_id === rem.id) {
+    if (!lote) continue;
+    if (rem.tipo === 'scrap') {
+      lote.scrap_enviado = false;
+      lote.scrap_remision_id = null;
+    } else if (lote.estado === 'enviado' && lote.remision_id === rem.id) {
       lote.estado = 'cerrado';
       lote.enviado = 0;
       lote.remision_id = null;

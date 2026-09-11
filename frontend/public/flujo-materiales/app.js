@@ -788,12 +788,14 @@ async function showPODetail(poId) {
 // SALIDA TENNECO
 // ═══════════════════════════════════════════════════════════════════════════════
 async function viewSalidaTenneco(el) {
-  const [lotesListos, remisiones, pos] = await Promise.all([
+  const [lotesListos, lotesScrap, remisiones, pos] = await Promise.all([
     GET('/tenneco/lotes-listos'),
+    GET('/tenneco/lotes-con-scrap'),
     GET('/tenneco/remisiones'),
     GET('/tenneco/pos')
   ]);
   S.lotesListos = lotesListos;
+  S.lotesScrap = lotesScrap;
   S.remisiones = remisiones;
   S.pos = pos;
 
@@ -828,6 +830,36 @@ async function viewSalidaTenneco(el) {
     </div>`;
   }
 
+  // Seccion scrap pendiente
+  let scrapHtml = '';
+  if (S.lotesScrap.length > 0) {
+    const scrapByDiam = {};
+    S.lotesScrap.forEach(l => {
+      const d = l.diametro || 'Sin diametro';
+      if (!scrapByDiam[d]) scrapByDiam[d] = [];
+      scrapByDiam[d].push(l);
+    });
+    const scrapKeys = Object.keys(scrapByDiam).sort();
+    scrapHtml = `<div class="fm-table-wrap"><table class="fm-table">
+      <thead><tr><th><input type="checkbox" id="chk-all-scrap"/></th><th>Lote</th><th>N/P</th><th>Diam.</th><th>Cliente</th><th class="text-right">Scrap (pzas)</th><th class="text-right">% Scrap</th><th>Estado lote</th></tr></thead>
+      <tbody>${scrapKeys.map(d => {
+        const groupHeader = `<tr style="background:#fef3c7"><td colspan="8" style="font-weight:700;font-size:12px;padding:6px 10px;color:#92400e">Diametro: ${esc(d)} mm — N/P: ${esc(scrapByDiam[d][0].numero_parte)} (${scrapByDiam[d].length} lote${scrapByDiam[d].length > 1 ? 's' : ''})</td></tr>`;
+        const rows = scrapByDiam[d].map(l => `<tr>
+          <td><input type="checkbox" class="chk-scrap" value="${l.id}" data-diam="${esc(l.diametro)}"/></td>
+          <td class="mono">${esc(l.lote)}</td><td class="mono">${esc(l.numero_parte)}</td>
+          <td>${esc(l.diametro)}</td><td>${esc(l.cliente_int)}</td>
+          <td class="text-right" style="color:#dc2626;font-weight:600">${fmtNum(l.scrap_total)}</td>
+          <td class="text-right">${l.pct_scrap != null ? l.pct_scrap.toFixed(2) + '%' : '0%'}</td>
+          <td><span class="badge-status badge-${l.estado === 'enviado' ? 'cerrado' : 'abierto'}">${l.estado}</span></td>
+        </tr>`).join('');
+        return groupHeader + rows;
+      }).join('')}</tbody>
+    </table></div>
+    <div style="margin-top:14px">
+      ${can('edit-inventarios') ? '<button class="fm-btn fm-btn-sm" id="btn-gen-rem-scrap" style="background:#dc2626;color:#fff;border:none">Generar remision SCRAP</button>' : ''}
+    </div>`;
+  }
+
   el.innerHTML = `
     <div class="fm-card">
       <h3>Lotes listos para enviar</h3>
@@ -836,17 +868,25 @@ async function viewSalidaTenneco(el) {
         : lotesHtml
       }
     </div>
+    <div class="fm-card" style="${S.lotesScrap.length === 0 ? 'display:none' : ''}">
+      <h3 style="color:#dc2626">Scrap pendiente de envio</h3>
+      <p style="font-size:12px;color:var(--fm-muted);margin-bottom:12px">Lotes con scrap registrado que aun no se ha remisionado como salida.</p>
+      ${scrapHtml}
+    </div>
     <div class="fm-card">
       <h3>Remisiones generadas</h3>
       ${S.remisiones.length === 0
         ? '<p style="color:var(--fm-muted);font-size:13px">Sin remisiones</p>'
         : `<div class="fm-table-wrap"><table class="fm-table">
-          <thead><tr><th>Folio</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>PO</th><th>Factura</th><th>Creado por</th><th></th></tr></thead>
+          <thead><tr><th>Folio</th><th>Tipo</th><th>Fecha</th><th>Lotes</th><th>Total pzas</th><th>PO</th><th>Factura</th><th>Creado por</th><th></th></tr></thead>
           <tbody>${S.remisiones.map(r => {
             const _poId = (r.lotes || []).find(l => l.po_id)?.po_id;
             const _po = _poId && S.pos ? S.pos.find(p => p.id === _poId) : null;
-            return `<tr>
-            <td class="mono">${esc(r.folio)}</td><td>${esc(r.fecha)}</td>
+            const isScrap = r.tipo === 'scrap';
+            return `<tr${isScrap ? ' style="background:#fef2f2"' : ''}>
+            <td class="mono">${esc(r.folio)}</td>
+            <td>${isScrap ? '<span style="background:#dc2626;color:#fff;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">SCRAP</span>' : '<span style="color:var(--fm-muted);font-size:11px">Normal</span>'}</td>
+            <td>${esc(r.fecha)}</td>
             <td>${r.lotes.length}</td>
             <td class="text-right">${fmtNum(r.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))}</td>
             <td class="mono" style="font-size:11px">${_po ? esc(_po.no_po) : '<span style="color:var(--fm-muted)">—</span>'}</td>
@@ -866,6 +906,11 @@ async function viewSalidaTenneco(el) {
   if ($('#chk-all')) {
     $('#chk-all').addEventListener('change', e => {
       $$('.chk-lote').forEach(c => c.checked = e.target.checked);
+    });
+  }
+  if ($('#chk-all-scrap')) {
+    $('#chk-all-scrap').addEventListener('change', e => {
+      $$('.chk-scrap').forEach(c => c.checked = e.target.checked);
     });
   }
 
@@ -901,6 +946,32 @@ async function viewSalidaTenneco(el) {
 
       // Mostrar modal de confirmacion de folio
       showFolioConfirmModal(ids, folioSugerido, el);
+    });
+  }
+
+  // Generar remision SCRAP
+  if ($('#btn-gen-rem-scrap')) {
+    $('#btn-gen-rem-scrap').addEventListener('click', async () => {
+      const checked = [...$$('.chk-scrap:checked')];
+      if (!checked.length) { alert('Selecciona al menos un lote con scrap'); return; }
+
+      const diams = new Set(checked.map(c => c.dataset.diam));
+      if (diams.size > 1) {
+        alert('Solo puedes generar una remision scrap por numero de parte (diametro).\nSelecciona lotes del mismo diametro.');
+        return;
+      }
+
+      const ids = checked.map(c => Number(c.value));
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+      const todayPrefix = `SCRAP${dateStr}.`;
+      const todayCount = S.remisiones.filter(r => {
+        const f = (r.folio || '').replace(/\s/g, '');
+        return f.startsWith(todayPrefix);
+      }).length;
+      const folioSugerido = `${todayPrefix}${String(todayCount + 1).padStart(2, '0')}`;
+
+      showScrapConfirmModal(ids, folioSugerido, el);
     });
   }
 
@@ -1148,6 +1219,66 @@ function showFolioConfirmModal(loteIds, folioSugerido, parentEl) {
   });
 }
 
+function showScrapConfirmModal(loteIds, folioSugerido, parentEl) {
+  const lotes = loteIds.map(id => S.lotesScrap.find(l => l.id === id)).filter(Boolean);
+  const totalScrap = lotes.reduce((s, l) => s + (l.scrap_total || 0), 0);
+  const diam = lotes[0]?.diametro || '';
+  const np = lotes[0]?.numero_parte || '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'fm-modal-overlay';
+  overlay.innerHTML = `<div class="fm-modal" style="width:550px">
+    <h3 style="color:#dc2626">Confirmar Remision SCRAP</h3>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:14px;margin-bottom:16px;font-size:13px">
+      <div><strong>Diametro:</strong> ${esc(diam)} mm — <strong>N/P:</strong> ${esc(np)}</div>
+      <div><strong>Lotes:</strong> ${lotes.map(l => esc(l.lote)).join(', ')}</div>
+      <div style="margin-top:6px;font-size:15px;font-weight:700;color:#dc2626">Total scrap: ${fmtNum(totalScrap)} piezas</div>
+    </div>
+    <div class="fm-form-group">
+      <label style="font-weight:700">Numero de Remision SCRAP</label>
+      <input class="fm-input" id="sc-folio" value="${esc(folioSugerido)}" style="font-size:16px;font-weight:700;letter-spacing:1px"/>
+      <div style="font-size:11px;color:var(--fm-muted);margin-top:4px">Formato: SCRAPYYYYMMDD.CC</div>
+    </div>
+    <div class="fm-form-group">
+      <label style="font-weight:700">Observaciones</label>
+      <textarea class="fm-input" id="sc-obs" rows="2" style="resize:vertical" placeholder="Motivo de scrap, destino, etc."></textarea>
+    </div>
+    <div id="sc-error" style="display:none;color:var(--fm-danger);font-size:13px;font-weight:600;margin-top:8px"></div>
+    <div class="fm-modal-footer">
+      <button class="fm-btn fm-btn-outline fm-btn-sm" id="sc-cancel">Cancelar</button>
+      <button class="fm-btn fm-btn-sm" id="sc-confirm" style="background:#dc2626;color:#fff;border:none">Generar remision SCRAP</button>
+    </div>
+  </div>`;
+  document.body.appendChild(overlay);
+
+  $('#sc-cancel').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+  $('#sc-confirm').addEventListener('click', async () => {
+    const folio = $('#sc-folio').value.trim();
+    if (!folio) { $('#sc-error').style.display = 'block'; $('#sc-error').textContent = 'Ingresa un numero de remision'; return; }
+
+    const folioNorm = folio.replace(/\s/g, '');
+    const dup = S.remisiones.find(r => (r.folio || '').replace(/\s/g, '') === folioNorm);
+    if (dup) {
+      $('#sc-error').style.display = 'block';
+      $('#sc-error').textContent = `El folio "${folio}" ya existe. Cambia el consecutivo.`;
+      return;
+    }
+
+    try {
+      await POST('/tenneco/remisiones', {
+        lote_ids: loteIds,
+        folio,
+        tipo: 'scrap',
+        observaciones: $('#sc-obs').value.trim()
+      });
+      overlay.remove();
+      await viewSalidaTenneco(parentEl);
+    } catch (e) { alert('Error: ' + e.message); }
+  });
+}
+
 function showFacturaModal(remId, parentEl) {
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
@@ -1192,9 +1323,11 @@ async function showRemisionDetail(remId) {
   const po = poId && S.pos ? S.pos.find(p => p.id === poId) : null;
   const poLabel = po ? `PO ${po.no_po}` : '';
 
+  const isScrap = rem.tipo === 'scrap';
   overlay.innerHTML = `<div class="fm-modal" style="width:600px">
-    <h3>Remision ${esc(rem.folio)}</h3>
+    <h3>${isScrap ? '<span style="color:#dc2626">SCRAP</span> — ' : ''}Remision ${esc(rem.folio)}</h3>
     <p style="font-size:13px"><strong>Fecha:</strong> ${esc(rem.fecha)} | <strong>Creado por:</strong> ${esc(rem.created_by || '')}${poLabel ? ` | <strong>PO:</strong> ${esc(poLabel)}` : ''}</p>
+    ${isScrap ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 12px;margin-top:10px;font-size:13px;color:#dc2626;font-weight:600">Material de SCRAP</div>' : ''}
     ${rem.facturado
       ? `<div class="fm-alert fm-alert-success" style="margin-top:10px"><strong>Facturado:</strong> ${esc(rem.factura_numero)} — ${esc(rem.factura_fecha || '')}</div>`
       : '<div class="fm-alert fm-alert-warn" style="margin-top:10px">Pendiente de facturacion</div>'}
@@ -1205,7 +1338,7 @@ async function showRemisionDetail(remId) {
         <td>${esc(l.diametro)} mm</td><td class="text-right">${fmtNum(l.cantidad)}</td>
       </tr>`).join('')}
       <tr class="kpi-total"><td colspan="2"></td><td class="text-right"><strong>TOTAL</strong></td>
-        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))} Piezas</strong></td></tr>
+        <td class="text-right"><strong>${fmtNum(rem.lotes.reduce((s, l) => s + (l.cantidad || 0), 0))} Piezas${isScrap ? ' (SCRAP)' : ''}</strong></td></tr>
       </tbody>
     </table></div>
     ${rem.observaciones ? '<p style="margin-top:12px;font-size:13px;color:var(--fm-muted)"><strong>Obs:</strong> ' + esc(rem.observaciones) + '</p>' : ''}
@@ -1281,8 +1414,11 @@ async function generarRemisionPDF(remId) {
   doc.text(fechaDD, ML, 34);
 
   // ── Titulo: REMISION FOLIO (alineado izquierda) ──
+  const pdfIsScrap = rem.tipo === 'scrap';
   doc.setFontSize(16); doc.setFont(undefined, 'bold');
-  doc.text(`REMISI\u00D3N ${rem.folio}`, ML, 44);
+  if (pdfIsScrap) doc.setTextColor(220, 38, 38);
+  doc.text(`REMISI\u00D3N ${pdfIsScrap ? 'SCRAP ' : ''}${rem.folio}`, ML, 44);
+  if (pdfIsScrap) doc.setTextColor(0);
 
   // ── Header table (ENVIA | Cliente) ──
   const hdrY = 50;
@@ -1397,7 +1533,8 @@ async function generarRemisionPDF(remId) {
   doc.setFontSize(8); doc.setFont(undefined, 'bold'); doc.setTextColor(80);
   doc.text('Comentarios', ML + 3, y + 4.5);
   doc.setFont(undefined, 'normal'); doc.setTextColor(0); doc.setFontSize(8);
-  const comments = [poNum ? `PO: ${poNum}` : '', proyecto].filter(Boolean).join('  |  ');
+  const commentParts = [pdfIsScrap ? 'MATERIAL SCRAP' : '', poNum ? `PO: ${poNum}` : '', proyecto, rem.observaciones || ''].filter(Boolean);
+  const comments = commentParts.join('  |  ');
   if (comments) doc.text(comments, ML + 3, y + 10);
 
   y += boxH + 6;
