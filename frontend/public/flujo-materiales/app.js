@@ -477,6 +477,8 @@ function showModalRecepcion(onSave) {
 }
 
 function showModalEditLote(lote, onSave) {
+  const partes = S.partes || [];
+  const optsD = partes.map(p => `<option value="${esc(p.diametro_mm)}"${p.diametro_mm === lote.diametro ? ' selected' : ''}>${esc(p.diametro_mm)} mm</option>`).join('');
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
   overlay.innerHTML = `<div class="fm-modal">
@@ -490,25 +492,43 @@ function showModalEditLote(lote, onSave) {
       <div class="fm-form-group"><label>Cantidad recibida</label><input class="fm-input" id="el-cant" type="number" min="1" value="${lote.cantidad_recibida || 0}"/></div>
     </div>
     <div class="fm-form-row">
-      <div class="fm-form-group"><label>Diametro</label><input class="fm-input fm-auto-filled" id="el-diam" value="${esc(lote.diametro || '')}" readonly/></div>
+      <div class="fm-form-group"><label>Diametro (mm)</label><select class="fm-input" id="el-diam"><option value="">Seleccionar...</option>${optsD}</select></div>
       <div class="fm-form-group"><label>N/P</label><input class="fm-input fm-auto-filled" id="el-np" value="${esc(lote.numero_parte || '')}" readonly/></div>
     </div>
     <div class="fm-form-group"><label>Cliente</label><input class="fm-input fm-auto-filled" id="el-cli" value="${esc(lote.cliente_int || '')}" readonly/></div>
+    <div id="el-warn" style="display:none;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:10px;margin-top:10px;font-size:12px;color:#92400e">
+      <strong>Atencion:</strong> Cambiar el diametro revalidara las muestras existentes contra las specs del nuevo N/P. Las que queden fuera de especificacion pasaran a HOLD.
+    </div>
     <div class="fm-modal-footer">
       <button class="fm-btn fm-btn-outline fm-btn-sm" id="el-cancel">Cancelar</button>
       <button class="fm-btn fm-btn-primary fm-btn-sm" id="el-save">Guardar</button>
     </div>
   </div>`;
   document.body.appendChild(overlay);
+
+  // Auto-fill al cambiar diametro
+  const origDiam = lote.diametro || '';
+  $('#el-diam').addEventListener('change', () => {
+    const d = $('#el-diam').value;
+    const p = partes.find(x => x.diametro_mm === d);
+    $('#el-np').value = p ? p.numero_parte : '';
+    $('#el-cli').value = p ? p.proyecto : '';
+    $('#el-warn').style.display = d !== origDiam ? 'block' : 'none';
+  });
+
   $('#el-cancel').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   $('#el-save').addEventListener('click', async () => {
+    if (!$('#el-diam').value) { alert('Selecciona un diametro'); return; }
     try {
       await PATCH('/tenneco/lotes/' + lote.id, {
         folio_salida_tenneco: $('#el-folio').value,
         enviado_por: $('#el-enviado').value,
         lote: $('#el-lote').value,
-        cantidad_recibida: parseInt($('#el-cant').value) || 0
+        cantidad_recibida: parseInt($('#el-cant').value) || 0,
+        diametro: $('#el-diam').value,
+        numero_parte: $('#el-np').value,
+        cliente_int: $('#el-cli').value
       });
       overlay.remove();
       S.lotes = await GET('/tenneco/lotes');

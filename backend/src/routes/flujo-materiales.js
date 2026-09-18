@@ -682,6 +682,84 @@ router.patch('/tenneco/lotes/:id', flujoAllowRoles('supervisor'), (req, res) => 
   for (const k of editable) {
     if (b[k] !== undefined) row[k] = String(b[k]).trim();
   }
+
+  // Si cambio diametro, auto-completar N/P y cliente desde catalogo
+  const diamCambio = b.diametro !== undefined;
+  if (diamCambio) {
+    const parte = (db.cat_tenneco_partes || []).find(p =>
+      String(p.diametro_mm).trim() === String(row.diametro).trim()
+    );
+    if (parte) {
+      row.numero_parte = parte.numero_parte;
+      row.cliente_int = parte.proyecto;
+    }
+
+    // Propagar a muestras: actualizar campos denormalizados + revalidar specs
+    const newSpecs = (db.cat_tenneco_specs || []).find(s =>
+      String(s.numero_parte).trim() === String(row.numero_parte).trim()
+    );
+    const newParte = (db.cat_tenneco_partes || []).find(p =>
+      String(p.numero_parte).trim() === String(row.numero_parte).trim()
+    );
+    const tamMuestra = newParte ? newParte.tamano_muestra : 100;
+
+    const muestras = (db.muestras_tenneco || []).filter(m => m.lote_id === row.id);
+    for (const m of muestras) {
+      m.numero_parte = row.numero_parte;
+      m.diametro = row.diametro;
+      m.tamano_muestra = tamMuestra;
+
+      // Revalidar specs
+      let rugOk = true, altOk = true;
+      const rugNA = newSpecs && newSpecs.rugosidad_min === 0 && newSpecs.rugosidad_max === 0;
+      if (newSpecs && m.rugosidad_prom != null && !rugNA) {
+        rugOk = m.rugosidad_prom >= newSpecs.rugosidad_min && m.rugosidad_prom <= newSpecs.rugosidad_max;
+      }
+      if (newSpecs && m.altura_axial_prom != null) {
+        altOk = m.altura_axial_prom >= newSpecs.altura_axial_min && m.altura_axial_prom <= newSpecs.altura_axial_max;
+      }
+      m.rugosidad_ok = rugOk;
+      m.altura_axial_ok = altOk;
+
+      const fueraDeSpec = !(rugOk && altOk);
+      const prevStatus = m.status;
+      m.status = fueraDeSpec ? 'retenida' : 'aceptada';
+      m.qc_liberado = m.status === 'aceptada';
+
+      // Si paso a HOLD, mover aceptadas a rechazos "Fuera de especificacion"
+      if (fueraDeSpec && prevStatus !== 'retenida') {
+        const rechazosOther = (m.rechazos || []).filter(r => r.defecto !== 'Fuera de especificacion');
+        const fdeTotal = (m.piezas_aceptadas || 0) + rechazosOther.reduce((s, r) => s + (r.cantidad || 0), 0);
+        m.rechazos = [{ defecto: 'Fuera de especificacion', cantidad: fdeTotal }, ...rechazosOther];
+        m.piezas_aceptadas = 0;
+      }
+      // Si salio de HOLD (ahora en spec), restaurar aceptadas desde rechazos FDE
+      if (!fueraDeSpec && prevStatus === 'retenida') {
+        const fde = (m.rechazos || []).find(r => r.defecto === 'Fuera de especificacion');
+        const rechazosOther = (m.rechazos || []).filter(r => r.defecto !== 'Fuera de especificacion');
+        const otherTotal = rechazosOther.reduce((s, r) => s + (r.cantidad || 0), 0);
+        m.piezas_aceptadas = (fde ? fde.cantidad : 0) - otherTotal;
+        if (m.piezas_aceptadas < 0) m.piezas_aceptadas = 0;
+        m.rechazos = rechazosOther;
+      }
+      m.total_muestra = m.piezas_aceptadas + (m.rechazos || []).reduce((s, r) => s + (r.cantidad || 0), 0) + (m.scrap || 0);
+    }
+
+    // Propagar a remisiones: actualizar campos denormalizados
+    for (const rem of (db.remisiones_tenneco || [])) {
+      for (const entry of (rem.lotes || [])) {
+        if (entry.lote_id === row.id) {
+          entry.numero_parte = row.numero_parte;
+          entry.diametro = row.diametro;
+          entry.cliente_int = row.cliente_int;
+        }
+      }
+    }
+
+    // Recalcular lote (totales aceptadas/scrap pueden haber cambiado)
+    recalcLote(row, db);
+  }
+
   if (b.cantidad_recibida !== undefined) {
     const c = parseInt(b.cantidad_recibida) || 0;
     if (c > 0) {
