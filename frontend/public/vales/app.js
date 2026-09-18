@@ -6915,26 +6915,31 @@ async function generarReporteTitulacion(headerId) {
     return { bg:'#f3f4f6', color:'#6b7280', txt: String(det.valor_registrado) };
   }
 
-  function rangoTxt(p) {
-    if (p.tipo_rango === 'entre')  return `${p.valor_min??'—'} – ${p.valor_max??'—'}`;
-    if (p.tipo_rango === 'maximo') return `≤ ${p.valor_max??'—'}`;
-    if (p.tipo_rango === 'minimo') return `≥ ${p.valor_min??'—'}`;
+  function rangoTxt(tipo, vmin, vmax) {
+    if (tipo === 'entre')  return `${vmin??'—'} – ${vmax??'—'}`;
+    if (tipo === 'maximo') return `≤ ${vmax??'—'}`;
+    if (tipo === 'minimo') return `≥ ${vmin??'—'}`;
     return '—';
   }
 
   function renderParamRow(p) {
     const det = detalleMap[p.id];
     const c = colorCell(det);
-    const obj = p.objetivo != null ? p.objetivo : '';
-    const rango = rangoTxt(p);
-    const unidad = p.unidad ? ` <span style="color:#9ca3af;font-size:10px">(${p.unidad})</span>` : '';
+    // Usar specs del snapshot (momento del registro) con fallback al catálogo actual
+    const sTipo = det?.spec_tipo_rango ?? p.tipo_rango;
+    const sMin  = det?.spec_valor_min  ?? p.valor_min;
+    const sMax  = det?.spec_valor_max  ?? p.valor_max;
+    const sObj  = det?.spec_objetivo   ?? p.objetivo;
+    const sUnit = det?.spec_unidad     ?? p.unidad;
+    const rango = rangoTxt(sTipo, sMin, sMax);
+    const unidad = sUnit ? ` <span style="color:#9ca3af;font-size:9px">(${sUnit})</span>` : '';
     return `<tr style="border-bottom:1px solid #f0f0f0">
-      <td style="padding:3px 8px;font-size:13px;color:#1e293b;white-space:nowrap"><strong>${p.nombre_parametro}</strong>${unidad}</td>
-      <td style="padding:3px 6px;text-align:center;white-space:nowrap">
-        <span style="display:inline-block;min-width:48px;padding:3px 8px;border-radius:4px;font-weight:800;font-size:15px;background:${c.bg};color:${c.color}">${c.txt}</span>
+      <td style="padding:2px 6px;font-size:11px;color:#1e293b"><strong>${p.nombre_parametro}</strong>${unidad}</td>
+      <td style="padding:2px 4px;text-align:center">
+        <span style="display:inline-block;min-width:40px;padding:2px 6px;border-radius:4px;font-weight:800;font-size:13px;background:${c.bg};color:${c.color}">${c.txt}</span>
       </td>
-      <td style="padding:3px 6px;font-size:12px;color:#6b7280;white-space:nowrap">rango ${rango}</td>
-      <td style="padding:3px 6px;font-size:12px;color:#6b7280;white-space:nowrap">${obj ? obj+' obj' : ''}</td>
+      <td style="padding:2px 4px;font-size:10px;color:#6b7280">${rango}</td>
+      <td style="padding:2px 4px;font-size:10px;color:#6b7280">${sObj != null ? sObj+' obj' : ''}</td>
     </tr>`;
   }
 
@@ -6943,7 +6948,7 @@ async function generarReporteTitulacion(headerId) {
     if (!ps.length) return '';
     const qLabel = t.quimico_activo ? ` <span style="background:#3b82f6;color:#fff;padding:1px 5px;border-radius:3px;font-size:11px">${t.quimico_activo}</span>` : '';
     return `<div style="border:1.5px solid #cbd5e1;border-radius:6px;overflow:hidden;break-inside:avoid">
-      <div style="background:#1e3a5f;color:#fff;padding:5px 10px;font-weight:700;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+      <div style="background:#1e3a5f;color:#fff;padding:4px 8px;font-weight:700;font-size:11px;line-height:1.3">
         ${t.no_tanque} — ${t.nombre_tanque}${qLabel}
       </div>
       <table style="width:100%;border-collapse:collapse">
@@ -6958,10 +6963,11 @@ async function generarReporteTitulacion(headerId) {
     const filas = ps.map(p => {
       const det = detalleMap[p.id];
       const c = colorCell(det);
+      const sUnit = det?.spec_unidad ?? p.unidad;
       return `<tr style="border-bottom:1px solid #f0f9ff">
-        <td style="padding:3px 6px;font-size:12px;color:#1e293b">${p.nombre_parametro}${p.unidad?` <span style="color:#9ca3af;font-size:10px">(${p.unidad})</span>`:''}</td>
-        <td style="padding:3px 5px;text-align:center">
-          <span style="display:inline-block;min-width:40px;padding:2px 5px;border-radius:3px;font-weight:800;font-size:13px;background:${c.bg};color:${c.color}">${c.txt}</span>
+        <td style="padding:2px 5px;font-size:11px;color:#1e293b">${p.nombre_parametro}${sUnit?` <span style="color:#9ca3af;font-size:9px">(${sUnit})</span>`:''}</td>
+        <td style="padding:2px 4px;text-align:center">
+          <span style="display:inline-block;min-width:36px;padding:2px 4px;border-radius:3px;font-weight:800;font-size:12px;background:${c.bg};color:${c.color}">${c.txt}</span>
         </td>
       </tr>`;
     }).join('');
@@ -7040,6 +7046,11 @@ async function generarReporteTitulacion(headerId) {
       <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#bbf7d0;border-radius:3px"></span><span style="font-size:12px"><strong>Verde</strong> — Dentro de especificación → Mantener</span></span>
       <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#fef08a;border-radius:3px"></span><span style="font-size:12px"><strong>Amarillo</strong> — En límite → Dosificar</span></span>
       <span style="display:flex;align-items:center;gap:5px"><span style="display:inline-block;width:22px;height:14px;background:#fecaca;border-radius:3px"></span><span style="font-size:12px"><strong>Rojo</strong> — Fuera de especificación → Ajustar y volver a validar</span></span>
+    </div>
+
+    <!-- Pie de página -->
+    <div style="margin-top:10px;border-top:1px solid #cbd5e1;padding-top:6px;text-align:right;font-size:11px;color:#64748b;letter-spacing:0.5px">
+      4-CA-102 Rev. 1 &nbsp; 08-marzo-24
     </div>
   </div>
 

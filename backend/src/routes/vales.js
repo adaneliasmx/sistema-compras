@@ -2204,7 +2204,8 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
         corregido: false,
         valor_corregido: null,
         valor_original: null,
-        observaciones: 'Turno no trabajado'
+        observaciones: 'Turno no trabajado',
+        spec_tipo_rango: p.tipo_rango, spec_valor_min: p.valor_min, spec_valor_max: p.valor_max, spec_objetivo: p.objetivo, spec_unidad: p.unidad
       });
     });
     writeVales(db);
@@ -2227,7 +2228,12 @@ router.post('/titulaciones', valesAllowRoles('admin', 'operador'), (req, res) =>
       corregido: false,
       valor_corregido: null,
       valor_original: null,
-      observaciones: (b.observaciones || {})[p.id] || ''
+      observaciones: (b.observaciones || {})[p.id] || '',
+      spec_tipo_rango: p.tipo_rango,
+      spec_valor_min: p.valor_min,
+      spec_valor_max: p.valor_max,
+      spec_objetivo: p.objetivo,
+      spec_unidad: p.unidad
     });
   });
 
@@ -2266,6 +2272,7 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
       d.corregido = true;
       d.corrected_at = now.toISOString();
       d.corrected_by = req.valesUser.full_name;
+      if (param) { d.spec_tipo_rango = param.tipo_rango; d.spec_valor_min = param.valor_min; d.spec_valor_max = param.valor_max; d.spec_objetivo = param.objetivo; d.spec_unidad = param.unidad; }
       if ((b.observaciones || {})[d.parametro_id]) d.observaciones = b.observaciones[d.parametro_id];
     });
     // Crear detalles faltantes (parámetros que no se incluyeron en el POST original)
@@ -2288,7 +2295,12 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
         corregido: false,
         valor_corregido: null,
         valor_original: null,
-        observaciones: (b.observaciones || {})[pid] || ''
+        observaciones: (b.observaciones || {})[pid] || '',
+        spec_tipo_rango: param.tipo_rango,
+        spec_valor_min: param.valor_min,
+        spec_valor_max: param.valor_max,
+        spec_objetivo: param.objetivo,
+        spec_unidad: param.unidad
       });
     });
     header.estado = hayFuera ? 'fuera_de_rango' : 'corregido';
@@ -2519,7 +2531,8 @@ router.post('/admin/import-excel-compact', valesAuthRequired, valesAllowRoles('a
         detalles.push({
           id: dId++, header_id: header.id, parametro_id: pid,
           valor_registrado: valor, estado_param: estadoP,
-          corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+          corregido: false, valor_corregido: null, valor_original: null, observaciones: '',
+          spec_tipo_rango: param.tipo_rango, spec_valor_min: param.valor_min, spec_valor_max: param.valor_max, spec_objetivo: param.objetivo, spec_unidad: param.unidad
         });
       });
 
@@ -2781,7 +2794,8 @@ router.post('/admin/import-excel', valesAuthRequired, valesAllowRoles('admin'),
             rowDets.push({
               id: dId++, header_id: header.id, parametro_id: param.id,
               valor_registrado: valor, estado_param: estadoP,
-              corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+              corregido: false, valor_corregido: null, valor_original: null, observaciones: '',
+              spec_tipo_rango: param.tipo_rango, spec_valor_min: param.valor_min, spec_valor_max: param.valor_max, spec_objetivo: param.objetivo, spec_unidad: param.unidad
             });
           });
 
@@ -2925,13 +2939,15 @@ router.post('/import-excel-tit/execute', valesAllowRoles('admin'), (req, res) =>
             id: nextId(db.titulaciones_detalle),
             header_id: header.id, parametro_id: Number(paramId),
             valor_registrado: valor, estado_param: calcEstadoParam(valor, param),
-            corregido: false, valor_corregido: null, valor_original: null, observaciones: ''
+            corregido: false, valor_corregido: null, valor_original: null, observaciones: '',
+            spec_tipo_rango: param.tipo_rango, spec_valor_min: param.valor_min, spec_valor_max: param.valor_max, spec_objetivo: param.objetivo, spec_unidad: param.unidad
           });
         } else {
           const cKey = `${row.fecha}|${clave}|${linea}|${paramId}`;
           if ((conflict_resolutions[cKey] || 'excel') === 'excel') {
             det.valor_registrado = valor;
             det.estado_param     = calcEstadoParam(valor, param);
+            det.spec_tipo_rango = param.tipo_rango; det.spec_valor_min = param.valor_min; det.spec_valor_max = param.valor_max; det.spec_objetivo = param.objetivo; det.spec_unidad = param.unidad;
             updated++;
           } else { skipped++; }
         }
