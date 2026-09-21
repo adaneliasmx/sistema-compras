@@ -1763,14 +1763,4 @@ router.get('/debug-incidencias', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
   });
 });
 
-// GET /api/rhh/catalogo/export-db — descarga completa de la BD RHH como JSON
-router.get('/export-db', rhhAuthRequired, rhhRequireRole('admin'), (req, res) => {
-  const db = read();
-  const fecha = new Date().toISOString().slice(0, 10);
-  const filename = `rhh-backup-${fecha}.json`;
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-  res.send(JSON.stringify(db, null, 2));
-});
-
 module.exports = router;
