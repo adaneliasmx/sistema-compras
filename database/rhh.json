@@ -3353,7 +3353,7 @@
     {
       "id": 137,
       "employee_number": "162",
-      "full_name": "LIMON FLORES PAULA IVATTE",
+      "full_name": "LIMON FLORES PAULA IVETTE",
       "email": "",
       "phone": "",
       "department_id": 17,
@@ -3383,6 +3383,23 @@
         "must_change": true,
         "password": "CMLL05"
       }
+    },
+    {
+      "id": 139,
+      "employee_number": "164",
+      "full_name": "FRAUSTO HERNANDEZ ANDREA LIZETTE",
+      "status": "active",
+      "department_id": 27,
+      "position_id": 5,
+      "rfc": "FAHA960420MK9",
+      "curp": "FAHA960420MJCRRN08",
+      "nss": "63159671682",
+      "sal_diario": 348.69,
+      "salary_daily": 348.69,
+      "sdi": 365.89,
+      "sbc": 365.89,
+      "fecha_ingreso": "27/07/2026",
+      "created_at": "2026-08-11"
     }
   ],
   "rhh_departments": [
@@ -4070,42 +4087,17 @@
     }
   ],
   "rhh_attendance": [],
-  "rhh_attendance_log": [],
-  "rhh_te_applications": [],
-  "rhh_notifications": [],
-  "rhh_vacation_rules": [
-    {
-      "id": 1,
-      "name": "Reglas de vacaciones",
-      "rules": [
-        {
-          "max_days": 1,
-          "min_advance_days": 1,
-          "label": "1 día: mínimo 1 día de anticipación"
-        },
-        {
-          "max_days": 3,
-          "min_advance_days": 7,
-          "label": "2-3 días: mínimo 1 semana de anticipación"
-        },
-        {
-          "max_days": 999,
-          "min_advance_days": 14,
-          "label": "4+ días: mínimo 2 semanas de anticipación"
-        }
-      ],
-      "max_days_per_week": 1,
-      "count_holidays": true,
-      "updated_at": "2026-01-01T00:00:00.000Z",
-      "updated_by": null
-    }
-  ],
   "rhh_holidays": [
     {
       "id": 1,
       "date": "2026-01-01",
       "name": "Año Nuevo",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-01-01"
     },
     {
       "id": 2,
@@ -4142,13 +4134,100 @@
       "date": "2026-12-25",
       "name": "Navidad",
       "created_at": "2026-01-01T00:00:00.000Z"
+    },
+    {
+      "id": 8,
+      "date": "2026-12-24",
+      "name": "24 de diciembre — Acuerdo sindical",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-24",
+      "created_at": "2026-09-04T14:42:43.068Z"
+    },
+    {
+      "id": 9,
+      "date": "2027-01-01",
+      "name": "1 de enero — Acuerdo sindical",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-01-01",
+      "created_at": "2026-09-04T14:42:43.071Z"
+    },
+    {
+      "id": 10,
+      "date": "2027-12-24",
+      "name": "24 de diciembre — Acuerdo sindical",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-24",
+      "created_at": "2026-09-04T14:42:43.071Z"
     }
   ],
+  "rhh_recurring_holidays": [
+    {
+      "id": 1,
+      "key": "union-01-01",
+      "month_day": "01-01",
+      "name": "1 de enero — Acuerdo sindical",
+      "start_year": 2026,
+      "source": "acuerdo_sindical",
+      "active": true
+    },
+    {
+      "id": 2,
+      "key": "union-12-24",
+      "month_day": "12-24",
+      "name": "24 de diciembre — Acuerdo sindical",
+      "start_year": 2026,
+      "source": "acuerdo_sindical",
+      "active": true
+    }
+  ],
+  "rhh_attendance_log": [],
+  "rhh_vacation_rules": [
+    {
+      "id": 1,
+      "name": "Reglas de vacaciones",
+      "rules": [
+        {
+          "max_days": 1,
+          "min_advance_days": 1,
+          "label": "1 día: mínimo 1 día de anticipación"
+        },
+        {
+          "max_days": 3,
+          "min_advance_days": 7,
+          "label": "2-3 días: mínimo 1 semana de anticipación"
+        },
+        {
+          "max_days": 999,
+          "min_advance_days": 14,
+          "label": "4+ días: mínimo 2 semanas de anticipación"
+        }
+      ],
+      "max_days_per_week": 1,
+      "count_holidays": true,
+      "updated_at": "2026-01-01T00:00:00.000Z",
+      "updated_by": null
+    }
+  ],
+  "rhh_lft_rules": [],
+  "rhh_te_applications": [],
+  "rhh_notifications": [],
   "rhh_weekly_rol": [],
   "rhh_rol_slots": [],
   "rhh_rol_assignments": [],
-  "rhh_checador_mappings": [],
-  "rhh_checador_records": [],
+  "rhh_attendance_week_templates": [],
+  "rhh_eval_forms": [],
+  "rhh_eval_sessions": [],
+  "rhh_eval_results": [],
+  "rhh_periodos": [],
   "rhh_incidencias_semanales": [
     {
       "id": 1,
@@ -30773,5 +30852,18 @@
       "_from_sqlite": true
     }
   ],
-  "rhh_periodos": []
+  "rhh_employee_period_snapshots": [],
+  "rhh_import_batches": [],
+  "rhh_status_events": [],
+  "rhh_he_detalle": [],
+  "rhh_vac_solicitudes": [],
+  "rhh_te_solicitudes": [],
+  "rhh_te_catalogos": [],
+  "rhh_baja_candidatos": [],
+  "rhh_txt_deudas": [],
+  "rhh_txt_pagos": [],
+  "rhh_bono_vales": [],
+  "rhh_cumpleanos_incidencias": [],
+  "rhh_checador_mappings": [],
+  "rhh_checador_records": []
 }

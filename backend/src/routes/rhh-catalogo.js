@@ -1384,6 +1384,7 @@ router.post(
         const isLatestRow = rowPeriod.period_key === latestPeriodArchivo.period_key;
         const deptId = findOrCreateDept(deptName);
         const posId  = findOrCreatePos(posName, deptId);
+        if (isLatestRow && empName && !emp.manual_name_locked && emp.full_name !== empName) { emp.full_name = empName; empChanged = true; }
         if (isLatestRow && !emp.manual_department_locked && emp.department_id !== deptId) { emp.department_id = deptId; empChanged = true; }
         if (isLatestRow && !emp.manual_position_locked   && emp.position_id   !== posId)  { emp.position_id   = posId;  empChanged = true; }
         if (isLatestRow && project && !emp.manual_project_locked && emp.project !== project) { emp.project = project; empChanged = true; }
