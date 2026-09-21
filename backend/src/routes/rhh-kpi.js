@@ -56,6 +56,17 @@ function costos(inc, emp) {
   };
 }
 
+/** Filtra incidencias a solo periodos con nómina importada (rhh_periodos) */
+function payrollIncidencias(db) {
+  const periodos = db.rhh_periodos || [];
+  if (periodos.length === 0) return db.rhh_incidencias_semanales || [];
+  const keys = new Set(periodos.map(p => `${p.year || 2026}-S${String(p.no_periodo).padStart(2, '0')}`));
+  return (db.rhh_incidencias_semanales || []).filter(i => {
+    const k = `${i.year || 2026}-S${String(i.no_periodo).padStart(2, '0')}`;
+    return keys.has(k);
+  });
+}
+
 /** Genera labels de semanas y meses a partir de incidencias */
 function buildPeriodLabels(incidencias) {
   // Semanas
@@ -101,7 +112,7 @@ function buildPeriodLabels(incidencias) {
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
-  const incs = db.rhh_incidencias_semanales || [];
+  const incs = payrollIncidencias(db);
   const emps = db.rhh_employees || [];
   const empMap = new Map(emps.map(e => [e.id, e]));
 
@@ -167,7 +178,7 @@ router.get('/costos-rhh', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/costos-proyecto', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
-  const incs = db.rhh_incidencias_semanales || [];
+  const incs = payrollIncidencias(db);
   const emps = db.rhh_employees || [];
   const depts = db.rhh_departments || [];
   const positions = db.rhh_positions || [];
@@ -272,7 +283,7 @@ router.get('/costos-proyecto', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (
 // ══════════════════════════════════════════════════════════════════════════════
 router.get('/incidencias', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
-  const incs = db.rhh_incidencias_semanales || [];
+  const incs = payrollIncidencias(db);
   const emps = db.rhh_employees || [];
   const depts = db.rhh_departments || [];
   const empMap = new Map(emps.map(e => [e.id, e]));
