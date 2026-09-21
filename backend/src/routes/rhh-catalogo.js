@@ -1187,11 +1187,14 @@ router.post(
       const puestoCol   = colIdx['Puesto']        ?? 6;
       const rfcCol      = colIdx['RFC']            ?? -1;
       const curpCol     = colIdx['CURP']           ?? -1;
+      const nssCol      = hdrRaw.findIndex(v => norm(v).toLowerCase().includes('afiliaci') && norm(v).toLowerCase().includes('imss'));
       const salDiarioCol= colIdx['Sal. Diario']   ?? 11;
       const sdiCol      = colIdx['SDI']           ?? 12;
       const sbcCol      = colIdx['SBC']           ?? 13;
+      const salVarCol   = colIdx['Sal. Variable'] ?? -1;
       const fechaIngCol = colIdx['Fecha Ingreso'] ?? 10;
       const diasPagCol  = colIdx['Días Pagados']  ?? 15;
+      const hrsTrabCol  = colIdx['Hrs. Trabajadas'] ?? -1;
       const hrsExtCol   = colIdx['Hrs. Extras']   ?? 17;
       const notasCol    = colIdx['Notas']         ?? 18;
       const projectCol  = hdrRaw.findIndex(v => normName(v).includes('proyecto'));
@@ -1397,6 +1400,11 @@ router.post(
           const curpVal = norm(row[curpCol]).replace(/[^A-Z0-9]/gi, '').toUpperCase();
           if (curpVal && !emp.curp) { emp.curp = curpVal; empChanged = true; }
         }
+        // Actualizar NSS (Afiliación IMSS) si viene en el Excel y el empleado no lo tiene
+        if (isLatestRow && nssCol >= 0) {
+          const nssVal = norm(row[nssCol]).replace(/[^0-9]/g, '');
+          if (nssVal && !emp.nss) { emp.nss = nssVal; empChanged = true; }
+        }
         // Crear emp_login si el empleado tiene RFC y CURP pero no tiene login
         if (isLatestRow && !emp.emp_login) {
           const rfcLogin = (emp.rfc || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
@@ -1440,6 +1448,22 @@ router.post(
         // Despensa: si P|32 > 0
         const despensaCol = hdrRaw.findIndex(v => String(v).includes('32 Despensa'));
         const despensa = despensaCol >= 0 && toNum(row[despensaCol]) > 0 ? 1 : 0;
+
+        // Gratificación: importe de P|12
+        const gratifCol = hdrRaw.findIndex(v => String(v).includes('12 Gratificaci'));
+        const gratificacion = gratifCol >= 0 ? (toNum(row[gratifCol]) || null) : null;
+
+        // Bono puntualidad: si P|15 > 0 → 1
+        const bonoPuntCol = hdrRaw.findIndex(v => String(v).includes('15 Bono puntualidad'));
+        const bono_puntualidad_dias = bonoPuntCol >= 0 && toNum(row[bonoPuntCol]) > 0 ? 1 : null;
+
+        // Bono eficiencia: si P|7 > 0 → 1
+        const bonoEficCol = hdrRaw.findIndex(v => String(v).includes('7 Bono de productividad'));
+        const bono_eficiencia_dias = bonoEficCol >= 0 && toNum(row[bonoEficCol]) > 0 ? 1 : null;
+
+        // Bono instructor: si P|139 > 0 → 1
+        const bonoInstCol = hdrRaw.findIndex(v => String(v).includes('139 Bono instructor'));
+        const bono_instructor = bonoInstCol >= 0 && toNum(row[bonoInstCol]) > 0 ? 1 : null;
 
         // Detectar aguinaldo (P|24) fuera de diciembre → posible baja por liquidación
         const aguinaldoColIdx = hdrRaw.findIndex(v => String(v).includes('24 Aguinaldo'));
@@ -1488,6 +1512,10 @@ router.post(
           despensa,
           prima_dominical:     primaDom,
           vacaciones_dias:     vacDias,
+          gratificacion,
+          bono_puntualidad_dias,
+          bono_eficiencia_dias,
+          bono_instructor,
           percepciones,
           deducciones,
           total_perc_pdf:      totalPerc,

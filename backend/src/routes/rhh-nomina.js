@@ -1380,6 +1380,12 @@ const CODE_TO_FIELD = {
   '19':  'vacaciones_importe',  // Vacaciones
   '12':  'gratificacion',       // Gratificación
   '32':  'despensa',            // Despensa (informativa)
+  '140': 'bono_entregas',       // Bono por entregas
+  '141': 'bono_limpieza',       // Bono por actividades de limpieza
+  '55':  'dias_descanso_laborados', // Días de descanso obligatorios laborados
+  '131': 'fondo_ahorro_empresa',// Fondo de ahorro Empresa
+  '20':  'prima_vacaciones',    // Prima de vacaciones a tiempo
+  '24':  'aguinaldo',           // Aguinaldo
 };
 
 function conceptsToFields(percepciones) {
@@ -1703,6 +1709,12 @@ const CONCEPTOS = {
   19:  'vacaciones_importe',
   12:  'gratificacion_importe',
   32:  'despensa_importe',
+  140: 'bono_entregas',
+  141: 'bono_limpieza',
+  55:  'dias_descanso_laborados',
+  131: 'fondo_ahorro_empresa',
+  20:  'prima_vacaciones',
+  24:  'aguinaldo',
 };
 
 /**
