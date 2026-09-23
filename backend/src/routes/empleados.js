@@ -666,14 +666,12 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
   // Reglas de anticipacion
   const todayStr = nowMxDate();
   const daysAhead = Math.floor((d1 - new Date(todayStr + 'T12:00:00')) / 86400000);
-  if (diasVac <= 1 && daysAhead < 1) {
-    return res.status(400).json({ error: 'Para solicitar 1 dia de vacaciones necesitas al menos 1 dia habil de anticipacion.' });
-  }
-  if (diasVac <= 3 && daysAhead < 7) {
-    return res.status(400).json({ error: `Para solicitar ${diasVac} dias necesitas al menos 1 semana de anticipacion (${daysAhead} dias de anticipacion).` });
-  }
-  if (diasVac > 3 && daysAhead < 14) {
-    return res.status(400).json({ error: `Para solicitar ${diasVac} dias necesitas al menos 2 semanas de anticipacion (${daysAhead} dias de anticipacion).` });
+  if (diasVac <= 1) {
+    if (daysAhead < 1) return res.status(400).json({ error: 'Para solicitar 1 dia de vacaciones necesitas al menos 1 dia habil de anticipacion.' });
+  } else if (diasVac <= 3) {
+    if (daysAhead < 7) return res.status(400).json({ error: `Para solicitar ${diasVac} dias necesitas al menos 1 semana de anticipacion (${daysAhead} dias de anticipacion).` });
+  } else {
+    if (daysAhead < 14) return res.status(400).json({ error: `Para solicitar ${diasVac} dias necesitas al menos 2 semanas de anticipacion (${daysAhead} dias de anticipacion).` });
   }
 
   // Determinar periodo ISO de fecha_inicio
