@@ -205,6 +205,50 @@ router.get('/', rhhAuthRequired, (req, res) => {
   });
 });
 
+// ── GET /api/rhh/catalogo/exportar ─────────────────────────────────────────────
+router.get('/exportar', (req, res, next) => {
+  if (!req.headers.authorization && req.query.token) {
+    req.headers.authorization = 'Bearer ' + req.query.token;
+  }
+  next();
+}, rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  const today = nowMxDate();
+
+  const emps = (db.rhh_employees || [])
+    .filter(e => {
+      const num = String(e.employee_number || '').trim();
+      return num.length >= 3 && /^\d+$/.test(num.replace(/^0+/, '') || '0') && e.status === 'active';
+    })
+    .sort((a, b) => String(a.employee_number).localeCompare(String(b.employee_number), undefined, { numeric: true }));
+
+  const rows = emps.map(e => {
+    const vi = calcVacInfo(e, db, today);
+    return {
+      'ID': e.employee_number || '',
+      'Nombre': e.full_name || '',
+      'RFC': e.rfc || '',
+      'CURP': e.curp || '',
+      'NSS': e.nss || '',
+      'Fecha Ingreso': e.start_date || e.fecha_ingreso || '',
+      'Salario Diario': e.daily_salary || e.salary_daily || e.sal_diario || '',
+      'Vacaciones Disponibles (dias)': vi.dias_disponibles ?? 0,
+      'Vacaciones Tomadas': vi.dias_tomados ?? 0,
+      'Vacaciones Restantes': vi.dias_restantes ?? 0,
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Empleados');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  wb.Sheets = {};
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="catalogo_empleados_${today}.xlsx"`);
+  res.send(buf);
+});
+
 // ── GET /api/rhh/catalogo/baja-candidatos ─────────────────────────────────────
 router.get('/baja-candidatos', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
   const db = readFresh();

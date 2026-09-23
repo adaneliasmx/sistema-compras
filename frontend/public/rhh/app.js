@@ -12956,6 +12956,7 @@ async function catalogoEmpleadosView() {
       <button class="btn-primary" onclick="catCargar()">🔍 Buscar</button>
       <button class="btn-ghost" onclick="catImportContpaq()" title="Actualizar Departamento y Puesto desde lista de asistencia CONTPAQ i (Excel .xlsx)">📥 Cargar CONTPAQ i</button>
       <button class="btn-ghost" onclick="abrirCandidatosPendientes()" title="Revisar bajas y reingresos pendientes">⚠ Bajas pendientes</button>
+      <button class="btn-ghost" onclick="catDescargarBase()" title="Descargar base de empleados activos en Excel">📥 Descargar base</button>
     </div>
   </div>
   <div id="cat-import-msg" style="font-size:12px;color:#64748b;margin-bottom:8px"></div>
@@ -12966,6 +12967,14 @@ async function catalogoEmpleadosView() {
   document.getElementById('cat-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') catCargar(); });
 
   catCargar();
+}
+
+function catDescargarBase() {
+  const token = localStorage.getItem('rhh_token');
+  if (!token) { toast('Sin sesión', 'error'); return; }
+  const a = document.createElement('a');
+  a.href = `/api/rhh/catalogo/exportar?token=${encodeURIComponent(token)}`;
+  a.click();
 }
 
 async function catCargar() {
