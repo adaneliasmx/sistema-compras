@@ -1091,6 +1091,19 @@ async function loadCompradorTab(tab, inv_type) {
           : '<div class="empty-msg">Sin datos de conteo</div>';
       }
 
+      const fallbackBanner = data.fallback
+        ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+            <span style="font-size:1.5rem">⚠️</span>
+            <div>
+              <div style="font-weight:700;color:#92400e">No se ha realizado inventario semanal</div>
+              <div style="color:#92400e;font-size:.85rem">Inventario de referencia — Semana ${data.fallback_week} / ${data.fallback_year}. Favor de actualizar el inventario lo más pronto posible.</div>
+            </div>
+          </div>`
+        : '';
+      const noDataMsg = !data.cur_fecha && !data.fallback
+        ? `<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:12px 16px;margin-bottom:12px;text-align:center;color:#991b1b;font-weight:600">No se ha realizado inventario semanal</div>`
+        : '';
+
       el.innerHTML = `
         <div class="card">
           <div class="card-header">
@@ -1103,6 +1116,7 @@ async function loadCompradorTab(tab, inv_type) {
               <button data-m="kg">Kilogramos</button>
             </div>
           </div>
+          ${fallbackBanner}${noDataMsg}
           <div id="comprador-q-table">${buildQTable(resumen, viewMode)}</div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm" id="comprador-actualizar">🔄 Actualizar entradas/salidas</button>
@@ -1224,8 +1238,23 @@ async function loadCompradorTab(tab, inv_type) {
           const hdr = `<tr><td colspan="${semColCount}" style="background:#dbeafe;color:#1e40af;font-weight:700;padding:6px 12px;font-size:.8rem">${esc(prov)}</td></tr>`;
           return [hdr, ...grouped[prov].map(rowHtml)];
         }).join('');
+
+        const fallbackBanner2 = data.fallback
+          ? `<div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:12px 16px;margin-bottom:12px;display:flex;align-items:center;gap:10px">
+              <span style="font-size:1.5rem">⚠️</span>
+              <div>
+                <div style="font-weight:700;color:#92400e">No se ha realizado inventario semanal</div>
+                <div style="color:#92400e;font-size:.85rem">Inventario de referencia — Semana ${data.fallback_week} / ${data.fallback_year}. Favor de actualizar el inventario lo más pronto posible.</div>
+              </div>
+            </div>`
+          : '';
+        const noDataMsg2 = !data.cur_fecha && !data.fallback
+          ? `<div style="background:#fee2e2;border:1px solid #ef4444;border-radius:8px;padding:12px 16px;margin-bottom:12px;text-align:center;color:#991b1b;font-weight:600">No se ha realizado inventario semanal</div>`
+          : '';
+
         return `<div class="card">
           <div class="card-header"><div class="card-title">Semana ${data.cur_week} / ${data.cur_year}</div><div class="page-subtitle">Conteo actual: ${data.cur_fecha||'Sin conteo'}</div></div>
+          ${fallbackBanner2}${noDataMsg2}
           ${data.rows.length ? `<div class="table-wrap"><table>
             <thead><tr><th>Item</th><th>Stock actual</th><th>Consumo sem. ant.</th><th>Recibido sem.</th><th>Pendiente recibir</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
             <tbody>${rows}</tbody></table></div>` : '<div class="empty-msg">Sin datos de conteo</div>'}

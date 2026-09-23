@@ -654,7 +654,22 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
   const allItems   = db.inv_conteo_items || [];
   const cfg        = (db.inv_items_config || []).filter(i => i.inv_type === inv_type && i.activo !== false);
 
-  const cCur  = allConteos.find(c => c.inv_type === inv_type && c.year === curYear  && c.week === curWeek);
+  let cCur  = allConteos.find(c => c.inv_type === inv_type && c.year === curYear  && c.week === curWeek);
+  let fallback = false, fallbackWeek = null, fallbackYear = null;
+
+  // Si no hay conteo en la semana actual, buscar el más reciente como referencia
+  if (!cCur) {
+    const sorted = allConteos
+      .filter(c => c.inv_type === inv_type)
+      .sort((a, b) => (b.year - a.year) || (b.week - a.week));
+    if (sorted.length) {
+      cCur = sorted[0];
+      fallback = true;
+      fallbackWeek = cCur.week;
+      fallbackYear = cCur.year;
+    }
+  }
+
   const itemsCur = cCur ? allItems.filter(i => i.conteo_id === cCur.id) : [];
 
   // Recibido semana actual (recepciones dentro del rango de la semana ISO actual)
@@ -757,6 +772,9 @@ router.get('/consumo-semanal/:inv_type', invAuthRequired, (req, res) => {
     inv_type,
     cur_year: curYear, cur_week: curWeek,
     cur_fecha: cCur?.fecha || null,
+    fallback,
+    fallback_week: fallbackWeek,
+    fallback_year: fallbackYear,
     rows
   });
 });
