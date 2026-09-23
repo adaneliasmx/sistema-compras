@@ -13009,6 +13009,9 @@ async function catCargar() {
     const waBtn = e.has_portal
       ? `<button class="btn-ghost btn-sm" onclick="event.stopPropagation();catEnviarWhatsApp(${e.id},'${esc(e.portal_username || '')}','${esc(e.full_name || '')}','${esc(e.phone || '')}')" style="color:#25d366;font-size:11px" title="Enviar credenciales por WhatsApp">📱 WA</button>`
       : '';
+    const resetBtn = e.has_portal
+      ? `<button class="btn-ghost btn-sm" onclick="event.stopPropagation();catResetYEnviarWA(${e.id},'${esc(e.full_name || '')}','${esc(e.phone || '')}')" style="color:#dc2626;font-size:11px" title="Restablecer contraseña y enviar por WhatsApp">🔑 Reset</button>`
+      : '';
     return `
     <tr style="cursor:pointer" onclick="catVerDetalle(${e.id})">
       <td style="font-weight:600;color:#1e293b">#${e.employee_number}</td>
@@ -13020,6 +13023,7 @@ async function catCargar() {
       <td style="text-align:center">${enabledChk}</td>
       <td style="white-space:nowrap">
         <button class="btn-ghost btn-sm" onclick="event.stopPropagation();catVerDetalle(${e.id})">Ver</button>
+        ${resetBtn}
         ${waBtn}
         ${e.status === 'active' ? `<a href="/empleados" target="_blank" class="btn-ghost btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">🏭 Portal</a>` : ''}
       </td>
@@ -13503,6 +13507,39 @@ async function catEnviarWhatsApp(empId, username, fullName, phone) {
 
   const encoded = encodeURIComponent(msg);
   // Si tiene teléfono, pre-llenar el número
+  const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
+  const waUrl = cleanPhone
+    ? `https://wa.me/52${cleanPhone.slice(-10)}?text=${encoded}`
+    : `https://wa.me/?text=${encoded}`;
+
+  window.open(waUrl, '_blank');
+}
+
+// Restablecer contraseña + enviar por WhatsApp (botón combinado desde lista)
+async function catResetYEnviarWA(empId, fullName, phone) {
+  if (!confirm(`¿Restablecer contraseña de ${fullName}?\nSe generará una contraseña genérica y se abrirá WhatsApp para enviarla.`)) return;
+
+  const r = await api(`/api/rhh/catalogo/${empId}/credenciales`, { method:'PATCH', body: JSON.stringify({}) }).catch(() => null);
+  if (!r || !r.ok) {
+    toast('Error al restablecer contraseña. Verifica que el empleado tenga RFC y CURP.', 'error');
+    return;
+  }
+
+  toast(`Contraseña restablecida. Usuario: ${r.username} / Pass: ${r.password}`, 'success');
+
+  const link = 'https://cuestocompras.onrender.com/empleados/';
+  const msg = `Hola *${fullName}*,\n\n`
+    + `Tu contraseña del portal de empleados ha sido restablecida.\n\n`
+    + `*Tus nuevas credenciales de acceso:*\n`
+    + `Usuario: *${r.username}*\n`
+    + `Contraseña: *${r.password}*\n\n`
+    + `*Como ingresar:*\n`
+    + `1. Abre el siguiente enlace en tu navegador:\n${link}\n`
+    + `2. Ingresa tu usuario y contraseña\n`
+    + `3. Al ingresar se te pedira crear una nueva contraseña\n\n`
+    + `Si tienes dudas, contacta a Recursos Humanos.`;
+
+  const encoded = encodeURIComponent(msg);
   const cleanPhone = (phone || '').replace(/[^0-9]/g, '');
   const waUrl = cleanPhone
     ? `https://wa.me/52${cleanPhone.slice(-10)}?text=${encoded}`
