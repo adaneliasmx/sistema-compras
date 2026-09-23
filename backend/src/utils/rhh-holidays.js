@@ -1,6 +1,7 @@
 const UNION_HOLIDAY_RULES = [
   { key: 'union-01-01', monthDay: '01-01', name: '1 de enero — Acuerdo sindical', startYear: 2026 },
   { key: 'union-12-24', monthDay: '12-24', name: '24 de diciembre — Acuerdo sindical', startYear: 2026 },
+  { key: 'union-12-31', monthDay: '12-31', name: '31 de diciembre — Otorgado por la empresa', startYear: 2026 },
 ];
 
 function normalizeYears(years) {

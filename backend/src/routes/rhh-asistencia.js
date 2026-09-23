@@ -1174,7 +1174,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
         let autoType = null;
         if (!worksDay) autoType = 'descanso';
         if (isFest)    autoType = 'festivo';
-        if (isVac)     autoType = 'vacacion';
+        if (isVac && !isFest && worksDay) autoType = 'vacacion';
         if (emp.template_status === 'baja') autoType = 'baja';
 
         const locked    = isLockedForSupervisor(rec, fecha, role, unlocks);
@@ -1799,7 +1799,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
       const isVac  = vacSols.some(v => v.employee_id === emp.id && fecha >= v.fecha_inicio && fecha <= v.fecha_fin);
       let autoType = works ? null : 'descanso';
       if (isFest) autoType = 'festivo';
-      if (isVac)  autoType = 'vacacion';
+      if (isVac && !isFest && works) autoType = 'vacacion';
       if (emp.template_status === 'baja') autoType = 'baja';
       if (rec?.te_horas) teHorasWeek += rec.te_horas;
       const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
