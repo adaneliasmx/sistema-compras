@@ -24,6 +24,7 @@ const {
   upsertEmployeePeriodSnapshot,
 } = require('../utils/rhh-periods');
 const { assertNoTxtDebt } = require('../utils/rhh-txt');
+const { calcVacInfo } = require('../utils/rhh-vac-calc');
 const router = express.Router();
 
 // Multer — solo memoria (no guarda en disco)
@@ -697,52 +698,12 @@ router.get('/vac-solicitudes/resumen', rhhAuthRequired, rhhRequireRole('supervis
   const today     = nowMxDate();
   const currentYear = new Date(today).getFullYear();
 
-  const DEFAULT_LFT = [
-    { years: 1, dias: 12 }, { years: 2, dias: 14 }, { years: 3, dias: 16 },
-    { years: 4, dias: 18 }, { years: 5, dias: 20 }, { years: 6, dias: 22 }, { years: 11, dias: 24 },
-  ];
-
   const solicitudes = (db.rhh_vac_solicitudes || []).filter(s =>
     s.estado === 'aprobada' && effectivePeriodYear(s) === currentYear
   );
 
   const resumen = employees.map(emp => {
-    // calcVacInfo inline
-    const startDate = emp.start_date || emp.fecha_ingreso || null;
-    let elegible = false, ciclos = 0, lft_dias = 0;
-    if (startDate) {
-      let start;
-      if (/^\d{2}\/\d{2}\/\d{4}$/.test(startDate)) {
-        const [d, m, y] = startDate.split('/');
-        start = new Date(`${y}-${m}-${d}T12:00:00`);
-      } else { start = new Date(startDate + 'T12:00:00'); }
-      if (!isNaN(start.getTime())) {
-        const sy = start.getFullYear();
-        if (sy < currentYear && start < new Date(currentYear - 1, 10, 1)) {
-          elegible = true; ciclos = currentYear - sy;
-          const rules = (db.rhh_lft_rules?.length) ? [...db.rhh_lft_rules].sort((a,b)=>a.years-b.years) : DEFAULT_LFT;
-          for (const r of rules) { if (ciclos >= r.years) lft_dias = r.dias; }
-        }
-      }
-    }
-    const override_dias = emp.vac_dias_disponibles != null ? Number(emp.vac_dias_disponibles) : null;
-    const dias_disponibles = override_dias !== null ? override_dias : lft_dias;
-    const incidencias = (db.rhh_incidencias_semanales || []).filter(i => i.employee_id === emp.id);
-    const dias_tomados = incidencias.reduce((sum, inc) => {
-      if (!inc.vacaciones_dias) return sum;
-      if (inc.year || inc.period_key || inc.fecha_inicio || inc.fecha_fin) {
-        return effectivePeriodYear(inc) === currentYear ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
-      }
-      return (inc.no_periodo >= 1 && inc.no_periodo <= 53) ? sum + (Number(inc.vacaciones_dias) || 0) : sum;
-    }, 0);
-    const CUTOFF = '2026-08-11';
-    const pendReqs = (db.rhh_vac_solicitudes || []).filter(r =>
-      r.employee_id === emp.id && r.estado === 'pendiente' && (r.created_at || '') >= CUTOFF
-    );
-    const diasPendientes = pendReqs.reduce((s, r) => s + (r.dias || 0), 0);
-    const dias_programados = dias_tomados + diasPendientes;
-    const dias_restantes = Math.max(0, dias_disponibles - dias_programados);
-
+    const vi = calcVacInfo(emp, db, today);
     const dept = depts.find(d => d.id === emp.department_id);
     const pos  = positions.find(p => p.id === emp.position_id);
     const empSols = solicitudes.filter(s => s.employee_id === emp.id);
@@ -753,11 +714,11 @@ router.get('/vac-solicitudes/resumen', rhhAuthRequired, rhhRequireRole('supervis
       employee_number: emp.employee_number,
       department: dept ? dept.name : null,
       position: pos ? pos.name : null,
-      elegible,
-      dias_disponibles,
-      dias_tomados,
-      dias_programados,
-      dias_restantes,
+      elegible: vi.elegible,
+      dias_disponibles: vi.dias_disponibles,
+      dias_tomados: vi.dias_tomados,
+      dias_programados: vi.dias_programados,
+      dias_restantes: vi.dias_restantes,
       solicitudes: empSols.map(s => ({
         id: s.id, fecha_inicio: s.fecha_inicio, fecha_fin: s.fecha_fin,
         dias: s.dias, desglose: s.desglose, origen: s.origen, created_at: s.created_at,
