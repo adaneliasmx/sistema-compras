@@ -203,11 +203,12 @@
                 <th style="min-width:190px;">📦 Inventarios</th>
                 <th style="min-width:180px;">🚛 Validaciones</th>
                 <th style="min-width:180px;">📦 Flujo Materiales</th>
+                <th style="min-width:170px;">📋 Planner</th>
                 <th style="min-width:110px;">Acciones</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr><td colspan="10" class="empty">Cargando...</td></tr>
+              <tr><td colspan="11" class="empty">Cargando...</td></tr>
             </tbody>
           </table>
         </div>
@@ -503,6 +504,7 @@ const MODULE_COLORS = { compras:'#1d4ed8', rhh:'#0f766e', calidad:'#7c3aed', pro
 let _invUsers = []; // cache de usuarios_inv
 let _valUsers = []; // cache de usuarios_val
 let _flujoUsers = []; // cache de usuarios_flujo
+let _plannerData = { users: [], departamentos: [] }; // cache de planner
 
 let _unifiedData = { internal: [], external: [] };
 let _currentPageTab = 'users';
@@ -557,16 +559,17 @@ function switchPageTab(tab) {
 // ── Load data ─────────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    [_unifiedData, _invUsers, _valUsers, _flujoUsers] = await Promise.all([
+    [_unifiedData, _invUsers, _valUsers, _flujoUsers, _plannerData] = await Promise.all([
       api('/api/super-admin/unified-users'),
       api('/api/super-admin/inv-users').catch(() => []),
       api('/api/super-admin/val-users').catch(() => []),
-      api('/api/super-admin/flujo-users').catch(() => [])
+      api('/api/super-admin/flujo-users').catch(() => []),
+      api('/api/super-admin/planner-users').catch(() => ({ users: [], departamentos: [] }))
     ]);
     renderUsersTable();
     renderProvidersTable();
   } catch(e) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="10" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="11" style="color:#dc2626;padding:24px">${e.message}</td></tr>`;
   }
 }
 
@@ -579,7 +582,7 @@ function renderUsersTable() {
   document.getElementById('userCount').textContent = `${users.length} usuario${users.length !== 1 ? 's' : ''}`;
 
   if (!users.length) {
-    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="10" class="empty">Sin usuarios que coincidan</td></tr>`;
+    document.getElementById('usersTableBody').innerHTML = `<tr><td colspan="11" class="empty">Sin usuarios que coincidan</td></tr>`;
     return;
   }
 
@@ -690,6 +693,18 @@ function renderUsersTable() {
            </select>
          </div>`;
 
+    const plannerUser = (_plannerData.users || []).find(pu => pu.id === u.compras?.id);
+    const plR = plannerUser?.planner_role || null;
+    const plannerCell = `<div class="mod-cell">
+           <span class="dot ${plR ? 'dot-on' : 'dot-off'}" id="dot-planner-${uidKey}"></span>
+           <select class="role-sel" style="color:${plR ? '#7c3aed' : '#9ca3af'}"
+             onchange="changePlannerRole(${u.compras?.id||'null'}, this.value, this, '${uidKey}')">
+             <option value="">— Sin acceso —</option>
+             <option value="staff"  ${plR==='staff' ?'selected':''}>Staff</option>
+             <option value="admin"  ${plR==='admin' ?'selected':''}>Admin</option>
+           </select>
+         </div>`;
+
     const actionsCell = `
       <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start;">
         <button class="btn-pwd" onclick="openPwdModal('${esc(u.full_name)}',${u.compras?.id||'null'},${u.rhh?.id||'null'},'${esc(u.email)}')">🔑 Reset</button>
@@ -710,6 +725,7 @@ function renderUsersTable() {
       <td>${invCell}</td>
       <td>${valCell}</td>
       <td>${flujoCell}</td>
+      <td>${plannerCell}</td>
       <td>${actionsCell}</td>
     </tr>`;
   }).join('');
@@ -844,6 +860,27 @@ async function changeFlujoRole(email, flujoRole, sel, dotKey) {
     sel.style.color = flujoRole ? '#0d9488' : '#9ca3af';
     const dot = document.getElementById('dot-flujo-' + dotKey);
     if (dot) dot.className = 'dot ' + (flujoRole ? 'dot-on' : 'dot-off');
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
+  } catch(e) {
+    sel.style.borderColor = '#ef4444';
+    setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1500);
+    alert(e.message);
+  }
+}
+
+async function changePlannerRole(userId, plannerRole, sel, dotKey) {
+  if (!userId) { alert('El usuario necesita tener cuenta en Compras primero'); sel.selectedIndex = 0; return; }
+  try {
+    sel.style.borderColor = '#f59e0b';
+    const deptos = ['smya','rhh','produccion','calidad','mantenimiento','procesos','compras','sgc','operaciones'];
+    await api('/api/super-admin/planner-asignacion', {
+      method: 'PATCH',
+      body: JSON.stringify({ usuario_id: userId, planner_role: plannerRole || null, departamentos: plannerRole ? deptos : [] })
+    });
+    sel.style.borderColor = '#22c55e';
+    sel.style.color = plannerRole ? '#7c3aed' : '#9ca3af';
+    const dot = document.getElementById('dot-planner-' + dotKey);
+    if (dot) dot.className = 'dot ' + (plannerRole ? 'dot-on' : 'dot-off');
     setTimeout(() => { sel.style.borderColor = '#e2e8f0'; }, 1200);
   } catch(e) {
     sel.style.borderColor = '#ef4444';
