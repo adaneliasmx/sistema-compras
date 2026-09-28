@@ -1234,4 +1234,80 @@ router.post('/vacuum', superAdminRequired, async (req, res) => {
   }
 });
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// PLANNER STAFF — asignacion de departamentos
+// ═══════════════════════════════════════════════════════════════════════════════
+const { read: readPlanner, write: writePlanner, DEPARTAMENTOS: PLANNER_DEPTOS } = require('../db-planner');
+
+// GET /api/super-admin/planner-users — lista usuarios internos con su asignacion planner
+router.get('/planner-users', superAdminRequired, (req, res) => {
+  const comprasDb = readCompras();
+  const plannerDb = readPlanner();
+  const asignaciones = plannerDb.asignaciones || [];
+
+  const internos = (comprasDb.users || [])
+    .filter(u => u.active !== false && u.role_code !== 'proveedor')
+    .map(u => {
+      const asig = asignaciones.find(a => a.usuario_id === u.id);
+      return {
+        id: u.id,
+        nombre: u.full_name,
+        email: u.email,
+        role_code: u.role_code,
+        planner_role: asig ? asig.planner_role : null,
+        departamentos: asig ? (asig.departamentos || []) : []
+      };
+    });
+
+  res.json({ users: internos, departamentos: PLANNER_DEPTOS });
+});
+
+// PATCH /api/super-admin/planner-asignacion — asignar/revocar acceso planner
+router.patch('/planner-asignacion', superAdminRequired, (req, res) => {
+  const { usuario_id, planner_role, departamentos } = req.body || {};
+  if (!usuario_id) return res.status(400).json({ error: 'usuario_id requerido' });
+  if (planner_role && !['admin', 'staff'].includes(planner_role)) {
+    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff o null' });
+  }
+  if (departamentos && !Array.isArray(departamentos)) {
+    return res.status(400).json({ error: 'departamentos debe ser un array' });
+  }
+
+  const comprasDb = readCompras();
+  const user = (comprasDb.users || []).find(u => u.id === Number(usuario_id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const plannerDb = readPlanner();
+  plannerDb.asignaciones = plannerDb.asignaciones || [];
+
+  const idx = plannerDb.asignaciones.findIndex(a => a.usuario_id === user.id);
+
+  if (!planner_role) {
+    // Revocar acceso
+    if (idx !== -1) plannerDb.asignaciones.splice(idx, 1);
+    writePlanner(plannerDb);
+    return res.json({ ok: true, accion: 'revocado' });
+  }
+
+  const validDeptos = (departamentos || []).filter(d => PLANNER_DEPTOS.find(dp => dp.id === d));
+
+  if (idx !== -1) {
+    plannerDb.asignaciones[idx].planner_role = planner_role;
+    plannerDb.asignaciones[idx].departamentos = validDeptos;
+    plannerDb.asignaciones[idx].nombre = user.full_name;
+    plannerDb.asignaciones[idx].email = user.email;
+  } else {
+    plannerDb.asignaciones.push({
+      usuario_id: user.id,
+      nombre: user.full_name,
+      email: user.email,
+      planner_role,
+      departamentos: validDeptos
+    });
+  }
+
+  writePlanner(plannerDb);
+  res.json({ ok: true, accion: 'asignado', planner_role, departamentos: validDeptos });
+});
+
 module.exports = router;

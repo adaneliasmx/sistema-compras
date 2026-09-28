@@ -1,0 +1,52 @@
+{
+  "departamentos": [
+    {
+      "id": "smya",
+      "nombre": "SMYA"
+    },
+    {
+      "id": "rhh",
+      "nombre": "RHH"
+    },
+    {
+      "id": "produccion",
+      "nombre": "Produccion"
+    },
+    {
+      "id": "calidad",
+      "nombre": "Calidad"
+    },
+    {
+      "id": "mantenimiento",
+      "nombre": "Mantenimiento"
+    },
+    {
+      "id": "procesos",
+      "nombre": "Procesos/Ingenierias"
+    },
+    {
+      "id": "compras",
+      "nombre": "Compras"
+    },
+    {
+      "id": "sgc",
+      "nombre": "SGC"
+    },
+    {
+      "id": "operaciones",
+      "nombre": "Operaciones"
+    }
+  ],
+  "asignaciones": [],
+  "actividades": [],
+  "daily_registros": [],
+  "config_ptar": {
+    "dias_retrolavado": [
+      1,
+      3,
+      5
+    ]
+  },
+  "plantilla_puestos": [],
+  "plantilla_historico": []
+}

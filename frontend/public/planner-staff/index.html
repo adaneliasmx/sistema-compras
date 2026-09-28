@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planner Staff — CUESTO</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--primary:#1a3a5c;--primary-light:#2c5f8a;--accent:#2980b9;--text:#1e1e1e;--muted:#888;--line:#e0e4ea;--green:#27ae60;--red:#c0392b;--orange:#e67e22;--yellow:#f1c40f;--tag-alta:#fce4e4;--tag-media:#fef9e7;--tag-baja:#d5f5e3}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);font-size:14px}
+a{color:var(--accent);text-decoration:none}
+
+/* Layout */
+.app{display:flex;height:100vh}
+.sidebar{width:230px;background:var(--primary);color:#fff;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sidebar-header{padding:18px 16px 12px;border-bottom:1px solid rgba(255,255,255,.12)}
+.sidebar-header h2{font-size:15px;font-weight:700;letter-spacing:.5px}
+.sidebar-header small{font-size:11px;opacity:.6}
+.nav-item{padding:10px 16px;cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px;transition:background .15s}
+.nav-item:hover{background:rgba(255,255,255,.08)}
+.nav-item.active{background:rgba(255,255,255,.15);border-left:3px solid #fff}
+.nav-group-title{padding:14px 16px 4px;font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.45;font-weight:700}
+.nav-sub{padding:7px 16px 7px 36px;cursor:pointer;font-size:12px;opacity:.75;transition:background .15s}
+.nav-sub:hover{background:rgba(255,255,255,.08);opacity:1}
+.nav-sub.active{background:rgba(255,255,255,.12);opacity:1}
+.sidebar-footer{margin-top:auto;padding:12px 16px;border-top:1px solid rgba(255,255,255,.12);font-size:11px;opacity:.5}
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 24px;background:var(--card);border-bottom:1px solid var(--line)}
+.topbar-title{font-size:15px;font-weight:700;color:var(--primary)}
+.topbar-user{display:flex;align-items:center;gap:10px;font-size:13px}
+.topbar-user button{background:none;border:1px solid var(--line);border-radius:6px;padding:4px 12px;cursor:pointer;font-size:12px;color:var(--muted)}
+.content{flex:1;overflow-y:auto;padding:20px 24px}
+
+/* Cards & KPIs */
+.kpi-row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.kpi{background:var(--card);border-radius:10px;padding:14px 18px;min-width:120px;flex:1;border:1px solid var(--line)}
+.kpi label{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.kpi .val{font-size:24px;font-weight:800;color:var(--primary);margin-top:2px}
+.kpi .sub{font-size:11px;color:var(--muted)}
+.kpi.red .val{color:var(--red)}
+.kpi.green .val{color:var(--green)}
+.kpi.orange .val{color:var(--orange)}
+
+/* Table */
+table{width:100%;border-collapse:collapse;background:var(--card);border-radius:8px;overflow:hidden;font-size:13px}
+thead{background:#f0f3f7}
+th{padding:10px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:700;border-bottom:2px solid var(--line)}
+td{padding:9px 12px;border-bottom:1px solid var(--line)}
+tr:hover{background:#f8fafc}
+
+/* Badges */
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700}
+.badge.alta{background:var(--tag-alta);color:var(--red)}
+.badge.media{background:var(--tag-media);color:#b7770d}
+.badge.baja{background:var(--tag-baja);color:var(--green)}
+.badge.sin_empezar{background:#eaecee;color:#7f8c8d}
+.badge.en_proceso{background:#d6eaf8;color:#2471a3}
+.badge.cerrada{background:#d5f5e3;color:#1e8449}
+.badge.atrasada{background:var(--tag-alta);color:var(--red)}
+.badge.pospuesta{background:#f5eef8;color:#7d3c98}
+.badge.cancelada{background:#f2f3f4;color:#95a5a6;text-decoration:line-through}
+
+/* Buttons */
+.btn{padding:7px 16px;border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-primary{background:var(--primary);color:#fff}
+.btn-accent{background:var(--accent);color:#fff}
+.btn-success{background:var(--green);color:#fff}
+.btn-danger{background:var(--red);color:#fff}
+.btn-outline{background:none;border:1.5px solid var(--line);color:var(--text)}
+.btn-sm{padding:5px 12px;font-size:12px}
+
+/* Filters */
+.filters{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:16px;padding:14px;background:var(--card);border-radius:10px;border:1px solid var(--line)}
+.filters label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;font-weight:600;text-transform:uppercase}
+.filters select,.filters input[type=text],.filters input[type=date]{padding:6px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;background:#fff}
+
+/* Tabs */
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin-bottom:16px}
+.tab{padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:var(--muted);transition:all .15s}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--primary);border-bottom-color:var(--primary)}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;justify-content:center;align-items:flex-start;padding-top:60px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--card);border-radius:12px;width:95%;max-width:700px;max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal-box.wide{max-width:900px}
+.modal-header{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+.modal-header h3{font-size:15px;font-weight:700;color:var(--primary)}
+.modal-close{background:none;border:none;font-size:22px;cursor:pointer;color:var(--muted);padding:0 4px}
+.modal-body{padding:20px}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:10px}
+
+/* Forms */
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:4px;text-transform:uppercase}
+.form-group input,.form-group select,.form-group textarea{width:100%;padding:8px 12px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;font-family:inherit}
+.form-group textarea{resize:vertical;min-height:60px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+
+/* Trazabilidad */
+.traza-list{max-height:250px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;padding:10px}
+.traza-item{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:12px}
+.traza-item:last-child{border-bottom:none}
+.traza-fecha{color:var(--muted);white-space:nowrap;min-width:100px}
+.traza-user{font-weight:600;min-width:110px;color:var(--primary)}
+.traza-detalle{color:var(--text)}
+
+/* Sub-actividades */
+.sub-list{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.sub-item{display:grid;grid-template-columns:1fr auto auto auto;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);align-items:center;font-size:13px}
+.sub-item:last-child{border-bottom:none}
+.sub-item:hover{background:#f8fafc}
+
+/* Spinner */
+.spinner{border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;width:28px;height:28px;animation:spin .7s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Login */
+.login-wrap{display:flex;justify-content:center;align-items:center;height:100vh;background:var(--bg)}
+.login-box{background:var(--card);border-radius:14px;padding:36px;width:360px;box-shadow:0 4px 24px rgba(0,0,0,.08)}
+.login-box h2{font-size:18px;color:var(--primary);margin-bottom:4px}
+.login-box p{font-size:13px;color:var(--muted);margin-bottom:20px}
+.login-err{color:var(--red);font-size:12px;margin-top:8px;min-height:16px}
+
+/* Responsive */
+@media(max-width:768px){.sidebar{width:56px}.sidebar-header h2,.sidebar-header small,.nav-item span,.nav-sub,.nav-group-title,.sidebar-footer{display:none}.nav-item{justify-content:center;padding:12px}.content{padding:12px}.filters{flex-direction:column}.form-row{grid-template-columns:1fr}.kpi-row{flex-direction:column}}
+
+/* Empty */
+.empty{text-align:center;padding:30px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+const API = '';
+let token = localStorage.getItem('planner_token');
+let currentUser = null;
+let _currentView = 'tareas';
+let _currentDepto = '';
+let _actividadesCache = [];
+
+// ── Auth ─────────────────────────────────────────────────────────────────────
+
+function apiFetch(path, opts = {}) {
+  return fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { 'Authorization': 'Bearer ' + token } : {}),
+      ...(opts.headers || {})
+    }
+  }).then(async r => {
+    if (r.status === 401) { doLogout(); return null; }
+    if (r.status === 403) {
+      const d = await r.json().catch(() => null);
+      alert(d?.error || 'Sin permisos');
+      return null;
+    }
+    const data = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((data && data.error) || r.statusText);
+    return data;
+  });
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s || '';
+  return d.innerHTML;
+}
+
+async function tryLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  document.getElementById('loginErr').textContent = '';
+  try {
+    const r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password: pass })
+    });
+    const d = await r.json();
+    if (!r.ok || !d.token) throw new Error(d.error || 'Error de login');
+    token = d.token;
+    localStorage.setItem('planner_token', token);
+    await initApp();
+  } catch (e) {
+    document.getElementById('loginErr').textContent = e.message;
+  }
+}
+
+function doLogout() {
+  token = null;
+  currentUser = null;
+  localStorage.removeItem('planner_token');
+  renderLogin();
+}
+
+function renderLogin() {
+  document.getElementById('app').innerHTML = `
+    <div class="login-wrap">
+      <div class="login-box">
+        <h2>Planner Staff</h2>
+        <p>Inicia sesion con tu cuenta del sistema</p>
+        <div class="form-group"><label>Correo</label><input type="text" id="loginEmail" onkeydown="if(event.key==='Enter')tryLogin()"></div>
+        <div class="form-group"><label>Contrasena</label><input type="password" id="loginPass" onkeydown="if(event.key==='Enter')tryLogin()"></div>
+        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="tryLogin()">Iniciar sesion</button>
+        <div class="login-err" id="loginErr"></div>
+      </div>
+    </div>`;
+}
+
+async function initApp() {
+  if (!token) return renderLogin();
+  try {
+    currentUser = await apiFetch('/api/planner/me');
+    if (!currentUser) return renderLogin();
+    renderApp();
+    navigateTo('tareas');
+  } catch (e) {
+    renderLogin();
+  }
+}
+
+// ── Layout principal ─────────────────────────────────────────────────────────
+
+const DEPTOS = [
+  { id: 'smya', nombre: 'SMYA', icon: '🛡' },
+  { id: 'rhh', nombre: 'RHH', icon: '👥' },
+  { id: 'produccion', nombre: 'Produccion', icon: '🏭' },
+  { id: 'calidad', nombre: 'Calidad', icon: '✅' },
+  { id: 'mantenimiento', nombre: 'Mantenimiento', icon: '🔧' },
+  { id: 'procesos', nombre: 'Procesos/Ing.', icon: '⚙' },
+  { id: 'compras', nombre: 'Compras', icon: '🛒' },
+  { id: 'sgc', nombre: 'SGC', icon: '📋' },
+  { id: 'operaciones', nombre: 'Operaciones', icon: '📊' }
+];
+
+function renderApp() {
+  document.getElementById('app').innerHTML = `
+    <div class="app">
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <h2>PLANNER</h2>
+          <small>Staff CUESTO</small>
+        </div>
+        <div class="nav-item active" data-view="tareas" onclick="navigateTo('tareas')">
+          <span>📋</span> <span>Tareas del STAFF</span>
+        </div>
+        <div class="nav-group-title">Daily</div>
+        ${DEPTOS.map(d => `
+          <div class="nav-sub" data-view="daily-${d.id}" onclick="navigateTo('daily-${d.id}')">
+            ${d.icon} ${d.nombre}
+          </div>
+        `).join('')}
+        <div class="nav-item" data-view="dashboard" onclick="navigateTo('dashboard')" style="margin-top:8px">
+          <span>📊</span> <span>Dashboard</span>
+        </div>
+        <div class="sidebar-footer">v1.0 — Planner Staff</div>
+      </div>
+      <div class="main">
+        <div class="topbar">
+          <div class="topbar-title" id="topbarTitle">Tareas del STAFF</div>
+          <div class="topbar-user">
+            <span>${esc(currentUser.nombre)}</span>
+            <span class="badge ${currentUser.planner_role === 'admin' ? 'en_proceso' : 'sin_empezar'}">${currentUser.planner_role}</span>
+            <button onclick="doLogout()">Salir</button>
+          </div>
+        </div>
+        <div class="content" id="mainContent">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+function navigateTo(view) {
+  _currentView = view;
+  // Update sidebar active
+  document.querySelectorAll('.nav-item,.nav-sub').forEach(el => el.classList.remove('active'));
+  const navEl = document.querySelector(`[data-view="${view}"]`);
+  if (navEl) navEl.classList.add('active');
+
+  const titles = { tareas: 'Tareas del STAFF', dashboard: 'Dashboard' };
+  if (view.startsWith('daily-')) {
+    const d = DEPTOS.find(x => x.id === view.replace('daily-', ''));
+    document.getElementById('topbarTitle').textContent = `Daily ${d ? d.nombre : ''}`;
+  } else {
+    document.getElementById('topbarTitle').textContent = titles[view] || view;
+  }
+
+  if (view === 'tareas') renderTareas();
+  else if (view === 'dashboard') renderDashboard();
+  else if (view.startsWith('daily-')) renderDailyPlaceholder(view.replace('daily-', ''));
+}
+
+// ── VISTA: Tareas del STAFF ──────────────────────────────────────────────────
+
+async function renderTareas() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div class="filters">
+      <div><label>Departamento</label>
+        <select id="fDepto" onchange="cargarActividades()">
+          <option value="">Todos</option>
+          ${DEPTOS.map(d => `<option value="${d.id}">${d.nombre}</option>`).join('')}
+        </select>
+      </div>
+      <div><label>Estatus</label>
+        <select id="fEstatus" onchange="cargarActividades()">
+          <option value="">Todos</option>
+          <option value="sin_empezar">Sin empezar</option>
+          <option value="en_proceso">En proceso</option>
+          <option value="cerrada">Cerrada</option>
+          <option value="atrasada">Atrasada</option>
+          <option value="pospuesta">Pospuesta</option>
+          <option value="cancelada">Cancelada</option>
+        </select>
+      </div>
+      <div><label>Urgencia</label>
+        <select id="fUrgencia" onchange="cargarActividades()">
+          <option value="">Todas</option>
+          <option value="alta">Alta</option>
+          <option value="media">Media</option>
+          <option value="baja">Baja</option>
+        </select>
+      </div>
+      <div><label>Buscar</label><input type="text" id="fBuscar" placeholder="ID, titulo, responsable..." onkeydown="if(event.key==='Enter')cargarActividades()"></div>
+      <button class="btn btn-primary btn-sm" onclick="cargarActividades()">Buscar</button>
+      <button class="btn btn-outline btn-sm" onclick="limpiarFiltros()">Limpiar</button>
+      <div style="margin-left:auto"><button class="btn btn-accent" onclick="openNewActModal()">+ Nueva Actividad</button></div>
+    </div>
+    <div id="kpisRow"></div>
+    <div id="tareasTabla"><div class="spinner"></div></div>`;
+
+  if (_currentDepto) {
+    const sel = document.getElementById('fDepto');
+    if (sel) sel.value = _currentDepto;
+  }
+  cargarActividades();
+}
+
+function limpiarFiltros() {
+  ['fDepto', 'fEstatus', 'fUrgencia'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  const buscar = document.getElementById('fBuscar'); if (buscar) buscar.value = '';
+  _currentDepto = '';
+  cargarActividades();
+}
+
+async function cargarActividades() {
+  const tabla = document.getElementById('tareasTabla');
+  if (tabla) tabla.innerHTML = '<div class="spinner"></div>';
+
+  const params = new URLSearchParams();
+  const depto = document.getElementById('fDepto')?.value;
+  const estatus = document.getElementById('fEstatus')?.value;
+  const urgencia = document.getElementById('fUrgencia')?.value;
+  const buscar = document.getElementById('fBuscar')?.value;
+  if (depto) params.set('depto', depto);
+  if (estatus) params.set('estatus', estatus);
+  if (urgencia) params.set('urgencia', urgencia);
+  if (buscar) params.set('buscar', buscar);
+
+  const data = await apiFetch('/api/planner/actividades?' + params.toString());
+  if (!data) return;
+  _actividadesCache = data;
+
+  // KPIs
+  const kpisEl = document.getElementById('kpisRow');
+  if (kpisEl) {
+    const total = data.length;
+    const sinEmp = data.filter(a => a.estatus === 'sin_empezar').length;
+    const enProc = data.filter(a => a.estatus === 'en_proceso').length;
+    const cerradas = data.filter(a => a.estatus === 'cerrada').length;
+    const atrasadas = data.filter(a => a.estatus === 'atrasada').length;
+    kpisEl.innerHTML = `
+      <div class="kpi-row">
+        <div class="kpi"><label>Total</label><div class="val">${total}</div></div>
+        <div class="kpi"><label>Sin empezar</label><div class="val">${sinEmp}</div></div>
+        <div class="kpi orange"><label>En proceso</label><div class="val">${enProc}</div></div>
+        <div class="kpi green"><label>Cerradas</label><div class="val">${cerradas}</div></div>
+        <div class="kpi red"><label>Atrasadas</label><div class="val">${atrasadas}</div></div>
+      </div>`;
+  }
+
+  if (!tabla) return;
+  if (data.length === 0) {
+    tabla.innerHTML = '<div class="empty">No hay actividades que mostrar</div>';
+    return;
+  }
+
+  tabla.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>ID</th><th>Actividad</th><th>Responsable</th><th>Depto</th><th>Compromiso</th><th>Urgencia</th><th>Estatus</th><th>Avance</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${data.map(a => {
+          const deptoName = (DEPTOS.find(d => d.id === a.departamento) || {}).nombre || a.departamento;
+          const dailyTag = a.correlacion_daily ? `<br><span style="font-size:10px;color:var(--accent)">[Daily: ${a.correlacion_daily.departamento}]</span>` : '';
+          return `<tr>
+            <td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+            <td><b>${esc(a.titulo)}</b>${dailyTag}</td>
+            <td>${esc(a.responsable_nombre)}</td>
+            <td style="font-size:12px">${esc(deptoName)}</td>
+            <td style="font-size:12px;white-space:nowrap">${a.fecha_compromiso || '<span style="color:var(--muted)">—</span>'}</td>
+            <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
+            <td><span class="badge ${a.estatus}">${a.estatus.replace('_', ' ')}</span></td>
+            <td style="text-align:center">${a.avance}%</td>
+            <td style="white-space:nowrap">
+              <button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Detalle</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+// ── MODAL: Nueva Actividad ───────────────────────────────────────────────────
+
+let _staffDisponibles = [];
+
+async function openNewActModal(presets) {
+  if (!_staffDisponibles.length) {
+    _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
+  }
+  const p = presets || {};
+
+  const html = `
+    <div class="modal-overlay open" id="newActModal">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Nueva Actividad</h3>
+          <button class="modal-close" onclick="closeModal('newActModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Actividad *</label>
+            <input type="text" id="naTitle" value="${esc(p.titulo || '')}">
+          </div>
+          <div class="form-group">
+            <label>Descripcion</label>
+            <textarea id="naDesc">${esc(p.descripcion || '')}</textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Responsable *</label>
+              <select id="naResp">
+                <option value="">Seleccionar...</option>
+                ${_staffDisponibles.map(s => `<option value="${s.id}" ${p.responsable_id === s.id ? 'selected' : ''}>${esc(s.nombre)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Departamento *</label>
+              <select id="naDepto">
+                ${DEPTOS.map(d => `<option value="${d.id}" ${p.departamento === d.id ? 'selected' : ''}>${d.nombre}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Fecha compromiso</label>
+              <input type="date" id="naFecha" value="${p.fecha_compromiso || ''}">
+            </div>
+            <div class="form-group">
+              <label>Urgencia *</label>
+              <select id="naUrg">
+                <option value="alta">Alta</option>
+                <option value="media" selected>Media</option>
+                <option value="baja">Baja</option>
+              </select>
+            </div>
+          </div>
+          <div id="naErr" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('newActModal')">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveNewAct(false)">Crear actividad</button>
+          <button class="btn btn-accent" onclick="saveNewAct(true)">Crear y enviar correo</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveNewAct(sendEmail) {
+  const titulo = document.getElementById('naTitle').value.trim();
+  const descripcion = document.getElementById('naDesc').value.trim();
+  const responsable_id = Number(document.getElementById('naResp').value);
+  const departamento = document.getElementById('naDepto').value;
+  const fecha_compromiso = document.getElementById('naFecha').value || null;
+  const urgencia = document.getElementById('naUrg').value;
+
+  if (!titulo || !responsable_id || !departamento) {
+    document.getElementById('naErr').textContent = 'Completa los campos obligatorios';
+    return;
+  }
+
+  try {
+    const act = await apiFetch('/api/planner/actividades', {
+      method: 'POST',
+      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia })
+    });
+    if (!act) return;
+
+    if (sendEmail) {
+      const r = await apiFetch(`/api/planner/actividades/${act.id}/mailto?accion=Nueva+actividad+asignada`);
+      if (r && r.mailto) window.open(r.mailto, '_blank');
+    }
+
+    closeModal('newActModal');
+    alert('Actividad creada: ' + act.id);
+    if (_currentView === 'tareas') cargarActividades();
+  } catch (e) {
+    document.getElementById('naErr').textContent = e.message;
+  }
+}
+
+function closeModal(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+// ── MODAL: Detalle de Actividad ──────────────────────────────────────────────
+
+async function verDetalle(actId) {
+  const act = await apiFetch('/api/planner/actividades/' + actId);
+  if (!act) return;
+
+  const deptoName = (DEPTOS.find(d => d.id === act.departamento) || {}).nombre || act.departamento;
+  const subs = act.sub_actividades || [];
+  const traza = act.trazabilidad || [];
+  const isAdmin = currentUser.planner_role === 'admin';
+
+  const html = `
+    <div class="modal-overlay open" id="detalleModal">
+      <div class="modal-box wide">
+        <div class="modal-header">
+          <h3>${esc(act.id)} — ${esc(act.titulo)}</h3>
+          <button class="modal-close" onclick="closeModal('detalleModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="color:var(--muted);font-size:13px;margin-bottom:14px">${esc(act.descripcion || 'Sin descripcion')}</p>
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+            <div class="form-group">
+              <label>Responsable</label>
+              <div style="font-weight:600;font-size:13px">${esc(act.responsable_nombre)}</div>
+            </div>
+            <div class="form-group">
+              <label>Departamento</label>
+              <div style="font-size:13px">${esc(deptoName)}</div>
+            </div>
+            <div class="form-group">
+              <label>Urgencia</label>
+              <select id="deUrg" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+                ${VALID_URGENCIAS.map(u => `<option value="${u}" ${act.urgencia === u ? 'selected' : ''}>${u}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Estatus</label>
+              <select id="deEstatus" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+                ${VALID_ESTADOS.map(e => `<option value="${e}" ${act.estatus === e ? 'selected' : ''}>${e.replace('_', ' ')}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
+            <div class="form-group">
+              <label>Fecha compromiso</label>
+              <input type="date" id="deFecha" value="${act.fecha_compromiso || ''}" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+            </div>
+            <div class="form-group">
+              <label>Fecha inicio</label>
+              <div style="font-size:13px">${act.fecha_inicio || '—'}</div>
+            </div>
+            <div class="form-group">
+              <label>Fecha fin</label>
+              <div style="font-size:13px">${act.fecha_fin || '—'}</div>
+            </div>
+            <div class="form-group">
+              <label>% Avance</label>
+              <input type="number" id="deAvance" value="${act.avance}" min="0" max="100" style="width:70px;padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+            </div>
+          </div>
+
+          ${act.correlacion_daily ? `<div style="background:#eaf2f8;padding:8px 14px;border-radius:6px;font-size:12px;margin-bottom:14px;color:var(--primary)"><b>Correlacion Daily:</b> ${esc(act.correlacion_daily.departamento)} > ${esc(act.correlacion_daily.formulario)} > ${act.correlacion_daily.fecha}</div>` : ''}
+          ${act.correlacion_compras ? `<div style="background:#fef9e7;padding:8px 14px;border-radius:6px;font-size:12px;margin-bottom:14px;color:#b7770d"><b>Vinculado a:</b> ${esc(act.correlacion_compras.tipo)} ${esc(act.correlacion_compras.numero || '')} — ${esc(act.correlacion_compras.item_descripcion || '')}</div>` : ''}
+
+          <!-- Sub-actividades -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+            <h4 style="font-size:14px;color:var(--primary)">Sub-actividades (${subs.length})</h4>
+            <button class="btn btn-accent btn-sm" onclick="openNewSubModal('${act.id}')">+ Agregar</button>
+          </div>
+          ${subs.length === 0 ? '<div class="empty">Sin sub-actividades</div>' : `
+            <div class="sub-list">
+              ${subs.map(s => `
+                <div class="sub-item">
+                  <div>
+                    <b style="font-size:12px;color:var(--primary)">${esc(s.id)}</b> ${esc(s.nombre)}
+                    ${s.evidencias ? `<br><a href="${esc(s.evidencias)}" target="_blank" style="font-size:11px">📎 Evidencia</a>` : ''}
+                    ${(s.comentarios || []).length > 0 ? `<br><span style="font-size:11px;color:var(--muted)">💬 ${s.comentarios.length} comentario(s) — ultimo: "${esc((s.comentarios[s.comentarios.length-1]||{}).texto || '').slice(0,40)}"</span>` : ''}
+                  </div>
+                  <span class="badge ${s.estatus}" style="font-size:10px">${s.estatus.replace('_',' ')}</span>
+                  <span style="font-size:12px;color:var(--muted)">${s.fecha_compromiso || '—'}</span>
+                  <div style="display:flex;gap:4px">
+                    <button class="btn btn-outline btn-sm" onclick="openEditSubModal('${act.id}','${s.id}')">Editar</button>
+                    <button class="btn btn-outline btn-sm" onclick="addSubComment('${act.id}','${s.id}')">💬</button>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+
+          <!-- Trazabilidad -->
+          <h4 style="font-size:14px;color:var(--primary);margin:18px 0 10px">Trazabilidad (${traza.length})</h4>
+          <div class="traza-list">
+            ${traza.length === 0 ? '<div class="empty">Sin registros</div>' : traza.slice().reverse().map(t => `
+              <div class="traza-item">
+                <span class="traza-fecha">${t.fecha} ${t.hora}</span>
+                <span class="traza-user">${esc(t.usuario_nombre)}</span>
+                <span class="traza-detalle">${esc(t.detalle)}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        <div class="modal-footer">
+          ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="eliminarActividad('${act.id}')" style="margin-right:auto">Eliminar</button>` : ''}
+          <button class="btn btn-outline" onclick="enviarCorreo('${act.id}')">📧 Enviar correo</button>
+          <button class="btn btn-primary" onclick="guardarDetalle('${act.id}')">💾 Guardar cambios</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+const VALID_URGENCIAS = ['alta', 'media', 'baja'];
+const VALID_ESTADOS = ['sin_empezar', 'en_proceso', 'cerrada', 'atrasada', 'pospuesta', 'cancelada'];
+
+async function guardarDetalle(actId) {
+  const estatus = document.getElementById('deEstatus').value;
+  const urgencia = document.getElementById('deUrg').value;
+  const avance = Number(document.getElementById('deAvance').value);
+  const fecha_compromiso = document.getElementById('deFecha').value || null;
+
+  try {
+    const r = await apiFetch('/api/planner/actividades/' + actId, {
+      method: 'PATCH',
+      body: JSON.stringify({ estatus, urgencia, avance, fecha_compromiso })
+    });
+    if (!r) return;
+
+    if (r.mailto) {
+      if (confirm('Se actualizo la actividad. ¿Desea enviar correo de notificacion al responsable?')) {
+        window.open(r.mailto, '_blank');
+      }
+    }
+
+    closeModal('detalleModal');
+    if (_currentView === 'tareas') cargarActividades();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function enviarCorreo(actId) {
+  try {
+    const r = await apiFetch(`/api/planner/actividades/${actId}/mailto?accion=Actualizacion+de+actividad`);
+    if (r && r.mailto) window.open(r.mailto, '_blank');
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function eliminarActividad(actId) {
+  if (!confirm('¿Eliminar actividad ' + actId + '? Esta accion no se puede deshacer.')) return;
+  try {
+    const r = await apiFetch('/api/planner/actividades/' + actId, { method: 'DELETE' });
+    if (r && r.ok) {
+      closeModal('detalleModal');
+      alert('Actividad eliminada');
+      if (_currentView === 'tareas') cargarActividades();
+    }
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+// ── Sub-actividades modals ───────────────────────────────────────────────────
+
+async function openNewSubModal(actId) {
+  if (!_staffDisponibles.length) {
+    _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
+  }
+  const html = `
+    <div class="modal-overlay open" id="newSubModal" style="z-index:1100">
+      <div class="modal-box" style="max-width:500px">
+        <div class="modal-header">
+          <h3>Nueva Sub-actividad</h3>
+          <button class="modal-close" onclick="closeModal('newSubModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label>Nombre *</label><input type="text" id="nsNombre"></div>
+          <div class="form-group"><label>Descripcion</label><textarea id="nsDesc"></textarea></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Responsable</label>
+              <select id="nsResp">
+                ${_staffDisponibles.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group"><label>Fecha compromiso</label><input type="date" id="nsFecha"></div>
+          </div>
+          <div id="nsErr" style="color:var(--red);font-size:12px;min-height:16px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('newSubModal')">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveNewSub('${actId}')">Crear</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveNewSub(actId) {
+  const nombre = document.getElementById('nsNombre').value.trim();
+  if (!nombre) { document.getElementById('nsErr').textContent = 'Nombre requerido'; return; }
+
+  try {
+    await apiFetch(`/api/planner/actividades/${actId}/sub`, {
+      method: 'POST',
+      body: JSON.stringify({
+        nombre,
+        descripcion: document.getElementById('nsDesc').value.trim(),
+        responsable_id: Number(document.getElementById('nsResp').value),
+        fecha_compromiso: document.getElementById('nsFecha').value || null
+      })
+    });
+    closeModal('newSubModal');
+    closeModal('detalleModal');
+    verDetalle(actId);
+  } catch (e) {
+    document.getElementById('nsErr').textContent = e.message;
+  }
+}
+
+async function openEditSubModal(actId, subId) {
+  const act = await apiFetch('/api/planner/actividades/' + actId);
+  if (!act) return;
+  const sub = (act.sub_actividades || []).find(s => s.id === subId);
+  if (!sub) return;
+
+  if (!_staffDisponibles.length) {
+    _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
+  }
+
+  const html = `
+    <div class="modal-overlay open" id="editSubModal" style="z-index:1100">
+      <div class="modal-box" style="max-width:500px">
+        <div class="modal-header">
+          <h3>Editar ${esc(sub.id)}</h3>
+          <button class="modal-close" onclick="closeModal('editSubModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group"><label>Nombre</label><input type="text" id="esNombre" value="${esc(sub.nombre)}"></div>
+          <div class="form-group"><label>Descripcion</label><textarea id="esDesc">${esc(sub.descripcion)}</textarea></div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Estatus</label>
+              <select id="esEstatus">
+                ${['sin_empezar','en_proceso','cerrada','atrasada','pospuesta'].map(e => `<option value="${e}" ${sub.estatus === e ? 'selected' : ''}>${e.replace('_',' ')}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group"><label>Fecha compromiso</label><input type="date" id="esFecha" value="${sub.fecha_compromiso || ''}"></div>
+          </div>
+          <div class="form-group"><label>Evidencias (URL OneDrive)</label><input type="text" id="esEvid" value="${esc(sub.evidencias || '')}" placeholder="https://onedrive.com/..."></div>
+          ${(sub.comentarios || []).length > 0 ? `
+            <div style="margin-top:10px">
+              <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase">Comentarios</label>
+              <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:8px;margin-top:4px">
+                ${sub.comentarios.map(c => `<div style="font-size:12px;margin-bottom:6px"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${esc(c.texto)}</div>`).join('')}
+              </div>
+            </div>
+          ` : ''}
+          <div id="esErr" style="color:var(--red);font-size:12px;min-height:16px;margin-top:8px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-danger btn-sm" onclick="deleteSub('${actId}','${subId}')" style="margin-right:auto">Eliminar</button>
+          <button class="btn btn-outline" onclick="closeModal('editSubModal')">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveEditSub('${actId}','${subId}')">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveEditSub(actId, subId) {
+  try {
+    await apiFetch(`/api/planner/actividades/${actId}/sub/${subId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        nombre: document.getElementById('esNombre').value.trim(),
+        descripcion: document.getElementById('esDesc').value.trim(),
+        estatus: document.getElementById('esEstatus').value,
+        fecha_compromiso: document.getElementById('esFecha').value || null,
+        evidencias: document.getElementById('esEvid').value.trim()
+      })
+    });
+    closeModal('editSubModal');
+    closeModal('detalleModal');
+    verDetalle(actId);
+  } catch (e) {
+    document.getElementById('esErr').textContent = e.message;
+  }
+}
+
+async function deleteSub(actId, subId) {
+  if (!confirm('¿Eliminar sub-actividad ' + subId + '?')) return;
+  try {
+    await apiFetch(`/api/planner/actividades/${actId}/sub/${subId}`, { method: 'DELETE' });
+    closeModal('editSubModal');
+    closeModal('detalleModal');
+    verDetalle(actId);
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function addSubComment(actId, subId) {
+  const texto = prompt('Agregar comentario:');
+  if (!texto || !texto.trim()) return;
+  try {
+    await apiFetch(`/api/planner/actividades/${actId}/sub/${subId}/comentario`, {
+      method: 'POST',
+      body: JSON.stringify({ texto: texto.trim() })
+    });
+    closeModal('detalleModal');
+    verDetalle(actId);
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+// ── VISTA: Daily (placeholder Fase 2+) ───────────────────────────────────────
+
+function renderDailyPlaceholder(deptoId) {
+  const d = DEPTOS.find(x => x.id === deptoId);
+  const m = document.getElementById('mainContent');
+  m.innerHTML = `
+    <div style="text-align:center;padding:60px 20px">
+      <div style="font-size:48px;margin-bottom:16px">${d ? d.icon : '📅'}</div>
+      <h2 style="color:var(--primary);margin-bottom:8px">Daily ${d ? d.nombre : deptoId}</h2>
+      <p style="color:var(--muted);font-size:14px">Los formularios diarios estaran disponibles en la Fase 2.</p>
+      <p style="color:var(--muted);font-size:13px;margin-top:12px">Mientras tanto, puedes crear actividades para este departamento desde "Tareas del STAFF".</p>
+      <button class="btn btn-accent" style="margin-top:20px" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver tareas de ${d ? d.nombre : deptoId}</button>
+    </div>`;
+}
+
+// ── VISTA: Dashboard (placeholder Fase 5) ────────────────────────────────────
+
+async function renderDashboard() {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = '<div class="spinner"></div>';
+
+  const kpis = await apiFetch('/api/planner/kpis');
+  if (!kpis) return;
+
+  // KPIs por departamento
+  const deptoKpis = [];
+  for (const d of DEPTOS) {
+    const dk = await apiFetch('/api/planner/kpis?depto=' + d.id);
+    if (dk) deptoKpis.push({ ...d, ...dk });
+  }
+
+  m.innerHTML = `
+    <h3 style="color:var(--primary);margin-bottom:16px">Resumen Global</h3>
+    <div class="kpi-row">
+      <div class="kpi"><label>Total actividades</label><div class="val">${kpis.total}</div></div>
+      <div class="kpi"><label>Sin empezar</label><div class="val">${kpis.sin_empezar}</div></div>
+      <div class="kpi orange"><label>En proceso</label><div class="val">${kpis.en_proceso}</div></div>
+      <div class="kpi green"><label>Cerradas</label><div class="val">${kpis.cerrada}</div></div>
+      <div class="kpi red"><label>Atrasadas</label><div class="val">${kpis.atrasada}</div></div>
+      <div class="kpi"><label>Pospuestas</label><div class="val">${kpis.pospuesta}</div></div>
+      <div class="kpi"><label>Canceladas</label><div class="val">${kpis.cancelada}</div></div>
+    </div>
+
+    <h3 style="color:var(--primary);margin:24px 0 16px">Por Departamento</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">
+      ${deptoKpis.map(d => `
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer" onclick="_currentDepto='${d.id}';navigateTo('tareas')">
+          <div style="font-size:20px;margin-bottom:6px">${d.icon}</div>
+          <div style="font-weight:700;font-size:14px;color:var(--primary);margin-bottom:8px">${d.nombre}</div>
+          <div style="font-size:13px;color:var(--text)">
+            Total: <b>${d.total}</b>
+            ${d.atrasada > 0 ? ` · <span style="color:var(--red);font-weight:700">${d.atrasada} atrasada(s)</span>` : ''}
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-top:4px">
+            ${d.en_proceso} en proc. · ${d.cerrada} cerradas · ${d.sin_empezar} pendientes
+          </div>
+        </div>
+      `).join('')}
+    </div>
+
+    <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;margin-top:20px">
+      El dashboard ejecutivo completo con graficos estara disponible en la Fase 5.
+    </div>`;
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────────
+initApp();
+</script>
+</body>
+</html>

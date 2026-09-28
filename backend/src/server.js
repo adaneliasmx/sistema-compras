@@ -72,6 +72,9 @@ const flujoRoutes = require('./routes/flujo-materiales');
 // ── Módulo Validaciones Almacen (SKF/CUESTO sync) ─────────────────────────────
 const validacionesRoutes = require('./routes/validaciones');
 
+// ── Módulo Planner Staff ────────────────────────────────────────────────────
+const plannerRoutes = require('./routes/planner');
+
 // ── PO Pública (proveedor) ────────────────────────────────────────────────────
 const publicPoRoutes = require('./routes/public-po');
 
@@ -83,6 +86,7 @@ const { initDb: initInventariosDb } = require('./db-inventarios');
 const { initDb: initMantDb } = require('./db-mantenimiento');
 const { initDb: initValDb } = require('./db-validaciones');
 const { initDb: initFlujoDb } = require('./db-flujo');
+const { initDb: initPlannerDb } = require('./db-planner');
 
 const app = express();
 
@@ -197,6 +201,9 @@ app.use('/api/flujo', flujoRoutes);
 
 // ── API Validaciones Almacen ──────────────────────────────────────────────────
 app.use('/api/val', validacionesRoutes);
+
+// ── API Planner Staff ───────────────────────────────────────────────────────
+app.use('/api/planner', plannerRoutes);
 
 // ── API Inventario con App (aislada, sin acceso a BD del sistema) ─────────────
 const crypto = require('crypto');
@@ -352,6 +359,10 @@ app.get('/validaciones-almacen/*', (req, res) => res.redirect(302, '/clientes/c7
 app.get('/empleados', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
 app.get('/empleados/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
 
+// Planner Staff
+app.get('/planner-staff', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/planner-staff/index.html')));
+app.get('/planner-staff/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/planner-staff/index.html')));
+
 // Inventario con App (escaneo QR movil)
 app.get('/home/inventarioconapp', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
 app.get('/home/inventarioconapp/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
@@ -373,7 +384,7 @@ app.get('*', (req, res) => {
 
 const port = Number(process.env.PORT || 3000);
 
-Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb()])
+Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb(), initPlannerDb()])
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port} [build 2026-09-10]`);

@@ -396,6 +396,17 @@
           <option value="aux.calidad">Aux. Calidad</option>
         </select>
       </div>
+      <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
+        <label style="margin:0;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:13px;">
+          <input type="checkbox" id="cm-planner-chk" onchange="document.getElementById('cm-planner-role').disabled=!this.checked" style="width:auto;margin:0;"/>
+          📋 Planner Staff
+        </label>
+        <small style="display:block;margin-top:3px;font-size:11px;color:var(--muted);">Planeacion de actividades y daily</small>
+        <select class="modal-input" id="cm-planner-role" disabled style="margin-top:8px;font-size:13px;">
+          <option value="staff">Staff</option>
+          <option value="admin">Admin (acceso total)</option>
+        </select>
+      </div>
     </div>
     <div class="modal-err" id="cmErr"></div>
     <div class="modal-actions">
@@ -942,6 +953,7 @@ function openCreateModal(forceRole) {
   document.getElementById('cm-mant-chk').checked = false;
   document.getElementById('cm-val-chk').checked = false;
   document.getElementById('cm-flujo-chk').checked = false;
+  document.getElementById('cm-planner-chk').checked = false;
   document.getElementById('cm-compras-role').disabled = true;
   document.getElementById('cm-rhh-role').disabled = true;
   document.getElementById('cm-calidad-role').disabled = true;
@@ -949,6 +961,7 @@ function openCreateModal(forceRole) {
   document.getElementById('cm-mant-role').disabled = true;
   document.getElementById('cm-val-role').disabled = true;
   document.getElementById('cm-flujo-role').disabled = true;
+  document.getElementById('cm-planner-role').disabled = true;
   if (forceRole === 'proveedor') {
     document.getElementById('cm-compras-chk').checked = true;
     document.getElementById('cm-compras-role').disabled = false;
@@ -969,10 +982,11 @@ async function saveCreateUser() {
   const mantChk = document.getElementById('cm-mant-chk').checked;
   const valChk = document.getElementById('cm-val-chk').checked;
   const flujoChk = document.getElementById('cm-flujo-chk').checked;
+  const plannerChk = document.getElementById('cm-planner-chk').checked;
   const errEl = document.getElementById('cmErr');
   errEl.textContent = '';
   if (!name || !email || !pass) { errEl.textContent = 'Nombre, correo y contraseña requeridos'; return; }
-  if (!comprasChk && !rhhChk && !valChk && !flujoChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
+  if (!comprasChk && !rhhChk && !valChk && !flujoChk && !plannerChk) { errEl.textContent = 'Selecciona al menos un módulo'; return; }
   if (calidadChk && !comprasChk) { errEl.textContent = 'Registros de Calidad requiere activar también Compras'; return; }
   if (produccionChk && !comprasChk) { errEl.textContent = 'Registros de Producción requiere activar también Compras'; return; }
   if (mantChk && !comprasChk) { errEl.textContent = 'Órdenes de Mantenimiento requiere activar también Compras'; return; }
@@ -1001,6 +1015,23 @@ async function saveCreateUser() {
         method: 'PATCH',
         body: JSON.stringify({ email, flujo_role: document.getElementById('cm-flujo-role').value })
       });
+    }
+    if (plannerChk) {
+      // Planner necesita el user_id de compras — buscarlo despues de crear
+      const comprasDb = await api('/api/super-admin/unified-users').catch(() => null);
+      if (comprasDb) {
+        const usr = (comprasDb || []).find(u => (u.compras?.email || u.email || '').toLowerCase() === email.toLowerCase());
+        if (usr) {
+          await api('/api/super-admin/planner-asignacion', {
+            method: 'PATCH',
+            body: JSON.stringify({
+              usuario_id: usr.compras?.id || usr.id,
+              planner_role: document.getElementById('cm-planner-role').value,
+              departamentos: ['smya','rhh','produccion','calidad','mantenimiento','procesos','compras','sgc','operaciones']
+            })
+          });
+        }
+      }
     }
     closeCreateModal();
     await loadData();
