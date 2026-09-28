@@ -80,6 +80,7 @@ tr:hover td{background:#fafbff}
 .badge.resuelto{background:#d5f5e3;color:#1e8449}
 .badge.pendiente{background:#fce4e4;color:#c0392b}
 .badge.conforme{background:#d5f5e3;color:#1e8449}
+.badge.retirado{background:#eaecee;color:#7f8c8d}
 .badge.extra{background:#fef3cd;color:#b7770d}
 
 /* ── PAGINACION ── */
@@ -673,7 +674,7 @@ async function renderTrazabilidad() {
         <select id="tFlujo"><option value="">Todos</option><option value="cuesto_a_skf">Cuesto &rarr; SKF</option><option value="skf_a_cuesto">SKF &rarr; Cuesto</option></select>
       </div>
       <div><label>Estado</label>
-        <select id="tEstado"><option value="">Todos</option><option value="ENVIADO">Enviado</option><option value="VALIDADO">Validado</option></select>
+        <select id="tEstado"><option value="">Todos</option><option value="ENVIADO">Enviado</option><option value="VALIDADO">Validado</option><option value="RETIRADO">Retirado</option></select>
       </div>
       <div><label>Desde</label><input type="date" id="tDesde"></div>
       <div><label>Hasta</label><input type="date" id="tHasta"></div>
@@ -751,6 +752,7 @@ async function cargarTrazabilidad() {
 function _renderTrazSection(id, titulo, rows) {
   const enviados = rows.filter(r => r.estado === 'ENVIADO').length;
   const validados = rows.filter(r => r.estado === 'VALIDADO').length;
+  const retirados = rows.filter(r => r.estado === 'RETIRADO').length;
   return `
     <div class="traz-section">
       <div class="traz-section-header" onclick="toggleTrazSection('${id}')">
@@ -759,6 +761,7 @@ function _renderTrazSection(id, titulo, rows) {
           <span class="traz-badge-count">${rows.length} embarques</span>
           ${enviados > 0 ? '<span class="badge pendiente">' + enviados + ' en transito</span>' : ''}
           ${validados > 0 ? '<span class="badge conforme">' + validados + ' validados</span>' : ''}
+          ${retirados > 0 ? '<span class="badge retirado">' + retirados + ' retirados</span>' : ''}
         </div>
       </div>
       <div class="traz-section-body" id="body_${id}">
@@ -770,8 +773,9 @@ function _renderTrazSection(id, titulo, rows) {
           <tbody>
             ${rows.length === 0 ? '<tr><td colspan="10" class="empty">Sin embarques en este flujo</td></tr>' :
               rows.map(r => {
-                const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : 'pendiente';
-                return `<tr>
+                const estadoBadge = r.estado === 'VALIDADO' ? 'conforme' : r.estado === 'RETIRADO' ? 'retirado' : 'pendiente';
+                const estadoLabel = r.estado === 'RETIRADO' ? 'RETIRADO' : r.estado;
+                return `<tr${r.estado === 'RETIRADO' ? ' style="opacity:.6"' : ''}>
                   <td style="font-size:.75rem;font-family:monospace;color:#1a5276">${r.uuid}</td>
                   <td><b>${r.numero_embarque || '-'}</b></td>
                   <td>${r.operador_envio || '-'}</td>
@@ -779,9 +783,9 @@ function _renderTrazSection(id, titulo, rows) {
                   <td>${r.hora_envio || '-'}</td>
                   <td style="text-align:right;font-weight:600">${r.total_piezas || 0}</td>
                   <td style="text-align:right">${r.total_items || 0}</td>
-                  <td><span class="badge ${estadoBadge}">${r.estado}</span>${r.operador_recepcion ? '<br><span style="font-size:.7rem;color:#888">' + r.operador_recepcion + '</span>' : ''}</td>
+                  <td><span class="badge ${estadoBadge}">${estadoLabel}</span>${r.operador_recepcion ? '<br><span style="font-size:.7rem;color:#888">' + r.operador_recepcion + '</span>' : ''}</td>
                   <td>${(r.anomalias_count || 0) > 0 ? '<span class="badge faltante">' + r.anomalias_count + '</span>' : '<span style="color:#27ae60">0</span>'}</td>
-                  <td style="white-space:nowrap"><button style="background:#1a3a5c;color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600" onclick="verDetalleTraz('${r.uuid}')">Detalle</button>${currentUser && currentUser.role === 'admin' ? ' <button style="background:#c0392b;color:#fff;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;margin-left:4px" onclick="eliminarEmbarque(\'' + r.uuid + '\')">Eliminar</button>' : ''}</td>
+                  <td style="white-space:nowrap"><button style="background:#1a3a5c;color:#fff;border:none;padding:5px 14px;border-radius:4px;cursor:pointer;font-size:.78rem;font-weight:600" onclick="verDetalleTraz('${r.uuid}')">Detalle</button>${currentUser && currentUser.role === 'admin' && r.estado === 'ENVIADO' ? ' <button style="background:#7f8c8d;color:#fff;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;margin-left:4px" onclick="retirarEmbarque(\'' + r.uuid + '\')">Retirar</button>' : ''}${currentUser && currentUser.role === 'admin' ? ' <button style="background:#c0392b;color:#fff;border:none;padding:5px 10px;border-radius:4px;cursor:pointer;font-size:.75rem;margin-left:4px" onclick="eliminarEmbarque(\'' + r.uuid + '\')">Eliminar</button>' : ''}</td>
                 </tr>`;
               }).join('')}
           </tbody>
@@ -1063,6 +1067,21 @@ async function verDetalleTraz(uuid) {
 function toggleItemsDetalle() {
   const el = document.getElementById('itemsDetalleWrap');
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+async function retirarEmbarque(uuid) {
+  if (!confirm('¿Retirar este embarque?\n\n' + uuid + '\n\nDejara de aparecer como pendiente de validar en la app.')) return;
+  try {
+    const r = await apiFetch('/embarques-online/' + encodeURIComponent(uuid) + '/retirar', { method: 'PATCH' });
+    if (r && r.ok) {
+      alert('Embarque retirado: ' + uuid);
+      cargarTrazabilidad();
+    } else {
+      alert('Error al retirar: ' + (r?.error || 'desconocido'));
+    }
+  } catch(e) {
+    alert('Error: ' + e.message);
+  }
 }
 
 async function eliminarEmbarque(uuid) {

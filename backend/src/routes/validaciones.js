@@ -628,6 +628,20 @@ router.get('/embarques-online/:uuid', valAuthRequired, (req, res) => {
   res.json(emb);
 });
 
+// Retirar un embarque ENVIADO (deja de aparecer como pendiente en la app)
+router.patch('/embarques-online/:uuid/retirar', valAuthRequired, valAllowRoles('admin'), (req, res) => {
+  const db = read();
+  const emb = (db.val_embarques || []).find(e => e.uuid === req.params.uuid);
+  if (!emb) return res.status(404).json({ error: 'Embarque no encontrado' });
+  if (emb.estado !== 'ENVIADO') return res.status(400).json({ error: 'Solo se pueden retirar embarques con estado ENVIADO' });
+
+  emb.estado = 'RETIRADO';
+  emb.fecha_retiro = nowMxDate();
+  emb.retirado_por = req.user.usuario || req.user.nombre || 'admin';
+  write(db);
+  res.json({ ok: true, uuid: emb.uuid, mensaje: 'Embarque retirado' });
+});
+
 // Eliminar un embarque online (solo admin)
 router.delete('/embarques-online/:uuid', valAuthRequired, valAllowRoles('admin'), (req, res) => {
   const db = read();
