@@ -637,7 +637,7 @@ router.patch('/embarques-online/:uuid/retirar', valAuthRequired, valAllowRoles('
 
   emb.estado = 'RETIRADO';
   emb.fecha_retiro = nowMxDate();
-  emb.retirado_por = req.user.usuario || req.user.nombre || 'admin';
+  emb.retirado_por = req.valUser.nombre || req.valUser.email || 'admin';
   write(db);
   res.json({ ok: true, uuid: emb.uuid, mensaje: 'Embarque retirado' });
 });
