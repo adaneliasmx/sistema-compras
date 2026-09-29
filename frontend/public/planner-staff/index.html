@@ -1229,13 +1229,6 @@ function renderRhhForm(formId, container) {
         <label>Detalle / Observaciones</label>
         <textarea id="df_detalle" rows="3">${esc(datos.detalle || '')}</textarea>
       </div>
-      <script>
-        (function calcCob(){
-          const r=document.getElementById('df_requeridos'),d=document.getElementById('df_disponibles'),v=document.getElementById('df_cobertura_val');
-          function up(){const req=Number(r.value)||0,dis=Number(d.value)||0;v.textContent=req>0?Math.round(dis/req*100)+'%':'—';v.style.color=req>0&&dis>=req?'var(--green)':'var(--red)'}
-          r.addEventListener('input',up);d.addEventListener('input',up);up();
-        })();
-      </script>
     `, () => {
       const req = Number(document.getElementById('df_requeridos').value) || 0;
       const dis = Number(document.getElementById('df_disponibles').value) || 0;
@@ -1246,6 +1239,13 @@ function renderRhhForm(formId, container) {
         detalle: document.getElementById('df_detalle').value.trim()
       };
     });
+    // Bind cobertura calc after DOM ready
+    setTimeout(() => {
+      const r = document.getElementById('df_requeridos'), d = document.getElementById('df_disponibles'), v = document.getElementById('df_cobertura_val');
+      if (!r || !d || !v) return;
+      function up() { const req = Number(r.value) || 0, dis = Number(d.value) || 0; v.textContent = req > 0 ? Math.round(dis / req * 100) + '%' : '—'; v.style.color = req > 0 && dis >= req ? 'var(--green)' : 'var(--red)'; }
+      r.addEventListener('input', up); d.addEventListener('input', up); up();
+    }, 0);
   } else if (formId === 'vacantes_criticas') {
     const vacantes = datos.vacantes || [];
     container.innerHTML = dailyFormWrap('Vacantes criticas abiertas', `
