@@ -180,22 +180,18 @@ router.get('/actividades', (req, res) => {
   const db = read();
   let list = db.actividades || [];
 
-  // Auto-overdue: marcar actividades y sub-actividades vencidas
+  // Auto-overdue: marcar estatus vencidos en memoria (sin write bloqueante)
   const hoy = nowMxDate();
-  let dirty = false;
   for (const act of list) {
     if (['sin_empezar', 'en_proceso'].includes(act.estatus) && act.fecha_compromiso && act.fecha_compromiso < hoy) {
       act.estatus = 'atrasada';
-      dirty = true;
     }
     for (const sub of act.sub_actividades || []) {
       if (['sin_empezar', 'en_proceso'].includes(sub.estatus) && sub.fecha_compromiso && sub.fecha_compromiso < hoy) {
         sub.estatus = 'atrasada';
-        dirty = true;
       }
     }
   }
-  if (dirty) write(db);
 
   const { depto, estatus, urgencia, responsable, buscar, desde, hasta } = req.query;
   if (depto) list = list.filter(a => a.departamento === depto);
