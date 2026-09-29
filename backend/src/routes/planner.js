@@ -912,33 +912,67 @@ router.get('/integracion/compras/resumen', (req, res) => {
 });
 
 // RHH: Ausentismo del dia (incidencias, excluyendo "labora")
+// Fuentes: rhh_attendance (captura diaria: campos fecha/incidencia_type)
+//          rhh_incidences (incidencias aprobadas/pendientes que cubren la fecha)
 router.get('/integracion/rhh/ausentismo', (req, res) => {
   const fecha = req.query.fecha || nowMxDate();
   const rhhDb = readRhh();
-  const attendance = rhhDb.rhh_attendance || [];
   const employees = rhhDb.rhh_employees || [];
+  const positions = rhhDb.rhh_positions || [];
+  const seen = new Set(); // evitar duplicados por employee_id
 
-  const del_dia = attendance.filter(a => a.date === fecha && a.status !== 'labora');
+  // Normalizar incidencia_type del modulo asistencia al formato del frontend
+  const TIPO_MAP = {
+    falta: 'falta', retardo: 'retardo', vacacion: 'vacaciones',
+    incapacidad: 'incapacidad', permiso_cg: 'permiso_con_goce',
+    permiso_sg: 'permiso_sin_goce', baja: 'falta',
+    paro_tecnico: 'permiso', descanso: 'permiso',
+    festivo: 'festivo', turno_incompleto: 'retardo'
+  };
 
-  const result = del_dia.map(a => {
-    const emp = employees.find(e => e.id === a.employee_id);
-    return {
-      employee_id: a.employee_id,
+  const result = [];
+
+  // 1) rhh_attendance — captura diaria (campo "fecha" + "incidencia_type")
+  const attendance = rhhDb.rhh_attendance || [];
+  for (const a of attendance) {
+    const d = a.fecha || a.date;
+    const tipo = a.incidencia_type || a.status;
+    if (d !== fecha) continue;
+    if (['labora', 'festivo', 'descanso'].includes(tipo)) continue;
+    seen.add(Number(a.employee_id));
+    const emp = employees.find(e => e.id === Number(a.employee_id));
+    const mapped = TIPO_MAP[tipo] || tipo;
+    const pos = emp ? positions.find(p => p.id === emp.position_id) : null;
+    result.push({
+      employee_id: Number(a.employee_id),
       nombre: emp ? emp.full_name : `Emp #${a.employee_id}`,
       puesto: emp ? emp.position_id : null,
-      status: a.status,
-      entrada: a.entrada || null,
-      salida: a.salida || null,
-      te_horas: a.te_horas || null,
-      notes: a.notes || ''
-    };
-  });
+      puesto_nombre: pos ? pos.name : '',
+      status: mapped,
+      notes: a.notas || a.notes || ''
+    });
+  }
 
-  // Enriquecer con nombre de puesto
-  const positions = rhhDb.rhh_positions || [];
-  for (const r of result) {
-    const pos = positions.find(p => p.id === r.puesto);
-    r.puesto_nombre = pos ? pos.name : '';
+  // 2) rhh_incidences — incidencias (aprobadas/pendientes) que cubren la fecha
+  const incidences = rhhDb.rhh_incidences || [];
+  for (const inc of incidences) {
+    if (inc.status === 'rechazada') continue;
+    const start = inc.date;
+    const end = inc.date_end || inc.date;
+    if (!start || fecha < start || fecha > end) continue;
+    if (seen.has(Number(inc.employee_id))) continue;
+    seen.add(Number(inc.employee_id));
+    const emp = employees.find(e => e.id === Number(inc.employee_id));
+    const mapped = TIPO_MAP[inc.type] || inc.type;
+    const pos = emp ? positions.find(p => p.id === emp.position_id) : null;
+    result.push({
+      employee_id: Number(inc.employee_id),
+      nombre: emp ? emp.full_name : `Emp #${inc.employee_id}`,
+      puesto: emp ? emp.position_id : null,
+      puesto_nombre: pos ? pos.name : '',
+      status: mapped,
+      notes: inc.notes || ''
+    });
   }
 
   // Contar por tipo
