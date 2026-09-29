@@ -39,6 +39,7 @@ const MENU_BY_ROLE = {
     ['autorizaciones', '✅ Autorizaciones'],
     ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
+    ['plantilla-personal', '📊 Plantilla'],
     ['evaluaciones', '⭐ Evaluaciones'],
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['reportes', '📊 Reportes'],
@@ -55,6 +56,7 @@ const MENU_BY_ROLE = {
     ['autorizaciones', '✅ Autorizaciones'],
     ['lista-raya', '💰 Lista de Raya'],
     ['vacantes', '🔍 Vacantes'],
+    ['plantilla-personal', '📊 Plantilla'],
     ['evaluaciones', '⭐ Evaluaciones'],
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
@@ -5596,6 +5598,98 @@ async function updateVacancy(id, status) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// PLANTILLA PERSONAL (headcount requerido vs actual)
+// ══════════════════════════════════════════════════════════════════════════════
+
+async function plantillaPersonalView() {
+  const el = document.getElementById('app');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando plantilla...</div>', 'plantilla-personal');
+
+  try {
+    const data = await api('/api/rhh/catalogs/plantilla');
+    if (!data) return;
+
+    const { puestos, resumen } = data;
+    const pctColor = v => v >= 100 ? '#059669' : v >= 80 ? '#b45309' : '#b91c1c';
+
+    const rows = puestos.map(p => `
+      <tr>
+        <td><strong>${escHtml(p.puesto)}</strong></td>
+        <td style="font-size:12px;color:#6b7280;">${escHtml(p.departamento)}</td>
+        <td style="text-align:center;">
+          <input type="number" min="0" value="${p.requerido}" data-pos-id="${p.id}" class="hc-input"
+            style="width:60px;text-align:center;padding:4px 6px;border:1.5px solid #d1d5db;border-radius:6px;font-size:13px;" />
+        </td>
+        <td style="text-align:center;font-weight:700;">${p.actual}</td>
+        <td style="text-align:center;font-weight:700;color:${pctColor(p.porcentaje)}">${p.porcentaje}%</td>
+        <td style="text-align:center;color:${p.vacantes_abiertas > 0 ? '#b91c1c' : '#059669'};font-weight:700;">
+          ${p.vacantes_abiertas > 0 ? p.vacantes_abiertas : '—'}
+        </td>
+      </tr>`).join('');
+
+    const content = `
+      <div class="module-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+        <h2>📊 Plantilla Personal</h2>
+        <button class="btn-primary" onclick="guardarPlantillaHC()">💾 Guardar cambios</button>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+        <div class="card" style="flex:1;min-width:150px;padding:14px;text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:#1d4ed8;">${resumen.total_requerido}</div>
+          <div style="font-size:11px;color:#6b7280;">Plantilla requerida</div>
+        </div>
+        <div class="card" style="flex:1;min-width:150px;padding:14px;text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:#059669;">${resumen.total_actual}</div>
+          <div style="font-size:11px;color:#6b7280;">Plantilla actual</div>
+        </div>
+        <div class="card" style="flex:1;min-width:150px;padding:14px;text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:${pctColor(resumen.porcentaje_global)}">${resumen.porcentaje_global}%</div>
+          <div style="font-size:11px;color:#6b7280;">Cobertura global</div>
+        </div>
+        <div class="card" style="flex:1;min-width:150px;padding:14px;text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:#b91c1c;">${resumen.vacantes_abiertas}</div>
+          <div style="font-size:11px;color:#6b7280;">Vacantes abiertas</div>
+        </div>
+      </div>
+      <div class="card section">
+        <table>
+          <thead><tr>
+            <th>Puesto</th><th>Departamento</th>
+            <th style="text-align:center;">Requerido</th>
+            <th style="text-align:center;">Actual</th>
+            <th style="text-align:center;">% Cobertura</th>
+            <th style="text-align:center;">Vacantes</th>
+          </tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" style="text-align:center;color:#9ca3af;">No hay puestos en el catálogo</td></tr>'}</tbody>
+        </table>
+      </div>`;
+
+    el.innerHTML = shell(content, 'plantilla-personal');
+  } catch (err) {
+    el.innerHTML = shell(`<div class="notice error">${err.message}</div>`, 'plantilla-personal');
+  }
+}
+
+async function guardarPlantillaHC() {
+  const inputs = document.querySelectorAll('.hc-input');
+  if (!inputs.length) return;
+
+  let saved = 0;
+  for (const inp of inputs) {
+    const posId = inp.dataset.posId;
+    const val = Math.max(0, Number(inp.value) || 0);
+    try {
+      await api(`/api/rhh/catalogs/positions/${posId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ headcount_requerido: val })
+      });
+      saved++;
+    } catch (e) { /* skip */ }
+  }
+  toast(`Plantilla actualizada (${saved} puestos)`);
+  plantillaPersonalView();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // HISTORIAL DEL EMPLEADO
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -10643,6 +10737,7 @@ function render() {
     'aclaracion-nomina': aclaracionNominaView,
     'aclaraciones-rh': aclaracionesRHView,
     vacantes: vacantesView,
+    'plantilla-personal': plantillaPersonalView,
     evaluaciones: evaluacionesView,
     'mis-evaluaciones': misEvaluacionesView,
     plantillas: plantillasView,

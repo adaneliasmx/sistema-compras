@@ -101,7 +101,8 @@ router.post('/positions', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
     id: nextId(positions),
     name: String(name),
     department_id: Number(department_id),
-    level: level ? Number(level) : 1
+    level: level ? Number(level) : 1,
+    headcount_requerido: req.body.headcount_requerido != null ? Math.max(0, Number(req.body.headcount_requerido) || 0) : 0
   };
   positions.push(pos);
   db.rhh_positions = positions;
@@ -119,6 +120,7 @@ router.patch('/positions/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (
   if (req.body.name !== undefined) pos.name = req.body.name;
   if (req.body.department_id !== undefined) pos.department_id = Number(req.body.department_id);
   if (req.body.level !== undefined) pos.level = Number(req.body.level);
+  if (req.body.headcount_requerido !== undefined) pos.headcount_requerido = Math.max(0, Number(req.body.headcount_requerido) || 0);
 
   db.rhh_positions[idx] = pos;
   write(db);
@@ -137,6 +139,45 @@ router.delete('/positions/:id', rhhAuthRequired, rhhRequireRole('admin'), (req, 
   db.rhh_positions.splice(idx, 1);
   write(db);
   res.json({ ok: true });
+});
+
+// GET /api/rhh/catalogs/plantilla — resumen plantilla por puesto con headcount
+router.get('/plantilla', rhhAuthRequired, (req, res) => {
+  const db = read();
+  const positions = db.rhh_positions || [];
+  const employees = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const departments = db.rhh_departments || [];
+
+  const result = positions.map(p => {
+    const dept = departments.find(d => d.id === p.department_id);
+    const actual = employees.filter(e => e.position_id === p.id).length;
+    const requerido = p.headcount_requerido || 0;
+    const pct = requerido > 0 ? Math.round((actual / requerido) * 100) : (actual > 0 ? 100 : 0);
+    return {
+      id: p.id,
+      puesto: p.name,
+      departamento: dept ? dept.name : 'Sin depto',
+      departamento_id: p.department_id,
+      requerido,
+      actual,
+      porcentaje: pct,
+      vacantes_abiertas: Math.max(0, requerido - actual)
+    };
+  });
+
+  const totalReq = result.reduce((s, r) => s + r.requerido, 0);
+  const totalAct = result.reduce((s, r) => s + r.actual, 0);
+  const totalVac = result.reduce((s, r) => s + r.vacantes_abiertas, 0);
+
+  res.json({
+    puestos: result,
+    resumen: {
+      total_requerido: totalReq,
+      total_actual: totalAct,
+      porcentaje_global: totalReq > 0 ? Math.round((totalAct / totalReq) * 100) : 0,
+      vacantes_abiertas: totalVac
+    }
+  });
 });
 
 // ══════════════════════════════════════════════════════════════

@@ -5,6 +5,7 @@ const { read: readProd } = require('../db-produccion');
 const { read: readMant } = require('../db-mantenimiento');
 const { read: readInv } = require('../db-inventarios');
 const { read: readVales } = require('../db-vales');
+const { read: readRhh } = require('../db-rhh');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
@@ -904,6 +905,134 @@ router.get('/integracion/compras/resumen', (req, res) => {
     total_items: reqItems.length,
     pos_activas: urgentes.length,
     pos_total: pos.length
+  });
+});
+
+// RHH: Ausentismo del dia (incidencias, excluyendo "labora")
+router.get('/integracion/rhh/ausentismo', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const rhhDb = readRhh();
+  const attendance = rhhDb.rhh_attendance || [];
+  const employees = rhhDb.rhh_employees || [];
+
+  const del_dia = attendance.filter(a => a.date === fecha && a.status !== 'labora');
+
+  const result = del_dia.map(a => {
+    const emp = employees.find(e => e.id === a.employee_id);
+    return {
+      employee_id: a.employee_id,
+      nombre: emp ? emp.full_name : `Emp #${a.employee_id}`,
+      puesto: emp ? emp.position_id : null,
+      status: a.status,
+      entrada: a.entrada || null,
+      salida: a.salida || null,
+      te_horas: a.te_horas || null,
+      notes: a.notes || ''
+    };
+  });
+
+  // Enriquecer con nombre de puesto
+  const positions = rhhDb.rhh_positions || [];
+  for (const r of result) {
+    const pos = positions.find(p => p.id === r.puesto);
+    r.puesto_nombre = pos ? pos.name : '';
+  }
+
+  // Contar por tipo
+  const resumen = {};
+  for (const r of result) {
+    resumen[r.status] = (resumen[r.status] || 0) + 1;
+  }
+
+  res.json({ fecha, registros: result, resumen, total: result.length });
+});
+
+// RHH: Horas extra (vales TE de la semana)
+router.get('/integracion/rhh/horas-extra', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const rhhDb = readRhh();
+  const vales = rhhDb.rhh_overtime_vales || [];
+  const employees = rhhDb.rhh_employees || [];
+
+  // Calcular rango de la semana (lun-dom) que contiene la fecha
+  const d = new Date(fecha + 'T12:00:00');
+  const day = d.getDay();
+  const diffToMon = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + diffToMon);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const weekStart = monday.toISOString().slice(0, 10);
+  const weekEnd = sunday.toISOString().slice(0, 10);
+
+  const de_semana = vales.filter(v => v.fecha >= weekStart && v.fecha <= weekEnd);
+
+  const result = de_semana.map(v => {
+    const emp = employees.find(e => e.id === v.employee_id);
+    return {
+      id: v.id,
+      employee_id: v.employee_id,
+      nombre: emp ? emp.full_name : `Emp #${v.employee_id}`,
+      fecha: v.fecha,
+      horas: v.te_horas || 0,
+      razon: v.te_razon || '',
+      proyecto: v.te_proyecto || '',
+      status: v.status
+    };
+  });
+
+  const autorizados = result.filter(r => r.status === 'autorizado');
+  const pendientes = result.filter(r => r.status === 'pendiente');
+
+  res.json({
+    semana: { inicio: weekStart, fin: weekEnd },
+    registros: result,
+    resumen: {
+      total: result.length,
+      autorizados: autorizados.length,
+      pendientes: pendientes.length,
+      horas_autorizadas: autorizados.reduce((s, r) => s + r.horas, 0),
+      horas_pendientes: pendientes.reduce((s, r) => s + r.horas, 0)
+    }
+  });
+});
+
+// RHH: Plantilla de puestos (headcount requerido vs actual)
+router.get('/integracion/rhh/plantilla', (req, res) => {
+  const rhhDb = readRhh();
+  const positions = rhhDb.rhh_positions || [];
+  const employees = (rhhDb.rhh_employees || []).filter(e => e.status === 'active');
+  const departments = rhhDb.rhh_departments || [];
+
+  const puestos = positions.map(p => {
+    const dept = departments.find(d => d.id === p.department_id);
+    const actual = employees.filter(e => e.position_id === p.id).length;
+    const requerido = p.headcount_requerido || 0;
+    const pct = requerido > 0 ? Math.round((actual / requerido) * 100) : (actual > 0 ? 100 : 0);
+    return {
+      id: p.id,
+      puesto: p.name,
+      departamento: dept ? dept.name : '',
+      requerido,
+      actual,
+      porcentaje: pct,
+      vacantes_abiertas: Math.max(0, requerido - actual)
+    };
+  });
+
+  const totalReq = puestos.reduce((s, r) => s + r.requerido, 0);
+  const totalAct = puestos.reduce((s, r) => s + r.actual, 0);
+  const vacAbiertas = puestos.filter(p => p.vacantes_abiertas > 0);
+
+  res.json({
+    puestos,
+    vacantes_no_cubiertas: vacAbiertas,
+    resumen: {
+      total_requerido: totalReq,
+      total_actual: totalAct,
+      porcentaje_global: totalReq > 0 ? Math.round((totalAct / totalReq) * 100) : 0,
+      vacantes_abiertas: vacAbiertas.reduce((s, p) => s + p.vacantes_abiertas, 0)
+    }
   });
 });
 
