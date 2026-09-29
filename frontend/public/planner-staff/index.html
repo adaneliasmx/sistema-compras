@@ -135,6 +135,7 @@ tr:hover{background:#f8fafc}
 
 <div id="app"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
 <script>
 const API = '';
 let token = localStorage.getItem('planner_token');
@@ -2150,54 +2151,302 @@ function renderDailyPlaceholder(deptoId) {
     </div>`;
 }
 
-// ── VISTA: Dashboard (placeholder Fase 5) ────────────────────────────────────
+// ── VISTA: Dashboard ejecutivo ─────────────────────────────────────────────
+
+let _dashData = null;
 
 async function renderDashboard() {
   const m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
 
-  const kpis = await apiFetch('/api/planner/kpis');
-  if (!kpis) return;
+  _dashData = await apiFetch('/api/planner/dashboard/resumen');
+  if (!_dashData) return;
 
-  // KPIs por departamento
-  const deptoKpis = [];
-  for (const d of DEPTOS) {
-    const dk = await apiFetch('/api/planner/kpis?depto=' + d.id);
-    if (dk) deptoKpis.push({ ...d, ...dk });
-  }
+  const g = _dashData.global;
+  const deptos = _dashData.departamentos;
+  const tend = _dashData.tendencia;
+  const totalDaily = deptos.reduce((s, d) => s + d.daily.total_forms, 0);
+  const llenadosDaily = deptos.reduce((s, d) => s + d.daily.llenados, 0);
+  const pctDaily = totalDaily > 0 ? Math.round(llenadosDaily / totalDaily * 100) : 0;
 
   m.innerHTML = `
-    <h3 style="color:var(--primary);margin-bottom:16px">Resumen Global</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="color:var(--primary);margin:0">Dashboard Ejecutivo</h3>
+      <span style="font-size:12px;color:var(--muted)">${_dashData.fecha}</span>
+    </div>
+
+    <!-- KPIs globales -->
     <div class="kpi-row">
-      <div class="kpi"><label>Total actividades</label><div class="val">${kpis.total}</div></div>
-      <div class="kpi"><label>Sin empezar</label><div class="val">${kpis.sin_empezar}</div></div>
-      <div class="kpi orange"><label>En proceso</label><div class="val">${kpis.en_proceso}</div></div>
-      <div class="kpi green"><label>Cerradas</label><div class="val">${kpis.cerrada}</div></div>
-      <div class="kpi red"><label>Atrasadas</label><div class="val">${kpis.atrasada}</div></div>
-      <div class="kpi"><label>Pospuestas</label><div class="val">${kpis.pospuesta}</div></div>
-      <div class="kpi"><label>Canceladas</label><div class="val">${kpis.cancelada}</div></div>
+      <div class="kpi"><label>Total actividades</label><div class="val">${g.total}</div></div>
+      <div class="kpi orange"><label>En proceso</label><div class="val">${g.en_proceso}</div></div>
+      <div class="kpi green"><label>Cerradas</label><div class="val">${g.cerrada}</div></div>
+      <div class="kpi red"><label>Atrasadas</label><div class="val">${g.atrasada}</div></div>
+      <div class="kpi"><label>Sin empezar</label><div class="val">${g.sin_empezar}</div></div>
+      <div class="kpi" style="border-color:${pctDaily === 100 ? 'var(--green)' : pctDaily > 0 ? 'var(--orange)' : 'var(--line)'}">
+        <label>Daily hoy</label>
+        <div class="val" style="color:${pctDaily === 100 ? 'var(--green)' : pctDaily > 0 ? 'var(--orange)' : 'var(--muted)'}">${pctDaily}%</div>
+        <div class="sub">${llenadosDaily}/${totalDaily} forms</div>
+      </div>
     </div>
 
-    <h3 style="color:var(--primary);margin:24px 0 16px">Por Departamento</h3>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px">
-      ${deptoKpis.map(d => `
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer" onclick="_currentDepto='${d.id}';navigateTo('tareas')">
-          <div style="font-size:20px;margin-bottom:6px">${d.icon}</div>
-          <div style="font-weight:700;font-size:14px;color:var(--primary);margin-bottom:8px">${d.nombre}</div>
-          <div style="font-size:13px;color:var(--text)">
-            Total: <b>${d.total}</b>
-            ${d.atrasada > 0 ? ` · <span style="color:var(--red);font-weight:700">${d.atrasada} atrasada(s)</span>` : ''}
-          </div>
-          <div style="font-size:12px;color:var(--muted);margin-top:4px">
-            ${d.en_proceso} en proc. · ${d.cerrada} cerradas · ${d.sin_empezar} pendientes
-          </div>
-        </div>
-      `).join('')}
+    <!-- Graficos -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:20px 0">
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
+        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Actividades — ultimos 7 dias</h4>
+        <canvas id="chartActividades" height="160"></canvas>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
+        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Daily llenados — ultimos 7 dias</h4>
+        <canvas id="chartDaily" height="160"></canvas>
+      </div>
     </div>
 
-    <div style="text-align:center;padding:40px;color:var(--muted);font-size:13px;margin-top:20px">
-      El dashboard ejecutivo completo con graficos estara disponible en la Fase 5.
+    <!-- Grid departamentos -->
+    <h3 style="color:var(--primary);margin:24px 0 14px">Por Departamento</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px" id="dashDeptoGrid">
+      ${deptos.map(d => {
+        const di = DEPTOS.find(x => x.id === d.id) || {};
+        const a = d.actividades;
+        const dl = d.daily;
+        const pct = dl.total_forms > 0 ? Math.round(dl.llenados / dl.total_forms * 100) : 0;
+        const barColor = pct === 100 ? 'var(--green)' : pct > 0 ? 'var(--orange)' : '#ddd';
+        return `
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer;transition:transform .15s,box-shadow .15s" onclick="openDeptoDetail('${d.id}')" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(0,0,0,.08)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <span style="font-size:20px">${di.icon || ''}</span>
+              <b style="font-size:14px;color:var(--primary)">${di.nombre || d.id}</b>
+            </div>
+            ${a.atrasada > 0 ? `<span class="badge atrasada">${a.atrasada} atrasada(s)</span>` : ''}
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center;margin-bottom:10px">
+            <div><div style="font-size:16px;font-weight:800;color:var(--primary)">${a.total}</div><div style="font-size:10px;color:var(--muted)">Total</div></div>
+            <div><div style="font-size:16px;font-weight:800;color:var(--orange)">${a.en_proceso}</div><div style="font-size:10px;color:var(--muted)">En proc.</div></div>
+            <div><div style="font-size:16px;font-weight:800;color:var(--green)">${a.cerrada}</div><div style="font-size:10px;color:var(--muted)">Cerradas</div></div>
+            <div><div style="font-size:16px;font-weight:800">${a.sin_empezar}</div><div style="font-size:10px;color:var(--muted)">Pendientes</div></div>
+          </div>
+          <div style="margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px">
+              <span style="color:var(--muted)">Daily</span>
+              <span style="font-weight:700;color:${pct === 100 ? 'var(--green)' : 'var(--muted)'}">${dl.llenados}/${dl.total_forms}</span>
+            </div>
+            <div style="height:6px;background:#eee;border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+            </div>
+          </div>
+          ${a.por_cerrar_semana > 0 ? `<div style="font-size:11px;color:var(--orange);margin-top:6px">${a.por_cerrar_semana} por cerrar esta semana</div>` : ''}
+        </div>`;
+      }).join('')}
     </div>`;
+
+  // Render charts
+  setTimeout(() => renderDashCharts(tend), 50);
+}
+
+function renderDashCharts(tendencia) {
+  if (typeof Chart === 'undefined') return;
+
+  const labels = tendencia.map(t => t.fecha.slice(5));
+
+  // Chart: Actividades creadas vs cerradas
+  const ctx1 = document.getElementById('chartActividades');
+  if (ctx1) {
+    new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Creadas', data: tendencia.map(t => t.creadas), backgroundColor: 'rgba(41,128,185,.7)', borderRadius: 4 },
+          { label: 'Cerradas', data: tendencia.map(t => t.cerradas), backgroundColor: 'rgba(39,174,96,.7)', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } },
+          x: { ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+
+  // Chart: Daily fill rate
+  const ctx2 = document.getElementById('chartDaily');
+  if (ctx2) {
+    const pcts = tendencia.map(t => t.daily_total > 0 ? Math.round(t.daily_llenados / t.daily_total * 100) : 0);
+    new Chart(ctx2, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: '% Formularios llenados',
+          data: pcts,
+          borderColor: 'rgba(41,128,185,1)',
+          backgroundColor: 'rgba(41,128,185,.1)',
+          fill: true,
+          tension: .3,
+          pointRadius: 4,
+          pointBackgroundColor: pcts.map(p => p === 100 ? 'var(--green)' : p > 0 ? 'var(--orange)' : '#ccc')
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { beginAtZero: true, max: 100, ticks: { callback: v => v + '%', font: { size: 11 } } },
+          x: { ticks: { font: { size: 11 } } }
+        }
+      }
+    });
+  }
+}
+
+// ── Dashboard: detalle departamento ─────────────────────────────────────────
+
+async function openDeptoDetail(deptoId) {
+  const m = document.getElementById('mainContent');
+  m.innerHTML = '<div class="spinner"></div>';
+
+  const data = await apiFetch(`/api/planner/dashboard/${deptoId}?fecha=${_dashData?.fecha || ''}`);
+  if (!data) { renderDashboard(); return; }
+
+  const di = DEPTOS.find(x => x.id === deptoId) || {};
+  const forms = data.formularios || [];
+  const acts = data.actividades || {};
+  const tend = data.tendencia || [];
+
+  m.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
+      <button class="btn btn-outline btn-sm" onclick="renderDashboard()">← Volver</button>
+      <span style="font-size:22px">${di.icon || ''}</span>
+      <h3 style="color:var(--primary);margin:0">${di.nombre || deptoId}</h3>
+      <span style="font-size:12px;color:var(--muted)">${data.fecha}</span>
+    </div>
+
+    <!-- Formularios del dia -->
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:18px">
+      <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Formularios Daily</h4>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+        ${forms.map(f => {
+          const fm = (DAILY_FORMS_META[deptoId] || []).find(x => x.id === f.id);
+          return `<div style="padding:8px 12px;border-radius:6px;border:1px solid ${f.llenado ? 'var(--green)' : 'var(--line)'};background:${f.llenado ? '#f0fdf4' : '#fafafa'};cursor:pointer" onclick="navigateTo('daily-${deptoId}');setTimeout(()=>selectDailyForm('${deptoId}','${f.id}'),200)">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span style="font-size:12px;font-weight:600">${fm ? fm.icon + ' ' + fm.nombre : f.id}</span>
+              <span style="font-size:14px">${f.llenado ? '🟢' : '⚪'}</span>
+            </div>
+            ${f.llenado ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${f.llenado_por || ''} · ${f.hora || ''}</div>` : '<div style="font-size:10px;color:var(--red);margin-top:2px">Pendiente</div>'}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+
+    <!-- Graficos tendencia -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
+        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Actividades — 7 dias</h4>
+        <canvas id="chartDeptoActs" height="140"></canvas>
+      </div>
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
+        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Daily completado — 7 dias</h4>
+        <canvas id="chartDeptoDaily" height="140"></canvas>
+      </div>
+    </div>
+
+    <!-- Actividades atrasadas -->
+    ${acts.atrasadas && acts.atrasadas.length > 0 ? `
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid var(--red)">
+        <h4 style="font-size:13px;color:var(--red);margin-bottom:8px">Atrasadas (${acts.atrasadas.length})</h4>
+        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead>
+        <tbody>${acts.atrasadas.map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
+          <td style="color:var(--red)">${a.fecha_compromiso || '—'}</td>
+          <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
+          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    ` : ''}
+
+    <!-- Por cerrar esta semana -->
+    ${acts.por_cerrar_semana && acts.por_cerrar_semana.length > 0 ? `
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid var(--orange)">
+        <h4 style="font-size:13px;color:var(--orange);margin-bottom:8px">Por cerrar esta semana (${acts.por_cerrar_semana.length})</h4>
+        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead>
+        <tbody>${acts.por_cerrar_semana.map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
+          <td>${a.fecha_compromiso || '—'}</td>
+          <td><span class="badge ${a.estatus}">${(a.estatus || '').replace('_', ' ')}</span></td>
+          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    ` : ''}
+
+    <!-- Sin fecha compromiso -->
+    ${acts.sin_fecha && acts.sin_fecha.length > 0 ? `
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px">
+        <h4 style="font-size:13px;color:var(--muted);margin-bottom:8px">Sin fecha compromiso (${acts.sin_fecha.length})</h4>
+        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Urgencia</th><th></th></tr></thead>
+        <tbody>${acts.sin_fecha.slice(0, 10).map(a => `<tr>
+          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
+          <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
+          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
+        </tr>`).join('')}</tbody></table>
+      </div>
+    ` : ''}
+
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-accent" onclick="openNewActModal({departamento:'${deptoId}'})">+ Nueva actividad</button>
+      <button class="btn btn-primary" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver todas las tareas</button>
+      <button class="btn btn-outline" onclick="navigateTo('daily-${deptoId}')">Ir a Daily</button>
+    </div>`;
+
+  setTimeout(() => renderDeptoCharts(tend, forms.length), 50);
+}
+
+function renderDeptoCharts(tendencia, totalForms) {
+  if (typeof Chart === 'undefined') return;
+  const labels = tendencia.map(t => t.fecha.slice(5));
+
+  const ctx1 = document.getElementById('chartDeptoActs');
+  if (ctx1) {
+    new Chart(ctx1, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Creadas', data: tendencia.map(t => t.creadas), backgroundColor: 'rgba(41,128,185,.7)', borderRadius: 4 },
+          { label: 'Cerradas', data: tendencia.map(t => t.cerradas), backgroundColor: 'rgba(39,174,96,.7)', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } }, x: { ticks: { font: { size: 11 } } } }
+      }
+    });
+  }
+
+  const ctx2 = document.getElementById('chartDeptoDaily');
+  if (ctx2) {
+    new Chart(ctx2, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Llenados', data: tendencia.map(t => t.daily_llenados), backgroundColor: 'rgba(39,174,96,.7)', borderRadius: 4 },
+          { label: 'Pendientes', data: tendencia.map(t => t.daily_total - t.daily_llenados), backgroundColor: 'rgba(220,220,220,.7)', borderRadius: 4 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+        scales: { y: { beginAtZero: true, stacked: true, max: totalForms, ticks: { stepSize: 1, font: { size: 11 } } }, x: { stacked: true, ticks: { font: { size: 11 } } } }
+      }
+    });
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────

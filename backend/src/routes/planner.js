@@ -918,4 +918,145 @@ router.get('/kpis', (req, res) => {
   res.json(kpis);
 });
 
+// ── DASHBOARD ejecutivo ──────────────────────────────────────────────────────
+
+router.get('/dashboard/resumen', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const db = read();
+  const acts = db.actividades || [];
+  const dailyRegs = db.daily_registros || [];
+
+  const deptos = DEPARTAMENTOS.map(d => {
+    const deptoActs = acts.filter(a => a.departamento === d.id);
+    const forms = DAILY_FORMS[d.id] || [];
+    const dailyHoy = dailyRegs.filter(r => r.departamento === d.id && r.fecha === fecha);
+    const llenados = forms.filter(f => dailyHoy.some(r => r.formulario === f)).length;
+
+    // Actividades por cerrar esta semana
+    const hoy = new Date(fecha + 'T12:00:00');
+    const finSemana = new Date(hoy);
+    finSemana.setDate(hoy.getDate() + (7 - hoy.getDay()));
+    const finSemStr = finSemana.toISOString().slice(0, 10);
+    const porCerrar = deptoActs.filter(a =>
+      a.fecha_compromiso && a.fecha_compromiso <= finSemStr &&
+      !['cerrada', 'cancelada'].includes(a.estatus)
+    ).length;
+
+    const sinFecha = deptoActs.filter(a => !a.fecha_compromiso && !['cerrada', 'cancelada'].includes(a.estatus)).length;
+
+    return {
+      id: d.id,
+      nombre: d.nombre,
+      actividades: {
+        total: deptoActs.length,
+        sin_empezar: deptoActs.filter(a => a.estatus === 'sin_empezar').length,
+        en_proceso: deptoActs.filter(a => a.estatus === 'en_proceso').length,
+        cerrada: deptoActs.filter(a => a.estatus === 'cerrada').length,
+        atrasada: deptoActs.filter(a => a.estatus === 'atrasada').length,
+        pospuesta: deptoActs.filter(a => a.estatus === 'pospuesta').length,
+        cancelada: deptoActs.filter(a => a.estatus === 'cancelada').length,
+        por_cerrar_semana: porCerrar,
+        sin_fecha: sinFecha
+      },
+      daily: {
+        total_forms: forms.length,
+        llenados,
+        pendientes: forms.length - llenados
+      }
+    };
+  });
+
+  // Global
+  const totalActs = acts.length;
+  const globalKpis = {
+    total: totalActs,
+    sin_empezar: acts.filter(a => a.estatus === 'sin_empezar').length,
+    en_proceso: acts.filter(a => a.estatus === 'en_proceso').length,
+    cerrada: acts.filter(a => a.estatus === 'cerrada').length,
+    atrasada: acts.filter(a => a.estatus === 'atrasada').length,
+    pospuesta: acts.filter(a => a.estatus === 'pospuesta').length,
+    cancelada: acts.filter(a => a.estatus === 'cancelada').length
+  };
+
+  // Tendencia: ultimos 7 dias
+  const tendencia = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(new Date(fecha + 'T12:00:00').getTime() - i * 86400000);
+    const ds = d.toISOString().slice(0, 10);
+    const creadas = acts.filter(a => a.fecha_creacion === ds).length;
+    const cerradas = acts.filter(a => a.fecha_fin === ds).length;
+    const dailyDia = dailyRegs.filter(r => r.fecha === ds);
+    const formsTotal = Object.values(DAILY_FORMS).reduce((s, f) => s + f.length, 0);
+    const formsLlenados = dailyDia.length;
+    tendencia.push({ fecha: ds, creadas, cerradas, daily_llenados: formsLlenados, daily_total: formsTotal });
+  }
+
+  res.json({ fecha, global: globalKpis, departamentos: deptos, tendencia });
+});
+
+router.get('/dashboard/:depto', (req, res) => {
+  const { depto } = req.params;
+  const fecha = req.query.fecha || nowMxDate();
+  const db = read();
+  const acts = (db.actividades || []).filter(a => a.departamento === depto);
+  const dailyRegs = db.daily_registros || [];
+  const forms = DAILY_FORMS[depto] || [];
+  const dailyHoy = dailyRegs.filter(r => r.departamento === depto && r.fecha === fecha);
+
+  // Formularios con resumen
+  const formularios = forms.map(f => {
+    const reg = dailyHoy.find(r => r.formulario === f);
+    return {
+      id: f,
+      llenado: !!reg,
+      llenado_por: reg ? reg.llenado_por_nombre : null,
+      hora: reg ? reg.hora_llenado : null,
+      datos_resumen: reg ? Object.keys(reg.datos || {}).length + ' campos' : null
+    };
+  });
+
+  // Actividades agrupadas
+  const hoy = new Date(fecha + 'T12:00:00');
+  const finSemana = new Date(hoy);
+  finSemana.setDate(hoy.getDate() + (7 - hoy.getDay()));
+  const finSemStr = finSemana.toISOString().slice(0, 10);
+
+  const atrasadas = acts.filter(a => a.estatus === 'atrasada');
+  const porCerrar = acts.filter(a =>
+    a.fecha_compromiso && a.fecha_compromiso <= finSemStr &&
+    !['cerrada', 'cancelada'].includes(a.estatus)
+  );
+  const sinFecha = acts.filter(a => !a.fecha_compromiso && !['cerrada', 'cancelada'].includes(a.estatus));
+  const recientes = acts.filter(a => a.fecha_creacion >= fecha).slice(0, 10);
+
+  // Tendencia semanal
+  const tendencia = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(hoy.getTime() - i * 86400000);
+    const ds = d.toISOString().slice(0, 10);
+    const dailyDia = dailyRegs.filter(r => r.departamento === depto && r.fecha === ds);
+    tendencia.push({
+      fecha: ds,
+      creadas: acts.filter(a => a.fecha_creacion === ds).length,
+      cerradas: acts.filter(a => a.fecha_fin === ds).length,
+      daily_llenados: dailyDia.length,
+      daily_total: forms.length
+    });
+  }
+
+  res.json({
+    depto,
+    fecha,
+    formularios,
+    actividades: {
+      total: acts.length,
+      atrasadas: atrasadas.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, urgencia: a.urgencia })),
+      por_cerrar_semana: porCerrar.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus })),
+      sin_fecha: sinFecha.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, urgencia: a.urgencia })),
+      recientes: recientes.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, estatus: a.estatus, fecha_creacion: a.fecha_creacion }))
+    },
+    tendencia
+  });
+});
+
 module.exports = router;
