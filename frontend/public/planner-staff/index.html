@@ -1226,15 +1226,28 @@ function renderRhhForm(formId, container) {
   const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
 
   if (formId === 'ausentismo') {
+    // Auto-pull from RHH
     container.innerHTML = dailyFormWrap('Ausentismo y retardos del dia', `
-      <div class="form-row">
-        <div class="form-group"><label>Retardos</label><input type="number" id="df_retardos" min="0" value="${datos.retardos || 0}"></div>
-        <div class="form-group"><label>Faltas</label><input type="number" id="df_faltas" min="0" value="${datos.faltas || 0}"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <p style="font-size:12px;color:var(--muted);margin:0">Datos del modulo RHH — Control de Asistencias</p>
+        <button class="btn btn-outline btn-sm" onclick="_loadRhhAusentismo()">Cargar de RHH</button>
       </div>
-      <div class="form-row">
-        <div class="form-group"><label>Vacaciones</label><input type="number" id="df_vacaciones" min="0" value="${datos.vacaciones || 0}"></div>
-        <div class="form-group"><label>Incapacidad</label><input type="number" id="df_incapacidad" min="0" value="${datos.incapacidad || 0}"></div>
+      <div class="kpi-row" style="margin-bottom:12px">
+        <div class="kpi"><label>Retardos</label><div class="val" id="df_kpi_retardos">${datos.retardos || 0}</div></div>
+        <div class="kpi"><label>Faltas</label><div class="val" id="df_kpi_faltas">${datos.faltas || 0}</div></div>
+        <div class="kpi"><label>Vacaciones</label><div class="val" id="df_kpi_vac">${datos.vacaciones || 0}</div></div>
+        <div class="kpi"><label>Incapacidad</label><div class="val" id="df_kpi_incap">${datos.incapacidad || 0}</div></div>
+        <div class="kpi"><label>Permisos</label><div class="val" id="df_kpi_perm">${datos.permisos || 0}</div></div>
+        <div class="kpi"><label>Otros</label><div class="val" id="df_kpi_otros">${datos.otros || 0}</div></div>
       </div>
+      <div id="df_ausen_table" style="font-size:12px;color:var(--muted);margin-bottom:12px">${datos._registros_html || '<p>Presiona "Cargar de RHH" para obtener incidencias del dia</p>'}</div>
+      <input type="hidden" id="df_retardos" value="${datos.retardos || 0}">
+      <input type="hidden" id="df_faltas" value="${datos.faltas || 0}">
+      <input type="hidden" id="df_vacaciones" value="${datos.vacaciones || 0}">
+      <input type="hidden" id="df_incapacidad" value="${datos.incapacidad || 0}">
+      <input type="hidden" id="df_permisos" value="${datos.permisos || 0}">
+      <input type="hidden" id="df_otros" value="${datos.otros || 0}">
+      <input type="hidden" id="df_registros_json" value='${esc(JSON.stringify(datos._registros || []))}'>
       <div class="form-group">
         <label>Notas / Observaciones</label>
         <textarea id="df_notas" rows="3">${esc(datos.notas || '')}</textarea>
@@ -1244,20 +1257,28 @@ function renderRhhForm(formId, container) {
       faltas: Number(document.getElementById('df_faltas').value) || 0,
       vacaciones: Number(document.getElementById('df_vacaciones').value) || 0,
       incapacidad: Number(document.getElementById('df_incapacidad').value) || 0,
+      permisos: Number(document.getElementById('df_permisos').value) || 0,
+      otros: Number(document.getElementById('df_otros').value) || 0,
+      _registros: (() => { try { return JSON.parse(document.getElementById('df_registros_json').value); } catch(e) { return []; }})(),
       notas: document.getElementById('df_notas').value.trim()
     }));
   } else if (formId === 'personal_disponible') {
+    // Auto-pull plantilla from RHH
     container.innerHTML = dailyFormWrap('Personal disponible vs requerido', `
-      <div class="form-row">
-        <div class="form-group"><label>Personal requerido (plantilla)</label><input type="number" id="df_requeridos" min="0" value="${datos.requeridos || 0}"></div>
-        <div class="form-group"><label>Personal disponible hoy</label><input type="number" id="df_disponibles" min="0" value="${datos.disponibles || 0}"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <p style="font-size:12px;color:var(--muted);margin:0">Plantilla del modulo RHH — Puestos con headcount</p>
+        <button class="btn btn-outline btn-sm" onclick="_loadRhhPlantilla()">Cargar de RHH</button>
       </div>
-      <div class="form-row">
-        <div class="form-group">
-          <label>% Cobertura</label>
-          <div id="df_cobertura_val" style="font-size:20px;font-weight:700;color:var(--primary);padding:4px 0">—</div>
-        </div>
+      <div class="kpi-row" style="margin-bottom:12px">
+        <div class="kpi"><label>Requerido</label><div class="val" id="df_kpi_req">${datos.requeridos || 0}</div></div>
+        <div class="kpi"><label>Actual</label><div class="val" id="df_kpi_act">${datos.disponibles || 0}</div></div>
+        <div class="kpi"><label>% Cobertura</label><div class="val" id="df_kpi_cob" style="color:${(datos.porcentaje||0) >= 100 ? 'var(--green)' : 'var(--red)'}">${datos.porcentaje || 0}%</div></div>
+        <div class="kpi red"><label>Vacantes</label><div class="val" id="df_kpi_vacantes">${datos.vacantes_abiertas || 0}</div></div>
       </div>
+      <div id="df_plantilla_table" style="font-size:12px;margin-bottom:12px">${datos._plantilla_html || '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener datos de plantilla</p>'}</div>
+      <input type="hidden" id="df_requeridos" value="${datos.requeridos || 0}">
+      <input type="hidden" id="df_disponibles" value="${datos.disponibles || 0}">
+      <input type="hidden" id="df_vacantes_ab" value="${datos.vacantes_abiertas || 0}">
       <div class="form-group">
         <label>Detalle / Observaciones</label>
         <textarea id="df_detalle" rows="3">${esc(datos.detalle || '')}</textarea>
@@ -1269,21 +1290,19 @@ function renderRhhForm(formId, container) {
         requeridos: req,
         disponibles: dis,
         porcentaje: req > 0 ? Math.round(dis / req * 100) : 0,
+        vacantes_abiertas: Number(document.getElementById('df_vacantes_ab').value) || 0,
         detalle: document.getElementById('df_detalle').value.trim()
       };
     });
-    // Bind cobertura calc after DOM ready
-    setTimeout(() => {
-      const r = document.getElementById('df_requeridos'), d = document.getElementById('df_disponibles'), v = document.getElementById('df_cobertura_val');
-      if (!r || !d || !v) return;
-      function up() { const req = Number(r.value) || 0, dis = Number(d.value) || 0; v.textContent = req > 0 ? Math.round(dis / req * 100) + '%' : '—'; v.style.color = req > 0 && dis >= req ? 'var(--green)' : 'var(--red)'; }
-      r.addEventListener('input', up); d.addEventListener('input', up); up();
-    }, 0);
   } else if (formId === 'vacantes_criticas') {
-    const vacantes = datos.vacantes || [];
+    // Auto-pull vacantes no cubiertas from RHH plantilla
     container.innerHTML = dailyFormWrap('Vacantes criticas abiertas', `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <p style="font-size:12px;color:var(--muted);margin:0">Vacantes no cubiertas segun plantilla</p>
+        <button class="btn btn-outline btn-sm" onclick="_loadRhhVacantes()">Cargar de RHH</button>
+      </div>
       <div id="df_vacantes_list">
-        ${vacantes.length === 0 ? '' : vacantes.map((v, i) => vacantRow(i, v)).join('')}
+        ${(datos.vacantes || []).length === 0 ? '' : (datos.vacantes || []).map((v, i) => vacantRow(i, v)).join('')}
       </div>
       <button class="btn btn-outline btn-sm" onclick="addVacantRow()" style="margin-top:8px">+ Agregar vacante</button>
     `, () => {
@@ -1321,17 +1340,30 @@ function renderRhhForm(formId, container) {
       return { registros: list };
     });
   } else if (formId === 'horas_extra') {
+    // Auto-pull from RHH overtime vales
     container.innerHTML = dailyFormWrap('Horas extra autorizadas (semana)', `
-      <div class="form-row">
-        <div class="form-group"><label>Total horas extra</label><input type="number" id="df_total_he" min="0" step="0.5" value="${datos.total_horas || 0}"></div>
-        <div class="form-group"><label>Personas involucradas</label><input type="number" id="df_personas_he" min="0" value="${datos.personas || 0}"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <p style="font-size:12px;color:var(--muted);margin:0">Vales de tiempo extra del modulo RHH</p>
+        <button class="btn btn-outline btn-sm" onclick="_loadRhhHorasExtra()">Cargar de RHH</button>
       </div>
+      <div class="kpi-row" style="margin-bottom:12px">
+        <div class="kpi"><label>Hrs autorizadas</label><div class="val" id="df_kpi_hrs_aut">${datos.horas_autorizadas || 0}</div></div>
+        <div class="kpi"><label>Hrs pendientes</label><div class="val" id="df_kpi_hrs_pend">${datos.horas_pendientes || 0}</div></div>
+        <div class="kpi"><label>Personas</label><div class="val" id="df_kpi_personas">${datos.personas || 0}</div></div>
+      </div>
+      <div id="df_he_table" style="font-size:12px;margin-bottom:12px">${datos._he_html || '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener vales de la semana</p>'}</div>
+      <input type="hidden" id="df_total_he" value="${datos.total_horas || 0}">
+      <input type="hidden" id="df_personas_he" value="${datos.personas || 0}">
+      <input type="hidden" id="df_hrs_aut" value="${datos.horas_autorizadas || 0}">
+      <input type="hidden" id="df_hrs_pend" value="${datos.horas_pendientes || 0}">
       <div class="form-group">
         <label>Notas / Justificacion</label>
         <textarea id="df_notas_he" rows="3">${esc(datos.notas || '')}</textarea>
       </div>
     `, () => ({
       total_horas: Number(document.getElementById('df_total_he').value) || 0,
+      horas_autorizadas: Number(document.getElementById('df_hrs_aut').value) || 0,
+      horas_pendientes: Number(document.getElementById('df_hrs_pend').value) || 0,
       personas: Number(document.getElementById('df_personas_he').value) || 0,
       notas: document.getElementById('df_notas_he').value.trim()
     }));
@@ -1405,6 +1437,131 @@ function capRow(i, r) {
 }
 function addCapRow() {
   document.getElementById('df_cap_list').insertAdjacentHTML('beforeend', capRow(0, {}));
+}
+
+// ── RHH auto-pull helpers ──────────────────────────────────────────────────
+
+const STATUS_LABELS = {
+  retardo: 'Retardo', falta: 'Falta', vacaciones: 'Vacaciones', incapacidad: 'Incapacidad',
+  permiso: 'Permiso', permiso_con_goce: 'Permiso C/G', permiso_sin_goce: 'Permiso S/G',
+  tiempo_extra: 'Tiempo Extra', cumpleanos: 'Cumpleaños'
+};
+
+async function _loadRhhAusentismo() {
+  const data = await apiFetch('/api/planner/integracion/rhh/ausentismo?fecha=' + _dailyDate);
+  if (!data) return;
+  const { registros, resumen } = data;
+
+  // Update KPI counters
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('df_kpi_retardos', resumen.retardo || 0);
+  set('df_kpi_faltas', resumen.falta || 0);
+  set('df_kpi_vac', resumen.vacaciones || 0);
+  set('df_kpi_incap', resumen.incapacidad || 0);
+  const permisos = (resumen.permiso || 0) + (resumen.permiso_con_goce || 0) + (resumen.permiso_sin_goce || 0);
+  set('df_kpi_perm', permisos);
+  const otros = (resumen.tiempo_extra || 0) + (resumen.cumpleanos || 0);
+  set('df_kpi_otros', otros);
+
+  // Hidden inputs
+  const si = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  si('df_retardos', resumen.retardo || 0);
+  si('df_faltas', resumen.falta || 0);
+  si('df_vacaciones', resumen.vacaciones || 0);
+  si('df_incapacidad', resumen.incapacidad || 0);
+  si('df_permisos', permisos);
+  si('df_otros', otros);
+  si('df_registros_json', JSON.stringify(registros));
+
+  // Build table
+  const tbl = document.getElementById('df_ausen_table');
+  if (tbl) {
+    if (registros.length === 0) {
+      tbl.innerHTML = '<p style="color:var(--green);font-weight:600">Sin incidencias registradas para este dia</p>';
+    } else {
+      tbl.innerHTML = '<table style="width:100%;font-size:12px"><thead><tr><th>Nombre</th><th>Puesto</th><th>Incidencia</th><th>Notas</th></tr></thead><tbody>' +
+        registros.map(r => '<tr><td><strong>' + esc(r.nombre) + '</strong></td><td style="color:var(--muted)">' + esc(r.puesto_nombre || '') + '</td><td><span class="badge atrasada" style="font-size:10px">' + (STATUS_LABELS[r.status] || r.status) + '</span></td><td style="color:var(--muted);font-size:11px">' + esc(r.notes || '') + '</td></tr>').join('') +
+        '</tbody></table>';
+    }
+  }
+}
+
+async function _loadRhhPlantilla() {
+  const data = await apiFetch('/api/planner/integracion/rhh/plantilla');
+  if (!data) return;
+  const { puestos, resumen } = data;
+
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('df_kpi_req', resumen.total_requerido);
+  set('df_kpi_act', resumen.total_actual);
+  set('df_kpi_cob', resumen.porcentaje_global + '%');
+  const cobEl = document.getElementById('df_kpi_cob');
+  if (cobEl) cobEl.style.color = resumen.porcentaje_global >= 100 ? 'var(--green)' : 'var(--red)';
+  set('df_kpi_vacantes', resumen.vacantes_abiertas);
+
+  const si = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  si('df_requeridos', resumen.total_requerido);
+  si('df_disponibles', resumen.total_actual);
+  si('df_vacantes_ab', resumen.vacantes_abiertas);
+
+  const tbl = document.getElementById('df_plantilla_table');
+  if (tbl) {
+    const vacantes = puestos.filter(p => p.vacantes_abiertas > 0);
+    if (vacantes.length === 0) {
+      tbl.innerHTML = '<p style="color:var(--green);font-weight:600">Plantilla completa — sin vacantes abiertas</p>';
+    } else {
+      tbl.innerHTML = '<table style="width:100%;font-size:12px"><thead><tr><th>Puesto</th><th>Depto</th><th style="text-align:center">Req</th><th style="text-align:center">Act</th><th style="text-align:center">%</th><th style="text-align:center">Vacantes</th></tr></thead><tbody>' +
+        vacantes.map(p => '<tr><td><strong>' + esc(p.puesto) + '</strong></td><td style="color:var(--muted)">' + esc(p.departamento) + '</td><td style="text-align:center">' + p.requerido + '</td><td style="text-align:center">' + p.actual + '</td><td style="text-align:center;color:' + (p.porcentaje >= 100 ? 'var(--green)' : 'var(--red)') + ';font-weight:700">' + p.porcentaje + '%</td><td style="text-align:center;color:var(--red);font-weight:700">' + p.vacantes_abiertas + '</td></tr>').join('') +
+        '</tbody></table>';
+    }
+  }
+}
+
+async function _loadRhhVacantes() {
+  const data = await apiFetch('/api/planner/integracion/rhh/plantilla');
+  if (!data) return;
+  const vacantes = data.puestos.filter(p => p.vacantes_abiertas > 0);
+  const list = document.getElementById('df_vacantes_list');
+  if (!list) return;
+  list.innerHTML = '';
+  vacantes.forEach(v => {
+    for (let i = 0; i < v.vacantes_abiertas; i++) {
+      list.insertAdjacentHTML('beforeend', vacantRow(0, { puesto: v.puesto + ' (' + v.departamento + ')', fecha_apertura: '', prioridad: 'media' }));
+    }
+  });
+  if (vacantes.length === 0) {
+    list.innerHTML = '<p style="color:var(--green);font-size:12px">Sin vacantes abiertas segun plantilla</p>';
+  }
+}
+
+async function _loadRhhHorasExtra() {
+  const data = await apiFetch('/api/planner/integracion/rhh/horas-extra?fecha=' + _dailyDate);
+  if (!data) return;
+  const { registros, resumen } = data;
+
+  const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+  set('df_kpi_hrs_aut', resumen.horas_autorizadas || 0);
+  set('df_kpi_hrs_pend', resumen.horas_pendientes || 0);
+  set('df_kpi_personas', resumen.total || 0);
+
+  const si = (id, v) => { const e = document.getElementById(id); if (e) e.value = v; };
+  si('df_total_he', (resumen.horas_autorizadas || 0) + (resumen.horas_pendientes || 0));
+  si('df_personas_he', resumen.total || 0);
+  si('df_hrs_aut', resumen.horas_autorizadas || 0);
+  si('df_hrs_pend', resumen.horas_pendientes || 0);
+
+  const tbl = document.getElementById('df_he_table');
+  if (tbl) {
+    if (registros.length === 0) {
+      tbl.innerHTML = '<p style="color:var(--muted)">Sin vales de tiempo extra esta semana (' + data.semana.inicio + ' a ' + data.semana.fin + ')</p>';
+    } else {
+      const statusBadge = s => s === 'autorizado' ? 'cerrada' : s === 'pendiente' ? 'en_proceso' : 'sin_empezar';
+      tbl.innerHTML = '<p style="font-size:11px;color:var(--muted);margin-bottom:6px">Semana: ' + data.semana.inicio + ' a ' + data.semana.fin + '</p>' +
+        '<table style="width:100%;font-size:12px"><thead><tr><th>Nombre</th><th>Fecha</th><th>Horas</th><th>Razon</th><th>Status</th></tr></thead><tbody>' +
+        registros.map(r => '<tr><td><strong>' + esc(r.nombre) + '</strong></td><td>' + r.fecha + '</td><td style="font-weight:700">' + r.horas + 'h</td><td style="color:var(--muted)">' + esc(r.razon || '') + '</td><td><span class="badge ' + statusBadge(r.status) + '" style="font-size:10px">' + r.status + '</span></td></tr>').join('') +
+        '</tbody></table>';
+    }
+  }
 }
 
 // ── PRODUCCION Daily Forms ───────────────────────────────────────────────────
@@ -1523,8 +1680,11 @@ async function renderEficienciasForm(container, datos) {
   const kpis = kpiData ? kpiData.kpis : {};
   const lineas = ['Baker', 'L1', 'L3', 'L4'];
 
-  container.innerHTML = dailyFormWrap('Eficiencias por linea (auto-pull produccion)', `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Datos obtenidos automaticamente del modulo de Produccion. Puedes ajustar valores manualmente si es necesario.</p>
+  container.innerHTML = dailyFormWrap('Eficiencias por linea', `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--muted);margin:0">Datos del modulo Produccion. Ajusta manualmente si es necesario.</p>
+      <button class="btn btn-outline btn-sm" onclick="renderEficienciasForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${lineas.map(l => {
         const k = kpis[l] || {};
@@ -1566,7 +1726,11 @@ async function renderParosForm(container, datos) {
   let totalParos = 0;
   lineas.forEach(l => { totalMin += (paros[l]?.minutos_total || 0); totalParos += (paros[l]?.total || 0); });
 
-  container.innerHTML = dailyFormWrap('Paros de lineas (auto-pull produccion)', `
+  container.innerHTML = dailyFormWrap('Paros de lineas', `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--muted);margin:0">Datos del modulo Produccion — paros del dia</p>
+      <button class="btn btn-outline btn-sm" onclick="renderParosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>Total paros</label><div class="val">${totalParos}</div></div>
       <div class="kpi red"><label>Minutos totales</label><div class="val">${totalMin}</div></div>
@@ -1640,7 +1804,10 @@ async function renderRechazosInternosForm(container, datos) {
   const kpis = kpiData ? kpiData.kpis : {};
 
   container.innerHTML = dailyFormWrap('Rechazos internos / % calidad', `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Baker y L1: datos auto-pull del KPI calidad. L3 y L4: ingreso manual.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--muted);margin:0">Baker y L1: auto-pull KPI calidad. L3 y L4: manual.</p>
+      <button class="btn btn-outline btn-sm" onclick="renderRechazosInternosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${['Baker', 'L1', 'L3', 'L4'].map(l => {
         const k = kpis[l] || {};
@@ -1700,6 +1867,9 @@ async function renderParosFallaForm(container, datos) {
   const pendientes = mantData ? mantData.pendientes_globales : 0;
 
   container.innerHTML = dailyFormWrap(`Paros por falla — OTs del ${ayer}`, `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-outline btn-sm" onclick="renderParosFallaForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>OTs del dia anterior</label><div class="val">${ordenes.length}</div></div>
       <div class="kpi red"><label>OTs pendientes global</label><div class="val">${pendientes}</div></div>
@@ -1769,8 +1939,11 @@ async function renderDisponibilidadForm(container, datos) {
   const kpiData = await apiFetch(`/api/planner/integracion/produccion/kpis?fecha=${_dailyDate}`);
   const kpis = kpiData ? kpiData.kpis : {};
 
-  container.innerHTML = dailyFormWrap('% Disponibilidad por linea (auto-pull produccion)', `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Disponibilidad calculada del modulo de Produccion. Ajusta manualmente si es necesario.</p>
+  container.innerHTML = dailyFormWrap('% Disponibilidad por linea', `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--muted);margin:0">Disponibilidad del modulo Produccion. Ajusta manualmente si es necesario.</p>
+      <button class="btn btn-outline btn-sm" onclick="renderDisponibilidadForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${['Baker', 'L1', 'L3', 'L4'].map(l => {
         const k = kpis[l] || {};
@@ -1820,7 +1993,10 @@ async function renderMateriasCriticasForm(container, datos) {
 
   const typeLabels = { quimicos_proceso: 'Quimicos Proceso', epp: 'EPP', insumos_consumibles: 'Insumos', quimicos_titulacion: 'Titulacion' };
 
-  container.innerHTML = dailyFormWrap('Materias primas y quimicos criticos (auto-pull inventarios)', `
+  container.innerHTML = dailyFormWrap('Materias primas y quimicos criticos', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-outline btn-sm" onclick="renderMateriasCriticasForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi red"><label>Items fuera de rango</label><div class="val">${items.filter(i => i.fuera_min || i.fuera_max).length}</div></div>
       <div class="kpi"><label>Sin conteo</label><div class="val">${items.filter(i => i.sin_conteo).length}</div></div>
@@ -1856,7 +2032,10 @@ async function renderOrdenesCompraForm(container, datos) {
   const statusOrder = ['En cotizacion', 'En autorizacion', 'Autorizado', 'Enviada', 'En proceso'];
   const allStatus = Object.keys(porEstatus);
 
-  container.innerHTML = dailyFormWrap('Ordenes de compra — resumen por estatus (auto-pull compras)', `
+  container.innerHTML = dailyFormWrap('Ordenes de compra — resumen por estatus', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-outline btn-sm" onclick="renderOrdenesCompraForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>Items totales</label><div class="val">${comp ? comp.total_items : 0}</div></div>
       <div class="kpi orange"><label>POs activas</label><div class="val">${comp ? comp.pos_activas : 0}</div></div>
@@ -1906,6 +2085,9 @@ async function renderInventariosCriticosForm(container, datos) {
   const soloFueraMin = items.filter(i => i.fuera_min);
 
   container.innerHTML = dailyFormWrap('Nivel de inventarios — materiales criticos bajo minimo', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
+      <button class="btn btn-outline btn-sm" onclick="renderInventariosCriticosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+    </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi red"><label>Bajo minimo</label><div class="val">${soloFueraMin.length}</div></div>
     </div>
@@ -1951,7 +2133,10 @@ async function renderCpkForm(container) {
   const lineas = ['Baker', 'L1', 'L3', 'L4'];
 
   container.innerHTML = dailyFormWrap('CP / CPK — Ultimas titulaciones por linea', `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Datos de las ultimas titulaciones del modulo de Calidad/Vales.</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <p style="font-size:12px;color:var(--muted);margin:0">Titulaciones del modulo Vales/Calidad</p>
+      <button class="btn btn-outline btn-sm" onclick="renderCpkForm(this.closest('.daily-form-body'))">Recargar</button>
+    </div>
     ${lineas.map(l => {
       const headers = tits[l] || [];
       if (headers.length === 0) return `<div style="font-size:12px;color:var(--muted);margin-bottom:8px"><b>${l}:</b> Sin titulaciones recientes</div>`;
