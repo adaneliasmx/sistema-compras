@@ -1107,59 +1107,45 @@ router.get('/integracion/vales/cpk', (req, res) => {
     });
   }
 
-  // CPK por parametro — ultimas 30 mediciones de cada parametro con limites
+  // Migrar limites de Peso Fosfato T14 MACRO si faltan (1000-2500 mg/ft²)
+  const pf14 = params.find(p => p.id === 14);
+  if (pf14 && pf14.valor_min == null) {
+    pf14.valor_min = 1000; pf14.valor_max = 2500;
+    pf14.tipo_rango = 'entre'; pf14.unidad = 'mg/ft²';
+    try { const { write: writeVales } = require('../db-vales'); writeVales(valesDb); } catch (_) {}
+  }
+
+  // CPK por parametro — solo Peso Fosfato (IDs 14, 52, 92)
+  const PESO_FOSFATO_IDS = [14, 52, 92];
   const cpkParams = [];
-  const paramsConLimites = params.filter(p => p.activo && p.valor_min != null && p.valor_max != null);
-  for (const p of paramsConLimites) {
+  for (const pid of PESO_FOSFATO_IDS) {
+    const p = params.find(x => x.id === pid);
+    if (!p) continue;
     const vals = detalles
       .filter(d => d.parametro_id === p.id && d.valor_registrado != null)
       .sort((a, b) => b.id - a.id)
       .slice(0, 30)
       .map(d => Number(d.valor_registrado))
       .filter(v => !isNaN(v));
-    if (vals.length < 2) continue;
+    if (vals.length < 2) {
+      cpkParams.push({ id: p.id, nombre: p.nombre_parametro, tanque: p.no_tanque || p.nombre_tanque, unidad: p.unidad, n: vals.length, mean: null, sigma: null, lsl: p.valor_min, usl: p.valor_max, cp: null, cpk: null });
+      continue;
+    }
     const n = vals.length;
     const mean = vals.reduce((s, v) => s + v, 0) / n;
     const sigma = Math.sqrt(vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1));
     const lsl = p.valor_min;
     const usl = p.valor_max;
-    const cp = sigma > 0 ? (usl - lsl) / (6 * sigma) : null;
-    const cpkU = sigma > 0 ? (usl - mean) / (3 * sigma) : null;
-    const cpkL = sigma > 0 ? (mean - lsl) / (3 * sigma) : null;
+    const cp = sigma > 0 && lsl != null && usl != null ? (usl - lsl) / (6 * sigma) : null;
+    const cpkU = sigma > 0 && usl != null ? (usl - mean) / (3 * sigma) : null;
+    const cpkL = sigma > 0 && lsl != null ? (mean - lsl) / (3 * sigma) : null;
     const cpkVal = cpkU != null && cpkL != null ? Math.min(cpkU, cpkL) : null;
     cpkParams.push({
-      id: p.id,
-      nombre: p.nombre_parametro,
-      tanque: p.no_tanque || p.nombre_tanque,
-      unidad: p.unidad,
-      n,
-      mean: Math.round(mean * 1000) / 1000,
-      sigma: Math.round(sigma * 1000) / 1000,
+      id: p.id, nombre: p.nombre_parametro, tanque: p.no_tanque || p.nombre_tanque, unidad: p.unidad,
+      n, mean: Math.round(mean * 1000) / 1000, sigma: Math.round(sigma * 1000) / 1000,
       lsl, usl,
       cp: cp != null ? Math.round(cp * 100) / 100 : null,
       cpk: cpkVal != null ? Math.round(cpkVal * 100) / 100 : null
-    });
-  }
-
-  // Parametros sin limites pero relevantes (ej: Peso Fosfato)
-  const sinLimites = params.filter(p => p.activo && (p.valor_min == null || p.valor_max == null) && /peso.*fosf/i.test(p.nombre_parametro || ''));
-  for (const p of sinLimites) {
-    const vals = detalles
-      .filter(d => d.parametro_id === p.id && d.valor_registrado != null)
-      .slice(-30)
-      .map(d => Number(d.valor_registrado))
-      .filter(v => !isNaN(v));
-    const n = vals.length;
-    const mean = n > 0 ? vals.reduce((s, v) => s + v, 0) / n : null;
-    cpkParams.push({
-      id: p.id,
-      nombre: p.nombre_parametro,
-      tanque: p.no_tanque || p.nombre_tanque,
-      unidad: p.unidad,
-      n,
-      mean: mean != null ? Math.round(mean * 1000) / 1000 : null,
-      sigma: null, lsl: null, usl: null, cp: null, cpk: null,
-      sin_limites: true
     });
   }
 
