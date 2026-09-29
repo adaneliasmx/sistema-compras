@@ -637,7 +637,7 @@ const DAILY_FORMS = {
   mantenimiento: ['paros_falla', 'equipos_fuera', 'disponibilidad', 'correctivos_pendientes', 'preventivo_programado', 'equipos_criticos', 'riesgos_falla'],
   procesos: ['cpk', 'problemas_proceso', 'estudios_pruebas', 'mejoras_implementaciones'],
   compras: ['materias_criticas', 'ordenes_compra', 'refacciones_criticas', 'inventarios_criticos', 'compras_urgentes'],
-  sgc: ['no_conformidades', 'documentos_pendientes', 'indicadores_fuera', 'cumplimiento_sgc'],
+  sgc: ['no_conformidades', '8ds_abiertos', 'documentos_pendientes', 'indicadores_fuera', 'cumplimiento_sgc'],
   operaciones: ['prioridades_dia', 'pedidos_criticos']
 };
 
