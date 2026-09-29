@@ -850,6 +850,29 @@ const DAILY_FORMS_META = {
     { id: 'epp', nombre: 'EPP y cumplimiento', icon: '🦺' },
     { id: 'ptar', nombre: 'PTAR', icon: '💧' }
   ],
+  produccion: [
+    { id: 'piezas_procesadas', nombre: 'Piezas procesadas', icon: '🔩' },
+    { id: 'eficiencias', nombre: 'Eficiencias por linea', icon: '📈' },
+    { id: 'paros_lineas', nombre: 'Paros de lineas', icon: '🛑' },
+    { id: 'material_pendiente', nombre: 'Material pendiente', icon: '📦' },
+    { id: 'riesgos_incumplimiento', nombre: 'Riesgos de incumplimiento', icon: '⚠' }
+  ],
+  calidad: [
+    { id: 'rechazos_internos', nombre: 'Rechazos internos / % calidad', icon: '❌' },
+    { id: 'rechazos_cliente', nombre: 'Rechazos de cliente', icon: '🔙' },
+    { id: 'problemas_calidad', nombre: 'Problemas de calidad', icon: '🔍' },
+    { id: 'liberaciones_pendientes', nombre: 'Liberaciones pendientes', icon: '🔓' },
+    { id: 'reprocesos', nombre: '% Reprocesos', icon: '🔄' }
+  ],
+  mantenimiento: [
+    { id: 'paros_falla', nombre: 'Paros por falla', icon: '⚡' },
+    { id: 'equipos_fuera', nombre: 'Equipos fuera de operacion', icon: '🚫' },
+    { id: 'disponibilidad', nombre: '% Disponibilidad', icon: '📊' },
+    { id: 'correctivos_pendientes', nombre: 'Correctivos pendientes', icon: '🔧' },
+    { id: 'preventivo_programado', nombre: 'Preventivo programado', icon: '📅' },
+    { id: 'equipos_criticos', nombre: 'Equipos criticos / refacciones', icon: '⚙' },
+    { id: 'riesgos_falla', nombre: 'Riesgos de falla', icon: '⚠' }
+  ],
   rhh: [
     { id: 'ausentismo', nombre: 'Ausentismo y retardos', icon: '📅' },
     { id: 'personal_disponible', nombre: 'Personal disponible vs requerido', icon: '👥' },
@@ -940,6 +963,9 @@ async function selectDailyForm(deptoId, formId) {
   // Render form based on department + form
   if (deptoId === 'smya') renderSmyaForm(formId, container);
   else if (deptoId === 'rhh') renderRhhForm(formId, container);
+  else if (deptoId === 'produccion') renderProduccionForm(formId, container);
+  else if (deptoId === 'calidad') renderCalidadForm(formId, container);
+  else if (deptoId === 'mantenimiento') renderMantenimientoForm(formId, container);
   else container.innerHTML = '<div class="empty">Formulario no disponible aun</div>';
 }
 
@@ -1346,6 +1372,394 @@ function capRow(i, r) {
 }
 function addCapRow() {
   document.getElementById('df_cap_list').insertAdjacentHTML('beforeend', capRow(0, {}));
+}
+
+// ── PRODUCCION Daily Forms ───────────────────────────────────────────────────
+
+function renderProduccionForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'piezas_procesadas') {
+    const lineas = ['Baker', 'L1', 'L3', 'L4'];
+    container.innerHTML = dailyFormWrap('Piezas procesadas por cliente/linea', `
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra las piezas procesadas del dia por linea y cliente.</p>
+      ${lineas.map(l => `
+        <div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px">
+          <b style="font-size:13px;color:var(--primary)">${l}</b>
+          <div class="form-row" style="margin-top:8px">
+            <div class="form-group" style="margin:0"><label style="font-size:11px">Piezas procesadas</label><input type="number" id="df_pz_${l}" min="0" value="${(datos[l] && datos[l].procesadas) || 0}"></div>
+            <div class="form-group" style="margin:0"><label style="font-size:11px">Piezas objetivo</label><input type="number" id="df_obj_${l}" min="0" value="${(datos[l] && datos[l].objetivo) || 0}"></div>
+          </div>
+        </div>
+      `).join('')}
+      <div class="form-group"><label>Observaciones</label><textarea id="df_obs_pz" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+    `, () => {
+      const r = { observaciones: document.getElementById('df_obs_pz').value.trim() };
+      ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
+        r[l] = {
+          procesadas: Number(document.getElementById('df_pz_' + l).value) || 0,
+          objetivo: Number(document.getElementById('df_obj_' + l).value) || 0
+        };
+      });
+      return r;
+    });
+  } else if (formId === 'eficiencias') {
+    renderEficienciasForm(container, datos);
+  } else if (formId === 'paros_lineas') {
+    renderParosForm(container, datos);
+  } else if (formId === 'material_pendiente') {
+    const items = datos.items || [];
+    container.innerHTML = dailyFormWrap('Material pendiente para producir', `
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra material pendiente por cliente (Amsted, Tenneco, SKF).</p>
+      <div id="df_mat_list">
+        ${items.map((it, i) => matPendRow(i, it)).join('')}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addMatPendRow()" style="margin-top:8px">+ Agregar material</button>
+    `, () => {
+      const rows = document.querySelectorAll('.df-mat-row');
+      const list = [];
+      rows.forEach(r => {
+        const np = r.querySelector('.mat-np')?.value?.trim();
+        if (np) list.push({
+          cliente: r.querySelector('.mat-cli')?.value || '',
+          numero_parte: np,
+          cantidad: Number(r.querySelector('.mat-cant')?.value) || 0,
+          notas: r.querySelector('.mat-notas')?.value?.trim() || ''
+        });
+      });
+      return { items: list };
+    });
+  } else if (formId === 'riesgos_incumplimiento') {
+    const items = datos.items || [];
+    container.innerHTML = dailyFormWrap('Riesgos de incumplimiento', `
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra riesgos que puedan afectar entregas a cliente.</p>
+      <div id="df_riesgo_list">
+        ${items.map((it, i) => riesgoRow(i, it)).join('')}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addRiesgoRow()" style="margin-top:8px">+ Agregar riesgo</button>
+    `, () => {
+      const rows = document.querySelectorAll('.df-riesgo-row');
+      const list = [];
+      rows.forEach(r => {
+        const desc = r.querySelector('.ries-desc')?.value?.trim();
+        if (desc) list.push({
+          cliente: r.querySelector('.ries-cli')?.value || '',
+          descripcion: desc,
+          impacto: r.querySelector('.ries-imp')?.value || 'medio'
+        });
+      });
+      return { items: list };
+    });
+  }
+}
+
+function matPendRow(i, it) {
+  it = it || {};
+  return `<div class="df-mat-row" style="display:grid;grid-template-columns:1fr 2fr 80px 2fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Cliente</label>
+      <select class="mat-cli"><option value="SKF" ${it.cliente==='SKF'?'selected':''}>SKF</option><option value="Amsted" ${it.cliente==='Amsted'?'selected':''}>Amsted</option><option value="Tenneco" ${it.cliente==='Tenneco'?'selected':''}>Tenneco</option><option value="Otro" ${it.cliente==='Otro'?'selected':''}>Otro</option></select>
+    </div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">No. parte</label><input type="text" class="mat-np" value="${esc(it.numero_parte || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Cant.</label><input type="number" class="mat-cant" min="0" value="${it.cantidad || 0}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Notas</label><input type="text" class="mat-notas" value="${esc(it.notas || '')}"></div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addMatPendRow() { document.getElementById('df_mat_list').insertAdjacentHTML('beforeend', matPendRow(0, {})); }
+
+function riesgoRow(i, it) {
+  it = it || {};
+  return `<div class="df-riesgo-row" style="display:grid;grid-template-columns:1fr 3fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Cliente</label>
+      <select class="ries-cli"><option value="SKF" ${it.cliente==='SKF'?'selected':''}>SKF</option><option value="Amsted" ${it.cliente==='Amsted'?'selected':''}>Amsted</option><option value="Tenneco" ${it.cliente==='Tenneco'?'selected':''}>Tenneco</option><option value="General" ${it.cliente==='General'||!it.cliente?'selected':''}>General</option></select>
+    </div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Descripcion del riesgo</label><input type="text" class="ries-desc" value="${esc(it.descripcion || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Impacto</label>
+      <select class="ries-imp"><option value="alto" ${it.impacto==='alto'?'selected':''}>Alto</option><option value="medio" ${it.impacto==='medio'||!it.impacto?'selected':''}>Medio</option><option value="bajo" ${it.impacto==='bajo'?'selected':''}>Bajo</option></select>
+    </div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addRiesgoRow() { document.getElementById('df_riesgo_list').insertAdjacentHTML('beforeend', riesgoRow(0, {})); }
+
+// Auto-pull: Eficiencias
+async function renderEficienciasForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const kpiData = await apiFetch(`/api/planner/integracion/produccion/kpis?fecha=${_dailyDate}`);
+
+  const kpis = kpiData ? kpiData.kpis : {};
+  const lineas = ['Baker', 'L1', 'L3', 'L4'];
+
+  container.innerHTML = dailyFormWrap('Eficiencias por linea (auto-pull produccion)', `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Datos obtenidos automaticamente del modulo de Produccion. Puedes ajustar valores manualmente si es necesario.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+      ${lineas.map(l => {
+        const k = kpis[l] || {};
+        const manual = datos[l] || {};
+        const ef = manual.eficiencia !== undefined ? manual.eficiencia : (k.eficiencia !== null ? k.eficiencia : '');
+        const cal = manual.calidad !== undefined ? manual.calidad : (k.calidad !== null ? k.calidad : '');
+        const disp = manual.disponibilidad !== undefined ? manual.disponibilidad : (k.disponibilidad !== null ? k.disponibilidad : '');
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
+          <b style="font-size:13px;color:var(--primary)">${l}</b>
+          ${k.eficiencia !== null ? '<span style="font-size:10px;color:var(--green);margin-left:6px">auto</span>' : '<span style="font-size:10px;color:var(--orange);margin-left:6px">sin datos</span>'}
+          <div class="form-group" style="margin:8px 0 4px"><label style="font-size:10px">Eficiencia %</label><input type="number" id="df_ef_${l}" min="0" max="100" value="${ef}" style="font-size:13px"></div>
+          <div class="form-group" style="margin:4px 0"><label style="font-size:10px">Calidad %</label><input type="number" id="df_cal_${l}" min="0" max="100" value="${cal}" style="font-size:13px"></div>
+          <div class="form-group" style="margin:4px 0 0"><label style="font-size:10px">Disponibilidad %</label><input type="number" id="df_disp_${l}" min="0" max="100" value="${disp}" style="font-size:13px"></div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="df_obs_ef" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => {
+    const r = { observaciones: document.getElementById('df_obs_ef').value.trim() };
+    ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
+      r[l] = {
+        eficiencia: Number(document.getElementById('df_ef_' + l).value) || 0,
+        calidad: Number(document.getElementById('df_cal_' + l).value) || 0,
+        disponibilidad: Number(document.getElementById('df_disp_' + l).value) || 0
+      };
+    });
+    return r;
+  });
+}
+
+// Auto-pull: Paros
+async function renderParosForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const parosData = await apiFetch(`/api/planner/integracion/produccion/paros?fecha=${_dailyDate}`);
+  const paros = parosData ? parosData.paros : {};
+  const lineas = ['Baker', 'L1', 'L3', 'L4'];
+
+  let totalMin = 0;
+  let totalParos = 0;
+  lineas.forEach(l => { totalMin += (paros[l]?.minutos_total || 0); totalParos += (paros[l]?.total || 0); });
+
+  container.innerHTML = dailyFormWrap('Paros de lineas (auto-pull produccion)', `
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi"><label>Total paros</label><div class="val">${totalParos}</div></div>
+      <div class="kpi red"><label>Minutos totales</label><div class="val">${totalMin}</div></div>
+      ${lineas.map(l => `<div class="kpi"><label>${l}</label><div class="val">${paros[l]?.total || 0}</div><div class="sub">${paros[l]?.minutos_total || 0} min</div></div>`).join('')}
+    </div>
+    ${lineas.map(l => {
+      const p = paros[l] || { paros: [] };
+      if (p.paros.length === 0) return `<div style="font-size:12px;color:var(--muted);margin-bottom:8px"><b>${l}:</b> Sin paros registrados</div>`;
+      return `
+        <div style="margin-bottom:12px">
+          <b style="font-size:13px;color:var(--primary)">${l}</b> <span style="font-size:11px;color:var(--muted)">(${p.total} paros, ${p.minutos_total} min)</span>
+          <table style="margin-top:4px;font-size:12px">
+            <thead><tr><th>Folio</th><th>Motivo</th><th>Sub-motivo</th><th>Inicio</th><th>Fin</th><th>Min</th><th>Estado</th></tr></thead>
+            <tbody>
+              ${p.paros.map(pp => `<tr>
+                <td style="font-family:monospace;font-size:11px">${esc(pp.folio || '')}</td>
+                <td>${esc(pp.motivo || '')}</td>
+                <td>${esc(pp.sub_motivo || '—')}</td>
+                <td>${pp.hora_inicio || ''}</td>
+                <td>${pp.hora_fin || '—'}</td>
+                <td style="font-weight:700">${pp.duracion_min !== null ? pp.duracion_min : '...'}</td>
+                <td><span class="badge ${pp.estado === 'activo' ? 'atrasada' : 'cerrada'}" style="font-size:10px">${pp.estado}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }).join('')}
+    <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones tomadas</label><textarea id="df_obs_paros" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_paros').value.trim(),
+    resumen: { total_paros: totalParos, total_min: totalMin }
+  }));
+}
+
+// ── CALIDAD Daily Forms ─────────────────────────────────────────────────────
+
+function renderCalidadForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'rechazos_internos') {
+    renderRechazosInternosForm(container, datos);
+  } else if (formId === 'rechazos_cliente') {
+    renderTaskFormDaily(container, 'calidad', 'rechazos_cliente', 'Rechazos de cliente (SKF / Amsted / Tenneco)');
+  } else if (formId === 'problemas_calidad') {
+    renderTaskFormDaily(container, 'calidad', 'problemas_calidad', 'Problemas de calidad detectados');
+  } else if (formId === 'liberaciones_pendientes') {
+    renderTaskFormDaily(container, 'calidad', 'liberaciones_pendientes', 'Liberaciones pendientes — producto retenido');
+  } else if (formId === 'reprocesos') {
+    container.innerHTML = dailyFormWrap('% Reprocesos', `
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Porcentaje de reprocesos por linea.</p>
+      <div class="form-row">
+        ${['Baker', 'L1', 'L3', 'L4'].map(l => `
+          <div class="form-group">
+            <label>${l} — % reprocesos</label>
+            <input type="number" id="df_rep_${l}" min="0" max="100" step="0.1" value="${datos[l] || 0}">
+          </div>
+        `).join('')}
+      </div>
+      <div class="form-group"><label>Observaciones</label><textarea id="df_obs_rep" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+    `, () => {
+      const r = { observaciones: document.getElementById('df_obs_rep').value.trim() };
+      ['Baker', 'L1', 'L3', 'L4'].forEach(l => { r[l] = Number(document.getElementById('df_rep_' + l).value) || 0; });
+      return r;
+    });
+  }
+}
+
+async function renderRechazosInternosForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const kpiData = await apiFetch(`/api/planner/integracion/produccion/kpis?fecha=${_dailyDate}`);
+  const kpis = kpiData ? kpiData.kpis : {};
+
+  container.innerHTML = dailyFormWrap('Rechazos internos / % calidad', `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Baker y L1: datos auto-pull del KPI calidad. L3 y L4: ingreso manual.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+      ${['Baker', 'L1', 'L3', 'L4'].map(l => {
+        const k = kpis[l] || {};
+        const autoCal = k.calidad !== null ? k.calidad : null;
+        const manual = datos[l] || {};
+        const isAuto = (l === 'Baker' || l === 'L1') && autoCal !== null;
+        const calVal = manual.calidad !== undefined ? manual.calidad : (autoCal !== null ? autoCal : '');
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
+          <b style="font-size:13px;color:var(--primary)">${l}</b>
+          ${isAuto ? '<span style="font-size:10px;color:var(--green);margin-left:4px">auto</span>' : '<span style="font-size:10px;color:var(--orange);margin-left:4px">manual</span>'}
+          <div class="form-group" style="margin:8px 0 4px"><label style="font-size:10px">% Calidad</label><input type="number" id="df_rcal_${l}" min="0" max="100" value="${calVal}"></div>
+          <div class="form-group" style="margin:4px 0 0"><label style="font-size:10px">Pzas rechazadas</label><input type="number" id="df_rech_${l}" min="0" value="${manual.rechazadas || 0}"></div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="df_obs_rech" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => {
+    const r = { observaciones: document.getElementById('df_obs_rech').value.trim() };
+    ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
+      r[l] = {
+        calidad: Number(document.getElementById('df_rcal_' + l).value) || 0,
+        rechazadas: Number(document.getElementById('df_rech_' + l).value) || 0
+      };
+    });
+    return r;
+  });
+}
+
+// ── MANTENIMIENTO Daily Forms ────────────────────────────────────────────────
+
+function renderMantenimientoForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'paros_falla') {
+    renderParosFallaForm(container, datos);
+  } else if (formId === 'equipos_fuera') {
+    renderEquiposFueraForm(container, datos);
+  } else if (formId === 'disponibilidad') {
+    renderDisponibilidadForm(container, datos);
+  } else if (formId === 'correctivos_pendientes') {
+    renderTaskFormDaily(container, 'mantenimiento', 'correctivos_pendientes', 'Mantenimientos correctivos pendientes');
+  } else if (formId === 'preventivo_programado') {
+    renderTaskFormDaily(container, 'mantenimiento', 'preventivo_programado', 'Mantenimiento preventivo programado');
+  } else if (formId === 'equipos_criticos') {
+    renderTaskFormDaily(container, 'mantenimiento', 'equipos_criticos', 'Equipos criticos y refacciones pendientes');
+  } else if (formId === 'riesgos_falla') {
+    renderTaskFormDaily(container, 'mantenimiento', 'riesgos_falla', 'Riesgos de falla que puedan afectar produccion');
+  }
+}
+
+async function renderParosFallaForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  // Obtener OTs del dia anterior
+  const ayer = new Date(new Date(_dailyDate + 'T12:00:00').getTime() - 86400000).toISOString().slice(0, 10);
+  const mantData = await apiFetch(`/api/planner/integracion/mantenimiento/ordenes?fecha=${ayer}`);
+  const ordenes = mantData ? mantData.ordenes : [];
+  const pendientes = mantData ? mantData.pendientes_globales : 0;
+
+  container.innerHTML = dailyFormWrap(`Paros por falla — OTs del ${ayer}`, `
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi"><label>OTs del dia anterior</label><div class="val">${ordenes.length}</div></div>
+      <div class="kpi red"><label>OTs pendientes global</label><div class="val">${pendientes}</div></div>
+      <div class="kpi"><label>Maq. parada</label><div class="val">${ordenes.filter(o => o.maquina_parada).length}</div></div>
+    </div>
+    ${ordenes.length === 0 ? '<div class="empty">Sin OTs registradas para el dia anterior</div>' : `
+      <table style="font-size:12px">
+        <thead><tr><th>Folio</th><th>Tipo</th><th>Equipo</th><th>Falla</th><th>Urgencia</th><th>Status</th><th>Tecnico</th></tr></thead>
+        <tbody>
+          ${ordenes.map(o => `<tr>
+            <td style="font-family:monospace;font-weight:700">${esc(o.folio)}</td>
+            <td style="font-size:11px">${esc(o.tipo)}</td>
+            <td>${esc(o.equipo_nombre)}</td>
+            <td style="max-width:200px">${esc((o.descripcion_falla || '').slice(0, 60))}</td>
+            <td><span class="badge ${o.nivel_urgencia}">${o.nivel_urgencia}</span></td>
+            <td><span class="badge ${o.status === 'cerrada' ? 'cerrada' : o.status === 'en_proceso' ? 'en_proceso' : 'sin_empezar'}" style="font-size:10px">${o.status}</span></td>
+            <td style="font-size:11px">${esc(o.tecnico_nombre)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    `}
+    <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones</label><textarea id="df_obs_paros_falla" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_paros_falla').value.trim(),
+    resumen: { ots_dia_anterior: ordenes.length, pendientes_global: pendientes }
+  }));
+}
+
+function renderEquiposFueraForm(container, datos) {
+  const equipos = datos.equipos || [];
+  container.innerHTML = dailyFormWrap('Equipos fuera de operacion', `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra equipos inhabilitados. Al guardar puedes crear una actividad de seguimiento.</p>
+    <div id="df_eqfuera_list">
+      ${equipos.map((eq, i) => eqFueraRow(i, eq)).join('')}
+    </div>
+    <button class="btn btn-outline btn-sm" onclick="addEqFueraRow()" style="margin-top:8px">+ Agregar equipo</button>
+  `, () => {
+    const rows = document.querySelectorAll('.df-eqfuera-row');
+    const list = [];
+    rows.forEach(r => {
+      const nombre = r.querySelector('.eq-nombre')?.value?.trim();
+      if (nombre) list.push({
+        nombre,
+        area: r.querySelector('.eq-area')?.value?.trim() || '',
+        fecha_inhabilitado: r.querySelector('.eq-fecha')?.value || '',
+        diagnostico: r.querySelector('.eq-diag')?.value?.trim() || ''
+      });
+    });
+    return { equipos: list };
+  });
+}
+
+function eqFueraRow(i, eq) {
+  eq = eq || {};
+  return `<div class="df-eqfuera-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 2fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Equipo</label><input type="text" class="eq-nombre" value="${esc(eq.nombre || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Area</label><input type="text" class="eq-area" value="${esc(eq.area || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Fecha inh.</label><input type="date" class="eq-fecha" value="${eq.fecha_inhabilitado || ''}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Diagnostico</label><input type="text" class="eq-diag" value="${esc(eq.diagnostico || '')}"></div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addEqFueraRow() { document.getElementById('df_eqfuera_list').insertAdjacentHTML('beforeend', eqFueraRow(0, {})); }
+
+async function renderDisponibilidadForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const kpiData = await apiFetch(`/api/planner/integracion/produccion/kpis?fecha=${_dailyDate}`);
+  const kpis = kpiData ? kpiData.kpis : {};
+
+  container.innerHTML = dailyFormWrap('% Disponibilidad por linea (auto-pull produccion)', `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Disponibilidad calculada del modulo de Produccion. Ajusta manualmente si es necesario.</p>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
+      ${['Baker', 'L1', 'L3', 'L4'].map(l => {
+        const k = kpis[l] || {};
+        const manual = datos[l] || {};
+        const disp = manual.disponibilidad !== undefined ? manual.disponibilidad : (k.disponibilidad !== null ? k.disponibilidad : '');
+        const color = disp !== '' && Number(disp) >= 85 ? 'var(--green)' : disp !== '' ? 'var(--red)' : 'var(--muted)';
+        return `<div style="border:1px solid var(--line);border-radius:8px;padding:14px;text-align:center">
+          <b style="font-size:13px;color:var(--primary)">${l}</b>
+          ${k.disponibilidad !== null ? '<span style="font-size:10px;color:var(--green);margin-left:4px">auto</span>' : ''}
+          <div style="font-size:28px;font-weight:800;color:${color};margin:8px 0">${disp !== '' ? disp + '%' : '—'}</div>
+          <input type="number" id="df_disp_m_${l}" min="0" max="100" value="${disp}" style="width:80px;padding:4px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px;text-align:center">
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="form-group"><label>Observaciones</label><textarea id="df_obs_disp" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => {
+    const r = { observaciones: document.getElementById('df_obs_disp').value.trim() };
+    ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
+      r[l] = { disponibilidad: Number(document.getElementById('df_disp_m_' + l).value) || 0 };
+    });
+    return r;
+  });
 }
 
 // ── Daily: tipo "crear tarea" ────────────────────────────────────────────────

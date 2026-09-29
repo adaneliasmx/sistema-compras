@@ -1,6 +1,8 @@
 const express = require('express');
 const { read, write, DEPARTAMENTOS } = require('../db-planner');
 const { read: readCompras } = require('../db');
+const { read: readProd } = require('../db-produccion');
+const { read: readMant } = require('../db-mantenimiento');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
@@ -662,6 +664,117 @@ router.get('/plantilla-resumen-semanal', (req, res) => {
 
 router.get('/daily-forms', (req, res) => {
   res.json(DAILY_FORMS);
+});
+
+// ── INTEGRACION: datos de otros modulos para daily ──────────────────────────
+
+// KPIs de produccion por linea para una fecha
+router.get('/integracion/produccion/kpis', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const prodDb = readProd();
+  const snapshots = prodDb.kpi_snapshots || [];
+  const del_dia = snapshots.filter(s => s.fecha === fecha);
+
+  const lineas = ['Baker', 'L1', 'L3', 'L4'];
+  const result = {};
+  for (const linea of lineas) {
+    const snaps = del_dia.filter(s => s.linea === linea);
+    if (snaps.length === 0) {
+      result[linea] = { eficiencia: null, calidad: null, disponibilidad: null, capacidad: null, rendimiento: null };
+    } else {
+      // Promediar turnos
+      const avg = (field) => {
+        const vals = snaps.map(s => s[field]).filter(v => v !== null && v !== undefined);
+        return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) : null;
+      };
+      result[linea] = {
+        eficiencia: avg('eficiencia'),
+        calidad: avg('calidad'),
+        disponibilidad: avg('disponibilidad'),
+        capacidad: avg('capacidad'),
+        rendimiento: avg('rendimiento'),
+        turnos: snaps.length
+      };
+    }
+  }
+  res.json({ fecha, kpis: result });
+});
+
+// Paros de produccion agrupados por linea
+router.get('/integracion/produccion/paros', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const prodDb = readProd();
+
+  const lineas = [
+    { key: 'paros', linea: 'L3' },
+    { key: 'paros', linea: 'L4' },
+    { key: 'paros_baker', linea: 'Baker' },
+    { key: 'paros_l1', linea: 'L1' }
+  ];
+
+  const result = {};
+  for (const { key, linea } of lineas) {
+    const allParos = prodDb[key] || [];
+    const del_dia = allParos.filter(p => p.fecha_inicio === fecha);
+    result[linea] = {
+      total: del_dia.length,
+      minutos_total: del_dia.reduce((s, p) => s + (p.duracion_min || 0), 0),
+      activos: del_dia.filter(p => p.estado === 'activo').length,
+      paros: del_dia.map(p => ({
+        id: p.id,
+        folio: p.folio,
+        motivo: p.motivo,
+        sub_motivo: p.sub_motivo,
+        hora_inicio: p.hora_inicio,
+        hora_fin: p.hora_fin,
+        duracion_min: p.duracion_min,
+        estado: p.estado,
+        ot_folio: p.ot_folio
+      }))
+    };
+  }
+  res.json({ fecha, paros: result });
+});
+
+// Ordenes de mantenimiento (del dia o dia anterior)
+router.get('/integracion/mantenimiento/ordenes', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  const mantDb = readMant();
+  const ordenes = mantDb.ordenes_mantenimiento || [];
+  const comprasDb = readCompras();
+  const users = comprasDb.users || [];
+  const equipos = mantDb.equipos_mant || [];
+
+  const del_dia = ordenes.filter(o => o.fecha_solicitud === fecha);
+
+  const enriched = del_dia.map(o => {
+    const equipo = equipos.find(e => e.id === o.equipo_id);
+    const tecnico = users.find(u => u.id === o.tecnico_asignado_id);
+    return {
+      id: o.id,
+      folio: o.folio,
+      tipo: o.tipo,
+      status: o.status,
+      equipo_nombre: equipo ? equipo.nombre : (o.equipo_custom || 'N/A'),
+      equipo_codigo: equipo ? equipo.codigo : '',
+      descripcion_falla: o.descripcion_falla,
+      nivel_urgencia: o.nivel_urgencia,
+      maquina_parada: o.maquina_parada,
+      tecnico_nombre: tecnico ? tecnico.full_name : 'Sin asignar',
+      solicitante_nombre: o.solicitante_nombre,
+      fecha_solicitud: o.fecha_solicitud,
+      hora_solicitud: o.hora_solicitud,
+      fecha_cierre: o.fecha_cierre,
+      hora_cierre: o.hora_cierre
+    };
+  });
+
+  // Tambien incluir pendientes (abiertas/asignadas/en_proceso)
+  const pendientes = ordenes.filter(o =>
+    ['abierta', 'asignada', 'en_proceso'].includes(o.status)
+  ).length;
+
+  res.json({ fecha, ordenes: enriched, total_dia: enriched.length, pendientes_globales: pendientes });
 });
 
 // ── KPIs rapidos ─────────────────────────────────────────────────────────────
