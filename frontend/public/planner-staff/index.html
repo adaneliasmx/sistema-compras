@@ -260,6 +260,10 @@ function renderApp() {
         <div class="nav-item" data-view="dashboard" onclick="navigateTo('dashboard')" style="margin-top:8px">
           <span>📊</span> <span>Dashboard</span>
         </div>
+        ${currentUser.planner_role === 'admin' ? `
+        <div class="nav-item" data-view="equipo" onclick="navigateTo('equipo')" style="margin-top:4px">
+          <span>👥</span> <span>Equipo</span>
+        </div>` : ''}
         <div class="sidebar-footer">v1.0 — Planner Staff</div>
       </div>
       <div class="main">
@@ -285,7 +289,7 @@ function navigateTo(view) {
   const navEl = document.querySelector(`[data-view="${view}"]`);
   if (navEl) navEl.classList.add('active');
 
-  const titles = { tareas: 'Tareas del STAFF', dashboard: 'Dashboard' };
+  const titles = { tareas: 'Tareas del STAFF', dashboard: 'Dashboard', equipo: 'Gestión de Equipo' };
   if (view.startsWith('daily-')) {
     const d = DEPTOS.find(x => x.id === view.replace('daily-', ''));
     document.getElementById('topbarTitle').textContent = `Daily ${d ? d.nombre : ''}`;
@@ -295,6 +299,7 @@ function navigateTo(view) {
 
   if (view === 'tareas') renderTareas();
   else if (view === 'dashboard') renderDashboard();
+  else if (view === 'equipo') renderEquipo();
   else if (view.startsWith('daily-')) renderDaily(view.replace('daily-', ''));
 }
 
@@ -2149,6 +2154,114 @@ function renderDailyPlaceholder(deptoId) {
       <p style="color:var(--muted);font-size:13px;margin-top:12px">Mientras tanto, puedes crear actividades para este departamento desde "Tareas del STAFF".</p>
       <button class="btn btn-accent" style="margin-top:20px" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver tareas de ${d ? d.nombre : deptoId}</button>
     </div>`;
+}
+
+// ── VISTA: Gestión de Equipo (admin) ──────────────────────────────────────
+
+async function renderEquipo() {
+  const m = document.getElementById('mainContent');
+  if (currentUser.planner_role !== 'admin') {
+    m.innerHTML = '<div class="empty-state"><h3>Acceso restringido</h3><p>Solo administradores del Planner pueden gestionar el equipo.</p></div>';
+    return;
+  }
+  m.innerHTML = '<div class="spinner"></div>';
+
+  const [staff, disponibles] = await Promise.all([
+    apiFetch('/api/planner/staff'),
+    apiFetch('/api/planner/staff/disponibles')
+  ]);
+  if (!disponibles) { m.innerHTML = '<div class="empty-state"><p>Error cargando usuarios</p></div>'; return; }
+
+  const asigMap = {};
+  (staff || []).forEach(s => { asigMap[s.usuario_id] = s; });
+
+  const deptoOpts = DEPTOS.map(d => `<option value="${d.id}">${d.icon} ${d.nombre}</option>`).join('');
+
+  m.innerHTML = `
+    <div style="margin-bottom:18px">
+      <h3 style="margin:0 0 4px">Asignación de usuarios al Planner</h3>
+      <p style="margin:0;font-size:13px;color:var(--muted)">Asigna rol y departamentos a cada usuario para darle acceso al módulo.</p>
+    </div>
+    <div style="overflow-x:auto">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Email</th>
+            <th>Rol sistema</th>
+            <th style="min-width:120px">Rol Planner</th>
+            <th style="min-width:200px">Departamentos</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${disponibles.map(u => {
+            const a = asigMap[u.id];
+            const role = a ? a.planner_role : '';
+            const deptos = a ? (a.departamentos || []) : [];
+            return `<tr id="eq-row-${u.id}">
+              <td><strong>${esc(u.nombre)}</strong></td>
+              <td style="font-size:12px;color:var(--muted)">${esc(u.email)}</td>
+              <td><span class="badge sin_empezar">${esc(u.role)}</span></td>
+              <td>
+                <select id="eq-role-${u.id}" style="padding:5px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:12px;width:100%">
+                  <option value=""${!role ? ' selected' : ''}>— Sin acceso —</option>
+                  <option value="admin"${role === 'admin' ? ' selected' : ''}>Admin</option>
+                  <option value="staff"${role === 'staff' ? ' selected' : ''}>Staff</option>
+                </select>
+              </td>
+              <td>
+                <div style="display:flex;flex-wrap:wrap;gap:4px" id="eq-deptos-${u.id}">
+                  ${DEPTOS.map(d => `
+                    <label style="font-size:11px;display:flex;align-items:center;gap:2px;cursor:pointer;background:${deptos.includes(d.id) ? 'var(--primary)' : 'var(--bg-alt)'};color:${deptos.includes(d.id) ? '#fff' : 'var(--text)'};padding:2px 7px;border-radius:10px;transition:all .15s">
+                      <input type="checkbox" value="${d.id}" ${deptos.includes(d.id) ? 'checked' : ''} style="display:none" onchange="toggleDeptoPill(this)">
+                      ${d.icon} ${d.nombre}
+                    </label>
+                  `).join('')}
+                </div>
+              </td>
+              <td>
+                <button class="btn btn-sm" onclick="guardarAsignacion(${u.id})" style="white-space:nowrap">Guardar</button>
+              </td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function toggleDeptoPill(cb) {
+  const lbl = cb.parentElement;
+  if (cb.checked) {
+    lbl.style.background = 'var(--primary)';
+    lbl.style.color = '#fff';
+  } else {
+    lbl.style.background = 'var(--bg-alt)';
+    lbl.style.color = 'var(--text)';
+  }
+}
+
+async function guardarAsignacion(userId) {
+  const roleEl = document.getElementById('eq-role-' + userId);
+  const deptoCont = document.getElementById('eq-deptos-' + userId);
+  if (!roleEl || !deptoCont) return;
+
+  const planner_role = roleEl.value || null;
+  const departamentos = [...deptoCont.querySelectorAll('input:checked')].map(c => c.value);
+
+  const res = await apiFetch('/api/planner/staff/asignar', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ usuario_id: userId, planner_role, departamentos })
+  });
+  if (res && res.ok) {
+    const row = document.getElementById('eq-row-' + userId);
+    if (row) {
+      row.style.transition = 'background .3s';
+      row.style.background = 'rgba(16,185,129,.12)';
+      setTimeout(() => { row.style.background = ''; }, 1200);
+    }
+  }
 }
 
 // ── VISTA: Dashboard ejecutivo ─────────────────────────────────────────────

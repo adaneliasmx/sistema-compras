@@ -115,6 +115,51 @@ router.get('/staff/disponibles', (req, res) => {
   res.json(internos);
 });
 
+// Asignar/revocar acceso planner (solo admin planner)
+router.patch('/staff/asignar', plannerAdmin, (req, res) => {
+  const { usuario_id, planner_role, departamentos } = safeBody(req.body);
+  if (!usuario_id) return res.status(400).json({ error: 'usuario_id requerido' });
+  if (planner_role && !['admin', 'staff'].includes(planner_role)) {
+    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff o null' });
+  }
+  if (departamentos && !Array.isArray(departamentos)) {
+    return res.status(400).json({ error: 'departamentos debe ser un array' });
+  }
+
+  const comprasDb = readCompras();
+  const user = (comprasDb.users || []).find(u => u.id === Number(usuario_id));
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const db = read();
+  db.asignaciones = db.asignaciones || [];
+  const idx = db.asignaciones.findIndex(a => a.usuario_id === user.id);
+
+  if (!planner_role) {
+    if (idx !== -1) db.asignaciones.splice(idx, 1);
+    write(db);
+    return res.json({ ok: true, accion: 'revocado' });
+  }
+
+  const validDeptos = (departamentos || []).filter(d => DEPARTAMENTOS.find(dp => dp.id === d));
+  if (idx !== -1) {
+    db.asignaciones[idx].planner_role = planner_role;
+    db.asignaciones[idx].departamentos = validDeptos;
+    db.asignaciones[idx].nombre = user.full_name;
+    db.asignaciones[idx].email = user.email;
+  } else {
+    db.asignaciones.push({
+      usuario_id: user.id,
+      nombre: user.full_name,
+      email: user.email,
+      planner_role,
+      departamentos: validDeptos
+    });
+  }
+
+  write(db);
+  res.json({ ok: true, accion: 'asignado', planner_role, departamentos: validDeptos });
+});
+
 // Mi perfil planner
 router.get('/me', (req, res) => {
   res.json({
