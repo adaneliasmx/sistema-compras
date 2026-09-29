@@ -903,6 +903,7 @@ const DAILY_FORMS_META = {
   ],
   sgc: [
     { id: 'no_conformidades', nombre: 'No conformidades abiertas', icon: '📋' },
+    { id: '8ds_abiertos', nombre: "8D's Abiertos", icon: '🔴' },
     { id: 'documentos_pendientes', nombre: 'Documentos pendientes', icon: '📄' },
     { id: 'indicadores_fuera', nombre: 'Indicadores fuera de objetivo', icon: '📊' },
     { id: 'cumplimiento_sgc', nombre: 'Cumplimiento acciones SGC', icon: '✅' }
@@ -2201,6 +2202,7 @@ async function renderCpkForm(container) {
 // ── SGC Daily Forms ─────────────────────────────────────────────────────────
 
 function renderSgcForm(formId, container) {
+  if (formId === '8ds_abiertos') return render8DForm(container);
   const labels = {
     no_conformidades: 'No conformidades abiertas',
     documentos_pendientes: 'Documentos/procedimientos pendientes de actualizacion',
@@ -2208,6 +2210,156 @@ function renderSgcForm(formId, container) {
     cumplimiento_sgc: 'Cumplimiento de acciones del SGC'
   };
   renderTaskFormDaily(container, 'sgc', formId, labels[formId] || formId);
+}
+
+async function render8DForm(container) {
+  if (!_staffDisponibles.length) {
+    _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
+  }
+  // Load existing 8D activities
+  const acts = await apiFetch('/api/planner/actividades?depto=sgc') || [];
+  const linked = acts.filter(a => a.correlacion_daily && a.correlacion_daily.formulario === '8ds_abiertos');
+  const abiertas = linked.filter(a => !['cerrada', 'cancelada'].includes(a.estatus));
+
+  container.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h4 style="font-size:14px;color:var(--primary)">8D's Abiertos</h4>
+        <button class="btn btn-accent btn-sm" onclick="open8DModal()">+ Nuevo 8D</button>
+      </div>
+      ${abiertas.length === 0 ? '<div class="empty">No hay 8D abiertos.</div>' : `
+        <table>
+          <thead><tr><th>ID</th><th>8D</th><th>Responsable</th><th>Estatus</th><th>Compromiso</th><th></th></tr></thead>
+          <tbody>
+            ${abiertas.map(a => `<tr>
+              <td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+              <td><b>${esc(a.titulo)}</b></td>
+              <td>${esc(a.responsable_nombre)}</td>
+              <td><span class="badge ${a.estatus}">${a.estatus.replace('_',' ')}</span></td>
+              <td style="font-size:12px">${a.fecha_compromiso || '-'}</td>
+              <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Detalle</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>`;
+}
+
+async function open8DModal() {
+  if (!_staffDisponibles.length) {
+    _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
+  }
+  const hoy = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const html = `
+    <div class="modal-overlay open" id="modal8D">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Nuevo 8D</h3>
+          <button class="modal-close" onclick="closeModal('modal8D')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Cliente *</label>
+            <select id="d8Cliente">
+              <option value="">Seleccionar...</option>
+              <option value="SKF">SKF</option>
+              <option value="Tenneco">Tenneco</option>
+              <option value="Amsted">Amsted</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Componente *</label>
+            <input type="text" id="d8Componente" placeholder="Uno o varios componentes">
+          </div>
+          <div class="form-group">
+            <label>Problema *</label>
+            <textarea id="d8Problema" rows="3" placeholder="Descripcion del problema"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Fecha de reclamo *</label>
+              <input type="date" id="d8FechaReclamo" value="${hoy}">
+            </div>
+            <div class="form-group">
+              <label>Responsable *</label>
+              <select id="d8Resp">
+                <option value="">Seleccionar...</option>
+                ${_staffDisponibles.map(s => '<option value="' + s.id + '">' + esc(s.nombre) + '</option>').join('')}
+              </select>
+            </div>
+          </div>
+          <div id="d8Preview" style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:10px;font-size:12px;color:var(--muted);display:none">
+            <b>Vista previa:</b><br>
+            <span id="d8PreviewTitle"></span><br>
+            <div style="margin-top:8px">
+              <b>Sub-tareas auto:</b>
+              <div>D1. Contencion — +1 dia</div>
+              <div>D2. Identificacion Causa Raiz — +7 dias</div>
+              <div>D3. Implementar Accion Correctiva/Deteccion — +14 dias</div>
+              <div>D4. Validacion de Acciones Correctivas — +34 dias</div>
+              <div>D5. AMEF/PC Actualizados / Trabajo Estandar / LPA — +35 dias</div>
+              <div>D6. Lecciones Aprendidas — +40 dias</div>
+            </div>
+          </div>
+          <div id="d8Err" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('modal8D')">Cancelar</button>
+          <button class="btn btn-primary" onclick="save8D()">Crear 8D</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+
+  // Live preview
+  const updatePreview = () => {
+    const cl = document.getElementById('d8Cliente').value;
+    const co = document.getElementById('d8Componente').value.trim();
+    const pr = document.getElementById('d8Problema').value.trim();
+    const prev = document.getElementById('d8Preview');
+    if (cl && co && pr) {
+      prev.style.display = 'block';
+      document.getElementById('d8PreviewTitle').textContent = '"' + pr + '" de ' + cl + ' en componente ' + co;
+    } else {
+      prev.style.display = 'none';
+    }
+  };
+  document.getElementById('d8Cliente').addEventListener('change', updatePreview);
+  document.getElementById('d8Componente').addEventListener('input', updatePreview);
+  document.getElementById('d8Problema').addEventListener('input', updatePreview);
+}
+
+async function save8D() {
+  const cliente = document.getElementById('d8Cliente').value;
+  const componente = document.getElementById('d8Componente').value.trim();
+  const problema = document.getElementById('d8Problema').value.trim();
+  const fecha_reclamo = document.getElementById('d8FechaReclamo').value;
+  const responsable_id = Number(document.getElementById('d8Resp').value);
+  const errEl = document.getElementById('d8Err');
+
+  if (!cliente || !componente || !problema || !fecha_reclamo || !responsable_id) {
+    errEl.textContent = 'Completa todos los campos obligatorios';
+    return;
+  }
+
+  try {
+    errEl.textContent = 'Creando 8D...';
+    errEl.style.color = 'var(--accent)';
+    const act = await apiFetch('/api/planner/actividades/8d', {
+      method: 'POST',
+      body: JSON.stringify({ cliente, componente, problema, fecha_reclamo, responsable_id })
+    });
+    if (!act) { errEl.textContent = 'Error al crear'; errEl.style.color = 'var(--red)'; return; }
+
+    closeModal('modal8D');
+    alert('8D creado: ' + act.id + ' con 6 sub-tareas');
+    // Refresh 8D list
+    const container = document.getElementById('dailyFormContent');
+    if (container) render8DForm(container);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.color = 'var(--red)';
+  }
 }
 
 // ── OPERACIONES Daily Forms ─────────────────────────────────────────────────

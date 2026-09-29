@@ -180,6 +180,23 @@ router.get('/actividades', (req, res) => {
   const db = read();
   let list = db.actividades || [];
 
+  // Auto-overdue: marcar actividades y sub-actividades vencidas
+  const hoy = nowMxDate();
+  let dirty = false;
+  for (const act of list) {
+    if (['sin_empezar', 'en_proceso'].includes(act.estatus) && act.fecha_compromiso && act.fecha_compromiso < hoy) {
+      act.estatus = 'atrasada';
+      dirty = true;
+    }
+    for (const sub of act.sub_actividades || []) {
+      if (['sin_empezar', 'en_proceso'].includes(sub.estatus) && sub.fecha_compromiso && sub.fecha_compromiso < hoy) {
+        sub.estatus = 'atrasada';
+        dirty = true;
+      }
+    }
+  }
+  if (dirty) write(db);
+
   const { depto, estatus, urgencia, responsable, buscar, desde, hasta } = req.query;
   if (depto) list = list.filter(a => a.departamento === depto);
   if (estatus) list = list.filter(a => a.estatus === estatus);
@@ -367,6 +384,94 @@ router.delete('/actividades/:id', plannerAdmin, (req, res) => {
   const removed = db.actividades.splice(idx, 1)[0];
   write(db);
   res.json({ ok: true, id: removed.id });
+});
+
+// ── 8D CREATION ─────────────────────────────────────────────────────────────
+
+const SUB_8D = [
+  { nombre: 'Contencion', dias: 1 },
+  { nombre: 'Identificacion Causa Raiz', dias: 7 },
+  { nombre: 'Implementar Accion Correctiva/Deteccion', dias: 14 },
+  { nombre: 'Validacion de Acciones Correctivas', dias: 34 },
+  { nombre: 'AMEF/PC Actualizados Actualizacion de Trabajo Estandar. Ingreso a LPA.', dias: 35 },
+  { nombre: 'Lecciones Aprendidas', dias: 40 }
+];
+
+function addDays(dateStr, days) {
+  const d = new Date(dateStr + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+router.post('/actividades/8d', (req, res) => {
+  const body = safeBody(req.body);
+  const { cliente, componente, problema, fecha_reclamo, responsable_id } = body;
+
+  if (!cliente || !componente || !problema || !fecha_reclamo) {
+    return res.status(400).json({ error: 'cliente, componente, problema y fecha_reclamo son requeridos' });
+  }
+
+  const titulo = `"${problema}" de ${cliente} en componente ${componente}`;
+  const fecha_compromiso = addDays(fecha_reclamo, 40);
+
+  const comprasDb = readCompras();
+  const effectiveRespId = responsable_id ? Number(responsable_id) : req.user.id;
+  const responsable = (comprasDb.users || []).find(u => u.id === effectiveRespId);
+  if (!responsable) return res.status(400).json({ error: 'Responsable no encontrado' });
+
+  const db = read();
+  const id = formatActId(nextActNum(db.actividades || []));
+
+  const actividad = {
+    id,
+    titulo,
+    descripcion: `8D — Cliente: ${cliente} | Componente: ${componente} | Problema: ${problema} | Fecha reclamo: ${fecha_reclamo}`,
+    responsable_id: responsable.id,
+    responsable_nombre: responsable.full_name,
+    responsable_email: responsable.email || '',
+    departamento: 'sgc',
+    fecha_compromiso,
+    urgencia: 'alta',
+    estatus: 'sin_empezar',
+    avance: 0,
+    fecha_inicio: null,
+    fecha_fin: null,
+    correlacion_daily: { departamento: 'sgc', formulario: '8ds_abiertos', fecha: fecha_reclamo },
+    correlacion_compras: null,
+    origen_formulario: '8d',
+    creado_por: req.user.id,
+    creado_por_nombre: req.user.full_name,
+    fecha_creacion: nowMxDate(),
+    hora_creacion: nowMxTime(),
+    sub_actividades: [],
+    trazabilidad: []
+  };
+
+  // Crear sub-actividades 8D
+  for (const step of SUB_8D) {
+    const subId = formatSubId(nextSubNum(actividad.sub_actividades));
+    actividad.sub_actividades.push({
+      id: subId,
+      nombre: step.nombre,
+      descripcion: '',
+      responsable_id: responsable.id,
+      responsable_nombre: responsable.full_name,
+      fecha_compromiso: addDays(fecha_reclamo, step.dias),
+      estatus: 'sin_empezar',
+      fecha_inicio: null,
+      fecha_fin: null,
+      evidencias: '',
+      comentarios: []
+    });
+  }
+
+  addTraza(actividad, req.user.id, req.user.full_name, 'creada', `8D creada: ${titulo}`);
+
+  db.actividades = db.actividades || [];
+  db.actividades.push(actividad);
+  write(db);
+
+  res.status(201).json(actividad);
 });
 
 // ── SUB-ACTIVIDADES ──────────────────────────────────────────────────────────
