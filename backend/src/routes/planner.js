@@ -6,6 +6,7 @@ const { read: readMant } = require('../db-mantenimiento');
 const { read: readInv } = require('../db-inventarios');
 const { read: readVales } = require('../db-vales');
 const { read: readRhh } = require('../db-rhh');
+const { read: readFlujo } = require('../db-flujo');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
@@ -225,10 +226,10 @@ router.get('/actividades', (req, res) => {
 
 router.post('/actividades', (req, res) => {
   const body = safeBody(req.body);
-  const { titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, correlacion_daily, correlacion_compras } = body;
+  const { titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, correlacion_daily, correlacion_compras, origen_formulario } = body;
 
-  if (!titulo || !responsable_id || !departamento) {
-    return res.status(400).json({ error: 'titulo, responsable_id y departamento son requeridos' });
+  if (!titulo || !departamento) {
+    return res.status(400).json({ error: 'titulo y departamento son requeridos' });
   }
   if (!DEPARTAMENTOS.find(d => d.id === departamento)) {
     return res.status(400).json({ error: 'Departamento invalido' });
@@ -237,9 +238,10 @@ router.post('/actividades', (req, res) => {
     return res.status(400).json({ error: 'Urgencia invalida. Use: alta, media, baja' });
   }
 
-  // Buscar responsable
+  // Buscar responsable (si no se proporciona, usar el creador)
   const comprasDb = readCompras();
-  const responsable = (comprasDb.users || []).find(u => u.id === Number(responsable_id));
+  const effectiveRespId = responsable_id ? Number(responsable_id) : req.user.id;
+  const responsable = (comprasDb.users || []).find(u => u.id === effectiveRespId);
   if (!responsable) return res.status(400).json({ error: 'Responsable no encontrado' });
 
   const db = read();
@@ -261,6 +263,7 @@ router.post('/actividades', (req, res) => {
     fecha_fin: null,
     correlacion_daily: correlacion_daily || null,
     correlacion_compras: correlacion_compras || null,
+    origen_formulario: origen_formulario || null,
     creado_por: req.user.id,
     creado_por_nombre: req.user.full_name,
     fecha_creacion: nowMxDate(),
@@ -1070,6 +1073,68 @@ router.get('/integracion/vales/cpk', (req, res) => {
     });
   }
   res.json({ titulaciones: result });
+});
+
+// CPK Empaque: datos de muestras Tenneco (altura_axial, rugosidad)
+router.get('/integracion/empaque/cpk', (req, res) => {
+  const flujoDb = readFlujo();
+  const muestras = flujoDb.muestras_tenneco || [];
+  const specs = flujoDb.cat_tenneco_specs || [];
+
+  // Get unique numero_parte with data
+  const npSet = new Set(muestras.map(m => String(m.numero_parte).trim()).filter(Boolean));
+  const partes = [...npSet].sort();
+
+  const result = partes.map(np => {
+    const spec = specs.find(s => String(s.numero_parte).trim() === np);
+    const npMuestras = muestras.filter(m => String(m.numero_parte).trim() === np)
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
+      .slice(0, 10);
+
+    const rugVals = npMuestras.filter(m => m.rugosidad_prom != null).map(m => m.rugosidad_prom);
+    const altVals = npMuestras.filter(m => m.altura_axial_prom != null).map(m => m.altura_axial_prom);
+
+    const mean = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+    const stddev = arr => {
+      if (arr.length < 2) return null;
+      const m = mean(arr);
+      return Math.sqrt(arr.reduce((sum, v) => sum + Math.pow(v - m, 2), 0) / (arr.length - 1));
+    };
+    const cpk = (m, s, lsl, usl) => {
+      if (!s || s === 0 || (lsl == null && usl == null)) return null;
+      const cpkU = usl != null ? (usl - m) / (3 * s) : null;
+      const cpkL = lsl != null ? (m - lsl) / (3 * s) : null;
+      return cpkU != null && cpkL != null ? Math.min(cpkU, cpkL) : (cpkU ?? cpkL);
+    };
+
+    const rugMean = mean(rugVals);
+    const rugStd = stddev(rugVals);
+    const rugNA = spec ? spec.rugosidad_min === 0 && spec.rugosidad_max === 0 : false;
+    const altMean = mean(altVals);
+    const altStd = stddev(altVals);
+
+    return {
+      numero_parte: np,
+      muestras: npMuestras.length,
+      rugosidad: {
+        n: rugVals.length, mean: rugMean != null ? Math.round(rugMean * 100) / 100 : null,
+        sigma: rugStd != null ? Math.round(rugStd * 1000) / 1000 : null,
+        lsl: rugNA ? null : (spec?.rugosidad_min ?? null),
+        usl: rugNA ? null : (spec?.rugosidad_max ?? null),
+        na: rugNA,
+        cpk: rugNA ? null : cpk(rugMean, rugStd, spec?.rugosidad_min, spec?.rugosidad_max)
+      },
+      altura_axial: {
+        n: altVals.length, mean: altMean != null ? Math.round(altMean * 100) / 100 : null,
+        sigma: altStd != null ? Math.round(altStd * 1000) / 1000 : null,
+        lsl: spec?.altura_axial_min ?? null,
+        usl: spec?.altura_axial_max ?? null,
+        cpk: cpk(altMean, altStd, spec?.altura_axial_min, spec?.altura_axial_max)
+      }
+    };
+  });
+
+  res.json({ partes: result, total: partes.length });
 });
 
 // ── KPIs rapidos ─────────────────────────────────────────────────────────────
