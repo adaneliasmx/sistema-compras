@@ -472,6 +472,198 @@ router.get('/actividades/:id/mailto', (req, res) => {
   res.json({ mailto, responsable: act.responsable_nombre, email: act.responsable_email });
 });
 
+// ── DAILY — formularios por departamento ─────────────────────────────────────
+
+const DAILY_FORMS = {
+  smya: ['accidentes', 'condiciones_inseguras', 'epp', 'ptar'],
+  rhh: ['ausentismo', 'personal_disponible', 'vacantes_criticas', 'incapacidades', 'horas_extra', 'personal_capacitacion', 'necesidades_personal'],
+  produccion: ['piezas_procesadas', 'eficiencias', 'paros_lineas', 'material_pendiente', 'riesgos_incumplimiento'],
+  calidad: ['rechazos_internos', 'rechazos_cliente', 'problemas_calidad', 'liberaciones_pendientes', 'reprocesos'],
+  mantenimiento: ['paros_falla', 'equipos_fuera', 'disponibilidad', 'correctivos_pendientes', 'preventivo_programado', 'equipos_criticos', 'riesgos_falla'],
+  procesos: ['cpk', 'problemas_proceso', 'estudios_pruebas', 'mejoras_implementaciones'],
+  compras: ['materias_criticas', 'ordenes_compra', 'refacciones_criticas', 'inventarios_criticos', 'compras_urgentes'],
+  sgc: ['no_conformidades', 'documentos_pendientes', 'indicadores_fuera', 'cumplimiento_sgc'],
+  operaciones: ['prioridades_dia', 'pedidos_criticos']
+};
+
+function formatDlyId(num) {
+  return 'DLY-' + String(num).padStart(5, '0');
+}
+
+function nextDlyNum(registros) {
+  if (!registros.length) return 1;
+  const nums = registros.map(r => {
+    const m = String(r.id).match(/DLY-(\d+)/);
+    return m ? parseInt(m[1]) : 0;
+  });
+  return Math.max(...nums) + 1;
+}
+
+// Resumen: estado de todos los forms de un depto para una fecha
+router.get('/daily/:depto/resumen', (req, res) => {
+  const { depto } = req.params;
+  const forms = DAILY_FORMS[depto];
+  if (!forms) return res.status(400).json({ error: 'Departamento invalido' });
+
+  const fecha = req.query.fecha || nowMxDate();
+  const db = read();
+  const regs = (db.daily_registros || []).filter(r => r.departamento === depto && r.fecha === fecha);
+
+  const formularios = forms.map(f => {
+    const reg = regs.find(r => r.formulario === f);
+    return {
+      id: f,
+      llenado: !!reg,
+      fecha_llenado: reg ? reg.fecha_llenado : null,
+      hora_llenado: reg ? reg.hora_llenado : null,
+      llenado_por_nombre: reg ? reg.llenado_por_nombre : null
+    };
+  });
+
+  res.json({ fecha, departamento: depto, formularios });
+});
+
+// Obtener un registro daily especifico
+router.get('/daily/:depto/:formulario', (req, res) => {
+  const { depto, formulario } = req.params;
+  if (!DAILY_FORMS[depto] || !DAILY_FORMS[depto].includes(formulario)) {
+    return res.status(400).json({ error: 'Departamento o formulario invalido' });
+  }
+
+  const fecha = req.query.fecha || nowMxDate();
+  const db = read();
+  const reg = (db.daily_registros || []).find(r =>
+    r.departamento === depto && r.formulario === formulario && r.fecha === fecha
+  );
+  res.json({ registro: reg || null, fecha });
+});
+
+// Guardar/actualizar registro daily
+router.post('/daily/:depto/:formulario', (req, res) => {
+  const { depto, formulario } = req.params;
+  if (!DAILY_FORMS[depto] || !DAILY_FORMS[depto].includes(formulario)) {
+    return res.status(400).json({ error: 'Departamento o formulario invalido' });
+  }
+
+  const body = safeBody(req.body);
+  const fecha = body.fecha || nowMxDate();
+  const datos = body.datos || {};
+
+  const db = read();
+  db.daily_registros = db.daily_registros || [];
+
+  const idx = db.daily_registros.findIndex(r =>
+    r.departamento === depto && r.formulario === formulario && r.fecha === fecha
+  );
+
+  if (idx >= 0) {
+    // Actualizar existente
+    db.daily_registros[idx].datos = datos;
+    db.daily_registros[idx].fecha_llenado = nowMxDate();
+    db.daily_registros[idx].hora_llenado = nowMxTime();
+    db.daily_registros[idx].llenado_por = req.user.id;
+    db.daily_registros[idx].llenado_por_nombre = req.user.full_name;
+    write(db);
+    res.json({ ok: true, registro: db.daily_registros[idx] });
+  } else {
+    // Crear nuevo
+    const id = formatDlyId(nextDlyNum(db.daily_registros));
+    const reg = {
+      id,
+      departamento: depto,
+      formulario,
+      fecha,
+      llenado_por: req.user.id,
+      llenado_por_nombre: req.user.full_name,
+      fecha_llenado: nowMxDate(),
+      hora_llenado: nowMxTime(),
+      datos,
+      actividades_creadas: []
+    };
+    db.daily_registros.push(reg);
+    write(db);
+    res.status(201).json({ ok: true, registro: reg });
+  }
+});
+
+// Historial de un formulario
+router.get('/daily/:depto/:formulario/historial', (req, res) => {
+  const { depto, formulario } = req.params;
+  if (!DAILY_FORMS[depto] || !DAILY_FORMS[depto].includes(formulario)) {
+    return res.status(400).json({ error: 'Departamento o formulario invalido' });
+  }
+
+  const { desde, hasta } = req.query;
+  const db = read();
+  let regs = (db.daily_registros || []).filter(r =>
+    r.departamento === depto && r.formulario === formulario
+  );
+  if (desde) regs = regs.filter(r => r.fecha >= desde);
+  if (hasta) regs = regs.filter(r => r.fecha <= hasta);
+
+  regs.sort((a, b) => b.fecha.localeCompare(a.fecha));
+  // Limitar a 90 registros
+  res.json(regs.slice(0, 90));
+});
+
+// ── CONFIG PTAR ─────────────────────────────────────────────────────────────
+
+router.get('/config/ptar', (req, res) => {
+  const db = read();
+  res.json(db.config_ptar || { dias_retrolavado: [1, 3, 5] });
+});
+
+router.patch('/config/ptar', (req, res) => {
+  const body = safeBody(req.body);
+  if (!Array.isArray(body.dias_retrolavado)) {
+    return res.status(400).json({ error: 'dias_retrolavado debe ser un array de numeros (0-6)' });
+  }
+  const db = read();
+  db.config_ptar = { dias_retrolavado: body.dias_retrolavado.map(Number).filter(n => n >= 0 && n <= 6) };
+  write(db);
+  res.json({ ok: true, config_ptar: db.config_ptar });
+});
+
+// ── PLANTILLA PUESTOS (RHH) ────────────────────────────────────────────────
+
+router.get('/plantilla-puestos', (req, res) => {
+  const db = read();
+  res.json(db.plantilla_puestos || []);
+});
+
+router.post('/plantilla-puestos', (req, res) => {
+  const body = safeBody(req.body);
+  if (!Array.isArray(body.puestos)) {
+    return res.status(400).json({ error: 'puestos debe ser un array' });
+  }
+  const db = read();
+  db.plantilla_puestos = body.puestos.map(p => ({
+    puesto_id: p.puesto_id || '',
+    puesto_nombre: p.puesto_nombre || '',
+    requeridos: Math.max(0, Number(p.requeridos) || 0)
+  }));
+  write(db);
+  res.json({ ok: true, plantilla_puestos: db.plantilla_puestos });
+});
+
+router.get('/plantilla-resumen-semanal', (req, res) => {
+  const db = read();
+  const plantilla = db.plantilla_puestos || [];
+  const totalRequeridos = plantilla.reduce((sum, p) => sum + (p.requeridos || 0), 0);
+  // Nota: la integracion completa con catalogo RHH se completara en fases posteriores
+  res.json({
+    plantilla,
+    total_requeridos: totalRequeridos,
+    mensaje: 'Configurar plantilla de puestos para calcular % de cobertura'
+  });
+});
+
+// ── DAILY FORMS METADATA ────────────────────────────────────────────────────
+
+router.get('/daily-forms', (req, res) => {
+  res.json(DAILY_FORMS);
+});
+
 // ── KPIs rapidos ─────────────────────────────────────────────────────────────
 
 router.get('/kpis', (req, res) => {

@@ -294,7 +294,7 @@ function navigateTo(view) {
 
   if (view === 'tareas') renderTareas();
   else if (view === 'dashboard') renderDashboard();
-  else if (view.startsWith('daily-')) renderDailyPlaceholder(view.replace('daily-', ''));
+  else if (view.startsWith('daily-')) renderDaily(view.replace('daily-', ''));
 }
 
 // ── VISTA: Tareas del STAFF ──────────────────────────────────────────────────
@@ -428,6 +428,7 @@ async function openNewActModal(presets) {
     _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
   }
   const p = presets || {};
+  window._newActPresets = p;
 
   const html = `
     <div class="modal-overlay open" id="newActModal">
@@ -502,7 +503,7 @@ async function saveNewAct(sendEmail) {
   try {
     const act = await apiFetch('/api/planner/actividades', {
       method: 'POST',
-      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia })
+      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, correlacion_daily: window._newActPresets?.correlacion_daily || null })
     });
     if (!act) return;
 
@@ -840,7 +841,653 @@ async function addSubComment(actId, subId) {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
-// ── VISTA: Daily (placeholder Fase 2+) ───────────────────────────────────────
+// ── DAILY — Formularios por departamento ─────────────────────────────────────
+
+const DAILY_FORMS_META = {
+  smya: [
+    { id: 'accidentes', nombre: 'Accidentes/Incidentes', icon: '🚨' },
+    { id: 'condiciones_inseguras', nombre: 'Condiciones inseguras', icon: '⚠' },
+    { id: 'epp', nombre: 'EPP y cumplimiento', icon: '🦺' },
+    { id: 'ptar', nombre: 'PTAR', icon: '💧' }
+  ],
+  rhh: [
+    { id: 'ausentismo', nombre: 'Ausentismo y retardos', icon: '📅' },
+    { id: 'personal_disponible', nombre: 'Personal disponible vs requerido', icon: '👥' },
+    { id: 'vacantes_criticas', nombre: 'Vacantes criticas', icon: '🔴' },
+    { id: 'incapacidades', nombre: 'Incapacidades/incidencias', icon: '🏥' },
+    { id: 'horas_extra', nombre: 'Horas extra autorizadas', icon: '⏰' },
+    { id: 'personal_capacitacion', nombre: 'Personal en capacitacion', icon: '📚' },
+    { id: 'necesidades_personal', nombre: 'Necesidades de personal', icon: '📋' }
+  ]
+};
+
+let _dailyDate = '';
+let _dailyDepto = '';
+let _dailyActiveForm = '';
+let _dailyResumen = null;
+let _dailyRegistro = null;
+let _ptarConfig = null;
+
+function getDailyForms(deptoId) {
+  return DAILY_FORMS_META[deptoId] || null;
+}
+
+async function renderDaily(deptoId) {
+  _dailyDepto = deptoId;
+  _dailyDate = _dailyDate || todayMx();
+  _dailyActiveForm = '';
+  _dailyRegistro = null;
+
+  const forms = getDailyForms(deptoId);
+  if (!forms) {
+    renderDailyPlaceholder(deptoId);
+    return;
+  }
+
+  const m = document.getElementById('mainContent');
+  m.innerHTML = '<div class="spinner"></div>';
+
+  _dailyResumen = await apiFetch(`/api/planner/daily/${deptoId}/resumen?fecha=${_dailyDate}`);
+  if (!_dailyResumen) return;
+
+  const d = DEPTOS.find(x => x.id === deptoId);
+  const llenados = _dailyResumen.formularios.filter(f => f.llenado).length;
+  const total = _dailyResumen.formularios.length;
+
+  m.innerHTML = `
+    <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label>Fecha</label>
+        <input type="date" id="dailyDatePick" value="${_dailyDate}" onchange="_dailyDate=this.value;renderDaily('${deptoId}')" style="padding:6px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px">
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:24px">${d ? d.icon : ''}</span>
+        <span style="font-weight:700;font-size:15px;color:var(--primary)">${d ? d.nombre : deptoId}</span>
+      </div>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+        <span class="badge ${llenados === total ? 'cerrada' : llenados > 0 ? 'en_proceso' : 'sin_empezar'}" style="font-size:12px;padding:5px 12px">
+          ${llenados}/${total} formularios
+        </span>
+      </div>
+    </div>
+    <div class="tabs" id="dailyTabs">
+      ${forms.map(f => {
+        const info = _dailyResumen.formularios.find(x => x.id === f.id);
+        const dot = info && info.llenado ? '🟢' : '⚪';
+        return `<div class="tab" data-form="${f.id}" onclick="selectDailyForm('${deptoId}','${f.id}')">${dot} ${f.icon} ${f.nombre}</div>`;
+      }).join('')}
+    </div>
+    <div id="dailyFormContent">
+      <div class="empty">Selecciona un formulario arriba</div>
+    </div>`;
+}
+
+function todayMx() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+
+async function selectDailyForm(deptoId, formId) {
+  _dailyActiveForm = formId;
+  document.querySelectorAll('#dailyTabs .tab').forEach(t => t.classList.toggle('active', t.dataset.form === formId));
+
+  const container = document.getElementById('dailyFormContent');
+  container.innerHTML = '<div class="spinner"></div>';
+
+  const data = await apiFetch(`/api/planner/daily/${deptoId}/${formId}?fecha=${_dailyDate}`);
+  if (!data) return;
+  _dailyRegistro = data.registro;
+
+  // Render form based on department + form
+  if (deptoId === 'smya') renderSmyaForm(formId, container);
+  else if (deptoId === 'rhh') renderRhhForm(formId, container);
+  else container.innerHTML = '<div class="empty">Formulario no disponible aun</div>';
+}
+
+// ── SMYA Daily Forms ────────────────────────────────────────────────────────
+
+function renderSmyaForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'accidentes') {
+    container.innerHTML = dailyFormWrap('Accidentes/Incidentes del dia', `
+      <div class="form-group">
+        <label>¿Hubo accidentes o incidentes?</label>
+        <select id="df_hubo" onchange="toggleDailyFields('df_hubo','df_detalle_block')">
+          <option value="false" ${!datos.hubo ? 'selected' : ''}>No</option>
+          <option value="true" ${datos.hubo ? 'selected' : ''}>Si</option>
+        </select>
+      </div>
+      <div id="df_detalle_block" style="display:${datos.hubo ? 'block' : 'none'}">
+        <div class="form-group">
+          <label>¿Que paso?</label>
+          <textarea id="df_que_paso" rows="3">${esc(datos.que_paso || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label>¿Que se hizo?</label>
+          <textarea id="df_que_se_hizo" rows="3">${esc(datos.que_se_hizo || '')}</textarea>
+        </div>
+      </div>
+    `, () => ({
+      hubo: document.getElementById('df_hubo').value === 'true',
+      que_paso: document.getElementById('df_que_paso')?.value?.trim() || '',
+      que_se_hizo: document.getElementById('df_que_se_hizo')?.value?.trim() || ''
+    }));
+  } else if (formId === 'condiciones_inseguras') {
+    container.innerHTML = dailyFormWrap('Condiciones inseguras detectadas', `
+      <div class="form-group">
+        <label>¿Se detectaron condiciones inseguras?</label>
+        <select id="df_hubo" onchange="toggleDailyFields('df_hubo','df_detalle_block')">
+          <option value="false" ${!datos.hubo ? 'selected' : ''}>No</option>
+          <option value="true" ${datos.hubo ? 'selected' : ''}>Si</option>
+        </select>
+      </div>
+      <div id="df_detalle_block" style="display:${datos.hubo ? 'block' : 'none'}">
+        <div class="form-group">
+          <label>¿Que se detecto?</label>
+          <textarea id="df_que_paso" rows="3">${esc(datos.que_paso || '')}</textarea>
+        </div>
+        <div class="form-group">
+          <label>¿Que se hizo al respecto?</label>
+          <textarea id="df_que_se_hizo" rows="3">${esc(datos.que_se_hizo || '')}</textarea>
+        </div>
+      </div>
+    `, () => ({
+      hubo: document.getElementById('df_hubo').value === 'true',
+      que_paso: document.getElementById('df_que_paso')?.value?.trim() || '',
+      que_se_hizo: document.getElementById('df_que_se_hizo')?.value?.trim() || ''
+    }));
+  } else if (formId === 'epp') {
+    container.innerHTML = dailyFormWrap('EPP y cumplimiento', `
+      <div class="form-group">
+        <label>¿Se cumplio al 100% el uso de EPP?</label>
+        <select id="df_cumplimiento" onchange="toggleDailyFields('df_cumplimiento','df_incumplimiento_block',true)">
+          <option value="true" ${datos.cumplimiento !== false ? 'selected' : ''}>Si</option>
+          <option value="false" ${datos.cumplimiento === false ? 'selected' : ''}>No</option>
+        </select>
+      </div>
+      <div id="df_incumplimiento_block" style="display:${datos.cumplimiento === false ? 'block' : 'none'}">
+        <div class="form-row">
+          <div class="form-group">
+            <label>% de cumplimiento</label>
+            <input type="number" id="df_porcentaje" min="0" max="100" value="${datos.porcentaje || 0}">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>¿Quien no cumplio? / Detalles</label>
+          <textarea id="df_quien" rows="3">${esc(datos.quien_no_cumplio || '')}</textarea>
+        </div>
+      </div>
+    `, () => ({
+      cumplimiento: document.getElementById('df_cumplimiento').value === 'true',
+      porcentaje: Number(document.getElementById('df_porcentaje')?.value) || 0,
+      quien_no_cumplio: document.getElementById('df_quien')?.value?.trim() || ''
+    }));
+  } else if (formId === 'ptar') {
+    renderPtarForm(container, datos);
+  }
+}
+
+async function renderPtarForm(container, datos) {
+  if (!_ptarConfig) {
+    _ptarConfig = await apiFetch('/api/planner/config/ptar');
+  }
+  const diasRetro = (_ptarConfig && _ptarConfig.dias_retrolavado) || [1, 3, 5];
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+  const dateObj = new Date(_dailyDate + 'T12:00:00');
+  const dayOfWeek = dateObj.getDay();
+  const retroAplica = diasRetro.includes(dayOfWeek);
+  const retro = datos.retrolavado || {};
+
+  container.innerHTML = dailyFormWrap('PTAR — Planta de Tratamiento de Aguas Residuales', `
+    <div class="form-row">
+      <div class="form-group">
+        <label>Litros ingresados PTAR</label>
+        <input type="number" id="df_lit_ing_ptar" min="0" value="${datos.litros_ingresados_ptar || 0}">
+      </div>
+      <div class="form-group">
+        <label>Litros ingresados pipas</label>
+        <input type="number" id="df_lit_ing_pipas" min="0" value="${datos.litros_ingresados_pipas || 0}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Litros tratados PTAR</label>
+        <input type="number" id="df_lit_trat_ptar" min="0" value="${datos.litros_tratados_ptar || 0}">
+      </div>
+      <div class="form-group">
+        <label>Litros tratados salida</label>
+        <input type="number" id="df_lit_trat_sal" min="0" value="${datos.litros_tratados_salida || 0}">
+      </div>
+    </div>
+
+    <div style="margin-top:16px;padding:14px;border:1.5px solid ${retroAplica ? 'var(--accent)' : 'var(--line)'};border-radius:8px;background:${retroAplica ? '#eaf2f8' : '#f8fafc'}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <b style="font-size:13px;color:var(--primary)">Retrolavado</b>
+        <span class="badge ${retroAplica ? 'en_proceso' : 'sin_empezar'}" style="font-size:11px">
+          ${retroAplica ? 'Aplica hoy (' + dayNames[dayOfWeek] + ')' : 'No aplica hoy (' + dayNames[dayOfWeek] + ')'}
+        </span>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
+        Dias programados: ${diasRetro.map(d => dayNames[d]).join(', ')}
+        <button class="btn btn-outline btn-sm" onclick="openPtarConfigModal()" style="margin-left:8px;font-size:10px">Configurar</button>
+      </div>
+      ${retroAplica ? `
+        <div class="form-group">
+          <label>¿Se realizo el retrolavado?</label>
+          <select id="df_retro_realizado" onchange="toggleDailyFields('df_retro_realizado','df_retro_no_block',true)">
+            <option value="true" ${retro.realizado !== false ? 'selected' : ''}>Si</option>
+            <option value="false" ${retro.realizado === false ? 'selected' : ''}>No</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Evidencia (URL)</label>
+          <input type="text" id="df_retro_evidencia" value="${esc(retro.evidencia_url || '')}" placeholder="https://onedrive.com/...">
+        </div>
+        <div id="df_retro_no_block" style="display:${retro.realizado === false ? 'block' : 'none'}">
+          <div class="form-group">
+            <label>Razones por las que no se realizo</label>
+            <textarea id="df_retro_razones" rows="2">${esc(retro.razones || '')}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Plan de accion</label>
+            <textarea id="df_retro_plan" rows="2">${esc(retro.plan_accion || '')}</textarea>
+          </div>
+        </div>
+      ` : `<div style="font-size:12px;color:var(--muted)">El retrolavado no esta programado para este dia.</div>`}
+    </div>
+  `, () => {
+    const result = {
+      litros_ingresados_ptar: Number(document.getElementById('df_lit_ing_ptar').value) || 0,
+      litros_ingresados_pipas: Number(document.getElementById('df_lit_ing_pipas').value) || 0,
+      litros_tratados_ptar: Number(document.getElementById('df_lit_trat_ptar').value) || 0,
+      litros_tratados_salida: Number(document.getElementById('df_lit_trat_sal').value) || 0,
+      retrolavado: {}
+    };
+    if (retroAplica) {
+      result.retrolavado = {
+        aplica: true,
+        realizado: document.getElementById('df_retro_realizado').value === 'true',
+        evidencia_url: document.getElementById('df_retro_evidencia')?.value?.trim() || '',
+        razones: document.getElementById('df_retro_razones')?.value?.trim() || '',
+        plan_accion: document.getElementById('df_retro_plan')?.value?.trim() || ''
+      };
+    } else {
+      result.retrolavado = { aplica: false };
+    }
+    return result;
+  });
+}
+
+function openPtarConfigModal() {
+  const cfg = (_ptarConfig && _ptarConfig.dias_retrolavado) || [1, 3, 5];
+  const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado'];
+  const html = `
+    <div class="modal-overlay open" id="ptarConfigModal" style="z-index:1100">
+      <div class="modal-box" style="max-width:400px">
+        <div class="modal-header">
+          <h3>Config. Retrolavado PTAR</h3>
+          <button class="modal-close" onclick="closeModal('ptarConfigModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Selecciona los dias de la semana en que aplica retrolavado:</p>
+          ${dayNames.map((name, i) => `
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;cursor:pointer">
+              <input type="checkbox" class="ptarDayChk" value="${i}" ${cfg.includes(i) ? 'checked' : ''}>
+              ${name}
+            </label>
+          `).join('')}
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('ptarConfigModal')">Cancelar</button>
+          <button class="btn btn-primary" onclick="savePtarConfig()">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function savePtarConfig() {
+  const checked = [...document.querySelectorAll('.ptarDayChk:checked')].map(c => Number(c.value));
+  try {
+    const r = await apiFetch('/api/planner/config/ptar', {
+      method: 'PATCH',
+      body: JSON.stringify({ dias_retrolavado: checked })
+    });
+    if (r && r.ok) {
+      _ptarConfig = r.config_ptar;
+      closeModal('ptarConfigModal');
+      selectDailyForm(_dailyDepto, 'ptar');
+    }
+  } catch (e) { alert(e.message); }
+}
+
+// ── RHH Daily Forms ─────────────────────────────────────────────────────────
+
+function renderRhhForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'ausentismo') {
+    container.innerHTML = dailyFormWrap('Ausentismo y retardos del dia', `
+      <div class="form-row">
+        <div class="form-group"><label>Retardos</label><input type="number" id="df_retardos" min="0" value="${datos.retardos || 0}"></div>
+        <div class="form-group"><label>Faltas</label><input type="number" id="df_faltas" min="0" value="${datos.faltas || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>Vacaciones</label><input type="number" id="df_vacaciones" min="0" value="${datos.vacaciones || 0}"></div>
+        <div class="form-group"><label>Incapacidad</label><input type="number" id="df_incapacidad" min="0" value="${datos.incapacidad || 0}"></div>
+      </div>
+      <div class="form-group">
+        <label>Notas / Observaciones</label>
+        <textarea id="df_notas" rows="3">${esc(datos.notas || '')}</textarea>
+      </div>
+    `, () => ({
+      retardos: Number(document.getElementById('df_retardos').value) || 0,
+      faltas: Number(document.getElementById('df_faltas').value) || 0,
+      vacaciones: Number(document.getElementById('df_vacaciones').value) || 0,
+      incapacidad: Number(document.getElementById('df_incapacidad').value) || 0,
+      notas: document.getElementById('df_notas').value.trim()
+    }));
+  } else if (formId === 'personal_disponible') {
+    container.innerHTML = dailyFormWrap('Personal disponible vs requerido', `
+      <div class="form-row">
+        <div class="form-group"><label>Personal requerido (plantilla)</label><input type="number" id="df_requeridos" min="0" value="${datos.requeridos || 0}"></div>
+        <div class="form-group"><label>Personal disponible hoy</label><input type="number" id="df_disponibles" min="0" value="${datos.disponibles || 0}"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>% Cobertura</label>
+          <div id="df_cobertura_val" style="font-size:20px;font-weight:700;color:var(--primary);padding:4px 0">—</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Detalle / Observaciones</label>
+        <textarea id="df_detalle" rows="3">${esc(datos.detalle || '')}</textarea>
+      </div>
+      <script>
+        (function calcCob(){
+          const r=document.getElementById('df_requeridos'),d=document.getElementById('df_disponibles'),v=document.getElementById('df_cobertura_val');
+          function up(){const req=Number(r.value)||0,dis=Number(d.value)||0;v.textContent=req>0?Math.round(dis/req*100)+'%':'—';v.style.color=req>0&&dis>=req?'var(--green)':'var(--red)'}
+          r.addEventListener('input',up);d.addEventListener('input',up);up();
+        })();
+      </script>
+    `, () => {
+      const req = Number(document.getElementById('df_requeridos').value) || 0;
+      const dis = Number(document.getElementById('df_disponibles').value) || 0;
+      return {
+        requeridos: req,
+        disponibles: dis,
+        porcentaje: req > 0 ? Math.round(dis / req * 100) : 0,
+        detalle: document.getElementById('df_detalle').value.trim()
+      };
+    });
+  } else if (formId === 'vacantes_criticas') {
+    const vacantes = datos.vacantes || [];
+    container.innerHTML = dailyFormWrap('Vacantes criticas abiertas', `
+      <div id="df_vacantes_list">
+        ${vacantes.length === 0 ? '' : vacantes.map((v, i) => vacantRow(i, v)).join('')}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addVacantRow()" style="margin-top:8px">+ Agregar vacante</button>
+    `, () => {
+      const rows = document.querySelectorAll('.df-vacant-row');
+      const list = [];
+      rows.forEach(r => {
+        const puesto = r.querySelector('.vac-puesto')?.value?.trim();
+        if (puesto) list.push({
+          puesto,
+          fecha_apertura: r.querySelector('.vac-fecha')?.value || '',
+          prioridad: r.querySelector('.vac-prior')?.value || 'media'
+        });
+      });
+      return { vacantes: list };
+    });
+  } else if (formId === 'incapacidades') {
+    const registros = datos.registros || [];
+    container.innerHTML = dailyFormWrap('Incapacidades e incidencias activas', `
+      <div id="df_incap_list">
+        ${registros.length === 0 ? '' : registros.map((r, i) => incapRow(i, r)).join('')}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addIncapRow()" style="margin-top:8px">+ Agregar registro</button>
+    `, () => {
+      const rows = document.querySelectorAll('.df-incap-row');
+      const list = [];
+      rows.forEach(r => {
+        const nombre = r.querySelector('.inc-nombre')?.value?.trim();
+        if (nombre) list.push({
+          nombre,
+          tipo: r.querySelector('.inc-tipo')?.value || '',
+          fecha_inicio: r.querySelector('.inc-fi')?.value || '',
+          fecha_fin: r.querySelector('.inc-ff')?.value || ''
+        });
+      });
+      return { registros: list };
+    });
+  } else if (formId === 'horas_extra') {
+    container.innerHTML = dailyFormWrap('Horas extra autorizadas (semana)', `
+      <div class="form-row">
+        <div class="form-group"><label>Total horas extra</label><input type="number" id="df_total_he" min="0" step="0.5" value="${datos.total_horas || 0}"></div>
+        <div class="form-group"><label>Personas involucradas</label><input type="number" id="df_personas_he" min="0" value="${datos.personas || 0}"></div>
+      </div>
+      <div class="form-group">
+        <label>Notas / Justificacion</label>
+        <textarea id="df_notas_he" rows="3">${esc(datos.notas || '')}</textarea>
+      </div>
+    `, () => ({
+      total_horas: Number(document.getElementById('df_total_he').value) || 0,
+      personas: Number(document.getElementById('df_personas_he').value) || 0,
+      notas: document.getElementById('df_notas_he').value.trim()
+    }));
+  } else if (formId === 'personal_capacitacion') {
+    const registros = datos.registros || [];
+    container.innerHTML = dailyFormWrap('Personal nuevo en capacitacion', `
+      <div id="df_cap_list">
+        ${registros.length === 0 ? '' : registros.map((r, i) => capRow(i, r)).join('')}
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="addCapRow()" style="margin-top:8px">+ Agregar personal</button>
+    `, () => {
+      const rows = document.querySelectorAll('.df-cap-row');
+      const list = [];
+      rows.forEach(r => {
+        const nombre = r.querySelector('.cap-nombre')?.value?.trim();
+        if (nombre) list.push({
+          nombre,
+          area: r.querySelector('.cap-area')?.value?.trim() || '',
+          fecha_inicio: r.querySelector('.cap-fi')?.value || '',
+          fecha_fin: r.querySelector('.cap-ff')?.value || ''
+        });
+      });
+      return { registros: list };
+    });
+  } else if (formId === 'necesidades_personal') {
+    renderTaskFormDaily(container, 'rhh', 'necesidades_personal', 'Necesidades de personal para cubrir produccion');
+  }
+}
+
+// Row builders for dynamic lists
+function vacantRow(i, v) {
+  v = v || {};
+  return `<div class="df-vacant-row" style="display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Puesto</label><input type="text" class="vac-puesto" value="${esc(v.puesto || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Fecha apertura</label><input type="date" class="vac-fecha" value="${v.fecha_apertura || ''}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Prioridad</label>
+      <select class="vac-prior"><option value="alta" ${v.prioridad==='alta'?'selected':''}>Alta</option><option value="media" ${v.prioridad==='media'||!v.prioridad?'selected':''}>Media</option><option value="baja" ${v.prioridad==='baja'?'selected':''}>Baja</option></select>
+    </div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addVacantRow() {
+  document.getElementById('df_vacantes_list').insertAdjacentHTML('beforeend', vacantRow(0, {}));
+}
+
+function incapRow(i, r) {
+  r = r || {};
+  return `<div class="df-incap-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Nombre</label><input type="text" class="inc-nombre" value="${esc(r.nombre || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Tipo</label>
+      <select class="inc-tipo"><option value="incapacidad" ${r.tipo==='incapacidad'||!r.tipo?'selected':''}>Incapacidad</option><option value="accidente" ${r.tipo==='accidente'?'selected':''}>Accidente</option><option value="maternidad" ${r.tipo==='maternidad'?'selected':''}>Maternidad</option><option value="otro" ${r.tipo==='otro'?'selected':''}>Otro</option></select>
+    </div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Inicio</label><input type="date" class="inc-fi" value="${r.fecha_inicio || ''}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Fin</label><input type="date" class="inc-ff" value="${r.fecha_fin || ''}"></div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addIncapRow() {
+  document.getElementById('df_incap_list').insertAdjacentHTML('beforeend', incapRow(0, {}));
+}
+
+function capRow(i, r) {
+  r = r || {};
+  return `<div class="df-cap-row" style="display:grid;grid-template-columns:2fr 1fr 1fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Nombre</label><input type="text" class="cap-nombre" value="${esc(r.nombre || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Area</label><input type="text" class="cap-area" value="${esc(r.area || '')}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Inicio</label><input type="date" class="cap-fi" value="${r.fecha_inicio || ''}"></div>
+    <div class="form-group" style="margin:0"><label style="font-size:11px">Fin est.</label><input type="date" class="cap-ff" value="${r.fecha_fin || ''}"></div>
+    <button class="btn btn-danger btn-sm" onclick="this.parentElement.remove()" style="height:32px">✕</button>
+  </div>`;
+}
+function addCapRow() {
+  document.getElementById('df_cap_list').insertAdjacentHTML('beforeend', capRow(0, {}));
+}
+
+// ── Daily: tipo "crear tarea" ────────────────────────────────────────────────
+
+async function renderTaskFormDaily(container, deptoId, formId, titulo) {
+  // Mostrar tareas vinculadas a este formulario + boton crear nueva
+  const acts = await apiFetch(`/api/planner/actividades?depto=${deptoId}`) || [];
+  const linked = acts.filter(a => a.correlacion_daily && a.correlacion_daily.formulario === formId);
+
+  container.innerHTML = `
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <h4 style="font-size:14px;color:var(--primary)">${titulo}</h4>
+        <button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:'${deptoId}',correlacion_daily:{departamento:'${deptoId}',formulario:'${formId}',fecha:'${_dailyDate}'}})">+ Crear actividad</button>
+      </div>
+      ${linked.length === 0 ? '<div class="empty">No hay actividades vinculadas a este formulario. Crea una para dar seguimiento.</div>' : `
+        <table>
+          <thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Estatus</th><th>Urgencia</th><th></th></tr></thead>
+          <tbody>
+            ${linked.map(a => `<tr>
+              <td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+              <td><b>${esc(a.titulo)}</b></td>
+              <td>${esc(a.responsable_nombre)}</td>
+              <td><span class="badge ${a.estatus}">${a.estatus.replace('_',' ')}</span></td>
+              <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
+              <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Detalle</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      `}
+    </div>`;
+}
+
+// ── Daily: helpers comunes ────────────────────────────────────────────────────
+
+let _currentDailyGetData = null;
+
+function dailyFormWrap(titulo, fieldsHtml, getDataFn) {
+  _currentDailyGetData = getDataFn;
+  const info = _dailyRegistro ? `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ultimo registro: ${_dailyRegistro.fecha_llenado} ${_dailyRegistro.hora_llenado} por ${esc(_dailyRegistro.llenado_por_nombre)}</div>` : '';
+  return `
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
+      <h4 style="font-size:14px;color:var(--primary);margin-bottom:4px">${titulo}</h4>
+      ${info}
+      ${fieldsHtml}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
+        <div id="dailySaveMsg" style="font-size:12px;min-height:16px"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-outline btn-sm" onclick="viewDailyHistory()">Historial</button>
+          <button class="btn btn-primary" onclick="saveDailyForm()">Guardar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleDailyFields(selectId, blockId, invertLogic) {
+  const val = document.getElementById(selectId).value === 'true';
+  const show = invertLogic ? !val : val;
+  document.getElementById(blockId).style.display = show ? 'block' : 'none';
+}
+
+async function saveDailyForm() {
+  if (!_currentDailyGetData) return;
+  const datos = _currentDailyGetData();
+  const msg = document.getElementById('dailySaveMsg');
+
+  try {
+    msg.textContent = 'Guardando...';
+    msg.style.color = 'var(--accent)';
+    const r = await apiFetch(`/api/planner/daily/${_dailyDepto}/${_dailyActiveForm}`, {
+      method: 'POST',
+      body: JSON.stringify({ fecha: _dailyDate, datos })
+    });
+    if (r && r.ok) {
+      msg.textContent = 'Guardado correctamente';
+      msg.style.color = 'var(--green)';
+      // Refresh resumen badges
+      const resumen = await apiFetch(`/api/planner/daily/${_dailyDepto}/resumen?fecha=${_dailyDate}`);
+      if (resumen) {
+        _dailyResumen = resumen;
+        const tabs = document.querySelectorAll('#dailyTabs .tab');
+        tabs.forEach(t => {
+          const fid = t.dataset.form;
+          const info = resumen.formularios.find(x => x.id === fid);
+          const forms = getDailyForms(_dailyDepto);
+          const fm = forms.find(f => f.id === fid);
+          if (info && fm) {
+            const dot = info.llenado ? '🟢' : '⚪';
+            t.innerHTML = `${dot} ${fm.icon} ${fm.nombre}`;
+          }
+        });
+        // Update header badge
+        const llenados = resumen.formularios.filter(f => f.llenado).length;
+        const total = resumen.formularios.length;
+        const headerBadge = document.querySelector('.content .badge');
+        if (headerBadge) {
+          headerBadge.className = `badge ${llenados === total ? 'cerrada' : llenados > 0 ? 'en_proceso' : 'sin_empezar'}`;
+          headerBadge.textContent = `${llenados}/${total} formularios`;
+        }
+      }
+    }
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.style.color = 'var(--red)';
+  }
+}
+
+async function viewDailyHistory() {
+  if (!_dailyDepto || !_dailyActiveForm) return;
+  const hist = await apiFetch(`/api/planner/daily/${_dailyDepto}/${_dailyActiveForm}/historial?desde=&hasta=`);
+  if (!hist || !hist.length) { alert('Sin historial disponible'); return; }
+
+  const fm = getDailyForms(_dailyDepto)?.find(f => f.id === _dailyActiveForm);
+  const html = `
+    <div class="modal-overlay open" id="dailyHistModal" style="z-index:1100">
+      <div class="modal-box wide">
+        <div class="modal-header">
+          <h3>Historial — ${fm ? fm.nombre : _dailyActiveForm}</h3>
+          <button class="modal-close" onclick="closeModal('dailyHistModal')">&times;</button>
+        </div>
+        <div class="modal-body" style="max-height:60vh;overflow-y:auto">
+          <table>
+            <thead><tr><th>Fecha</th><th>Llenado por</th><th>Hora</th><th>Datos</th></tr></thead>
+            <tbody>
+              ${hist.map(r => `<tr>
+                <td style="font-weight:600;white-space:nowrap">${r.fecha}</td>
+                <td>${esc(r.llenado_por_nombre)}</td>
+                <td style="white-space:nowrap">${r.hora_llenado || ''}</td>
+                <td style="font-size:11px;max-width:400px;word-break:break-all">${esc(JSON.stringify(r.datos || {}).slice(0, 200))}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('dailyHistModal')">Cerrar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+// ── Daily placeholder (para deptos Fase 3-4) ─────────────────────────────────
 
 function renderDailyPlaceholder(deptoId) {
   const d = DEPTOS.find(x => x.id === deptoId);
@@ -849,7 +1496,7 @@ function renderDailyPlaceholder(deptoId) {
     <div style="text-align:center;padding:60px 20px">
       <div style="font-size:48px;margin-bottom:16px">${d ? d.icon : '📅'}</div>
       <h2 style="color:var(--primary);margin-bottom:8px">Daily ${d ? d.nombre : deptoId}</h2>
-      <p style="color:var(--muted);font-size:14px">Los formularios diarios estaran disponibles en la Fase 2.</p>
+      <p style="color:var(--muted);font-size:14px">Los formularios diarios de este departamento estaran disponibles proximamente.</p>
       <p style="color:var(--muted);font-size:13px;margin-top:12px">Mientras tanto, puedes crear actividades para este departamento desde "Tareas del STAFF".</p>
       <button class="btn btn-accent" style="margin-top:20px" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver tareas de ${d ? d.nombre : deptoId}</button>
     </div>`;
