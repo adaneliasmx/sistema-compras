@@ -1106,7 +1106,64 @@ router.get('/integracion/vales/cpk', (req, res) => {
       };
     });
   }
-  res.json({ titulaciones: result });
+
+  // CPK por parametro — ultimas 30 mediciones de cada parametro con limites
+  const cpkParams = [];
+  const paramsConLimites = params.filter(p => p.activo && p.valor_min != null && p.valor_max != null);
+  for (const p of paramsConLimites) {
+    const vals = detalles
+      .filter(d => d.parametro_id === p.id && d.valor_registrado != null)
+      .sort((a, b) => b.id - a.id)
+      .slice(0, 30)
+      .map(d => Number(d.valor_registrado))
+      .filter(v => !isNaN(v));
+    if (vals.length < 2) continue;
+    const n = vals.length;
+    const mean = vals.reduce((s, v) => s + v, 0) / n;
+    const sigma = Math.sqrt(vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1));
+    const lsl = p.valor_min;
+    const usl = p.valor_max;
+    const cp = sigma > 0 ? (usl - lsl) / (6 * sigma) : null;
+    const cpkU = sigma > 0 ? (usl - mean) / (3 * sigma) : null;
+    const cpkL = sigma > 0 ? (mean - lsl) / (3 * sigma) : null;
+    const cpkVal = cpkU != null && cpkL != null ? Math.min(cpkU, cpkL) : null;
+    cpkParams.push({
+      id: p.id,
+      nombre: p.nombre_parametro,
+      tanque: p.no_tanque || p.nombre_tanque,
+      unidad: p.unidad,
+      n,
+      mean: Math.round(mean * 1000) / 1000,
+      sigma: Math.round(sigma * 1000) / 1000,
+      lsl, usl,
+      cp: cp != null ? Math.round(cp * 100) / 100 : null,
+      cpk: cpkVal != null ? Math.round(cpkVal * 100) / 100 : null
+    });
+  }
+
+  // Parametros sin limites pero relevantes (ej: Peso Fosfato)
+  const sinLimites = params.filter(p => p.activo && (p.valor_min == null || p.valor_max == null) && /peso.*fosf/i.test(p.nombre_parametro || ''));
+  for (const p of sinLimites) {
+    const vals = detalles
+      .filter(d => d.parametro_id === p.id && d.valor_registrado != null)
+      .slice(-30)
+      .map(d => Number(d.valor_registrado))
+      .filter(v => !isNaN(v));
+    const n = vals.length;
+    const mean = n > 0 ? vals.reduce((s, v) => s + v, 0) / n : null;
+    cpkParams.push({
+      id: p.id,
+      nombre: p.nombre_parametro,
+      tanque: p.no_tanque || p.nombre_tanque,
+      unidad: p.unidad,
+      n,
+      mean: mean != null ? Math.round(mean * 1000) / 1000 : null,
+      sigma: null, lsl: null, usl: null, cp: null, cpk: null,
+      sin_limites: true
+    });
+  }
+
+  res.json({ titulaciones: result, cpk_params: cpkParams });
 });
 
 // CPK Empaque: datos de muestras Tenneco (altura_axial, rugosidad)

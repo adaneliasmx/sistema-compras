@@ -1683,7 +1683,7 @@ async function renderEficienciasForm(container, datos) {
   container.innerHTML = dailyFormWrap('Eficiencias por linea', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <p style="font-size:12px;color:var(--muted);margin:0">Datos del modulo Produccion. Ajusta manualmente si es necesario.</p>
-      <button class="btn btn-outline btn-sm" onclick="renderEficienciasForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderEficienciasForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${lineas.map(l => {
@@ -1729,7 +1729,7 @@ async function renderParosForm(container, datos) {
   container.innerHTML = dailyFormWrap('Paros de lineas', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <p style="font-size:12px;color:var(--muted);margin:0">Datos del modulo Produccion — paros del dia</p>
-      <button class="btn btn-outline btn-sm" onclick="renderParosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderParosForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>Total paros</label><div class="val">${totalParos}</div></div>
@@ -1806,7 +1806,7 @@ async function renderRechazosInternosForm(container, datos) {
   container.innerHTML = dailyFormWrap('Rechazos internos / % calidad', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <p style="font-size:12px;color:var(--muted);margin:0">Baker y L1: auto-pull KPI calidad. L3 y L4: manual.</p>
-      <button class="btn btn-outline btn-sm" onclick="renderRechazosInternosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderRechazosInternosForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${['Baker', 'L1', 'L3', 'L4'].map(l => {
@@ -1868,7 +1868,7 @@ async function renderParosFallaForm(container, datos) {
 
   container.innerHTML = dailyFormWrap(`Paros por falla — OTs del ${ayer}`, `
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-outline btn-sm" onclick="renderParosFallaForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderParosFallaForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>OTs del dia anterior</label><div class="val">${ordenes.length}</div></div>
@@ -1942,7 +1942,7 @@ async function renderDisponibilidadForm(container, datos) {
   container.innerHTML = dailyFormWrap('% Disponibilidad por linea', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <p style="font-size:12px;color:var(--muted);margin:0">Disponibilidad del modulo Produccion. Ajusta manualmente si es necesario.</p>
-      <button class="btn btn-outline btn-sm" onclick="renderDisponibilidadForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderDisponibilidadForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px">
       ${['Baker', 'L1', 'L3', 'L4'].map(l => {
@@ -1995,7 +1995,7 @@ async function renderMateriasCriticasForm(container, datos) {
 
   container.innerHTML = dailyFormWrap('Materias primas y quimicos criticos', `
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-outline btn-sm" onclick="renderMateriasCriticasForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderMateriasCriticasForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi red"><label>Items fuera de rango</label><div class="val">${items.filter(i => i.fuera_min || i.fuera_max).length}</div></div>
@@ -2034,7 +2034,7 @@ async function renderOrdenesCompraForm(container, datos) {
 
   container.innerHTML = dailyFormWrap('Ordenes de compra — resumen por estatus', `
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-outline btn-sm" onclick="renderOrdenesCompraForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderOrdenesCompraForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi"><label>Items totales</label><div class="val">${comp ? comp.total_items : 0}</div></div>
@@ -2086,7 +2086,7 @@ async function renderInventariosCriticosForm(container, datos) {
 
   container.innerHTML = dailyFormWrap('Nivel de inventarios — materiales criticos bajo minimo', `
     <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-outline btn-sm" onclick="renderInventariosCriticosForm(this.closest('.daily-form-body'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderInventariosCriticosForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
     </div>
     <div class="kpi-row" style="margin-bottom:14px">
       <div class="kpi red"><label>Bajo minimo</label><div class="val">${soloFueraMin.length}</div></div>
@@ -2133,6 +2133,7 @@ async function renderCpkForm(container) {
     apiFetch('/api/planner/integracion/empaque/cpk')
   ]);
   const tits = cpkData ? cpkData.titulaciones : {};
+  const cpkParamsList = cpkData ? (cpkData.cpk_params || []) : [];
   const empPartes = empData ? empData.partes : [];
   const lineas = ['Baker', 'L1', 'L3', 'L4'];
 
@@ -2148,7 +2149,7 @@ async function renderCpkForm(container) {
   container.innerHTML = dailyFormWrap('CP / CPK — Titulaciones + Empaque', `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <p style="font-size:12px;color:var(--muted);margin:0">Datos de Vales/Calidad + Flujo Materiales (Empaque)</p>
-      <button class="btn btn-outline btn-sm" onclick="renderCpkForm(this.closest('.daily-form-body'))">Recargar</button>
+      <button class="btn btn-outline btn-sm" onclick="renderCpkForm(document.getElementById('dailyFormContent'))">Recargar</button>
     </div>
     <h4 style="margin:0 0 10px;font-size:14px;color:var(--primary)">Titulaciones por Proceso</h4>
     ${lineas.map(l => {
@@ -2163,6 +2164,23 @@ async function renderCpkForm(container) {
           '<td style="font-size:10px">' + esc(h.analista || '') + '</td></tr>').join('') +
         '</tbody></table></div>';
     }).join('')}
+    <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK por Parametro (Titulaciones)</h4>
+    ${cpkParamsList.length === 0 ? '<p style="font-size:12px;color:var(--muted)">Sin datos de CPK por parametro disponibles</p>' :
+      '<table style="font-size:11px;width:100%"><thead><tr><th>Parametro</th><th>Tanque</th><th>n</th><th style="text-align:center">Media</th><th style="text-align:center">Sigma</th><th style="text-align:center">LSL – USL</th><th style="text-align:center">Cp</th><th style="text-align:center">Cpk</th></tr></thead><tbody>' +
+      cpkParamsList.map(p => '<tr>' +
+        '<td><strong>' + esc(p.nombre) + '</strong></td>' +
+        '<td style="font-size:10px;color:var(--muted)">' + esc(p.tanque || '') + '</td>' +
+        '<td>' + p.n + '</td>' +
+        '<td style="text-align:center">' + (p.mean != null ? p.mean : '—') + ' ' + esc(p.unidad || '') + '</td>' +
+        '<td style="text-align:center">' + (p.sigma != null ? p.sigma : '—') + '</td>' +
+        (p.sin_limites ?
+          '<td style="text-align:center;font-size:10px;color:var(--orange)">Sin limites</td><td style="text-align:center;color:var(--orange)">—</td><td style="text-align:center;color:var(--orange)">—</td>' :
+          '<td style="text-align:center;font-size:10px;color:var(--muted)">' + (p.lsl ?? '—') + ' – ' + (p.usl ?? '—') + '</td>' +
+          '<td style="text-align:center">' + cpkBadge(p.cp) + '</td>' +
+          '<td style="text-align:center">' + cpkBadge(p.cpk) + '</td>'
+        ) +
+      '</tr>').join('') +
+      '</tbody></table>'}
     <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK Empaque (Tenneco)</h4>
     ${empPartes.length === 0 ? '<p style="font-size:12px;color:var(--muted)">Sin datos de empaque disponibles</p>' :
       '<table style="font-size:11px;width:100%"><thead><tr><th>N. Parte</th><th>n</th><th style="text-align:center">Rugosidad CPK</th><th style="text-align:center">Rug. Media</th><th style="text-align:center">Rug. Limites</th><th style="text-align:center">Alt. Axial CPK</th><th style="text-align:center">Alt. Media</th><th style="text-align:center">Alt. Limites</th></tr></thead><tbody>' +
