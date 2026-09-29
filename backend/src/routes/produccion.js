@@ -6065,4 +6065,102 @@ router.get('/turno-l4-config-history', produccionAllowRoles('admin'), (req, res)
   res.json({ history });
 });
 
+// ── Helper exportado para planner-staff: KPIs del dia por linea ──────────────
+// Reutiliza la misma logica del pizarron (buildSlots + annotate) pero solo
+// devuelve totales_dia con los 5 KPIs por linea.
+router._getDailyKpis = function _getDailyKpis(fecha) {
+  const targetDate = fecha || getShiftDate(nowDateStr(), nowTimeStr());
+  const pdb = dbProd.read();
+  const config = pdb.config || {};
+  const r3 = v => v != null ? Math.round(v * 1000) / 1000 : null;
+
+  let targetTurnos = ['T1', 'T2', 'T3'];
+  if (targetDate === nowDateStr()) {
+    const nowMins = toMins(nowTimeStr());
+    const TURNO_INICIO = { T1: 6*60+30, T2: 14*60+30, T3: 21*60+30 };
+    targetTurnos = targetTurnos.filter(t => nowMins >= TURNO_INICIO[t]);
+  }
+
+  const result = {};
+
+  // L3/L4 standard (buildPizarronResult)
+  const pizData = buildPizarronResult(pdb, config, ['L3'], targetTurnos, targetDate);
+  for (const l of ['L3']) {
+    if (pizData[l] && pizData[l].totales_dia) result[l] = pizData[l].totales_dia;
+  }
+
+  // L4: verificar si usa TL4
+  if (l4UsesTL4(pdb, targetDate)) {
+    const weekStart = getWeekStart(targetDate);
+    const l4cfg = getTurnoL4Config(pdb, weekStart);
+    const dia = getDiaSemana(targetDate);
+    const diaConf = l4cfg.dias[dia];
+    if (diaConf && diaConf.activo) {
+      const slots = buildSlotsForL4TL4(pdb, config, targetDate);
+      const window = getTL4EffectiveWindow(pdb, targetDate);
+      let filteredSlots = slots;
+      if (targetDate === nowDateStr()) {
+        const nowMins = toMins(nowTimeStr());
+        if (nowMins < toMins(diaConf.hora_entrada)) filteredSlots = [];
+      }
+      const live = annotateLiveSlots(pdb, 'L4', 'TL4', targetDate, filteredSlots);
+      const tNVQ = filteredSlots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+      const tBQ = filteredSlots.reduce((s, x) => s + (x.ciclos_buenos_calidad ?? x.ciclos_buenos), 0);
+      const tPz = filteredSlots.reduce((s, x) => s + x.piezas_total, 0);
+      const tPzO = filteredSlots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      const tParosDisp = filteredSlots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      const tParosRend = filteredSlots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+      const totalMins = window.minutos_calculo;
+      const dispMins = Math.max(0, totalMins - tParosDisp);
+      result['L4'] = {
+        eficiencia: r3(live.eficiencia),
+        calidad: tNVQ > 0 ? r3(tBQ / tNVQ) : null,
+        capacidad: tPzO > 0 ? r3(tPz / tPzO) : null,
+        disponibilidad: totalMins > 0 ? r3(Math.max(0, totalMins - Math.min(tParosDisp, totalMins)) / totalMins) : null,
+        rendimiento: dispMins > 0 ? r3((dispMins - Math.min(tParosRend, dispMins)) / dispMins) : null
+      };
+    } else {
+      result['L4'] = { eficiencia: null, calidad: null, disponibilidad: null, rendimiento: null, capacidad: null };
+    }
+  } else {
+    const l4data = buildPizarronResult(pdb, config, ['L4'], targetTurnos, targetDate);
+    if (l4data['L4'] && l4data['L4'].totales_dia) result['L4'] = l4data['L4'].totales_dia;
+  }
+
+  // Baker y L1 (addBakerLike logic)
+  function addLine(lineaLabel, buildFn) {
+    let dNVQ = 0, dBQ = 0, dPz = 0, dPzO = 0, dParosDisp = 0, dParosRend = 0, dCEff = 0, dObjElap = 0, dSlots = 0, dCompletedSlots = 0;
+    for (const t of targetTurnos) {
+      const tDef = TURNOS_DEF[t];
+      if (!tDef) continue;
+      const slots = buildFn(pdb, config, t, targetDate);
+      const live = annotateLiveSlots(pdb, lineaLabel, t, targetDate, slots);
+      dNVQ += slots.reduce((s, x) => s + (x.ciclos_no_vacios_calidad ?? x.ciclos_no_vacios), 0);
+      dBQ += slots.reduce((s, x) => s + (x.ciclos_buenos_calidad ?? x.ciclos_buenos), 0);
+      dPz += slots.reduce((s, x) => s + x.piezas_total, 0);
+      dPzO += slots.reduce((s, x) => s + x.piezas_obj_total, 0);
+      dParosDisp += slots.reduce((s, x) => s + (x.paros_min_disp ?? 0), 0);
+      dParosRend += slots.reduce((s, x) => s + (x.paros_min_rend ?? 0), 0);
+      dCEff += live.ciclos_eficiencia;
+      dObjElap += live.objetivo_eficiencia;
+      dSlots += tDef.hours;
+      dCompletedSlots += live.slots_completados;
+    }
+    const dTotalMins = dSlots * 60;
+    const dDispMins = Math.max(0, dTotalMins - dParosDisp);
+    result[lineaLabel] = {
+      eficiencia: r3(dObjElap > 0 ? dCEff / dObjElap : (dCompletedSlots > 0 && dCEff === 0 ? 1 : null)),
+      calidad: dNVQ > 0 ? r3(dBQ / dNVQ) : null,
+      capacidad: dPzO > 0 ? r3(dPz / dPzO) : null,
+      disponibilidad: dTotalMins > 0 ? r3((dTotalMins - Math.min(dParosDisp, dTotalMins)) / dTotalMins) : null,
+      rendimiento: dDispMins > 0 ? r3((dDispMins - Math.min(dParosRend, dDispMins)) / dDispMins) : null
+    };
+  }
+
+  addLine('Baker', buildSlotsForBaker);
+  addLine('L1', buildSlotsForL1);
+
+  return { fecha: targetDate, kpis: result };
+};
+
 module.exports = router;

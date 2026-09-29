@@ -2,6 +2,7 @@ const express = require('express');
 const { read, write, DEPARTAMENTOS } = require('../db-planner');
 const { read: readCompras } = require('../db');
 const { read: readProd } = require('../db-produccion');
+const prodRouter = require('./produccion');
 const { read: readMant } = require('../db-mantenimiento');
 const { read: readInv } = require('../db-inventarios');
 const { read: readVales } = require('../db-vales');
@@ -719,36 +720,22 @@ router.get('/daily-forms', (req, res) => {
 
 // ── INTEGRACION: datos de otros modulos para daily ──────────────────────────
 
-// KPIs de produccion por linea para una fecha
+// KPIs de produccion por linea — calculo live (misma logica que pizarron produccion)
 router.get('/integracion/produccion/kpis', (req, res) => {
   const fecha = req.query.fecha || nowMxDate();
-  const prodDb = readProd();
-  const snapshots = prodDb.kpi_snapshots || [];
-  const del_dia = snapshots.filter(s => s.fecha === fecha);
-
-  const lineas = ['Baker', 'L1', 'L3', 'L4'];
-  const result = {};
-  for (const linea of lineas) {
-    const snaps = del_dia.filter(s => s.linea === linea);
-    if (snaps.length === 0) {
-      result[linea] = { eficiencia: null, calidad: null, disponibilidad: null, capacidad: null, rendimiento: null };
-    } else {
-      // Promediar turnos
-      const avg = (field) => {
-        const vals = snaps.map(s => s[field]).filter(v => v !== null && v !== undefined);
-        return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) : null;
-      };
-      result[linea] = {
-        eficiencia: avg('eficiencia'),
-        calidad: avg('calidad'),
-        disponibilidad: avg('disponibilidad'),
-        capacidad: avg('capacidad'),
-        rendimiento: avg('rendimiento'),
-        turnos: snaps.length
-      };
-    }
+  const data = prodRouter._getDailyKpis(fecha);
+  // Convertir decimales (0-1) a porcentaje entero para el frontend
+  const kpis = {};
+  for (const [linea, vals] of Object.entries(data.kpis)) {
+    kpis[linea] = {
+      eficiencia: vals.eficiencia != null ? Math.round(vals.eficiencia * 100) : null,
+      calidad: vals.calidad != null ? Math.round(vals.calidad * 100) : null,
+      disponibilidad: vals.disponibilidad != null ? Math.round(vals.disponibilidad * 100) : null,
+      capacidad: vals.capacidad != null ? Math.round(vals.capacidad * 100) : null,
+      rendimiento: vals.rendimiento != null ? Math.round(vals.rendimiento * 100) : null
+    };
   }
-  res.json({ fecha, kpis: result });
+  res.json({ fecha: data.fecha, kpis });
 });
 
 // Paros de produccion agrupados por linea
@@ -1107,38 +1094,44 @@ router.get('/integracion/vales/cpk', (req, res) => {
     });
   }
 
-  // Migrar limites de Peso Fosfato T14 MACRO si faltan (1000-2500 mg/ft²)
-  const pf14 = params.find(p => p.id === 14);
-  if (pf14 && pf14.valor_min == null) {
-    pf14.valor_min = 1000; pf14.valor_max = 2500;
-    pf14.tipo_rango = 'entre'; pf14.unidad = 'mg/ft²';
-    try { const { write: writeVales } = require('../db-vales'); writeVales(valesDb); } catch (_) {}
-  }
-
-  // CPK por parametro — solo Peso Fosfato (IDs 14, 52, 92)
-  const PESO_FOSFATO_IDS = [14, 52, 92];
+  // CPK Peso Fosfato — mismos IDs que pizarron CPK de /vales/
+  // 85: T16: MACRO (Baker), 92: T18: MICRO (Baker), 52: T16: MICRO 2 (L3)
+  const PESO_FOSFATO_IDS = [85, 92, 52];
   const cpkParams = [];
+
+  // Semana en curso (lun-dom) — misma ventana que el pizarron de vales
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const dayW = now.getDay();
+  const diffMon = dayW === 0 ? -6 : 1 - dayW;
+  const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
+  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmtD = d => d.toISOString().slice(0, 10);
+  const semIni = fmtD(mon);
+  const semFin = fmtD(sun);
+
+  // Filtrar headers de la semana (excluir paro_linea)
+  const weekHeaders = headers.filter(h => h.fecha >= semIni && h.fecha <= semFin && h.estado !== 'paro_linea');
+  const weekHeaderIds = new Set(weekHeaders.map(h => h.id));
+
   for (const pid of PESO_FOSFATO_IDS) {
     const p = params.find(x => x.id === pid);
     if (!p) continue;
     const vals = detalles
-      .filter(d => d.parametro_id === p.id && d.valor_registrado != null)
-      .sort((a, b) => b.id - a.id)
-      .slice(0, 30)
+      .filter(d => d.parametro_id === p.id && weekHeaderIds.has(d.header_id) && d.valor_registrado != null)
       .map(d => Number(d.valor_registrado))
       .filter(v => !isNaN(v));
-    if (vals.length < 2) {
-      cpkParams.push({ id: p.id, nombre: p.nombre_parametro, tanque: p.no_tanque || p.nombre_tanque, unidad: p.unidad, n: vals.length, mean: null, sigma: null, lsl: p.valor_min, usl: p.valor_max, cp: null, cpk: null });
-      continue;
-    }
     const n = vals.length;
-    const mean = vals.reduce((s, v) => s + v, 0) / n;
-    const sigma = Math.sqrt(vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1));
     const lsl = p.valor_min;
     const usl = p.valor_max;
-    const cp = sigma > 0 && lsl != null && usl != null ? (usl - lsl) / (6 * sigma) : null;
-    const cpkU = sigma > 0 && usl != null ? (usl - mean) / (3 * sigma) : null;
-    const cpkL = sigma > 0 && lsl != null ? (mean - lsl) / (3 * sigma) : null;
+    if (n < 2 || lsl == null || usl == null) {
+      cpkParams.push({ id: p.id, nombre: p.nombre_parametro, tanque: p.no_tanque || p.nombre_tanque, unidad: p.unidad, n, mean: null, sigma: null, lsl, usl, cp: null, cpk: null });
+      continue;
+    }
+    const mean = vals.reduce((s, v) => s + v, 0) / n;
+    const sigma = Math.sqrt(vals.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / (n - 1));
+    const cp = sigma > 0 ? (usl - lsl) / (6 * sigma) : null;
+    const cpkU = sigma > 0 ? (usl - mean) / (3 * sigma) : null;
+    const cpkL = sigma > 0 ? (mean - lsl) / (3 * sigma) : null;
     const cpkVal = cpkU != null && cpkL != null ? Math.min(cpkU, cpkL) : null;
     cpkParams.push({
       id: p.id, nombre: p.nombre_parametro, tanque: p.no_tanque || p.nombre_tanque, unidad: p.unidad,
@@ -1149,7 +1142,7 @@ router.get('/integracion/vales/cpk', (req, res) => {
     });
   }
 
-  res.json({ titulaciones: result, cpk_params: cpkParams });
+  res.json({ titulaciones: result, cpk_params: cpkParams, semana: { ini: semIni, fin: semFin } });
 });
 
 // CPK Empaque: datos de muestras Tenneco (altura_axial, rugosidad)
