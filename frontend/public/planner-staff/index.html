@@ -881,6 +881,29 @@ const DAILY_FORMS_META = {
     { id: 'horas_extra', nombre: 'Horas extra autorizadas', icon: '⏰' },
     { id: 'personal_capacitacion', nombre: 'Personal en capacitacion', icon: '📚' },
     { id: 'necesidades_personal', nombre: 'Necesidades de personal', icon: '📋' }
+  ],
+  compras: [
+    { id: 'materias_criticas', nombre: 'Materias primas criticas', icon: '🧪' },
+    { id: 'ordenes_compra', nombre: 'Ordenes de compra', icon: '🛒' },
+    { id: 'refacciones_criticas', nombre: 'Refacciones criticas', icon: '🔩' },
+    { id: 'inventarios_criticos', nombre: 'Inventarios criticos', icon: '📦' },
+    { id: 'compras_urgentes', nombre: 'Compras urgentes', icon: '🚨' }
+  ],
+  procesos: [
+    { id: 'cpk', nombre: 'CP/CPK caract. criticas', icon: '📈' },
+    { id: 'problemas_proceso', nombre: 'Problemas de proceso', icon: '🔍' },
+    { id: 'estudios_pruebas', nombre: 'Estudios y pruebas', icon: '🧪' },
+    { id: 'mejoras_implementaciones', nombre: 'Mejoras e implementaciones', icon: '💡' }
+  ],
+  sgc: [
+    { id: 'no_conformidades', nombre: 'No conformidades abiertas', icon: '📋' },
+    { id: 'documentos_pendientes', nombre: 'Documentos pendientes', icon: '📄' },
+    { id: 'indicadores_fuera', nombre: 'Indicadores fuera de objetivo', icon: '📊' },
+    { id: 'cumplimiento_sgc', nombre: 'Cumplimiento acciones SGC', icon: '✅' }
+  ],
+  operaciones: [
+    { id: 'prioridades_dia', nombre: 'Prioridades del dia', icon: '🎯' },
+    { id: 'pedidos_criticos', nombre: 'Pedidos/clientes criticos', icon: '🚨' }
   ]
 };
 
@@ -966,6 +989,10 @@ async function selectDailyForm(deptoId, formId) {
   else if (deptoId === 'produccion') renderProduccionForm(formId, container);
   else if (deptoId === 'calidad') renderCalidadForm(formId, container);
   else if (deptoId === 'mantenimiento') renderMantenimientoForm(formId, container);
+  else if (deptoId === 'compras') renderComprasForm(formId, container);
+  else if (deptoId === 'procesos') renderProcesosForm(formId, container);
+  else if (deptoId === 'sgc') renderSgcForm(formId, container);
+  else if (deptoId === 'operaciones') renderOperacionesForm(formId, container);
   else container.innerHTML = '<div class="empty">Formulario no disponible aun</div>';
 }
 
@@ -1760,6 +1787,213 @@ async function renderDisponibilidadForm(container, datos) {
     });
     return r;
   });
+}
+
+// ── COMPRAS Daily Forms ──────────────────────────────────────────────────────
+
+function renderComprasForm(formId, container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  if (formId === 'materias_criticas') {
+    renderMateriasCriticasForm(container, datos);
+  } else if (formId === 'ordenes_compra') {
+    renderOrdenesCompraForm(container, datos);
+  } else if (formId === 'refacciones_criticas') {
+    renderTaskFormDaily(container, 'compras', 'refacciones_criticas', 'Refacciones criticas pendientes');
+  } else if (formId === 'inventarios_criticos') {
+    renderInventariosCriticosForm(container, datos);
+  } else if (formId === 'compras_urgentes') {
+    renderTaskFormDaily(container, 'compras', 'compras_urgentes', 'Compras urgentes');
+  }
+}
+
+async function renderMateriasCriticasForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const inv = await apiFetch('/api/planner/integracion/inventarios/criticos');
+  const items = inv ? inv.items : [];
+
+  const typeLabels = { quimicos_proceso: 'Quimicos Proceso', epp: 'EPP', insumos_consumibles: 'Insumos', quimicos_titulacion: 'Titulacion' };
+
+  container.innerHTML = dailyFormWrap('Materias primas y quimicos criticos (auto-pull inventarios)', `
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi red"><label>Items fuera de rango</label><div class="val">${items.filter(i => i.fuera_min || i.fuera_max).length}</div></div>
+      <div class="kpi"><label>Sin conteo</label><div class="val">${items.filter(i => i.sin_conteo).length}</div></div>
+      <div class="kpi"><label>Total alertas</label><div class="val">${items.length}</div></div>
+    </div>
+    ${items.length === 0 ? '<div class="empty">Todos los inventarios dentro de rango</div>' : `
+      <table style="font-size:12px">
+        <thead><tr><th>Item</th><th>Tipo</th><th>Stock</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
+        <tbody>
+          ${items.slice(0, 40).map(i => `<tr>
+            <td><b>${esc(i.nombre)}</b></td>
+            <td style="font-size:11px">${typeLabels[i.inv_type] || i.inv_type}</td>
+            <td style="font-weight:700;color:${i.fuera_min ? 'var(--red)' : i.fuera_max ? 'var(--orange)' : 'var(--muted)'}">${i.stock !== null ? i.stock + ' ' + i.unidad : '—'}</td>
+            <td>${i.min != null ? i.min : '—'}</td>
+            <td>${i.max != null ? i.max : '—'}</td>
+            <td>${i.fuera_min ? '<span class="badge atrasada">Bajo min</span>' : i.fuera_max ? '<span class="badge en_proceso">Sobre max</span>' : '<span class="badge sin_empezar">Sin conteo</span>'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    `}
+    <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones</label><textarea id="df_obs_mat" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_mat').value.trim(),
+    resumen: { items_alerta: items.length }
+  }));
+}
+
+async function renderOrdenesCompraForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const comp = await apiFetch('/api/planner/integracion/compras/resumen');
+  const porEstatus = comp ? comp.por_estatus : {};
+
+  const statusOrder = ['En cotizacion', 'En autorizacion', 'Autorizado', 'Enviada', 'En proceso'];
+  const allStatus = Object.keys(porEstatus);
+
+  container.innerHTML = dailyFormWrap('Ordenes de compra — resumen por estatus (auto-pull compras)', `
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi"><label>Items totales</label><div class="val">${comp ? comp.total_items : 0}</div></div>
+      <div class="kpi orange"><label>POs activas</label><div class="val">${comp ? comp.pos_activas : 0}</div></div>
+      <div class="kpi"><label>POs totales</label><div class="val">${comp ? comp.pos_total : 0}</div></div>
+    </div>
+    ${allStatus.length === 0 ? '<div class="empty">Sin items de compra</div>' : `
+      ${statusOrder.filter(s => porEstatus[s]).map(st => {
+        const g = porEstatus[st];
+        return `
+          <div style="margin-bottom:14px;border:1px solid var(--line);border-radius:8px;padding:12px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <b style="font-size:13px;color:var(--primary)">${st}</b>
+              <span class="badge en_proceso" style="font-size:11px">${g.count} items</span>
+            </div>
+            ${g.items.length > 0 ? `
+              <table style="font-size:11px">
+                <thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th></tr></thead>
+                <tbody>
+                  ${g.items.slice(0, 10).map(i => `<tr>
+                    <td style="max-width:200px">${esc((i.descripcion || '').slice(0, 50))}</td>
+                    <td>${i.cantidad} ${i.unidad}</td>
+                    <td style="font-family:monospace;font-size:10px">${i.po_folio || '—'}</td>
+                    <td style="font-size:10px">${esc((i.proveedor || '').slice(0, 25))}</td>
+                  </tr>`).join('')}
+                  ${g.items.length > 10 ? `<tr><td colspan="4" style="color:var(--muted);text-align:center">... y ${g.count - 10} mas</td></tr>` : ''}
+                </tbody>
+              </table>
+            ` : ''}
+          </div>`;
+      }).join('')}
+      ${allStatus.filter(s => !statusOrder.includes(s) && porEstatus[s]).map(st => {
+        const g = porEstatus[st];
+        return `<div style="font-size:12px;color:var(--muted);margin-bottom:4px"><b>${st}:</b> ${g.count} items</div>`;
+      }).join('')}
+    `}
+    <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_oc" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_oc').value.trim(),
+    resumen: { pos_activas: comp ? comp.pos_activas : 0, total_items: comp ? comp.total_items : 0 }
+  }));
+}
+
+async function renderInventariosCriticosForm(container, datos) {
+  container.innerHTML = '<div class="spinner"></div>';
+  const inv = await apiFetch('/api/planner/integracion/inventarios/criticos');
+  const items = inv ? inv.items : [];
+  const soloFueraMin = items.filter(i => i.fuera_min);
+
+  container.innerHTML = dailyFormWrap('Nivel de inventarios — materiales criticos bajo minimo', `
+    <div class="kpi-row" style="margin-bottom:14px">
+      <div class="kpi red"><label>Bajo minimo</label><div class="val">${soloFueraMin.length}</div></div>
+    </div>
+    ${soloFueraMin.length === 0 ? '<div class="empty">Ningun material critico bajo minimo</div>' : `
+      <table style="font-size:12px">
+        <thead><tr><th>Material</th><th>Stock actual</th><th>Minimo</th><th>Deficit</th></tr></thead>
+        <tbody>
+          ${soloFueraMin.map(i => `<tr>
+            <td><b>${esc(i.nombre)}</b></td>
+            <td style="color:var(--red);font-weight:700">${i.stock} ${i.unidad}</td>
+            <td>${i.min} ${i.unidad}</td>
+            <td style="font-weight:700;color:var(--red)">${(i.min - i.stock).toFixed(1)} ${i.unidad}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    `}
+    <div class="form-group" style="margin-top:12px"><label>Acciones tomadas</label><textarea id="df_obs_inv" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_inv').value.trim(),
+    resumen: { bajo_minimo: soloFueraMin.length }
+  }));
+}
+
+// ── PROCESOS Daily Forms ────────────────────────────────────────────────────
+
+function renderProcesosForm(formId, container) {
+  if (formId === 'cpk') {
+    renderCpkForm(container);
+  } else if (formId === 'problemas_proceso') {
+    renderTaskFormDaily(container, 'procesos', 'problemas_proceso', 'Problemas de proceso detectados');
+  } else if (formId === 'estudios_pruebas') {
+    renderTaskFormDaily(container, 'procesos', 'estudios_pruebas', 'Estudios y pruebas en proceso');
+  } else if (formId === 'mejoras_implementaciones') {
+    renderTaskFormDaily(container, 'procesos', 'mejoras_implementaciones', 'Mejoras e implementaciones (sistemas)');
+  }
+}
+
+async function renderCpkForm(container) {
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+  container.innerHTML = '<div class="spinner"></div>';
+  const cpkData = await apiFetch('/api/planner/integracion/vales/cpk');
+  const tits = cpkData ? cpkData.titulaciones : {};
+  const lineas = ['Baker', 'L1', 'L3', 'L4'];
+
+  container.innerHTML = dailyFormWrap('CP / CPK — Ultimas titulaciones por linea', `
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Datos de las ultimas titulaciones del modulo de Calidad/Vales.</p>
+    ${lineas.map(l => {
+      const headers = tits[l] || [];
+      if (headers.length === 0) return `<div style="font-size:12px;color:var(--muted);margin-bottom:8px"><b>${l}:</b> Sin titulaciones recientes</div>`;
+      return `
+        <div style="margin-bottom:14px;border:1px solid var(--line);border-radius:8px;padding:12px">
+          <b style="font-size:13px;color:var(--primary)">${l}</b>
+          <table style="font-size:11px;margin-top:6px">
+            <thead><tr><th>Fecha</th><th>Turno</th><th>#</th><th>Estado</th><th>Params</th><th>Fuera</th><th>Analista</th></tr></thead>
+            <tbody>
+              ${headers.map(h => `<tr>
+                <td>${h.fecha}</td>
+                <td>${h.turno}</td>
+                <td>${h.numero}</td>
+                <td><span class="badge ${h.estado === 'completo' ? 'cerrada' : h.estado === 'fuera_de_rango' ? 'atrasada' : 'sin_empezar'}" style="font-size:10px">${h.estado}</span></td>
+                <td>${h.parametros_total}</td>
+                <td style="color:${h.parametros_fuera > 0 ? 'var(--red)' : 'var(--green)'};font-weight:700">${h.parametros_fuera}</td>
+                <td style="font-size:10px">${esc(h.analista || '')}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }).join('')}
+    <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_cpk" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+  `, () => ({
+    observaciones: document.getElementById('df_obs_cpk').value.trim()
+  }));
+}
+
+// ── SGC Daily Forms ─────────────────────────────────────────────────────────
+
+function renderSgcForm(formId, container) {
+  const labels = {
+    no_conformidades: 'No conformidades abiertas',
+    documentos_pendientes: 'Documentos/procedimientos pendientes de actualizacion',
+    indicadores_fuera: 'Indicadores fuera de objetivo',
+    cumplimiento_sgc: 'Cumplimiento de acciones del SGC'
+  };
+  renderTaskFormDaily(container, 'sgc', formId, labels[formId] || formId);
+}
+
+// ── OPERACIONES Daily Forms ─────────────────────────────────────────────────
+
+function renderOperacionesForm(formId, container) {
+  const labels = {
+    prioridades_dia: 'Prioridades del dia',
+    pedidos_criticos: 'Pedidos / clientes criticos'
+  };
+  renderTaskFormDaily(container, 'operaciones', formId, labels[formId] || formId);
 }
 
 // ── Daily: tipo "crear tarea" ────────────────────────────────────────────────

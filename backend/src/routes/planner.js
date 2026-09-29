@@ -3,6 +3,8 @@ const { read, write, DEPARTAMENTOS } = require('../db-planner');
 const { read: readCompras } = require('../db');
 const { read: readProd } = require('../db-produccion');
 const { read: readMant } = require('../db-mantenimiento');
+const { read: readInv } = require('../db-inventarios');
+const { read: readVales } = require('../db-vales');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
 
@@ -775,6 +777,125 @@ router.get('/integracion/mantenimiento/ordenes', (req, res) => {
   ).length;
 
   res.json({ fecha, ordenes: enriched, total_dia: enriched.length, pendientes_globales: pendientes });
+});
+
+// Inventarios criticos: items fuera de min/max
+router.get('/integracion/inventarios/criticos', (req, res) => {
+  const invDb = readInv();
+  const itemsConfig = invDb.inv_items_config || [];
+  const conteos = invDb.inv_conteos || [];
+  const conteoItems = invDb.inv_conteo_items || [];
+
+  // Ultimo conteo por tipo
+  const ultimoConteoPorTipo = {};
+  conteos.sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
+  for (const c of conteos) {
+    if (!ultimoConteoPorTipo[c.inv_type]) ultimoConteoPorTipo[c.inv_type] = c;
+  }
+
+  const result = [];
+  for (const item of itemsConfig) {
+    if (item.activo === false) continue;
+    const ultimoConteo = ultimoConteoPorTipo[item.inv_type];
+    let stock = null;
+    if (ultimoConteo) {
+      const ci = conteoItems.find(x => x.conteo_id === ultimoConteo.id && x.item_key === item.item_key);
+      if (ci) stock = ci.cantidad !== undefined ? ci.cantidad : ci.kg;
+    }
+    const fueraMin = stock !== null && item.min_val != null && stock < item.min_val;
+    const fueraMax = stock !== null && item.max_val != null && stock > item.max_val;
+    if (fueraMin || fueraMax || stock === null) {
+      result.push({
+        item_key: item.item_key,
+        nombre: item.item_label,
+        inv_type: item.inv_type,
+        min: item.min_val,
+        max: item.max_val,
+        stock,
+        unidad: item.unidad || 'pz',
+        fuera_min: fueraMin,
+        fuera_max: fueraMax,
+        sin_conteo: stock === null
+      });
+    }
+  }
+  res.json({ items: result, total: result.length });
+});
+
+// Compras: resumen de items por estatus
+router.get('/integracion/compras/resumen', (req, res) => {
+  const comprasDb = readCompras();
+  const reqItems = comprasDb.requisition_items || [];
+  const pos = comprasDb.purchase_orders || [];
+  const suppliers = comprasDb.suppliers || [];
+
+  const statusGroups = {};
+  for (const ri of reqItems) {
+    const st = ri.status || 'Sin estado';
+    if (!statusGroups[st]) statusGroups[st] = { count: 0, total_mxn: 0, items: [] };
+    statusGroups[st].count++;
+    statusGroups[st].total_mxn += (ri.unit_cost || 0) * (ri.quantity || 0);
+    if (statusGroups[st].items.length < 20) {
+      const po = ri.purchase_order_id ? pos.find(p => p.id === ri.purchase_order_id) : null;
+      statusGroups[st].items.push({
+        id: ri.id,
+        descripcion: ri.manual_item_name || `Item #${ri.id}`,
+        cantidad: ri.quantity,
+        unidad: ri.unit || 'pz',
+        costo_unit: ri.unit_cost,
+        moneda: ri.currency || 'MXN',
+        po_folio: po ? po.folio : null,
+        po_status: po ? po.status : null,
+        proveedor: ri.supplier_id ? (suppliers.find(s => s.id === ri.supplier_id) || {}).business_name : null
+      });
+    }
+  }
+
+  // POs urgentes/atrasadas
+  const urgentes = pos.filter(p => ['Enviada', 'Aceptada', 'En proceso'].includes(p.status));
+
+  res.json({
+    por_estatus: statusGroups,
+    total_items: reqItems.length,
+    pos_activas: urgentes.length,
+    pos_total: pos.length
+  });
+});
+
+// CPK: ultimas titulaciones con estado
+router.get('/integracion/vales/cpk', (req, res) => {
+  const valesDb = readVales();
+  const headers = valesDb.titulaciones_header || [];
+  const detalles = valesDb.titulaciones_detalle || [];
+  const params = valesDb.parametros_titulacion || [];
+
+  // Ultimas 4 titulaciones por linea
+  const lineas = ['Baker', 'L1', 'L3', 'L4'];
+  const result = {};
+  for (const linea of lineas) {
+    const lineaHeaders = headers.filter(h => h.linea === linea).sort((a, b) => {
+      const da = (b.fecha || '') + (b.numero_titulacion || '');
+      const db2 = (a.fecha || '') + (a.numero_titulacion || '');
+      return da.localeCompare(db2);
+    }).slice(0, 4);
+
+    result[linea] = lineaHeaders.map(h => {
+      const dets = detalles.filter(d => d.header_id === h.id);
+      const fuera = dets.filter(d => d.estado_param === 'fuera' || d.estado_param === 'limite').length;
+      const total = dets.length;
+      return {
+        id: h.id,
+        fecha: h.fecha,
+        turno: h.turno,
+        numero: h.numero_titulacion,
+        estado: h.estado,
+        parametros_total: total,
+        parametros_fuera: fuera,
+        analista: h.analista
+      };
+    });
+  }
+  res.json({ titulaciones: result });
 });
 
 // ── KPIs rapidos ─────────────────────────────────────────────────────────────
