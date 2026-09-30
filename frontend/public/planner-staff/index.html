@@ -546,10 +546,14 @@ async function verDetalle(actId) {
     <div class="modal-overlay open" id="detalleModal">
       <div class="modal-box wide">
         <div class="modal-header">
-          <h3>${esc(act.id)} — ${esc(act.titulo)}</h3>
+          <h3>${esc(act.id)}</h3>
           <button class="modal-close" onclick="closeModal('detalleModal')">&times;</button>
         </div>
         <div class="modal-body">
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Titulo</label>
+            <input type="text" id="deTitulo" value="${esc(act.titulo)}" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px;width:100%">
+          </div>
           <p style="color:var(--muted);font-size:13px;margin-bottom:14px">${esc(act.descripcion || 'Sin descripcion')}</p>
 
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
@@ -582,11 +586,11 @@ async function verDetalle(actId) {
             </div>
             <div class="form-group">
               <label>Fecha inicio</label>
-              <div style="font-size:13px">${act.fecha_inicio || '—'}</div>
+              <input type="date" id="deFechaInicio" value="${act.fecha_inicio || ''}" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
             </div>
             <div class="form-group">
               <label>Fecha fin</label>
-              <div style="font-size:13px">${act.fecha_fin || '—'}</div>
+              <input type="date" id="deFechaFin" value="${act.fecha_fin || ''}" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
             </div>
             <div class="form-group">
               <label>% Avance</label>
@@ -649,15 +653,20 @@ const VALID_URGENCIAS = ['alta', 'media', 'baja'];
 const VALID_ESTADOS = ['sin_empezar', 'en_proceso', 'cerrada', 'atrasada', 'pospuesta', 'cancelada'];
 
 async function guardarDetalle(actId) {
+  const titulo = document.getElementById('deTitulo').value.trim();
   const estatus = document.getElementById('deEstatus').value;
   const urgencia = document.getElementById('deUrg').value;
   const avance = Number(document.getElementById('deAvance').value);
   const fecha_compromiso = document.getElementById('deFecha').value || null;
+  const fecha_inicio = document.getElementById('deFechaInicio').value || null;
+  const fecha_fin = document.getElementById('deFechaFin').value || null;
+
+  if (!titulo) { alert('El titulo no puede estar vacio'); return; }
 
   try {
     const r = await apiFetch('/api/planner/actividades/' + actId, {
       method: 'PATCH',
-      body: JSON.stringify({ estatus, urgencia, avance, fecha_compromiso })
+      body: JSON.stringify({ titulo, estatus, urgencia, avance, fecha_compromiso, fecha_inicio, fecha_fin })
     });
     if (!r) return;
 
@@ -928,7 +937,7 @@ function getDailyForms(deptoId) {
 
 async function renderDaily(deptoId) {
   _dailyDepto = deptoId;
-  _dailyDate = _dailyDate || todayMx();
+  _dailyDate = _dailyDate || yesterdayMx();
   _dailyActiveForm = '';
   _dailyRegistro = null;
 
@@ -978,6 +987,11 @@ async function renderDaily(deptoId) {
 
 function todayMx() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+}
+function yesterdayMx() {
+  const d = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 async function selectDailyForm(deptoId, formId) {
@@ -2952,7 +2966,10 @@ function renderDashCharts(tendencia) {
   }
 }
 
-// ── Dashboard: detalle departamento ─────────────────────────────────────────
+// ── Dashboard: detalle departamento (presentacion) ──────────────────────────
+
+let _dashSlideIdx = 0;
+let _dashSlides = [];
 
 async function openDeptoDetail(deptoId) {
   const m = document.getElementById('mainContent');
@@ -2964,96 +2981,135 @@ async function openDeptoDetail(deptoId) {
   const di = DEPTOS.find(x => x.id === deptoId) || {};
   const forms = data.formularios || [];
   const acts = data.actividades || {};
-  const tend = data.tendencia || [];
 
-  m.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:18px">
-      <button class="btn btn-outline btn-sm" onclick="renderDashboard()">← Volver</button>
-      <span style="font-size:22px">${di.icon || ''}</span>
-      <h3 style="color:var(--primary);margin:0">${di.nombre || deptoId}</h3>
-      <span style="font-size:12px;color:var(--muted)">${data.fecha}</span>
-    </div>
+  // Build slides: one per form + summary slide
+  _dashSlides = [];
 
-    <!-- Formularios del dia -->
-    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:18px">
-      <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Formularios Daily</h4>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px">
+  // Slide 0: resumen depto
+  _dashSlides.push({
+    titulo: di.nombre || deptoId,
+    icon: di.icon || '',
+    tipo: 'resumen',
+    html: buildDeptoResumenSlide(di, forms, acts, data.fecha)
+  });
+
+  // Slides por formulario
+  forms.forEach(f => {
+    const fm = (DAILY_FORMS_META[deptoId] || []).find(x => x.id === f.id);
+    const nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
+    _dashSlides.push({
+      titulo: nombre,
+      tipo: f.llenado ? 'llenado' : 'pendiente',
+      html: buildFormSlide(f, nombre, deptoId)
+    });
+  });
+
+  _dashSlideIdx = 0;
+  renderDashSlide(deptoId);
+}
+
+function buildDeptoResumenSlide(di, forms, acts, fecha) {
+  const llenados = forms.filter(f => f.llenado).length;
+  const total = forms.length;
+  const pct = total > 0 ? Math.round(llenados / total * 100) : 0;
+  return `
+    <div style="text-align:center;padding:30px 0">
+      <div style="font-size:48px;margin-bottom:10px">${di.icon || ''}</div>
+      <h2 style="color:var(--primary);margin:0 0 6px">${di.nombre || ''}</h2>
+      <div style="font-size:13px;color:var(--muted);margin-bottom:24px">${fecha}</div>
+      <div style="display:flex;justify-content:center;gap:20px;margin-bottom:24px">
+        <div style="text-align:center"><div style="font-size:32px;font-weight:800;color:${pct === 100 ? 'var(--green)' : 'var(--orange)'}">${pct}%</div><div style="font-size:11px;color:var(--muted)">Daily (${llenados}/${total})</div></div>
+        <div style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--primary)">${acts.total || 0}</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>
+        ${(acts.atrasadas || []).length > 0 ? `<div style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--red)">${acts.atrasadas.length}</div><div style="font-size:11px;color:var(--muted)">Atrasadas</div></div>` : ''}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">
         ${forms.map(f => {
-          const fm = (DAILY_FORMS_META[deptoId] || []).find(x => x.id === f.id);
-          return `<div style="padding:8px 12px;border-radius:6px;border:1px solid ${f.llenado ? 'var(--green)' : 'var(--line)'};background:${f.llenado ? '#f0fdf4' : '#fafafa'};cursor:pointer" onclick="navigateTo('daily-${deptoId}');setTimeout(()=>selectDailyForm('${deptoId}','${f.id}'),200)">
-            <div style="display:flex;justify-content:space-between;align-items:center">
-              <span style="font-size:12px;font-weight:600">${fm ? fm.icon + ' ' + fm.nombre : f.id}</span>
-              <span style="font-size:14px">${f.llenado ? '🟢' : '⚪'}</span>
-            </div>
-            ${f.llenado ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${f.llenado_por || ''} · ${f.hora || ''}</div>` : '<div style="font-size:10px;color:var(--red);margin-top:2px">Pendiente</div>'}
-          </div>`;
+          const fm = (DAILY_FORMS_META[di.id] || []).find(x => x.id === f.id);
+          return `<span style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ${f.llenado ? 'var(--green)' : 'var(--line)'};color:${f.llenado ? 'var(--green)' : 'var(--muted)'};background:${f.llenado ? '#f0fdf4' : '#fafafa'}">${f.llenado ? '✓' : '○'} ${fm ? fm.nombre : f.id}</span>`;
         }).join('')}
       </div>
-    </div>
-
-    <!-- Graficos tendencia -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px">
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
-        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Actividades — 7 dias</h4>
-        <canvas id="chartDeptoActs" height="140"></canvas>
-      </div>
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
-        <h4 style="font-size:13px;color:var(--primary);margin-bottom:10px">Daily completado — 7 dias</h4>
-        <canvas id="chartDeptoDaily" height="140"></canvas>
-      </div>
-    </div>
-
-    <!-- Actividades atrasadas -->
-    ${acts.atrasadas && acts.atrasadas.length > 0 ? `
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid var(--red)">
-        <h4 style="font-size:13px;color:var(--red);margin-bottom:8px">Atrasadas (${acts.atrasadas.length})</h4>
-        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead>
-        <tbody>${acts.atrasadas.map(a => `<tr>
-          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
-          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
-          <td style="color:var(--red)">${a.fecha_compromiso || '—'}</td>
-          <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
-          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
-        </tr>`).join('')}</tbody></table>
-      </div>
-    ` : ''}
-
-    <!-- Por cerrar esta semana -->
-    ${acts.por_cerrar_semana && acts.por_cerrar_semana.length > 0 ? `
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px;border-left:4px solid var(--orange)">
-        <h4 style="font-size:13px;color:var(--orange);margin-bottom:8px">Por cerrar esta semana (${acts.por_cerrar_semana.length})</h4>
-        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead>
-        <tbody>${acts.por_cerrar_semana.map(a => `<tr>
-          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
-          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
-          <td>${a.fecha_compromiso || '—'}</td>
-          <td><span class="badge ${a.estatus}">${(a.estatus || '').replace('_', ' ')}</span></td>
-          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
-        </tr>`).join('')}</tbody></table>
-      </div>
-    ` : ''}
-
-    <!-- Sin fecha compromiso -->
-    ${acts.sin_fecha && acts.sin_fecha.length > 0 ? `
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px">
-        <h4 style="font-size:13px;color:var(--muted);margin-bottom:8px">Sin fecha compromiso (${acts.sin_fecha.length})</h4>
-        <table style="font-size:12px"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Urgencia</th><th></th></tr></thead>
-        <tbody>${acts.sin_fecha.slice(0, 10).map(a => `<tr>
-          <td style="font-family:monospace;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
-          <td>${esc(a.titulo)}</td><td>${esc(a.responsable)}</td>
-          <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
-          <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Ver</button></td>
-        </tr>`).join('')}</tbody></table>
-      </div>
-    ` : ''}
-
-    <div style="display:flex;gap:10px;margin-top:16px">
-      <button class="btn btn-accent" onclick="openNewActModal({departamento:'${deptoId}'})">+ Nueva actividad</button>
-      <button class="btn btn-primary" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver todas las tareas</button>
-      <button class="btn btn-outline" onclick="navigateTo('daily-${deptoId}')">Ir a Daily</button>
     </div>`;
+}
 
-  setTimeout(() => renderDeptoCharts(tend, forms.length), 50);
+function buildFormSlide(f, nombre, deptoId) {
+  if (!f.llenado) {
+    return `<div style="text-align:center;padding:40px 0">
+      <div style="font-size:40px;margin-bottom:12px">⚪</div>
+      <h3 style="color:var(--muted);margin:0 0 8px">${nombre}</h3>
+      <div style="font-size:14px;color:var(--red)">No llenado</div>
+    </div>`;
+  }
+
+  const datos = f.datos || {};
+  const keys = Object.keys(datos);
+
+  // Render datos as key-value pairs
+  let datosHtml = '';
+  if (keys.length === 0) {
+    datosHtml = '<div style="color:var(--muted);font-size:13px">Sin datos registrados</div>';
+  } else {
+    datosHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px">';
+    for (const k of keys) {
+      const val = datos[k];
+      const label = k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+      let display = '';
+      if (val === true) display = '<span style="color:var(--green);font-weight:700">Si</span>';
+      else if (val === false) display = '<span style="color:var(--red);font-weight:700">No</span>';
+      else if (val === 'true') display = '<span style="color:var(--green);font-weight:700">Si</span>';
+      else if (val === 'false') display = '<span style="color:var(--red);font-weight:700">No</span>';
+      else if (Array.isArray(val)) display = esc(val.join(', '));
+      else if (typeof val === 'object' && val !== null) display = '<pre style="font-size:11px;margin:0;white-space:pre-wrap">' + esc(JSON.stringify(val, null, 1)) + '</pre>';
+      else display = esc(String(val || '—'));
+      datosHtml += `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${esc(label)}</div>
+        <div style="font-size:13px;font-weight:600;margin-top:2px">${display}</div>
+      </div>`;
+    }
+    datosHtml += '</div>';
+  }
+
+  return `<div style="padding:20px 0">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h3 style="color:var(--primary);margin:0">${nombre}</h3>
+      <span style="font-size:20px">🟢</span>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Llenado por ${esc(f.llenado_por || '?')} a las ${f.hora || '?'}</div>
+    ${datosHtml}
+  </div>`;
+}
+
+function renderDashSlide(deptoId) {
+  const m = document.getElementById('mainContent');
+  const slide = _dashSlides[_dashSlideIdx];
+  const total = _dashSlides.length;
+  const di = DEPTOS.find(x => x.id === deptoId) || {};
+
+  m.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <button class="btn btn-outline btn-sm" onclick="renderDashboard()">← Dashboard</button>
+      <span style="font-size:18px">${di.icon || ''}</span>
+      <b style="color:var(--primary)">${di.nombre || deptoId}</b>
+      <span style="font-size:12px;color:var(--muted);margin-left:auto">${_dashSlideIdx + 1} / ${total}</span>
+    </div>
+
+    <!-- Dots -->
+    <div style="display:flex;justify-content:center;gap:6px;margin-bottom:16px">
+      ${_dashSlides.map((s, i) => `<div onclick="_dashSlideIdx=${i};renderDashSlide('${deptoId}')" style="width:${i === 0 ? 20 : 10}px;height:10px;border-radius:5px;cursor:pointer;transition:all .2s;background:${i === _dashSlideIdx ? 'var(--primary)' : s.tipo === 'llenado' ? 'var(--green)' : s.tipo === 'pendiente' ? '#ddd' : 'var(--accent)'}" title="${esc(s.titulo)}"></div>`).join('')}
+    </div>
+
+    <!-- Slide content -->
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;min-height:300px">
+      ${slide.html}
+    </div>
+
+    <!-- Navigation -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
+      <button class="btn btn-outline" onclick="_dashSlideIdx=Math.max(0,_dashSlideIdx-1);renderDashSlide('${deptoId}')" ${_dashSlideIdx === 0 ? 'disabled' : ''}>← Anterior</button>
+      <div style="display:flex;gap:8px">
+        ${DEPTOS.map(d => `<button class="btn ${d.id === deptoId ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="openDeptoDetail('${d.id}')" title="${d.nombre}">${d.icon}</button>`).join('')}
+      </div>
+      <button class="btn btn-outline" onclick="_dashSlideIdx=Math.min(${total - 1},_dashSlideIdx+1);renderDashSlide('${deptoId}')" ${_dashSlideIdx === total - 1 ? 'disabled' : ''}>Siguiente →</button>
+    </div>`;
 }
 
 function renderDeptoCharts(tendencia, totalForms) {

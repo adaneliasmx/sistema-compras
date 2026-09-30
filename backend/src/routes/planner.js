@@ -341,8 +341,14 @@ router.patch('/actividades/:id', (req, res) => {
     cambios.push(`Fecha compromiso: ${act.fecha_compromiso || 'N/A'} -> ${body.fecha_compromiso || 'N/A'}`);
     act.fecha_compromiso = body.fecha_compromiso || null;
   }
-  if (body.fecha_inicio !== undefined) act.fecha_inicio = body.fecha_inicio || null;
-  if (body.fecha_fin !== undefined) act.fecha_fin = body.fecha_fin || null;
+  if (body.fecha_inicio !== undefined && body.fecha_inicio !== act.fecha_inicio) {
+    cambios.push(`Fecha inicio: ${act.fecha_inicio || 'N/A'} -> ${body.fecha_inicio || 'N/A'}`);
+    act.fecha_inicio = body.fecha_inicio || null;
+  }
+  if (body.fecha_fin !== undefined && body.fecha_fin !== act.fecha_fin) {
+    cambios.push(`Fecha fin: ${act.fecha_fin || 'N/A'} -> ${body.fecha_fin || 'N/A'}`);
+    act.fecha_fin = body.fecha_fin || null;
+  }
   if (body.responsable_id && body.responsable_id !== act.responsable_id) {
     const comprasDb = readCompras();
     const resp = (comprasDb.users || []).find(u => u.id === Number(body.responsable_id));
@@ -1467,7 +1473,7 @@ router.get('/dashboard/:depto', (req, res) => {
   const forms = DAILY_FORMS[depto] || [];
   const dailyHoy = dailyRegs.filter(r => r.departamento === depto && r.fecha === fecha);
 
-  // Formularios con resumen
+  // Formularios con resumen y datos
   const formularios = forms.map(f => {
     const reg = dailyHoy.find(r => r.formulario === f);
     return {
@@ -1475,7 +1481,8 @@ router.get('/dashboard/:depto', (req, res) => {
       llenado: !!reg,
       llenado_por: reg ? reg.llenado_por_nombre : null,
       hora: reg ? reg.hora_llenado : null,
-      datos_resumen: reg ? Object.keys(reg.datos || {}).length + ' campos' : null
+      datos_resumen: reg ? Object.keys(reg.datos || {}).length + ' campos' : null,
+      datos: reg ? reg.datos : null
     };
   });
 
