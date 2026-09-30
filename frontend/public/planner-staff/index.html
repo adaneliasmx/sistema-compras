@@ -636,6 +636,7 @@ async function verDetalle(actId) {
         </div>
         <div class="modal-footer">
           ${isAdmin ? `<button class="btn btn-danger btn-sm" onclick="eliminarActividad('${act.id}')" style="margin-right:auto">Eliminar</button>` : ''}
+          ${isAdmin && act.origen_formulario === '8d' ? `<button class="btn btn-outline btn-sm" onclick="openEdit8DModal('${act.id}')">Editar 8D</button>` : ''}
           <button class="btn btn-outline" onclick="enviarCorreo('${act.id}')">📧 Enviar correo</button>
           <button class="btn btn-primary" onclick="guardarDetalle('${act.id}')">💾 Guardar cambios</button>
         </div>
@@ -2356,6 +2357,91 @@ async function save8D() {
     // Refresh 8D list
     const container = document.getElementById('dailyFormContent');
     if (container) render8DForm(container);
+  } catch (e) {
+    errEl.textContent = e.message;
+    errEl.style.color = 'var(--red)';
+  }
+}
+
+async function openEdit8DModal(actId) {
+  const act = await apiFetch('/api/planner/actividades/' + actId);
+  if (!act) return;
+
+  // Parse 8D fields from descripcion
+  const m = (act.descripcion || '').match(/Cliente: (.+?) \| Componente: (.+?) \| Problema: (.+?) \| Fecha reclamo: (.+)/);
+  const cliente = m ? m[1] : '';
+  const componente = m ? m[2] : '';
+  const problema = m ? m[3] : '';
+  const fecha_reclamo = m ? m[4] : '';
+
+  const html = `
+    <div class="modal-overlay open" id="modalEdit8D">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>Editar 8D — ${esc(act.id)}</h3>
+          <button class="modal-close" onclick="closeModal('modalEdit8D')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Cliente</label>
+            <select id="e8dCliente">
+              <option value="SKF" ${cliente === 'SKF' ? 'selected' : ''}>SKF</option>
+              <option value="Tenneco" ${cliente === 'Tenneco' ? 'selected' : ''}>Tenneco</option>
+              <option value="Amsted" ${cliente === 'Amsted' ? 'selected' : ''}>Amsted</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Componente</label>
+            <input type="text" id="e8dComponente" value="${esc(componente)}">
+          </div>
+          <div class="form-group">
+            <label>Problema</label>
+            <textarea id="e8dProblema" rows="3">${esc(problema)}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Fecha de reclamo</label>
+            <input type="date" id="e8dFechaReclamo" value="${fecha_reclamo}">
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:6px">Al cambiar la fecha de reclamo se recalculan automaticamente las fechas de todas las sub-tareas.</div>
+          <div id="e8dErr" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('modalEdit8D')">Cancelar</button>
+          <button class="btn btn-primary" onclick="saveEdit8D('${act.id}')">Guardar cambios</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+}
+
+async function saveEdit8D(actId) {
+  const cliente = document.getElementById('e8dCliente').value;
+  const componente = document.getElementById('e8dComponente').value.trim();
+  const problema = document.getElementById('e8dProblema').value.trim();
+  const fecha_reclamo = document.getElementById('e8dFechaReclamo').value;
+  const errEl = document.getElementById('e8dErr');
+
+  if (!cliente || !componente || !problema || !fecha_reclamo) {
+    errEl.textContent = 'Todos los campos son obligatorios';
+    return;
+  }
+
+  try {
+    errEl.textContent = 'Guardando...';
+    errEl.style.color = 'var(--accent)';
+    const r = await apiFetch('/api/planner/actividades/' + actId + '/8d', {
+      method: 'PATCH',
+      body: JSON.stringify({ cliente, componente, problema, fecha_reclamo })
+    });
+    if (!r) { errEl.textContent = 'Error al guardar'; errEl.style.color = 'var(--red)'; return; }
+
+    closeModal('modalEdit8D');
+    closeModal('detalleModal');
+    alert('8D actualizado');
+    if (_currentView === 'tareas') cargarActividades();
+    // Refresh 8D list if in daily view
+    const container = document.getElementById('dailyFormContent');
+    if (container && _dailyActiveForm === '8ds_abiertos') render8DForm(container);
   } catch (e) {
     errEl.textContent = e.message;
     errEl.style.color = 'var(--red)';

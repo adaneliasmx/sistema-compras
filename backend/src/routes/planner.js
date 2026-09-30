@@ -378,6 +378,11 @@ router.delete('/actividades/:id', plannerAdmin, (req, res) => {
   const idx = (db.actividades || []).findIndex(a => a.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error: 'Actividad no encontrada' });
   const removed = db.actividades.splice(idx, 1)[0];
+  addTraza(removed, req.user.id, req.user.full_name, 'eliminada', 'Actividad eliminada');
+  removed.eliminada_por = req.user.full_name;
+  removed.fecha_eliminacion = nowMxDate();
+  db.actividades_eliminadas = db.actividades_eliminadas || [];
+  db.actividades_eliminadas.push(removed);
   write(db);
   res.json({ ok: true, id: removed.id });
 });
@@ -398,6 +403,55 @@ function addDays(dateStr, days) {
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
+
+// Editar campos 8D (cliente, componente, problema, fecha_reclamo)
+router.patch('/actividades/:id/8d', plannerAdmin, (req, res) => {
+  const body = safeBody(req.body);
+  const db = read();
+  const act = (db.actividades || []).find(a => a.id === req.params.id);
+  if (!act) return res.status(404).json({ error: 'Actividad no encontrada' });
+  if (act.origen_formulario !== '8d') return res.status(400).json({ error: 'Esta actividad no es un 8D' });
+
+  // Parse current 8D fields from descripcion
+  const descMatch = (act.descripcion || '').match(/Cliente: (.+?) \| Componente: (.+?) \| Problema: (.+?) \| Fecha reclamo: (.+)/);
+  const prev = {
+    cliente: descMatch ? descMatch[1] : '',
+    componente: descMatch ? descMatch[2] : '',
+    problema: descMatch ? descMatch[3] : '',
+    fecha_reclamo: descMatch ? descMatch[4] : ''
+  };
+
+  const cambios = [];
+  const cliente = body.cliente !== undefined ? body.cliente : prev.cliente;
+  const componente = body.componente !== undefined ? body.componente : prev.componente;
+  const problema = body.problema !== undefined ? body.problema : prev.problema;
+  const fecha_reclamo = body.fecha_reclamo !== undefined ? body.fecha_reclamo : prev.fecha_reclamo;
+
+  if (body.cliente !== undefined && body.cliente !== prev.cliente) cambios.push(`Cliente: "${prev.cliente}" -> "${body.cliente}"`);
+  if (body.componente !== undefined && body.componente !== prev.componente) cambios.push(`Componente: "${prev.componente}" -> "${body.componente}"`);
+  if (body.problema !== undefined && body.problema !== prev.problema) cambios.push(`Problema: "${prev.problema}" -> "${body.problema}"`);
+  if (body.fecha_reclamo !== undefined && body.fecha_reclamo !== prev.fecha_reclamo) cambios.push(`Fecha reclamo: ${prev.fecha_reclamo} -> ${body.fecha_reclamo}`);
+
+  if (cambios.length === 0) return res.json(act);
+
+  // Update titulo and descripcion
+  act.titulo = `"${problema}" de ${cliente} en componente ${componente}`;
+  act.descripcion = `8D — Cliente: ${cliente} | Componente: ${componente} | Problema: ${problema} | Fecha reclamo: ${fecha_reclamo}`;
+
+  // Recalculate main fecha_compromiso and sub dates if fecha_reclamo changed
+  if (body.fecha_reclamo !== undefined && body.fecha_reclamo !== prev.fecha_reclamo) {
+    act.fecha_compromiso = addDays(fecha_reclamo, 40);
+    const subDias = [1, 7, 14, 34, 35, 40];
+    (act.sub_actividades || []).forEach((sub, i) => {
+      if (i < subDias.length) sub.fecha_compromiso = addDays(fecha_reclamo, subDias[i]);
+    });
+    cambios.push('Fechas de sub-actividades recalculadas');
+  }
+
+  addTraza(act, req.user.id, req.user.full_name, '8d_editada', cambios.join('; '));
+  write(db);
+  res.json(act);
+});
 
 router.post('/actividades/8d', (req, res) => {
   const body = safeBody(req.body);
