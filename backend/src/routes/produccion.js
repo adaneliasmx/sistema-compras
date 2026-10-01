@@ -696,7 +696,7 @@ router.post('/cargas/:linea', produccionAllowRoles('produccion'), (req, res) => 
 
   if (!pdb.cargas) pdb.cargas = [];
   pdb.cargas.push(carga);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas');
   res.status(201).json(carga);
 });
 
@@ -734,7 +734,7 @@ router.post('/cargas/:linea/:id/descargar', produccionAllowRoles('produccion'), 
     }
   }
 
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas');
   res.json(pdb.cargas[idx]);
 });
 
@@ -825,7 +825,7 @@ router.post('/cargas/:linea/:id/reprocesar', produccionAllowRoles('produccion'),
   pdb.cargas[idx].reprocesado = true;
 
   pdb.cargas.push(nuevaCarga);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas');
   res.status(201).json(nuevaCarga);
 });
 
@@ -1491,7 +1491,7 @@ router.post('/vincular-ot', produccionAllowRoles('produccion'), (req, res) => {
   paro.ot_mantenimiento_id = ot.id;
   paro.ot_folio = ot.folio;
   pdb[parosKey][paroIdx] = paro;
-  dbProd.write(pdb);
+  dbProd.write(pdb, parosKey);
 
   res.status(201).json({ ot, paro });
 });
@@ -1566,7 +1566,7 @@ router.post('/paros/:linea', produccionAllowRoles('produccion'), (req, res) => {
 
   if (!pdb.paros) pdb.paros = [];
   pdb.paros.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.status(201).json(paro);
 });
 
@@ -1636,7 +1636,7 @@ router.post('/paros/:linea/pendiente-motivo', produccionAuthRequired, (req, res)
     created_at: new Date().toISOString()
   };
   pdb.paros.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.status(201).json(paro);
 });
 
@@ -1689,7 +1689,7 @@ router.patch('/paros/:linea/:id/definir-motivo', produccionAuthRequired, (req, r
     tolerancia_tiempo_maquina,
     estado: 'cerrado'
   };
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.json(pdb.paros[idx]);
 });
 
@@ -1758,7 +1758,7 @@ router.post('/paros/:linea/cambio-turno', produccionAllowRoles('produccion'), (r
   };
 
   pdb.paros.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.status(201).json(paro);
 });
 
@@ -1866,7 +1866,7 @@ router.post('/paros/:linea/auto-sin-actividad', produccionAllowRoles('produccion
   };
 
   pdb.paros.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros', motivoKey);
   res.status(201).json({ created: true, paro });
 });
 
@@ -1888,7 +1888,7 @@ router.patch('/paros/:linea/:id/cerrar', produccionAllowRoles('produccion'), (re
     (new Date(`${fecha_fin}T${hora_fin}:00`) - new Date(`${paro.fecha_inicio}T${paro.hora_inicio}:00`)) / 60000
   );
 
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.json(pdb.paros[idx]);
 });
 
@@ -1912,7 +1912,7 @@ router.patch('/paros/:id/admin-cerrar', produccionAllowRoles('admin'), (req, res
   );
   paro.cerrado_por_admin = req.prodUser?.nombre || 'Admin';
 
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.json(pdb.paros[idx]);
 });
 
@@ -4680,7 +4680,7 @@ router.post('/l1/cargas', (req, res) => {
   }
 
   pdb.cargas_l1.push(carga);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_l1');
   res.status(201).json(carga);
 });
 
@@ -4744,7 +4744,7 @@ router.post('/l1/cargas/:id/descargar', (req, res) => {
   carga.turno_descarga = turno;
   carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_l1[idx] = carga;
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_l1');
   res.json(carga);
 });
 
@@ -4793,7 +4793,7 @@ router.post('/l1/cargas/:id/reprocesar', (req, res) => {
   original.reprocesado = true;
   pdb.cargas_l1[idx] = original;
   pdb.cargas_l1.push(nueva);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_l1');
   res.status(201).json(nueva);
 });
 
@@ -4842,7 +4842,7 @@ router.post('/l1/paros', (req, res) => {
     created_at: new Date().toISOString()
   };
   pdb.paros_l1.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_l1');
   res.status(201).json(paro);
 });
 
@@ -4864,7 +4864,7 @@ router.patch('/l1/paros/:id/cerrar', (req, res) => {
 
   paro.fecha_fin = fecha_fin; paro.hora_fin = hora_fin; paro.duracion_min = duracion_min;
   pdb.paros_l1[idx] = paro;
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_l1');
   res.json(paro);
 });
 
@@ -4909,7 +4909,7 @@ router.post('/l1/paros/auto-sin-actividad', (req, res) => {
     tipo: 'auto', created_at: new Date().toISOString()
   };
   pdb.paros_l1.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_l1', 'motivos_paro_l1');
   res.json({ created: true, paro });
 });
 
@@ -4944,7 +4944,7 @@ router.post('/l1/paros/antes-de-tiempo', produccionAllowRoles('produccion'), (re
   };
   if (!pdb.paros_l1) pdb.paros_l1 = [];
   pdb.paros_l1.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_l1');
   res.status(201).json(paro);
 });
 
@@ -5191,7 +5191,7 @@ router.post('/baker/cargas', (req, res) => {
   }
 
   pdb.cargas_baker.push(carga);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_baker');
   res.status(201).json(carga);
 });
 
@@ -5260,7 +5260,7 @@ router.post('/baker/cargas/:id/descargar', (req, res) => {
   carga.turno_descarga = turno;
   carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_baker[idx] = carga;
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_baker');
   res.json(carga);
 });
 
@@ -5310,7 +5310,7 @@ router.post('/baker/cargas/:id/reprocesar', (req, res) => {
   original.reprocesado = true;
   pdb.cargas_baker[idx] = original;
   pdb.cargas_baker.push(nueva);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'cargas_baker');
   res.status(201).json(nueva);
 });
 
@@ -5359,7 +5359,7 @@ router.post('/baker/paros', (req, res) => {
     created_at: new Date().toISOString()
   };
   pdb.paros_baker.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_baker', 'motivos_paro_baker');
   res.status(201).json(paro);
 });
 
@@ -5381,7 +5381,7 @@ router.patch('/baker/paros/:id/cerrar', (req, res) => {
 
   paro.fecha_fin = fecha_fin; paro.hora_fin = hora_fin; paro.duracion_min = duracion_min;
   pdb.paros_baker[idx] = paro;
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_baker');
   res.json(paro);
 });
 
@@ -5426,7 +5426,7 @@ router.post('/baker/paros/auto-sin-actividad', (req, res) => {
     tipo: 'auto', created_at: new Date().toISOString()
   };
   pdb.paros_baker.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_baker', 'motivos_paro_baker');
   res.json({ created: true, paro });
 });
 
@@ -5526,7 +5526,7 @@ router.post('/paros/:linea/antes-de-tiempo', produccionAllowRoles('produccion'),
   };
   if (!pdb.paros) pdb.paros = [];
   pdb.paros.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros');
   res.status(201).json(paro);
 });
 
@@ -5560,7 +5560,7 @@ router.post('/baker/paros/antes-de-tiempo', produccionAllowRoles('produccion'), 
   };
   if (!pdb.paros_baker) pdb.paros_baker = [];
   pdb.paros_baker.push(paro);
-  dbProd.write(pdb);
+  dbProd.write(pdb, 'paros_baker');
   res.status(201).json(paro);
 });
 

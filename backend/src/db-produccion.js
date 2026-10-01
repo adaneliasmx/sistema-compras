@@ -142,18 +142,39 @@ function read() {
   return _cache;
 }
 
-function write(data) {
+function write(data, ...changedKeys) {
   _cache = data;
   if (pool) {
-    const snapshot = JSON.stringify(data);
-    _writeQueue = _writeQueue.then(() =>
-      pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
-        .catch(err => {
-          console.error('[db-produccion] Error persistiendo, reintentando:', err.message);
-          return pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
-            .catch(err2 => console.error('[db-produccion] Reintento fallido:', err2.message));
-        })
-    );
+    if (changedKeys.length > 0) {
+      // Partial update — only serialize the changed collections via jsonb_set
+      const params = [];
+      let expr = 'data';
+      for (let i = 0; i < changedKeys.length; i++) {
+        const p = i * 2 + 1;
+        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
+        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
+      }
+      const sql = `UPDATE produccion_data SET data = ${expr} WHERE id = 1`;
+      _writeQueue = _writeQueue.then(() =>
+        pool.query(sql, params)
+          .catch(err => {
+            console.error('[db-produccion] Error persistiendo parcial, reintentando:', err.message);
+            return pool.query(sql, params)
+              .catch(err2 => console.error('[db-produccion] Reintento parcial fallido:', err2.message));
+          })
+      );
+    } else {
+      // Full update (backward compatible — serializes entire cache)
+      const snapshot = JSON.stringify(data);
+      _writeQueue = _writeQueue.then(() =>
+        pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
+          .catch(err => {
+            console.error('[db-produccion] Error persistiendo, reintentando:', err.message);
+            return pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
+              .catch(err2 => console.error('[db-produccion] Reintento fallido:', err2.message));
+          })
+      );
+    }
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
