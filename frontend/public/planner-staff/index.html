@@ -1777,7 +1777,8 @@ async function renderParosForm(container, datos) {
     <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones tomadas</label><textarea id="df_obs_paros" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_paros').value.trim(),
-    resumen: { total_paros: totalParos, total_min: totalMin }
+    resumen: { total_paros: totalParos, total_min: totalMin },
+    lineas: Object.fromEntries(lineas.map(l => [l, { total: paros[l]?.total || 0, minutos_total: paros[l]?.minutos_total || 0, paros: (paros[l]?.paros || []).map(p => ({ folio: p.folio, motivo: p.motivo, sub_motivo: p.sub_motivo, hora_inicio: p.hora_inicio, hora_fin: p.hora_fin, duracion_min: p.duracion_min, estado: p.estado })) }]))
   }));
 }
 
@@ -1910,7 +1911,8 @@ async function renderParosFallaForm(container, datos) {
     <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones</label><textarea id="df_obs_paros_falla" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_paros_falla').value.trim(),
-    resumen: { ots_dia_anterior: ordenes.length, pendientes_global: pendientes }
+    resumen: { ots_dia_anterior: ordenes.length, pendientes_global: pendientes },
+    ordenes: ordenes.map(o => ({ folio: o.folio, tipo: o.tipo, equipo: o.equipo_nombre, falla: (o.descripcion_falla || '').slice(0, 80), urgencia: o.nivel_urgencia, status: o.status, tecnico: o.tecnico_nombre }))
   }));
 }
 
@@ -2036,7 +2038,8 @@ async function renderMateriasCriticasForm(container, datos) {
     <div class="form-group" style="margin-top:12px"><label>Observaciones / Acciones</label><textarea id="df_obs_mat" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_mat').value.trim(),
-    resumen: { items_alerta: items.length }
+    resumen: { items_alerta: items.length, fuera_min: items.filter(i => i.fuera_min).length, sin_conteo: items.filter(i => i.sin_conteo).length },
+    items_detalle: items.slice(0, 30).map(i => ({ nombre: i.nombre, tipo: typeLabels[i.inv_type] || i.inv_type, stock: i.stock, unidad: i.unidad, min: i.min, max: i.max, fuera_min: !!i.fuera_min, fuera_max: !!i.fuera_max }))
   }));
 }
 
@@ -2090,7 +2093,8 @@ async function renderOrdenesCompraForm(container, datos) {
     <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_oc" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_oc').value.trim(),
-    resumen: { pos_activas: comp ? comp.pos_activas : 0, total_items: comp ? comp.total_items : 0 }
+    resumen: { pos_activas: comp ? comp.pos_activas : 0, total_items: comp ? comp.total_items : 0 },
+    por_estatus: Object.entries(porEstatus).map(function(e) { return { estatus: e[0], count: e[1].count, items: (e[1].items || []).slice(0, 8).map(function(i) { return { descripcion: (i.descripcion || '').slice(0, 50), cantidad: i.cantidad, unidad: i.unidad, po_folio: i.po_folio, proveedor: (i.proveedor || '').slice(0, 25) }; }) }; })
   }));
 }
 
@@ -2123,7 +2127,8 @@ async function renderInventariosCriticosForm(container, datos) {
     <div class="form-group" style="margin-top:12px"><label>Acciones tomadas</label><textarea id="df_obs_inv" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_inv').value.trim(),
-    resumen: { bajo_minimo: soloFueraMin.length }
+    resumen: { bajo_minimo: soloFueraMin.length },
+    items_detalle: soloFueraMin.map(function(i) { return { nombre: i.nombre, stock: i.stock, unidad: i.unidad, min: i.min, deficit: +(i.min - i.stock).toFixed(1) }; })
   }));
 }
 
@@ -2210,7 +2215,10 @@ async function renderCpkForm(container) {
       '</tbody></table>'}
     <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_cpk" rows="2">${esc(datos.observaciones || '')}</textarea></div>
   `, () => ({
-    observaciones: document.getElementById('df_obs_cpk').value.trim()
+    observaciones: document.getElementById('df_obs_cpk').value.trim(),
+    titulaciones: tits,
+    cpk_params: cpkParamsList.map(function(p) { return { tanque: p.tanque, unidad: p.unidad, n: p.n, mean: p.mean, sigma: p.sigma, lsl: p.lsl, usl: p.usl, cp: p.cp, cpk: p.cpk }; }),
+    empaque_partes: empPartes.map(function(p) { return { numero_parte: p.numero_parte, muestras: p.muestras, rug_cpk: p.rugosidad.cpk, rug_na: !!p.rugosidad.na, alt_cpk: p.altura_axial.cpk }; })
   }));
 }
 
@@ -3082,6 +3090,239 @@ function dsFormBody(datos) {
   return h + '</div>';
 }
 
+// ── Helpers de presentacion para slides ──
+function dsKpiGrid(items) {
+  var cols = Math.min(items.length, 4);
+  var h = '<div style="display:grid;grid-template-columns:repeat(' + cols + ',1fr);gap:10px;margin-bottom:14px">';
+  items.forEach(function(it) {
+    var val = it[0], label = it[1], color = it[2] || 'var(--primary)';
+    h += '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">' +
+      '<div style="font-size:28px;font-weight:800;color:' + color + '">' + val + '</div>' +
+      '<div style="font-size:11px;color:var(--muted);font-weight:600;margin-top:4px">' + esc(String(label)) + '</div></div>';
+  });
+  return h + '</div>';
+}
+function dsObsBox(text) {
+  if (!text) return '';
+  return '<div style="padding:10px 14px;background:var(--bg);border-radius:8px;border:1px solid var(--line);margin-top:8px">' +
+    '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:3px">Observaciones</div>' +
+    '<div style="font-size:13px">' + esc(text) + '</div></div>';
+}
+function dsCpkBadge(v) {
+  if (v == null) return '<span style="color:var(--muted)">—</span>';
+  v = Math.round(v * 100) / 100;
+  var c = v >= 1.33 ? '#059669' : v >= 1.0 ? '#b45309' : '#b91c1c';
+  return '<span style="color:' + c + ';font-weight:700">' + v.toFixed(2) + '</span>';
+}
+
+function dsCustomRender(formId, datos) {
+  if (!datos || !Object.keys(datos).length) return null;
+  var LINEAS = ['Baker', 'L1', 'L3', 'L4'];
+  var h = '';
+
+  // ── Per-line cards: eficiencias, piezas_procesadas, rechazos_internos, disponibilidad ──
+  var hasLineObj = LINEAS.some(function(l) { return datos[l] !== undefined && typeof datos[l] === 'object'; });
+  if (hasLineObj) {
+    h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">';
+    LINEAS.forEach(function(l) {
+      var v = datos[l]; if (!v || typeof v !== 'object') return;
+      h += '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">' +
+        '<b style="font-size:14px;color:var(--primary)">' + l + '</b>';
+      Object.keys(v).forEach(function(k) {
+        var val = v[k];
+        var isPct = /eficiencia|calidad|disponibilidad/.test(k);
+        var color = isPct ? (Number(val) >= 85 ? 'var(--green)' : Number(val) >= 70 ? 'var(--orange)' : 'var(--red)') : 'var(--primary)';
+        h += '<div style="margin-top:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:600">' + esc(dsLabel(k)) + '</div>' +
+          '<div style="font-size:20px;font-weight:800;color:' + color + '">' + val + (isPct ? '%' : '') + '</div></div>';
+      });
+      h += '</div>';
+    });
+    h += '</div>';
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── Reprocesos (Baker:1.5 numeros directos) ──
+  if (formId === 'reprocesos') {
+    h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">';
+    LINEAS.forEach(function(l) {
+      if (datos[l] === undefined) return;
+      var v = Number(datos[l]) || 0;
+      h += '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">' +
+        '<b style="font-size:14px;color:var(--primary)">' + l + '</b>' +
+        '<div style="font-size:32px;font-weight:800;color:' + (v <= 1 ? 'var(--green)' : v <= 3 ? 'var(--orange)' : 'var(--red)') + ';margin-top:6px">' + v + '%</div></div>';
+    });
+    h += '</div>';
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── PTAR ──
+  if (datos.litros_ingresados_ptar !== undefined) {
+    h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">';
+    [['litros_ingresados_ptar','Lts ingresados PTAR'],['litros_ingresados_pipas','Lts ingresados pipas'],
+     ['litros_tratados_ptar','Lts tratados PTAR'],['litros_tratados_salida','Lts tratados salida']].forEach(function(p) {
+      h += '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">' +
+        '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700">' + p[1] + '</div>' +
+        '<div style="font-size:28px;font-weight:800;color:var(--primary);margin-top:4px">' + (datos[p[0]] || 0) + '</div></div>';
+    });
+    h += '</div>';
+    var r = datos.retrolavado;
+    if (r && typeof r === 'object') {
+      h += '<div style="padding:12px;border:1.5px solid var(--line);border-radius:8px;margin-bottom:10px">' +
+        '<b style="font-size:13px;color:var(--primary)">Retrolavado</b>';
+      if (r.aplica === false) h += ' <span style="color:var(--muted);font-size:12px">— No aplica este dia</span>';
+      else {
+        h += '<div style="margin-top:6px">' + dsVal(r.realizado) + '</div>';
+        if (r.razones) h += '<div style="font-size:12px;margin-top:4px"><b>Razones:</b> ' + esc(r.razones) + '</div>';
+        if (r.plan_accion) h += '<div style="font-size:12px;margin-top:2px"><b>Plan:</b> ' + esc(r.plan_accion) + '</div>';
+      }
+      h += '</div>';
+    }
+    return h;
+  }
+
+  // ── Ausentismo KPIs ──
+  if (datos.retardos !== undefined && datos.faltas !== undefined) {
+    h = dsKpiGrid([
+      [datos.retardos||0,'Retardos',datos.retardos>0?'var(--red)':'var(--green)'],
+      [datos.faltas||0,'Faltas',datos.faltas>0?'var(--red)':'var(--green)'],
+      [datos.vacaciones||0,'Vacaciones','var(--accent)'],
+      [datos.incapacidad||0,'Incapacidad',datos.incapacidad>0?'var(--orange)':'var(--green)'],
+      [datos.permisos||0,'Permisos','var(--primary)'],
+      [datos.otros||0,'Otros','var(--muted)']
+    ]);
+    return h + dsObsBox(datos.notas);
+  }
+
+  // ── Personal disponible ──
+  if (datos.requeridos !== undefined && datos.disponibles !== undefined) {
+    var pct = datos.porcentaje || 0;
+    h = dsKpiGrid([
+      [datos.requeridos||0,'Requerido','var(--primary)'],
+      [datos.disponibles||0,'Actual','var(--primary)'],
+      [pct+'%','% Cobertura',pct>=100?'var(--green)':'var(--red)'],
+      [datos.vacantes_abiertas||0,'Vacantes',datos.vacantes_abiertas>0?'var(--red)':'var(--green)']
+    ]);
+    return h + dsObsBox(datos.detalle);
+  }
+
+  // ── Horas extra ──
+  if (datos.horas_autorizadas !== undefined && datos.personas !== undefined) {
+    h = dsKpiGrid([
+      [datos.horas_autorizadas||0,'Hrs. autorizadas','var(--green)'],
+      [datos.horas_pendientes||0,'Hrs. pendientes','var(--orange)'],
+      [datos.personas||0,'Personas','var(--primary)']
+    ]);
+    return h + dsObsBox(datos.notas);
+  }
+
+  // ── Paros de lineas (con datos guardados por linea) ──
+  if (formId === 'paros_lineas' && datos.lineas) {
+    var rs = datos.resumen || {};
+    h = dsKpiGrid([[rs.total_paros||0,'Total paros','var(--red)'],[rs.total_min||0,'Min. totales','var(--red)']]);
+    LINEAS.forEach(function(l) {
+      var ld = datos.lineas[l];
+      if (!ld || !ld.paros || !ld.paros.length) { h += '<div style="font-size:12px;color:var(--muted);margin-bottom:6px"><b>' + l + ':</b> Sin paros</div>'; return; }
+      h += '<div style="margin-bottom:10px"><b style="color:var(--primary)">' + l + '</b> <span style="font-size:11px;color:var(--muted)">(' + ld.total + ' paros, ' + ld.minutos_total + ' min)</span>' +
+        '<table style="margin-top:4px;font-size:11px;width:100%"><thead><tr><th>Folio</th><th>Motivo</th><th>Min</th><th>Estado</th></tr></thead><tbody>' +
+        ld.paros.map(function(p) { return '<tr><td style="font-family:monospace">' + esc(p.folio||'') + '</td><td>' + esc(p.motivo||'') + '</td><td style="font-weight:700">' + (p.duracion_min!=null?p.duracion_min:'...') + '</td><td><span class="badge ' + (p.estado==='activo'?'atrasada':'cerrada') + '" style="font-size:10px">' + esc(p.estado||'') + '</span></td></tr>'; }).join('') +
+        '</tbody></table></div>';
+    });
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── Paros falla OTs ──
+  if (formId === 'paros_falla' && datos.ordenes) {
+    var rs = datos.resumen || {};
+    h = dsKpiGrid([[rs.ots_dia_anterior||0,'OTs dia anterior','var(--primary)'],[rs.pendientes_global||0,'Pendientes global','var(--red)']]);
+    if (datos.ordenes.length) {
+      h += '<table style="font-size:11px;width:100%;margin-bottom:10px"><thead><tr><th>Folio</th><th>Tipo</th><th>Equipo</th><th>Falla</th><th>Urgencia</th><th>Status</th></tr></thead><tbody>' +
+        datos.ordenes.map(function(o) { return '<tr><td style="font-family:monospace;font-weight:700">' + esc(o.folio||'') + '</td><td>' + esc(o.tipo||'') + '</td><td>' + esc(o.equipo||'') + '</td><td style="max-width:180px">' + esc(o.falla||'') + '</td><td><span class="badge ' + esc(o.urgencia||'') + '">' + esc(o.urgencia||'') + '</span></td><td><span class="badge ' + (o.status==='cerrada'?'cerrada':o.status==='en_proceso'?'en_proceso':'sin_empezar') + '" style="font-size:10px">' + esc(o.status||'') + '</span></td></tr>'; }).join('') +
+        '</tbody></table>';
+    } else h += '<div class="empty">Sin OTs registradas</div>';
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── Materias criticas con detalle ──
+  if (formId === 'materias_criticas' && datos.items_detalle) {
+    var rs = datos.resumen || {};
+    h = dsKpiGrid([[rs.fuera_min||0,'Bajo minimo','var(--red)'],[rs.sin_conteo||0,'Sin conteo','var(--orange)'],[rs.items_alerta||0,'Total alertas','var(--primary)']]);
+    if (datos.items_detalle.length) {
+      h += '<table style="font-size:11px;width:100%;margin-bottom:10px"><thead><tr><th>Item</th><th>Tipo</th><th>Stock</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead><tbody>' +
+        datos.items_detalle.map(function(i) { return '<tr><td><b>' + esc(i.nombre||'') + '</b></td><td style="font-size:10px">' + esc(i.tipo||'') + '</td><td style="font-weight:700;color:' + (i.fuera_min?'var(--red)':i.fuera_max?'var(--orange)':'var(--muted)') + '">' + (i.stock!=null?i.stock+' '+esc(i.unidad||''):'—') + '</td><td>' + (i.min!=null?i.min:'—') + '</td><td>' + (i.max!=null?i.max:'—') + '</td><td>' + (i.fuera_min?'<span class="badge atrasada" style="font-size:10px">Bajo min</span>':i.fuera_max?'<span class="badge en_proceso" style="font-size:10px">Sobre max</span>':'<span class="badge sin_empezar" style="font-size:10px">Sin conteo</span>') + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    } else h += '<div class="empty">Sin alertas</div>';
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── Ordenes compra con desglose ──
+  if (formId === 'ordenes_compra' && datos.por_estatus) {
+    var rs = datos.resumen || {};
+    h = dsKpiGrid([[rs.total_items||0,'Items totales','var(--primary)'],[rs.pos_activas||0,'POs activas','var(--orange)']]);
+    datos.por_estatus.forEach(function(g) {
+      h += '<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;padding:10px">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<b style="font-size:13px;color:var(--primary)">' + esc(g.estatus) + '</b>' +
+        '<span class="badge en_proceso" style="font-size:11px">' + g.count + ' items</span></div>';
+      if (g.items && g.items.length) {
+        h += '<table style="font-size:11px;width:100%"><thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th></tr></thead><tbody>' +
+          g.items.map(function(i) { return '<tr><td>' + esc(i.descripcion||'') + '</td><td>' + (i.cantidad||'') + ' ' + esc(i.unidad||'') + '</td><td style="font-family:monospace;font-size:10px">' + esc(i.po_folio||'—') + '</td><td style="font-size:10px">' + esc(i.proveedor||'') + '</td></tr>'; }).join('') +
+          '</tbody></table>';
+      }
+      h += '</div>';
+    });
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── Inventarios criticos con detalle ──
+  if (formId === 'inventarios_criticos' && datos.items_detalle) {
+    var rs = datos.resumen || {};
+    h = dsKpiGrid([[rs.bajo_minimo||0,'Bajo minimo','var(--red)']]);
+    if (datos.items_detalle.length) {
+      h += '<table style="font-size:11px;width:100%;margin-bottom:10px"><thead><tr><th>Material</th><th>Stock</th><th>Minimo</th><th>Deficit</th></tr></thead><tbody>' +
+        datos.items_detalle.map(function(i) { return '<tr><td><b>' + esc(i.nombre||'') + '</b></td><td style="color:var(--red);font-weight:700">' + i.stock + ' ' + esc(i.unidad||'') + '</td><td>' + i.min + ' ' + esc(i.unidad||'') + '</td><td style="font-weight:700;color:var(--red)">' + i.deficit + ' ' + esc(i.unidad||'') + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    } else h += '<div class="empty">Ningun material bajo minimo</div>';
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  // ── CPK con titulaciones y empaque ──
+  if (formId === 'cpk' && (datos.titulaciones || datos.cpk_params || datos.empaque_partes)) {
+    if (datos.titulaciones) {
+      h += '<h4 style="margin:0 0 8px;font-size:14px;color:var(--primary)">Titulaciones por Proceso</h4>';
+      Object.keys(datos.titulaciones).forEach(function(l) {
+        var hdrs = datos.titulaciones[l];
+        if (!hdrs || !hdrs.length) { h += '<div style="font-size:12px;color:var(--muted);margin-bottom:6px"><b>' + l + ':</b> Sin titulaciones</div>'; return; }
+        h += '<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;padding:10px"><b style="color:var(--primary)">' + l + '</b>' +
+          '<table style="font-size:11px;margin-top:4px;width:100%"><thead><tr><th>Fecha</th><th>Turno</th><th>#</th><th>Estado</th><th>Params</th><th>Fuera</th></tr></thead><tbody>' +
+          hdrs.map(function(r) { return '<tr><td>' + esc(r.fecha||'') + '</td><td>' + esc(r.turno||'') + '</td><td>' + r.numero + '</td><td><span class="badge ' + (r.estado==='completo'?'cerrada':r.estado==='fuera_de_rango'?'atrasada':'sin_empezar') + '" style="font-size:10px">' + esc(r.estado||'') + '</span></td><td>' + r.parametros_total + '</td><td style="color:' + (r.parametros_fuera>0?'var(--red)':'var(--green)') + ';font-weight:700">' + r.parametros_fuera + '</td></tr>'; }).join('') +
+          '</tbody></table></div>';
+      });
+    }
+    if (datos.cpk_params && datos.cpk_params.length) {
+      h += '<h4 style="margin:12px 0 8px;font-size:14px;color:var(--primary)">CPK Peso Fosfato</h4>' +
+        '<table style="font-size:11px;width:100%"><thead><tr><th>Tanque</th><th>n</th><th>Media</th><th>Sigma</th><th>Cp</th><th>Cpk</th></tr></thead><tbody>' +
+        datos.cpk_params.map(function(p) { return '<tr><td><b>' + esc(p.tanque||'') + '</b></td><td>' + p.n + '</td><td>' + (p.mean!=null?p.mean:'—') + '</td><td>' + (p.sigma!=null?p.sigma:'—') + '</td><td>' + dsCpkBadge(p.cp) + '</td><td>' + dsCpkBadge(p.cpk) + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    }
+    if (datos.empaque_partes && datos.empaque_partes.length) {
+      h += '<h4 style="margin:12px 0 8px;font-size:14px;color:var(--primary)">CPK Empaque (Tenneco)</h4>' +
+        '<table style="font-size:11px;width:100%"><thead><tr><th>N. Parte</th><th>n</th><th>Rug. CPK</th><th>Alt. CPK</th></tr></thead><tbody>' +
+        datos.empaque_partes.map(function(p) { return '<tr><td><b>' + esc(p.numero_parte||'') + '</b></td><td>' + p.muestras + '</td><td>' + (p.rug_na?'N/A':dsCpkBadge(p.rug_cpk)) + '</td><td>' + dsCpkBadge(p.alt_cpk) + '</td></tr>'; }).join('') +
+        '</tbody></table>';
+    }
+    return (h || null) ? h + dsObsBox(datos.observaciones) : null;
+  }
+
+  // ── Resumen generico (tiene .resumen object) ──
+  if (datos.resumen && typeof datos.resumen === 'object') {
+    var entries = Object.entries(datos.resumen);
+    h = dsKpiGrid(entries.map(function(e) { return [e[1], dsLabel(e[0])]; }));
+    return h + dsObsBox(datos.observaciones);
+  }
+
+  return null;
+}
+
 function dsActRow(a) {
   var isLate = a.estatus === 'atrasada';
   return '<tr style="' + (isLate ? 'background:#fef2f2;' : '') + '">' +
@@ -3175,7 +3416,7 @@ async function openDeptoSlides(deptoId) {
           '<span style="background:#f0fdf4;color:var(--green);padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700">LLENADO</span>' +
           '<span style="font-size:12px;color:var(--muted)">' + esc(f.llenado_por||'') + ' &middot; ' + (f.hora||'') + '</span>' +
         '</div></div>' +
-        dsFormBody(f.datos || {}) + '</div>';
+        (dsCustomRender(f.id, f.datos || {}) || dsFormBody(f.datos || {})) + '</div>';
     }
     _ds.slides.push({ titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html: html });
   });
