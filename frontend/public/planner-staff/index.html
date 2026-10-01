@@ -2980,6 +2980,66 @@ document.addEventListener('keydown', function(e) {
   else if (e.key === 'End') { e.preventDefault(); _ds.idx = _ds.slides.length - 1; paintSlide(); }
 });
 
+// Labels legibles para campos de formularios daily
+var DS_LABELS = {
+  // General
+  observaciones:'Observaciones', notas:'Notas', detalle:'Detalle / Observaciones',
+  // SMYA
+  hubo:'¿Se presentaron?', que_paso:'¿Qué pasó?', que_se_hizo:'¿Qué se hizo?',
+  cumplimiento:'¿Cumplimiento 100%?', porcentaje:'% Cumplimiento',
+  quien_no_cumplio:'¿Quién no cumplió?',
+  // PTAR
+  litros_ingresados_ptar:'Litros ingresados PTAR', litros_ingresados_pipas:'Litros ingresados pipas',
+  litros_tratados_ptar:'Litros tratados PTAR', litros_tratados_salida:'Litros tratados salida',
+  retrolavado:'Retrolavado',
+  // RHH
+  retardos:'Retardos', faltas:'Faltas', vacaciones:'Vacaciones',
+  incapacidad:'Incapacidad', permisos:'Permisos', otros:'Otros',
+  requeridos:'Personal requerido', disponibles:'Personal disponible',
+  vacantes_abiertas:'Vacantes abiertas', vacantes:'Vacantes',
+  total_horas:'Total horas', horas_autorizadas:'Hrs. autorizadas',
+  horas_pendientes:'Hrs. pendientes', personas:'Personas',
+  registros:'Registros',
+  // Produccion
+  procesadas:'Piezas procesadas', objetivo:'Objetivo',
+  eficiencia:'Eficiencia %', calidad:'Calidad %', disponibilidad:'Disponibilidad %',
+  // Calidad
+  rechazadas:'Pzas rechazadas', issues:'Registros',
+  // Mantenimiento
+  equipos:'Equipos',
+  // Common nested
+  resumen:'Resumen', items:'Items',
+  nombre:'Nombre', puesto:'Puesto', tipo:'Tipo', area:'Área',
+  fecha_inicio:'Fecha inicio', fecha_fin:'Fecha fin',
+  fecha_apertura:'Fecha apertura', prioridad:'Prioridad',
+  cliente:'Cliente', numero_parte:'No. parte', cantidad:'Cantidad',
+  descripcion:'Descripción', impacto:'Impacto',
+  diagnostico:'Diagnóstico', fecha_inhabilitado:'Fecha inhabilitado',
+  problema:'Problema', fecha:'Fecha', comentario:'Comentario',
+  // sub-fields retrolavado
+  aplica:'Aplica', realizado:'¿Se realizó?', evidencia_url:'Evidencia URL',
+  razones:'Razones', plan_accion:'Plan de acción',
+  // resumen sub
+  total_paros:'Total paros', total_min:'Minutos totales',
+  ots_dia_anterior:'OTs dia anterior', pendientes_global:'Pendientes global',
+  items_alerta:'Items en alerta', bajo_minimo:'Bajo mínimo',
+  pos_activas:'POs activas', total_items:'Items totales'
+};
+
+// Formularios tipo "tarea" que no guardan datos sino que gestionan actividades
+var DS_TASK_FORMS = [
+  'necesidades_personal','rechazos_cliente','problemas_calidad','liberaciones_pendientes',
+  'correctivos_pendientes','preventivo_programado','equipos_criticos','riesgos_falla',
+  'refacciones_criticas','compras_urgentes',
+  'no_conformidades','8ds_abiertos','documentos_pendientes','indicadores_fuera','cumplimiento_sgc',
+  'prioridades_dia','pedidos_criticos',
+  'problemas_proceso','estudios_pruebas','mejoras_implementaciones'
+];
+
+function dsLabel(k) {
+  return DS_LABELS[k] || k.replace(/_/g, ' ').replace(/^\w/, function(c) { return c.toUpperCase(); });
+}
+
 function dsVal(val) {
   if (val === true || val === 'true') return '<span style="color:#fff;background:var(--green);padding:1px 8px;border-radius:4px;font-size:11px;font-weight:700">SI</span>';
   if (val === false || val === 'false') return '<span style="color:#fff;background:var(--red);padding:1px 8px;border-radius:4px;font-size:11px;font-weight:700">NO</span>';
@@ -2989,7 +3049,7 @@ function dsVal(val) {
     if (typeof val[0] === 'object') {
       var cols = Object.keys(val[0]);
       return '<table style="font-size:11px;width:100%;margin-top:6px;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:8px;overflow:hidden"><thead><tr>' +
-        cols.map(function(c) { return '<th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--bg);font-weight:700">' + esc(c.replace(/_/g,' ')) + '</th>'; }).join('') +
+        cols.map(function(c) { return '<th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--bg);font-weight:700">' + esc(dsLabel(c)) + '</th>'; }).join('') +
         '</tr></thead><tbody>' +
         val.map(function(row, ri) { return '<tr style="background:' + (ri%2?'var(--bg)':'var(--card)') + '">' + cols.map(function(c) { return '<td style="padding:5px 8px">' + dsVal(row[c]) + '</td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table>';
@@ -3000,14 +3060,14 @@ function dsVal(val) {
     var entries = Object.entries(val);
     if (!entries.length) return '<span style="color:var(--muted)">—</span>';
     return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">' + entries.map(function(e) {
-      return '<span style="background:var(--bg);padding:3px 10px;border-radius:6px;font-size:11px"><b style="color:var(--muted)">' + esc(e[0].replace(/_/g,' ')) + ':</b> ' + dsVal(e[1]) + '</span>';
+      return '<span style="background:var(--bg);padding:3px 10px;border-radius:6px;font-size:11px"><b style="color:var(--muted)">' + esc(dsLabel(e[0])) + ':</b> ' + dsVal(e[1]) + '</span>';
     }).join('') + '</div>';
   }
   return esc(String(val));
 }
 
 function dsFormBody(datos) {
-  var keys = Object.keys(datos);
+  var keys = Object.keys(datos).filter(function(k) { return k.charAt(0) !== '_'; });
   if (!keys.length) return '<div style="color:var(--muted);font-size:14px;text-align:center;padding:30px">Sin datos registrados</div>';
   var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">';
   keys.forEach(function(k, idx) {
@@ -3016,7 +3076,7 @@ function dsFormBody(datos) {
     var isObj = typeof val === 'object' && val !== null && !Array.isArray(val);
     var bg = idx % 2 === 0 ? 'var(--card)' : 'var(--bg)';
     h += '<div style="padding:10px 14px;' + (wide || isObj ? 'grid-column:1/-1;' : '') + 'background:' + bg + ';border-bottom:1px solid var(--line)">' +
-      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:3px">' + esc(k.replace(/_/g, ' ').replace(/^\w/, function(c) { return c.toUpperCase(); })) + '</div>' +
+      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:3px">' + esc(dsLabel(k)) + '</div>' +
       '<div style="font-size:13px;font-weight:600">' + dsVal(val) + '</div></div>';
   });
   return h + '</div>';
@@ -3077,7 +3137,12 @@ async function openDeptoSlides(deptoId) {
       forms.map(function(f, fi) {
         var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
         var nm = fm ? fm.nombre : f.id;
-        return '<span onclick="_ds.idx=' + (fi+1) + ';paintSlide()" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:1.5px solid ' + (f.llenado?'var(--green)':'var(--line)') + ';color:' + (f.llenado?'var(--green)':'var(--muted)') + ';background:' + (f.llenado?'#f0fdf4':'#fafafa') + '" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'\'">' + (f.llenado?'✓':'○') + ' ' + nm + '</span>';
+        var isTF = DS_TASK_FORMS.indexOf(f.id) >= 0;
+        var borderC = isTF ? 'var(--accent)' : (f.llenado ? 'var(--green)' : 'var(--line)');
+        var colorC = isTF ? 'var(--accent)' : (f.llenado ? 'var(--green)' : 'var(--muted)');
+        var bgC = isTF ? '#eef6ff' : (f.llenado ? '#f0fdf4' : '#fafafa');
+        var icon = isTF ? '📋' : (f.llenado ? '✓' : '○');
+        return '<span onclick="_ds.idx=' + (fi+1) + ';paintSlide()" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:1.5px solid ' + borderC + ';color:' + colorC + ';background:' + bgC + '" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'\'">' + icon + ' ' + nm + '</span>';
       }).join('') +
     '</div></div>';
   _ds.slides.push({ titulo: 'Resumen', tipo: 'resumen', html: s0 });
@@ -3086,8 +3151,18 @@ async function openDeptoSlides(deptoId) {
   forms.forEach(function(f) {
     var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
     var nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
+    var isTaskForm = DS_TASK_FORMS.indexOf(f.id) >= 0;
     var html;
-    if (!f.llenado) {
+    if (isTaskForm) {
+      // Formularios tipo actividad — no guardan datos, gestionan tareas
+      var linkedActs = (acts.pendientes||[]).concat(acts.atrasadas||[]).filter(function(a) { return a.origen_formulario === f.id; });
+      html = '<div style="text-align:center;padding:40px 0">' +
+        '<div style="font-size:40px;margin-bottom:10px">📋</div>' +
+        '<h3 style="color:var(--primary);margin:0 0 8px;font-size:17px">' + nombre + '</h3>' +
+        '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Este formulario gestiona actividades vinculadas</div>' +
+        '<div style="font-size:24px;font-weight:800;color:var(--accent)">' + linkedActs.length + '</div>' +
+        '<div style="font-size:12px;color:var(--muted)">actividades abiertas</div></div>';
+    } else if (!f.llenado) {
       html = '<div style="text-align:center;padding:50px 0">' +
         '<div style="width:80px;height:80px;border-radius:50%;border:3px dashed var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;color:var(--muted)">○</div>' +
         '<h3 style="color:var(--muted);margin:0 0 8px;font-size:18px">' + nombre + '</h3>' +
@@ -3102,7 +3177,7 @@ async function openDeptoSlides(deptoId) {
         '</div></div>' +
         dsFormBody(f.datos || {}) + '</div>';
     }
-    _ds.slides.push({ titulo: nombre, tipo: f.llenado ? 'llenado' : 'pendiente', html: html });
+    _ds.slides.push({ titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html: html });
   });
 
   // ── Slide final: actividades ──
