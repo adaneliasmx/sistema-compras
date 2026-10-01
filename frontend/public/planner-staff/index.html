@@ -2818,6 +2818,7 @@ async function guardarAsignacion(userId) {
 // ── VISTA: Dashboard ejecutivo ─────────────────────────────────────────────
 
 let _dashData = null;
+let _dashFecha = '';
 
 async function renderDashboard() {
   const m = document.getElementById('mainContent');
@@ -3035,10 +3036,12 @@ async function openDeptoDetail(deptoId) {
   const m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
 
-  const data = await apiFetch(`/api/planner/dashboard/${deptoId}?fecha=${_dashData?.fecha || ''}`);
+  const fechaParam = _dashFecha || (_dashData?.fecha) || '';
+  const data = await apiFetch(`/api/planner/dashboard/${deptoId}?fecha=${fechaParam}`);
   if (!data) { renderDashboard(); return; }
 
   _dashDeptoId = deptoId;
+  _dashFecha = data.fecha;
   const di = DEPTOS.find(x => x.id === deptoId) || {};
   const forms = data.formularios || [];
   const acts = data.actividades || {};
@@ -3052,7 +3055,7 @@ async function openDeptoDetail(deptoId) {
     '<div style="text-align:center;padding:30px 0">' +
     '<div style="font-size:52px;margin-bottom:10px">' + (di.icon||'') + '</div>' +
     '<h2 style="color:var(--primary);margin:0 0 4px">' + (di.nombre||'') + '</h2>' +
-    '<div style="font-size:13px;color:var(--muted);margin-bottom:28px">' + data.fecha + '</div>' +
+    '<div style="margin-bottom:28px"><input type="date" id="dashFechaInput" value="' + data.fecha + '" onchange="_dashFecha=this.value;openDeptoDetail(\'' + deptoId + '\')" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:6px;font-size:14px;color:var(--primary);font-weight:600;cursor:pointer"></div>' +
     '<div style="display:flex;justify-content:center;gap:24px;margin-bottom:28px">' +
       '<div><div style="font-size:36px;font-weight:800;color:' + (pct===100?'var(--green)':'var(--orange)') + '">' + pct + '%</div><div style="font-size:11px;color:var(--muted)">Daily (' + llenados + '/' + forms.length + ')</div></div>' +
       '<div><div style="font-size:36px;font-weight:800;color:var(--primary)">' + (acts.total||0) + '</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>' +
