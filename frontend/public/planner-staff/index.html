@@ -2968,9 +2968,6 @@ function renderDashCharts(tendencia) {
 
 // ── Dashboard: detalle departamento (presentacion) ──────────────────────────
 
-let _dashSlideIdx = 0;
-let _dashSlides = [];
-
 async function openDeptoDetail(deptoId) {
   const m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
@@ -2981,134 +2978,121 @@ async function openDeptoDetail(deptoId) {
   const di = DEPTOS.find(x => x.id === deptoId) || {};
   const forms = data.formularios || [];
   const acts = data.actividades || {};
+  const llenados = forms.filter(f => f.llenado).length;
+  const pct = forms.length > 0 ? Math.round(llenados / forms.length * 100) : 0;
 
-  // Build slides: one per form + summary slide
-  _dashSlides = [];
-
-  // Slide 0: resumen depto
-  _dashSlides.push({
-    titulo: di.nombre || deptoId,
-    icon: di.icon || '',
-    tipo: 'resumen',
-    html: buildDeptoResumenSlide(di, forms, acts, data.fecha)
-  });
-
-  // Slides por formulario
-  forms.forEach(f => {
+  // Build all form cards
+  const formCards = forms.map(f => {
     const fm = (DAILY_FORMS_META[deptoId] || []).find(x => x.id === f.id);
     const nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
-    _dashSlides.push({
-      titulo: nombre,
-      tipo: f.llenado ? 'llenado' : 'pendiente',
-      html: buildFormSlide(f, nombre, deptoId)
-    });
-  });
-
-  _dashSlideIdx = 0;
-  renderDashSlide(deptoId);
-}
-
-function buildDeptoResumenSlide(di, forms, acts, fecha) {
-  const llenados = forms.filter(f => f.llenado).length;
-  const total = forms.length;
-  const pct = total > 0 ? Math.round(llenados / total * 100) : 0;
-  return `
-    <div style="text-align:center;padding:30px 0">
-      <div style="font-size:48px;margin-bottom:10px">${di.icon || ''}</div>
-      <h2 style="color:var(--primary);margin:0 0 6px">${di.nombre || ''}</h2>
-      <div style="font-size:13px;color:var(--muted);margin-bottom:24px">${fecha}</div>
-      <div style="display:flex;justify-content:center;gap:20px;margin-bottom:24px">
-        <div style="text-align:center"><div style="font-size:32px;font-weight:800;color:${pct === 100 ? 'var(--green)' : 'var(--orange)'}">${pct}%</div><div style="font-size:11px;color:var(--muted)">Daily (${llenados}/${total})</div></div>
-        <div style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--primary)">${acts.total || 0}</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>
-        ${(acts.atrasadas || []).length > 0 ? `<div style="text-align:center"><div style="font-size:32px;font-weight:800;color:var(--red)">${acts.atrasadas.length}</div><div style="font-size:11px;color:var(--muted)">Atrasadas</div></div>` : ''}
-      </div>
-      <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">
-        ${forms.map(f => {
-          const fm = (DAILY_FORMS_META[di.id] || []).find(x => x.id === f.id);
-          return `<span style="padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ${f.llenado ? 'var(--green)' : 'var(--line)'};color:${f.llenado ? 'var(--green)' : 'var(--muted)'};background:${f.llenado ? '#f0fdf4' : '#fafafa'}">${f.llenado ? '✓' : '○'} ${fm ? fm.nombre : f.id}</span>`;
-        }).join('')}
-      </div>
-    </div>`;
-}
-
-function buildFormSlide(f, nombre, deptoId) {
-  if (!f.llenado) {
-    return `<div style="text-align:center;padding:40px 0">
-      <div style="font-size:40px;margin-bottom:12px">⚪</div>
-      <h3 style="color:var(--muted);margin:0 0 8px">${nombre}</h3>
-      <div style="font-size:14px;color:var(--red)">No llenado</div>
-    </div>`;
-  }
-
-  const datos = f.datos || {};
-  const keys = Object.keys(datos);
-
-  // Render datos as key-value pairs
-  let datosHtml = '';
-  if (keys.length === 0) {
-    datosHtml = '<div style="color:var(--muted);font-size:13px">Sin datos registrados</div>';
-  } else {
-    datosHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 16px">';
-    for (const k of keys) {
-      const val = datos[k];
-      const label = k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
-      let display = '';
-      if (val === true) display = '<span style="color:var(--green);font-weight:700">Si</span>';
-      else if (val === false) display = '<span style="color:var(--red);font-weight:700">No</span>';
-      else if (val === 'true') display = '<span style="color:var(--green);font-weight:700">Si</span>';
-      else if (val === 'false') display = '<span style="color:var(--red);font-weight:700">No</span>';
-      else if (Array.isArray(val)) display = esc(val.join(', '));
-      else if (typeof val === 'object' && val !== null) display = '<pre style="font-size:11px;margin:0;white-space:pre-wrap">' + esc(JSON.stringify(val, null, 1)) + '</pre>';
-      else display = esc(String(val || '—'));
-      datosHtml += `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
-        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${esc(label)}</div>
-        <div style="font-size:13px;font-weight:600;margin-top:2px">${display}</div>
+    if (!f.llenado) {
+      return `<div style="background:#fafafa;border:1.5px dashed var(--line);border-radius:10px;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <b style="font-size:13px;color:var(--muted)">${nombre}</b>
+          <span style="font-size:11px;color:var(--red);font-weight:600">No llenado</span>
+        </div>
       </div>`;
     }
-    datosHtml += '</div>';
+    const datos = f.datos || {};
+    const keys = Object.keys(datos);
+    let datosHtml = '';
+    if (keys.length > 0) {
+      datosHtml = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:10px">';
+      for (const k of keys) {
+        const val = datos[k];
+        const label = k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
+        let display = '';
+        if (val === true || val === 'true') display = '<span style="color:var(--green);font-weight:700">Si</span>';
+        else if (val === false || val === 'false') display = '<span style="color:var(--red);font-weight:700">No</span>';
+        else if (Array.isArray(val)) display = esc(val.join(', '));
+        else if (typeof val === 'object' && val !== null) display = '<pre style="font-size:10px;margin:0;white-space:pre-wrap">' + esc(JSON.stringify(val, null, 1)) + '</pre>';
+        else display = esc(String(val || '—'));
+        datosHtml += `<div style="padding:4px 0;border-bottom:1px solid var(--line)">
+          <div style="font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${esc(label)}</div>
+          <div style="font-size:12px;font-weight:600;margin-top:1px">${display}</div>
+        </div>`;
+      }
+      datosHtml += '</div>';
+    }
+    return `<div style="background:var(--card);border:1.5px solid var(--green);border-radius:10px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <b style="font-size:13px;color:var(--primary)">${nombre}</b>
+        <span style="font-size:10px;color:var(--muted)">${esc(f.llenado_por || '')} · ${f.hora || ''}</span>
+      </div>
+      ${datosHtml}
+    </div>`;
+  }).join('');
+
+  // Build activity rows helper
+  function actRow(a, showEstatus) {
+    return `<tr>
+      <td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
+      <td style="font-size:12px">${esc(a.titulo)}</td>
+      <td style="font-size:12px">${esc(a.responsable)}</td>
+      <td style="font-size:11px">${a.fecha_compromiso || '—'}</td>
+      ${showEstatus ? `<td><span class="badge ${a.estatus}">${(a.estatus||'').replace('_',' ')}</span></td>` : `<td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>`}
+      <td><button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')" style="font-size:10px;padding:3px 8px">Ver</button></td>
+    </tr>`;
   }
 
-  return `<div style="padding:20px 0">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
-      <h3 style="color:var(--primary);margin:0">${nombre}</h3>
-      <span style="font-size:20px">🟢</span>
-    </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:16px">Llenado por ${esc(f.llenado_por || '?')} a las ${f.hora || '?'}</div>
-    ${datosHtml}
-  </div>`;
-}
+  const atrasadasHtml = (acts.atrasadas || []).length > 0 ? `
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;border-left:4px solid var(--red)">
+      <h4 style="font-size:13px;color:var(--red);margin:0 0 8px">Atrasadas (${acts.atrasadas.length})</h4>
+      <table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead>
+      <tbody>${acts.atrasadas.map(a => actRow(a, false)).join('')}</tbody></table>
+    </div>` : '';
 
-function renderDashSlide(deptoId) {
-  const m = document.getElementById('mainContent');
-  const slide = _dashSlides[_dashSlideIdx];
-  const total = _dashSlides.length;
-  const di = DEPTOS.find(x => x.id === deptoId) || {};
+  const pendientesHtml = (acts.pendientes || []).length > 0 ? `
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px">
+      <h4 style="font-size:13px;color:var(--primary);margin:0 0 8px">Pendientes (${acts.pendientes.length})</h4>
+      <table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead>
+      <tbody>${acts.pendientes.map(a => actRow(a, true)).join('')}</tbody></table>
+    </div>` : '';
 
   m.innerHTML = `
+    <!-- Header + nav deptos -->
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
       <button class="btn btn-outline btn-sm" onclick="renderDashboard()">← Dashboard</button>
-      <span style="font-size:18px">${di.icon || ''}</span>
-      <b style="color:var(--primary)">${di.nombre || deptoId}</b>
-      <span style="font-size:12px;color:var(--muted);margin-left:auto">${_dashSlideIdx + 1} / ${total}</span>
-    </div>
-
-    <!-- Dots -->
-    <div style="display:flex;justify-content:center;gap:6px;margin-bottom:16px">
-      ${_dashSlides.map((s, i) => `<div onclick="_dashSlideIdx=${i};renderDashSlide('${deptoId}')" style="width:${i === 0 ? 20 : 10}px;height:10px;border-radius:5px;cursor:pointer;transition:all .2s;background:${i === _dashSlideIdx ? 'var(--primary)' : s.tipo === 'llenado' ? 'var(--green)' : s.tipo === 'pendiente' ? '#ddd' : 'var(--accent)'}" title="${esc(s.titulo)}"></div>`).join('')}
-    </div>
-
-    <!-- Slide content -->
-    <div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;min-height:300px">
-      ${slide.html}
-    </div>
-
-    <!-- Navigation -->
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">
-      <button class="btn btn-outline" onclick="_dashSlideIdx=Math.max(0,_dashSlideIdx-1);renderDashSlide('${deptoId}')" ${_dashSlideIdx === 0 ? 'disabled' : ''}>← Anterior</button>
-      <div style="display:flex;gap:8px">
-        ${DEPTOS.map(d => `<button class="btn ${d.id === deptoId ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="openDeptoDetail('${d.id}')" title="${d.nombre}">${d.icon}</button>`).join('')}
+      <span style="font-size:22px">${di.icon || ''}</span>
+      <h3 style="color:var(--primary);margin:0">${di.nombre || deptoId}</h3>
+      <span style="font-size:12px;color:var(--muted)">${data.fecha}</span>
+      <div style="margin-left:auto;display:flex;gap:4px">
+        ${DEPTOS.map(d => `<button class="btn ${d.id === deptoId ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="openDeptoDetail('${d.id}')" title="${d.nombre}" style="padding:4px 8px">${d.icon}</button>`).join('')}
       </div>
-      <button class="btn btn-outline" onclick="_dashSlideIdx=Math.min(${total - 1},_dashSlideIdx+1);renderDashSlide('${deptoId}')" ${_dashSlideIdx === total - 1 ? 'disabled' : ''}>Siguiente →</button>
+    </div>
+
+    <!-- KPI resumen -->
+    <div class="kpi-row" style="margin-bottom:18px">
+      <div class="kpi" style="border-color:${pct === 100 ? 'var(--green)' : 'var(--orange)'}">
+        <label>Daily</label>
+        <div class="val" style="color:${pct === 100 ? 'var(--green)' : 'var(--orange)'}">${pct}%</div>
+        <div class="sub">${llenados}/${forms.length} forms</div>
+      </div>
+      <div class="kpi"><label>Total act.</label><div class="val">${acts.total || 0}</div></div>
+      <div class="kpi red"><label>Atrasadas</label><div class="val">${(acts.atrasadas||[]).length}</div></div>
+      <div class="kpi orange"><label>Pendientes</label><div class="val">${(acts.pendientes||[]).length}</div></div>
+    </div>
+
+    <!-- Formularios llenados -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="font-size:14px;color:var(--primary);margin:0">Formularios del dia</h4>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:20px">
+      ${formCards}
+    </div>
+
+    <!-- Actividades -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <h4 style="font-size:14px;color:var(--primary);margin:0">Actividades del area</h4>
+      <button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:'${deptoId}'})">+ Nueva actividad</button>
+    </div>
+    ${atrasadasHtml}
+    ${pendientesHtml}
+    ${(acts.atrasadas||[]).length === 0 && (acts.pendientes||[]).length === 0 ? '<div class="empty" style="margin-bottom:12px">Sin actividades pendientes ni atrasadas</div>' : ''}
+
+    <div style="display:flex;gap:10px;margin-top:16px">
+      <button class="btn btn-primary btn-sm" onclick="_currentDepto='${deptoId}';navigateTo('tareas')">Ver todas las tareas</button>
+      <button class="btn btn-outline btn-sm" onclick="navigateTo('daily-${deptoId}')">Ir a Daily</button>
     </div>`;
 }
 
