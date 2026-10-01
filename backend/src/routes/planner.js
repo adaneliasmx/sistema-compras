@@ -1522,8 +1522,8 @@ router.get('/dashboard/:depto', (req, res) => {
     formularios,
     actividades: {
       total: acts.length,
-      atrasadas: atrasadas.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, urgencia: a.urgencia })),
-      pendientes: pendientes.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus, urgencia: a.urgencia })),
+      atrasadas: atrasadas.slice().sort((a, b) => (a.fecha_compromiso || '').localeCompare(b.fecha_compromiso || '')).map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, urgencia: a.urgencia })),
+      pendientes: pendientes.slice().sort((a, b) => (a.fecha_compromiso || 'z').localeCompare(b.fecha_compromiso || 'z')).map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus, urgencia: a.urgencia })),
       por_cerrar_semana: porCerrar.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus })),
       sin_fecha: sinFecha.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, urgencia: a.urgencia })),
       recientes: recientes.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, estatus: a.estatus, fecha_creacion: a.fecha_creacion }))

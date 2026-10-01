@@ -2818,7 +2818,6 @@ async function guardarAsignacion(userId) {
 // ── VISTA: Dashboard ejecutivo ─────────────────────────────────────────────
 
 let _dashData = null;
-let _dashFecha = '';
 
 async function renderDashboard() {
   const m = document.getElementById('mainContent');
@@ -2876,7 +2875,7 @@ async function renderDashboard() {
         const pct = dl.total_forms > 0 ? Math.round(dl.llenados / dl.total_forms * 100) : 0;
         const barColor = pct === 100 ? 'var(--green)' : pct > 0 ? 'var(--orange)' : '#ddd';
         return `
-        <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer;transition:transform .15s,box-shadow .15s" onclick="openDeptoDetail('${d.id}')" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(0,0,0,.08)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
+        <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;cursor:pointer;transition:transform .15s,box-shadow .15s" onclick="openDeptoSlides('${d.id}')" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 6px 20px rgba(0,0,0,.08)'" onmouseout="this.style.transform='';this.style.boxShadow=''">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
             <div style="display:flex;align-items:center;gap:8px">
               <span style="font-size:20px">${di.icon || ''}</span>
@@ -2967,228 +2966,196 @@ function renderDashCharts(tendencia) {
   }
 }
 
-// ── Dashboard: detalle departamento (presentacion slides) ───────────────────
+// ── Dashboard Slides v2 — sistema de presentacion por departamento ──────────
 
-let _dashSlideIdx = 0;
-let _dashSlides = [];
-let _dashDeptoId = '';
+var _ds = { deptoId: '', fecha: '', slides: [], idx: 0 };
 
-function formatDatoValue(val) {
+function dsVal(val) {
   if (val === true || val === 'true') return '<span style="color:var(--green);font-weight:700">Si</span>';
   if (val === false || val === 'false') return '<span style="color:var(--red);font-weight:700">No</span>';
   if (val == null || val === '') return '<span style="color:var(--muted)">—</span>';
   if (Array.isArray(val)) {
-    if (val.length === 0) return '<span style="color:var(--muted)">—</span>';
-    // Array of objects (tables like lineas, tanques, etc)
+    if (!val.length) return '<span style="color:var(--muted)">—</span>';
     if (typeof val[0] === 'object') {
-      const cols = Object.keys(val[0]);
-      return '<table style="font-size:11px;width:100%;margin-top:4px"><thead><tr>' +
-        cols.map(c => '<th style="text-align:left;padding:2px 6px;font-size:10px;text-transform:uppercase;color:var(--muted)">' + esc(c.replace(/_/g,' ')) + '</th>').join('') +
+      var cols = Object.keys(val[0]);
+      return '<table style="font-size:11px;width:100%;margin-top:4px;border-collapse:collapse"><thead><tr>' +
+        cols.map(function(c) { return '<th style="text-align:left;padding:3px 6px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)">' + esc(c.replace(/_/g,' ')) + '</th>'; }).join('') +
         '</tr></thead><tbody>' +
-        val.map(row => '<tr>' + cols.map(c => '<td style="padding:2px 6px">' + formatDatoValue(row[c]) + '</td>').join('') + '</tr>').join('') +
+        val.map(function(row) { return '<tr>' + cols.map(function(c) { return '<td style="padding:3px 6px;border-bottom:1px solid var(--line)">' + dsVal(row[c]) + '</td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table>';
     }
     return esc(val.join(', '));
   }
   if (typeof val === 'object' && val !== null) {
-    // Flat object: render as mini key-value
-    const entries = Object.entries(val);
-    if (entries.length === 0) return '<span style="color:var(--muted)">—</span>';
-    return entries.map(([k, v]) => '<span style="font-size:11px"><b>' + esc(k.replace(/_/g,' ')) + ':</b> ' + formatDatoValue(v) + '</span>').join(' · ');
+    var entries = Object.entries(val);
+    if (!entries.length) return '<span style="color:var(--muted)">—</span>';
+    return entries.map(function(e) { return '<span style="font-size:11px"><b>' + esc(e[0].replace(/_/g,' ')) + ':</b> ' + dsVal(e[1]) + '</span>'; }).join(' &middot; ');
   }
   return esc(String(val));
 }
 
-function buildFormSlideHtml(f, nombre) {
-  if (!f.llenado) {
-    return '<div style="text-align:center;padding:50px 0">' +
-      '<div style="font-size:48px;margin-bottom:14px;opacity:.4">○</div>' +
-      '<h3 style="color:var(--muted);margin:0 0 8px">' + nombre + '</h3>' +
-      '<div style="font-size:15px;color:var(--red);font-weight:600">No llenado</div></div>';
-  }
-  const datos = f.datos || {};
-  const keys = Object.keys(datos);
-  if (keys.length === 0) {
-    return '<div style="text-align:center;padding:40px 0"><h3 style="color:var(--primary);margin:0 0 6px">' + nombre +
-      '</h3><div style="font-size:11px;color:var(--muted);margin-bottom:14px">Llenado por ' + esc(f.llenado_por||'') + ' a las ' + (f.hora||'') +
-      '</div><div style="color:var(--muted)">Sin datos registrados</div></div>';
-  }
-  let html = '<div style="padding:10px 0"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
-    '<h3 style="color:var(--primary);margin:0;font-size:16px">' + nombre + '</h3>' +
-    '<span style="font-size:11px;color:var(--muted)">' + esc(f.llenado_por||'') + ' · ' + (f.hora||'') + '</span></div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">';
-  for (const k of keys) {
-    const val = datos[k];
-    const label = k.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase());
-    const rendered = formatDatoValue(val);
-    // If value is a table/complex, span full width
-    const isWide = Array.isArray(val) && val.length > 0 && typeof val[0] === 'object';
-    const spanStyle = isWide ? 'grid-column:1/-1;' : '';
-    html += '<div style="padding:6px 0;border-bottom:1px solid var(--line);' + spanStyle + '">' +
-      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">' + esc(label) + '</div>' +
-      '<div style="font-size:13px;font-weight:600;margin-top:2px">' + rendered + '</div></div>';
-  }
-  html += '</div></div>';
-  return html;
+function dsFormBody(datos) {
+  var keys = Object.keys(datos);
+  if (!keys.length) return '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin datos registrados</div>';
+  var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">';
+  keys.forEach(function(k) {
+    var val = datos[k];
+    var wide = Array.isArray(val) && val.length && typeof val[0] === 'object';
+    h += '<div style="padding:6px 0;border-bottom:1px solid var(--line);' + (wide ? 'grid-column:1/-1;' : '') + '">' +
+      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">' + esc(k.replace(/_/g, ' ').replace(/^\w/, function(c) { return c.toUpperCase(); })) + '</div>' +
+      '<div style="font-size:13px;font-weight:600;margin-top:2px">' + dsVal(val) + '</div></div>';
+  });
+  return h + '</div>';
 }
 
-async function openDeptoDetail(deptoId) {
-  const m = document.getElementById('mainContent');
+function dsActRow(a) {
+  var badge = a.estatus === 'atrasada'
+    ? '<span class="badge atrasada">' + a.urgencia + '</span>'
+    : '<span class="badge ' + a.estatus + '">' + (a.estatus||'').replace('_',' ') + '</span>';
+  return '<tr>' +
+    '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--primary)">' + esc(a.id) + '</td>' +
+    '<td style="font-size:12px">' + esc(a.titulo) + '</td>' +
+    '<td style="font-size:12px">' + esc(a.responsable) + '</td>' +
+    '<td style="font-size:11px">' + (a.fecha_compromiso || '—') + '</td>' +
+    '<td>' + badge + '</td>' +
+    '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 8px">Ver</button></td></tr>';
+}
+
+function dsChangeDate(delta) {
+  var d = new Date(_ds.fecha + 'T12:00:00');
+  d.setDate(d.getDate() + delta);
+  _ds.fecha = d.toISOString().slice(0, 10);
+  openDeptoSlides(_ds.deptoId);
+}
+
+async function openDeptoSlides(deptoId) {
+  var m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
 
-  const fechaParam = _dashFecha || (_dashData?.fecha) || '';
-  const data = await apiFetch(`/api/planner/dashboard/${deptoId}?fecha=${fechaParam}`);
+  if (!_ds.fecha) _ds.fecha = yesterdayMx();
+  var data = await apiFetch('/api/planner/dashboard/' + deptoId + '?fecha=' + _ds.fecha);
   if (!data) { renderDashboard(); return; }
 
-  _dashDeptoId = deptoId;
-  _dashFecha = data.fecha;
-  const di = DEPTOS.find(x => x.id === deptoId) || {};
-  const forms = data.formularios || [];
-  const acts = data.actividades || {};
-  const llenados = forms.filter(f => f.llenado).length;
-  const pct = forms.length > 0 ? Math.round(llenados / forms.length * 100) : 0;
+  _ds.deptoId = deptoId;
+  _ds.fecha = data.fecha;
+  _ds.slides = [];
 
-  _dashSlides = [];
+  var di = DEPTOS.find(function(x) { return x.id === deptoId; }) || {};
+  var forms = data.formularios || [];
+  var acts = data.actividades || {};
+  var llenados = forms.filter(function(f) { return f.llenado; }).length;
+  var pct = forms.length ? Math.round(llenados / forms.length * 100) : 0;
 
-  // Slide 0: resumen
-  _dashSlides.push({ titulo: 'Resumen', tipo: 'resumen', html:
-    '<div style="text-align:center;padding:30px 0">' +
-    '<div style="font-size:52px;margin-bottom:10px">' + (di.icon||'') + '</div>' +
-    '<h2 style="color:var(--primary);margin:0 0 4px">' + (di.nombre||'') + '</h2>' +
-    '<div style="margin-bottom:28px"><input type="date" id="dashFechaInput" value="' + data.fecha + '" onchange="_dashFecha=this.value;openDeptoDetail(\'' + deptoId + '\')" style="padding:6px 12px;border:1.5px solid var(--line);border-radius:6px;font-size:14px;color:var(--primary);font-weight:600;cursor:pointer"></div>' +
-    '<div style="display:flex;justify-content:center;gap:24px;margin-bottom:28px">' +
-      '<div><div style="font-size:36px;font-weight:800;color:' + (pct===100?'var(--green)':'var(--orange)') + '">' + pct + '%</div><div style="font-size:11px;color:var(--muted)">Daily (' + llenados + '/' + forms.length + ')</div></div>' +
-      '<div><div style="font-size:36px;font-weight:800;color:var(--primary)">' + (acts.total||0) + '</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>' +
-      ((acts.atrasadas||[]).length>0 ? '<div><div style="font-size:36px;font-weight:800;color:var(--red)">' + acts.atrasadas.length + '</div><div style="font-size:11px;color:var(--muted)">Atrasadas</div></div>' : '') +
-      ((acts.pendientes||[]).length>0 ? '<div><div style="font-size:36px;font-weight:800;color:var(--orange)">' + acts.pendientes.length + '</div><div style="font-size:11px;color:var(--muted)">Pendientes</div></div>' : '') +
+  // ── Slide 0: Portada ──
+  var s0 = '<div style="text-align:center;padding:24px 0">' +
+    '<div style="font-size:52px;margin-bottom:8px">' + (di.icon||'') + '</div>' +
+    '<h2 style="color:var(--primary);margin:0 0 16px">' + esc(di.nombre||deptoId) + '</h2>' +
+    '<div style="display:flex;justify-content:center;gap:28px;margin-bottom:24px">' +
+      '<div><div style="font-size:38px;font-weight:800;color:' + (pct===100?'var(--green)':'var(--orange)') + '">' + pct + '%</div><div style="font-size:11px;color:var(--muted)">Daily (' + llenados + '/' + forms.length + ')</div></div>' +
+      '<div><div style="font-size:38px;font-weight:800;color:var(--primary)">' + (acts.total||0) + '</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>' +
+      ((acts.atrasadas||[]).length ? '<div><div style="font-size:38px;font-weight:800;color:var(--red)">' + acts.atrasadas.length + '</div><div style="font-size:11px;color:var(--muted)">Atrasadas</div></div>' : '') +
+      ((acts.pendientes||[]).length ? '<div><div style="font-size:38px;font-weight:800;color:var(--orange)">' + acts.pendientes.length + '</div><div style="font-size:11px;color:var(--muted)">Pendientes</div></div>' : '') +
     '</div>' +
     '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">' +
-      forms.map(f => {
-        const fm = (DAILY_FORMS_META[deptoId]||[]).find(x => x.id === f.id);
-        return '<span style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ' + (f.llenado?'var(--green)':'var(--line)') + ';color:' + (f.llenado?'var(--green)':'var(--muted)') + ';background:' + (f.llenado?'#f0fdf4':'#fafafa') + '">' + (f.llenado?'✓':'○') + ' ' + (fm?fm.nombre:f.id) + '</span>';
+      forms.map(function(f) {
+        var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
+        var nm = fm ? fm.nombre : f.id;
+        return '<span style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ' + (f.llenado?'var(--green)':'var(--line)') + ';color:' + (f.llenado?'var(--green)':'var(--muted)') + ';background:' + (f.llenado?'#f0fdf4':'#fafafa') + '">' + (f.llenado?'✓':'○') + ' ' + nm + '</span>';
       }).join('') +
-    '</div></div>'
+    '</div></div>';
+  _ds.slides.push({ titulo: 'Resumen', tipo: 'resumen', html: s0 });
+
+  // ── Slides 1..N: formularios ──
+  forms.forEach(function(f) {
+    var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
+    var nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
+    var html;
+    if (!f.llenado) {
+      html = '<div style="text-align:center;padding:50px 0">' +
+        '<div style="font-size:48px;margin-bottom:14px;opacity:.4">○</div>' +
+        '<h3 style="color:var(--muted);margin:0 0 8px">' + nombre + '</h3>' +
+        '<div style="font-size:15px;color:var(--red);font-weight:600">No llenado</div></div>';
+    } else {
+      html = '<div style="padding:10px 0">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
+        '<h3 style="color:var(--primary);margin:0;font-size:16px">' + nombre + '</h3>' +
+        '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">' + esc(f.llenado_por||'') + ' &middot; ' + (f.hora||'') + '</span><span style="font-size:16px">🟢</span></div></div>' +
+        dsFormBody(f.datos || {}) + '</div>';
+    }
+    _ds.slides.push({ titulo: nombre, tipo: f.llenado ? 'llenado' : 'pendiente', html: html });
   });
 
-  // Slides por formulario
-  forms.forEach(f => {
-    const fm = (DAILY_FORMS_META[deptoId]||[]).find(x => x.id === f.id);
-    const nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
-    _dashSlides.push({ titulo: nombre, tipo: f.llenado ? 'llenado' : 'pendiente', html: buildFormSlideHtml(f, nombre) });
-  });
-
-  // Slide final: actividades
-  let actHtml = '<div style="padding:10px 0">' +
+  // ── Slide final: actividades ──
+  var ah = '<div style="padding:10px 0">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
     '<h3 style="color:var(--primary);margin:0">Actividades del area</h3>' +
     '<button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:\'' + deptoId + '\'})">+ Nueva actividad</button></div>';
-
-  function actRowHtml(a, showEstatus) {
-    return '<tr>' +
-      '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--primary)">' + esc(a.id) + '</td>' +
-      '<td style="font-size:12px">' + esc(a.titulo) + '</td>' +
-      '<td style="font-size:12px">' + esc(a.responsable) + '</td>' +
-      '<td style="font-size:11px">' + (a.fecha_compromiso||'—') + '</td>' +
-      (showEstatus ? '<td><span class="badge ' + a.estatus + '">' + (a.estatus||'').replace('_',' ') + '</span></td>' : '<td><span class="badge ' + a.urgencia + '">' + a.urgencia + '</span></td>') +
-      '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 8px">Ver</button></td></tr>';
-  }
-
-  if ((acts.atrasadas||[]).length > 0) {
-    actHtml += '<div style="margin-bottom:14px;border-left:4px solid var(--red);padding-left:12px">' +
+  if ((acts.atrasadas||[]).length) {
+    ah += '<div style="margin-bottom:16px;border-left:4px solid var(--red);padding-left:12px">' +
       '<h4 style="font-size:13px;color:var(--red);margin:0 0 6px">Atrasadas (' + acts.atrasadas.length + ')</h4>' +
       '<table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead><tbody>' +
-      acts.atrasadas.map(a => actRowHtml(a, false)).join('') + '</tbody></table></div>';
+      acts.atrasadas.map(dsActRow).join('') + '</tbody></table></div>';
   }
-  if ((acts.pendientes||[]).length > 0) {
-    actHtml += '<div style="margin-bottom:14px">' +
-      '<h4 style="font-size:13px;color:var(--primary);margin:0 0 6px">Pendientes (' + acts.pendientes.length + ')</h4>' +
+  if ((acts.pendientes||[]).length) {
+    ah += '<div style="margin-bottom:16px">' +
+      '<h4 style="font-size:13px;color:var(--orange);margin:0 0 6px">Pendientes (' + acts.pendientes.length + ')</h4>' +
       '<table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead><tbody>' +
-      acts.pendientes.map(a => actRowHtml(a, true)).join('') + '</tbody></table></div>';
+      acts.pendientes.map(dsActRow).join('') + '</tbody></table></div>';
   }
-  if ((acts.atrasadas||[]).length === 0 && (acts.pendientes||[]).length === 0) {
-    actHtml += '<div class="empty">Sin actividades pendientes ni atrasadas</div>';
+  if (!(acts.atrasadas||[]).length && !(acts.pendientes||[]).length) {
+    ah += '<div class="empty">Sin actividades pendientes ni atrasadas</div>';
   }
-  actHtml += '</div>';
-  _dashSlides.push({ titulo: 'Actividades', tipo: 'actividades', html: actHtml });
+  ah += '</div>';
+  _ds.slides.push({ titulo: 'Actividades', tipo: 'actividades', html: ah });
 
-  _dashSlideIdx = 0;
-  renderDashSlide();
+  _ds.idx = 0;
+  paintSlide();
 }
 
-function renderDashSlide() {
-  const m = document.getElementById('mainContent');
-  const deptoId = _dashDeptoId;
-  const slide = _dashSlides[_dashSlideIdx];
-  const total = _dashSlides.length;
-  const di = DEPTOS.find(x => x.id === deptoId) || {};
+function paintSlide() {
+  var m = document.getElementById('mainContent');
+  var s = _ds.slides[_ds.idx];
+  var total = _ds.slides.length;
+  var di = DEPTOS.find(function(x) { return x.id === _ds.deptoId; }) || {};
+  var deptoId = _ds.deptoId;
 
-  m.innerHTML =
-    '<div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">' +
-      '<button class="btn btn-outline btn-sm" onclick="renderDashboard()">← Dashboard</button>' +
-      '<span style="font-size:18px">' + (di.icon||'') + '</span>' +
-      '<b style="color:var(--primary)">' + (di.nombre||deptoId) + '</b>' +
-      '<span style="font-size:12px;color:var(--muted);margin-left:auto">' + (_dashSlideIdx+1) + ' / ' + total + '</span>' +
+  // Header
+  var hdr = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">' +
+    '<button class="btn btn-outline btn-sm" onclick="renderDashboard()" title="Volver al Dashboard">← Dashboard</button>' +
+    '<span style="font-size:20px">' + (di.icon||'') + '</span>' +
+    '<b style="color:var(--primary);font-size:15px">' + esc(di.nombre||deptoId) + '</b>' +
+    '<div style="display:flex;align-items:center;gap:4px;margin-left:auto">' +
+      '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(-1)" title="Dia anterior" style="padding:4px 8px;font-size:14px">◄</button>' +
+      '<input type="date" value="' + _ds.fecha + '" onchange="_ds.fecha=this.value;openDeptoSlides(\'' + deptoId + '\')" style="padding:4px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;font-weight:600;color:var(--primary);cursor:pointer">' +
+      '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(1)" title="Dia siguiente" style="padding:4px 8px;font-size:14px">►</button>' +
     '</div>' +
-    '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:16px">' +
-      _dashSlides.map(function(s, i) {
-        var bg = i === _dashSlideIdx ? 'var(--primary)' : s.tipo === 'llenado' ? 'var(--green)' : s.tipo === 'pendiente' ? '#ddd' : s.tipo === 'actividades' ? 'var(--accent)' : 'var(--accent)';
-        var w = i === 0 || s.tipo === 'actividades' ? '20px' : '10px';
-        return '<div onclick="_dashSlideIdx=' + i + ';renderDashSlide()" style="width:' + w + ';height:10px;border-radius:5px;cursor:pointer;transition:all .2s;background:' + bg + '" title="' + esc(s.titulo) + '"></div>';
+    '<span style="font-size:12px;color:var(--muted);font-weight:600;min-width:44px;text-align:right">' + (_ds.idx+1) + '/' + total + '</span>' +
+  '</div>';
+
+  // Dots
+  var dots = '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:14px">';
+  _ds.slides.forEach(function(sl, i) {
+    var bg = i === _ds.idx ? 'var(--primary)' : sl.tipo === 'llenado' ? 'var(--green)' : sl.tipo === 'pendiente' ? '#ccc' : 'var(--accent)';
+    var w = sl.tipo === 'resumen' || sl.tipo === 'actividades' ? '20px' : '10px';
+    dots += '<div onclick="_ds.idx=' + i + ';paintSlide()" style="width:' + w + ';height:10px;border-radius:5px;cursor:pointer;transition:all .15s;background:' + bg + '" title="' + esc(sl.titulo) + '"></div>';
+  });
+  dots += '</div>';
+
+  // Content
+  var content = '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;min-height:320px">' + s.html + '</div>';
+
+  // Footer
+  var footer = '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">' +
+    '<button class="btn btn-outline" onclick="_ds.idx=Math.max(0,_ds.idx-1);paintSlide()" ' + (_ds.idx===0?'disabled':'') + '>← Anterior</button>' +
+    '<div style="display:flex;gap:5px">' +
+      DEPTOS.map(function(d) {
+        return '<button class="btn ' + (d.id===deptoId?'btn-primary':'btn-outline') + ' btn-sm" onclick="openDeptoSlides(\'' + d.id + '\')" title="' + d.nombre + '" style="padding:4px 7px;font-size:13px">' + d.icon + '</button>';
       }).join('') +
     '</div>' +
-    '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;min-height:320px">' +
-      slide.html +
-    '</div>' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:16px">' +
-      '<button class="btn btn-outline" onclick="_dashSlideIdx=Math.max(0,_dashSlideIdx-1);renderDashSlide()" ' + (_dashSlideIdx===0?'disabled':'') + '>← Anterior</button>' +
-      '<div style="display:flex;gap:6px">' +
-        DEPTOS.map(function(d) { return '<button class="btn ' + (d.id===deptoId?'btn-primary':'btn-outline') + ' btn-sm" onclick="openDeptoDetail(\'' + d.id + '\')" title="' + d.nombre + '" style="padding:4px 8px">' + d.icon + '</button>'; }).join('') +
-      '</div>' +
-      '<button class="btn btn-outline" onclick="_dashSlideIdx=Math.min(' + (total-1) + ',_dashSlideIdx+1);renderDashSlide()" ' + (_dashSlideIdx===total-1?'disabled':'') + '>Siguiente →</button>' +
-    '</div>';
-}
+    '<button class="btn btn-outline" onclick="_ds.idx=Math.min(' + (total-1) + ',_ds.idx+1);paintSlide()" ' + (_ds.idx===total-1?'disabled':'') + '>Siguiente →</button>' +
+  '</div>';
 
-function renderDeptoCharts(tendencia, totalForms) {
-  if (typeof Chart === 'undefined') return;
-  const labels = tendencia.map(t => t.fecha.slice(5));
-
-  const ctx1 = document.getElementById('chartDeptoActs');
-  if (ctx1) {
-    new Chart(ctx1, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Creadas', data: tendencia.map(t => t.creadas), backgroundColor: 'rgba(41,128,185,.7)', borderRadius: 4 },
-          { label: 'Cerradas', data: tendencia.map(t => t.cerradas), backgroundColor: 'rgba(39,174,96,.7)', borderRadius: 4 }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
-        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 11 } } }, x: { ticks: { font: { size: 11 } } } }
-      }
-    });
-  }
-
-  const ctx2 = document.getElementById('chartDeptoDaily');
-  if (ctx2) {
-    new Chart(ctx2, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [
-          { label: 'Llenados', data: tendencia.map(t => t.daily_llenados), backgroundColor: 'rgba(39,174,96,.7)', borderRadius: 4 },
-          { label: 'Pendientes', data: tendencia.map(t => t.daily_total - t.daily_llenados), backgroundColor: 'rgba(220,220,220,.7)', borderRadius: 4 }
-        ]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
-        scales: { y: { beginAtZero: true, stacked: true, max: totalForms, ticks: { stepSize: 1, font: { size: 11 } } }, x: { stacked: true, ticks: { font: { size: 11 } } } }
-      }
-    });
-  }
+  m.innerHTML = hdr + dots + content + footer;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
