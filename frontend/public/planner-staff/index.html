@@ -2966,22 +2966,32 @@ function renderDashCharts(tendencia) {
   }
 }
 
-// ── Dashboard Slides v2 — sistema de presentacion por departamento ──────────
+// ── Dashboard Slides v3 — presentacion por departamento ─────────────────────
 
 var _ds = { deptoId: '', fecha: '', slides: [], idx: 0 };
 
+// Keyboard nav
+document.addEventListener('keydown', function(e) {
+  if (!_ds.slides.length || _currentView !== 'dashboard') return;
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); if (_ds.idx < _ds.slides.length - 1) { _ds.idx++; paintSlide(); } }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); if (_ds.idx > 0) { _ds.idx--; paintSlide(); } }
+  else if (e.key === 'Home') { e.preventDefault(); _ds.idx = 0; paintSlide(); }
+  else if (e.key === 'End') { e.preventDefault(); _ds.idx = _ds.slides.length - 1; paintSlide(); }
+});
+
 function dsVal(val) {
-  if (val === true || val === 'true') return '<span style="color:var(--green);font-weight:700">Si</span>';
-  if (val === false || val === 'false') return '<span style="color:var(--red);font-weight:700">No</span>';
+  if (val === true || val === 'true') return '<span style="color:#fff;background:var(--green);padding:1px 8px;border-radius:4px;font-size:11px;font-weight:700">SI</span>';
+  if (val === false || val === 'false') return '<span style="color:#fff;background:var(--red);padding:1px 8px;border-radius:4px;font-size:11px;font-weight:700">NO</span>';
   if (val == null || val === '') return '<span style="color:var(--muted)">—</span>';
   if (Array.isArray(val)) {
     if (!val.length) return '<span style="color:var(--muted)">—</span>';
     if (typeof val[0] === 'object') {
       var cols = Object.keys(val[0]);
-      return '<table style="font-size:11px;width:100%;margin-top:4px;border-collapse:collapse"><thead><tr>' +
-        cols.map(function(c) { return '<th style="text-align:left;padding:3px 6px;font-size:10px;text-transform:uppercase;color:var(--muted);border-bottom:1px solid var(--line)">' + esc(c.replace(/_/g,' ')) + '</th>'; }).join('') +
+      return '<table style="font-size:11px;width:100%;margin-top:6px;border-collapse:separate;border-spacing:0;border:1px solid var(--line);border-radius:8px;overflow:hidden"><thead><tr>' +
+        cols.map(function(c) { return '<th style="text-align:left;padding:6px 8px;font-size:10px;text-transform:uppercase;color:var(--muted);background:var(--bg);font-weight:700">' + esc(c.replace(/_/g,' ')) + '</th>'; }).join('') +
         '</tr></thead><tbody>' +
-        val.map(function(row) { return '<tr>' + cols.map(function(c) { return '<td style="padding:3px 6px;border-bottom:1px solid var(--line)">' + dsVal(row[c]) + '</td>'; }).join('') + '</tr>'; }).join('') +
+        val.map(function(row, ri) { return '<tr style="background:' + (ri%2?'var(--bg)':'var(--card)') + '">' + cols.map(function(c) { return '<td style="padding:5px 8px">' + dsVal(row[c]) + '</td>'; }).join('') + '</tr>'; }).join('') +
         '</tbody></table>';
     }
     return esc(val.join(', '));
@@ -2989,36 +2999,38 @@ function dsVal(val) {
   if (typeof val === 'object' && val !== null) {
     var entries = Object.entries(val);
     if (!entries.length) return '<span style="color:var(--muted)">—</span>';
-    return entries.map(function(e) { return '<span style="font-size:11px"><b>' + esc(e[0].replace(/_/g,' ')) + ':</b> ' + dsVal(e[1]) + '</span>'; }).join(' &middot; ');
+    return '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:2px">' + entries.map(function(e) {
+      return '<span style="background:var(--bg);padding:3px 10px;border-radius:6px;font-size:11px"><b style="color:var(--muted)">' + esc(e[0].replace(/_/g,' ')) + ':</b> ' + dsVal(e[1]) + '</span>';
+    }).join('') + '</div>';
   }
   return esc(String(val));
 }
 
 function dsFormBody(datos) {
   var keys = Object.keys(datos);
-  if (!keys.length) return '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Sin datos registrados</div>';
-  var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px">';
-  keys.forEach(function(k) {
+  if (!keys.length) return '<div style="color:var(--muted);font-size:14px;text-align:center;padding:30px">Sin datos registrados</div>';
+  var h = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:0">';
+  keys.forEach(function(k, idx) {
     var val = datos[k];
     var wide = Array.isArray(val) && val.length && typeof val[0] === 'object';
-    h += '<div style="padding:6px 0;border-bottom:1px solid var(--line);' + (wide ? 'grid-column:1/-1;' : '') + '">' +
-      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">' + esc(k.replace(/_/g, ' ').replace(/^\w/, function(c) { return c.toUpperCase(); })) + '</div>' +
-      '<div style="font-size:13px;font-weight:600;margin-top:2px">' + dsVal(val) + '</div></div>';
+    var isObj = typeof val === 'object' && val !== null && !Array.isArray(val);
+    var bg = idx % 2 === 0 ? 'var(--card)' : 'var(--bg)';
+    h += '<div style="padding:10px 14px;' + (wide || isObj ? 'grid-column:1/-1;' : '') + 'background:' + bg + ';border-bottom:1px solid var(--line)">' +
+      '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;font-weight:700;margin-bottom:3px">' + esc(k.replace(/_/g, ' ').replace(/^\w/, function(c) { return c.toUpperCase(); })) + '</div>' +
+      '<div style="font-size:13px;font-weight:600">' + dsVal(val) + '</div></div>';
   });
   return h + '</div>';
 }
 
 function dsActRow(a) {
-  var badge = a.estatus === 'atrasada'
-    ? '<span class="badge atrasada">' + a.urgencia + '</span>'
-    : '<span class="badge ' + a.estatus + '">' + (a.estatus||'').replace('_',' ') + '</span>';
-  return '<tr>' +
+  var isLate = a.estatus === 'atrasada';
+  return '<tr style="' + (isLate ? 'background:#fef2f2;' : '') + '">' +
     '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--primary)">' + esc(a.id) + '</td>' +
-    '<td style="font-size:12px">' + esc(a.titulo) + '</td>' +
+    '<td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(a.titulo) + '</td>' +
     '<td style="font-size:12px">' + esc(a.responsable) + '</td>' +
-    '<td style="font-size:11px">' + (a.fecha_compromiso || '—') + '</td>' +
-    '<td>' + badge + '</td>' +
-    '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 8px">Ver</button></td></tr>';
+    '<td style="font-size:11px;color:' + (isLate ? 'var(--red)' : 'inherit') + ';font-weight:' + (isLate ? '700' : '400') + '">' + (a.fecha_compromiso || '—') + '</td>' +
+    '<td><span class="badge ' + (isLate ? 'atrasada' : a.estatus) + '">' + (isLate ? a.urgencia : (a.estatus||'').replace('_',' ')) + '</span></td>' +
+    '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 10px">Ver</button></td></tr>';
 }
 
 function dsChangeDate(delta) {
@@ -3047,20 +3059,25 @@ async function openDeptoSlides(deptoId) {
   var pct = forms.length ? Math.round(llenados / forms.length * 100) : 0;
 
   // ── Slide 0: Portada ──
-  var s0 = '<div style="text-align:center;padding:24px 0">' +
-    '<div style="font-size:52px;margin-bottom:8px">' + (di.icon||'') + '</div>' +
-    '<h2 style="color:var(--primary);margin:0 0 16px">' + esc(di.nombre||deptoId) + '</h2>' +
-    '<div style="display:flex;justify-content:center;gap:28px;margin-bottom:24px">' +
-      '<div><div style="font-size:38px;font-weight:800;color:' + (pct===100?'var(--green)':'var(--orange)') + '">' + pct + '%</div><div style="font-size:11px;color:var(--muted)">Daily (' + llenados + '/' + forms.length + ')</div></div>' +
-      '<div><div style="font-size:38px;font-weight:800;color:var(--primary)">' + (acts.total||0) + '</div><div style="font-size:11px;color:var(--muted)">Actividades</div></div>' +
-      ((acts.atrasadas||[]).length ? '<div><div style="font-size:38px;font-weight:800;color:var(--red)">' + acts.atrasadas.length + '</div><div style="font-size:11px;color:var(--muted)">Atrasadas</div></div>' : '') +
-      ((acts.pendientes||[]).length ? '<div><div style="font-size:38px;font-weight:800;color:var(--orange)">' + acts.pendientes.length + '</div><div style="font-size:11px;color:var(--muted)">Pendientes</div></div>' : '') +
+  var kpiCard = function(valor, label, color) {
+    return '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;text-align:center;min-width:100px">' +
+      '<div style="font-size:36px;font-weight:800;color:' + color + ';line-height:1">' + valor + '</div>' +
+      '<div style="font-size:11px;color:var(--muted);margin-top:4px;font-weight:600">' + label + '</div></div>';
+  };
+  var s0 = '<div style="text-align:center;padding:20px 0">' +
+    '<div style="font-size:56px;margin-bottom:6px">' + (di.icon||'') + '</div>' +
+    '<h2 style="color:var(--primary);margin:0 0 20px;font-size:22px">' + esc(di.nombre||deptoId) + '</h2>' +
+    '<div style="display:flex;justify-content:center;gap:14px;margin-bottom:26px;flex-wrap:wrap">' +
+      kpiCard(pct + '%', 'Daily (' + llenados + '/' + forms.length + ')', pct===100?'var(--green)':'var(--orange)') +
+      kpiCard(acts.total||0, 'Actividades', 'var(--primary)') +
+      ((acts.atrasadas||[]).length ? kpiCard(acts.atrasadas.length, 'Atrasadas', 'var(--red)') : '') +
+      ((acts.pendientes||[]).length ? kpiCard(acts.pendientes.length, 'Pendientes', 'var(--orange)') : '') +
     '</div>' +
     '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px">' +
-      forms.map(function(f) {
+      forms.map(function(f, fi) {
         var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
         var nm = fm ? fm.nombre : f.id;
-        return '<span style="padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;border:1.5px solid ' + (f.llenado?'var(--green)':'var(--line)') + ';color:' + (f.llenado?'var(--green)':'var(--muted)') + ';background:' + (f.llenado?'#f0fdf4':'#fafafa') + '">' + (f.llenado?'✓':'○') + ' ' + nm + '</span>';
+        return '<span onclick="_ds.idx=' + (fi+1) + ';paintSlide()" style="padding:6px 16px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s;border:1.5px solid ' + (f.llenado?'var(--green)':'var(--line)') + ';color:' + (f.llenado?'var(--green)':'var(--muted)') + ';background:' + (f.llenado?'#f0fdf4':'#fafafa') + '" onmouseover="this.style.transform=\'scale(1.05)\'" onmouseout="this.style.transform=\'\'">' + (f.llenado?'✓':'○') + ' ' + nm + '</span>';
       }).join('') +
     '</div></div>';
   _ds.slides.push({ titulo: 'Resumen', tipo: 'resumen', html: s0 });
@@ -3072,38 +3089,45 @@ async function openDeptoSlides(deptoId) {
     var html;
     if (!f.llenado) {
       html = '<div style="text-align:center;padding:50px 0">' +
-        '<div style="font-size:48px;margin-bottom:14px;opacity:.4">○</div>' +
-        '<h3 style="color:var(--muted);margin:0 0 8px">' + nombre + '</h3>' +
-        '<div style="font-size:15px;color:var(--red);font-weight:600">No llenado</div></div>';
+        '<div style="width:80px;height:80px;border-radius:50%;border:3px dashed var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;color:var(--muted)">○</div>' +
+        '<h3 style="color:var(--muted);margin:0 0 8px;font-size:18px">' + nombre + '</h3>' +
+        '<div style="font-size:14px;color:var(--red);font-weight:600">Pendiente de llenado</div></div>';
     } else {
-      html = '<div style="padding:10px 0">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
-        '<h3 style="color:var(--primary);margin:0;font-size:16px">' + nombre + '</h3>' +
-        '<div style="display:flex;align-items:center;gap:8px"><span style="font-size:11px;color:var(--muted)">' + esc(f.llenado_por||'') + ' &middot; ' + (f.hora||'') + '</span><span style="font-size:16px">🟢</span></div></div>' +
+      html = '<div style="padding:6px 0">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid var(--line)">' +
+        '<h3 style="color:var(--primary);margin:0;font-size:17px">' + nombre + '</h3>' +
+        '<div style="display:flex;align-items:center;gap:10px">' +
+          '<span style="background:#f0fdf4;color:var(--green);padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700">LLENADO</span>' +
+          '<span style="font-size:12px;color:var(--muted)">' + esc(f.llenado_por||'') + ' &middot; ' + (f.hora||'') + '</span>' +
+        '</div></div>' +
         dsFormBody(f.datos || {}) + '</div>';
     }
     _ds.slides.push({ titulo: nombre, tipo: f.llenado ? 'llenado' : 'pendiente', html: html });
   });
 
   // ── Slide final: actividades ──
-  var ah = '<div style="padding:10px 0">' +
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">' +
-    '<h3 style="color:var(--primary);margin:0">Actividades del area</h3>' +
+  var ah = '<div style="padding:6px 0">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--line)">' +
+    '<h3 style="color:var(--primary);margin:0;font-size:17px">Actividades del area</h3>' +
     '<button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:\'' + deptoId + '\'})">+ Nueva actividad</button></div>';
   if ((acts.atrasadas||[]).length) {
-    ah += '<div style="margin-bottom:16px;border-left:4px solid var(--red);padding-left:12px">' +
-      '<h4 style="font-size:13px;color:var(--red);margin:0 0 6px">Atrasadas (' + acts.atrasadas.length + ')</h4>' +
-      '<table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead><tbody>' +
-      acts.atrasadas.map(dsActRow).join('') + '</tbody></table></div>';
+    ah += '<div style="margin-bottom:18px">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:4px;height:18px;background:var(--red);border-radius:2px"></div>' +
+      '<h4 style="font-size:13px;color:var(--red);margin:0">Atrasadas (' + acts.atrasadas.length + ')</h4></div>' +
+      '<div style="border-radius:8px;overflow:hidden;border:1px solid var(--line)">' +
+      '<table style="font-size:12px;width:100%;margin:0"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead><tbody>' +
+      acts.atrasadas.map(dsActRow).join('') + '</tbody></table></div></div>';
   }
   if ((acts.pendientes||[]).length) {
-    ah += '<div style="margin-bottom:16px">' +
-      '<h4 style="font-size:13px;color:var(--orange);margin:0 0 6px">Pendientes (' + acts.pendientes.length + ')</h4>' +
-      '<table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead><tbody>' +
-      acts.pendientes.map(dsActRow).join('') + '</tbody></table></div>';
+    ah += '<div style="margin-bottom:18px">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:4px;height:18px;background:var(--orange);border-radius:2px"></div>' +
+      '<h4 style="font-size:13px;color:var(--orange);margin:0">Pendientes (' + acts.pendientes.length + ')</h4></div>' +
+      '<div style="border-radius:8px;overflow:hidden;border:1px solid var(--line)">' +
+      '<table style="font-size:12px;width:100%;margin:0"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead><tbody>' +
+      acts.pendientes.map(dsActRow).join('') + '</tbody></table></div></div>';
   }
   if (!(acts.atrasadas||[]).length && !(acts.pendientes||[]).length) {
-    ah += '<div class="empty">Sin actividades pendientes ni atrasadas</div>';
+    ah += '<div style="text-align:center;padding:40px 0;color:var(--muted)"><div style="font-size:36px;margin-bottom:8px">✓</div><div style="font-size:14px">Sin actividades pendientes ni atrasadas</div></div>';
   }
   ah += '</div>';
   _ds.slides.push({ titulo: 'Actividades', tipo: 'actividades', html: ah });
@@ -3119,43 +3143,56 @@ function paintSlide() {
   var di = DEPTOS.find(function(x) { return x.id === _ds.deptoId; }) || {};
   var deptoId = _ds.deptoId;
 
-  // Header
-  var hdr = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">' +
-    '<button class="btn btn-outline btn-sm" onclick="renderDashboard()" title="Volver al Dashboard">← Dashboard</button>' +
-    '<span style="font-size:20px">' + (di.icon||'') + '</span>' +
-    '<b style="color:var(--primary);font-size:15px">' + esc(di.nombre||deptoId) + '</b>' +
-    '<div style="display:flex;align-items:center;gap:4px;margin-left:auto">' +
-      '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(-1)" title="Dia anterior" style="padding:4px 8px;font-size:14px">◄</button>' +
-      '<input type="date" value="' + _ds.fecha + '" onchange="_ds.fecha=this.value;openDeptoSlides(\'' + deptoId + '\')" style="padding:4px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;font-weight:600;color:var(--primary);cursor:pointer">' +
-      '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(1)" title="Dia siguiente" style="padding:4px 8px;font-size:14px">►</button>' +
-    '</div>' +
-    '<span style="font-size:12px;color:var(--muted);font-weight:600;min-width:44px;text-align:right">' + (_ds.idx+1) + '/' + total + '</span>' +
+  // ── Header bar ──
+  var hdr = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px">' +
+    '<button class="btn btn-outline btn-sm" onclick="renderDashboard()" style="padding:5px 10px;font-size:12px">← Dashboard</button>' +
+    '<div style="width:1px;height:24px;background:var(--line)"></div>' +
+    '<span style="font-size:18px">' + (di.icon||'') + '</span>' +
+    '<b style="color:var(--primary);font-size:14px">' + esc(di.nombre||deptoId) + '</b>' +
+    '<div style="flex:1"></div>' +
+    '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(-1)" style="padding:4px 10px;font-size:15px;font-weight:700" title="Dia anterior">◄</button>' +
+    '<input type="date" value="' + _ds.fecha + '" onchange="_ds.fecha=this.value;openDeptoSlides(\'' + deptoId + '\')" style="padding:5px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;font-weight:600;color:var(--primary);cursor:pointer">' +
+    '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(1)" style="padding:4px 10px;font-size:15px;font-weight:700" title="Dia siguiente">►</button>' +
+    '<div style="width:1px;height:24px;background:var(--line);margin:0 4px"></div>' +
+    '<span style="font-size:13px;color:var(--muted);font-weight:700;min-width:38px;text-align:center">' + (_ds.idx+1) + '/' + total + '</span>' +
   '</div>';
 
-  // Dots
-  var dots = '<div style="display:flex;justify-content:center;gap:6px;margin-bottom:14px">';
+  // ── Progress bar + dots ──
+  var pctBar = Math.round((_ds.idx / (total - 1)) * 100);
+  var nav = '<div style="margin-bottom:14px">' +
+    '<div style="height:3px;background:var(--line);border-radius:2px;margin-bottom:10px;overflow:hidden"><div style="height:100%;width:' + pctBar + '%;background:var(--accent);border-radius:2px;transition:width .3s ease"></div></div>' +
+    '<div style="display:flex;justify-content:center;gap:4px;flex-wrap:wrap">';
   _ds.slides.forEach(function(sl, i) {
-    var bg = i === _ds.idx ? 'var(--primary)' : sl.tipo === 'llenado' ? 'var(--green)' : sl.tipo === 'pendiente' ? '#ccc' : 'var(--accent)';
-    var w = sl.tipo === 'resumen' || sl.tipo === 'actividades' ? '20px' : '10px';
-    dots += '<div onclick="_ds.idx=' + i + ';paintSlide()" style="width:' + w + ';height:10px;border-radius:5px;cursor:pointer;transition:all .15s;background:' + bg + '" title="' + esc(sl.titulo) + '"></div>';
+    var active = i === _ds.idx;
+    var bg, border;
+    if (active) { bg = 'var(--primary)'; border = 'var(--primary)'; }
+    else if (sl.tipo === 'llenado') { bg = 'var(--green)'; border = 'var(--green)'; }
+    else if (sl.tipo === 'pendiente') { bg = '#e0e4ea'; border = '#e0e4ea'; }
+    else { bg = 'var(--accent)'; border = 'var(--accent)'; }
+    var size = active ? 'width:28px;height:10px' : (sl.tipo === 'resumen' || sl.tipo === 'actividades' ? 'width:18px;height:10px' : 'width:10px;height:10px');
+    nav += '<div onclick="_ds.idx=' + i + ';paintSlide()" style="' + size + ';border-radius:5px;cursor:pointer;transition:all .2s ease;background:' + bg + ';opacity:' + (active?'1':'.65') + '" title="' + esc(sl.titulo) + '"></div>';
   });
-  dots += '</div>';
+  nav += '</div></div>';
 
-  // Content
-  var content = '<div style="background:var(--card);border:1px solid var(--line);border-radius:12px;padding:24px;min-height:320px">' + s.html + '</div>';
+  // ── Slide content with animation ──
+  var content = '<div id="dsSlideBox" style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px;min-height:340px;animation:dsFadeIn .25s ease">' + s.html + '</div>';
 
-  // Footer
+  // ── Footer navigation ──
+  var prevDis = _ds.idx === 0 ? 'opacity:.4;pointer-events:none;' : '';
+  var nextDis = _ds.idx === total - 1 ? 'opacity:.4;pointer-events:none;' : '';
   var footer = '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">' +
-    '<button class="btn btn-outline" onclick="_ds.idx=Math.max(0,_ds.idx-1);paintSlide()" ' + (_ds.idx===0?'disabled':'') + '>← Anterior</button>' +
-    '<div style="display:flex;gap:5px">' +
+    '<button onclick="_ds.idx=Math.max(0,_ds.idx-1);paintSlide()" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);transition:all .15s;' + prevDis + '" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--line)\'">' +
+      '<span style="font-size:16px">←</span> Anterior</button>' +
+    '<div style="display:flex;gap:4px">' +
       DEPTOS.map(function(d) {
-        return '<button class="btn ' + (d.id===deptoId?'btn-primary':'btn-outline') + ' btn-sm" onclick="openDeptoSlides(\'' + d.id + '\')" title="' + d.nombre + '" style="padding:4px 7px;font-size:13px">' + d.icon + '</button>';
+        var isCur = d.id === deptoId;
+        return '<button onclick="openDeptoSlides(\'' + d.id + '\')" title="' + d.nombre + '" style="width:34px;height:34px;border-radius:8px;border:1.5px solid ' + (isCur?'var(--accent)':'var(--line)') + ';background:' + (isCur?'var(--accent)':'var(--card)') + ';cursor:pointer;font-size:15px;transition:all .15s;display:flex;align-items:center;justify-content:center" onmouseover="if(!' + isCur + ')this.style.borderColor=\'var(--accent)\'" onmouseout="if(!' + isCur + ')this.style.borderColor=\'var(--line)\'">' + d.icon + '</button>';
       }).join('') +
     '</div>' +
-    '<button class="btn btn-outline" onclick="_ds.idx=Math.min(' + (total-1) + ',_ds.idx+1);paintSlide()" ' + (_ds.idx===total-1?'disabled':'') + '>Siguiente →</button>' +
+    '<button onclick="_ds.idx=Math.min(' + (total-1) + ',_ds.idx+1);paintSlide()" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);transition:all .15s;' + nextDis + '" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--line)\'">Siguiente <span style="font-size:16px">→</span></button>' +
   '</div>';
 
-  m.innerHTML = hdr + dots + content + footer;
+  m.innerHTML = '<style>@keyframes dsFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}</style>' + hdr + nav + content + footer;
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
