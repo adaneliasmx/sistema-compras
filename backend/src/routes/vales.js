@@ -2314,12 +2314,10 @@ router.patch('/titulaciones/:id', valesAllowRoles('admin', 'operador'), (req, re
 });
 
 // Estadísticas para SPC
-router.get('/titulaciones/estadisticas/valores', (req, res) => {
-  const db = readVales();
-  const { parametro_id, fecha_ini, fecha_fin } = req.query;
-  if (!parametro_id) return res.status(400).json({ error: 'parametro_id requerido' });
+// Lógica compartida: calcula estadísticas de valores para un parámetro en un rango de fechas
+function calcEstadisticasValores(db, parametro_id, fecha_ini, fecha_fin) {
   const param = (db.parametros_titulacion || []).find(p => p.id === Number(parametro_id));
-  if (!param) return res.status(404).json({ error: 'Parámetro no encontrado' });
+  if (!param) return { param: null, valores: [] };
 
   let headers = db.titulaciones_header || [];
   if (fecha_ini) headers = headers.filter(h => h.fecha >= fecha_ini);
@@ -2335,7 +2333,27 @@ router.get('/titulaciones/estadisticas/valores', (req, res) => {
     return { fecha: h?.fecha, clave: h?.clave_titulacion, turno: h?.turno, valor: d.valor_registrado, estado: d.estado_param, analista: h?.analista };
   }).sort((a, b) => a.fecha?.localeCompare(b.fecha) || 0);
 
-  res.json({ param, valores: result });
+  return { param, valores: result };
+}
+
+router.get('/titulaciones/estadisticas/valores', (req, res) => {
+  const db = readVales();
+  const { parametro_id, fecha_ini, fecha_fin } = req.query;
+  if (!parametro_id) return res.status(400).json({ error: 'parametro_id requerido' });
+  const result = calcEstadisticasValores(db, parametro_id, fecha_ini, fecha_fin);
+  if (!result.param) return res.status(404).json({ error: 'Parámetro no encontrado' });
+  res.json(result);
+});
+
+// POST /titulaciones/estadisticas/valores-batch — reduce N requests a 1 para KPI CPK grid
+router.post('/titulaciones/estadisticas/valores-batch', valesAuthRequired, (req, res) => {
+  const { queries } = req.body || {};
+  if (!Array.isArray(queries) || queries.length === 0 || queries.length > 300) {
+    return res.status(400).json({ error: 'queries requerido (array, max 300)' });
+  }
+  const db = readVales();
+  const results = queries.map(q => calcEstadisticasValores(db, q.parametro_id, q.fecha_ini, q.fecha_fin));
+  res.json(results);
 });
 
 // ── GET /admin/diag-titulaciones ─────────────────────────────────────────────

@@ -309,26 +309,37 @@ router.get('/catalogos/:linea', produccionAllowRoles('produccion'), (req, res) =
 // ?activas=1  → todas las OTs urgentes actualmente abiertas (para carga inicial del pizarrón)
 // ?desde=ISO  → solo las nuevas desde ese timestamp
 // ?ids=1,2,3  → verifica cuáles de esos IDs siguen abiertas
-router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => {
+// Cache server-side de 15s para reducir carga cuando N TVs piden simultáneamente.
+let _urgMantCache = { ordenes: null, ts: 0 };
+const URGENCIAS_CACHE_TTL = 15000;
+function getUrgenciasOrdenes() {
+  const now = Date.now();
+  if (_urgMantCache.ordenes && now - _urgMantCache.ts < URGENCIAS_CACHE_TTL) return _urgMantCache.ordenes;
   const mdb = readMant();
   if (!mdb.settings?.alerta_pizarron_activa || !mdb.settings?.integracion_produccion_activa) {
-    return res.json([]);
+    _urgMantCache = { ordenes: [], ts: now };
+    return [];
   }
-  const ordenes = mdb.ordenes_mantenimiento || [];
+  const urgentes = (mdb.ordenes_mantenimiento || []).filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta');
+  _urgMantCache = { ordenes: urgentes, ts: now };
+  return urgentes;
+}
+router.get('/urgencias-mant', produccionAllowRoles('produccion'), (req, res) => {
+  const ordenes = getUrgenciasOrdenes();
   const toDto = o => ({ id: o.id, folio: o.folio, descripcion: o.descripcion, departamento_nombre: o.departamento_nombre, created_at: o.created_at });
   // Modo activas: OTs urgentes abiertas en las últimas 8 h (carga inicial pizarrón — omite históricas no cerradas)
   if (req.query.activas) {
     const hace8h = new Date(Date.now() - 8 * 60 * 60 * 1000).toISOString();
-    return res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= hace8h).map(toDto));
+    return res.json(ordenes.filter(o => o.created_at >= hace8h).map(toDto));
   }
   // Modo check: ¿siguen abiertas estas IDs?
   if (req.query.ids) {
     const ids = req.query.ids.split(',').map(Number).filter(Boolean);
-    return res.json(ordenes.filter(o => ids.includes(o.id) && o.status === 'abierta').map(toDto));
+    return res.json(ordenes.filter(o => ids.includes(o.id)).map(toDto));
   }
   // Modo normal: nuevas desde timestamp
   const desde = req.query.desde || new Date(Date.now() - 60 * 1000).toISOString();
-  res.json(ordenes.filter(o => o.tipo === 'correctivo_urgente' && o.status === 'abierta' && o.created_at >= desde).map(toDto));
+  res.json(ordenes.filter(o => o.created_at >= desde).map(toDto));
 });
 
 // PATCH /ot/:id/asignar-tecnico — asigna técnico a OT existente sin cerrarla

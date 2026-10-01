@@ -37,8 +37,18 @@ const state = {
   _tl4CargasActivas: 0,
   _tl4TiempoExtraActivo: false,
   _kpiConfig: null,
-  _autoParoLastTs: {}   // { [linea]: lastTs } — timestamp que disparó el último pendiente_motivo creado
+  _autoParoLastTs: {},   // { [linea]: lastTs } — timestamp que disparó el último pendiente_motivo creado
+  _autoSinActividadDone: {} // { [linea]: true } — solo ejecutar POST auto-sin-actividad una vez por sesion
 };
+
+// ── Cache client-side para datos que cambian raramente (/config, /catalogos) ─
+const _getCacheTTL = 5 * 60 * 1000; // 5 minutos
+const _getCache = {};
+function cachedGET(url) {
+  const entry = _getCache[url];
+  if (entry && Date.now() - entry.ts < _getCacheTTL) return Promise.resolve(entry.data);
+  return GET(url).then(data => { _getCache[url] = { data, ts: Date.now() }; return data; });
+}
 
 // ── Menú por rol ──────────────────────────────────────────────────────────────
 const MENU = {
@@ -997,7 +1007,7 @@ async function viewLinea(el, linea) {
   state._lineaTimer = setInterval(() => {
     const elActual = document.getElementById('p-content');
     if (elActual) viewLinea(elActual, linea);
-  }, 20000);
+  }, 60000);
 
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando tarjetas...</p></div>';
   try {
@@ -1012,10 +1022,10 @@ async function viewLinea(el, linea) {
 
     const [cargasData, catalogData, parosData, todasHoyData, cfgData, pizarronData] = await Promise.all([
       GET(`/cargas/${linea}/activas`),
-      GET(`/catalogos/${linea}`),
+      cachedGET(`/catalogos/${linea}`),
       GET(`/paros/${linea}/activo`).catch(() => null),
       GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
-      GET('/config').catch(() => ({})),
+      cachedGET('/config').catch(() => ({})),
       GET(`/pizarron?linea=${linea}&turno=all&fecha=${shiftFechaIni}`).catch(() => null)
     ]);
 
@@ -1088,11 +1098,14 @@ async function viewLinea(el, linea) {
 
     state.paroActivo[linea] = paroActivo;
 
-    // ── Check A: turno anterior sin actividad → paro automático cerrado ───────
-    try {
-      const prev = getPrevTurnoInfo();
-      await POST(`/paros/${linea}/auto-sin-actividad`, { fecha: prev.fecha, turno: prev.turno });
-    } catch (_) { /* silencioso — no bloquear la vista */ }
+    // ── Check A: turno anterior sin actividad → paro automático cerrado (solo 1 vez por sesion) ──
+    if (!state._autoSinActividadDone[linea]) {
+      state._autoSinActividadDone[linea] = true;
+      try {
+        const prev = getPrevTurnoInfo();
+        await POST(`/paros/${linea}/auto-sin-actividad`, { fecha: prev.fecha, turno: prev.turno });
+      } catch (_) { /* silencioso — no bloquear la vista */ }
+    }
 
     // ── Check B: 15 min sin actividad → crear paro pendiente_motivo silenciosamente ───
     if (!paroActivo) {
@@ -1293,7 +1306,7 @@ async function viewBaker(el) {
   state._lineaTimer = setInterval(() => {
     const elActual = document.getElementById('p-content');
     if (elActual && state.section === 'linea-baker') viewBaker(elActual);
-  }, 20000);
+  }, 60000);
 
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Baker...</p></div>';
   try {
@@ -1305,10 +1318,10 @@ async function viewBaker(el) {
 
     const [cargasData, catalogData, paroData, pizarronData, cfgData] = await Promise.all([
       GET('/baker/cargas/activas'),
-      GET('/catalogos/baker'),
+      cachedGET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
       GET(`/pizarron?linea=baker&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
-      GET('/config').catch(() => ({}))
+      cachedGET('/config').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
@@ -1342,11 +1355,14 @@ async function viewBaker(el) {
     const ciclosObjBaker = cfg.ciclos_objetivo_baker ?? 2;
     const objetivoTurno = Math.round(ciclosObjBaker * (HORAS_TURNO[turnoActual] ?? 8));
 
-    // Check turno anterior sin actividad (idempotente)
-    try {
-      const prev = getPrevTurnoInfo();
-      await POST('/baker/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
-    } catch (_) {}
+    // Check turno anterior sin actividad (solo 1 vez por sesion)
+    if (!state._autoSinActividadDone['baker']) {
+      state._autoSinActividadDone['baker'] = true;
+      try {
+        const prev = getPrevTurnoInfo();
+        await POST('/baker/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
+      } catch (_) {}
+    }
 
     const capacidadBar = `
       <div style="display:flex;align-items:center;gap:8px;background:#f1f5f9;border-radius:8px;padding:6px 14px">
@@ -1495,7 +1511,7 @@ async function viewL1(el) {
   state._lineaTimer = setInterval(() => {
     const elActual = document.getElementById('p-content');
     if (elActual && state.section === 'linea-l1') viewL1(elActual);
-  }, 20000);
+  }, 60000);
 
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Línea 1...</p></div>';
   try {
@@ -1507,10 +1523,10 @@ async function viewL1(el) {
 
     const [cargasData, catalogData, paroData, pizarronData, cfgData] = await Promise.all([
       GET('/l1/cargas/activas'),
-      GET('/catalogos/l1'),
+      cachedGET('/catalogos/l1'),
       GET('/l1/paros/activo').catch(() => null),
       GET(`/pizarron?linea=L1&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
-      GET('/config').catch(() => ({}))
+      cachedGET('/config').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
@@ -1544,10 +1560,14 @@ async function viewL1(el) {
     const ciclosObjL1 = cfg.ciclos_objetivo_l1 ?? 2;
     const objetivoTurno = Math.round(ciclosObjL1 * (HORAS_TURNO[turnoActual] ?? 8));
 
-    try {
-      const prev = getPrevTurnoInfo();
-      await POST('/l1/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
-    } catch (_) {}
+    // Check turno anterior sin actividad (solo 1 vez por sesion)
+    if (!state._autoSinActividadDone['l1']) {
+      state._autoSinActividadDone['l1'] = true;
+      try {
+        const prev = getPrevTurnoInfo();
+        await POST('/l1/paros/auto-sin-actividad', { fecha: prev.fecha, turno: prev.turno });
+      } catch (_) {}
+    }
 
     const MAX_L1 = 8;
     const capacidadBar = `
@@ -3636,7 +3656,7 @@ async function viewMonitor(el) {
 
   el.innerHTML = `
     <div style="margin-bottom:10px;display:flex;align-items:center;gap:10px">
-      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 15 seg — Cargas del turno actual (L3 + L4 + Baker + L1)</span>
+      <span style="font-size:12px;color:var(--p-muted)">📡 Auto-actualiza cada 45 seg — Cargas del turno actual (L3 + L4 + Baker + L1)</span>
       <button class="btn btn-outline btn-sm" id="mon-refresh">↻ Actualizar</button>
     </div>
     <div id="monitor-contenido"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
@@ -3644,7 +3664,7 @@ async function viewMonitor(el) {
   document.getElementById('mon-refresh')?.addEventListener('click', cargarMonitor);
 
   clearInterval(state._monitorTimer);
-  state._monitorTimer = setInterval(cargarMonitor, 15000);
+  state._monitorTimer = setInterval(cargarMonitor, 45000);
   cargarMonitor();
 }
 

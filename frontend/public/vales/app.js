@@ -5080,24 +5080,24 @@ function bindKpiProcesos() {
       const tanqueData = await loadKpiTanqueParams();
       const ranges = period === 'semanal' ? getWeekRanges(count) : getMonthRanges(count);
 
-      // Fetch all param+period combos in parallel
-      const allFetches = [];
+      // Batch: construir todas las queries y enviar en 1 solo POST
+      const queryMap = []; // { tanque, paramId, rangeLabel }
+      const queries = [];
       for (const tk of tanqueData) {
         for (const p of tk.params) {
           for (const r of ranges) {
-            allFetches.push(
-              GET(`/titulaciones/estadisticas/valores?parametro_id=${p.id}&fecha_ini=${r.ini}&fecha_fin=${r.fin}`)
-                .then(d => ({ tanque: tk.no, paramId: p.id, range: r.label, data: d }))
-                .catch(() => ({ tanque: tk.no, paramId: p.id, range: r.label, data: null }))
-            );
+            queries.push({ parametro_id: p.id, fecha_ini: r.ini, fecha_fin: r.fin });
+            queryMap.push({ tanque: tk.no, paramId: p.id, range: r.label });
           }
         }
       }
-      const results = await Promise.all(allFetches);
+      const batchResults = queries.length > 0
+        ? await POST('/titulaciones/estadisticas/valores-batch', { queries })
+        : [];
 
       // Build lookup: key = `tanque|paramId|rangeLabel`
       const lookup = {};
-      results.forEach(r => { lookup[`${r.tanque}|${r.paramId}|${r.range}`] = r.data; });
+      queryMap.forEach((m, i) => { lookup[`${m.tanque}|${m.paramId}|${m.range}`] = batchResults[i] || null; });
 
       // Build table
       let html = `<table style="width:100%;border-collapse:collapse;font-size:13px">
