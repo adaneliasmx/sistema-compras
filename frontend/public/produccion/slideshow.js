@@ -1129,7 +1129,7 @@
         showAlertaMant(abiertas);
       }
     } catch(e) {}
-    setInterval(pollUrgencias, 30 * 1000);
+    setInterval(pollUrgencias, 120 * 1000);
   }
 
   function startPollUrgencias() {
