@@ -13,7 +13,9 @@ if (process.env.DATABASE_URL) {
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
-    max: 3
+    max: 3,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
   });
   pool.on('error', err => console.error('[db] Pool error (idle client):', err.message));
 }
@@ -145,7 +147,11 @@ function write(data) {
     _writeQueue = _writeQueue.then(() => {
       const snapshot = JSON.stringify(data);
       return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
-        .catch(err => console.error('[db] Error persistiendo en PostgreSQL:', err.message));
+        .catch(err => {
+          console.error('[db] Error persistiendo, reintentando:', err.message);
+          return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
+            .catch(err2 => console.error('[db] Reintento fallido:', err2.message));
+        });
     });
   } else {
     try {

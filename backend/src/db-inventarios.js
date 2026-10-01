@@ -11,7 +11,9 @@ if (process.env.DATABASE_URL) {
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
-    max: 3
+    max: 3,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
   });
   pool.on('error', err => console.error('[db-inventarios] Pool error (idle client):', err.message));
 }
@@ -77,7 +79,11 @@ function write(data) {
     const snapshot = JSON.stringify(data);
     _writeQueue = _writeQueue.then(() =>
       pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
-        .catch(err => console.error('[db-inventarios] Error PostgreSQL:', err.message))
+        .catch(err => {
+          console.error('[db-inventarios] Error persistiendo, reintentando:', err.message);
+          return pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
+            .catch(err2 => console.error('[db-inventarios] Reintento fallido:', err2.message));
+        })
     );
   } else {
     try { fs.writeFileSync(dbPath, JSON.stringify(data, null, 2)); }

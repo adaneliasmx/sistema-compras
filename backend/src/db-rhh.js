@@ -20,7 +20,9 @@ if (process.env.DATABASE_URL) {
     ssl: { rejectUnauthorized: false },
     connectionTimeoutMillis: 10000,
     idleTimeoutMillis: 30000,
-    max: 3
+    max: 3,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
   });
   pool.on('error', err => console.error('[db-rhh] Pool error (idle client):', err.message));
 }
@@ -174,7 +176,13 @@ function read() {
 
 async function persistSnapshot(snapshot) {
   if (pool) {
-    await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [JSON.stringify(snapshot)]);
+    const json = JSON.stringify(snapshot);
+    try {
+      await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
+    } catch (err) {
+      console.error('[db-rhh] Error persistiendo, reintentando:', err.message);
+      await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
+    }
   } else {
     fs.writeFileSync(dbPath, JSON.stringify(snapshot, null, 2));
   }
