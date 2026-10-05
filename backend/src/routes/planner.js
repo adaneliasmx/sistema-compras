@@ -193,11 +193,20 @@ router.get('/actividades', (req, res) => {
     }
   }
 
-  const { depto, estatus, urgencia, responsable, buscar, desde, hasta } = req.query;
+  const { depto, estatus, urgencia, responsable, buscar, desde, hasta, mis, creadas_por } = req.query;
   if (depto) list = list.filter(a => a.departamento === depto);
   if (estatus) list = list.filter(a => a.estatus === estatus);
   if (urgencia) list = list.filter(a => a.urgencia === urgencia);
   if (responsable) list = list.filter(a => a.responsable_id === Number(responsable));
+  // "Mis tareas": tareas donde soy responsable O tengo sub-actividades asignadas
+  if (mis) {
+    const uid = Number(mis);
+    list = list.filter(a =>
+      a.responsable_id === uid ||
+      (a.sub_actividades || []).some(s => s.responsable_id === uid)
+    );
+  }
+  if (creadas_por) list = list.filter(a => a.creado_por === Number(creadas_por));
   if (desde) list = list.filter(a => (a.fecha_creacion || '') >= desde);
   if (hasta) list = list.filter(a => (a.fecha_creacion || '') <= hasta);
   if (buscar) {
@@ -231,9 +240,14 @@ router.get('/actividades', (req, res) => {
     fecha_creacion: a.fecha_creacion,
     fecha_inicio: a.fecha_inicio,
     fecha_fin: a.fecha_fin,
+    creado_por: a.creado_por,
     correlacion_daily: a.correlacion_daily || null,
     correlacion_compras: a.correlacion_compras || null,
+    origen_formulario: a.origen_formulario || null,
+    colaboradores: a.colaboradores || [],
+    comentarios_count: (a.comentarios || []).length,
     sub_count: (a.sub_actividades || []).length,
+    sub_responsables: (a.sub_actividades || []).filter(s => s.responsable_id).map(s => ({ id: s.responsable_id, nombre: s.responsable_nombre, sub_id: s.id })),
     traza_count: (a.trazabilidad || []).length
   })));
 });
@@ -282,9 +296,20 @@ router.post('/actividades', (req, res) => {
     creado_por_nombre: req.user.full_name,
     fecha_creacion: nowMxDate(),
     hora_creacion: nowMxTime(),
+    colaboradores: [],
+    comentarios: [],
     sub_actividades: [],
     trazabilidad: []
   };
+
+  // Colaboradores (array de user IDs)
+  if (Array.isArray(body.colaboradores)) {
+    const compUsers = comprasDb.users || [];
+    actividad.colaboradores = body.colaboradores.slice(0, 10).map(uid => {
+      const u = compUsers.find(x => x.id === Number(uid));
+      return u ? { id: u.id, nombre: u.full_name } : null;
+    }).filter(Boolean);
+  }
 
   addTraza(actividad, req.user.id, req.user.full_name, 'creada', 'Actividad creada');
 
@@ -362,6 +387,15 @@ router.patch('/actividades/:id', (req, res) => {
   if (body.departamento && body.departamento !== act.departamento && DEPARTAMENTOS.find(d => d.id === body.departamento)) {
     cambios.push(`Departamento: ${act.departamento} -> ${body.departamento}`);
     act.departamento = body.departamento;
+  }
+  if (Array.isArray(body.colaboradores)) {
+    const comprasDb = readCompras();
+    const compUsers = comprasDb.users || [];
+    act.colaboradores = body.colaboradores.slice(0, 10).map(uid => {
+      const u = compUsers.find(x => x.id === Number(uid));
+      return u ? { id: u.id, nombre: u.full_name } : null;
+    }).filter(Boolean);
+    cambios.push(`Colaboradores: ${act.colaboradores.map(c => c.nombre).join(', ') || 'ninguno'}`);
   }
 
   if (cambios.length > 0) {
@@ -617,6 +651,30 @@ router.delete('/actividades/:id/sub/:subId', (req, res) => {
   addTraza(act, req.user.id, req.user.full_name, 'sub_eliminada', `${removed.id}: ${removed.nombre}`);
   write(db);
   res.json({ ok: true });
+});
+
+// ── COMENTARIOS EN ACTIVIDAD PRINCIPAL ──────────────────────────────────────
+router.post('/actividades/:id/comentario', (req, res) => {
+  const { texto } = safeBody(req.body);
+  if (!texto) return res.status(400).json({ error: 'texto es requerido' });
+
+  const db = read();
+  const act = (db.actividades || []).find(a => a.id === req.params.id);
+  if (!act) return res.status(404).json({ error: 'Actividad no encontrada' });
+
+  act.comentarios = act.comentarios || [];
+  const com = {
+    id: act.comentarios.length + 1,
+    fecha: nowMxDate(),
+    hora: nowMxTime(),
+    usuario_id: req.user.id,
+    usuario_nombre: req.user.full_name,
+    texto
+  };
+  act.comentarios.push(com);
+  addTraza(act, req.user.id, req.user.full_name, 'comentario', `"${texto.slice(0, 60)}"`);
+  write(db);
+  res.status(201).json(com);
 });
 
 // ── COMENTARIOS EN SUB-ACTIVIDADES ──────────────────────────────────────────
@@ -1260,15 +1318,21 @@ router.get('/integracion/vales/cpk', (req, res) => {
   const PESO_FOSFATO_IDS = [85, 92, 52];
   const cpkParams = [];
 
-  // Semana en curso (lun-dom) — misma ventana que el pizarron de vales
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-  const dayW = now.getDay();
-  const diffMon = dayW === 0 ? -6 : 1 - dayW;
-  const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
-  const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-  const fmtD = d => d.toISOString().slice(0, 10);
-  const semIni = fmtD(mon);
-  const semFin = fmtD(sun);
+  // Rango de fechas: si se proporcionan desde/hasta usar esos, sino semana en curso
+  let semIni, semFin;
+  if (req.query.desde && req.query.hasta) {
+    semIni = req.query.desde;
+    semFin = req.query.hasta;
+  } else {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const dayW = now.getDay();
+    const diffMon = dayW === 0 ? -6 : 1 - dayW;
+    const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
+    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+    const fmtD = d => d.toISOString().slice(0, 10);
+    semIni = fmtD(mon);
+    semFin = fmtD(sun);
+  }
 
   // Filtrar headers de la semana (excluir paro_linea)
   const weekHeaders = headers.filter(h => h.fecha >= semIni && h.fecha <= semFin && h.estado !== 'paro_linea');
@@ -1529,6 +1593,92 @@ router.get('/dashboard/:depto', (req, res) => {
       recientes: recientes.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, estatus: a.estatus, fecha_creacion: a.fecha_creacion }))
     },
     tendencia
+  });
+});
+
+// ── DASHBOARD SEMANAL — datos para gráficas por departamento ────────────────
+router.get('/dashboard/:depto/semanal', (req, res) => {
+  const { depto } = req.params;
+  // Determinar semana: lunes = si hoy es lunes usar semana anterior, sino semana actual
+  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+  const dayW = now.getDay(); // 0=dom, 1=lun...
+  // Lunes: mostrar semana anterior; Mar-Sáb: semana actual; Dom: semana que termina
+  const diffMon = dayW === 0 ? -6 : (dayW === 1 ? -7 : 1 - dayW);
+  const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
+  const fmtD = d => d.toISOString().slice(0, 10);
+  const weekStart = fmtD(mon);
+  const weekDays = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(mon); d.setDate(mon.getDate() + i);
+    weekDays.push(fmtD(d));
+  }
+  const weekEnd = weekDays[6];
+
+  const db = read();
+  const acts = (db.actividades || []).filter(a => a.departamento === depto);
+  const dailyRegs = db.daily_registros || [];
+  const forms = DAILY_FORMS[depto] || [];
+
+  // Daily compliance por dia
+  const dailyCompliance = weekDays.map(d => {
+    const regs = dailyRegs.filter(r => r.departamento === depto && r.fecha === d);
+    return { fecha: d, llenados: regs.length, total: forms.length };
+  });
+
+  // Actividades creadas/cerradas por dia
+  const actTrend = weekDays.map(d => ({
+    fecha: d,
+    creadas: acts.filter(a => a.fecha_creacion === d).length,
+    cerradas: acts.filter(a => a.fecha_fin === d).length
+  }));
+
+  // Datos de integración según departamento
+  let integracion = {};
+  try {
+    if (depto === 'produccion') {
+      const pdb = readProd();
+      const parosWeek = (pdb.paros || []).concat(pdb.paros_baker || [], pdb.paros_l1 || [])
+        .filter(p => p.fecha_inicio >= weekStart && p.fecha_inicio <= weekEnd);
+      integracion.paros_por_dia = weekDays.map(d => ({
+        fecha: d,
+        count: parosWeek.filter(p => p.fecha_inicio === d).length,
+        min_total: parosWeek.filter(p => p.fecha_inicio === d).reduce((s, p) => s + (p.duracion_min || 0), 0)
+      }));
+    }
+    if (depto === 'mantenimiento') {
+      const mdb = readMant();
+      const otsWeek = (mdb.ordenes_trabajo || []).filter(o => o.fecha_creacion >= weekStart && o.fecha_creacion <= weekEnd);
+      integracion.ots_por_dia = weekDays.map(d => ({
+        fecha: d,
+        creadas: otsWeek.filter(o => o.fecha_creacion === d).length,
+        cerradas: otsWeek.filter(o => o.fecha_cierre === d).length
+      }));
+    }
+    if (depto === 'compras') {
+      const cdb = readCompras();
+      const reqsWeek = (cdb.requisitions || []).filter(r => r.created_at && r.created_at.slice(0, 10) >= weekStart && r.created_at.slice(0, 10) <= weekEnd);
+      integracion.reqs_por_dia = weekDays.map(d => ({
+        fecha: d,
+        creadas: reqsWeek.filter(r => r.created_at && r.created_at.slice(0, 10) === d).length
+      }));
+    }
+    if (depto === 'calidad') {
+      const vdb = readVales();
+      const titsWeek = (vdb.titulaciones_header || []).filter(h => h.fecha >= weekStart && h.fecha <= weekEnd);
+      integracion.titulaciones_por_dia = weekDays.map(d => ({
+        fecha: d,
+        count: titsWeek.filter(h => h.fecha === d).length,
+        fuera: titsWeek.filter(h => h.fecha === d && h.estado === 'fuera_de_rango').length
+      }));
+    }
+  } catch (_) { /* integración no critica */ }
+
+  res.json({
+    depto,
+    semana: { inicio: weekStart, fin: weekEnd, dias: weekDays },
+    daily_compliance: dailyCompliance,
+    actividades_trend: actTrend,
+    integracion
   });
 });
 

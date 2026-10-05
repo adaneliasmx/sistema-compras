@@ -143,6 +143,7 @@ let currentUser = null;
 let _currentView = 'tareas';
 let _currentDepto = '';
 let _actividadesCache = [];
+let _tareasFilterMode = 'todas'; // 'todas' | 'mis' | 'creadas'
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
@@ -305,9 +306,20 @@ function navigateTo(view) {
 
 // ── VISTA: Tareas del STAFF ──────────────────────────────────────────────────
 
+function setTareasFilter(mode) {
+  _tareasFilterMode = mode;
+  document.querySelectorAll('.quick-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  cargarActividades();
+}
+
 async function renderTareas() {
   const m = document.getElementById('mainContent');
   m.innerHTML = `
+    <div class="quick-tabs tabs" style="margin-bottom:0;border-bottom:none;padding:0 0 8px">
+      <div class="tab ${_tareasFilterMode === 'todas' ? 'active' : ''}" data-mode="todas" onclick="setTareasFilter('todas')">Todas</div>
+      <div class="tab ${_tareasFilterMode === 'mis' ? 'active' : ''}" data-mode="mis" onclick="setTareasFilter('mis')">Mis tareas</div>
+      <div class="tab ${_tareasFilterMode === 'creadas' ? 'active' : ''}" data-mode="creadas" onclick="setTareasFilter('creadas')">Creadas por mi</div>
+    </div>
     <div class="filters">
       <div><label>Departamento</label>
         <select id="fDepto" onchange="cargarActividades()">
@@ -369,6 +381,8 @@ async function cargarActividades() {
   if (estatus) params.set('estatus', estatus);
   if (urgencia) params.set('urgencia', urgencia);
   if (buscar) params.set('buscar', buscar);
+  if (_tareasFilterMode === 'mis' && currentUser) params.set('mis', currentUser.usuario_id);
+  if (_tareasFilterMode === 'creadas' && currentUser) params.set('creadas_por', currentUser.usuario_id);
 
   const data = await apiFetch('/api/planner/actividades?' + params.toString());
   if (!data) return;
@@ -398,24 +412,34 @@ async function cargarActividades() {
     return;
   }
 
+  const showRol = _tareasFilterMode === 'mis';
   tabla.innerHTML = `
     <table>
       <thead><tr>
-        <th>ID</th><th>Actividad</th><th>Responsable</th><th>Depto</th><th>Compromiso</th><th>Urgencia</th><th>Estatus</th><th>Avance</th><th></th>
+        <th>ID</th><th>Actividad</th><th>Responsable</th><th>Depto</th><th>Compromiso</th><th>Urgencia</th><th>Estatus</th><th>Avance</th>${showRol ? '<th>Rol</th>' : ''}<th></th>
       </tr></thead>
       <tbody>
         ${data.map(a => {
           const deptoName = (DEPTOS.find(d => d.id === a.departamento) || {}).nombre || a.departamento;
           const dailyTag = a.correlacion_daily ? `<br><span style="font-size:10px;color:var(--accent)">[Daily: ${a.correlacion_daily.departamento}]</span>` : '';
+          let rolTag = '';
+          if (showRol && currentUser) {
+            if (a.responsable_id === currentUser.usuario_id) rolTag = '<span style="font-size:11px;color:var(--primary);font-weight:600">Responsable</span>';
+            else {
+              const mySub = (a.sub_responsables || []).find(s => s.id === currentUser.usuario_id);
+              rolTag = mySub ? '<span style="font-size:11px;color:var(--accent)">Sub-tarea</span>' : '';
+            }
+          }
           return `<tr>
             <td style="font-family:monospace;font-size:12px;font-weight:700;color:var(--primary)">${esc(a.id)}</td>
             <td><b>${esc(a.titulo)}</b>${dailyTag}</td>
-            <td>${esc(a.responsable_nombre)}</td>
+            <td>${esc(a.responsable_nombre)}${(a.colaboradores||[]).length ? ' <span style="font-size:10px;background:var(--accent);color:#fff;padding:1px 5px;border-radius:8px" title="' + (a.colaboradores||[]).map(c=>c.nombre).join(', ') + '">+' + a.colaboradores.length + '</span>' : ''}</td>
             <td style="font-size:12px">${esc(deptoName)}</td>
             <td style="font-size:12px;white-space:nowrap">${a.fecha_compromiso || '<span style="color:var(--muted)">—</span>'}</td>
             <td><span class="badge ${a.urgencia}">${a.urgencia}</span></td>
             <td><span class="badge ${a.estatus}">${a.estatus.replace('_', ' ')}</span></td>
             <td style="text-align:center">${a.avance}%</td>
+            ${showRol ? '<td>' + rolTag + '</td>' : ''}
             <td style="white-space:nowrap">
               <button class="btn btn-primary btn-sm" onclick="verDetalle('${a.id}')">Detalle</button>
             </td>
@@ -481,6 +505,12 @@ async function openNewActModal(presets) {
               </select>
             </div>
           </div>
+          <div class="form-group">
+            <label>Colaboradores <span style="color:var(--muted);font-weight:normal">(opcional, Ctrl+click)</span></label>
+            <select id="naColabs" multiple size="4" style="font-size:12px">
+              ${_staffDisponibles.map(s => `<option value="${s.id}">${esc(s.nombre)}</option>`).join('')}
+            </select>
+          </div>
           <div id="naErr" style="color:var(--red);font-size:12px;min-height:16px;margin-top:4px"></div>
         </div>
         <div class="modal-footer">
@@ -507,9 +537,11 @@ async function saveNewAct(sendEmail) {
   }
 
   try {
+    const colabSel = document.getElementById('naColabs');
+    const colaboradores = colabSel ? Array.from(colabSel.selectedOptions).map(o => Number(o.value)) : [];
     const act = await apiFetch('/api/planner/actividades', {
       method: 'POST',
-      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, correlacion_daily: window._newActPresets?.correlacion_daily || null })
+      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, colaboradores, correlacion_daily: window._newActPresets?.correlacion_daily || null })
     });
     if (!act) return;
 
@@ -601,6 +633,14 @@ async function verDetalle(actId) {
           ${act.correlacion_daily ? `<div style="background:#eaf2f8;padding:8px 14px;border-radius:6px;font-size:12px;margin-bottom:14px;color:var(--primary)"><b>Correlacion Daily:</b> ${esc(act.correlacion_daily.departamento)} > ${esc(act.correlacion_daily.formulario)} > ${act.correlacion_daily.fecha}</div>` : ''}
           ${act.correlacion_compras ? `<div style="background:#fef9e7;padding:8px 14px;border-radius:6px;font-size:12px;margin-bottom:14px;color:#b7770d"><b>Vinculado a:</b> ${esc(act.correlacion_compras.tipo)} ${esc(act.correlacion_compras.numero || '')} — ${esc(act.correlacion_compras.item_descripcion || '')}</div>` : ''}
 
+          <!-- Colaboradores -->
+          <div class="form-group" style="margin-bottom:14px">
+            <label>Colaboradores <span style="color:var(--muted);font-weight:normal">(Ctrl+click para seleccionar)</span></label>
+            <select id="deColabs" multiple size="3" style="font-size:12px;width:100%;border:1.5px solid var(--line);border-radius:6px">
+              ${_staffDisponibles.map(u => `<option value="${u.id}" ${(act.colaboradores||[]).some(c => c.id === u.id) ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+            </select>
+          </div>
+
           <!-- Sub-actividades -->
           <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
             <h4 style="font-size:14px;color:var(--primary)">Sub-actividades (${subs.length})</h4>
@@ -625,6 +665,21 @@ async function verDetalle(actId) {
               `).join('')}
             </div>
           `}
+
+          <!-- Comentarios de actividad -->
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:18px 0 10px">
+            <h4 style="font-size:14px;color:var(--primary)">Comentarios (${(act.comentarios || []).length})</h4>
+          </div>
+          ${(act.comentarios || []).length > 0 ? `
+            <div style="max-height:160px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px">
+              ${act.comentarios.map(c => `<div style="font-size:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${esc(c.texto)}</div>`).join('')}
+            </div>
+          ` : '<div class="empty" style="margin-bottom:10px">Sin comentarios</div>'}
+          <div style="display:flex;gap:8px;margin-bottom:18px">
+            <input type="text" id="deComentario" placeholder="Escribe un comentario..." style="flex:1;padding:6px 10px;font-size:13px;border:1.5px solid var(--line);border-radius:6px" onkeydown="if(event.key==='Enter'){addActComment('${act.id}')}">
+            <button class="btn btn-accent btn-sm" onclick="addActComment('${act.id}')">Enviar</button>
+            <button class="btn btn-outline btn-sm" onclick="openCommentModal('${act.id}','')" title="Comentario con @mención">@</button>
+          </div>
 
           <!-- Trazabilidad -->
           <h4 style="font-size:14px;color:var(--primary);margin:18px 0 10px">Trazabilidad (${traza.length})</h4>
@@ -660,13 +715,15 @@ async function guardarDetalle(actId) {
   const fecha_compromiso = document.getElementById('deFecha').value || null;
   const fecha_inicio = document.getElementById('deFechaInicio').value || null;
   const fecha_fin = document.getElementById('deFechaFin').value || null;
+  const colabSel = document.getElementById('deColabs');
+  const colaboradores = colabSel ? Array.from(colabSel.selectedOptions).map(o => Number(o.value)) : undefined;
 
   if (!titulo) { alert('El titulo no puede estar vacio'); return; }
 
   try {
     const r = await apiFetch('/api/planner/actividades/' + actId, {
       method: 'PATCH',
-      body: JSON.stringify({ titulo, estatus, urgencia, avance, fecha_compromiso, fecha_inicio, fecha_fin })
+      body: JSON.stringify({ titulo, estatus, urgencia, avance, fecha_compromiso, fecha_inicio, fecha_fin, colaboradores })
     });
     if (!r) return;
 
@@ -793,6 +850,13 @@ async function openEditSubModal(actId, subId) {
             </div>
             <div class="form-group"><label>Fecha compromiso</label><input type="date" id="esFecha" value="${sub.fecha_compromiso || ''}"></div>
           </div>
+          <div class="form-group">
+            <label>Responsable</label>
+            <select id="esResponsable">
+              <option value="">— Sin asignar —</option>
+              ${_staffDisponibles.map(u => `<option value="${u.id}" ${sub.responsable_id === u.id ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+            </select>
+          </div>
           <div class="form-group"><label>Evidencias (URL OneDrive)</label><input type="text" id="esEvid" value="${esc(sub.evidencias || '')}" placeholder="https://onedrive.com/..."></div>
           ${(sub.comentarios || []).length > 0 ? `
             <div style="margin-top:10px">
@@ -823,7 +887,8 @@ async function saveEditSub(actId, subId) {
         descripcion: document.getElementById('esDesc').value.trim(),
         estatus: document.getElementById('esEstatus').value,
         fecha_compromiso: document.getElementById('esFecha').value || null,
-        evidencias: document.getElementById('esEvid').value.trim()
+        evidencias: document.getElementById('esEvid').value.trim(),
+        responsable_id: document.getElementById('esResponsable').value || undefined
       })
     });
     closeModal('editSubModal');
@@ -844,17 +909,95 @@ async function deleteSub(actId, subId) {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
-async function addSubComment(actId, subId) {
-  const texto = prompt('Agregar comentario:');
-  if (!texto || !texto.trim()) return;
+async function addActComment(actId) {
+  const el = document.getElementById('deComentario');
+  const texto = el ? el.value.trim() : '';
+  if (!texto) return;
   try {
-    await apiFetch(`/api/planner/actividades/${actId}/sub/${subId}/comentario`, {
+    await apiFetch(`/api/planner/actividades/${actId}/comentario`, {
       method: 'POST',
-      body: JSON.stringify({ texto: texto.trim() })
+      body: JSON.stringify({ texto })
     });
     closeModal('detalleModal');
     verDetalle(actId);
   } catch (e) { alert('Error: ' + e.message); }
+}
+
+function openCommentModal(actId, subId) {
+  if (!_staffDisponibles.length) {
+    apiFetch('/api/planner/staff/disponibles').then(s => { _staffDisponibles = s || []; });
+  }
+  const target = subId ? `Sub-actividad ${subId}` : `Actividad ${actId}`;
+  const html = `
+    <div class="modal-overlay open" id="commentModal" style="z-index:1200">
+      <div class="modal-box" style="max-width:460px">
+        <div class="modal-header">
+          <h3>Comentario — ${esc(target)}</h3>
+          <button class="modal-close" onclick="closeModal('commentModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group" style="position:relative">
+            <label>Mensaje <span style="color:var(--muted);font-weight:normal">(escribe @ para mencionar)</span></label>
+            <textarea id="cmTexto" rows="3" style="width:100%" oninput="onCommentInput(this)"></textarea>
+            <div id="cmMentionList" style="display:none;position:absolute;bottom:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:6px;box-shadow:0 2px 8px rgba(0,0,0,.15);z-index:10"></div>
+          </div>
+          <div id="cmErr" style="color:var(--red);font-size:12px;min-height:16px"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="closeModal('commentModal')">Cancelar</button>
+          <button class="btn btn-primary" onclick="submitComment('${actId}','${subId || ''}')">Enviar</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  setTimeout(() => document.getElementById('cmTexto')?.focus(), 100);
+}
+
+let _mentionQuery = '';
+function onCommentInput(ta) {
+  const val = ta.value;
+  const cursor = ta.selectionStart;
+  const before = val.slice(0, cursor);
+  const atMatch = before.match(/@([a-zA-ZáéíóúñÁÉÍÓÚÑ ]*)$/);
+  const listEl = document.getElementById('cmMentionList');
+  if (!atMatch) { listEl.style.display = 'none'; return; }
+  _mentionQuery = atMatch[1].toLowerCase();
+  const filtered = _staffDisponibles.filter(u => u.nombre.toLowerCase().includes(_mentionQuery)).slice(0, 8);
+  if (!filtered.length) { listEl.style.display = 'none'; return; }
+  listEl.style.display = 'block';
+  listEl.innerHTML = filtered.map(u => `<div style="padding:6px 10px;cursor:pointer;font-size:13px;border-bottom:1px solid var(--line)" onmousedown="insertMention(${u.id},'${esc(u.nombre)}')">${esc(u.nombre)}</div>`).join('');
+}
+
+function insertMention(userId, name) {
+  const ta = document.getElementById('cmTexto');
+  if (!ta) return;
+  const cursor = ta.selectionStart;
+  const before = ta.value.slice(0, cursor);
+  const after = ta.value.slice(cursor);
+  const atIdx = before.lastIndexOf('@');
+  ta.value = before.slice(0, atIdx) + `@[${name}](${userId}) ` + after;
+  document.getElementById('cmMentionList').style.display = 'none';
+  ta.focus();
+  const newPos = atIdx + `@[${name}](${userId}) `.length;
+  ta.setSelectionRange(newPos, newPos);
+}
+
+async function submitComment(actId, subId) {
+  const texto = document.getElementById('cmTexto')?.value?.trim();
+  if (!texto) { document.getElementById('cmErr').textContent = 'Escribe un comentario'; return; }
+  const url = subId
+    ? `/api/planner/actividades/${actId}/sub/${subId}/comentario`
+    : `/api/planner/actividades/${actId}/comentario`;
+  try {
+    await apiFetch(url, { method: 'POST', body: JSON.stringify({ texto }) });
+    closeModal('commentModal');
+    closeModal('detalleModal');
+    verDetalle(actId);
+  } catch (e) { document.getElementById('cmErr').textContent = e.message; }
+}
+
+function addSubComment(actId, subId) {
+  openCommentModal(actId, subId);
 }
 
 // ── DAILY — Formularios por departamento ─────────────────────────────────────
@@ -2022,15 +2165,16 @@ async function renderMateriasCriticasForm(container, datos) {
     </div>
     ${items.length === 0 ? '<div class="empty">Todos los inventarios dentro de rango</div>' : `
       <table style="font-size:12px">
-        <thead><tr><th>Item</th><th>Tipo</th><th>Stock</th><th>Min</th><th>Max</th><th>Estado</th></tr></thead>
+        <thead><tr><th>Item</th><th>Tipo</th><th>Stock</th><th>Min</th><th>Max</th><th>Estado</th><th></th></tr></thead>
         <tbody>
-          ${items.slice(0, 40).map(i => `<tr>
+          ${items.slice(0, 40).map((i, idx) => `<tr>
             <td><b>${esc(i.nombre)}</b></td>
             <td style="font-size:11px">${typeLabels[i.inv_type] || i.inv_type}</td>
             <td style="font-weight:700;color:${i.fuera_min ? 'var(--red)' : i.fuera_max ? 'var(--orange)' : 'var(--muted)'}">${i.stock !== null ? i.stock + ' ' + i.unidad : '—'}</td>
             <td>${i.min != null ? i.min : '—'}</td>
             <td>${i.max != null ? i.max : '—'}</td>
             <td>${i.fuera_min ? '<span class="badge atrasada">Bajo min</span>' : i.fuera_max ? '<span class="badge en_proceso">Sobre max</span>' : '<span class="badge sin_empezar">Sin conteo</span>'}</td>
+            <td><button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px" onclick="openNewActModal({titulo:'Reabastecer: ${esc(i.nombre).replace(/'/g,"\\'")}${i.fuera_min ? ' (deficit: ' + ((i.min||0) - (i.stock||0)).toFixed(1) + ' ' + esc(i.unidad||'') + ')' : ''}',departamento:'compras',urgencia:'${i.fuera_min ? 'alta' : 'media'}',correlacion_daily:{departamento:'compras',formulario:'materias_criticas',fecha:'${_dailyDate}'}})">+</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -2071,15 +2215,16 @@ async function renderOrdenesCompraForm(container, datos) {
             </div>
             ${g.items.length > 0 ? `
               <table style="font-size:11px">
-                <thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th></tr></thead>
+                <thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th><th></th></tr></thead>
                 <tbody>
                   ${g.items.slice(0, 10).map(i => `<tr>
                     <td style="max-width:200px">${esc((i.descripcion || '').slice(0, 50))}</td>
                     <td>${i.cantidad} ${i.unidad}</td>
                     <td style="font-family:monospace;font-size:10px">${i.po_folio || '—'}</td>
                     <td style="font-size:10px">${esc((i.proveedor || '').slice(0, 25))}</td>
+                    <td><button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px" onclick="openNewActModal({titulo:'Seguimiento ${esc((i.po_folio||'PO').replace(/'/g,"\\\\'"))}: ${esc((i.descripcion||'').slice(0,40).replace(/'/g,"\\\\'"))}',departamento:'compras',urgencia:'media',correlacion_daily:{departamento:'compras',formulario:'ordenes_compra',fecha:'${_dailyDate}'}})">+</button></td>
                   </tr>`).join('')}
-                  ${g.items.length > 10 ? `<tr><td colspan="4" style="color:var(--muted);text-align:center">... y ${g.count - 10} mas</td></tr>` : ''}
+                  ${g.items.length > 10 ? `<tr><td colspan="5" style="color:var(--muted);text-align:center">... y ${g.count - 10} mas</td></tr>` : ''}
                 </tbody>
               </table>
             ` : ''}
@@ -2113,13 +2258,14 @@ async function renderInventariosCriticosForm(container, datos) {
     </div>
     ${soloFueraMin.length === 0 ? '<div class="empty">Ningun material critico bajo minimo</div>' : `
       <table style="font-size:12px">
-        <thead><tr><th>Material</th><th>Stock actual</th><th>Minimo</th><th>Deficit</th></tr></thead>
+        <thead><tr><th>Material</th><th>Stock actual</th><th>Minimo</th><th>Deficit</th><th></th></tr></thead>
         <tbody>
           ${soloFueraMin.map(i => `<tr>
             <td><b>${esc(i.nombre)}</b></td>
             <td style="color:var(--red);font-weight:700">${i.stock} ${i.unidad}</td>
             <td>${i.min} ${i.unidad}</td>
             <td style="font-weight:700;color:var(--red)">${(i.min - i.stock).toFixed(1)} ${i.unidad}</td>
+            <td><button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px" onclick="openNewActModal({titulo:'Reabastecer: ${esc(i.nombre).replace(/'/g,"\\'")} (deficit: ${(i.min - i.stock).toFixed(1)} ${esc(i.unidad||'')})',departamento:'compras',urgencia:'alta',correlacion_daily:{departamento:'compras',formulario:'inventarios_criticos',fecha:'${_dailyDate}'}})">+</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -2149,8 +2295,11 @@ function renderProcesosForm(formId, container) {
 async function renderCpkForm(container) {
   const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
   container.innerHTML = '<div class="spinner"></div>';
+  const cpkDesde = document.getElementById('cpk_desde')?.value || '';
+  const cpkHasta = document.getElementById('cpk_hasta')?.value || '';
+  const cpkQs = cpkDesde && cpkHasta ? `?desde=${cpkDesde}&hasta=${cpkHasta}` : '';
   const [cpkData, empData] = await Promise.all([
-    apiFetch('/api/planner/integracion/vales/cpk'),
+    apiFetch('/api/planner/integracion/vales/cpk' + cpkQs),
     apiFetch('/api/planner/integracion/empaque/cpk')
   ]);
   const tits = cpkData ? cpkData.titulaciones : {};
@@ -2169,9 +2318,15 @@ async function renderCpkForm(container) {
   }
 
   container.innerHTML = dailyFormWrap('CP / CPK — Titulaciones + Empaque', `
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
       <p style="font-size:12px;color:var(--muted);margin:0">Datos de Vales/Calidad + Flujo Materiales (Empaque)</p>
-      <button class="btn btn-outline btn-sm" onclick="renderCpkForm(document.getElementById('dailyFormContent'))">Recargar</button>
+      <div style="display:flex;align-items:center;gap:6px">
+        <label style="font-size:11px;color:var(--muted)">Desde</label>
+        <input type="date" id="cpk_desde" value="${cpkData?.semana?.ini || ''}" style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:4px">
+        <label style="font-size:11px;color:var(--muted)">Hasta</label>
+        <input type="date" id="cpk_hasta" value="${cpkData?.semana?.fin || ''}" style="font-size:11px;padding:3px 6px;border:1px solid var(--line);border-radius:4px">
+        <button class="btn btn-outline btn-sm" onclick="renderCpkForm(document.getElementById('dailyFormContent'))">Consultar</button>
+      </div>
     </div>
     <h4 style="margin:0 0 10px;font-size:14px;color:var(--primary)">Titulaciones por Proceso</h4>
     ${lineas.map(l => {
@@ -2483,9 +2638,26 @@ function renderOperacionesForm(formId, container) {
 // ── Daily: tipo "crear tarea" ────────────────────────────────────────────────
 
 async function renderTaskFormDaily(container, deptoId, formId, titulo) {
-  // Mostrar tareas vinculadas a este formulario + boton crear nueva
+  container.innerHTML = '<div class="spinner"></div>';
+  // Mostrar tareas vinculadas a este formulario + boton crear nueva + boton sin pendientes
   const acts = await apiFetch(`/api/planner/actividades?depto=${deptoId}`) || [];
-  const linked = acts.filter(a => a.correlacion_daily && a.correlacion_daily.formulario === formId);
+  const linked = acts.filter(a => (a.correlacion_daily && a.correlacion_daily.formulario === formId) || a.origen_formulario === formId);
+  const openLinked = linked.filter(a => !['cerrada', 'cancelada'].includes(a.estatus));
+  const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
+
+  const sinNovedadChecked = datos.sin_novedad;
+  const btnColor = openLinked.length > 0 ? 'var(--orange)' : 'var(--green)';
+  const btnBg = openLinked.length > 0 ? '#fef9e7' : '#d5f5e3';
+  const btnText = openLinked.length > 0
+    ? openLinked.length + ' actividad(es) pendiente(s) — Marcar como revisado'
+    : 'Sin pendientes hoy';
+  const btnIcon = sinNovedadChecked ? '&#10003;' : (openLinked.length > 0 ? '&#9888;' : '&#10003;');
+
+  _currentDailyGetData = () => ({
+    sin_novedad: true,
+    actividades_abiertas: openLinked.length,
+    comentarios: document.getElementById('df_task_comments')?.value?.trim() || ''
+  });
 
   container.innerHTML = `
     <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
@@ -2493,8 +2665,13 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
         <h4 style="font-size:14px;color:var(--primary)">${titulo}</h4>
         <button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:'${deptoId}',correlacion_daily:{departamento:'${deptoId}',formulario:'${formId}',fecha:'${_dailyDate}'}})">+ Crear actividad</button>
       </div>
-      ${linked.length === 0 ? '<div class="empty">No hay actividades vinculadas a este formulario. Crea una para dar seguimiento.</div>' : `
-        <table>
+      <div style="margin-bottom:14px">
+        <button onclick="saveTaskFormRevisado('${deptoId}','${formId}')" style="width:100%;padding:12px;border:2px solid ${btnColor};background:${btnBg};border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:${btnColor};transition:opacity .15s${sinNovedadChecked ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinNovedadChecked ? '.65' : '1'}'">
+          ${btnIcon} ${sinNovedadChecked ? 'Revisado' : btnText}
+        </button>
+      </div>
+      ${linked.length === 0 ? '<div class="empty" style="margin-bottom:14px">No hay actividades vinculadas a este formulario.</div>' : `
+        <table style="margin-bottom:14px">
           <thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Estatus</th><th>Urgencia</th><th></th></tr></thead>
           <tbody>
             ${linked.map(a => `<tr>
@@ -2508,7 +2685,36 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
           </tbody>
         </table>
       `}
+      <div class="form-group"><label>Comentarios</label><textarea id="df_task_comments" rows="2" placeholder="Notas adicionales...">${esc(datos.comentarios || '')}</textarea></div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
+        <button class="btn btn-outline btn-sm" onclick="viewDailyHistory()">Historial</button>
+        <button class="btn btn-primary" onclick="saveDailyForm()">Guardar</button>
+      </div>
     </div>`;
+}
+
+async function saveTaskFormRevisado(deptoId, formId) {
+  const comentarios = document.getElementById('df_task_comments')?.value?.trim() || '';
+  try {
+    await apiFetch('/api/planner/daily/' + deptoId + '/' + formId, {
+      method: 'POST',
+      body: JSON.stringify({ fecha: _dailyDate, datos: { sin_novedad: true, comentarios } })
+    });
+    selectDailyForm(deptoId, formId);
+    // Refresh tabs
+    const resumen = await apiFetch('/api/planner/daily/' + deptoId + '/resumen?fecha=' + _dailyDate);
+    if (resumen) {
+      _dailyResumen = resumen;
+      const tabs = document.querySelectorAll('#dailyTabs .tab');
+      tabs.forEach(t => {
+        const fid = t.dataset.form;
+        const info = resumen.formularios.find(x => x.id === fid);
+        const forms = getDailyForms(deptoId);
+        const fm = forms.find(f => f.id === fid);
+        if (info && fm) t.innerHTML = (info.llenado ? '&#x1F7E2;' : '&#x26AA;') + ' ' + fm.icon + ' ' + fm.nombre;
+      });
+    }
+  } catch (e) { alert('Error: ' + e.message); }
 }
 
 // ── Daily: helpers comunes ────────────────────────────────────────────────────
@@ -2516,13 +2722,21 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
 let _currentDailyGetData = null;
 
 function dailyFormWrap(titulo, fieldsHtml, getDataFn) {
-  _currentDailyGetData = getDataFn;
+  // Wrap getDataFn to include the comments field
+  const origGetData = getDataFn;
+  _currentDailyGetData = () => {
+    const d = origGetData();
+    d.comentarios = document.getElementById('df_wrap_comments')?.value?.trim() || '';
+    return d;
+  };
   const info = _dailyRegistro ? `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ultimo registro: ${_dailyRegistro.fecha_llenado} ${_dailyRegistro.hora_llenado} por ${esc(_dailyRegistro.llenado_por_nombre)}</div>` : '';
+  const existingComments = (_dailyRegistro && _dailyRegistro.datos && _dailyRegistro.datos.comentarios) || '';
   return `
     <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
       <h4 style="font-size:14px;color:var(--primary);margin-bottom:4px">${titulo}</h4>
       ${info}
       ${fieldsHtml}
+      <div class="form-group" style="margin-top:14px"><label>Comentarios</label><textarea id="df_wrap_comments" rows="2" placeholder="Notas adicionales...">${esc(existingComments)}</textarea></div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
         <div id="dailySaveMsg" style="font-size:12px;min-height:16px"></div>
         <div style="display:flex;gap:8px">
@@ -2585,6 +2799,33 @@ async function saveDailyForm() {
   }
 }
 
+function formatDailyDatos(datos) {
+  if (!datos || typeof datos !== 'object') return '<span style="color:var(--muted)">—</span>';
+  const lines = [];
+  for (const [k, v] of Object.entries(datos)) {
+    const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+    if (v === null || v === undefined || v === '') continue;
+    if (Array.isArray(v)) {
+      if (!v.length) continue;
+      if (typeof v[0] === 'object') {
+        lines.push(`<b>${esc(label)}</b>: ${v.length} registro(s)`);
+        v.forEach((item, i) => {
+          const vals = Object.entries(item).filter(([,val]) => val !== null && val !== undefined && val !== '').map(([ik, iv]) => `${esc(ik.replace(/_/g,' '))}: ${esc(String(iv))}`).join(', ');
+          if (vals) lines.push(`&nbsp;&nbsp;${i+1}. ${vals}`);
+        });
+      } else {
+        lines.push(`<b>${esc(label)}</b>: ${v.map(x => esc(String(x))).join(', ')}`);
+      }
+    } else if (typeof v === 'object') {
+      const vals = Object.entries(v).filter(([,val]) => val !== null && val !== undefined && val !== '').map(([ik, iv]) => `${esc(ik.replace(/_/g,' '))}: ${esc(String(iv))}`).join(', ');
+      if (vals) lines.push(`<b>${esc(label)}</b>: ${vals}`);
+    } else {
+      lines.push(`<b>${esc(label)}</b>: ${esc(String(v))}`);
+    }
+  }
+  return lines.length ? lines.join('<br>') : '<span style="color:var(--muted)">Sin datos</span>';
+}
+
 async function viewDailyHistory() {
   if (!_dailyDepto || !_dailyActiveForm) return;
   const hist = await apiFetch(`/api/planner/daily/${_dailyDepto}/${_dailyActiveForm}/historial?desde=&hasta=`);
@@ -2606,7 +2847,7 @@ async function viewDailyHistory() {
                 <td style="font-weight:600;white-space:nowrap">${r.fecha}</td>
                 <td>${esc(r.llenado_por_nombre)}</td>
                 <td style="white-space:nowrap">${r.hora_llenado || ''}</td>
-                <td style="font-size:11px;max-width:400px;word-break:break-all">${esc(JSON.stringify(r.datos || {}).slice(0, 200))}</td>
+                <td style="font-size:11px;max-width:500px">${formatDailyDatos(r.datos)}</td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -2909,10 +3150,126 @@ async function renderDashboard() {
           ${a.por_cerrar_semana > 0 ? `<div style="font-size:11px;color:var(--orange);margin-top:6px">${a.por_cerrar_semana} por cerrar esta semana</div>` : ''}
         </div>`;
       }).join('')}
+    </div>
+
+    <!-- Graficas semanales por departamento -->
+    <h3 style="color:var(--primary);margin:24px 0 14px">Resumen Semanal por Departamento</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="dashWeeklyGrid">
+      <div style="text-align:center;color:var(--muted);font-size:13px;padding:20px;grid-column:1/-1">Cargando datos semanales...</div>
     </div>`;
 
   // Render charts
   setTimeout(() => renderDashCharts(tend), 50);
+  // Load weekly charts
+  loadWeeklyCharts(deptos);
+}
+
+async function loadWeeklyCharts(deptos) {
+  const grid = document.getElementById('dashWeeklyGrid');
+  if (!grid) return;
+  const results = await Promise.all(deptos.map(d => apiFetch('/api/planner/dashboard/' + d.id + '/semanal')));
+  let html = '';
+  results.forEach((data, i) => {
+    if (!data) return;
+    const di = DEPTOS.find(x => x.id === deptos[i].id) || {};
+    const canvasId = 'weekChart_' + deptos[i].id;
+    const intCanvasId = 'weekIntChart_' + deptos[i].id;
+    const hasIntegracion = data.integracion && Object.keys(data.integracion).length > 0;
+    html += `
+      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
+        <h4 style="font-size:13px;color:var(--primary);margin-bottom:4px">${di.icon || ''} ${di.nombre || deptos[i].id}</h4>
+        <div style="font-size:10px;color:var(--muted);margin-bottom:10px">${data.semana.inicio} al ${data.semana.fin}</div>
+        <canvas id="${canvasId}" height="130"></canvas>
+        ${hasIntegracion ? `<canvas id="${intCanvasId}" height="100" style="margin-top:10px"></canvas>` : ''}
+      </div>`;
+  });
+  grid.innerHTML = html || '<div style="color:var(--muted);font-size:13px;padding:20px">Sin datos semanales</div>';
+  setTimeout(() => {
+    results.forEach((data, i) => {
+      if (!data) return;
+      renderWeeklyDeptoChart(deptos[i].id, data);
+    });
+  }, 50);
+}
+
+function renderWeeklyDeptoChart(deptoId, data) {
+  if (typeof Chart === 'undefined') return;
+  const labels = data.semana.dias.map(d => d.slice(5));
+
+  // Daily compliance + actividades
+  const ctx = document.getElementById('weekChart_' + deptoId);
+  if (ctx) {
+    const dailyPcts = data.daily_compliance.map(d => d.total > 0 ? Math.round(d.llenados / d.total * 100) : 0);
+    new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Creadas', data: data.actividades_trend.map(t => t.creadas), backgroundColor: 'rgba(41,128,185,.6)', borderRadius: 3, order: 2 },
+          { label: 'Cerradas', data: data.actividades_trend.map(t => t.cerradas), backgroundColor: 'rgba(39,174,96,.6)', borderRadius: 3, order: 2 },
+          { label: 'Daily %', data: dailyPcts, type: 'line', borderColor: 'rgba(142,68,173,.8)', backgroundColor: 'transparent', tension: .3, pointRadius: 3, yAxisID: 'pct', order: 1 }
+        ]
+      },
+      options: {
+        responsive: true,
+        plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } },
+        scales: {
+          y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } }, position: 'left' },
+          pct: { beginAtZero: true, max: 100, position: 'right', ticks: { callback: v => v + '%', font: { size: 10 } }, grid: { drawOnChartArea: false } },
+          x: { ticks: { font: { size: 10 } } }
+        }
+      }
+    });
+  }
+
+  // Integracion chart
+  const int = data.integracion;
+  const ctxInt = document.getElementById('weekIntChart_' + deptoId);
+  if (!ctxInt || !int) return;
+
+  if (int.paros_por_dia) {
+    new Chart(ctxInt, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Paros', data: int.paros_por_dia.map(d => d.count), backgroundColor: 'rgba(192,57,43,.6)', borderRadius: 3 },
+        { label: 'Min. paro', data: int.paros_por_dia.map(d => d.min_total), type: 'line', borderColor: 'rgba(192,57,43,.8)', backgroundColor: 'transparent', tension: .3, pointRadius: 3, yAxisID: 'y2' }
+      ]},
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: 'Paros de produccion', font: { size: 11 } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } }, y2: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false }, ticks: { font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }
+    });
+  }
+  if (int.ots_por_dia) {
+    new Chart(ctxInt, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'OTs creadas', data: int.ots_por_dia.map(d => d.creadas), backgroundColor: 'rgba(41,128,185,.6)', borderRadius: 3 },
+        { label: 'OTs cerradas', data: int.ots_por_dia.map(d => d.cerradas), backgroundColor: 'rgba(39,174,96,.6)', borderRadius: 3 }
+      ]},
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: 'Ordenes de trabajo', font: { size: 11 } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }
+    });
+  }
+  if (int.reqs_por_dia) {
+    new Chart(ctxInt, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Requisiciones', data: int.reqs_por_dia.map(d => d.creadas), backgroundColor: 'rgba(41,128,185,.6)', borderRadius: 3 }
+      ]},
+      options: { responsive: true, plugins: { legend: { display: false }, title: { display: true, text: 'Requisiciones creadas', font: { size: 11 } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }
+    });
+  }
+  if (int.titulaciones_por_dia) {
+    new Chart(ctxInt, {
+      type: 'bar',
+      data: { labels, datasets: [
+        { label: 'Titulaciones', data: int.titulaciones_por_dia.map(d => d.count), backgroundColor: 'rgba(41,128,185,.6)', borderRadius: 3 },
+        { label: 'Fuera rango', data: int.titulaciones_por_dia.map(d => d.fuera), backgroundColor: 'rgba(192,57,43,.6)', borderRadius: 3 }
+      ]},
+      options: { responsive: true, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } }, title: { display: true, text: 'Titulaciones calidad', font: { size: 11 } } },
+        scales: { y: { beginAtZero: true, ticks: { stepSize: 1, font: { size: 10 } } }, x: { ticks: { font: { size: 10 } } } } }
+    });
+  }
 }
 
 function renderDashCharts(tendencia) {
