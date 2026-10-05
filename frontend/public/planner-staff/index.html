@@ -3161,13 +3161,14 @@ async function renderDashboard() {
   // Render charts
   setTimeout(() => renderDashCharts(tend), 50);
   // Load weekly charts
-  loadWeeklyCharts(deptos);
+  loadWeeklyCharts(deptos).catch(() => {});
 }
 
 async function loadWeeklyCharts(deptos) {
   const grid = document.getElementById('dashWeeklyGrid');
   if (!grid) return;
-  const results = await Promise.all(deptos.map(d => apiFetch('/api/planner/dashboard/' + d.id + '/semanal')));
+  const settled = await Promise.allSettled(deptos.map(d => apiFetch('/api/planner/dashboard/' + d.id + '/semanal')));
+  const results = settled.map(r => r.status === 'fulfilled' ? r.value : null);
   let html = '';
   results.forEach((data, i) => {
     if (!data) return;
