@@ -8,6 +8,23 @@ function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
 
+// ── Helper: calcular bono con penalización / sin derecho ─────────────────────
+function calcBonoFinal(eval_days, dias_reclamos, dias_calidad, entry) {
+  if (entry && entry.sin_derecho) return 0;
+  if (!entry || !entry.penalizacion) {
+    return eval_days !== null
+      ? Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100)
+      : null;
+  }
+  const pen = entry.penalizacion;
+  const pR = (pen.pct_reclamos ?? 100) / 100;
+  const pC = (pen.pct_calidad ?? 100) / 100;
+  const pE = (pen.pct_evaluacion ?? 100) / 100;
+  const pG = (pen.pct_general ?? 100) / 100;
+  const sub = (dias_reclamos * pR) + (dias_calidad * pC) + ((eval_days || 0) * pE);
+  return Math.min(3, Math.round(sub * pG * 100) / 100);
+}
+
 // ── Backward-compat: max puntos por item ──────────────────────────────────────
 // Items nuevos usan ponderacion (1|2|3); items viejos usaban valor (alto|medio|bajo)
 const VALOR_PTS_LEGACY = { alto: 5, medio: 3, bajo: 1 };
@@ -974,9 +991,7 @@ router.get('/sessions/:id/vista-bono', rhhAuthRequired, rhhRequireRole('rh', 'ad
     const eval_days = result && result.total_points > 0
       ? Math.round((result.points_obtained / result.total_points) * 100) / 100
       : null;
-    const total_bono = eval_days !== null
-      ? Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100)
-      : null;
+    const total_bono = calcBonoFinal(eval_days, dias_reclamos, dias_calidad, entry);
     return {
       employee_id:      entry.employee_id,
       employee_number:  emp?.employee_number || '—',
@@ -990,6 +1005,8 @@ router.get('/sessions/:id/vista-bono', rhhAuthRequired, rhhRequireRole('rh', 'ad
       dias_calidad,
       total_bono,
       evaluated:        !!result,
+      penalizacion:     entry.penalizacion || null,
+      sin_derecho:      entry.sin_derecho  || null,
     };
   });
 
@@ -1017,9 +1034,12 @@ router.get('/sessions/:id/reporte-bono', rhhAuthRequired, rhhRequireRole('rh', '
     const eval_days = result && result.total_points > 0
       ? Math.round((result.points_obtained / result.total_points) * 100) / 100
       : null;
-    const total_bono = eval_days !== null
-      ? Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100)
-      : null;
+    const total_bono = calcBonoFinal(eval_days, dias_reclamos, dias_calidad, entry);
+    const pen = entry.penalizacion;
+    const sd  = entry.sin_derecho;
+    let statusPen = '';
+    if (sd) statusPen = `SIN DERECHO: ${sd.motivo}`;
+    else if (pen) statusPen = `Pen: R${pen.pct_reclamos}% C${pen.pct_calidad}% E${pen.pct_evaluacion}% G${pen.pct_general}%`;
     return {
       'No. Nómina':       emp?.employee_number || '—',
       'Nombre':           emp?.full_name       || '—',
@@ -1029,19 +1049,90 @@ router.get('/sessions/:id/reporte-bono', rhhAuthRequired, rhhRequireRole('rh', '
       'Días Reclamos':    dias_reclamos,
       'Días Calidad':     dias_calidad,
       'Días Bono Total':  total_bono           ?? '',
+      'Penalización':     statusPen,
+      'Comentario':       (sd && sd.comentario) || (pen && pen.comentario) || '',
     };
   });
   data.sort((a, b) => a['Nombre'].localeCompare(b['Nombre']));
 
   const wb = XLSX.utils.book_new();
   const ws = XLSX.utils.json_to_sheet(data);
-  ws['!cols'] = [12, 30, 25, 18, 16, 14, 14, 16].map(w => ({ wch: w }));
+  ws['!cols'] = [12, 30, 25, 18, 16, 14, 14, 16, 22, 30].map(w => ({ wch: w }));
   XLSX.utils.book_append_sheet(wb, ws, 'Bono Evaluación');
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   const name = `bono_eval_${(session.name || session.id).replace(/\s+/g, '_')}.xlsx`;
   res.setHeader('Content-Disposition', `attachment; filename="${name}"`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);
+});
+
+// PATCH /api/rhh/evaluations/sessions/:id/penalizacion — guardar penalización por empleado
+router.patch('/sessions/:id/penalizacion', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+  const { employee_id, pct_reclamos, pct_calidad, pct_evaluacion, pct_general, comentario } = req.body;
+  if (!employee_id) return res.status(400).json({ error: 'employee_id requerido' });
+  const entry = (session.entries || []).find(e => e.employee_id === Number(employee_id));
+  if (!entry) return res.status(404).json({ error: 'Empleado no encontrado en esta sesión' });
+
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, Number(v)));
+  const pR = clamp(pct_reclamos ?? 100, 0, 100);
+  const pC = clamp(pct_calidad ?? 100, 0, 100);
+  const pE = clamp(pct_evaluacion ?? 100, 0, 100);
+  const pG = clamp(pct_general ?? 100, 0, 100);
+
+  if (pR === 100 && pC === 100 && pE === 100 && pG === 100) {
+    delete entry.penalizacion;
+  } else {
+    entry.penalizacion = {
+      pct_reclamos: pR, pct_calidad: pC, pct_evaluacion: pE, pct_general: pG,
+      comentario: String(comentario || '').trim(),
+      fecha: nowMxDate(),
+      aplicado_por: req.rhhUser.id
+    };
+  }
+  delete entry.sin_derecho;
+  write(db);
+  res.json({ ok: true, penalizacion: entry.penalizacion || null });
+});
+
+// PATCH /api/rhh/evaluations/sessions/:id/sin-derecho — marcar sin derecho a bono
+router.patch('/sessions/:id/sin-derecho', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+  const { employee_id, motivo } = req.body;
+  if (!employee_id) return res.status(400).json({ error: 'employee_id requerido' });
+  const MOTIVOS = ['faltas', 'retardos', 'baja'];
+  if (!MOTIVOS.includes(motivo)) return res.status(400).json({ error: 'Motivo inválido. Opciones: ' + MOTIVOS.join(', ') });
+  const entry = (session.entries || []).find(e => e.employee_id === Number(employee_id));
+  if (!entry) return res.status(404).json({ error: 'Empleado no encontrado en esta sesión' });
+
+  entry.sin_derecho = {
+    motivo,
+    comentario: `Sin derecho a bono por ${motivo}`,
+    fecha: nowMxDate(),
+    aplicado_por: req.rhhUser.id
+  };
+  delete entry.penalizacion;
+  write(db);
+  res.json({ ok: true, sin_derecho: entry.sin_derecho });
+});
+
+// DELETE /api/rhh/evaluations/sessions/:id/penalizacion — quitar penalización o sin-derecho
+router.delete('/sessions/:id/penalizacion', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  const session = (db.rhh_eval_sessions || []).find(s => s.id === Number(req.params.id));
+  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
+  const employee_id = Number(req.query.employee_id || req.body?.employee_id);
+  if (!employee_id) return res.status(400).json({ error: 'employee_id requerido' });
+  const entry = (session.entries || []).find(e => e.employee_id === employee_id);
+  if (!entry) return res.status(404).json({ error: 'Empleado no encontrado en esta sesión' });
+  delete entry.penalizacion;
+  delete entry.sin_derecho;
+  write(db);
+  res.json({ ok: true });
 });
 
 module.exports = router;

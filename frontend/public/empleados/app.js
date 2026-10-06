@@ -1341,17 +1341,32 @@ async function evaluaciones(el) {
     } else {
       const pct   = ev.score_pct?.toFixed(1) || '—';
       const color = ev.score_pct >= 80 ? '#059669' : ev.score_pct >= 60 ? '#f59e0b' : '#dc2626';
+
+      let penAlert = '';
+      if (ev.sin_derecho_motivo) {
+        penAlert = `<div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:8px 10px;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:700;color:#dc2626;">Sin derecho a bono por ${esc(ev.sin_derecho_motivo)}</div>
+          ${ev.penalizacion_comentario ? `<div style="font-size:11px;color:#7f1d1d;margin-top:2px;">${esc(ev.penalizacion_comentario)}</div>` : ''}
+        </div>`;
+      } else if (ev.penalizacion_comentario) {
+        penAlert = `<div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:8px 10px;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:700;color:#d97706;">Penalización aplicada</div>
+          <div style="font-size:11px;color:#92400e;margin-top:2px;">${esc(ev.penalizacion_comentario)}</div>
+        </div>`;
+      }
+
       const diasRows = [
         ev.dias_reclamos > 0 ? `<div class="eval-dias-row"><span>Días Reclamos</span><span style="font-weight:700;color:#2563eb;">+${ev.dias_reclamos.toFixed(2)} día(s)</span></div>` : '',
         ev.dias_calidad  > 0 ? `<div class="eval-dias-row"><span>Días Calidad</span><span style="font-weight:700;color:#2563eb;">+${ev.dias_calidad.toFixed(2)} día(s)</span></div>` : '',
         `<div class="eval-dias-row"><span>Evaluación (${pct}%)</span><span style="font-weight:700;color:${color};">+${ev.eval_days.toFixed(2)} día(s)</span></div>`,
         `<div class="eval-dias-row" style="border-top:1px solid #e2e8f0;margin-top:4px;padding-top:6px;">
           <span style="font-weight:700;">Total días bono</span>
-          <span style="font-weight:800;font-size:15px;color:${ev.total_bono>=2?'#059669':'#f59e0b'};">${ev.total_bono.toFixed(2)}</span>
+          <span style="font-weight:800;font-size:15px;color:${ev.total_bono >= 2 ? '#059669' : ev.total_bono === 0 ? '#dc2626' : '#f59e0b'};">${ev.total_bono.toFixed(2)}</span>
         </div>`
       ].filter(Boolean).join('');
 
       evalContent = `
+        ${penAlert}
         <div style="margin-bottom:8px;">${diasRows}</div>
         ${bonoProdFmt}
         <button class="emp-btn" style="margin-top:10px;padding:7px 16px;font-size:12px;"
@@ -1360,15 +1375,19 @@ async function evaluaciones(el) {
         </button>`;
     }
 
-    const monthColor = hasEval ? '#f0fdf4' : '#fafafa';
-    const borderColor = hasEval ? '#bbf7d0' : '#e2e8f0';
+    const isSinDerecho = hasEval && ev.sin_derecho_motivo;
+    const isPenalizado = hasEval && !isSinDerecho && ev.penalizacion_comentario;
+    const monthColor  = isSinDerecho ? '#fef2f2' : isPenalizado ? '#fffbeb' : hasEval ? '#f0fdf4' : '#fafafa';
+    const borderColor = isSinDerecho ? '#fca5a5' : isPenalizado ? '#fde68a' : hasEval ? '#bbf7d0' : '#e2e8f0';
+    let evalBadge;
+    if (isSinDerecho) evalBadge = `<span style="background:#dc2626;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">Sin Derecho</span>`;
+    else if (hasEval) evalBadge = `<span style="background:#059669;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">✓ Evaluado</span>`;
+    else evalBadge = `<span style="background:#e5e7eb;color:#9ca3af;border-radius:12px;padding:2px 10px;font-size:11px;">Sin evaluación</span>`;
     return `
       <div class="emp-card" style="background:${monthColor};border:1px solid ${borderColor};margin-bottom:10px;">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <div style="font-size:15px;font-weight:700;color:#1e293b;">${d.month_name} ${d.year}</div>
-          ${hasEval
-            ? `<span style="background:#059669;color:#fff;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;">✓ Evaluado</span>`
-            : `<span style="background:#e5e7eb;color:#9ca3af;border-radius:12px;padding:2px 10px;font-size:11px;">Sin evaluación</span>`}
+          ${evalBadge}
         </div>
         ${evalContent}
         ${!hasEval && bonoProdFmt ? `<div style="margin-top:4px;">${bonoProdFmt}</div>` : ''}

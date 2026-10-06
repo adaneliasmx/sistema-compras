@@ -276,6 +276,26 @@ router.get('/evaluaciones-historial', empAuthRequired, (req, res) => {
       : 0;
     const dias_reclamos = session.dias_reclamos ?? 0;
     const dias_calidad  = session.dias_calidad  ?? 0;
+
+    // Buscar penalización/sin_derecho en la entry del empleado
+    const entry = (session.entries || []).find(en => en.employee_id === empId);
+    const pen = entry?.penalizacion;
+    const sd  = entry?.sin_derecho;
+
+    let total_bono;
+    if (sd) {
+      total_bono = 0;
+    } else if (pen) {
+      const pR = (pen.pct_reclamos ?? 100) / 100;
+      const pC = (pen.pct_calidad ?? 100) / 100;
+      const pE = (pen.pct_evaluacion ?? 100) / 100;
+      const pG = (pen.pct_general ?? 100) / 100;
+      const sub = (dias_reclamos * pR) + (dias_calidad * pC) + (eval_days * pE);
+      total_bono = Math.min(3, Math.round(sub * pG * 100) / 100);
+    } else {
+      total_bono = Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100);
+    }
+
     monthData[k].eval = {
       session_name:     session.name,
       score_pct:        ev.score_pct,
@@ -284,7 +304,9 @@ router.get('/evaluaciones-historial', empAuthRequired, (req, res) => {
       eval_days,
       dias_reclamos,
       dias_calidad,
-      total_bono: Math.min(3, Math.round((eval_days + dias_reclamos + dias_calidad) * 100) / 100),
+      total_bono,
+      penalizacion_comentario: (pen && pen.comentario) || (sd && sd.comentario) || null,
+      sin_derecho_motivo: sd ? sd.motivo : null,
       items: (ev.item_scores || []).map(it => ({
         name:       it.item_name,
         stars:      it.stars || 0,

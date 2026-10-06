@@ -6407,22 +6407,41 @@ async function buildEvalVistaTab(sessions) {
         </div>
       </div>`;
 
+    // Guardar datos de vista-bono para acceso desde modales
+    window._evalVistaData = { sessionId: selId, diasReclamos: d.dias_reclamos, diasCalidad: d.dias_calidad, rows: {} };
+    d.rows.forEach(r => { window._evalVistaData.rows[r.employee_id] = r; });
+
     const rows = d.rows.map(r => {
       const calPct   = r.score_pct !== null ? r.score_pct.toFixed(1) + '%' : '—';
       const evalDays = r.eval_days !== null ? r.eval_days.toFixed(2) : '—';
       const bono     = r.total_bono !== null ? r.total_bono.toFixed(2) : '—';
-      const bonoColor = r.total_bono >= 2.5 ? '#059669' : r.total_bono >= 1.5 ? '#f59e0b' : '#6b7280';
+      const bonoColor = r.sin_derecho ? '#dc2626' : r.total_bono >= 2.5 ? '#059669' : r.total_bono >= 1.5 ? '#f59e0b' : '#6b7280';
       const badge = r.evaluated
         ? `<span style="background:#dcfce7;color:#166534;border-radius:6px;padding:2px 8px;font-size:11px;">✓</span>`
         : `<span style="background:#f3f4f6;color:#9ca3af;border-radius:6px;padding:2px 8px;font-size:11px;">Pend.</span>`;
-      return `<tr>
+
+      let penBadge = '';
+      if (r.sin_derecho) {
+        penBadge = `<span style="background:#fef2f2;color:#dc2626;border-radius:6px;padding:2px 6px;font-size:10px;font-weight:600;">SIN DERECHO</span>`;
+      } else if (r.penalizacion) {
+        penBadge = `<span style="background:#fffbeb;color:#d97706;border-radius:6px;padding:2px 6px;font-size:10px;font-weight:600;">PENALIZADO</span>`;
+      }
+
+      return `<tr style="${r.sin_derecho ? 'background:#fef2f2;' : r.penalizacion ? 'background:#fffbeb;' : ''}">
         <td style="font-size:12px;color:#6b7280;">${escHtml(r.employee_number)}</td>
-        <td style="font-weight:500;">${escHtml(r.full_name)}</td>
+        <td style="font-weight:500;">${escHtml(r.full_name)} ${penBadge}</td>
         <td style="font-size:12px;">${escHtml(r.position_name)}</td>
         <td style="text-align:center;">${badge}</td>
         <td style="text-align:center;font-weight:600;">${calPct}</td>
         <td style="text-align:center;">${evalDays}</td>
         <td style="text-align:center;font-weight:700;color:${r.total_bono !== null ? bonoColor : '#9ca3af'};">${bono}</td>
+        <td style="text-align:center;white-space:nowrap;">
+          <button class="btn-ghost" style="padding:3px 6px;font-size:11px;" title="Penalización"
+            onclick="evalOpenPenModal(${r.employee_id})">Penalizar</button>
+          <button class="btn-ghost" style="padding:3px 6px;font-size:11px;color:#dc2626;" title="Sin derecho a bono"
+            onclick="evalOpenSdModal(${r.employee_id})">Sin Derecho</button>
+          ${(r.penalizacion || r.sin_derecho) ? `<button class="btn-ghost" style="padding:3px 6px;font-size:11px;color:#6b7280;" title="Quitar penalización" onclick="evalQuitarPenalizacion(${selId}, ${r.employee_id})">Quitar</button>` : ''}
+        </td>
       </tr>`;
     }).join('');
 
@@ -6435,8 +6454,9 @@ async function buildEvalVistaTab(sessions) {
               <th style="text-align:center;">Calificación</th>
               <th style="text-align:center;">Días Eval</th>
               <th style="text-align:center;">Días Bono Total</th>
+              <th style="text-align:center;">Acciones</th>
             </tr></thead>
-            <tbody>${rows || '<tr><td colspan="7" style="text-align:center;color:#9ca3af;">Sin empleados asignados</td></tr>'}</tbody>
+            <tbody>${rows || '<tr><td colspan="8" style="text-align:center;color:#9ca3af;">Sin empleados asignados</td></tr>'}</tbody>
           </table>
         </div>
       </div>`;
@@ -6478,6 +6498,180 @@ async function evalVistaReporte(sessionId) {
     a.click();
     URL.revokeObjectURL(url);
     toast('Reporte descargado');
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Wrappers para abrir modales desde onclick (usa _evalVistaData) ────────────
+function evalOpenPenModal(empId) {
+  const vd = window._evalVistaData;
+  if (!vd) return;
+  const r = vd.rows[empId];
+  if (!r) return;
+  evalPenalizacionModal(vd.sessionId, empId, r.full_name, r.eval_days, vd.diasReclamos, vd.diasCalidad, r.penalizacion || {});
+}
+function evalOpenSdModal(empId) {
+  const vd = window._evalVistaData;
+  if (!vd) return;
+  const r = vd.rows[empId];
+  if (!r) return;
+  evalSinDerechoModal(vd.sessionId, empId, r.full_name);
+}
+
+// ── Modal: Penalización por empleado ──────────────────────────────────────────
+function evalPenalizacionModal(sessionId, empId, empName, evalDays, diasReclamos, diasCalidad, penExisting) {
+  const pen = (penExisting && typeof penExisting === 'object' && penExisting.pct_reclamos !== undefined) ? penExisting : {};
+  const pR = pen.pct_reclamos ?? 100;
+  const pC = pen.pct_calidad ?? 100;
+  const pE = pen.pct_evaluacion ?? 100;
+  const pG = pen.pct_general ?? 100;
+  const com = pen.comentario || '';
+
+  const modal = document.createElement('div');
+  modal.className = 'eval-pen-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:100%;max-width:560px;max-height:85vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;">Penalización — ${escHtml(empName)}</div>
+        <button onclick="this.closest('.eval-pen-modal').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Cada porcentaje inicia en 100% (sin penalización). Reduce para aplicar penalización.</p>
+      <table style="width:100%;border-collapse:collapse;margin-bottom:12px;">
+        <thead><tr style="background:#f8fafc;">
+          <th style="padding:8px;text-align:left;font-size:12px;">Concepto</th>
+          <th style="padding:8px;text-align:center;font-size:12px;">Valor original</th>
+          <th style="padding:8px;text-align:center;font-size:12px;">% a otorgar</th>
+          <th style="padding:8px;text-align:center;font-size:12px;">Resultado</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td style="padding:8px;font-size:13px;">Días Reclamos</td>
+            <td style="padding:8px;text-align:center;font-size:13px;color:#6b7280;">${diasReclamos.toFixed(2)}</td>
+            <td style="padding:8px;text-align:center;"><input id="pen-pct-r" type="number" min="0" max="100" value="${pR}" style="width:70px;padding:5px;border-radius:6px;border:1px solid #d1d5db;text-align:center;font-size:13px;" oninput="evalPenPreview(${evalDays ?? 0},${diasReclamos},${diasCalidad})">%</td>
+            <td id="pen-res-r" style="padding:8px;text-align:center;font-weight:600;font-size:13px;"></td>
+          </tr>
+          <tr>
+            <td style="padding:8px;font-size:13px;">Días Calidad</td>
+            <td style="padding:8px;text-align:center;font-size:13px;color:#6b7280;">${diasCalidad.toFixed(2)}</td>
+            <td style="padding:8px;text-align:center;"><input id="pen-pct-c" type="number" min="0" max="100" value="${pC}" style="width:70px;padding:5px;border-radius:6px;border:1px solid #d1d5db;text-align:center;font-size:13px;" oninput="evalPenPreview(${evalDays ?? 0},${diasReclamos},${diasCalidad})">%</td>
+            <td id="pen-res-c" style="padding:8px;text-align:center;font-weight:600;font-size:13px;"></td>
+          </tr>
+          <tr>
+            <td style="padding:8px;font-size:13px;">Evaluación</td>
+            <td style="padding:8px;text-align:center;font-size:13px;color:#6b7280;">${evalDays !== null ? evalDays.toFixed(2) : '—'}</td>
+            <td style="padding:8px;text-align:center;"><input id="pen-pct-e" type="number" min="0" max="100" value="${pE}" style="width:70px;padding:5px;border-radius:6px;border:1px solid #d1d5db;text-align:center;font-size:13px;" oninput="evalPenPreview(${evalDays ?? 0},${diasReclamos},${diasCalidad})">%</td>
+            <td id="pen-res-e" style="padding:8px;text-align:center;font-weight:600;font-size:13px;"></td>
+          </tr>
+          <tr style="border-top:2px solid #e2e8f0;background:#f0fdf4;">
+            <td style="padding:8px;font-size:13px;font-weight:700;">% Penalización General</td>
+            <td style="padding:8px;text-align:center;font-size:12px;color:#6b7280;">Aplica a todo</td>
+            <td style="padding:8px;text-align:center;"><input id="pen-pct-g" type="number" min="0" max="100" value="${pG}" style="width:70px;padding:5px;border-radius:6px;border:1px solid #d1d5db;text-align:center;font-size:13px;font-weight:700;" oninput="evalPenPreview(${evalDays ?? 0},${diasReclamos},${diasCalidad})">%</td>
+            <td id="pen-res-total" style="padding:8px;text-align:center;font-weight:800;font-size:15px;color:#059669;"></td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;color:#6b7280;display:block;margin-bottom:4px;">Comentario (requerido si hay penalización)</label>
+        <textarea id="pen-comentario" rows="2" style="width:100%;padding:8px;border-radius:8px;border:1px solid #d1d5db;font-size:13px;resize:vertical;" placeholder="Motivo de la penalización...">${escHtml(com)}</textarea>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-ghost" onclick="this.closest('.eval-pen-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="evalPenSave(${sessionId},${empId})" style="padding:8px 20px;">Guardar Penalización</button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+  evalPenPreview(evalDays ?? 0, diasReclamos, diasCalidad);
+}
+
+function evalPenPreview(evalDays, diasR, diasC) {
+  const pR = (parseFloat(document.getElementById('pen-pct-r')?.value) || 0) / 100;
+  const pC = (parseFloat(document.getElementById('pen-pct-c')?.value) || 0) / 100;
+  const pE = (parseFloat(document.getElementById('pen-pct-e')?.value) || 0) / 100;
+  const pG = (parseFloat(document.getElementById('pen-pct-g')?.value) || 0) / 100;
+  const rR = diasR * pR;
+  const rC = diasC * pC;
+  const rE = evalDays * pE;
+  const total = Math.min(3, (rR + rC + rE) * pG);
+  const el = id => document.getElementById(id);
+  if (el('pen-res-r')) el('pen-res-r').textContent = rR.toFixed(2);
+  if (el('pen-res-c')) el('pen-res-c').textContent = rC.toFixed(2);
+  if (el('pen-res-e')) el('pen-res-e').textContent = rE.toFixed(2);
+  if (el('pen-res-total')) {
+    el('pen-res-total').textContent = total.toFixed(2) + ' días';
+    el('pen-res-total').style.color = total >= 2.5 ? '#059669' : total >= 1.5 ? '#f59e0b' : '#dc2626';
+  }
+}
+
+async function evalPenSave(sessionId, empId) {
+  const pR = parseFloat(document.getElementById('pen-pct-r')?.value) ?? 100;
+  const pC = parseFloat(document.getElementById('pen-pct-c')?.value) ?? 100;
+  const pE = parseFloat(document.getElementById('pen-pct-e')?.value) ?? 100;
+  const pG = parseFloat(document.getElementById('pen-pct-g')?.value) ?? 100;
+  const comentario = (document.getElementById('pen-comentario')?.value || '').trim();
+  const hasPen = pR < 100 || pC < 100 || pE < 100 || pG < 100;
+  if (hasPen && !comentario) { toast('Agrega un comentario para la penalización', 'warning'); return; }
+  try {
+    await api('/api/rhh/evaluations/sessions/' + sessionId + '/penalizacion', {
+      method: 'PATCH',
+      body: JSON.stringify({ employee_id: empId, pct_reclamos: pR, pct_calidad: pC, pct_evaluacion: pE, pct_general: pG, comentario })
+    });
+    document.querySelector('.eval-pen-modal')?.remove();
+    toast(hasPen ? 'Penalización aplicada' : 'Penalización removida');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Modal: Sin derecho a bono ────────────────────────────────────────────────
+function evalSinDerechoModal(sessionId, empId, empName) {
+  const modal = document.createElement('div');
+  modal.className = 'eval-sd-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:16px;padding:24px;width:100%;max-width:380px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <div style="font-size:16px;font-weight:700;color:#dc2626;">Sin Derecho a Bono</div>
+        <button onclick="this.closest('.eval-sd-modal').remove()" style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+      </div>
+      <p style="font-size:13px;color:#374151;margin-bottom:16px;"><strong>${escHtml(empName)}</strong></p>
+      <p style="font-size:12px;color:#6b7280;margin-bottom:12px;">Selecciona el motivo. El bono quedará en 0 días.</p>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <button class="btn-ghost" style="padding:10px;text-align:left;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-weight:600;"
+          onclick="evalSinDerechoApply(${sessionId},${empId},'faltas')">Sin derecho a bono por faltas</button>
+        <button class="btn-ghost" style="padding:10px;text-align:left;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-weight:600;"
+          onclick="evalSinDerechoApply(${sessionId},${empId},'retardos')">Sin derecho a bono por retardos</button>
+        <button class="btn-ghost" style="padding:10px;text-align:left;border:1px solid #fca5a5;border-radius:8px;color:#dc2626;font-weight:600;"
+          onclick="evalSinDerechoApply(${sessionId},${empId},'baja')">Sin derecho a bono por baja</button>
+      </div>
+      <div style="margin-top:12px;text-align:right;">
+        <button class="btn-ghost" onclick="this.closest('.eval-sd-modal').remove()">Cancelar</button>
+      </div>
+    </div>`;
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  document.body.appendChild(modal);
+}
+
+async function evalSinDerechoApply(sessionId, empId, motivo) {
+  try {
+    await api('/api/rhh/evaluations/sessions/' + sessionId + '/sin-derecho', {
+      method: 'PATCH',
+      body: JSON.stringify({ employee_id: empId, motivo })
+    });
+    document.querySelector('.eval-sd-modal')?.remove();
+    toast('Marcado como sin derecho a bono por ' + motivo);
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Quitar penalización / sin derecho ────────────────────────────────────────
+async function evalQuitarPenalizacion(sessionId, empId) {
+  if (!confirm('¿Quitar penalización / sin derecho para este empleado?')) return;
+  try {
+    await api('/api/rhh/evaluations/sessions/' + sessionId + '/penalizacion?employee_id=' + empId, {
+      method: 'DELETE'
+    });
+    toast('Penalización removida');
+    evaluacionesView();
   } catch(err) { toast(err.message, 'error'); }
 }
 
