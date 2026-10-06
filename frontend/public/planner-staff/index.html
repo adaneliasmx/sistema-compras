@@ -591,7 +591,9 @@ async function verDetalle(actId) {
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px">
             <div class="form-group">
               <label>Responsable</label>
-              <div style="font-weight:600;font-size:13px">${esc(act.responsable_nombre)}</div>
+              <select id="deResp" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+                ${_staffDisponibles.map(u => `<option value="${u.id}" ${u.id === act.responsable_id ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
+              </select>
             </div>
             <div class="form-group">
               <label>Departamento</label>
@@ -723,7 +725,7 @@ async function guardarDetalle(actId) {
   try {
     const r = await apiFetch('/api/planner/actividades/' + actId, {
       method: 'PATCH',
-      body: JSON.stringify({ titulo, estatus, urgencia, avance, fecha_compromiso, fecha_inicio, fecha_fin, colaboradores })
+      body: JSON.stringify({ titulo, estatus, urgencia, avance, fecha_compromiso, fecha_inicio, fecha_fin, colaboradores, responsable_id: Number(document.getElementById('deResp').value) || undefined })
     });
     if (!r) return;
 
@@ -1758,8 +1760,14 @@ function renderProduccionForm(formId, container) {
     renderParosForm(container, datos);
   } else if (formId === 'material_pendiente') {
     const items = datos.items || [];
+    const sinPend = datos.sin_novedad;
     container.innerHTML = dailyFormWrap('Material pendiente para producir', `
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra material pendiente por cliente (Amsted, Tenneco, SKF).</p>
+      <div style="margin-bottom:14px">
+        <button onclick="saveSinNovedadForm('produccion','material_pendiente','Sin pendientes')" style="width:100%;padding:12px;border:2px solid ${items.length > 0 ? 'var(--orange)' : 'var(--green)'};background:${items.length > 0 ? '#fef9e7' : '#d5f5e3'};border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:${items.length > 0 ? 'var(--orange)' : 'var(--green)'};transition:opacity .15s${sinPend ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinPend ? '.65' : '1'}'">
+          ${sinPend ? '&#10003; Sin pendientes (revisado)' : '&#10003; Sin pendientes'}
+        </button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">O registra material pendiente por cliente (Amsted, Tenneco, SKF):</p>
       <div id="df_mat_list">
         ${items.map((it, i) => matPendRow(i, it)).join('')}
       </div>
@@ -1780,8 +1788,14 @@ function renderProduccionForm(formId, container) {
     });
   } else if (formId === 'riesgos_incumplimiento') {
     const items = datos.items || [];
+    const sinRiesgo = datos.sin_novedad;
     container.innerHTML = dailyFormWrap('Riesgos de incumplimiento', `
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra riesgos que puedan afectar entregas a cliente.</p>
+      <div style="margin-bottom:14px">
+        <button onclick="saveSinNovedadForm('produccion','riesgos_incumplimiento','Sin riesgo')" style="width:100%;padding:12px;border:2px solid ${items.length > 0 ? 'var(--red)' : 'var(--green)'};background:${items.length > 0 ? '#fef2f2' : '#d5f5e3'};border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:${items.length > 0 ? 'var(--red)' : 'var(--green)'};transition:opacity .15s${sinRiesgo ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinRiesgo ? '.65' : '1'}'">
+          ${sinRiesgo ? '&#10003; Sin riesgo (revisado)' : '&#10003; Sin riesgo'}
+        </button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">O registra riesgos que puedan afectar entregas a cliente:</p>
       <div id="df_riesgo_list">
         ${items.map((it, i) => riesgoRow(i, it)).join('')}
       </div>
@@ -1933,14 +1947,20 @@ function renderCalidadForm(formId, container) {
   if (formId === 'rechazos_internos') {
     renderRechazosInternosForm(container, datos);
   } else if (formId === 'rechazos_cliente') {
-    renderTaskFormDaily(container, 'calidad', 'rechazos_cliente', 'Rechazos de cliente (SKF / Amsted / Tenneco)');
+    renderIssueFormDaily(container, 'calidad', 'rechazos_cliente', 'Rechazos de cliente (SKF / Amsted / Tenneco)', datos);
   } else if (formId === 'problemas_calidad') {
     renderIssueFormDaily(container, 'calidad', 'problemas_calidad', 'Problemas de calidad detectados', datos);
   } else if (formId === 'liberaciones_pendientes') {
     renderIssueFormDaily(container, 'calidad', 'liberaciones_pendientes', 'Liberaciones pendientes — producto retenido', datos);
   } else if (formId === 'reprocesos') {
+    const sinRep = datos.sin_novedad;
     container.innerHTML = dailyFormWrap('% Reprocesos', `
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Porcentaje de reprocesos por linea.</p>
+      <div style="margin-bottom:14px">
+        <button onclick="saveSinNovedadForm('calidad','reprocesos','Sin reprocesos')" style="width:100%;padding:12px;border:2px solid var(--green);background:#d5f5e3;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:var(--green);transition:opacity .15s${sinRep ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinRep ? '.65' : '1'}'">
+          ${sinRep ? '&#10003; Sin reprocesos (revisado)' : '&#10003; Sin reprocesos'}
+        </button>
+      </div>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">O registra porcentaje de reprocesos por linea:</p>
       <div class="form-row">
         ${['Baker', 'L1', 'L3', 'L4'].map(l => `
           <div class="form-group">
@@ -2061,8 +2081,14 @@ async function renderParosFallaForm(container, datos) {
 
 function renderEquiposFueraForm(container, datos) {
   const equipos = datos.equipos || [];
+  const sinInc = datos.sin_novedad;
   container.innerHTML = dailyFormWrap('Equipos fuera de operacion', `
-    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra equipos inhabilitados. Al guardar puedes crear una actividad de seguimiento.</p>
+    <div style="margin-bottom:14px">
+      <button onclick="saveSinNovedadForm('mantenimiento','equipos_fuera','Sin incidencia')" style="width:100%;padding:12px;border:2px solid ${equipos.length > 0 ? 'var(--orange)' : 'var(--green)'};background:${equipos.length > 0 ? '#fef9e7' : '#d5f5e3'};border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:${equipos.length > 0 ? 'var(--orange)' : 'var(--green)'};transition:opacity .15s${sinInc ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinInc ? '.65' : '1'}'">
+        ${sinInc ? '&#10003; Sin incidencia (revisado)' : '&#10003; Sin incidencia'}
+      </button>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-bottom:12px">O registra equipos inhabilitados:</p>
     <div id="df_eqfuera_list">
       ${equipos.map((eq, i) => eqFueraRow(i, eq)).join('')}
     </div>
@@ -2702,6 +2728,29 @@ async function saveTaskFormRevisado(deptoId, formId) {
     });
     selectDailyForm(deptoId, formId);
     // Refresh tabs
+    const resumen = await apiFetch('/api/planner/daily/' + deptoId + '/resumen?fecha=' + _dailyDate);
+    if (resumen) {
+      _dailyResumen = resumen;
+      const tabs = document.querySelectorAll('#dailyTabs .tab');
+      tabs.forEach(t => {
+        const fid = t.dataset.form;
+        const info = resumen.formularios.find(x => x.id === fid);
+        const forms = getDailyForms(deptoId);
+        const fm = forms.find(f => f.id === fid);
+        if (info && fm) t.innerHTML = (info.llenado ? '&#x1F7E2;' : '&#x26AA;') + ' ' + fm.icon + ' ' + fm.nombre;
+      });
+    }
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
+async function saveSinNovedadForm(deptoId, formId, label) {
+  const comentarios = document.getElementById('df_wrap_comments')?.value?.trim() || '';
+  try {
+    await apiFetch('/api/planner/daily/' + deptoId + '/' + formId, {
+      method: 'POST',
+      body: JSON.stringify({ fecha: _dailyDate, datos: { sin_novedad: true, items: [], comentarios } })
+    });
+    selectDailyForm(deptoId, formId);
     const resumen = await apiFetch('/api/planner/daily/' + deptoId + '/resumen?fecha=' + _dailyDate);
     if (resumen) {
       _dailyResumen = resumen;
@@ -3481,22 +3530,38 @@ function dsCustomRender(formId, datos) {
   // ── Per-line cards: eficiencias, piezas_procesadas, rechazos_internos, disponibilidad ──
   var hasLineObj = LINEAS.some(function(l) { return datos[l] !== undefined && typeof datos[l] === 'object'; });
   if (hasLineObj) {
+    var isPiezas = formId === 'piezas_procesadas';
     h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">';
     LINEAS.forEach(function(l) {
       var v = datos[l]; if (!v || typeof v !== 'object') return;
-      h += '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">' +
-        '<b style="font-size:14px;color:var(--primary)">' + l + '</b>';
-      Object.keys(v).forEach(function(k) {
-        var val = v[k];
-        var isPct = /eficiencia|calidad|disponibilidad/.test(k);
-        var color = isPct ? (Number(val) >= 85 ? 'var(--green)' : Number(val) >= 70 ? 'var(--orange)' : 'var(--red)') : 'var(--primary)';
-        h += '<div style="margin-top:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:600">' + esc(dsLabel(k)) + '</div>' +
-          '<div style="font-size:20px;font-weight:800;color:' + color + '">' + val + (isPct ? '%' : '') + '</div></div>';
-      });
-      h += '</div>';
+      // Piezas procesadas: rojo/verde vs objetivo
+      if (isPiezas) {
+        var proc = Number(v.procesadas) || 0;
+        var obj = Number(v.objetivo) || 0;
+        var okPz = obj > 0 ? proc >= obj : true;
+        var borderPz = okPz ? '2px solid var(--green)' : '2px solid var(--red)';
+        var bgPz = okPz ? '#f0fdf4' : '#fef2f2';
+        h += '<div style="border:' + borderPz + ';border-radius:10px;padding:14px;text-align:center;background:' + bgPz + '">' +
+          '<b style="font-size:15px;color:var(--primary)">' + l + '</b>' +
+          '<div style="margin-top:8px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Procesadas</div>' +
+          '<div style="font-size:32px;font-weight:800;color:' + (okPz ? 'var(--green)' : 'var(--red)') + '">' + proc + '</div></div>' +
+          '<div style="margin-top:4px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Objetivo</div>' +
+          '<div style="font-size:16px;font-weight:700;color:var(--muted)">' + obj + '</div></div></div>';
+      } else {
+        h += '<div style="border:1px solid var(--line);border-radius:10px;padding:14px;text-align:center">' +
+          '<b style="font-size:15px;color:var(--primary)">' + l + '</b>';
+        Object.keys(v).forEach(function(k) {
+          var val = v[k];
+          var isPct = /eficiencia|calidad|disponibilidad/.test(k);
+          var color = isPct ? (Number(val) >= 85 ? 'var(--green)' : Number(val) >= 70 ? 'var(--orange)' : 'var(--red)') : 'var(--primary)';
+          h += '<div style="margin-top:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">' + esc(dsLabel(k)) + '</div>' +
+            '<div style="font-size:28px;font-weight:800;color:' + color + '">' + val + (isPct ? '%' : '') + '</div></div>';
+        });
+        h += '</div>';
+      }
     });
     h += '</div>';
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── Reprocesos (Baker:1.5 numeros directos) ──
@@ -3510,7 +3575,7 @@ function dsCustomRender(formId, datos) {
         '<div style="font-size:32px;font-weight:800;color:' + (v <= 1 ? 'var(--green)' : v <= 3 ? 'var(--orange)' : 'var(--red)') + ';margin-top:6px">' + v + '%</div></div>';
     });
     h += '</div>';
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── PTAR ──
@@ -3576,16 +3641,26 @@ function dsCustomRender(formId, datos) {
   // ── Paros de lineas (con datos guardados por linea) ──
   if (formId === 'paros_lineas' && datos.lineas) {
     var rs = datos.resumen || {};
-    h = dsKpiGrid([[rs.total_paros||0,'Total paros','var(--red)'],[rs.total_min||0,'Min. totales','var(--red)']]);
+    h = '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px">' +
+      '<div style="border:2px solid var(--red);border-radius:10px;padding:14px;text-align:center;background:#fef2f2">' +
+        '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700">Total paros</div>' +
+        '<div style="font-size:36px;font-weight:800;color:var(--red)">' + (rs.total_paros||0) + '</div></div>' +
+      '<div style="border:2px solid var(--red);border-radius:10px;padding:14px;text-align:center;background:#fef2f2">' +
+        '<div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700">Minutos totales</div>' +
+        '<div style="font-size:36px;font-weight:800;color:var(--red)">' + (rs.total_min||0) + '</div></div></div>';
+    // Resumen acumulado por linea
+    h += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">';
     LINEAS.forEach(function(l) {
       var ld = datos.lineas[l];
-      if (!ld || !ld.paros || !ld.paros.length) { h += '<div style="font-size:12px;color:var(--muted);margin-bottom:6px"><b>' + l + ':</b> Sin paros</div>'; return; }
-      h += '<div style="margin-bottom:10px"><b style="color:var(--primary)">' + l + '</b> <span style="font-size:11px;color:var(--muted)">(' + ld.total + ' paros, ' + ld.minutos_total + ' min)</span>' +
-        '<table style="margin-top:4px;font-size:11px;width:100%"><thead><tr><th>Folio</th><th>Motivo</th><th>Min</th><th>Estado</th></tr></thead><tbody>' +
-        ld.paros.map(function(p) { return '<tr><td style="font-family:monospace">' + esc(p.folio||'') + '</td><td>' + esc(p.motivo||'') + '</td><td style="font-weight:700">' + (p.duracion_min!=null?p.duracion_min:'...') + '</td><td><span class="badge ' + (p.estado==='activo'?'atrasada':'cerrada') + '" style="font-size:10px">' + esc(p.estado||'') + '</span></td></tr>'; }).join('') +
-        '</tbody></table></div>';
+      var minT = ld ? (ld.minutos_total||0) : 0;
+      var cnt = ld ? (ld.total||0) : 0;
+      h += '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">' +
+        '<b style="font-size:14px;color:var(--primary)">' + l + '</b>' +
+        '<div style="font-size:28px;font-weight:800;color:' + (minT > 0 ? 'var(--red)' : 'var(--green)') + ';margin-top:6px">' + minT + '</div>' +
+        '<div style="font-size:10px;color:var(--muted);font-weight:600">min (' + cnt + ' paros)</div></div>';
     });
-    return h + dsObsBox(datos.observaciones);
+    h += '</div>';
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── Paros falla OTs ──
@@ -3597,7 +3672,7 @@ function dsCustomRender(formId, datos) {
         datos.ordenes.map(function(o) { return '<tr><td style="font-family:monospace;font-weight:700">' + esc(o.folio||'') + '</td><td>' + esc(o.tipo||'') + '</td><td>' + esc(o.equipo||'') + '</td><td style="max-width:180px">' + esc(o.falla||'') + '</td><td><span class="badge ' + esc(o.urgencia||'') + '">' + esc(o.urgencia||'') + '</span></td><td><span class="badge ' + (o.status==='cerrada'?'cerrada':o.status==='en_proceso'?'en_proceso':'sin_empezar') + '" style="font-size:10px">' + esc(o.status||'') + '</span></td></tr>'; }).join('') +
         '</tbody></table>';
     } else h += '<div class="empty">Sin OTs registradas</div>';
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── Materias criticas con detalle ──
@@ -3609,7 +3684,7 @@ function dsCustomRender(formId, datos) {
         datos.items_detalle.map(function(i) { return '<tr><td><b>' + esc(i.nombre||'') + '</b></td><td style="font-size:10px">' + esc(i.tipo||'') + '</td><td style="font-weight:700;color:' + (i.fuera_min?'var(--red)':i.fuera_max?'var(--orange)':'var(--muted)') + '">' + (i.stock!=null?i.stock+' '+esc(i.unidad||''):'—') + '</td><td>' + (i.min!=null?i.min:'—') + '</td><td>' + (i.max!=null?i.max:'—') + '</td><td>' + (i.fuera_min?'<span class="badge atrasada" style="font-size:10px">Bajo min</span>':i.fuera_max?'<span class="badge en_proceso" style="font-size:10px">Sobre max</span>':'<span class="badge sin_empezar" style="font-size:10px">Sin conteo</span>') + '</td></tr>'; }).join('') +
         '</tbody></table>';
     } else h += '<div class="empty">Sin alertas</div>';
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── Ordenes compra con desglose ──
@@ -3628,7 +3703,7 @@ function dsCustomRender(formId, datos) {
       }
       h += '</div>';
     });
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── Inventarios criticos con detalle ──
@@ -3640,7 +3715,7 @@ function dsCustomRender(formId, datos) {
         datos.items_detalle.map(function(i) { return '<tr><td><b>' + esc(i.nombre||'') + '</b></td><td style="color:var(--red);font-weight:700">' + i.stock + ' ' + esc(i.unidad||'') + '</td><td>' + i.min + ' ' + esc(i.unidad||'') + '</td><td style="font-weight:700;color:var(--red)">' + i.deficit + ' ' + esc(i.unidad||'') + '</td></tr>'; }).join('') +
         '</tbody></table>';
     } else h += '<div class="empty">Ningun material bajo minimo</div>';
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   // ── CPK con titulaciones y empaque ──
@@ -3671,11 +3746,40 @@ function dsCustomRender(formId, datos) {
     return (h || null) ? h + dsObsBox(datos.observaciones) : null;
   }
 
+  // ── Formularios con sin_novedad (material_pendiente, riesgos_incumplimiento, equipos_fuera) ──
+  if (datos.sin_novedad && (!datos.items || !datos.items.length)) {
+    var sinLabels = {
+      material_pendiente: 'Sin pendientes',
+      riesgos_incumplimiento: 'Sin riesgo',
+      equipos_fuera: 'Sin incidencia',
+      reprocesos: 'Sin reprocesos'
+    };
+    h = '<div style="text-align:center;padding:30px 0">' +
+      '<div style="width:70px;height:70px;border-radius:50%;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px;color:var(--green);background:#f0fdf4">&#10003;</div>' +
+      '<div style="font-size:18px;font-weight:700;color:var(--green)">' + (sinLabels[formId] || 'Sin novedad') + '</div></div>';
+    return h + dsObsBox(datos.comentarios);
+  }
+
+  // ── Formularios con issues (rechazos_cliente, problemas_calidad, liberaciones_pendientes) ──
+  if (datos.issues && Array.isArray(datos.issues)) {
+    if (datos.issues.length === 0) {
+      h = '<div style="text-align:center;padding:30px 0">' +
+        '<div style="width:70px;height:70px;border-radius:50%;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:32px;color:var(--green);background:#f0fdf4">&#10003;</div>' +
+        '<div style="font-size:18px;font-weight:700;color:var(--green)">Sin registros</div></div>';
+    } else {
+      h = '<table style="font-size:12px;width:100%;margin-bottom:10px"><thead><tr><th>Problema</th><th>Fecha</th><th>Comentario</th></tr></thead><tbody>' +
+        datos.issues.map(function(iss) {
+          return '<tr><td style="font-weight:600">' + esc(iss.problema||'') + '</td><td style="white-space:nowrap">' + (iss.fecha||'') + '</td><td style="font-size:11px">' + esc(iss.comentario||'') + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    return h + dsObsBox(datos.comentarios);
+  }
+
   // ── Resumen generico (tiene .resumen object) ──
   if (datos.resumen && typeof datos.resumen === 'object') {
     var entries = Object.entries(datos.resumen);
     h = dsKpiGrid(entries.map(function(e) { return [e[1], dsLabel(e[0])]; }));
-    return h + dsObsBox(datos.observaciones);
+    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
   }
 
   return null;
@@ -3755,12 +3859,25 @@ async function openDeptoSlides(deptoId) {
     if (isTaskForm) {
       // Formularios tipo actividad — no guardan datos, gestionan tareas
       var linkedActs = (acts.pendientes||[]).concat(acts.atrasadas||[]).filter(function(a) { return a.origen_formulario === f.id; });
-      html = '<div style="text-align:center;padding:40px 0">' +
-        '<div style="font-size:40px;margin-bottom:10px">📋</div>' +
-        '<h3 style="color:var(--primary);margin:0 0 8px;font-size:17px">' + nombre + '</h3>' +
-        '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Este formulario gestiona actividades vinculadas</div>' +
-        '<div style="font-size:24px;font-weight:800;color:var(--accent)">' + linkedActs.length + '</div>' +
-        '<div style="font-size:12px;color:var(--muted)">actividades abiertas</div></div>';
+      var dailyComment = f.datos && f.datos.comentarios ? f.datos.comentarios : '';
+      var sinNov = f.datos && f.datos.sin_novedad;
+      if (linkedActs.length === 0 && (sinNov || f.llenado)) {
+        html = '<div style="text-align:center;padding:40px 0">' +
+          '<div style="width:80px;height:80px;border-radius:50%;border:3px solid var(--green);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:36px;color:var(--green);background:#f0fdf4">&#10003;</div>' +
+          '<h3 style="color:var(--primary);margin:0 0 8px;font-size:17px">' + nombre + '</h3>' +
+          '<div style="font-size:16px;font-weight:700;color:var(--green)">Sin pendientes</div>' +
+          (dailyComment ? '<div style="margin-top:14px;padding:10px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:13px;text-align:left"><b style="font-size:10px;color:var(--muted);text-transform:uppercase">Comentarios</b><br>' + esc(dailyComment) + '</div>' : '') +
+          '</div>';
+      } else {
+        html = '<div style="text-align:center;padding:40px 0">' +
+          '<div style="font-size:40px;margin-bottom:10px">📋</div>' +
+          '<h3 style="color:var(--primary);margin:0 0 8px;font-size:17px">' + nombre + '</h3>' +
+          '<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Actividades vinculadas</div>' +
+          '<div style="font-size:32px;font-weight:800;color:' + (linkedActs.length > 0 ? 'var(--orange)' : 'var(--accent)') + '">' + linkedActs.length + '</div>' +
+          '<div style="font-size:12px;color:var(--muted)">actividades abiertas</div>' +
+          (dailyComment ? '<div style="margin-top:14px;padding:10px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:13px;text-align:left"><b style="font-size:10px;color:var(--muted);text-transform:uppercase">Comentarios</b><br>' + esc(dailyComment) + '</div>' : '') +
+          '</div>';
+      }
     } else if (!f.llenado) {
       html = '<div style="text-align:center;padding:50px 0">' +
         '<div style="width:80px;height:80px;border-radius:50%;border:3px dashed var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;color:var(--muted)">○</div>' +
@@ -3778,6 +3895,84 @@ async function openDeptoSlides(deptoId) {
     }
     _ds.slides.push({ titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html: html });
   });
+
+  // ── Slide semanal: graficas si aplica ──
+  _ds.slides.push({ titulo: 'Resumen Semanal', tipo: 'semanal', html: '<div id="dsWeeklySlide" style="text-align:center;padding:20px 0"><div class="spinner"></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Cargando datos semanales...</div></div>' });
+  // Cargar datos semanales async
+  apiFetch('/api/planner/dashboard/' + deptoId + '/semanal').then(function(wdata) {
+    var el = document.getElementById('dsWeeklySlide');
+    if (!el || !wdata) return;
+    var int = wdata.integracion || {};
+    var labels = wdata.semana.dias.map(function(d) { return d.slice(5); });
+    var h = '<h3 style="color:var(--primary);margin:0 0 16px;font-size:17px">Resumen Semanal (' + wdata.semana.inicio + ' al ' + wdata.semana.fin + ')</h3>';
+    // Canvas containers
+    var charts = [];
+    if (int.kpis_por_dia && (deptoId === 'produccion' || deptoId === 'calidad' || deptoId === 'mantenimiento')) {
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Eficiencia por linea</div><canvas id="dsWkEfi" height="140"></canvas></div>';
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Disponibilidad por linea</div><canvas id="dsWkDisp" height="140"></canvas></div>';
+      h += '</div>';
+      charts.push('efi', 'disp');
+    }
+    if (int.calidad_por_dia && deptoId === 'calidad') {
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Calidad por dia</div><canvas id="dsWkCal" height="140"></canvas></div>';
+      charts.push('cal');
+    }
+    if (int.paros_por_dia) {
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Minutos de paro por dia</div><canvas id="dsWkParos" height="140"></canvas></div>';
+      if (int.pareto_paros && int.pareto_paros.length) {
+        h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Pareto causas de paro</div><canvas id="dsWkPareto" height="140"></canvas></div>';
+        charts.push('pareto');
+      }
+      h += '</div>';
+      charts.push('parosDia');
+    }
+    if (int.piezas_por_dia) {
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Piezas procesadas por linea</div><canvas id="dsWkPzas" height="140"></canvas></div>';
+      charts.push('pzas');
+    }
+    if (int.ots_por_dia) {
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Ordenes de trabajo</div><canvas id="dsWkOTs" height="140"></canvas></div>';
+      charts.push('ots');
+    }
+    el.innerHTML = h || '<div style="color:var(--muted);font-size:14px">Sin datos de integracion para este departamento</div>';
+    if (typeof Chart === 'undefined') return;
+    var COLORS = { Baker:'rgba(41,128,185,.7)', L1:'rgba(39,174,96,.7)', L3:'rgba(192,57,43,.7)', L4:'rgba(142,68,173,.7)' };
+    var LNS = ['Baker','L1','L3','L4'];
+    var lineOpts = { responsive:true, plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}}}, scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}} };
+    setTimeout(function() {
+      // Eficiencia
+      if (charts.indexOf('efi') >= 0 && document.getElementById('dsWkEfi')) {
+        new Chart(document.getElementById('dsWkEfi'), { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.kpis_por_dia.map(function(d){return d.kpis[l]?d.kpis[l].eficiencia:null}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+      }
+      // Disponibilidad
+      if (charts.indexOf('disp') >= 0 && document.getElementById('dsWkDisp')) {
+        new Chart(document.getElementById('dsWkDisp'), { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.kpis_por_dia.map(function(d){return d.kpis[l]?d.kpis[l].disponibilidad:null}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+      }
+      // Calidad por dia
+      if (charts.indexOf('cal') >= 0 && document.getElementById('dsWkCal') && int.calidad_por_dia) {
+        new Chart(document.getElementById('dsWkCal'), { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.calidad_por_dia.map(function(d){return d[l]}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+      }
+      // Paros por dia
+      if (charts.indexOf('parosDia') >= 0 && document.getElementById('dsWkParos')) {
+        new Chart(document.getElementById('dsWkParos'), { type:'bar', data:{ labels:labels, datasets:[{label:'Min. paro',data:int.paros_por_dia.map(function(d){return d.min_total}),backgroundColor:'rgba(192,57,43,.6)',borderRadius:3}]}, options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}} });
+      }
+      // Pareto causas
+      if (charts.indexOf('pareto') >= 0 && document.getElementById('dsWkPareto') && int.pareto_paros) {
+        var pp = int.pareto_paros;
+        new Chart(document.getElementById('dsWkPareto'), { type:'bar', data:{ labels:pp.map(function(p){return p.motivo.slice(0,20)}), datasets:[{label:'Min.',data:pp.map(function(p){return p.min_total}),backgroundColor:'rgba(192,57,43,.6)',borderRadius:3}]}, options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:9}}},y:{ticks:{font:{size:9}}}}} });
+      }
+      // Piezas procesadas
+      if (charts.indexOf('pzas') >= 0 && document.getElementById('dsWkPzas') && int.piezas_por_dia) {
+        new Chart(document.getElementById('dsWkPzas'), { type:'bar', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.piezas_por_dia.map(function(d){return d[l]||0}),backgroundColor:COLORS[l],borderRadius:3}})}, options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}}},scales:{y:{beginAtZero:true,stacked:false,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}} });
+      }
+      // OTs
+      if (charts.indexOf('ots') >= 0 && document.getElementById('dsWkOTs') && int.ots_por_dia) {
+        new Chart(document.getElementById('dsWkOTs'), { type:'bar', data:{ labels:labels, datasets:[{label:'Creadas',data:int.ots_por_dia.map(function(d){return d.creadas}),backgroundColor:'rgba(41,128,185,.6)',borderRadius:3},{label:'Cerradas',data:int.ots_por_dia.map(function(d){return d.cerradas}),backgroundColor:'rgba(39,174,96,.6)',borderRadius:3}]}, options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}}},scales:{y:{beginAtZero:true,ticks:{stepSize:1,font:{size:10}}},x:{ticks:{font:{size:10}}}}} });
+      }
+    }, 100);
+  }).catch(function() {});
 
   // ── Slide final: actividades ──
   var ah = '<div style="padding:6px 0">' +

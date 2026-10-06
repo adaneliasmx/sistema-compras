@@ -1635,19 +1635,61 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
   // Datos de integración según departamento
   let integracion = {};
   try {
-    if (depto === 'produccion') {
+    if (depto === 'produccion' || depto === 'calidad' || depto === 'mantenimiento') {
+      // KPIs de produccion por dia (eficiencia, calidad, disponibilidad por linea)
+      const kpisPorDia = weekDays.map(d => {
+        const raw = prodRouter._getDailyKpis(d);
+        const kpis = {};
+        for (const [linea, vals] of Object.entries(raw.kpis)) {
+          kpis[linea] = {
+            eficiencia: vals.eficiencia != null ? Math.round(vals.eficiencia * 100) : null,
+            calidad: vals.calidad != null ? Math.round(vals.calidad * 100) : null,
+            disponibilidad: vals.disponibilidad != null ? Math.round(vals.disponibilidad * 100) : null
+          };
+        }
+        return { fecha: d, kpis };
+      });
+      integracion.kpis_por_dia = kpisPorDia;
+
+      // Paros de produccion por dia + causas para pareto
       const pdb = readProd();
-      const parosWeek = (pdb.paros || []).concat(pdb.paros_baker || [], pdb.paros_l1 || [])
-        .filter(p => p.fecha_inicio >= weekStart && p.fecha_inicio <= weekEnd);
+      const allParos = (pdb.paros || []).concat(pdb.paros_baker || [], pdb.paros_l1 || []);
+      const parosWeek = allParos.filter(p => p.fecha_inicio >= weekStart && p.fecha_inicio <= weekEnd);
       integracion.paros_por_dia = weekDays.map(d => ({
         fecha: d,
         count: parosWeek.filter(p => p.fecha_inicio === d).length,
         min_total: parosWeek.filter(p => p.fecha_inicio === d).reduce((s, p) => s + (p.duracion_min || 0), 0)
       }));
+      // Pareto de causas de paro
+      const causas = {};
+      parosWeek.forEach(p => {
+        const mot = p.motivo || 'Sin clasificar';
+        if (!causas[mot]) causas[mot] = { motivo: mot, count: 0, min_total: 0 };
+        causas[mot].count++;
+        causas[mot].min_total += (p.duracion_min || 0);
+      });
+      integracion.pareto_paros = Object.values(causas).sort((a, b) => b.min_total - a.min_total).slice(0, 10);
+
+      // Piezas procesadas por dia (del daily planner)
+      const piezasDailys = dailyRegs.filter(r => r.departamento === 'produccion' && r.formulario === 'piezas_procesadas' && weekDays.includes(r.fecha));
+      if (piezasDailys.length > 0) {
+        integracion.piezas_por_dia = weekDays.map(d => {
+          const reg = piezasDailys.find(r => r.fecha === d);
+          if (!reg || !reg.datos) return { fecha: d, Baker: 0, L1: 0, L3: 0, L4: 0 };
+          return {
+            fecha: d,
+            Baker: (reg.datos.Baker && reg.datos.Baker.procesadas) || 0,
+            L1: (reg.datos.L1 && reg.datos.L1.procesadas) || 0,
+            L3: (reg.datos.L3 && reg.datos.L3.procesadas) || 0,
+            L4: (reg.datos.L4 && reg.datos.L4.procesadas) || 0
+          };
+        });
+      }
     }
     if (depto === 'mantenimiento') {
       const mdb = readMant();
-      const otsWeek = (mdb.ordenes_trabajo || []).filter(o => o.fecha_creacion >= weekStart && o.fecha_creacion <= weekEnd);
+      const ots = mdb.ordenes_mantenimiento || [];
+      const otsWeek = ots.filter(o => o.fecha_creacion >= weekStart && o.fecha_creacion <= weekEnd);
       integracion.ots_por_dia = weekDays.map(d => ({
         fecha: d,
         creadas: otsWeek.filter(o => o.fecha_creacion === d).length,
@@ -1670,6 +1712,19 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
         count: titsWeek.filter(h => h.fecha === d).length,
         fuera: titsWeek.filter(h => h.fecha === d && h.estado === 'fuera_de_rango').length
       }));
+      // Pareto causas rechazo — from daily rechazos_internos
+      const rechDailys = dailyRegs.filter(r => r.departamento === 'calidad' && r.formulario === 'rechazos_internos' && weekDays.includes(r.fecha));
+      integracion.calidad_por_dia = weekDays.map(d => {
+        const reg = rechDailys.find(r => r.fecha === d);
+        if (!reg || !reg.datos) return { fecha: d, Baker: null, L1: null, L3: null, L4: null };
+        return {
+          fecha: d,
+          Baker: reg.datos.Baker ? reg.datos.Baker.calidad : null,
+          L1: reg.datos.L1 ? reg.datos.L1.calidad : null,
+          L3: reg.datos.L3 ? reg.datos.L3.calidad : null,
+          L4: reg.datos.L4 ? reg.datos.L4.calidad : null
+        };
+      });
     }
   } catch (_) { /* integración no critica */ }
 
