@@ -1150,6 +1150,26 @@ router.post(
       const hrsExtCol   = colIdx['Hrs. Extras']   ?? 17;
       const notasCol    = colIdx['Notas']         ?? 18;
       const projectCol  = hdrRaw.findIndex(v => normName(v).includes('proyecto'));
+      const fechaNacCol = hdrRaw.findIndex(v => { const lc = normName(v); return lc.includes('nacimiento') || lc.includes('cumpleanos') || lc.includes('cumpleaños') || lc === 'fecha nac' || lc === 'fecha nac.'; });
+
+      // Helper: convertir serial Excel o string a YYYY-MM-DD
+      function parseExcelBirthDate(val) {
+        if (!val) return null;
+        if (typeof val === 'number') {
+          const d = new Date((val - 25569) * 86400000);
+          if (isNaN(d.getTime())) return null;
+          const y = d.getUTCFullYear(); const m = String(d.getUTCMonth() + 1).padStart(2, '0'); const day = String(d.getUTCDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+        const s = String(val).trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        const pd = new Date(s);
+        if (!isNaN(pd.getTime())) {
+          const y = pd.getFullYear(); const m = String(pd.getMonth() + 1).padStart(2, '0'); const day = String(pd.getDate()).padStart(2, '0');
+          return `${y}-${m}-${day}`;
+        }
+        return null;
+      }
 
       const rowPeriods = all.slice(1).map(row => canonicalPeriod({
         no_periodo: Number(row[semanaCol]),
@@ -1203,6 +1223,7 @@ router.post(
           sal_diario: toNum(row[salDiarioCol]), salary_daily: toNum(row[salDiarioCol]),
           sdi: toNum(row[sdiCol]), sbc: toNum(row[sbcCol]),
           fecha_ingreso: norm(row[fechaIngCol]), fecha_alta: nowMxDate(),
+          birth_date: fechaNacCol >= 0 ? parseExcelBirthDate(row[fechaNacCol]) : null,
           created_at: nowMxDate(), updated_at: nowMxDate(),
         };
         if (rfcRaw.length >= 10 && curpRaw.length >= 6) {
@@ -1244,6 +1265,7 @@ router.post(
           department_id: dId, position_id: pId,
           sal_diario: toNum(row[salDiarioCol]), salary_daily: toNum(row[salDiarioCol]),
           sdi: toNum(row[sdiCol]), sbc: toNum(row[sbcCol]), fecha_ingreso: norm(row[fechaIngCol]),
+          birth_date: fechaNacCol >= 0 ? parseExcelBirthDate(row[fechaNacCol]) : null,
           created_at: nowMxDate(), updated_at: nowMxDate(),
         };
         db.rhh_employees.push(emp);
@@ -1296,6 +1318,7 @@ router.post(
             sdi: toNum(row[sdiCol]),
             sbc: toNum(row[sbcCol]),
             fecha_ingreso: norm(row[fechaIngCol]),
+            birth_date: fechaNacCol >= 0 ? parseExcelBirthDate(row[fechaNacCol]) : null,
             fecha_alta: nowMxDate(),
             created_at: nowMxDate(),
             updated_at: nowMxDate(),
@@ -1357,6 +1380,11 @@ router.post(
         if (isLatestRow && nssCol >= 0) {
           const nssVal = norm(row[nssCol]).replace(/[^0-9]/g, '');
           if (nssVal && !emp.nss) { emp.nss = nssVal; empChanged = true; }
+        }
+        // Actualizar fecha de nacimiento (birth_date) si viene en el Excel
+        if (isLatestRow && fechaNacCol >= 0) {
+          const bdayVal = parseExcelBirthDate(row[fechaNacCol]);
+          if (bdayVal && !emp.birth_date) { emp.birth_date = bdayVal; empChanged = true; }
         }
         // Crear emp_login si el empleado tiene RFC y CURP pero no tiene login
         if (isLatestRow && !emp.emp_login) {
