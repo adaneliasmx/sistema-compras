@@ -574,7 +574,7 @@
       "supervisor_id": null,
       "start_date": "2024-11-11",
       "hire_date": "2024-11-11",
-      "birth_date": null,
+      "birth_date": "1987-03-25",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -643,7 +643,7 @@
       "supervisor_id": null,
       "start_date": "2025-05-29",
       "hire_date": "2025-05-29",
-      "birth_date": null,
+      "birth_date": "1974-05-06",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -677,7 +677,7 @@
       "supervisor_id": null,
       "start_date": "2025-06-17",
       "hire_date": "2025-06-17",
-      "birth_date": null,
+      "birth_date": "1978-06-01",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -815,7 +815,7 @@
       "supervisor_id": null,
       "start_date": "2010-10-04",
       "hire_date": "2010-10-04",
-      "birth_date": null,
+      "birth_date": "1979-07-20",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -849,7 +849,7 @@
       "supervisor_id": null,
       "start_date": "2010-10-04",
       "hire_date": "2010-10-04",
-      "birth_date": null,
+      "birth_date": "1981-08-16",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -883,7 +883,7 @@
       "supervisor_id": null,
       "start_date": "2010-10-25",
       "hire_date": "2010-10-25",
-      "birth_date": null,
+      "birth_date": "1972-10-09",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -917,7 +917,7 @@
       "supervisor_id": null,
       "start_date": "2015-03-23",
       "hire_date": "2015-03-23",
-      "birth_date": null,
+      "birth_date": "1981-10-19",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -951,7 +951,7 @@
       "supervisor_id": null,
       "start_date": "2025-10-06",
       "hire_date": "2025-10-06",
-      "birth_date": null,
+      "birth_date": "2001-01-10",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -985,7 +985,7 @@
       "supervisor_id": null,
       "start_date": "2024-05-27",
       "hire_date": "2024-05-27",
-      "birth_date": null,
+      "birth_date": "2000-07-02",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1020,7 +1020,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-05",
       "hire_date": "2021-07-05",
-      "birth_date": null,
+      "birth_date": "1981-05-03",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1054,7 +1054,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-05",
       "hire_date": "2021-07-05",
-      "birth_date": null,
+      "birth_date": "1980-11-04",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1088,7 +1088,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-19",
       "hire_date": "2021-07-19",
-      "birth_date": null,
+      "birth_date": "1982-01-22",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1122,7 +1122,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-19",
       "hire_date": "2021-07-19",
-      "birth_date": null,
+      "birth_date": "1964-04-25",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1156,7 +1156,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-19",
       "hire_date": "2021-07-19",
-      "birth_date": null,
+      "birth_date": "1983-08-06",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1190,7 +1190,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-19",
       "hire_date": "2021-07-19",
-      "birth_date": null,
+      "birth_date": "1987-12-22",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1224,7 +1224,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-26",
       "hire_date": "2021-07-26",
-      "birth_date": null,
+      "birth_date": "1994-02-24",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1258,7 +1258,7 @@
       "supervisor_id": null,
       "start_date": "2022-01-10",
       "hire_date": "2022-01-10",
-      "birth_date": null,
+      "birth_date": "1999-01-01",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1292,7 +1292,7 @@
       "supervisor_id": null,
       "start_date": "2022-02-08",
       "hire_date": "2022-02-08",
-      "birth_date": null,
+      "birth_date": "1995-12-01",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1326,7 +1326,7 @@
       "supervisor_id": null,
       "start_date": "2022-10-31",
       "hire_date": "2022-10-31",
-      "birth_date": null,
+      "birth_date": "1980-03-19",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1395,7 +1395,7 @@
       "supervisor_id": null,
       "start_date": "2024-06-03",
       "hire_date": "2024-06-03",
-      "birth_date": null,
+      "birth_date": "2002-04-29",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1429,7 +1429,7 @@
       "supervisor_id": null,
       "start_date": "2024-07-01",
       "hire_date": "2024-07-01",
-      "birth_date": null,
+      "birth_date": "1986-01-23",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1463,7 +1463,7 @@
       "supervisor_id": null,
       "start_date": "2024-08-19",
       "hire_date": "2024-08-19",
-      "birth_date": null,
+      "birth_date": "2002-10-06",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1497,7 +1497,7 @@
       "supervisor_id": null,
       "start_date": "2024-11-25",
       "hire_date": "2024-11-25",
-      "birth_date": null,
+      "birth_date": "2001-11-06",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -1878,7 +1878,7 @@
       "supervisor_id": null,
       "start_date": "2024-12-23",
       "hire_date": "2024-12-23",
-      "birth_date": null,
+      "birth_date": "1991-07-08",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2014,7 +2014,7 @@
       "supervisor_id": null,
       "start_date": "2021-07-19",
       "hire_date": "2021-07-19",
-      "birth_date": null,
+      "birth_date": "1999-10-06",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2048,7 +2048,7 @@
       "supervisor_id": null,
       "start_date": "2021-08-30",
       "hire_date": "2021-08-30",
-      "birth_date": null,
+      "birth_date": "2000-04-30",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2082,7 +2082,7 @@
       "supervisor_id": null,
       "start_date": "2024-10-07",
       "hire_date": "2024-10-07",
-      "birth_date": null,
+      "birth_date": "1996-05-17",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2117,7 +2117,7 @@
       "supervisor_id": null,
       "start_date": "2024-10-21",
       "hire_date": "2024-10-21",
-      "birth_date": null,
+      "birth_date": "1983-02-20",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2220,7 +2220,7 @@
       "supervisor_id": null,
       "start_date": "2025-05-05",
       "hire_date": "2025-05-05",
-      "birth_date": null,
+      "birth_date": "2003-07-20",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2255,7 +2255,7 @@
       "supervisor_id": null,
       "start_date": "2025-05-14",
       "hire_date": "2025-05-14",
-      "birth_date": null,
+      "birth_date": "1968-04-11",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2290,7 +2290,7 @@
       "supervisor_id": null,
       "start_date": "2025-06-04",
       "hire_date": "2025-06-04",
-      "birth_date": null,
+      "birth_date": "1990-02-16",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2430,7 +2430,7 @@
       "supervisor_id": null,
       "start_date": "2024-08-19",
       "hire_date": "2024-08-19",
-      "birth_date": null,
+      "birth_date": "1980-05-31",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2464,7 +2464,7 @@
       "supervisor_id": null,
       "start_date": "2025-09-29",
       "hire_date": "2025-09-29",
-      "birth_date": null,
+      "birth_date": "1996-01-10",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2637,7 +2637,7 @@
       "supervisor_id": null,
       "start_date": "2026-02-03",
       "hire_date": "2026-02-03",
-      "birth_date": null,
+      "birth_date": "1996-09-20",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2706,7 +2706,7 @@
       "supervisor_id": null,
       "start_date": "2026-04-07",
       "hire_date": "2026-04-07",
-      "birth_date": null,
+      "birth_date": "1995-06-20",
       "status": "active",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2740,7 +2740,7 @@
       "supervisor_id": null,
       "start_date": "2026-04-13",
       "hire_date": "2026-04-13",
-      "birth_date": null,
+      "birth_date": "1997-02-28",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -2775,7 +2775,7 @@
       "supervisor_id": null,
       "start_date": "2026-04-13",
       "hire_date": "2026-04-13",
-      "birth_date": null,
+      "birth_date": "1989-08-03",
       "status": "inactive",
       "contract_type": "indefinido",
       "base_salary": null,
@@ -4091,7 +4091,7 @@
     {
       "id": 1,
       "date": "2026-01-01",
-      "name": "Año Nuevo",
+      "name": "1 de enero — Acuerdo sindical",
       "created_at": "2026-01-01T00:00:00.000Z",
       "sources": [
         "acuerdo_sindical"
@@ -4103,25 +4103,41 @@
       "id": 2,
       "date": "2026-02-02",
       "name": "Día de la Constitución",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "lft"
+      ],
+      "recurring_key": "lft-02-const"
     },
     {
       "id": 3,
       "date": "2026-03-16",
-      "name": "Natalicio de Juárez",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "name": "Natalicio de Benito Juárez",
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "lft"
+      ],
+      "recurring_key": "lft-03-juarez"
     },
     {
       "id": 4,
       "date": "2026-05-01",
       "name": "Día del Trabajo",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "lft"
+      ],
+      "recurring_key": "lft-05-01"
     },
     {
       "id": 5,
       "date": "2026-09-16",
-      "name": "Independencia",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "name": "Día de la Independencia",
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "lft"
+      ],
+      "recurring_key": "lft-09-16"
     },
     {
       "id": 6,
@@ -4133,7 +4149,12 @@
       "id": 7,
       "date": "2026-12-25",
       "name": "Navidad",
-      "created_at": "2026-01-01T00:00:00.000Z"
+      "created_at": "2026-01-01T00:00:00.000Z",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-25"
     },
     {
       "id": 8,
@@ -4167,6 +4188,105 @@
       "union_agreement": true,
       "recurring_key": "union-12-24",
       "created_at": "2026-09-04T14:42:43.071Z"
+    },
+    {
+      "id": 11,
+      "date": "2026-11-16",
+      "name": "Revolución Mexicana",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-11-rev",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 12,
+      "date": "2026-12-31",
+      "name": "31 de diciembre — Otorgado por la empresa",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-31",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 13,
+      "date": "2027-02-01",
+      "name": "Día de la Constitución",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-02-const",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 14,
+      "date": "2027-03-15",
+      "name": "Natalicio de Benito Juárez",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-03-juarez",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 15,
+      "date": "2027-05-01",
+      "name": "Día del Trabajo",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-05-01",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 16,
+      "date": "2027-09-16",
+      "name": "Día de la Independencia",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-09-16",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 17,
+      "date": "2027-11-15",
+      "name": "Revolución Mexicana",
+      "sources": [
+        "lft"
+      ],
+      "union_agreement": false,
+      "recurring_key": "lft-11-rev",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 18,
+      "date": "2027-12-25",
+      "name": "Navidad",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-25",
+      "created_at": "2026-09-28T23:49:09.083Z"
+    },
+    {
+      "id": 19,
+      "date": "2027-12-31",
+      "name": "31 de diciembre — Otorgado por la empresa",
+      "sources": [
+        "acuerdo_sindical"
+      ],
+      "union_agreement": true,
+      "recurring_key": "union-12-31",
+      "created_at": "2026-09-28T23:49:09.083Z"
     }
   ],
   "rhh_recurring_holidays": [
@@ -4184,6 +4304,85 @@
       "key": "union-12-24",
       "month_day": "12-24",
       "name": "24 de diciembre — Acuerdo sindical",
+      "start_year": 2026,
+      "source": "acuerdo_sindical",
+      "active": true
+    },
+    {
+      "id": 3,
+      "key": "lft-02-const",
+      "month_day": null,
+      "nth_monday": {
+        "month": 2,
+        "nth": 1
+      },
+      "name": "Día de la Constitución",
+      "start_year": 2026,
+      "source": "lft",
+      "active": true
+    },
+    {
+      "id": 4,
+      "key": "lft-03-juarez",
+      "month_day": null,
+      "nth_monday": {
+        "month": 3,
+        "nth": 3
+      },
+      "name": "Natalicio de Benito Juárez",
+      "start_year": 2026,
+      "source": "lft",
+      "active": true
+    },
+    {
+      "id": 5,
+      "key": "lft-05-01",
+      "month_day": "05-01",
+      "nth_monday": null,
+      "name": "Día del Trabajo",
+      "start_year": 2026,
+      "source": "lft",
+      "active": true
+    },
+    {
+      "id": 6,
+      "key": "lft-09-16",
+      "month_day": "09-16",
+      "nth_monday": null,
+      "name": "Día de la Independencia",
+      "start_year": 2026,
+      "source": "lft",
+      "active": true
+    },
+    {
+      "id": 7,
+      "key": "lft-11-rev",
+      "month_day": null,
+      "nth_monday": {
+        "month": 11,
+        "nth": 3
+      },
+      "name": "Revolución Mexicana",
+      "start_year": 2026,
+      "source": "lft",
+      "active": true
+    },
+    {
+      "id": 8,
+      "key": "union-12-25",
+      "month_day": "12-25",
+      "nth_monday": null,
+      "name": "Navidad",
+      "start_year": 2026,
+      "source": "acuerdo_sindical",
+      "active": true
+    },
+    {
+      "id": 9,
+      "key": "union-12-31",
+      "month_day": "12-31",
+      "nth_monday": null,
+      "name": "31 de diciembre — Otorgado por la empresa",
       "start_year": 2026,
       "source": "acuerdo_sindical",
       "active": true
