@@ -13,7 +13,9 @@ if (process.env.DATABASE_URL) {
     idleTimeoutMillis: 30000,
     max: 3,
     keepAlive: true,
-    keepAliveInitialDelayMillis: 10000
+    keepAliveInitialDelayMillis: 10000,
+    statement_timeout: 15000,
+    query_timeout: 20000
   });
   pool.on('error', err => console.error('[db-validaciones] Pool error (idle client):', err.message));
 }
