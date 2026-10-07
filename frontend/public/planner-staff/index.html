@@ -3204,42 +3204,41 @@ async function renderDashboard() {
     <!-- Graficas semanales por departamento -->
     <h3 style="color:var(--primary);margin:24px 0 14px">Resumen Semanal por Departamento</h3>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px" id="dashWeeklyGrid">
-      <div style="text-align:center;color:var(--muted);font-size:13px;padding:20px;grid-column:1/-1">Cargando datos semanales...</div>
+      ${deptos.map(d => {
+        const di = DEPTOS.find(x => x.id === d.id) || {};
+        return `
+        <div id="weekCard_${d.id}" style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px;text-align:center">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;justify-content:center">
+            <span style="font-size:18px">${di.icon || ''}</span>
+            <b style="font-size:13px;color:var(--primary)">${di.nombre || d.id}</b>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="loadWeeklyChart('${d.id}')" style="padding:8px 20px;font-size:12px;cursor:pointer">
+            📊 Cargar datos semanales
+          </button>
+        </div>`;
+      }).join('')}
     </div>`;
 
   // Render charts
   setTimeout(() => renderDashCharts(tend), 50);
-  // Load weekly charts
-  loadWeeklyCharts(deptos).catch(() => {});
 }
 
-async function loadWeeklyCharts(deptos) {
-  const grid = document.getElementById('dashWeeklyGrid');
-  if (!grid) return;
-  const settled = await Promise.allSettled(deptos.map(d => apiFetch('/api/planner/dashboard/' + d.id + '/semanal')));
-  const results = settled.map(r => r.status === 'fulfilled' ? r.value : null);
-  let html = '';
-  results.forEach((data, i) => {
-    if (!data) return;
-    const di = DEPTOS.find(x => x.id === deptos[i].id) || {};
-    const canvasId = 'weekChart_' + deptos[i].id;
-    const intCanvasId = 'weekIntChart_' + deptos[i].id;
-    const hasIntegracion = data.integracion && Object.keys(data.integracion).length > 0;
-    html += `
-      <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px">
-        <h4 style="font-size:13px;color:var(--primary);margin-bottom:4px">${di.icon || ''} ${di.nombre || deptos[i].id}</h4>
-        <div style="font-size:10px;color:var(--muted);margin-bottom:10px">${data.semana.inicio} al ${data.semana.fin}</div>
-        <canvas id="${canvasId}" height="130"></canvas>
-        ${hasIntegracion ? `<canvas id="${intCanvasId}" height="100" style="margin-top:10px"></canvas>` : ''}
-      </div>`;
-  });
-  grid.innerHTML = html || '<div style="color:var(--muted);font-size:13px;padding:20px">Sin datos semanales</div>';
-  setTimeout(() => {
-    results.forEach((data, i) => {
-      if (!data) return;
-      renderWeeklyDeptoChart(deptos[i].id, data);
-    });
-  }, 50);
+async function loadWeeklyChart(deptoId) {
+  const card = document.getElementById('weekCard_' + deptoId);
+  if (!card) return;
+  const di = DEPTOS.find(x => x.id === deptoId) || {};
+  card.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;justify-content:center"><span style="font-size:18px">' + (di.icon||'') + '</span><b style="font-size:13px;color:var(--primary)">' + (di.nombre||deptoId) + '</b></div><div class="spinner"></div><div style="font-size:11px;color:var(--muted);margin-top:6px">Cargando...</div>';
+  const data = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal');
+  if (!data) { card.innerHTML = '<div style="color:var(--red);font-size:12px;padding:16px">Error al cargar datos</div><button class="btn btn-outline btn-sm" onclick="loadWeeklyChart(\'' + deptoId + '\')" style="font-size:11px">Reintentar</button>'; return; }
+  const canvasId = 'weekChart_' + deptoId;
+  const intCanvasId = 'weekIntChart_' + deptoId;
+  const hasIntegracion = data.integracion && Object.keys(data.integracion).length > 0;
+  card.innerHTML =
+    '<h4 style="font-size:13px;color:var(--primary);margin-bottom:4px">' + (di.icon||'') + ' ' + (di.nombre||deptoId) + '</h4>' +
+    '<div style="font-size:10px;color:var(--muted);margin-bottom:10px">' + data.semana.inicio + ' al ' + data.semana.fin + '</div>' +
+    '<canvas id="' + canvasId + '" height="130"></canvas>' +
+    (hasIntegracion ? '<canvas id="' + intCanvasId + '" height="100" style="margin-top:10px"></canvas>' : '');
+  setTimeout(() => renderWeeklyDeptoChart(deptoId, data), 50);
 }
 
 function renderWeeklyDeptoChart(deptoId, data) {
@@ -3896,45 +3895,16 @@ async function openDeptoSlides(deptoId) {
     _ds.slides.push({ titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html: html });
   });
 
-  // ── Slide semanal: graficas si aplica ──
+  // ── Slide semanal: boton para cargar graficas bajo demanda ──
   var semanalIdx = _ds.slides.length;
-  _ds.slides.push({ titulo: 'Resumen Semanal', tipo: 'semanal', html: '<div style="text-align:center;padding:20px 0"><div class="spinner"></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Cargando datos semanales...</div></div>' });
+  _ds.slides.push({ titulo: 'Resumen Semanal', tipo: 'semanal', html:
+    '<div style="text-align:center;padding:40px 0">' +
+    '<div style="font-size:48px;margin-bottom:12px">📊</div>' +
+    '<h3 style="color:var(--primary);margin:0 0 10px;font-size:17px">Resumen Semanal</h3>' +
+    '<div style="font-size:13px;color:var(--muted);margin-bottom:18px">Graficas de KPIs, paros, piezas y mas</div>' +
+    '<button class="btn btn-accent" onclick="dsLoadWeeklySlide(\'' + deptoId + '\',' + semanalIdx + ')" style="padding:10px 28px;font-size:14px;cursor:pointer">Cargar graficas</button></div>'
+  });
   _ds.weeklyData = null;
-  // Cargar datos semanales async — guardar en _ds y actualizar slide html
-  apiFetch('/api/planner/dashboard/' + deptoId + '/semanal').then(function(wdata) {
-    if (!wdata) return;
-    _ds.weeklyData = wdata;
-    var int = wdata.integracion || {};
-    var h = '<h3 style="color:var(--primary);margin:0 0 16px;font-size:17px">Resumen Semanal (' + wdata.semana.inicio + ' al ' + wdata.semana.fin + ')</h3>';
-    if (int.kpis_por_dia && (deptoId === 'produccion' || deptoId === 'calidad' || deptoId === 'mantenimiento')) {
-      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Eficiencia por linea</div><canvas id="dsWkEfi" height="140"></canvas></div>';
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Disponibilidad por linea</div><canvas id="dsWkDisp" height="140"></canvas></div>';
-      h += '</div>';
-    }
-    if (int.calidad_por_dia && deptoId === 'calidad') {
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Calidad por dia</div><canvas id="dsWkCal" height="140"></canvas></div>';
-    }
-    if (int.paros_por_dia) {
-      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Minutos de paro por dia</div><canvas id="dsWkParos" height="140"></canvas></div>';
-      if (int.pareto_paros && int.pareto_paros.length) {
-        h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Pareto causas de paro</div><canvas id="dsWkPareto" height="140"></canvas></div>';
-      }
-      h += '</div>';
-    }
-    if (int.piezas_por_dia) {
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Piezas procesadas por linea</div><canvas id="dsWkPzas" height="140"></canvas></div>';
-    }
-    if (int.ots_por_dia) {
-      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Ordenes de trabajo</div><canvas id="dsWkOTs" height="140"></canvas></div>';
-    }
-    if (h.indexOf('canvas') < 0) h += '<div style="color:var(--muted);font-size:14px;text-align:center;padding:20px">Sin datos de integracion para este departamento</div>';
-    // Actualizar el slide html guardado
-    if (_ds.slides[semanalIdx]) _ds.slides[semanalIdx].html = h;
-    // Si el usuario ya esta viendo este slide, repintar
-    if (_ds.idx === semanalIdx) paintSlide();
-  }).catch(function() {});
 
   // ── Slide final: actividades ──
   var ah = '<div style="padding:6px 0">' +
@@ -4029,6 +3999,51 @@ function paintSlide() {
   if (s.tipo === 'semanal' && _ds.weeklyData && typeof Chart !== 'undefined') {
     setTimeout(function() { dsRenderWeeklyCharts(_ds.weeklyData); }, 80);
   }
+}
+
+async function dsLoadWeeklySlide(deptoId, semanalIdx) {
+  // Mostrar spinner en el slide actual
+  if (_ds.slides[semanalIdx]) {
+    _ds.slides[semanalIdx].html = '<div style="text-align:center;padding:30px 0"><div class="spinner"></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Cargando datos semanales...</div></div>';
+    paintSlide();
+  }
+  var wdata = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal');
+  if (!wdata) {
+    if (_ds.slides[semanalIdx]) {
+      _ds.slides[semanalIdx].html = '<div style="text-align:center;padding:30px 0"><div style="color:var(--red);font-size:14px;margin-bottom:14px">Error al cargar datos</div><button class="btn btn-outline" onclick="dsLoadWeeklySlide(\'' + deptoId + '\',' + semanalIdx + ')" style="font-size:13px">Reintentar</button></div>';
+      paintSlide();
+    }
+    return;
+  }
+  _ds.weeklyData = wdata;
+  var int = wdata.integracion || {};
+  var h = '<h3 style="color:var(--primary);margin:0 0 16px;font-size:17px">Resumen Semanal (' + wdata.semana.inicio + ' al ' + wdata.semana.fin + ')</h3>';
+  if (int.kpis_por_dia && (deptoId === 'produccion' || deptoId === 'calidad' || deptoId === 'mantenimiento')) {
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Eficiencia por linea</div><canvas id="dsWkEfi" height="140"></canvas></div>';
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Disponibilidad por linea</div><canvas id="dsWkDisp" height="140"></canvas></div>';
+    h += '</div>';
+  }
+  if (int.calidad_por_dia && deptoId === 'calidad') {
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Calidad por dia</div><canvas id="dsWkCal" height="140"></canvas></div>';
+  }
+  if (int.paros_por_dia) {
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Minutos de paro por dia</div><canvas id="dsWkParos" height="140"></canvas></div>';
+    if (int.pareto_paros && int.pareto_paros.length) {
+      h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Pareto causas de paro</div><canvas id="dsWkPareto" height="140"></canvas></div>';
+    }
+    h += '</div>';
+  }
+  if (int.piezas_por_dia) {
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Piezas procesadas por linea</div><canvas id="dsWkPzas" height="140"></canvas></div>';
+  }
+  if (int.ots_por_dia) {
+    h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Ordenes de trabajo</div><canvas id="dsWkOTs" height="140"></canvas></div>';
+  }
+  if (h.indexOf('canvas') < 0) h += '<div style="color:var(--muted);font-size:14px;text-align:center;padding:20px">Sin datos de integracion para este departamento</div>';
+  if (_ds.slides[semanalIdx]) _ds.slides[semanalIdx].html = h;
+  paintSlide();
 }
 
 function dsRenderWeeklyCharts(wdata) {
