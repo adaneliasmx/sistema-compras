@@ -32,6 +32,10 @@ function mergeEmployeesFromSeed(existingEmployees = [], seedEmployees = []) {
     if (index !== -1) {
       // Existing values, including null/false, are intentional production data.
       merged[index] = { ...clone(seedEmployee), ...merged[index] };
+      // birth_date: si producción tiene null/vacío y el seed aporta valor, usar el del seed
+      if (!merged[index].birth_date && seedEmployee.birth_date) {
+        merged[index].birth_date = seedEmployee.birth_date;
+      }
       continue;
     }
 
