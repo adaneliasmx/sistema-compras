@@ -123,6 +123,7 @@ const INCIDENCIA_TYPES = [
   'labora', 'falta', 'festivo', 'vacacion', 'baja',
   'retardo', 'incapacidad', 'permiso_cg', 'permiso_sg',
   'paro_tecnico', 'descanso', 'turno_incompleto',
+  'cumpleanos_trabajado', 'cumpleanos_descanso',
 ];
 
 const INCIDENCIA_LABELS = {
@@ -136,8 +137,10 @@ const INCIDENCIA_LABELS = {
   permiso_cg:        'Permiso C/G',
   permiso_sg:        'Permiso S/G',
   paro_tecnico:      'Paro Técnico',
-  descanso:          'Descanso',
-  turno_incompleto:  'Turno Inc.',
+  descanso:              'Descanso',
+  turno_incompleto:      'Turno Inc.',
+  cumpleanos_trabajado:  'Cumpleaños Trabajado',
+  cumpleanos_descanso:   'Cumpleaños (Descanso)',
 };
 
 /* ── Helpers TxT ───────────────────────────────────────────────────────────── */
@@ -1184,6 +1187,7 @@ router.get('/diaria', rhhAuthRequired, async (req, res) => {
 
         // Cumpleaños
         const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+        if (isBirthday && autoType !== 'baja') autoType = 'cumpleanos_descanso';
         const cumpleRegistro = cumpleIncs.find(c => c.employee_id === emp.id && c.birth_date_match === fecha);
         // Bonos del día
         const dayBonos = allBonos.filter(b => b.employee_id === emp.id && b.fecha === fecha);
@@ -1350,6 +1354,38 @@ function syncDeudaTurnoIncompleto(db, attRec, userLabel) {
   existing.updated_by = userLabel;
 }
 
+// ── Auto-sync cumpleaños incidencia + gratificación desde captura ────────────
+function syncCumpleFromAttendance(db, employeeId, fecha, incidencia_type, userLabel) {
+  const laboro = incidencia_type === 'cumpleanos_trabajado';
+  const incs = getCumpleIncidencias(db);
+  const d = new Date(fecha + 'T12:00:00');
+  const nextWeek = new Date(weekMonday(fecha) + 'T12:00:00');
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  const semanaPago = nextWeek.toLocaleDateString('en-CA', { timeZone: 'UTC' });
+
+  const existing = incs.find(i => i.employee_id === employeeId && i.birth_date_match === fecha);
+  if (existing) {
+    existing.laboro = laboro;
+    existing.status = laboro ? 'cumpleanos_laborado' : 'pendiente';
+    existing.semana_pago = laboro ? semanaPago : null;
+    existing.gratificacion_tipo = laboro ? (d.getDay() === 0 ? 'domingo_cumpleanos' : 'cumpleanos_laborado') : null;
+    existing.updated_at = nowMxDateTime();
+  } else {
+    incs.push({
+      id: nextId(incs),
+      employee_id: employeeId,
+      birth_date_match: fecha,
+      semana_pago: laboro ? semanaPago : null,
+      laboro,
+      status: laboro ? 'cumpleanos_laborado' : 'pendiente',
+      gratificacion_tipo: laboro ? (d.getDay() === 0 ? 'domingo_cumpleanos' : 'cumpleanos_laborado') : null,
+      created_at: nowMxDateTime(),
+      created_by: userLabel,
+    });
+  }
+  syncBirthdayGratification(db, employeeId, fecha, semanaPago, laboro);
+}
+
 // ── Función interna de upsert para bulk y single ──────────────────────────────
 function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db) {
   const {
@@ -1367,6 +1403,18 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
   }
 
   const dayContext = db ? employeeDayContext(db, employee_id, fecha) : null;
+
+  // ── Cumpleaños: forzar tipos de incidencia ──
+  const CUMPLE_TYPES = ['cumpleanos_trabajado', 'cumpleanos_descanso'];
+  if (dayContext?.isBirthday) {
+    if (!CUMPLE_TYPES.includes(incidencia_type)) {
+      return { error: 'En día de cumpleaños solo se permite: Cumpleaños trabajado o Cumpleaños (descanso)', skip: true };
+    }
+  }
+  if (CUMPLE_TYPES.includes(incidencia_type) && !dayContext?.isBirthday) {
+    return { error: 'Solo se puede usar incidencia de cumpleaños en el día de cumpleaños del empleado', skip: true };
+  }
+
   const workIncidences = ['labora', 'retardo', 'turno_incompleto', 'paro_tecnico'];
   if (dayContext?.birthdayHolidayConflict && (workIncidences.includes(incidencia_type) || te_activo)) {
     return { error: 'El trabajador no puede laborar: su cumpleaños coincide con un festivo', skip: true };
@@ -1414,6 +1462,11 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
   const hpTurno = incidencia_type === 'turno_incompleto' && horas_pendientes_turno > 0
     ? Number(horas_pendientes_turno) : null;
 
+  // Auto-notas para cumpleaños
+  const cumpleNotas = incidencia_type === 'cumpleanos_trabajado' ? 'Cumpleaños trabajado'
+    : incidencia_type === 'cumpleanos_descanso' ? 'Descanso por cumpleaños'
+    : null;
+
   if (idx !== -1) {
     att[idx] = {
       ...att[idx],
@@ -1422,7 +1475,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
       proyecto:           proyecto    ?? att[idx].proyecto,
       proyectos:          proyectosArr ?? att[idx].proyectos ?? null,
       shift_id:           shift_id    ? Number(shift_id) : att[idx].shift_id,
-      notas:              notas       ?? att[idx].notas,
+      notas:              cumpleNotas || notas || att[idx].notas,
       te_activo:          !!te_activo,
       te_hora_entrada:    te_activo ? (te_hora_entrada || null) : null,
       te_hora_salida:     te_activo ? (te_hora_salida  || null) : null,
@@ -1434,6 +1487,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
       updated_at:         nowMxDateTime(),
     };
     if (db) syncDeudaTurnoIncompleto(db, att[idx], userLabel);
+    if (db && CUMPLE_TYPES.includes(incidencia_type)) syncCumpleFromAttendance(db, Number(employee_id), fecha, incidencia_type, userLabel);
     return { rec: att[idx], isNew: false };
   }
 
@@ -1446,7 +1500,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
     proyecto:           proyecto   || null,
     proyectos:          proyectosArr || null,
     shift_id:           shift_id   ? Number(shift_id) : null,
-    notas:              notas      || null,
+    notas:              cumpleNotas || notas || null,
     te_activo:          !!te_activo,
     te_hora_entrada:    te_activo ? (te_hora_entrada || null) : null,
     te_hora_salida:     te_activo ? (te_hora_salida  || null) : null,
@@ -1459,6 +1513,7 @@ function upsertAttendance(att, item, userLabel, role, skipLockCheck, unlocks, db
   };
   att.push(rec);
   if (db) syncDeudaTurnoIncompleto(db, rec, userLabel);
+  if (db && CUMPLE_TYPES.includes(incidencia_type)) syncCumpleFromAttendance(db, Number(employee_id), fecha, incidencia_type, userLabel);
   return { rec, isNew: true };
 }
 
@@ -1803,6 +1858,7 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
       if (emp.template_status === 'baja') autoType = 'baja';
       if (rec?.te_horas) teHorasWeek += rec.te_horas;
       const isBirthday = !!(emp.birth_date && emp.birth_date.slice(5) === fecha.slice(5));
+      if (isBirthday && autoType !== 'baja') autoType = 'cumpleanos_descanso';
       const dayTxtPagos = allPagos.filter(p => p.employee_id === emp.id && p.fecha_pago === fecha);
       const enrichedDayTxtPagos = dayTxtPagos.map(p => enrichTxtPayment(db, p));
       const txtPagadoHoras = enrichedDayTxtPagos.reduce((s, p) => s + p.horas_trabajadas, 0);
@@ -1860,7 +1916,10 @@ router.get('/semana', rhhAuthRequired, async (req, res) => {
       const lbl = b.bono_type === 'limpieza' ? 'Bono Limp.' : 'Bono Enc.Res.';
       comentarios.push({ text: `${lbl}: ${b.status}`, type: 'bono', status: b.status });
     }
-    if (empCumple) comentarios.push({ text: 'Cumple. laborado', type: 'cumpleanos' });
+    const cumpleTrabDays = days.filter(d => d.incidencia_type === 'cumpleanos_trabajado').length;
+    const cumpleDescDays = days.filter(d => d.incidencia_type === 'cumpleanos_descanso').length;
+    if (empCumple || cumpleTrabDays > 0) comentarios.push({ text: 'Cumpleaños trabajado', type: 'cumpleanos' });
+    else if (cumpleDescDays > 0) comentarios.push({ text: 'Descanso por cumpleaños', type: 'cumpleanos' });
     if (festivosLaborados > 0) comentarios.push({ text: `Festivo laborado: ${festivosLaborados} día${festivosLaborados > 1 ? 's' : ''}`, type: 'festivo' });
     if (specialConflicts > 0) comentarios.push({ text: 'Festivo + cumpleaños: no labora', type: 'especial_no_labora' });
     if (teHorasWeek > 0) comentarios.push({ text: `Tiempo extra: ${teHorasWeek} h`, type: 'te' });

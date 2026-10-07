@@ -7475,7 +7475,9 @@ const ASIST_INC_TYPES = [
   { v:'permiso_sg',        l:'Permiso S/G',  bg:'#ffe4e6', fg:'#9f1239' },
   { v:'paro_tecnico',      l:'Paro Téc.',    bg:'#fff7ed', fg:'#c2410c' },
   { v:'descanso',          l:'Descanso',     bg:'#f9fafb', fg:'#9ca3af' },
-  { v:'turno_incompleto',  l:'Turno Inc.',   bg:'#fce7f3', fg:'#9d174d' },
+  { v:'turno_incompleto',      l:'Turno Inc.',             bg:'#fce7f3', fg:'#9d174d' },
+  { v:'cumpleanos_trabajado',  l:'Cumpleaños Trabajado',   bg:'#fce7f3', fg:'#9d174d' },
+  { v:'cumpleanos_descanso',   l:'Cumpleaños (Descanso)',  bg:'#f3e8ff', fg:'#6b21a8' },
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -7517,6 +7519,8 @@ function statusColor(status) {
     falta:                { bg: '#fee2e2', text: '#991b1b' },
     retardo:              { bg: '#ffedd5', text: '#9a3412' },
     cumpleanos:           { bg: '#f3e8ff', text: '#6b21a8' },
+    cumpleanos_trabajado: { bg: '#fce7f3', text: '#9d174d' },
+    cumpleanos_descanso:  { bg: '#f3e8ff', text: '#6b21a8' },
     permiso:              { bg: '#fef9c3', text: '#854d0e' },
     permiso_sin_goce:     { bg: '#fee2e2', text: '#991b1b', border: '1px solid #fca5a5' },
     incapacidad:          { bg: '#ede9fe', text: '#5b21b6' },
@@ -7533,7 +7537,8 @@ function statusLabel(status) {
   const map = {
     labora: 'Asistió', festivo: 'FESTIVO', descanso: 'Descanso',
     vacaciones: 'Vacaciones', falta: 'Falta', retardo: 'Retardo',
-    cumpleanos: 'CUMPLEAÑOS', permiso: 'Permiso', permiso_sin_goce: 'Perm s/g',
+    cumpleanos: 'CUMPLEAÑOS', cumpleanos_trabajado: 'Cumple. Trab.', cumpleanos_descanso: 'Cumple. Desc.',
+    permiso: 'Permiso', permiso_sin_goce: 'Perm s/g',
     incapacidad: 'Incapacidad', vacio: '',
     // Estados pendientes (Automatización 3)
     vacaciones_pendiente: 'Vac. ⏳',
@@ -7553,7 +7558,20 @@ function openStatusDropdown(empId, date, currentStatus, cellEl) {
   // Cerrar dropdowns previos
   document.querySelectorAll('.status-dropdown').forEach(d => d.remove());
 
-  const options = [
+  // Detectar si el día es cumpleaños del empleado
+  let isBdayDay = false;
+  if (attendanceData) {
+    for (const sg of (attendanceData.shifts || [])) {
+      const emp = (sg.employees || []).find(e => e.id === empId);
+      if (emp) {
+        const day = (emp.days || []).find(d => d.date === date);
+        if (day?.birthday) isBdayDay = true;
+        break;
+      }
+    }
+  }
+
+  const allOptions = [
     { value: 'labora',     label: 'Asistió',         bg: '#dcfce7', text: '#166534' },
     { value: 'falta',      label: 'Falta',            bg: '#fee2e2', text: '#991b1b' },
     { value: 'retardo',    label: 'Retardo',          bg: '#ffedd5', text: '#9a3412' },
@@ -7562,8 +7580,14 @@ function openStatusDropdown(empId, date, currentStatus, cellEl) {
     { value: 'permiso_sin_goce', label: 'Permiso s/goce',   bg: '#fee2e2', text: '#991b1b' },
     { value: 'descanso',         label: 'Descanso',         bg: '#f1f5f9', text: '#64748b' },
     { value: 'festivo',    label: 'Festivo',          bg: '#e0e7ff', text: '#3730a3' },
-    { value: 'cumpleanos', label: 'CUMPLEAÑOS',       bg: '#f3e8ff', text: '#6b21a8' }
+    { value: 'cumpleanos', label: 'CUMPLEAÑOS',       bg: '#f3e8ff', text: '#6b21a8' },
+    { value: 'cumpleanos_trabajado', label: 'Cumpleaños Trabajado', bg: '#fce7f3', text: '#9d174d' },
+    { value: 'cumpleanos_descanso',  label: 'Cumpleaños (Descanso)', bg: '#f3e8ff', text: '#6b21a8' },
   ];
+  // Si es cumpleaños, solo permitir las dos opciones de cumpleaños
+  const options = isBdayDay
+    ? allOptions.filter(o => o.value === 'cumpleanos_trabajado' || o.value === 'cumpleanos_descanso')
+    : allOptions.filter(o => o.value !== 'cumpleanos_trabajado' && o.value !== 'cumpleanos_descanso');
 
   const dropdown = document.createElement('div');
   dropdown.className = 'status-dropdown';
@@ -9853,19 +9877,27 @@ async function asisCaptureView() {
 
         // Día de descanso: domingo O auto-descanso (sábado para L-V, etc.)
         // En descanso: incidencia fija, solo TE y TXT disponibles
-        const isRestDay = isBaja ? false : (dayData.is_rest_day ?? (isSundayDay || (isAuto && inc === 'descanso')));
+        // Si es cumpleaños, NO contar como descanso para permitir elegir la incidencia
+        const isRestDay = isBaja ? false : (!!dayData.is_birthday ? false : (dayData.is_rest_day ?? (isSundayDay || (isAuto && inc === 'descanso'))));
         const editable = (isBaja || specialConflict || txtProtected) ? false : (isRestDay ? true : (!isLocked || noRec));
 
         const incType  = txtVisual || (inc ? (ASIST_INC_TYPES.find(t => t.v === inc) || null) : null);
         const selStyle = incType ? `background:${incType.bg};color:${incType.fg};` : 'background:#f8fafc;color:#9ca3af;';
 
+        const isBdayCapture = !!dayData.is_birthday;
+        const CUMPLE_VALS = ['cumpleanos_trabajado', 'cumpleanos_descanso'];
         const incSelOpts = txtDisplayStatus
           ? `<option value="${inc}" selected>${escHtml(dayData.txt_display_label || 'TXT')}</option>`
-          : `<option value="" ${!inc?'selected':''} style="background:#f8fafc;color:#9ca3af;">— Sin asignar —</option>` +
-            ASIST_INC_TYPES
-              .filter(t => canParoTecnico || t.v !== 'paro_tecnico')
-              .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
-              .join('');
+          : isBdayCapture
+            ? ASIST_INC_TYPES
+                .filter(t => CUMPLE_VALS.includes(t.v))
+                .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
+                .join('')
+            : `<option value="" ${!inc?'selected':''} style="background:#f8fafc;color:#9ca3af;">— Sin asignar —</option>` +
+              ASIST_INC_TYPES
+                .filter(t => (canParoTecnico || t.v !== 'paro_tecnico') && !CUMPLE_VALS.includes(t.v))
+                .map(t => `<option value="${t.v}" ${inc===t.v?'selected':''} style="background:${t.bg};color:${t.fg};">${t.l}</option>`)
+                .join('');
 
         // Multi-proyecto: array [{name,pct}] o fallback a proyecto simple
         const empProyectos = dayData.proyectos || (dayData.proyecto ? [{ name: dayData.proyecto, pct: 100 }] : []);
@@ -9993,7 +10025,6 @@ async function asisCaptureView() {
             </select>
             ${dayData.txt_excedente_horas > 0 ? `<div style="margin-top:3px;font-size:9px;font-weight:700;color:#047857;">${dayData.txt_aplicado_horas} h a TXT + ${dayData.txt_excedente_horas} h a TE</div>` : ''}
             ${dayData.festivo_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#c2410c;">Festivo laborado</div>' : ''}
-            ${dayData.cumpleanos_laborado ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#be185d;">Cumpleaños laborado</div>' : ''}
             ${specialConflict ? '<div style="margin-top:3px;font-size:10px;font-weight:700;color:#991b1b;">Festivo + cumpleaños: no puede laborar</div>' : ''}
             <div id="asis-hp-wrap-${emp.employee_id}" style="margin-top:3px;${isIncTurnoInc?'':'display:none;'}">
               <input type="number" id="asis-hp-${emp.employee_id}" value="${hpTurno}" min="0.5" max="12" step="0.5" placeholder="Hrs pend."
@@ -10056,10 +10087,7 @@ async function asisCaptureView() {
               ${rowBtn}
               ${lockInfo}
               ${txtBtn}
-              ${isBirthday && !specialConflict ? `<label style="display:inline-flex;align-items:center;gap:3px;font-size:9px;color:#ec4899;cursor:pointer;white-space:nowrap;">
-                <input type="checkbox" id="asis-cumple-${emp.employee_id}" ${dayData.cumpleanos_laborado?'checked':''} onchange="asisCumpleLaboroToggle(${emp.employee_id},'${selFecha}',this.checked)"
-                  style="accent-color:#ec4899;width:12px;height:12px;" /> Cumple. lab.
-              </label>` : (specialConflict ? '<span style="font-size:9px;color:#991b1b;font-weight:600;">Cumpleaños en festivo</span>' : '')}
+              ${specialConflict ? '<span style="font-size:9px;color:#991b1b;font-weight:600;">Cumpleaños en festivo</span>' : ''}
               ${canBono && canCaptureBonos && !specialConflict ? `<div style="display:flex;gap:3px;margin-top:2px;">
                 ${['limpieza','encendido_resistencias'].map(bt => {
                   const existing = dayBonos.find(b => b.type === bt) || empBonosWeek.find(b => b.bono_type === bt);
@@ -10332,6 +10360,10 @@ function asisToggleTE(empId) {
 function asisOnIncChange(empId, value) {
   const wrap = document.getElementById('asis-hp-wrap-' + empId);
   if (wrap) wrap.style.display = value === 'turno_incompleto' ? '' : 'none';
+  // Si cambia a tipo cumpleaños, auto-guardar para sincronizar notas y gratificación
+  if (value === 'cumpleanos_trabajado' || value === 'cumpleanos_descanso') {
+    asisMarkDirty(empId);
+  }
 }
 
 /* ── TxT: Crear deuda desde falta ────────────────────────────────────────── */
@@ -10532,12 +10564,17 @@ async function asisAutoSave(empId, fecha) {
   const hpInput = document.getElementById('asis-hp-' + empId);
   const horas_pendientes_turno = (incidencia_type === 'turno_incompleto' && hpInput) ? Number(hpInput.value) || 0 : null;
 
+  // Auto-notas cumpleaños
+  const cumpleNotas = incidencia_type === 'cumpleanos_trabajado' ? 'Cumpleaños trabajado'
+    : incidencia_type === 'cumpleanos_descanso' ? 'Descanso por cumpleaños' : null;
+
   if (btn) { btn.textContent = '...'; btn.style.background = '#94a3b8'; btn.disabled = true; }
   try {
     await api('/api/rhh/asistencia/diaria', {
       method: 'POST',
       body: JSON.stringify({
         employee_id: empId, fecha, incidencia_type,
+        notas: cumpleNotas,
         proyecto:  proyectosArr.length === 1 ? proyectosArr[0].name : (proyectosArr.length > 0 ? proyectosArr[0].name : null),
         proyectos: proyectosArr.length > 0 ? proyectosArr : null,
         te_activo,
@@ -10549,7 +10586,7 @@ async function asisAutoSave(empId, fecha) {
       })
     });
     if (btn) { btn.textContent = '✓'; btn.style.background = '#16a34a'; btn.disabled = false; }
-    if (te_activo) {
+    if (te_activo || incidencia_type.startsWith('cumpleanos_')) {
       setTimeout(() => asisCaptureView(), 1500);
     }
   } catch(err) {
@@ -10598,12 +10635,17 @@ async function asisGuardarFila(empId, fecha) {
   const hpInput2 = document.getElementById('asis-hp-' + empId);
   const horas_pendientes_turno2 = (incidencia_type === 'turno_incompleto' && hpInput2) ? Number(hpInput2.value) || 0 : null;
 
+  // Auto-notas cumpleaños
+  const cumpleNotas2 = incidencia_type === 'cumpleanos_trabajado' ? 'Cumpleaños trabajado'
+    : incidencia_type === 'cumpleanos_descanso' ? 'Descanso por cumpleaños' : null;
+
   if (btn) { btn.textContent = '...'; btn.disabled = true; }
   try {
     await api('/api/rhh/asistencia/diaria', {
       method: 'POST',
       body: JSON.stringify({
         employee_id: empId, fecha, incidencia_type,
+        notas: cumpleNotas2,
         proyecto:      proyectosArr.length === 1 ? proyectosArr[0].name : (proyectosArr.length > 0 ? proyectosArr[0].name : null),
         proyectos:     proyectosArr.length > 0 ? proyectosArr : null,
         te_activo,
@@ -10617,6 +10659,9 @@ async function asisGuardarFila(empId, fecha) {
     if (btn) { btn.textContent = 'Guardado'; btn.style.background = '#16a34a'; btn.disabled = false; }
     if (te_activo) {
       toast('Registro guardado. Vale de tiempo extra generado — pendiente de aprobacion.');
+      setTimeout(() => asisCaptureView(), 1200);
+    } else if (incidencia_type.startsWith('cumpleanos_')) {
+      toast('Registro de cumpleaños guardado');
       setTimeout(() => asisCaptureView(), 1200);
     } else {
       toast('Registro guardado');
@@ -10787,15 +10832,12 @@ async function asisListaView() {
         else if (rec?.txt_display_status === 'parcial') t = { l:rec.txt_display_label || 'TXT parcial', bg:'#ffedd5', fg:'#c2410c' };
         else if (rec?.txt_display_status === 'pagado') t = { l:rec.txt_display_label || 'TXT pagado', bg:'#dcfce7', fg:'#166534' };
         else if (rec?.festivo_laborado) t = { l:'Festivo laborado', bg:'#ffedd5', fg:'#9a3412' };
-        else if (rec?.cumpleanos_laborado) t = { l:'Cumpleaños laborado', bg:'#fce7f3', fg:'#9d174d' };
         // TE y deuda junto a la incidencia
         const teH = rec?.te_horas;
         const teBadge = teH ? `<span style="font-size:9px;color:#ea580c;font-weight:700;margin-left:2px;">+${teH}</span>` : '';
         const txtBadge = rec?.txt_pagado_horas > 0 && !rec?.txt_display_status
           ? `<span style="display:block;font-size:9px;color:#047857;font-weight:700;margin-top:2px;">TXT pagado ${rec.txt_pagado_horas} h</span>` : '';
-        const birthdayBadge = rec?.is_birthday && !rec?.birthday_holiday_conflict && !rec?.cumpleanos_laborado
-          ? '<span style="display:block;font-size:9px;color:#be185d;font-weight:700;margin-top:2px;">Cumpleaños</span>' : '';
-        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}${txtBadge}${birthdayBadge}</td>`;
+        return `<td style="text-align:center;padding:4px 2px;"><span style="display:inline-block;padding:3px 7px;border-radius:6px;font-size:11px;font-weight:600;background:${t.bg};color:${t.fg};">${t.l}</span>${teBadge}${txtBadge}</td>`;
       }).join('');
 
       // Comentarios

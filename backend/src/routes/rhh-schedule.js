@@ -711,14 +711,16 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
         }
       }
 
-      // 4. Cumpleaños
+      // 4. Cumpleaños — forzar status de cumpleaños si aplica
       let birthday = false;
       let birthday_work = false;
       if (emp.birth_date) {
         const bMD = emp.birth_date.slice(5); // MM-DD
         if (bMD === dateStr.slice(5)) {
           birthday = true;
-          if (!isFutureDate && status === 'labora') birthday_work = true;
+          if (!isFutureDate && (status === 'labora' || status === 'cumpleanos_trabajado')) birthday_work = true;
+          // Default: mostrar como cumpleaños si no tiene registro explícito
+          if (!attRecord && status !== 'baja') status = 'cumpleanos';
         }
       }
 
@@ -790,7 +792,7 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     return res.status(400).json({ error: 'employee_id, date y status son requeridos' });
   }
 
-  const VALID_STATUS = ['labora', 'festivo', 'descanso', 'vacaciones', 'falta', 'retardo', 'cumpleanos', 'vacio', 'permiso', 'permiso_sin_goce', 'incapacidad'];
+  const VALID_STATUS = ['labora', 'festivo', 'descanso', 'vacaciones', 'falta', 'retardo', 'cumpleanos', 'cumpleanos_trabajado', 'cumpleanos_descanso', 'vacio', 'permiso', 'permiso_sin_goce', 'incapacidad'];
   if (!VALID_STATUS.includes(status)) {
     return res.status(400).json({ error: 'Status inválido' });
   }
