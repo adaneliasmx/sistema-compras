@@ -8837,11 +8837,12 @@ async function listaAsistenciaView() {
           }
           const borderStyle = colors.border ? `border:${colors.border};` : '';
           const attCellStyle = day.birthday_work ? `background:${colors.bg};color:${colors.text};${borderStyle}outline:2px solid #f59e0b;` : `background:${colors.bg};color:${colors.text};${borderStyle}`;
+          const notesTitle = day.notes ? ` title="${day.notes.replace(/"/g,'&quot;')}"` : '';
 
           dayCells += `<td style="padding:2px 3px;">
             <div class="${editCls}" data-empid="${emp.id}" data-date="${day.date}"
               style="${attCellStyle}"
-              ${clickHandler}>
+              ${clickHandler}${notesTitle}>
               ${label}${bdayIcon}${bdayDouble}
             </div>
           </td>`;

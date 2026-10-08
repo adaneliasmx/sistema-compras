@@ -669,13 +669,16 @@ router.get('/weekly-attendance', rhhAuthRequired, (req, res) => {
       }
 
       // 2. Registro explícito en rhh_attendance (sobreescribe base)
-      const attRecord = attendanceRecords.find(a => a.employee_id === emp.id && a.date === dateStr);
+      //    Captura diaria usa {fecha, incidencia_type}; Lista usa {date, status}
+      const attRecord = attendanceRecords.find(a =>
+        a.employee_id === emp.id && (a.date === dateStr || a.fecha === dateStr)
+      );
       let teHours = 0;
       let notes = null;
       if (attRecord) {
-        status = attRecord.status;
+        status = attRecord.status || attRecord.incidencia_type || status;
         teHours = attRecord.te_hours || 0;
-        notes = attRecord.notes || null;
+        notes = attRecord.notes || attRecord.notas || null;
         if (!isFutureDate) isEditable = true;
       }
 
@@ -826,12 +829,16 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     return res.status(400).json({ error: 'cost_center inválido (rh | operaciones | cliente)' });
   }
 
+  // Auto-notas para cumpleaños
+  const cumpleNotes = status === 'cumpleanos_trabajado' ? 'Cumpleaños trabajado'
+    : status === 'cumpleanos_descanso' ? 'Descanso por cumpleaños' : null;
+
   if (existingIdx !== -1) {
     attendance[existingIdx] = {
       ...attendance[existingIdx],
       status,
       te_hours: te_hours !== undefined ? Number(te_hours) : attendance[existingIdx].te_hours,
-      notes: notes !== undefined ? notes : attendance[existingIdx].notes,
+      notes: cumpleNotes || (notes !== undefined ? notes : attendance[existingIdx].notes),
       cost_center: cost_center !== undefined ? cc : attendance[existingIdx].cost_center,
       project_id: project_id !== undefined ? (project_id || null) : attendance[existingIdx].project_id,
       registered_by: req.rhhUser.id,
@@ -848,7 +855,7 @@ router.post('/attendance', rhhAuthRequired, rhhRequireRole('supervisor', 'rh', '
     date: String(date),
     status: String(status),
     te_hours: te_hours !== undefined ? Number(te_hours) : 0,
-    notes: notes || null,
+    notes: cumpleNotes || notes || null,
     cost_center: cc,
     project_id: project_id || null,
     registered_by: req.rhhUser.id,
@@ -1299,12 +1306,12 @@ router.get('/te-calc', rhhAuthRequired, (req, res) => {
       const isSunday = dow === 0;
       const isHoliday = holidays.some(h => h.date === dateStr);
       const worksThisDay = shift ? shift.work_days.includes(dow) : false;
-      const attRecord = attendanceRecords.find(a => a.employee_id === emp.id && a.date === dateStr);
+      const attRecord = attendanceRecords.find(a => a.employee_id === emp.id && (a.date === dateStr || a.fecha === dateStr));
       const teHours = attRecord?.te_hours || 0;
-      const actualStatus = attRecord?.status || (worksThisDay ? 'labora' : 'descanso');
+      const actualStatus = attRecord?.status || attRecord?.incidencia_type || (worksThisDay ? 'labora' : 'descanso');
       const isBirthdayWork = !!(emp.birth_date &&
         emp.birth_date.slice(5) === dateStr.slice(5) &&
-        (actualStatus === 'labora' || actualStatus === 'present'));
+        (actualStatus === 'labora' || actualStatus === 'cumpleanos_trabajado' || actualStatus === 'present'));
       return {
         date: dateStr,
         day_of_week: dow,
