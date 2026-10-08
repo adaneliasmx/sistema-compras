@@ -1473,4 +1473,80 @@ router.post('/import-excel', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (re
   }
 });
 
+// GET /api/rhh/schedule/weekly-rol/export-xlsx — descargar historico completo de ROL semanal
+router.get('/weekly-rol/export-xlsx', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  try {
+    const XLSX = require('xlsx');
+    const db = read();
+    const weeklyRols = db.rhh_weekly_rol || [];
+    const rolAssignments = db.rhh_rol_assignments || [];
+    const employees = db.rhh_employees || [];
+    const shifts = db.rhh_shifts || [];
+
+    const empMap = {};
+    for (const e of employees) empMap[e.id] = e;
+    const shiftMap = {};
+    for (const s of shifts) shiftMap[s.id] = s;
+
+    // Sheet 1: Rol Semanal — one row per assignment per week
+    const sheet1Rows = [];
+    for (const rol of weeklyRols) {
+      if (rol.shift_id == null) continue;
+      const shift = shiftMap[rol.shift_id];
+      const weekEnd = new Date(new Date(rol.week_start + 'T12:00:00').getTime() + 6 * 86400000)
+        .toISOString().slice(0, 10);
+      const assigns = rolAssignments.filter(a => a.rol_id === rol.id);
+      for (const a of assigns) {
+        const emp = empMap[a.employee_id];
+        sheet1Rows.push({
+          id_empleado: emp?.employee_number || String(a.employee_id),
+          nombre_empleado: emp?.full_name || 'Desconocido',
+          turno_asignado: shift?.name || String(rol.shift_id),
+          fecha_inicio_rol: rol.week_start,
+          fecha_fin_rol: weekEnd,
+          semana_rol: rol.week_start,
+        });
+      }
+    }
+    sheet1Rows.sort((a, b) => a.semana_rol.localeCompare(b.semana_rol) || a.nombre_empleado.localeCompare(b.nombre_empleado));
+
+    const ws1 = XLSX.utils.json_to_sheet(sheet1Rows, {
+      header: ['id_empleado', 'nombre_empleado', 'turno_asignado', 'fecha_inicio_rol', 'fecha_fin_rol', 'semana_rol'],
+    });
+    ws1['!cols'] = [{ wch: 14 }, { wch: 32 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
+    if (ws1.A1) ws1.A1.v = 'ID Empleado';
+    if (ws1.B1) ws1.B1.v = 'Nombre Empleado';
+    if (ws1.C1) ws1.C1.v = 'Turno Asignado';
+    if (ws1.D1) ws1.D1.v = 'Fecha Inicio Rol';
+    if (ws1.E1) ws1.E1.v = 'Fecha Fin Rol';
+    if (ws1.F1) ws1.F1.v = 'Semana Rol';
+
+    // Sheet 2: Horarios Turnos
+    const sheet2Rows = shifts.map(s => ({
+      turno_asignado: s.name,
+      hora_inicio: s.start_time || '',
+      hora_fin: s.end_time || '',
+    }));
+    const ws2 = XLSX.utils.json_to_sheet(sheet2Rows, {
+      header: ['turno_asignado', 'hora_inicio', 'hora_fin'],
+    });
+    ws2['!cols'] = [{ wch: 24 }, { wch: 14 }, { wch: 14 }];
+    if (ws2.A1) ws2.A1.v = 'Turno Asignado';
+    if (ws2.B1) ws2.B1.v = 'Hora Inicio';
+    if (ws2.C1) ws2.C1.v = 'Hora Fin';
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws1, 'Rol Semanal');
+    XLSX.utils.book_append_sheet(wb, ws2, 'Horarios Turnos');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    res.setHeader('Content-Disposition', 'attachment; filename="rol_semanal_historico.xlsx"');
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.send(buf);
+  } catch (err) {
+    console.error('[schedule] Error generando Excel ROL:', err.message);
+    res.status(500).json({ error: 'Error generando Excel' });
+  }
+});
+
 module.exports = router;

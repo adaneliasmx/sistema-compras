@@ -8257,6 +8257,25 @@ async function printRolSemanal(week) {
   }
 }
 
+async function exportRolSemanalXlsx() {
+  try {
+    const resp = await fetch('/api/rhh/schedule/weekly-rol/export-xlsx', {
+      headers: { Authorization: 'Bearer ' + (state.token || '') }
+    });
+    if (!resp.ok) { toast('Error al generar XLSX', 'error'); return; }
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'rol_semanal_historico.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('XLSX descargado', 'success');
+  } catch (e) {
+    toast('Error: ' + e.message, 'error');
+  }
+}
+
 async function listaRolView(el) {
   el.innerHTML = shell('<div class="loading-overlay">Cargando ROL semanal...</div>', 'lista-asistencia');
   try {
@@ -8370,6 +8389,7 @@ async function listaRolView(el) {
         <span style="font-weight:700;font-size:14px;">${weekLabel}</span>
         <button class="btn-ghost" onclick="rolNavWeek(1)">Semana siguiente ›</button>
         <button class="btn-ghost" style="font-size:12px;" onclick="rolWeekStart=getMonday(new Date());listaAsistenciaView()">Hoy</button>
+        ${canEdit ? `<button class="btn-ghost" style="font-size:12px;color:#059669;border-color:#a7f3d0;" onclick="exportRolSemanalXlsx()">Descargar XLSX</button>` : ''}
         ${canEdit && rolWeekStart >= getMonday(new Date()) ? `<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;margin-left:auto;" onclick="rolVerCambiosPlantilla('lista')">📋 Actualizar Plantilla</button>` : (canEdit ? '<span style="font-size:11px;color:#64748b;margin-left:auto;">🔒 Plantilla histórica protegida</span>' : '')}
       </div>
       ${shiftsHtml}
