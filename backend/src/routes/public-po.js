@@ -49,6 +49,7 @@ function enrichItems(db, po) {
     const req = reqItem.requisition_id
       ? (db.requisitions || []).find(r => r.id === reqItem.requisition_id) || {}
       : {};
+    const comments = item.comments || reqItem.comments || '';
     return {
       id: item.id,
       code: cat.code || '—',
@@ -59,7 +60,8 @@ function enrichItems(db, po) {
       subtotal: item.subtotal,
       currency: item.currency || po.currency || 'MXN',
       urgency: req.urgency || '—',
-      estimated_date: req.programmed_date || '—'
+      estimated_date: req.programmed_date || '—',
+      comments
     };
   });
 }

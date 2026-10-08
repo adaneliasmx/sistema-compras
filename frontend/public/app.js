@@ -3977,7 +3977,7 @@ async function purchasesView() {
                       const sub = Number(i.quantity||0) * Number(i.unit_cost||0);
                       const iv = sub * 0.16;
                       return `<tr style="border-bottom:1px solid #f3f4f6">
-                        <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}</td>
+                        <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}${i.comments?`<br><small style="color:#6b7280;font-style:italic">💬 ${escapeHtml(i.comments)}</small>`:''}</td>
                         <td style="padding:4px 8px;text-align:right">${Number(i.quantity||0)}</td>
                         <td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td>
                         <td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td>
@@ -4080,7 +4080,7 @@ async function purchasesView() {
                   <tbody>${items.map(i => {
                     const sub = Number(i.quantity||0) * Number(i.unit_cost||0);
                     return `<tr style="border-bottom:1px solid #f3f4f6">
-                      <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}</td>
+                      <td style="padding:4px 8px">${escapeHtml(i.description||i.name||i.manual_item_name||'-')}${i.comments?`<br><small style="color:#6b7280;font-style:italic">💬 ${escapeHtml(i.comments)}</small>`:''}</td>
                       <td style="padding:4px 8px;text-align:right">${Number(i.quantity||0)} ${i.unit||''}</td>
                       <td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td>
                       <td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td>
@@ -4745,7 +4745,7 @@ async function proveedorPOView() {
           </div>
           ${po.po_items && po.po_items.length ? `<div style="overflow-x:auto"><table style="width:100%;font-size:12px;border-collapse:collapse;margin-top:4px">
             <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left;border-bottom:1px solid #e5e7eb">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Unidad</th><th style="padding:4px 8px;text-align:right">Precio unit.</th><th style="padding:4px 8px;text-align:right">Subtotal</th></tr></thead>
-            <tbody>${po.po_items.map(i=>`<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity}</td><td style="padding:4px 8px;text-align:right">${i.unit||'pza'}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${Number(i.subtotal||0).toFixed(2)}</td></tr>`).join('')}</tbody>
+            <tbody>${po.po_items.map(i=>`<tr><td style="padding:4px 8px">${i.description||'-'}${i.comments?`<br><small style="color:#6b7280;font-style:italic">💬 ${escapeHtml(i.comments)}</small>`:''}</td><td style="padding:4px 8px;text-align:right">${i.quantity}</td><td style="padding:4px 8px;text-align:right">${i.unit||'pza'}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${Number(i.subtotal||0).toFixed(2)}</td></tr>`).join('')}</tbody>
           </table></div>` : ''}
         </div>`).join('')}
     </div>
@@ -4773,7 +4773,7 @@ async function proveedorPOView() {
           <div style="overflow-x:auto;margin-bottom:10px">
             <table style="width:100%;font-size:12px;border-collapse:collapse">
               <thead><tr style="background:#f8fafc"><th style="padding:4px 8px;text-align:left">Descripción</th><th style="padding:4px 8px;text-align:right">Cant.</th><th style="padding:4px 8px;text-align:right">Precio</th><th style="padding:4px 8px;text-align:right">Subtotal</th><th style="padding:4px 8px;text-align:right">IVA 16%</th><th style="padding:4px 8px;text-align:right;font-weight:700">Total</th><th style="padding:4px 8px"></th></tr></thead>
-              <tbody>${po.po_items.map(i => { const sub=Number(i.quantity||0)*Number(i.unit_cost||0); const iva=sub*0.16; return `<tr><td style="padding:4px 8px">${i.description||'-'}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${iva.toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(sub+iva).toFixed(2)}</td><td style="padding:4px 8px;text-align:center"><button class="btn-clarif" data-poid="${po.id}" data-poitemid="${i.id}" data-desc="${(i.description||'').replace(/"/g,'&quot;')}" data-qty="${i.quantity}" data-unit="${i.unit||''}" data-cost="${i.unit_cost||0}" style="font-size:11px;padding:2px 7px;background:none;border:1px solid #6366f1;color:#6366f1;border-radius:4px;cursor:pointer" title="Solicitar aclaración de precio/cantidad">💬</button></td></tr>`; }).join('')}</tbody>
+              <tbody>${po.po_items.map(i => { const sub=Number(i.quantity||0)*Number(i.unit_cost||0); const iva=sub*0.16; return `<tr><td style="padding:4px 8px">${i.description||'-'}${i.comments?`<br><small style="color:#6b7280;font-style:italic">💬 ${escapeHtml(i.comments)}</small>`:''}</td><td style="padding:4px 8px;text-align:right">${i.quantity} ${i.unit||''}</td><td style="padding:4px 8px;text-align:right">$${Number(i.unit_cost||0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${sub.toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${iva.toFixed(2)}</td><td style="padding:4px 8px;text-align:right;font-weight:600">$${(sub+iva).toFixed(2)}</td><td style="padding:4px 8px;text-align:center"><button class="btn-clarif" data-poid="${po.id}" data-poitemid="${i.id}" data-desc="${(i.description||'').replace(/"/g,'&quot;')}" data-qty="${i.quantity}" data-unit="${i.unit||''}" data-cost="${i.unit_cost||0}" style="font-size:11px;padding:2px 7px;background:none;border:1px solid #6366f1;color:#6366f1;border-radius:4px;cursor:pointer" title="Solicitar aclaración de precio/cantidad">💬</button></td></tr>`; }).join('')}</tbody>
               <tfoot><tr style="background:#f0fdf4;font-weight:700"><td colspan="3" style="padding:4px 8px;text-align:right">Totales:</td><td style="padding:4px 8px;text-align:right">$${po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0).toFixed(2)}</td><td style="padding:4px 8px;text-align:right">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*0.16).toFixed(2)}</td><td style="padding:4px 8px;text-align:right;color:#1d4ed8">$${(po.po_items.reduce((s,i)=>s+Number(i.quantity||0)*Number(i.unit_cost||0),0)*1.16).toFixed(2)}</td><td></td></tr></tfoot>
             </table>
           </div>` : ''}

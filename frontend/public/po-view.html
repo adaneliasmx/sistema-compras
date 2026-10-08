@@ -171,7 +171,7 @@
       const itemsHtml = items.map(item => `
         <tr>
           <td class="mono">${esc(item.code)}</td>
-          <td>${esc(item.name)}</td>
+          <td>${esc(item.name)}${item.comments ? `<br><small style="color:#64748b;font-style:italic">💬 ${esc(item.comments)}</small>` : ''}</td>
           <td class="text-right">${Number(item.quantity || 0)} ${esc(item.unit)}</td>
           <td class="text-right">${fmtMoney(item.unit_cost, item.currency)}</td>
           <td class="text-right">${fmtMoney(item.subtotal, item.currency)}</td>

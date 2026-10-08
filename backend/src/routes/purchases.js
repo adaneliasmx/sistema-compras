@@ -324,6 +324,7 @@ function createPOForGroup(db, lines, supplierId, buyerUserId, currency) {
       unit_cost: line.unit_cost,
       currency: line.currency || 'MXN',
       subtotal,
+      comments: line.comments || '',
       status: 'En proceso'
     });
     const oldStatus = line.status;
@@ -748,7 +749,9 @@ router.get('/purchase-orders/:id', allowRoles('comprador', 'proveedor', 'admin')
   if (req.user.supplier_id && po.supplier_id !== req.user.supplier_id) return res.status(403).json({ error: 'Sin permiso' });
   const items = db.purchase_order_items.filter(i => i.purchase_order_id === po.id).map(i => {
     const cat = db.catalog_items.find(c => c.id === i.catalog_item_id) || {};
-    return { ...i, name: cat.name || i.description || i.manual_item_name || '-', code: cat.code || '—' };
+    const reqItem = i.requisition_item_id ? (db.requisition_items || []).find(ri => ri.id === i.requisition_item_id) : null;
+    const comments = i.comments || (reqItem ? reqItem.comments : '') || '';
+    return { ...i, name: cat.name || i.description || i.manual_item_name || '-', code: cat.code || '—', comments };
   });
   res.json({ po, items });
 });
