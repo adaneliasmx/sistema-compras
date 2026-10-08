@@ -632,11 +632,13 @@ router.get('/sessions/my-pending', rhhAuthRequired, (req, res) => {
       );
       const emp = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
       const pos = emp ? (db.rhh_positions || []).find(p => p.id === emp.position_id) : null;
-      // Si el empleado tiene position_id, buscar formulario dinámicamente (más preciso).
-      // Solo usar entry.form_id guardado como fallback cuando position_id es null/ausente.
+      // Prioridad: 1) override manual, 2) dinamico por puesto, 3) form_id guardado
+      const overrideForm = entry.form_group_override
+        ? forms.find(f => f.group_name === entry.form_group_override) : null;
       const dynamicForm = emp?.position_id ? findFormForEmp(emp, forms, db.rhh_positions) : null;
       const entryFormId = entry.form_id || null;
-      const form = dynamicForm
+      const form = overrideForm
+        || dynamicForm
         || (entryFormId ? forms.find(f => f.id === entryFormId) : null)
         || null;
       pending.push({
@@ -716,24 +718,43 @@ router.patch('/sessions/:id/entries', rhhAuthRequired, rhhRequireRole('rh', 'adm
   const idx = sessions.findIndex(s => s.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Sesión no encontrada' });
 
-  const { employee_id, evaluador_id, asistencias, faltas, retardos, actas, amonestaciones } = req.body || {};
+  const { employee_id, evaluador_id, asistencias, faltas, retardos, actas, amonestaciones, form_group_override } = req.body || {};
   if (!employee_id) return res.status(400).json({ error: 'employee_id requerido' });
 
   const session = { ...sessions[idx], entries: [...(sessions[idx].entries || [])] };
   const entryIdx = session.entries.findIndex(e => e.employee_id === Number(employee_id));
-  const entry = {
-    employee_id: Number(employee_id),
-    evaluador_id: evaluador_id ? Number(evaluador_id) : null,
-    asistencias: asistencias !== undefined ? Number(asistencias) : null,
-    faltas: faltas !== undefined ? Number(faltas) : null,
-    retardos: retardos !== undefined ? Number(retardos) : null,
-    actas: actas !== undefined ? Number(actas) : null,
-    amonestaciones: amonestaciones !== undefined ? Number(amonestaciones) : null,
-    saved: true
-  };
 
-  if (entryIdx >= 0) session.entries[entryIdx] = { ...session.entries[entryIdx], ...entry };
-  else session.entries.push(entry);
+  // Si solo viene form_group_override (sin datos numericos), actualizar parcialmente
+  const isFormOverrideOnly = form_group_override !== undefined
+    && evaluador_id === undefined && asistencias === undefined;
+
+  if (isFormOverrideOnly) {
+    const patch = { form_group_override: form_group_override || null };
+    if (entryIdx >= 0) {
+      session.entries[entryIdx] = { ...session.entries[entryIdx], ...patch };
+    } else {
+      session.entries.push({
+        employee_id: Number(employee_id), evaluador_id: null,
+        asistencias: null, faltas: null, retardos: null, actas: null, amonestaciones: null,
+        saved: false, ...patch
+      });
+    }
+  } else {
+    const entry = {
+      employee_id: Number(employee_id),
+      evaluador_id: evaluador_id ? Number(evaluador_id) : null,
+      asistencias: asistencias !== undefined ? Number(asistencias) : null,
+      faltas: faltas !== undefined ? Number(faltas) : null,
+      retardos: retardos !== undefined ? Number(retardos) : null,
+      actas: actas !== undefined ? Number(actas) : null,
+      amonestaciones: amonestaciones !== undefined ? Number(amonestaciones) : null,
+      saved: true
+    };
+    if (form_group_override !== undefined) entry.form_group_override = form_group_override || null;
+
+    if (entryIdx >= 0) session.entries[entryIdx] = { ...session.entries[entryIdx], ...entry };
+    else session.entries.push(entry);
+  }
 
   sessions[idx] = session;
   db.rhh_eval_sessions = sessions;
@@ -759,11 +780,13 @@ router.post('/sessions/:id/assign', rhhAuthRequired, rhhRequireRole('rh', 'admin
     const form = findFormForEmp(emp, forms, db.rhh_positions);
     const eIdx = session.entries.findIndex(e => e.employee_id === Number(empId));
     if (eIdx >= 0) {
+      // Respetar form_group_override si ya existe
+      const existingOverride = session.entries[eIdx].form_group_override || null;
+      const resolvedForm = existingOverride ? forms.find(f => f.group_name === existingOverride) : form;
       session.entries[eIdx] = {
         ...session.entries[eIdx],
         evaluador_id: Number(evaluador_id),
-        // Guardar form_id en la entry para que my-pending lo use aunque position_id cambie
-        form_id: form?.id ?? session.entries[eIdx].form_id ?? null,
+        form_id: resolvedForm?.id ?? session.entries[eIdx].form_id ?? null,
       };
     } else {
       session.entries.push({
@@ -793,6 +816,8 @@ router.post('/sessions/:id/relink-forms', rhhAuthRequired, rhhRequireRole('rh', 
   let linked = 0;
   for (let i = 0; i < session.entries.length; i++) {
     const entry = session.entries[i];
+    // No sobreescribir asignaciones manuales
+    if (entry.form_group_override) continue;
     const emp  = (db.rhh_employees || []).find(e => e.id === entry.employee_id);
     const form = findFormForEmp(emp, forms, db.rhh_positions);
     if (form && form.id !== entry.form_id) {

@@ -6015,7 +6015,10 @@ async function buildEvalSessionTab(sessions, forms) {
     const entryRows = employees.map(emp => {
       const entry = (session.entries || []).find(e => e.employee_id === emp.id);
       const pos = state.positions.find(p => p.id === emp.position_id);
-      const formName = findEvalFormName(emp, forms, evalFormMap);
+      const autoFormName = findEvalFormName(emp, forms, evalFormMap);
+      const overrideName = entry?.form_group_override || null;
+      const formName = overrideName || autoFormName;
+      const isOverride = !!overrideName && overrideName !== autoFormName;
       const isSaved = entry && entry.saved;
       const supOpts = supOptsBase.replace(`value="${entry && entry.evaluador_id}"`, `value="${entry && entry.evaluador_id}" selected`);
       const evalSel = `<select id="ev-eval-${emp.id}" style="font-size:12px;padding:3px 6px;min-width:120px;"${isSaved?' disabled':''}>${supOpts}</select>`;
@@ -6024,10 +6027,13 @@ async function buildEvalSessionTab(sessions, forms) {
         return `<input type="number" id="ev-${field}-${emp.id}" min="0" value="${hasVal?val:''}" placeholder="—" style="width:55px;font-size:12px;padding:3px 5px;text-align:center;${isSaved?'background:#f0fdf4;':''}" ${isSaved?'disabled':''}>`;
       };
       const isAssigned = !!(entry && entry.evaluador_id);
+      const formLabel = formName
+        ? `<span style="cursor:pointer;text-decoration:underline dotted;" title="Click para cambiar formulario">${escHtml(formName)}</span>${isOverride ? ' <span style="font-size:9px;color:#b45309;" title="Asignado manualmente">(manual)</span>' : ''}`
+        : '<span style="cursor:pointer;text-decoration:underline dotted;" title="Click para asignar formulario">Sin form</span>';
       return `<tr id="ev-row-${emp.id}" data-assigned="${isAssigned?'1':'0'}" style="${isSaved?'background:#f0fdf4;':''}">
         <td style="font-size:13px;font-weight:600">${escHtml(emp.full_name)}</td>
         <td style="font-size:12px;color:#6b7280">${escHtml(pos?pos.name:'—')}</td>
-        <td style="font-size:11px;color:${formName?'#0369a1':'#b91c1c'};">${formName ? escHtml(formName) : '⚠ Sin form'}</td>
+        <td style="font-size:11px;color:${formName?'#0369a1':'#b91c1c'};cursor:pointer;" onclick="evalOpenFormOverride(${emp.id},'${escHtml((formName||'').replace(/'/g,"\\'"))}',${evalSessionId})">${formLabel}</td>
         <td>${evalSel}</td>
         <td style="text-align:center">${numField('asis', entry?entry.asistencias:undefined)}</td>
         <td style="text-align:center">${numField('falt', entry?entry.faltas:undefined)}</td>
@@ -6923,6 +6929,79 @@ async function evalGuardarVinculacion(formId) {
     });
     document.getElementById('eval-vinc-modal')?.remove();
     toast('Puestos actualizados', 'success');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Dropdown: asignar/cambiar formulario de un empleado en Sesiones ──────────
+function evalOpenFormOverride(empId, currentFormName, sessionId) {
+  document.querySelectorAll('.eval-form-dropdown').forEach(d => d.remove());
+  const forms = window._evalForms || [];
+  if (!forms.length) { toast('No hay formularios. Carga las plantillas primero.', 'warning'); return; }
+
+  const dropdown = document.createElement('div');
+  dropdown.className = 'eval-form-dropdown';
+  dropdown.style.cssText = 'position:fixed;z-index:9999;background:#fff;border:1px solid #d1d5db;border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);padding:6px 0;min-width:220px;max-height:350px;overflow-y:auto;';
+
+  // Opcion "Auto (por puesto)"
+  const autoItem = document.createElement('div');
+  autoItem.style.cssText = 'padding:8px 14px;font-size:13px;cursor:pointer;color:#6b7280;border-bottom:1px solid #f3f4f6;';
+  autoItem.textContent = 'Auto (por puesto)';
+  autoItem.title = 'Quitar asignacion manual, usar formulario automatico por puesto';
+  autoItem.onmouseenter = function() { this.style.background = '#f0f9ff'; };
+  autoItem.onmouseleave = function() { this.style.background = ''; };
+  autoItem.onclick = function(e) {
+    e.stopPropagation();
+    dropdown.remove();
+    evalSaveFormOverride(sessionId, empId, null);
+  };
+  dropdown.appendChild(autoItem);
+
+  for (const f of forms) {
+    const item = document.createElement('div');
+    const isCurrent = f.group_name === currentFormName;
+    item.style.cssText = 'padding:8px 14px;font-size:13px;cursor:pointer;' + (isCurrent ? 'font-weight:700;color:#2563eb;background:#eff6ff;' : '');
+    item.textContent = f.group_name + ' (' + (f.items || []).length + ' items)';
+    item.onmouseenter = function() { if (!isCurrent) this.style.background = '#f0f9ff'; };
+    item.onmouseleave = function() { if (!isCurrent) this.style.background = ''; };
+    item.onclick = (function(gName) {
+      return function(e) {
+        e.stopPropagation();
+        dropdown.remove();
+        evalSaveFormOverride(sessionId, empId, gName);
+      };
+    })(f.group_name);
+    dropdown.appendChild(item);
+  }
+
+  // Posicionar cerca del click
+  const row = document.getElementById('ev-row-' + empId);
+  if (row) {
+    const cell = row.cells[2];
+    const rect = cell.getBoundingClientRect();
+    dropdown.style.top = Math.min(rect.bottom + 2, window.innerHeight - 360) + 'px';
+    dropdown.style.left = Math.min(rect.left, window.innerWidth - 240) + 'px';
+  }
+
+  document.body.appendChild(dropdown);
+  setTimeout(function() {
+    document.addEventListener('click', function closeFO() {
+      dropdown.remove();
+      document.removeEventListener('click', closeFO);
+    }, { once: true });
+  }, 0);
+}
+
+async function evalSaveFormOverride(sessionId, empId, groupName) {
+  try {
+    await api('/api/rhh/evaluations/sessions/' + sessionId + '/entries', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        employee_id: empId,
+        form_group_override: groupName || ''
+      })
+    });
+    toast(groupName ? 'Formulario asignado: ' + groupName : 'Formulario restaurado a automatico', 'success');
     evaluacionesView();
   } catch(err) { toast(err.message, 'error'); }
 }
