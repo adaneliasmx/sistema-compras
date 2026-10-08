@@ -1489,19 +1489,21 @@ router.get('/weekly-rol/export-xlsx', rhhAuthRequired, rhhRequireRole('rh', 'adm
     for (const s of shifts) shiftMap[s.id] = s;
 
     // Sheet 1: Rol Semanal — one row per assignment per week
+    // Attendance-control ROLs have shift_id==null; the shift is on each assignment.
+    // Schedule ROLs have shift_id on the ROL itself.
     const sheet1Rows = [];
     for (const rol of weeklyRols) {
-      if (rol.shift_id == null) continue;
-      const shift = shiftMap[rol.shift_id];
       const weekEnd = new Date(new Date(rol.week_start + 'T12:00:00').getTime() + 6 * 86400000)
         .toISOString().slice(0, 10);
       const assigns = rolAssignments.filter(a => a.rol_id === rol.id);
       for (const a of assigns) {
         const emp = empMap[a.employee_id];
+        const shiftId = a.shift_id ?? rol.shift_id;
+        const shift = shiftId != null ? shiftMap[shiftId] : null;
         sheet1Rows.push({
           id_empleado: emp?.employee_number || String(a.employee_id),
           nombre_empleado: emp?.full_name || 'Desconocido',
-          turno_asignado: shift?.name || String(rol.shift_id),
+          turno_asignado: shift?.name || (shiftId != null ? String(shiftId) : ''),
           fecha_inicio_rol: rol.week_start,
           fecha_fin_rol: weekEnd,
           semana_rol: rol.week_start,
