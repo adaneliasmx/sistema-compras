@@ -485,7 +485,7 @@ router.post('/sync-position-names', rhhAuthRequired, rhhRequireRole('rh', 'admin
 // POST /api/rhh/evaluations/forms  — crear form vacío para un grupo
 router.post('/forms', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
   const db = read();
-  const { group_name, position_ids } = req.body || {};
+  const { group_name, position_ids, position_names } = req.body || {};
   if (!group_name) return res.status(400).json({ error: 'group_name requerido' });
 
   const forms = db.rhh_eval_forms || [];
@@ -496,6 +496,7 @@ router.post('/forms', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
     id: nextId(forms),
     group_name,
     position_ids: Array.isArray(position_ids) ? position_ids : [],
+    position_names: Array.isArray(position_names) ? position_names : [],
     items: [],
     created_at: nowMxDate(),
     updated_at: nowMxDate()
@@ -513,7 +514,7 @@ router.patch('/forms/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req,
   const idx = forms.findIndex(f => f.id === Number(req.params.id));
   if (idx === -1) return res.status(404).json({ error: 'Formulario no encontrado' });
 
-  const { items, position_ids, group_name } = req.body || {};
+  const { items, position_ids, position_names, group_name } = req.body || {};
 
   if (items !== undefined) {
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items debe ser un array' });
@@ -530,6 +531,7 @@ router.patch('/forms/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req,
     }));
   }
   if (position_ids !== undefined) forms[idx].position_ids = position_ids;
+  if (position_names !== undefined) forms[idx].position_names = position_names;
   if (group_name !== undefined) forms[idx].group_name = group_name;
   forms[idx].updated_at = nowMxDate();
 

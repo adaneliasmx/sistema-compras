@@ -6115,20 +6115,35 @@ async function buildEvalFormsTab(forms) {
         <td style="text-align:center;font-weight:700;color:${POND_COLOR[it.ponderacion]||'#6b7280'}">${it.ponderacion||0}</td>
         <td><button class="btn-ghost" style="font-size:11px;color:#b91c1c;" onclick="evalDeleteItem(${idx})">✕</button></td>
       </tr>`).join('');
+
+    // Puestos vinculados al formulario actual
+    const linkedPosIds = new Set((form?.position_ids || []).map(Number));
+    const linkedNames = (state.positions || []).filter(p => linkedPosIds.has(p.id)).map(p => escHtml(p.name));
+    const linkedHtml = linkedNames.length > 0
+      ? linkedNames.map(n => `<span style="display:inline-block;background:#eff6ff;color:#1e40af;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600;margin:2px;">${n}</span>`).join('')
+      : '<span style="color:#9ca3af;font-size:12px;">Sin puestos vinculados</span>';
+
     formHtml = `
+      <div class="card section" style="margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <h4 style="margin:0">Puestos vinculados</h4>
+          <button class="btn-ghost" style="font-size:12px;color:#0369a1;" onclick="evalOpenVincularPuestos(${form?form.id:0},'${escHtml(selGroup)}')">Editar puestos</button>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;">${linkedHtml}</div>
+      </div>
       <div class="card section">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h4 style="margin:0">Ítems — Puntaje máx: <strong style="color:#2563eb">${totalPts} pts</strong></h4>
+          <h4 style="margin:0">Items — Puntaje max: <strong style="color:#2563eb">${totalPts} pts</strong></h4>
           <div style="display:flex;gap:8px;">
-            <button class="btn-ghost" style="font-size:13px;" onclick="evalAddItem()">+ Agregar ítem</button>
-            <button class="btn-primary" style="font-size:13px;" onclick="evalSaveForm(${form?form.id:0})">💾 Guardar formulario</button>
+            <button class="btn-ghost" style="font-size:13px;" onclick="evalAddItem()">+ Agregar item</button>
+            <button class="btn-primary" style="font-size:13px;" onclick="evalSaveForm(${form?form.id:0})">Guardar formulario</button>
           </div>
         </div>
         ${items.length===0
-          ? '<div class="empty-state"><p>Sin ítems. Carga las plantillas 2026 o agrega manualmente.</p></div>'
-          : `<table><thead><tr><th>Ítem</th><th style="text-align:center">Ponderación</th><th style="text-align:center">Pts</th><th></th></tr></thead>
+          ? '<div class="empty-state"><p>Sin items. Carga las plantillas 2026 o agrega manualmente.</p></div>'
+          : `<table><thead><tr><th>Item</th><th style="text-align:center">Ponderacion</th><th style="text-align:center">Pts</th><th></th></tr></thead>
               <tbody id="eval-items-tbody">${itemRows}</tbody>
-              <tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="2">TOTAL (puntos máximos)</td><td style="text-align:center;color:#2563eb">${totalPts}</td><td></td></tr></tfoot>
+              <tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="2">TOTAL (puntos maximos)</td><td style="text-align:center;color:#2563eb">${totalPts}</td><td></td></tr></tfoot>
              </table>`}
       </div>`;
   }
@@ -6138,11 +6153,12 @@ async function buildEvalFormsTab(forms) {
         <label style="font-weight:600;">Grupo / Puesto:</label>
         ${forms.length>0
           ? `<select style="padding:8px 12px;border-radius:8px;border:1px solid #d1d5db;font-size:14px;" onchange="window._evalFormGroupName=this.value;evalTab='formularios';evaluacionesView()">
-              ${forms.map(f => `<option value="${escHtml(f.group_name)}" ${f.group_name===selGroup?'selected':''}>${escHtml(f.group_name)} (${(f.items||[]).length} ítems)</option>`).join('')}
+              ${forms.map(f => `<option value="${escHtml(f.group_name)}" ${f.group_name===selGroup?'selected':''}>${escHtml(f.group_name)} (${(f.items||[]).length} items)</option>`).join('')}
              </select>`
           : '<span class="small muted">Sin formularios. Carga las plantillas primero.</span>'}
-        <button class="btn-ghost" style="font-size:13px;" onclick="evalCargarPlantillas2026()">📋 Cargar Plantillas 2026</button>
-        <button class="btn-ghost" style="font-size:13px;color:#0369a1;" onclick="evalSyncPuestos()" title="Actualiza la asignación de formularios según los puestos del catálogo">🔗 Sincronizar puestos</button>
+        <button class="btn-ghost" style="font-size:13px;" onclick="evalCargarPlantillas2026()">Cargar Plantillas 2026</button>
+        <button class="btn-ghost" style="font-size:13px;color:#0369a1;" onclick="evalSyncPuestos()" title="Actualiza la asignacion de formularios segun los puestos del catalogo">Sincronizar puestos</button>
+        <button class="btn-primary" style="font-size:13px;" onclick="evalOpenNuevoGrupo()">+ Nuevo Grupo</button>
       </div>
     </div>
     ${formHtml}`;
@@ -6777,6 +6793,139 @@ async function evalSyncPuestos() {
 }
 
 function evalDeleteItem(idx) { if (window._evalFormItems) window._evalFormItems.splice(idx, 1); evaluacionesView(); }
+
+// ── Helper: obtener IDs de puestos ya asignados a algun formulario ───────────
+function evalGetAssignedPositionIds(excludeFormId) {
+  const forms = window._evalForms || [];
+  const assigned = new Set();
+  for (const f of forms) {
+    if (excludeFormId && f.id === excludeFormId) continue;
+    for (const pid of (f.position_ids || [])) assigned.add(Number(pid));
+  }
+  return assigned;
+}
+
+// ── Modal: Nuevo Grupo de Evaluacion ─────────────────────────────────────────
+function evalOpenNuevoGrupo() {
+  document.getElementById('eval-grupo-modal')?.remove();
+  const positions = state.positions || [];
+  const assigned = evalGetAssignedPositionIds();
+  const emps = state.employees || [];
+  const freePositions = positions.filter(p => !assigned.has(p.id));
+
+  const posRows = freePositions.map(p => {
+    const empCount = emps.filter(e => e.position_id === p.id && e.status === 'active').length;
+    const dimStyle = empCount === 0 ? 'opacity:.5;' : '';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:4px 0;${dimStyle}cursor:pointer;">
+      <input type="checkbox" class="eval-ng-pos" value="${p.id}" data-name="${escHtml(p.name)}" style="accent-color:#4f46e5;" />
+      <span style="font-size:13px;">${escHtml(p.name)}</span>
+      ${empCount === 0 ? '<span style="font-size:10px;color:#9ca3af;">(sin empleados)</span>' : `<span style="font-size:10px;color:#6b7280;">(${empCount})</span>`}
+    </label>`;
+  }).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'eval-grupo-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:480px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 16px;">Nuevo Grupo de Evaluacion</h3>
+      <label style="font-weight:600;font-size:13px;">Nombre del grupo:</label>
+      <input id="eval-ng-name" type="text" placeholder="Ej: Operador CNC, Vigilancia..." style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;margin:6px 0 16px;" />
+      <label style="font-weight:600;font-size:13px;">Puestos disponibles (sin formulario asignado):</label>
+      <div style="margin:8px 0 16px;max-height:300px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;">
+        ${freePositions.length > 0
+          ? posRows
+          : '<span style="color:#9ca3af;font-size:13px;">Todos los puestos ya estan asignados a un formulario.</span>'}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn-ghost" onclick="document.getElementById('eval-grupo-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="evalCrearNuevoGrupo()">Crear grupo</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+  document.getElementById('eval-ng-name')?.focus();
+}
+
+async function evalCrearNuevoGrupo() {
+  const name = (document.getElementById('eval-ng-name')?.value || '').trim();
+  if (!name) { toast('Escribe un nombre para el grupo', 'warning'); return; }
+  const checks = document.querySelectorAll('.eval-ng-pos:checked');
+  const posIds = [];
+  const posNames = [];
+  checks.forEach(function(ch) { posIds.push(Number(ch.value)); posNames.push(ch.dataset.name); });
+  try {
+    await api('/api/rhh/evaluations/forms', {
+      method: 'POST',
+      body: JSON.stringify({ group_name: name, position_ids: posIds, position_names: posNames })
+    });
+    document.getElementById('eval-grupo-modal')?.remove();
+    window._evalFormGroupName = name;
+    toast('Grupo creado. Agrega items de evaluacion.', 'success');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
+
+// ── Modal: Vincular puestos a formulario existente ───────────────────────────
+function evalOpenVincularPuestos(formId, groupName) {
+  document.getElementById('eval-vinc-modal')?.remove();
+  const forms = window._evalForms || [];
+  const form = forms.find(f => f.id === formId);
+  const currentPosIds = new Set((form?.position_ids || []).map(Number));
+  const assigned = evalGetAssignedPositionIds(formId);
+  const positions = state.positions || [];
+  const emps = state.employees || [];
+
+  const posRows = positions.map(p => {
+    const isCurrent = currentPosIds.has(p.id);
+    const isOther = assigned.has(p.id);
+    const empCount = emps.filter(e => e.position_id === p.id && e.status === 'active').length;
+    const dimStyle = empCount === 0 && !isCurrent ? 'opacity:.5;' : '';
+    const disabledAttr = isOther ? 'disabled' : '';
+    const otherForm = isOther ? forms.find(f => f.id !== formId && (f.position_ids || []).includes(p.id)) : null;
+    const otherLabel = otherForm ? ` <span style="font-size:10px;color:#dc2626;">(en: ${escHtml(otherForm.group_name)})</span>` : '';
+    return `<label style="display:flex;align-items:center;gap:6px;padding:4px 0;${dimStyle}${isOther?'opacity:.4;':''}cursor:pointer;">
+      <input type="checkbox" class="eval-vp-pos" value="${p.id}" data-name="${escHtml(p.name)}" ${isCurrent?'checked':''} ${disabledAttr} style="accent-color:#4f46e5;" />
+      <span style="font-size:13px;">${escHtml(p.name)}</span>${otherLabel}
+      ${empCount > 0 ? `<span style="font-size:10px;color:#6b7280;">(${empCount})</span>` : '<span style="font-size:10px;color:#9ca3af;">(sin empleados)</span>'}
+    </label>`;
+  }).join('');
+
+  const modal = document.createElement('div');
+  modal.id = 'eval-vinc-modal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999;';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:12px;padding:24px;width:480px;max-height:80vh;overflow-y:auto;box-shadow:0 8px 30px rgba(0,0,0,.2);">
+      <h3 style="margin:0 0 4px;">Vincular puestos</h3>
+      <p style="margin:0 0 16px;font-size:13px;color:#6b7280;">Grupo: <strong>${escHtml(groupName)}</strong></p>
+      <div style="max-height:400px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px 12px;">
+        ${posRows}
+      </div>
+      <p style="font-size:11px;color:#9ca3af;margin:8px 0 0;">Los puestos deshabilitados ya pertenecen a otro formulario.</p>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">
+        <button class="btn-ghost" onclick="document.getElementById('eval-vinc-modal').remove()">Cancelar</button>
+        <button class="btn-primary" onclick="evalGuardarVinculacion(${formId})">Guardar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+}
+
+async function evalGuardarVinculacion(formId) {
+  const checks = document.querySelectorAll('.eval-vp-pos:checked');
+  const posIds = [];
+  const posNames = [];
+  checks.forEach(function(ch) { posIds.push(Number(ch.value)); posNames.push(ch.dataset.name); });
+  try {
+    await api('/api/rhh/evaluations/forms/' + formId, {
+      method: 'PATCH',
+      body: JSON.stringify({ position_ids: posIds, position_names: posNames })
+    });
+    document.getElementById('eval-vinc-modal')?.remove();
+    toast('Puestos actualizados', 'success');
+    evaluacionesView();
+  } catch(err) { toast(err.message, 'error'); }
+}
 
 async function evalSaveForm(formId) {
   if (!window._evalFormGroupName) { toast('Selecciona un grupo', 'warning'); return; }
