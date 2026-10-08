@@ -1488,54 +1488,82 @@ router.get('/weekly-rol/export-xlsx', rhhAuthRequired, rhhRequireRole('rh', 'adm
     const shiftMap = {};
     for (const s of shifts) shiftMap[s.id] = s;
 
+    // ISO week number helper (ISO 8601)
+    function isoWeekNumber(dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+      const yearStart = new Date(d.getFullYear(), 0, 4);
+      yearStart.setDate(yearStart.getDate() + 3 - ((yearStart.getDay() + 6) % 7));
+      return 1 + Math.round((d - yearStart) / 604800000);
+    }
+    // Excel date serial helper (days since 1900-01-00, with Lotus bug)
+    function excelDate(dateStr) {
+      const d = new Date(dateStr + 'T12:00:00');
+      const epoch = new Date(1899, 11, 30, 12, 0, 0);
+      return Math.round((d - epoch) / 86400000);
+    }
+    // Excel time serial helper (fraction of day)
+    function excelTime(timeStr) {
+      if (!timeStr) return null;
+      const [h, m] = timeStr.split(':').map(Number);
+      return (h * 60 + (m || 0)) / 1440;
+    }
+
     // Sheet 1: Rol Semanal — one row per assignment per week
     // Attendance-control ROLs have shift_id==null; the shift is on each assignment.
     // Schedule ROLs have shift_id on the ROL itself.
-    const sheet1Rows = [];
+    const sheet1Data = [];
     for (const rol of weeklyRols) {
       const weekEnd = new Date(new Date(rol.week_start + 'T12:00:00').getTime() + 6 * 86400000)
         .toISOString().slice(0, 10);
+      const weekNum = isoWeekNumber(rol.week_start);
       const assigns = rolAssignments.filter(a => a.rol_id === rol.id);
       for (const a of assigns) {
         const emp = empMap[a.employee_id];
         const shiftId = a.shift_id ?? rol.shift_id;
         const shift = shiftId != null ? shiftMap[shiftId] : null;
-        sheet1Rows.push({
+        sheet1Data.push({
           id_empleado: emp?.employee_number || String(a.employee_id),
           nombre_empleado: emp?.full_name || 'Desconocido',
           turno_asignado: shift?.name || (shiftId != null ? String(shiftId) : ''),
-          fecha_inicio_rol: rol.week_start,
-          fecha_fin_rol: weekEnd,
-          semana_rol: rol.week_start,
+          fecha_inicio_raw: rol.week_start,
+          fecha_fin_raw: weekEnd,
+          semana_num: weekNum,
         });
       }
     }
-    sheet1Rows.sort((a, b) => a.semana_rol.localeCompare(b.semana_rol) || a.nombre_empleado.localeCompare(b.nombre_empleado));
+    sheet1Data.sort((a, b) => a.fecha_inicio_raw.localeCompare(b.fecha_inicio_raw) || a.nombre_empleado.localeCompare(b.nombre_empleado));
 
-    const ws1 = XLSX.utils.json_to_sheet(sheet1Rows, {
-      header: ['id_empleado', 'nombre_empleado', 'turno_asignado', 'fecha_inicio_rol', 'fecha_fin_rol', 'semana_rol'],
-    });
-    ws1['!cols'] = [{ wch: 14 }, { wch: 32 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 14 }];
-    if (ws1.A1) ws1.A1.v = 'ID Empleado';
-    if (ws1.B1) ws1.B1.v = 'Nombre Empleado';
-    if (ws1.C1) ws1.C1.v = 'Turno Asignado';
-    if (ws1.D1) ws1.D1.v = 'Fecha Inicio Rol';
-    if (ws1.E1) ws1.E1.v = 'Fecha Fin Rol';
-    if (ws1.F1) ws1.F1.v = 'Semana Rol';
+    // Build sheet manually to set cell types
+    const ws1 = XLSX.utils.aoa_to_sheet([
+      ['ID Empleado', 'Nombre Empleado', 'Turno Asignado', 'Fecha Inicio Rol', 'Fecha Fin Rol', 'Semana Rol'],
+    ]);
+    for (let i = 0; i < sheet1Data.length; i++) {
+      const r = sheet1Data[i];
+      const row = i + 1; // 0-based data row (row 0 is header)
+      XLSX.utils.sheet_add_aoa(ws1, [[r.id_empleado, r.nombre_empleado, r.turno_asignado, null, null, r.semana_num]], { origin: row });
+      // Overwrite date cells with proper Excel date type
+      ws1[XLSX.utils.encode_cell({ r: row, c: 3 })] = { t: 'n', v: excelDate(r.fecha_inicio_raw), z: 'yyyy-mm-dd' };
+      ws1[XLSX.utils.encode_cell({ r: row, c: 4 })] = { t: 'n', v: excelDate(r.fecha_fin_raw), z: 'yyyy-mm-dd' };
+    }
+    ws1['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: sheet1Data.length, c: 5 } });
+    ws1['!cols'] = [{ wch: 14 }, { wch: 32 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 12 }];
 
-    // Sheet 2: Horarios Turnos
-    const sheet2Rows = shifts.map(s => ({
-      turno_asignado: s.name,
-      hora_inicio: s.start_time || '',
-      hora_fin: s.end_time || '',
-    }));
-    const ws2 = XLSX.utils.json_to_sheet(sheet2Rows, {
-      header: ['turno_asignado', 'hora_inicio', 'hora_fin'],
-    });
+    // Sheet 2: Horarios Turnos — hours as Excel time format
+    const ws2 = XLSX.utils.aoa_to_sheet([
+      ['Turno Asignado', 'Hora Inicio', 'Hora Fin'],
+    ]);
+    for (let i = 0; i < shifts.length; i++) {
+      const s = shifts[i];
+      const row = i + 1;
+      XLSX.utils.sheet_add_aoa(ws2, [[s.name, null, null]], { origin: row });
+      const tStart = excelTime(s.start_time);
+      const tEnd = excelTime(s.end_time);
+      if (tStart != null) ws2[XLSX.utils.encode_cell({ r: row, c: 1 })] = { t: 'n', v: tStart, z: 'HH:mm' };
+      if (tEnd != null) ws2[XLSX.utils.encode_cell({ r: row, c: 2 })] = { t: 'n', v: tEnd, z: 'HH:mm' };
+    }
+    ws2['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: shifts.length, c: 2 } });
     ws2['!cols'] = [{ wch: 24 }, { wch: 14 }, { wch: 14 }];
-    if (ws2.A1) ws2.A1.v = 'Turno Asignado';
-    if (ws2.B1) ws2.B1.v = 'Hora Inicio';
-    if (ws2.C1) ws2.C1.v = 'Hora Fin';
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws1, 'Rol Semanal');
