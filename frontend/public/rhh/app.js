@@ -9676,6 +9676,7 @@ function asisRolRender() {
           : '<button class="btn-ghost" style="font-size:12px;color:#7c3aed;border-color:#c4b5fd;" onclick="rolVerCambiosPlantilla(\'asis\')">📋 Actualizar Plantilla</button>'}
         <button class="btn-ghost" onclick="asisShiftMgmtModal()">＋ Agregar turno</button>
         <button class="btn-ghost" onclick="printRolSemanal('${asisWeek}')">Imprimir</button>
+        <button class="btn-ghost" style="font-size:12px;color:#059669;border-color:#a7f3d0;" onclick="exportRolSemanalXlsx()">Descargar XLSX</button>
       </div>
     </div>
     <div style="font-size:11px;color:var(--muted);background:#f8fafc;border-radius:8px;padding:6px 12px;margin-bottom:12px;">
