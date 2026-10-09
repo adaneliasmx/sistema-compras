@@ -41,10 +41,12 @@ async function initDb() {
         console.log('[db-vales] Migrando datos de JSON a PostgreSQL...');
       }
       _cache = seed;
+      _refLengths = _captureRef(seed);
       await pool.query('INSERT INTO vales_data(id, data) VALUES(1, $1)', [JSON.stringify(seed)]);
       console.log('[db-vales] PostgreSQL inicializado con datos seed.');
     } else {
       _cache = rows[0].data;
+      _refLengths = _captureRef(_cache);
       console.log('[db-vales] Datos cargados desde PostgreSQL.');
     }
   } else {
@@ -53,6 +55,7 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    _refLengths = _captureRef(_cache);
     console.log('[db-vales] Datos cargados desde JSON local:', dbPath);
   }
 }
@@ -65,18 +68,58 @@ function read() {
   return _cache;
 }
 
-function write(data) {
+// Snapshot de referencia para detectar colecciones que cambiaron
+let _refLengths = null;
+function _captureRef(data) {
+  const r = {};
+  for (const k of Object.keys(data)) {
+    if (Array.isArray(data[k])) r[k] = data[k].length;
+  }
+  return r;
+}
+
+function write(data, ...changedKeys) {
+  if (pool && changedKeys.length === 0 && _refLengths) {
+    // Auto-detect: colecciones cuya longitud cambió (add/delete) son las que se modifican
+    // Para ediciones in-place (misma longitud), se serializa todo — pero son colecciones
+    // pequeñas comparadas con titulaciones_detalle (29k rows).
+    for (const k of Object.keys(data)) {
+      if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
+        changedKeys.push(k);
+      }
+    }
+  }
   _cache = data;
+  _refLengths = _captureRef(data);
   if (pool) {
-    const snapshot = JSON.stringify(data);
-    _writeQueue = _writeQueue.then(() =>
-      pool.query('UPDATE vales_data SET data = $1 WHERE id = 1', [snapshot])
-        .catch(err => {
-          console.error('[db-vales] Error persistiendo, reintentando:', err.message);
-          return pool.query('UPDATE vales_data SET data = $1 WHERE id = 1', [snapshot])
-            .catch(err2 => console.error('[db-vales] Reintento fallido:', err2.message));
-        })
-    );
+    if (changedKeys.length > 0) {
+      const params = [];
+      let expr = 'data';
+      for (let i = 0; i < changedKeys.length; i++) {
+        const p = i * 2 + 1;
+        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
+        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
+      }
+      const sql = `UPDATE vales_data SET data = ${expr} WHERE id = 1`;
+      _writeQueue = _writeQueue.then(() =>
+        pool.query(sql, params)
+          .catch(err => {
+            console.error('[db-vales] Error persistiendo parcial, reintentando:', err.message);
+            return pool.query(sql, params)
+              .catch(err2 => console.error('[db-vales] Reintento parcial fallido:', err2.message));
+          })
+      );
+    } else {
+      const snapshot = JSON.stringify(data);
+      _writeQueue = _writeQueue.then(() =>
+        pool.query('UPDATE vales_data SET data = $1 WHERE id = 1', [snapshot])
+          .catch(err => {
+            console.error('[db-vales] Error persistiendo, reintentando:', err.message);
+            return pool.query('UPDATE vales_data SET data = $1 WHERE id = 1', [snapshot])
+              .catch(err2 => console.error('[db-vales] Reintento fallido:', err2.message));
+          })
+      );
+    }
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));

@@ -114,6 +114,7 @@ async function initDb() {
     if (rows.length === 0) {
       // Primera vez: insertar seed completo
       _cache = seed;
+      _refLengths = _captureRef(seed);
       await pool.query('INSERT INTO rhh_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
       console.log('[db-rhh] PostgreSQL inicializado con seed. Empleados:', (seed.rhh_employees || []).length);
     } else {
@@ -152,6 +153,7 @@ async function initDb() {
       }
 
       _cache = existing;
+      _refLengths = _captureRef(existing);
       await pool.query('UPDATE rhh_data SET data=$1 WHERE id=1', [JSON.stringify(existing)]);
       console.log('[db-rhh] PostgreSQL actualizado (merge empleados). Total:', mergedEmps.length);
     }
@@ -165,6 +167,7 @@ async function initDb() {
       ...structuredClone(EMPTY_DB),
       ...JSON.parse(fs.readFileSync(dbPath, 'utf8')),
     };
+    _refLengths = _captureRef(_cache);
     const currentYear = Number(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City', year: 'numeric' }));
     if (ensureUnionAgreementHolidays(_cache, [2026, currentYear, currentYear + 1])) {
       await persistSnapshot(_cache);
@@ -185,14 +188,42 @@ function read() {
   return _cache;
 }
 
-async function persistSnapshot(snapshot) {
+// Referencia de longitudes para auto-detect de cambios parciales
+let _refLengths = null;
+function _captureRef(data) {
+  const r = {};
+  for (const k of Object.keys(data)) {
+    if (Array.isArray(data[k])) r[k] = data[k].length;
+  }
+  return r;
+}
+
+async function persistSnapshot(snapshot, changedKeys) {
   if (pool) {
-    const json = JSON.stringify(snapshot);
-    try {
-      await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
-    } catch (err) {
-      console.error('[db-rhh] Error persistiendo, reintentando:', err.message);
-      await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
+    if (changedKeys && changedKeys.length > 0) {
+      // Partial update — solo las colecciones que cambiaron
+      const params = [];
+      let expr = 'data';
+      for (let i = 0; i < changedKeys.length; i++) {
+        const p = i * 2 + 1;
+        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
+        params.push(`{${changedKeys[i]}}`, JSON.stringify(snapshot[changedKeys[i]]));
+      }
+      const sql = `UPDATE rhh_data SET data = ${expr} WHERE id = 1`;
+      try {
+        await pool.query(sql, params);
+      } catch (err) {
+        console.error('[db-rhh] Error persistiendo parcial, reintentando:', err.message);
+        await pool.query(sql, params);
+      }
+    } else {
+      const json = JSON.stringify(snapshot);
+      try {
+        await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
+      } catch (err) {
+        console.error('[db-rhh] Error persistiendo, reintentando:', err.message);
+        await pool.query('UPDATE rhh_data SET data = $1 WHERE id = 1', [json]);
+      }
     }
   } else {
     fs.writeFileSync(dbPath, JSON.stringify(snapshot, null, 2));
@@ -200,16 +231,24 @@ async function persistSnapshot(snapshot) {
 }
 
 function enqueueWrite(data) {
-  // El snapshot evita que una ruta continúe mutando el objeto mientras espera.
-  // La cola conserva el orden de persistencia y elimina escrituras fuera de orden.
-  const snapshot = structuredClone(data);
+  // Auto-detect colecciones que cambiaron por longitud
+  let changedKeys = null;
+  if (pool && _refLengths) {
+    changedKeys = [];
+    for (const k of Object.keys(data)) {
+      if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
+        changedKeys.push(k);
+      }
+    }
+    if (changedKeys.length === 0) changedKeys = null; // fallback a full write
+  }
+
+  const snapshot = changedKeys ? data : structuredClone(data);
   const previousCache = _cache;
-  // Se publica de inmediato para conservar la semántica de las rutas síncronas,
-  // pero se revierte si esta sigue siendo la versión más reciente y falla la
-  // persistencia. Una escritura posterior en cola ya contiene su propio snapshot.
-  _cache = snapshot;
-  const operation = _writeQueue.then(() => persistSnapshot(snapshot)).catch(error => {
-    if (_cache === snapshot) _cache = previousCache;
+  _cache = changedKeys ? data : snapshot;
+  _refLengths = _captureRef(data);
+  const operation = _writeQueue.then(() => persistSnapshot(snapshot, changedKeys)).catch(error => {
+    if (_cache === snapshot || _cache === data) _cache = previousCache;
     throw error;
   });
   _writeQueue = operation.catch(() => {});
