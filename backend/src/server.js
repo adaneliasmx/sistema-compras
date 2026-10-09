@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 
 // ── Validación de seguridad al arrancar ───────────────────────────────────────
@@ -129,10 +130,15 @@ app.use(cors({
   credentials: true
 }));
 
+app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
-app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), { index: false }));
+app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), {
+  index: false,
+  maxAge: '1h',
+  etag: true
+}));
 
 // ── API Health + memoria ──────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
