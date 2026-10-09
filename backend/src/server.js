@@ -114,7 +114,7 @@ app.use(helmet({
 }));
 
 // ── CORS: restringido a orígenes conocidos ────────────────────────────────────
-const DEFAULT_ORIGINS = ['https://cuestocompras.onrender.com'];
+const DEFAULT_ORIGINS = ['https://cuestocompras.onrender.com', 'https://erp-cuesto.com', 'https://www.erp-cuesto.com', 'https://erp-cuesto.up.railway.app'];
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
   .split(',').map(o => o.trim()).filter(Boolean);
 const CORS_ORIGINS = ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : DEFAULT_ORIGINS;
