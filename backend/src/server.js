@@ -136,10 +136,11 @@ app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), { index: 
 
 // ── API Health + memoria ──────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {
-  if (global.gc) global.gc();
+  // GC solo si heap > 350 MB (critical) — no en cada health check para no saturar CPU
   const m = process.memoryUsage();
   const mb = v => Math.round(v / 1024 / 1024);
   const heapUsedMB = mb(m.heapUsed);
+  if (heapUsedMB > 350 && global.gc) global.gc();
   const rssMB = mb(m.rss);
   const status = heapUsedMB > 350 ? 'critical' : heapUsedMB > 220 ? 'warning' : 'ok';
   res.json({
@@ -155,11 +156,14 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ── Middleware: loguear picos de memoria ──────────────────────────────────────
+// ── Middleware: loguear picos de memoria (sampleado 1 de cada 20 requests) ───
+let _memSampleCount = 0;
 app.use((req, res, next) => {
-  const heapMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
-  if (heapMB > 220) {
-    console.warn(`[MEM] ${heapMB}MB heap | ${req.method} ${req.path}`);
+  if (++_memSampleCount % 20 === 0) {
+    const heapMB = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+    if (heapMB > 220) {
+      console.warn(`[MEM] ${heapMB}MB heap | ${req.method} ${req.path}`);
+    }
   }
   next();
 });
