@@ -146,22 +146,24 @@ async function initDb() {
       const seedIncs = seed.rhh_incidencias_semanales || [];
       const prodIncs = existing.rhh_incidencias_semanales || [];
       const seedWithPerc = seedIncs.filter(i => i.percepciones && Object.keys(i.percepciones).length > 0);
+      const prodWithPerc = prodIncs.filter(i => i.percepciones && Object.keys(i.percepciones).length > 0);
+      console.log(`[db-rhh] Migration check: seed incs=${seedIncs.length} (with perc=${seedWithPerc.length}), prod incs=${prodIncs.length} (with perc=${prodWithPerc.length})`);
       if (seedWithPerc.length > 0) {
-        let enriched = 0;
+        let enriched = 0, noMatch = 0, alreadyHas = 0;
         for (const si of seedWithPerc) {
           const pi = prodIncs.find(p => p.employee_id === si.employee_id && p.no_periodo === si.no_periodo);
-          if (pi && (!pi.percepciones || Object.keys(pi.percepciones).length === 0)) {
-            pi.percepciones = si.percepciones;
-            pi.deducciones = si.deducciones;
-            if (si.total_perc_pdf != null) pi.total_perc_pdf = si.total_perc_pdf;
-            if (si.total_ded_pdf != null) pi.total_ded_pdf = si.total_ded_pdf;
-            if (si.neto_pdf != null) pi.neto_pdf = si.neto_pdf;
-            if (si.sdi != null) pi.sdi = si.sdi;
-            if (si.sbc != null) pi.sbc = si.sbc;
-            enriched++;
-          }
+          if (!pi) { noMatch++; continue; }
+          if (pi.percepciones && Object.keys(pi.percepciones).length > 0) { alreadyHas++; continue; }
+          pi.percepciones = si.percepciones;
+          pi.deducciones = si.deducciones;
+          if (si.total_perc_pdf != null) pi.total_perc_pdf = si.total_perc_pdf;
+          if (si.total_ded_pdf != null) pi.total_ded_pdf = si.total_ded_pdf;
+          if (si.neto_pdf != null) pi.neto_pdf = si.neto_pdf;
+          if (si.sdi != null) pi.sdi = si.sdi;
+          if (si.sbc != null) pi.sbc = si.sbc;
+          enriched++;
         }
-        if (enriched > 0) console.log(`[db-rhh] Migrated percepciones/deducciones from seed: ${enriched} incidencias enriched`);
+        console.log(`[db-rhh] Migration result: enriched=${enriched}, noMatch=${noMatch}, alreadyHas=${alreadyHas}`);
       }
 
       _cache = existing;
