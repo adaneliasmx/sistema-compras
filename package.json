@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node --max-old-space-size=1024 --expose-gc backend/src/server.js",
     "dev": "node backend/src/server.js",
+    "build": "npm ci --omit=dev",
     "init-db": "node scripts/init-db.js",
     "test:tl4": "node test_tl4.js && node test_tl4_supertest.js",
     "test:rhh-asistencia": "node --test backend/src/routes/rhh-asistencia.rules.test.js backend/src/routes/rhh-asistencia.api.test.js"
