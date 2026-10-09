@@ -11,23 +11,8 @@ const dbPath = process.env.DB_RHH_PATH
   ? path.resolve(process.env.DB_RHH_PATH)
   : seedPath;
 
-// ── PostgreSQL (producción en Render) ─────────────────────────────────────────
-let pool = null;
-if (process.env.DATABASE_URL) {
-  const { Pool } = require('pg');
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
-    max: 3,
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
-    statement_timeout: 15000,
-    query_timeout: 20000
-  });
-  pool.on('error', err => console.error('[db-rhh] Pool error (idle client):', err.message));
-}
+// ── PostgreSQL (producción en Render) — pool compartido ──────────────────────
+const pool = require('./db-pool');
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;

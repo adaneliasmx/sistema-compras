@@ -3,22 +3,8 @@ const path = require('path');
 
 const dbPath = path.resolve(process.cwd(), process.env.DB_MANT_PATH || './database/mantenimiento.json');
 
-let pool = null;
-if (process.env.DATABASE_URL) {
-  const { Pool } = require('pg');
-  pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 10000,
-    idleTimeoutMillis: 30000,
-    max: 3,
-    keepAlive: true,
-    keepAliveInitialDelayMillis: 10000,
-    statement_timeout: 15000,
-    query_timeout: 20000
-  });
-  pool.on('error', err => console.error('[db-mant] Pool error (idle client):', err.message));
-}
+// ── PostgreSQL (producción en Render) — pool compartido ──────────────────────
+const pool = require('./db-pool');
 
 let _cache = null;
 let _writeQueue = Promise.resolve();
