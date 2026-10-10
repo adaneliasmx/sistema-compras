@@ -4680,7 +4680,7 @@ router.post('/l1/cargas', (req, res) => {
   }
 
   pdb.cargas_l1.push(carga);
-  dbProd.write(pdb, 'cargas_l1');
+  dbProd.write(pdb, 'cargas_l1', 'cavidades_l1');
   res.status(201).json(carga);
 });
 
@@ -4744,7 +4744,7 @@ router.post('/l1/cargas/:id/descargar', (req, res) => {
   carga.turno_descarga = turno;
   carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_l1[idx] = carga;
-  dbProd.write(pdb, 'cargas_l1');
+  dbProd.write(pdb, 'cargas_l1', 'cavidades_l1');
   res.json(carga);
 });
 
@@ -5191,7 +5191,7 @@ router.post('/baker/cargas', (req, res) => {
   }
 
   pdb.cargas_baker.push(carga);
-  dbProd.write(pdb, 'cargas_baker');
+  dbProd.write(pdb, 'cargas_baker', 'cavidades_baker');
   res.status(201).json(carga);
 });
 
@@ -5260,7 +5260,7 @@ router.post('/baker/cargas/:id/descargar', (req, res) => {
   carga.turno_descarga = turno;
   carga.fecha_operativa_descarga = descargaCtx.fecha_turno;
   pdb.cargas_baker[idx] = carga;
-  dbProd.write(pdb, 'cargas_baker');
+  dbProd.write(pdb, 'cargas_baker', 'cavidades_baker');
   res.json(carga);
 });
 
