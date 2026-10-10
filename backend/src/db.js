@@ -11,6 +11,16 @@ const pool = require('./db-pool');
 let _cache = null;
 let _writeQueue = Promise.resolve(); // Serializa escrituras a PostgreSQL para evitar race conditions
 
+// ── Auto-detect: snapshot de longitudes para escritura parcial ────────────────
+let _refLengths = null;
+function _captureRef(data) {
+  const r = {};
+  for (const k of Object.keys(data)) {
+    if (Array.isArray(data[k])) r[k] = data[k].length;
+  }
+  return r;
+}
+
 const EMPTY_DB = {
   users: [], suppliers: [], cost_centers: [], sub_cost_centers: [],
   catalog_items: [], inventory_catalogs: [], inventory_items: [], inventory_weekly: [],
@@ -88,6 +98,7 @@ async function initDb() {
         console.log('[db] Migrando datos de JSON a PostgreSQL...');
       }
       _cache = seed;
+      _refLengths = _captureRef(seed);
       await pool.query(
         'INSERT INTO app_data(id, data) VALUES(1, $1)',
         [JSON.stringify(seed)]
@@ -95,6 +106,7 @@ async function initDb() {
       console.log('[db] PostgreSQL inicializado con datos seed.');
     } else {
       _cache = rows[0].data;
+      _refLengths = _captureRef(_cache);
       // Aplicar auto-migración de IDs duplicados si es necesario
       if (fixDuplicateItemIds(_cache)) {
         await pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [JSON.stringify(_cache)]);
@@ -109,6 +121,7 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    _refLengths = _captureRef(_cache);
     if (fixDuplicateItemIds(_cache)) {
       fs.writeFileSync(dbPath, JSON.stringify(_cache, null, 2));
     }
@@ -127,19 +140,48 @@ function read() {
 }
 
 // Escribe y persiste (actualiza caché + persiste en cola para evitar race conditions)
-function write(data) {
+function write(data, ...changedKeys) {
   _cache = data;
   if (pool) {
-    // JSON.stringify dentro de la cola asíncrona para no bloquear el event loop
-    _writeQueue = _writeQueue.then(() => {
-      const snapshot = JSON.stringify(data);
-      return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
-        .catch(err => {
-          console.error('[db] Error persistiendo, reintentando:', err.message);
-          return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
-            .catch(err2 => console.error('[db] Reintento fallido:', err2.message));
-        });
-    });
+    // Auto-detect: colecciones cuya longitud cambió
+    if (changedKeys.length === 0 && _refLengths) {
+      for (const k of Object.keys(data)) {
+        if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
+          changedKeys.push(k);
+        }
+      }
+    }
+    _refLengths = _captureRef(data);
+
+    if (changedKeys.length > 0) {
+      const params = [];
+      let expr = 'data';
+      for (let i = 0; i < changedKeys.length; i++) {
+        const p = i * 2 + 1;
+        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
+        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
+      }
+      const sql = `UPDATE app_data SET data = ${expr} WHERE id = 1`;
+      _writeQueue = _writeQueue.then(() =>
+        pool.query(sql, params)
+          .catch(err => {
+            console.error('[db] Error persistiendo parcial, reintentando:', err.message);
+            return pool.query(sql, params)
+              .catch(err2 => console.error('[db] Reintento parcial fallido:', err2.message));
+          })
+      );
+    } else {
+      // JSON.stringify dentro de la cola asíncrona para no bloquear el event loop
+      _writeQueue = _writeQueue.then(() => {
+        const snapshot = JSON.stringify(_cache);
+        return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
+          .catch(err => {
+            console.error('[db] Error persistiendo, reintentando:', err.message);
+            return pool.query('UPDATE app_data SET data = $1 WHERE id = 1', [snapshot])
+              .catch(err2 => console.error('[db] Reintento fallido:', err2.message));
+          });
+      });
+    }
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));

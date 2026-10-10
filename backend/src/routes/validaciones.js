@@ -3,7 +3,7 @@ const bcrypt  = require('bcryptjs');
 const jwt     = require('jsonwebtoken');
 const router  = express.Router();
 
-const { read, write, nextId } = require('../db-validaciones');
+const { read, write, writeMemoryOnly, nextId } = require('../db-validaciones');
 const { valAuthRequired, valAllowRoles, syncKeyRequired } = require('../middleware/validaciones-auth');
 const JWT_SECRET = require('../jwt-secret');
 const { createRateLimiter } = require('../rate-limit');
@@ -724,7 +724,8 @@ router.post('/app/heartbeat', syncKeyRequired, (req, res) => {
     db.val_app_status.push(entry);
   }
 
-  write(db);
+  // Solo en memoria — heartbeat es efímero, no justifica un UPDATE a PostgreSQL
+  writeMemoryOnly(db);
   res.json({ ok: true, server_time: `${fecha} ${hora}` });
 });
 

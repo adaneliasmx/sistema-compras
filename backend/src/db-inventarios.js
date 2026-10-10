@@ -9,6 +9,16 @@ const pool = require('./db-pool');
 let _cache = null;
 let _writeQueue = Promise.resolve();
 
+// ── Auto-detect: snapshot de longitudes para escritura parcial ────────────────
+let _refLengths = null;
+function _captureRef(data) {
+  const r = {};
+  for (const k of Object.keys(data)) {
+    if (Array.isArray(data[k])) r[k] = data[k].length;
+  }
+  return r;
+}
+
 const EMPTY_DB = {
   usuarios_inv: [],
   sesiones_inv: [],
@@ -18,13 +28,13 @@ const EMPTY_DB = {
     { id:3, inv_type:'insumos_consumibles',  form_code:'4-CA-118', form_rev:'Rev. 0', form_title:'Inventario de Insumos y Consumibles de Proceso' },
     { id:4, inv_type:'quimicos_titulacion',  form_code:'4-CA-119', form_rev:'Rev. 0', form_title:'Inventario de Quimicos e Insumos de Titulacion' }
   ],
-  inv_items_config: [],   // { id, inv_type, item_key, item_label, min_val, max_val, compras_item_id, activo }
-  inv_conteos: [],        // { id, inv_type, year, week, fecha, usuario_id, usuario_nombre, created_at }
-  inv_conteo_items: [],   // { id, conteo_id, item_key, tambos, porrones, cantidad, kg, unidad }
-  inv_recepciones: [],    // { id, inv_type, item_key, item_label, cantidad, kg, fecha, factura, usuario_id, usuario_nombre, created_at }
-  inv_salidas: [],        // { id, inv_type, item_key, item_label, cantidad, kg, fecha, hora, retira, autoriza, lote, motivo, usuario_id, usuario_nombre, created_at }
-  inv_vales_epp: [],      // { id, folio, empleado_id, empleado_nombre, autorizador_nombre, fecha, notas, usuario_id, usuario_nombre, created_at }
-  inv_vales_epp_items: [] // { id, vale_id, item_key, item_label, cantidad, unidad }
+  inv_items_config: [],
+  inv_conteos: [],
+  inv_conteo_items: [],
+  inv_recepciones: [],
+  inv_salidas: [],
+  inv_vales_epp: [],
+  inv_vales_epp_items: []
 };
 
 async function initDb() {
@@ -37,10 +47,12 @@ async function initDb() {
         try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
       }
       _cache = seed;
+      _refLengths = _captureRef(seed);
       await pool.query('INSERT INTO inventarios_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
       console.log('[db-inventarios] PostgreSQL inicializado.');
     } else {
       _cache = rows[0].data;
+      _refLengths = _captureRef(_cache);
       console.log('[db-inventarios] Datos cargados desde PostgreSQL.');
     }
   } else {
@@ -49,6 +61,7 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+    _refLengths = _captureRef(_cache);
     console.log('[db-inventarios] Datos cargados desde JSON:', dbPath);
   }
 }
@@ -61,18 +74,47 @@ function read() {
   return _cache;
 }
 
-function write(data) {
+function write(data, ...changedKeys) {
   _cache = data;
   if (pool) {
-    const snapshot = JSON.stringify(data);
-    _writeQueue = _writeQueue.then(() =>
-      pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
-        .catch(err => {
-          console.error('[db-inventarios] Error persistiendo, reintentando:', err.message);
-          return pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
-            .catch(err2 => console.error('[db-inventarios] Reintento fallido:', err2.message));
-        })
-    );
+    // Auto-detect: colecciones cuya longitud cambió
+    if (changedKeys.length === 0 && _refLengths) {
+      for (const k of Object.keys(data)) {
+        if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
+          changedKeys.push(k);
+        }
+      }
+    }
+    _refLengths = _captureRef(data);
+
+    if (changedKeys.length > 0) {
+      const params = [];
+      let expr = 'data';
+      for (let i = 0; i < changedKeys.length; i++) {
+        const p = i * 2 + 1;
+        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
+        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
+      }
+      const sql = `UPDATE inventarios_data SET data = ${expr} WHERE id = 1`;
+      _writeQueue = _writeQueue.then(() =>
+        pool.query(sql, params)
+          .catch(err => {
+            console.error('[db-inventarios] Error persistiendo parcial, reintentando:', err.message);
+            return pool.query(sql, params)
+              .catch(err2 => console.error('[db-inventarios] Reintento parcial fallido:', err2.message));
+          })
+      );
+    } else {
+      const snapshot = JSON.stringify(data);
+      _writeQueue = _writeQueue.then(() =>
+        pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
+          .catch(err => {
+            console.error('[db-inventarios] Error persistiendo, reintentando:', err.message);
+            return pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
+              .catch(err2 => console.error('[db-inventarios] Reintento fallido:', err2.message));
+          })
+      );
+    }
   } else {
     try { fs.writeFileSync(dbPath, JSON.stringify(data, null, 2)); }
     catch (err) { console.error('[db-inventarios] Error JSON:', err.message); }
