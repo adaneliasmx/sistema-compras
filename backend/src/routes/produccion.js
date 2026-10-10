@@ -8,6 +8,7 @@ const JWT_SECRET = require('../jwt-secret');
 const { createRateLimiter } = require('../rate-limit');
 const _rl = createRateLimiter();
 const dbProd = require('../db-produccion');
+const metricsCache = require('../production-metrics-cache').shared;
 const dbRhh = require('../db-rhh');
 const { read: readMant, write: writeMant, nextId: nextMantId, nextFolio: nextMantFolio } = require('../db-mantenimiento');
 const { produccionAuthRequired, produccionAllowRoles } = require('../middleware/produccion-auth');
@@ -48,7 +49,7 @@ function getShiftDate(fecha, hora) {
 function getStoredOperationalContext(carga, pdb) {
   const linea = carga.linea || carga._linea || '';
   if (carga.fecha_descarga && carga.hora_descarga) {
-    const ctx = resolveTurnoContext(pdb, linea, carga.fecha_descarga, carga.hora_descarga);
+    const ctx = getOperationalClassification(pdb, linea, carga.fecha_descarga, carga.hora_descarga);
     return {
       // La descarga es siempre la fuente de verdad. Los campos persistidos se
       // conservan para auditoría, pero nunca sustituyen fecha/hora de descarga.
@@ -68,10 +69,73 @@ function getParoOperationalContext(paro, pdb) {
   const linea = paro.linea || paro._linea || '';
   const fecha = paro.fecha_inicio || nowDateStr();
   const hora = paro.hora_inicio || '06:30';
-  const ctx = resolveTurnoContext(pdb, linea, fecha, hora);
+  const ctx = getOperationalClassification(pdb, linea, fecha, hora);
   return {
     turno: paro.turno_operativo || ctx.turno,
     fecha_operativa: paro.fecha_operativa || ctx.fecha_turno
+  };
+}
+
+// Clasificar fecha/turno no requiere recorrer cargas ni calcular la ventana TL4.
+// Las capturas siguen usando resolveTurnoContext para validar su ventana completa.
+function getOperationalClassification(pdb, linea, fecha, hora) {
+  if (linea === 'L4' && l4UsesTL4(pdb, fecha)) return { turno: 'TL4', fecha_turno: fecha };
+  return { turno: getTurno(hora), fecha_turno: getShiftDate(fecha, hora) };
+}
+
+function metricsClock(targetDate, turno) {
+  const today = nowDateStr();
+  return targetDate >= today || (turno === 'T3' && targetDate === addDays(today, -1))
+    ? today + 'T' + nowTimeStr() : 'closed';
+}
+
+function cachedMetric(pdb, kind, linea, turno, targetDate, build, raw = false) {
+  const root = metricsCache.attach(pdb);
+  const nextDate = addDays(targetDate, 1);
+  const today = nowDateStr();
+  let clock = metricsClock(targetDate, turno);
+  const stops = metricsCache.stopsFor(root, linea, targetDate, nextDate, today);
+  const temporalParos = stops.some(p =>
+    (!p.fecha_fin && today >= targetDate && today <= nextDate) ||
+    (!p.hora_fin && p.fecha_fin >= targetDate && p.fecha_fin <= nextDate));
+  if (raw && turno !== 'TL4') clock = 'static';
+  if (temporalParos) clock = today + 'T' + nowTimeStr();
+  return metricsCache.get(
+    JSON.stringify([kind, linea, turno, targetDate]),
+    metricsCache.dependencies(linea, targetDate, nextDate), clock,
+    () => build(metricsCache.view(root, linea, targetDate, nextDate, today))
+  );
+}
+
+// El cálculo es síncrono: el primer lector publica el resultado antes de que
+// otro request pueda entrar. El resto de PCs comparte ese resultado.
+// Se ejecuta después de los middlewares de autorización existentes.
+function cachedProductionGet(name, handler) {
+  return (req, res) => {
+    metricsCache.attach(dbProd.read());
+    const configOnly = name === '/config' || name === '/slideshow-config';
+    const dependencies = [configOnly ? 'config' : 'all'];
+    const clock = configOnly ? 'static' : nowDateStr() + 'T' + nowTimeStr();
+    const query = Object.keys(req.query).sort().map(key => [key, req.query[key]]);
+    const key = JSON.stringify([name, query]);
+    const sendEntry = entry => {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Cache-Control', 'private, no-cache');
+      res.setHeader('ETag', entry.etag);
+      if (req.headers?.['if-none-match'] === entry.etag) return res.status(304).end();
+      return res.send(entry.json);
+    };
+    const entry = metricsCache.peek(key, dependencies, clock);
+    if (entry) return sendEntry(entry);
+    const originalJson = res.json;
+    res.json = function (value) {
+      res.json = originalJson;
+      if (res.statusCode !== 200) return originalJson.call(res, value);
+      const result = metricsCache.put(key, dependencies, clock, value);
+      metricsCache.stats.builds++;
+      return sendEntry(result);
+    };
+    return handler(req, res);
   };
 }
 
@@ -1045,7 +1109,7 @@ router.get('/resumen/paros', (req, res) => {
 
 // GET /stats/operador-semana?operador_id=X&fecha_ini=Y&fecha_fin=Z
 // Retorna per-dia los ciclos, eficiencia y minutos de paro (rend) del operador en todas las líneas
-router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin'), (req, res) => {
+router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin'), cachedProductionGet('/stats/operador-semana', (req, res) => {
   const { operador_id, fecha_ini, fecha_fin } = req.query;
   if (!operador_id || !fecha_ini) {
     return res.status(400).json({ error: 'operador_id y fecha_ini son requeridos' });
@@ -1141,11 +1205,11 @@ router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin')
 
   result.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
   res.json(result);
-});
+}));
 
 // GET /stats/semana-linea?linea=L3&fecha_ini=Y&fecha_fin=Z
 // Para admin/supervisor: resumen semanal por (fecha, turno) con operador principal de cada turno
-router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (req, res) => {
+router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), cachedProductionGet('/stats/semana-linea', (req, res) => {
   const { linea, fecha_ini, fecha_fin } = req.query;
   if (!linea || !fecha_ini) return res.status(400).json({ error: 'linea y fecha_ini son requeridos' });
 
@@ -1212,7 +1276,7 @@ router.get('/stats/semana-linea', produccionAllowRoles('produccion', 'admin'), (
 
   result.sort((a, b) => a.fecha.localeCompare(b.fecha) || a.turno.localeCompare(b.turno));
   res.json(result);
-});
+}));
 
 // GET /resumen/defectos?desde=&hasta=&linea=&turno= — ciclos/cavidades con defecto (todos los roles)
 router.get('/resumen/defectos', (req, res) => {
@@ -2071,6 +2135,10 @@ function minsToTime(totalMins) {
 // cargas activas o cuando la ultima descarga ocurrio despues de esa salida.
 // La extension nunca cambia la fecha operativa ni permite cruzar medianoche.
 function getTL4EffectiveWindow(pdb, targetDate) {
+  return cachedMetric(pdb, 'window', 'L4', 'TL4', targetDate, view => computegetTL4EffectiveWindow(view, targetDate));
+}
+
+function computegetTL4EffectiveWindow(pdb, targetDate) {
   const cfg = getTurnoL4Config(pdb, getWeekStart(targetDate));
   const diaConf = cfg.dias[getDiaSemana(targetDate)];
   if (!diaConf || !diaConf.activo || !diaConf.hora_entrada || !diaConf.hora_salida) {
@@ -2219,6 +2287,10 @@ function elapsedHoursForTurno(t, targetDate) {
 }
 
 function buildSlotsForLinTur(pdb, config, l, t, targetDate) {
+  return cachedMetric(pdb, 'slots', l, t, targetDate, view => computebuildSlotsForLinTur(view, config, l, t, targetDate), true);
+}
+
+function computebuildSlotsForLinTur(pdb, config, l, t, targetDate) {
   const ciclos_obj = l === 'L3'
     ? (config.ciclos_objetivo_l3 ?? 2)
     : (config.ciclos_objetivo_l4 ?? 2);
@@ -2518,6 +2590,10 @@ function annotateLiveSlots(pdb, linea, turno, targetDate, slots) {
 
 // Construir slots hora x hora para L4 con TL4 (turno configurable)
 function buildSlotsForL4TL4(pdb, config, targetDate) {
+  return cachedMetric(pdb, 'slots', 'L4', 'TL4', targetDate, view => computebuildSlotsForL4TL4(view, config, targetDate), true);
+}
+
+function computebuildSlotsForL4TL4(pdb, config, targetDate) {
   const window = getTL4EffectiveWindow(pdb, targetDate);
   if (!window.activo) return [];
 
@@ -2880,6 +2956,10 @@ function buildParetoParos(pdb, lineaLabel, fecha, turno) {
 }
 
 function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
+  return cachedMetric(pdb, 'pareto-defectos', lineaLabel, turno, fecha, view => computebuildParetoDefectos(view, lineaLabel, fecha, turno));
+}
+
+function computebuildParetoDefectos(pdb, lineaLabel, fecha, turno) {
   const agg = {};
   const ftD  = c => getStoredOperationalContext({ ...c, _linea: lineaLabel }, pdb).fecha_operativa;
   const tnoD = (c, linea) => resolveStoredTurno({ ...c, _linea: linea }, pdb);
@@ -2916,7 +2996,7 @@ function buildParetoDefectos(pdb, lineaLabel, fecha, turno) {
 
 // ─── Pizarrón KPIs ────────────────────────────────────────────────────────────
 
-router.get('/pizarron', (req, res) => {
+router.get('/pizarron', cachedProductionGet('/pizarron', (req, res) => {
   const { linea = 'L3', fecha, turno = 'all' } = req.query;
   // Si no viene fecha, usar shift date (T3 nocturno 00:00-06:29 pertenece al día anterior)
   const targetDate = fecha || getShiftDate(nowDateStr(), nowTimeStr());
@@ -3149,7 +3229,7 @@ router.get('/pizarron', (req, res) => {
   }
 
   res.json({ fecha: targetDate, linea, turno, data });
-});
+}));
 
 // ─── Reportes ─────────────────────────────────────────────────────────────────
 
@@ -3350,10 +3430,15 @@ router.get('/backup', produccionAllowRoles('admin'), (req, res) => {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-router.get('/config', produccionAllowRoles('produccion'), (req, res) => {
+router.get('/config', produccionAllowRoles('produccion'), cachedProductionGet('/config', (req, res) => {
   const pdb = dbProd.read();
-  res.json(pdb.config || { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 });
-});
+  const config = pdb.config || { ciclos_objetivo_l3: 2, ciclos_objetivo_l4: 2 };
+  if (req.query.resumen === '1') {
+    const { slideshow, ...summary } = config;
+    return res.json(summary);
+  }
+  res.json(config);
+}));
 
 router.patch('/config', produccionAllowRoles('admin'), (req, res) => {
   const pdb = dbProd.read();
@@ -3407,7 +3492,7 @@ const DEFAULT_SLIDESHOW = {
   ]
 };
 
-router.get('/slideshow-config', (req, res) => {
+router.get('/slideshow-config', cachedProductionGet('/slideshow-config', (req, res) => {
   const pdb = dbProd.read();
   const stored = pdb.config?.slideshow;
   const storedSlides = Array.isArray(stored?.slides) ? stored.slides : [];
@@ -3424,7 +3509,7 @@ router.get('/slideshow-config', (req, res) => {
       }
     : DEFAULT_SLIDESHOW;
   res.json({ slideshow });
-});
+}));
 
 router.patch('/slideshow-config', produccionAllowRoles('admin'), (req, res) => {
   const pdb  = dbProd.read();
@@ -3441,6 +3526,10 @@ router.patch('/slideshow-config', produccionAllowRoles('admin'), (req, res) => {
 // ─── KPI Snapshots ────────────────────────────────────────────────────────────
 
 function calculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
+  return cachedMetric(pdb, 'snapshot', linea, turno, targetDate, view => computecalculateKpiSnapshot(view, config, linea, turno, targetDate));
+}
+
+function computecalculateKpiSnapshot(pdb, config, linea, turno, targetDate) {
   const isTL4 = linea === 'L4' && l4UsesTL4(pdb, targetDate);
   if (isTL4 && turno !== 'TL4') return null;
   if (!isTL4 && !TURNOS_DEF[turno]) return null;
@@ -3852,7 +3941,7 @@ router.post('/kpis/guardar-legacy-disabled', produccionAllowRoles('admin'), (req
   res.json({ guardados: guardados.length, snapshots: guardados });
 });
 
-router.get('/kpis', (req, res) => {
+router.get('/kpis', cachedProductionGet('/kpis', (req, res) => {
   const { linea, turno, desde, hasta } = req.query;
   const pdb = dbProd.read();
   const config = pdb.config || {};
@@ -3892,7 +3981,7 @@ router.get('/kpis', (req, res) => {
   snapshots.sort((a, b) =>
     b.fecha.localeCompare(a.fecha) || a.linea.localeCompare(b.linea) || a.turno.localeCompare(b.turno));
   res.json({ total: snapshots.length, snapshots });
-});
+}));
 
 router.get('/kpis-legacy-disabled', (req, res) => {
   const { linea, turno, desde, hasta } = req.query;
@@ -4239,6 +4328,10 @@ router.get('/kpis-legacy-disabled', (req, res) => {
 
 // KPI slots para Baker (análogo a buildSlotsForLinTur pero usa cargas_baker y paros_baker)
 function buildSlotsForBaker(pdb, config, t, targetDate) {
+  return cachedMetric(pdb, 'slots', 'Baker', t, targetDate, view => computebuildSlotsForBaker(view, config, t, targetDate), true);
+}
+
+function computebuildSlotsForBaker(pdb, config, t, targetDate) {
   const ciclos_obj = config.ciclos_objetivo_baker ?? 2;
   const tDef    = TURNOS_DEF[t];
   const nextDay = addDays(targetDate, 1);
@@ -4396,6 +4489,10 @@ function buildSlotsForBaker(pdb, config, t, targetDate) {
 
 // KPI slots para L1 — idéntico a Baker pero usa cargas_l1 y paros_l1
 function buildSlotsForL1(pdb, config, t, targetDate) {
+  return cachedMetric(pdb, 'slots', 'L1', t, targetDate, view => computebuildSlotsForL1(view, config, t, targetDate), true);
+}
+
+function computebuildSlotsForL1(pdb, config, t, targetDate) {
   const ciclos_obj = config.ciclos_objetivo_l1 ?? 2;
   const tDef    = TURNOS_DEF[t];
   const nextDay = addDays(targetDate, 1);
@@ -5689,7 +5786,7 @@ router.get('/scrap', produccionAllowRoles('admin', 'produccion', 'pizarron'), (r
   const { linea, fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
   let records = (pdb.registros_scrap || []).map(r => {
-    const ctx = resolveTurnoContext(pdb, r.linea || '', r.fecha || nowDateStr(), r.hora || '06:30');
+    const ctx = getOperationalClassification(pdb, r.linea || '', r.fecha || nowDateStr(), r.hora || '06:30');
     return { ...r, fecha_operativa: r.fecha_operativa || ctx.fecha_turno, turno: r.turno || ctx.turno };
   });
   if (linea)     records = records.filter(r => r.linea === linea);
@@ -5729,7 +5826,7 @@ router.post('/scrap', produccionAllowRoles('admin', 'produccion'), (req, res) =>
 });
 
 // GET /scrap/resumen — % SCRAP por línea y día (público — usado por pizarrón sin auth)
-router.get('/scrap/resumen', (req, res) => {
+router.get('/scrap/resumen', cachedProductionGet('/scrap/resumen', (req, res) => {
   const { linea, fecha_ini, fecha_fin } = req.query;
   const pdb = dbProd.read();
 
@@ -5782,11 +5879,11 @@ router.get('/scrap/resumen', (req, res) => {
   }).sort((a, b) => a.fecha.localeCompare(b.fecha) || a.linea.localeCompare(b.linea));
 
   res.json({ resumen });
-});
+}));
 
 
 // ─── Operadores activos por línea/turno hoy (para reconocimientos) ───────────
-router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) => {
+router.get('/reconocimientos', produccionAllowRoles('produccion'), cachedProductionGet('/reconocimientos', (req, res) => {
   const pdb = dbProd.read();
   const fecha = req.query.fecha || getShiftDate(nowDateStr(), nowTimeStr());
   const cargas = [
@@ -5816,7 +5913,7 @@ router.get('/reconocimientos', produccionAllowRoles('produccion'), (req, res) =>
     }
   }
   res.json({ fecha, operadores: result });
-});
+}));
 
 // ─── Calendario de turnos por línea ────────────────────────────────────────
 

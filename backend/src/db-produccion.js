@@ -6,6 +6,7 @@ const dbPath = path.resolve(process.cwd(), process.env.DB_PRODUCCION_PATH || './
 
 // ── PostgreSQL (producción en Render) — pool compartido ──────────────────────
 const pool = require('./db-pool');
+const metricsCache = require('./production-metrics-cache').shared;
 
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;
@@ -127,10 +128,12 @@ function read() {
     if (!fs.existsSync(dbPath)) return { ...EMPTY_DB };
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
   }
+  metricsCache.attach(_cache);
   return _cache;
 }
 
 function write(data, ...changedKeys) {
+  metricsCache.sync(data, changedKeys);
   _cache = data;
   if (pool) {
     if (changedKeys.length > 0) {

@@ -9,6 +9,7 @@
     "dev": "node backend/src/server.js",
     "init-db": "node scripts/init-db.js",
     "test:tl4": "node test_tl4.js && node test_tl4_supertest.js",
+    "test:produccion-rendimiento": "node --test backend/src/production-metrics-cache.test.js backend/src/production-performance.test.js backend/src/production-client-cache.test.js",
     "test:rhh-asistencia": "node --test backend/src/routes/rhh-asistencia.rules.test.js backend/src/routes/rhh-asistencia.api.test.js"
   },
   "dependencies": {

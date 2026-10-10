@@ -30,6 +30,11 @@
   let slideIdx    = 0;
   let slideTimer  = null;
   let progressInt = null;
+  let dataRefreshTimer = null;
+  let dataRefreshRunning = false;
+  let clockTimer = null;
+  let urgenciasTimer = null;
+  const conditionalJson = new Map();
   let kpiData     = {};
   let weeklyData  = {};
   let scrapData   = {};   // { L3: pct, L4: pct, Baker: pct }  — today
@@ -154,17 +159,24 @@
 
   // ── API ───────────────────────────────────────────────────────────────────
   async function apiFetch(path, opts = {}) {
+    const conditional = path === '/slideshow-config' && (!opts.method || opts.method === 'GET');
+    const previous = conditional ? conditionalJson.get(path) : null;
     const res = await fetch(API + path, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
+        ...(previous ? { 'If-None-Match': previous.etag } : {}),
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(opts.headers || {})
       }
     });
     if (res.status === 401) { doLogout(); return null; }
+    if (res.status === 304 && previous) return previous.data;
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    if (conditional && res.headers.get('ETag')) {
+      conditionalJson.set(path, { etag: res.headers.get('ETag'), data });
+    }
     return data;
   }
 
@@ -173,6 +185,11 @@
     token = null;
     localStorage.removeItem(TK_KEY);
     clearTimers();
+    clearInterval(dataRefreshTimer);
+    clearInterval(clockTimer);
+    clearInterval(urgenciasTimer);
+    clearInterval(mantSoundTimer);
+    conditionalJson.clear();
     document.getElementById('ss-app').style.display = 'none';
     document.getElementById('ss-login').style.display = 'flex';
   }
@@ -181,7 +198,7 @@
     const t = localStorage.getItem(TK_KEY);
     if (!t) return false;
     token = t;
-    try { await apiFetch('/config'); return true; }
+    try { await apiFetch('/config?resumen=1'); return true; }
     catch { token = null; return false; }
   }
 
@@ -1013,7 +1030,8 @@
 
   // ── Clock ─────────────────────────────────────────────────────────────────
   function startClock() {
-    setInterval(() => {
+    clearInterval(clockTimer);
+    clockTimer = setInterval(() => {
       const el = document.getElementById('ss-clock');
       if (el) el.textContent = nowTimeStr();
       updateTurnoBadge();
@@ -1129,7 +1147,9 @@
         showAlertaMant(abiertas);
       }
     } catch(e) {}
-    setInterval(pollUrgencias, 120 * 1000);
+    if (!token) return;
+    clearInterval(urgenciasTimer);
+    urgenciasTimer = setInterval(pollUrgencias, 120 * 1000);
   }
 
   function startPollUrgencias() {
@@ -1137,15 +1157,21 @@
   }
 
   function startDataRefresh() {
-    setInterval(async () => {
-      await fetchKpi();
-      await fetchWeeklyKpi();
-      await fetchScrap();
-      await fetchWeeklyScrap();
-      await fetchReconocimientos();
-      await fetchConfig();
-      buildSlides();
-      renderCurrentSlide();
+    clearInterval(dataRefreshTimer);
+    dataRefreshTimer = setInterval(async () => {
+      if (dataRefreshRunning || !token) return;
+      dataRefreshRunning = true;
+      try {
+        await fetchKpi();
+        await fetchWeeklyKpi();
+        await fetchScrap();
+        await fetchWeeklyScrap();
+        await fetchReconocimientos();
+        await fetchConfig();
+        if (!token) return;
+        buildSlides();
+        renderCurrentSlide();
+      } finally { dataRefreshRunning = false; }
     }, 5 * 60 * 1000);
   }
 

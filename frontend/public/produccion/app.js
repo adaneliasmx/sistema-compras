@@ -798,7 +798,7 @@ async function renderMain() {
   });
   el.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div>';
   if (!state._kpiConfig) {
-    state._kpiConfig = await GET('/config').catch(() => ({}));
+    state._kpiConfig = await GET('/config?resumen=1').catch(() => ({}));
   }
   try {
     switch (state.section) {
@@ -1025,7 +1025,7 @@ async function viewLinea(el, linea) {
       cachedGET(`/catalogos/${linea}`),
       GET(`/paros/${linea}/activo`).catch(() => null),
       GET(`/cargas/${linea}?fecha_ini=${ayer}&fecha_fin=${shiftFechaFin}`).catch(() => []),
-      cachedGET('/config').catch(() => ({})),
+      cachedGET('/config?resumen=1').catch(() => ({})),
       GET(`/pizarron?linea=${linea}&turno=all&fecha=${shiftFechaIni}`).catch(() => null)
     ]);
 
@@ -1321,7 +1321,7 @@ async function viewBaker(el) {
       cachedGET('/catalogos/baker'),
       GET('/baker/paros/activo').catch(() => null),
       GET(`/pizarron?linea=baker&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
-      cachedGET('/config').catch(() => ({}))
+      cachedGET('/config?resumen=1').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
@@ -1526,7 +1526,7 @@ async function viewL1(el) {
       cachedGET('/catalogos/l1'),
       GET('/l1/paros/activo').catch(() => null),
       GET(`/pizarron?linea=L1&turno=${turnoActual}&fecha=${shiftFechaIni}`).catch(() => null),
-      cachedGET('/config').catch(() => ({}))
+      cachedGET('/config?resumen=1').catch(() => ({}))
     ]);
 
     const cargas   = Array.isArray(cargasData) ? cargasData : [];
@@ -6512,7 +6512,7 @@ async function openModalCrearParoAdmin(onDone) {
 
 async function viewConfiguracion(el) {
   let cfg = {};
-  try { const d = await GET('/config'); cfg = d?.config || d || {}; } catch {}
+  try { const d = await GET('/config?resumen=1'); cfg = d?.config || d || {}; } catch {}
 
   const n = (k, def = 0) => cfg[k] ?? def;
   const row = (id, label, val, unit = '') => `
