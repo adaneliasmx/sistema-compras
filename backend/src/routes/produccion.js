@@ -3275,6 +3275,69 @@ router.get('/dashboard', produccionAllowRoles('produccion'), (req, res) => {
   });
 });
 
+// ─── Rebuild cavidades faltantes desde cargas embebidas ───────────────────────
+
+router.post('/rebuild-cavidades', produccionAllowRoles('admin'), (req, res) => {
+  const pdb = dbProd.read();
+  const dryRun = req.query.dry === '1';
+  let totalCreated = 0;
+
+  for (const suffix of ['baker', 'l1']) {
+    const cargasKey = `cargas_${suffix}`;
+    const cavsKey   = `cavidades_${suffix}`;
+    const cargas = (pdb[cargasKey] || []).filter(c => c.herramental_tipo === 'barril');
+    if (!pdb[cavsKey]) pdb[cavsKey] = [];
+
+    const existingCargaIds = new Set(pdb[cavsKey].map(c => String(c.carga_id)));
+
+    for (const carga of cargas) {
+      if (existingCargaIds.has(String(carga.id))) continue;
+      if (!Array.isArray(carga.cavidades) || carga.cavidades.length === 0) continue;
+
+      for (const cv of carga.cavidades) {
+        if (dryRun) { totalCreated++; continue; }
+        pdb[cavsKey].push({
+          id:              dbProd.nextId(pdb[cavsKey]),
+          folio_barril:    carga.folio,
+          carga_id:        carga.id,
+          herramental_no:  carga.herramental_no || null,
+          herramental_id:  carga.herramental_id || null,
+          cavidad_num:     cv.num,
+          es_vacia:        cv.es_vacia || false,
+          cliente:         cv.cliente   || carga.cliente || null,
+          componente:      cv.componente || null,
+          no_skf:          cv.no_skf    || null,
+          no_orden:        cv.no_orden  || null,
+          lote:            cv.lote      || null,
+          cantidad:        cv.cantidad  || null,
+          proceso:         carga.proceso     || null,
+          sub_proceso:     carga.sub_proceso || null,
+          operador:        carga.operador    || null,
+          fecha_carga:     carga.fecha_carga,
+          hora_carga:      carga.hora_carga,
+          turno:           carga.turno,
+          semana:          carga.semana,
+          estado:          cv.estado    || (cv.es_vacia ? 'vacia' : (carga.estado === 'descargado' ? 'buena' : 'activo')),
+          resultado:       cv.estado    || null,
+          defecto_id:      cv.defecto_id || null,
+          defecto:         cv.defecto    || null,
+          fecha_descarga:  carga.fecha_descarga || null,
+          hora_descarga:   carga.hora_descarga  || null,
+          created_at:      carga.created_at || new Date().toISOString(),
+          _rebuilt:        true
+        });
+        totalCreated++;
+      }
+    }
+
+    if (!dryRun && totalCreated > 0) {
+      dbProd.write(pdb, cargasKey, cavsKey);
+    }
+  }
+
+  res.json({ ok: true, dryRun, totalCreated });
+});
+
 // ─── Backup ───────────────────────────────────────────────────────────────────
 
 router.get('/backup', produccionAllowRoles('admin'), (req, res) => {
