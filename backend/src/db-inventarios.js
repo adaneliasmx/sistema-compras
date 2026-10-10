@@ -8,16 +8,7 @@ const pool = require('./db-pool');
 
 let _cache = null;
 let _writeQueue = Promise.resolve();
-
-// ── Auto-detect: snapshot de longitudes para escritura parcial ────────────────
-let _refLengths = null;
-function _captureRef(data) {
-  const r = {};
-  for (const k of Object.keys(data)) {
-    if (Array.isArray(data[k])) r[k] = data[k].length;
-  }
-  return r;
-}
+let _retryTimer = null;
 
 const EMPTY_DB = {
   usuarios_inv: [],
@@ -47,12 +38,10 @@ async function initDb() {
         try { seed = JSON.parse(fs.readFileSync(dbPath, 'utf8')); } catch (_) {}
       }
       _cache = seed;
-      _refLengths = _captureRef(seed);
       await pool.query('INSERT INTO inventarios_data(id,data) VALUES(1,$1)', [JSON.stringify(seed)]);
       console.log('[db-inventarios] PostgreSQL inicializado.');
     } else {
       _cache = rows[0].data;
-      _refLengths = _captureRef(_cache);
       console.log('[db-inventarios] Datos cargados desde PostgreSQL.');
     }
   } else {
@@ -61,7 +50,6 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    _refLengths = _captureRef(_cache);
     console.log('[db-inventarios] Datos cargados desde JSON:', dbPath);
   }
 }
@@ -74,47 +62,30 @@ function read() {
   return _cache;
 }
 
-function write(data, ...changedKeys) {
+function write(data) {
   _cache = data;
   if (pool) {
-    // Auto-detect: colecciones cuya longitud cambió
-    if (changedKeys.length === 0 && _refLengths) {
-      for (const k of Object.keys(data)) {
-        if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
-          changedKeys.push(k);
-        }
-      }
-    }
-    _refLengths = _captureRef(data);
-
-    if (changedKeys.length > 0) {
-      const params = [];
-      let expr = 'data';
-      for (let i = 0; i < changedKeys.length; i++) {
-        const p = i * 2 + 1;
-        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
-        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
-      }
-      const sql = `UPDATE inventarios_data SET data = ${expr} WHERE id = 1`;
-      _writeQueue = _writeQueue.then(() =>
-        pool.query(sql, params)
-          .catch(err => {
-            console.error('[db-inventarios] Error persistiendo parcial, reintentando:', err.message);
-            return pool.query(sql, params)
-              .catch(err2 => console.error('[db-inventarios] Reintento parcial fallido:', err2.message));
-          })
-      );
-    } else {
-      const snapshot = JSON.stringify(data);
-      _writeQueue = _writeQueue.then(() =>
-        pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
-          .catch(err => {
-            console.error('[db-inventarios] Error persistiendo, reintentando:', err.message);
-            return pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
-              .catch(err2 => console.error('[db-inventarios] Reintento fallido:', err2.message));
-          })
-      );
-    }
+    const snapshot = JSON.stringify(data);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
+        .catch(err => {
+          console.error('[db-inventarios] Error persistiendo, reintentando:', err.message);
+          return pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [snapshot])
+            .catch(err2 => {
+              console.error('[db-inventarios] Reintento fallido:', err2.message);
+              if (!_retryTimer) {
+                _retryTimer = setTimeout(() => {
+                  _retryTimer = null;
+                  const s = JSON.stringify(_cache);
+                  _writeQueue = _writeQueue.then(() =>
+                    pool.query('UPDATE inventarios_data SET data=$1 WHERE id=1', [s])
+                      .catch(e3 => console.error('[db-inventarios] Recuperación fallida:', e3.message))
+                  );
+                }, 30000);
+              }
+            });
+        })
+    );
   } else {
     try { fs.writeFileSync(dbPath, JSON.stringify(data, null, 2)); }
     catch (err) { console.error('[db-inventarios] Error JSON:', err.message); }

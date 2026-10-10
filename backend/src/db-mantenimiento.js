@@ -8,16 +8,7 @@ const pool = require('./db-pool');
 
 let _cache = null;
 let _writeQueue = Promise.resolve();
-
-// ── Auto-detect: snapshot de longitudes para escritura parcial ────────────────
-let _refLengths = null;
-function _captureRef(data) {
-  const r = {};
-  for (const k of Object.keys(data)) {
-    if (Array.isArray(data[k])) r[k] = data[k].length;
-  }
-  return r;
-}
+let _retryTimer = null;
 
 const EMPTY_DB = {
   equipos_mant: [
@@ -53,12 +44,10 @@ async function initDb() {
         console.log('[db-mant] Migrando datos de JSON a PostgreSQL...');
       }
       _cache = seed;
-      _refLengths = _captureRef(seed);
       await pool.query('INSERT INTO mantenimiento_data(id, data) VALUES(1, $1)', [JSON.stringify(seed)]);
       console.log('[db-mant] PostgreSQL inicializado.');
     } else {
       _cache = rows[0].data;
-      _refLengths = _captureRef(_cache);
       console.log('[db-mant] Datos cargados desde PostgreSQL.');
     }
   } else {
@@ -67,7 +56,6 @@ async function initDb() {
       fs.writeFileSync(dbPath, JSON.stringify(EMPTY_DB, null, 2));
     }
     _cache = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    _refLengths = _captureRef(_cache);
     console.log('[db-mant] Datos cargados desde JSON local:', dbPath);
   }
 }
@@ -80,47 +68,30 @@ function read() {
   return _cache;
 }
 
-function write(data, ...changedKeys) {
+function write(data) {
   _cache = data;
   if (pool) {
-    // Auto-detect: colecciones cuya longitud cambió
-    if (changedKeys.length === 0 && _refLengths) {
-      for (const k of Object.keys(data)) {
-        if (Array.isArray(data[k]) && _refLengths[k] !== data[k].length) {
-          changedKeys.push(k);
-        }
-      }
-    }
-    _refLengths = _captureRef(data);
-
-    if (changedKeys.length > 0) {
-      const params = [];
-      let expr = 'data';
-      for (let i = 0; i < changedKeys.length; i++) {
-        const p = i * 2 + 1;
-        expr = `jsonb_set(${expr}, $${p}::text[], $${p + 1}::jsonb)`;
-        params.push(`{${changedKeys[i]}}`, JSON.stringify(data[changedKeys[i]]));
-      }
-      const sql = `UPDATE mantenimiento_data SET data = ${expr} WHERE id = 1`;
-      _writeQueue = _writeQueue.then(() =>
-        pool.query(sql, params)
-          .catch(err => {
-            console.error('[db-mant] Error persistiendo parcial, reintentando:', err.message);
-            return pool.query(sql, params)
-              .catch(err2 => console.error('[db-mant] Reintento parcial fallido:', err2.message));
-          })
-      );
-    } else {
-      _writeQueue = _writeQueue.then(() => {
-        const snapshot = JSON.stringify(_cache);
-        return pool.query('UPDATE mantenimiento_data SET data = $1 WHERE id = 1', [snapshot])
-          .catch(err => {
-            console.error('[db-mant] Error persistiendo, reintentando:', err.message);
-            return pool.query('UPDATE mantenimiento_data SET data = $1 WHERE id = 1', [snapshot])
-              .catch(err2 => console.error('[db-mant] Reintento fallido:', err2.message));
-          });
-      });
-    }
+    const snapshot = JSON.stringify(data);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE mantenimiento_data SET data = $1 WHERE id = 1', [snapshot])
+        .catch(err => {
+          console.error('[db-mant] Error persistiendo, reintentando:', err.message);
+          return pool.query('UPDATE mantenimiento_data SET data = $1 WHERE id = 1', [snapshot])
+            .catch(err2 => {
+              console.error('[db-mant] Reintento fallido:', err2.message);
+              if (!_retryTimer) {
+                _retryTimer = setTimeout(() => {
+                  _retryTimer = null;
+                  const s = JSON.stringify(_cache);
+                  _writeQueue = _writeQueue.then(() =>
+                    pool.query('UPDATE mantenimiento_data SET data = $1 WHERE id = 1', [s])
+                      .catch(e3 => console.error('[db-mant] Recuperación fallida:', e3.message))
+                  );
+                }, 30000);
+              }
+            });
+        })
+    );
   } else {
     try {
       fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
