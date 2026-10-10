@@ -10,6 +10,7 @@ const pool = require('./db-pool');
 // ── Caché en memoria ──────────────────────────────────────────────────────────
 let _cache = null;
 let _writeQueue = Promise.resolve();
+let _retryTimer = null;
 
 const EMPTY_DB = {
   // Catálogos por línea (cada línea es independiente)
@@ -147,7 +148,10 @@ function write(data, ...changedKeys) {
           .catch(err => {
             console.error('[db-produccion] Error persistiendo parcial, reintentando:', err.message);
             return pool.query(sql, params)
-              .catch(err2 => console.error('[db-produccion] Reintento parcial fallido:', err2.message));
+              .catch(err2 => {
+                console.error('[db-produccion] Reintento parcial fallido:', err2.message);
+                _scheduleFullRetry();
+              });
           })
       );
     } else {
@@ -158,7 +162,10 @@ function write(data, ...changedKeys) {
           .catch(err => {
             console.error('[db-produccion] Error persistiendo, reintentando:', err.message);
             return pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [snapshot])
-              .catch(err2 => console.error('[db-produccion] Reintento fallido:', err2.message));
+              .catch(err2 => {
+                console.error('[db-produccion] Reintento fallido:', err2.message);
+                _scheduleFullRetry();
+              });
           })
       );
     }
@@ -170,6 +177,34 @@ function write(data, ...changedKeys) {
     }
   }
 }
+
+function _scheduleFullRetry() {
+  if (_retryTimer) return;
+  _retryTimer = setTimeout(() => {
+    _retryTimer = null;
+    if (!_cache) return;
+    console.log('[db-produccion] Retry 30s: persistiendo snapshot completo...');
+    const s = JSON.stringify(_cache);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [s])
+        .then(() => console.log('[db-produccion] Retry 30s: OK'))
+        .catch(e => console.error('[db-produccion] Retry 30s fallido:', e.message))
+    );
+  }, 30000);
+}
+
+function flush() {
+  if (_retryTimer) { clearTimeout(_retryTimer); _retryTimer = null; }
+  if (_cache && pool) {
+    const s = JSON.stringify(_cache);
+    _writeQueue = _writeQueue.then(() =>
+      pool.query('UPDATE produccion_data SET data = $1 WHERE id = 1', [s]).catch(() => {})
+    );
+  }
+  return _writeQueue;
+}
+
+process.once('SIGTERM', () => flush());
 
 function nextId(rows) {
   if (!Array.isArray(rows) || rows.length === 0) return 1;
