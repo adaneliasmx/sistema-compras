@@ -766,13 +766,13 @@ router.get('/app/peers', syncKeyRequired, (req, res) => {
 // Version de la app (para auto-update)
 router.get('/app/version', (req, res) => {
   res.json({
-    version: '4.4.0',
-    version_skf: '4.4.0',
-    version_cuesto: '4.4.0',
+    version: '4.5.0',
+    version_skf: '4.5.0',
+    version_cuesto: '4.5.0',
     min_version: '4.2.0',
     url_cuesto: 'https://drive.google.com/uc?export=download&id=1s19Mlqo2L6vUXVd43yAuxW3nRLyTN6TZ',
     url_skf: 'https://drive.google.com/uc?export=download&id=1PztrUGrbFQYLFftRqAYpmvuo2YVjPXQG',
-    changelog: 'v4.4.0: Boton Reenviar correo en todos los modulos. Dispatch valida 7 digitos con 0 inicial. Fix bug borrar fila individual (re-escaneo bloqueado). Sobrantes enriquecidos al servidor. Sync pendientes automatico. Limpieza tabla QRY al finalizar conciliacion.'
+    changelog: 'v4.5.0: Migracion a nuevo servidor erp-cuesto.com. Conexion directa sin intermediarios.'
   });
 });
 
