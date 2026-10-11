@@ -319,79 +319,118 @@ if (process.env.OPAQUE_ROUTES) {
   });
 }
 
-// Módulo Compras
-app.get('/compras', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
-});
-app.get('/compras/*', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/index.html'));
-});
+// Helper para sendFile
+const sf = (rel) => (req, res) => res.sendFile(path.resolve(process.cwd(), rel));
+const redir = (target) => (req, res) => res.redirect(302, target + (req.url.includes('?') ? '?' + req.url.split('?')[1] : ''));
 
-// Super Admin panel
-app.get('/super-admin', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/super-admin/index.html'));
-});
-app.get('/super-admin/*', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/super-admin/index.html'));
-});
+if (process.env.OPAQUE_ROUTES) {
+  // ── Rutas opacas (Railway) ──────────────────────────────────────────────────
+  // Compras internas
+  app.get('/m/k8f2c4/compras',    sf('frontend/public/index.html'));
+  app.get('/m/k8f2c4/compras/*',  sf('frontend/public/index.html'));
+  app.get('/compras',             redir('/m/k8f2c4/compras'));
+  app.get('/compras/*',           redir('/m/k8f2c4/compras'));
 
-// Módulo RHH
-app.get('/rhh', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/rhh/index.html'));
-});
-app.get('/rhh/*', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/rhh/index.html'));
-});
+  // Super Admin
+  app.get('/z/w4n8k6',            sf('frontend/public/super-admin/index.html'));
+  app.get('/z/w4n8k6/*',          sf('frontend/public/super-admin/index.html'));
+  app.get('/super-admin',         (req, res) => res.status(404).send('Not Found'));
+  app.get('/super-admin/*',       (req, res) => res.status(404).send('Not Found'));
 
-// Módulo Vales
-app.get('/vales', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
-});
-app.get('/vales/*', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/vales/index.html'));
-});
+  // RHH
+  app.get('/m/v6r9n3/rhh',       sf('frontend/public/rhh/index.html'));
+  app.get('/m/v6r9n3/rhh/*',     sf('frontend/public/rhh/index.html'));
+  app.get('/rhh',                 redir('/m/v6r9n3/rhh'));
+  app.get('/rhh/*',               redir('/m/v6r9n3/rhh'));
 
-// Módulo Inventarios
-app.get('/inventarios', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/inventarios/index.html')));
-app.get('/inventarios/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/inventarios/index.html')));
+  // Vales / Calidad
+  app.get('/m/t7q4h2/vales',     sf('frontend/public/vales/index.html'));
+  app.get('/m/t7q4h2/vales/*',   sf('frontend/public/vales/index.html'));
+  app.get('/vales',               redir('/m/t7q4h2/vales'));
+  app.get('/vales/*',             redir('/m/t7q4h2/vales'));
 
-// Módulo Producción
-app.get('/produccion', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
-app.get('/produccion/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/index.html')));
-app.get('/pizarron', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/pizarron.html')));
-app.get('/pizarron/vista', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/produccion/slideshow.html')));
+  // Inventarios
+  app.get('/m/k5i8r2/inventarios',   sf('frontend/public/inventarios/index.html'));
+  app.get('/m/k5i8r2/inventarios/*', sf('frontend/public/inventarios/index.html'));
+  app.get('/inventarios',            redir('/m/k5i8r2/inventarios'));
+  app.get('/inventarios/*',          redir('/m/k5i8r2/inventarios'));
 
-// Módulo Flujo de Materiales
-app.get('/flujo-materiales', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/flujo-materiales/index.html')));
-app.get('/flujo-materiales/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/flujo-materiales/index.html')));
+  // Produccion
+  app.get('/m/x3p9d5/produccion',    sf('frontend/public/produccion/index.html'));
+  app.get('/m/x3p9d5/produccion/*',  sf('frontend/public/produccion/index.html'));
+  app.get('/m/x3p9d5/pizarron',      sf('frontend/public/produccion/pizarron.html'));
+  app.get('/m/x3p9d5/pizarron/vista', sf('frontend/public/produccion/slideshow.html'));
+  app.get('/produccion',             redir('/m/x3p9d5/produccion'));
+  app.get('/produccion/*',           redir('/m/x3p9d5/produccion'));
+  app.get('/pizarron',               redir('/m/x3p9d5/pizarron'));
+  app.get('/pizarron/vista',         redir('/m/x3p9d5/pizarron/vista'));
 
-// Módulo Mantenimiento
-app.get('/mantenimiento', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
-app.get('/mantenimiento/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/mantenimiento/index.html')));
+  // Flujo de Materiales
+  app.get('/m/f7w3k9/flujo-materiales',   sf('frontend/public/flujo-materiales/index.html'));
+  app.get('/m/f7w3k9/flujo-materiales/*', sf('frontend/public/flujo-materiales/index.html'));
+  app.get('/flujo-materiales',            redir('/m/f7w3k9/flujo-materiales'));
+  app.get('/flujo-materiales/*',          redir('/m/f7w3k9/flujo-materiales'));
 
-// Módulo Validaciones Almacen — ruta opaca para clientes
-app.get('/clientes/c7m4q9/validaciones-almacen', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
-app.get('/clientes/c7m4q9/validaciones-almacen/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/validaciones-almacen/index.html')));
-// Redirect legacy → nueva ruta
-app.get('/validaciones-almacen', (req, res) => res.redirect(302, '/clientes/c7m4q9/validaciones-almacen' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '')));
-app.get('/validaciones-almacen/*', (req, res) => res.redirect(302, '/clientes/c7m4q9/validaciones-almacen' + (req.url.includes('?') ? '?' + req.url.split('?')[1] : '')));
+  // Mantenimiento
+  app.get('/m/b6t2v9/mantenimiento',     sf('frontend/public/mantenimiento/index.html'));
+  app.get('/m/b6t2v9/mantenimiento/*',   sf('frontend/public/mantenimiento/index.html'));
+  app.get('/mantenimiento',              redir('/m/b6t2v9/mantenimiento'));
+  app.get('/mantenimiento/*',            redir('/m/b6t2v9/mantenimiento'));
 
-// Portal Empleados (autoservicio)
-app.get('/empleados', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
-app.get('/empleados/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/empleados/index.html')));
+  // Empleados
+  app.get('/apps/e6v3m8/empleados',      sf('frontend/public/empleados/index.html'));
+  app.get('/apps/e6v3m8/empleados/*',    sf('frontend/public/empleados/index.html'));
+  app.get('/empleados',                  redir('/apps/e6v3m8/empleados'));
+  app.get('/empleados/*',                redir('/apps/e6v3m8/empleados'));
 
-// Planner Staff
-app.get('/planner-staff', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/planner-staff/index.html')));
-app.get('/planner-staff/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/planner-staff/index.html')));
+  // Planner Staff
+  app.get('/m/p4s6j8/planner-staff',     sf('frontend/public/planner-staff/index.html'));
+  app.get('/m/p4s6j8/planner-staff/*',   sf('frontend/public/planner-staff/index.html'));
+  app.get('/planner-staff',              redir('/m/p4s6j8/planner-staff'));
+  app.get('/planner-staff/*',            redir('/m/p4s6j8/planner-staff'));
 
-// Inventario con App (escaneo QR movil)
-app.get('/home/inventarioconapp', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
-app.get('/home/inventarioconapp/*', (req, res) => res.sendFile(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp/index.html')));
+  // Escaneo inventarios
+  app.get('/apps/s9q5r2/escaneo-inventarios',   sf('frontend/public/home/inventarioconapp/index.html'));
+  app.get('/apps/s9q5r2/escaneo-inventarios/*', sf('frontend/public/home/inventarioconapp/index.html'));
+  app.get('/home/inventarioconapp',             redir('/apps/s9q5r2/escaneo-inventarios'));
+  app.get('/home/inventarioconapp/*',           redir('/apps/s9q5r2/escaneo-inventarios'));
+
+} else {
+  // ── Rutas originales (Render) ───────────────────────────────────────────────
+  app.get('/compras',       sf('frontend/public/index.html'));
+  app.get('/compras/*',     sf('frontend/public/index.html'));
+  app.get('/super-admin',   sf('frontend/public/super-admin/index.html'));
+  app.get('/super-admin/*', sf('frontend/public/super-admin/index.html'));
+  app.get('/rhh',           sf('frontend/public/rhh/index.html'));
+  app.get('/rhh/*',         sf('frontend/public/rhh/index.html'));
+  app.get('/vales',         sf('frontend/public/vales/index.html'));
+  app.get('/vales/*',       sf('frontend/public/vales/index.html'));
+  app.get('/inventarios',   sf('frontend/public/inventarios/index.html'));
+  app.get('/inventarios/*', sf('frontend/public/inventarios/index.html'));
+  app.get('/produccion',    sf('frontend/public/produccion/index.html'));
+  app.get('/produccion/*',  sf('frontend/public/produccion/index.html'));
+  app.get('/pizarron',      sf('frontend/public/produccion/pizarron.html'));
+  app.get('/pizarron/vista', sf('frontend/public/produccion/slideshow.html'));
+  app.get('/flujo-materiales',   sf('frontend/public/flujo-materiales/index.html'));
+  app.get('/flujo-materiales/*', sf('frontend/public/flujo-materiales/index.html'));
+  app.get('/mantenimiento',      sf('frontend/public/mantenimiento/index.html'));
+  app.get('/mantenimiento/*',    sf('frontend/public/mantenimiento/index.html'));
+  app.get('/empleados',          sf('frontend/public/empleados/index.html'));
+  app.get('/empleados/*',        sf('frontend/public/empleados/index.html'));
+  app.get('/planner-staff',      sf('frontend/public/planner-staff/index.html'));
+  app.get('/planner-staff/*',    sf('frontend/public/planner-staff/index.html'));
+  app.get('/home/inventarioconapp',   sf('frontend/public/home/inventarioconapp/index.html'));
+  app.get('/home/inventarioconapp/*', sf('frontend/public/home/inventarioconapp/index.html'));
+}
+
+// Validaciones Almacen — ruta opaca (siempre activa, ya migrado)
+app.get('/clientes/c7m4q9/validaciones-almacen', sf('frontend/public/validaciones-almacen/index.html'));
+app.get('/clientes/c7m4q9/validaciones-almacen/*', sf('frontend/public/validaciones-almacen/index.html'));
+app.get('/validaciones-almacen', redir('/clientes/c7m4q9/validaciones-almacen'));
+app.get('/validaciones-almacen/*', redir('/clientes/c7m4q9/validaciones-almacen'));
 
 // Vista pública PO (proveedor)
-app.get('/po-view', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/po-view.html'));
-});
+app.get('/po-view', sf('frontend/public/po-view.html'));
 
 // ── API 404: rutas /api inexistentes devuelven JSON, no HTML ──────────────────
 app.all('/api/*', (req, res) => {

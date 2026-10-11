@@ -294,6 +294,35 @@
   </footer>
 
 <script>
+  // Rutas opacas: si estamos en /home1, reescribir links de módulos
+  if (location.pathname === '/home1') {
+    const routeMap = {
+      '/compras': '/m/k8f2c4/compras',
+      '/rhh': '/m/v6r9n3/rhh',
+      '/vales': '/m/t7q4h2/vales',
+      '/produccion': '/m/x3p9d5/produccion',
+      '/inventarios': '/m/k5i8r2/inventarios',
+      '/mantenimiento': '/m/b6t2v9/mantenimiento',
+      '/flujo-materiales': '/m/f7w3k9/flujo-materiales',
+      '/planner-staff': '/m/p4s6j8/planner-staff',
+      '/empleados': '/apps/e6v3m8/empleados'
+    };
+    document.querySelectorAll('a[href], [onclick]').forEach(el => {
+      // Reescribir href
+      const href = el.getAttribute('href');
+      if (href && routeMap[href]) el.setAttribute('href', routeMap[href]);
+      // Reescribir onclick
+      const oc = el.getAttribute('onclick');
+      if (oc) {
+        let newOc = oc;
+        for (const [old, nw] of Object.entries(routeMap)) {
+          newOc = newOc.replace("'" + old + "'", "'" + nw + "'");
+        }
+        if (newOc !== oc) el.setAttribute('onclick', newOc);
+      }
+    });
+  }
+
   document.addEventListener('contextmenu', e => e.preventDefault());
   document.addEventListener('keydown', e => {
     if (e.key === 'F12') { e.preventDefault(); e.stopPropagation(); }
