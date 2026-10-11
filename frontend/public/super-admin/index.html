@@ -170,6 +170,7 @@
       <button class="page-tab active" id="tab-users" onclick="switchPageTab('users')">👥 Usuarios internos</button>
       <button class="page-tab" id="tab-providers" onclick="switchPageTab('providers')">🚚 Proveedores externos</button>
       <button class="page-tab" id="tab-modules" onclick="switchPageTab('modules')">🔧 Módulos</button>
+      <button class="page-tab" id="tab-migration" onclick="switchPageTab('migration')">🚀 Migración</button>
     </div>
 
     <!-- USUARIOS INTERNOS -->
@@ -291,6 +292,62 @@
         <div style="text-align:center;padding:48px;color:#94a3b8">Cargando módulos...</div>
       </div>
     </div>
+
+    <!-- MIGRACIÓN -->
+    <div id="page-migration" style="display:none">
+      <div style="margin-bottom:20px;">
+        <div style="font-size:18px;font-weight:800;">🚀 Migración de plataforma</div>
+        <div style="font-size:13px;color:var(--muted);margin-top:2px;">Auditar, exportar e importar todas las bases de datos para migrar de Render a Railway.</div>
+      </div>
+
+      <!-- PASO 1: Auditar -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>1. Auditar bases de datos</h2>
+          <button class="btn-action" onclick="runMigrationAudit()" id="btnAudit" style="padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:linear-gradient(135deg,#7c3aed,#1d4ed8);color:#fff;border:0;cursor:pointer;">Auditar</button>
+        </div>
+        <div class="card-body" style="padding:16px 22px;">
+          <div id="auditResult" style="font-size:13px;color:var(--muted);">Haz click en "Auditar" para revisar todas las bases de datos.</div>
+        </div>
+      </div>
+
+      <!-- PASO 2: Corregir -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>2. Corregir problemas</h2>
+          <button class="btn-action" onclick="runMigrationFix()" id="btnFix" style="padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:#f59e0b;color:#fff;border:0;cursor:pointer;" disabled>Corregir</button>
+        </div>
+        <div class="card-body" style="padding:16px 22px;">
+          <div id="fixResult" style="font-size:13px;color:var(--muted);">Primero ejecuta la auditoría. Si hay problemas, este botón los corregirá automáticamente.</div>
+        </div>
+      </div>
+
+      <!-- PASO 3: Exportar -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>3. Exportar datos</h2>
+          <button class="btn-action" onclick="runMigrationExport()" id="btnExport" style="padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:#059669;color:#fff;border:0;cursor:pointer;" disabled>Descargar JSON</button>
+        </div>
+        <div class="card-body" style="padding:16px 22px;">
+          <div id="exportResult" style="font-size:13px;color:var(--muted);">Primero audita y corrige. Luego descarga el archivo con todas las bases de datos.</div>
+        </div>
+      </div>
+
+      <!-- PASO 4: Importar -->
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <h2>4. Importar datos (en Railway)</h2>
+          <div style="display:flex;gap:8px;">
+            <input type="file" id="migrationFile" accept=".json" style="font-size:13px;" />
+            <button class="btn-action" onclick="runMigrationImport()" id="btnImport" style="padding:8px 18px;border-radius:10px;font-size:13px;font-weight:700;background:#dc2626;color:#fff;border:0;cursor:pointer;">Importar</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:16px 22px;">
+          <div id="importResult" style="font-size:13px;color:var(--muted);">Sube el archivo JSON exportado desde Render para cargar los datos en esta instancia. <strong>Esto reemplazará TODOS los datos actuales.</strong></div>
+        </div>
+      </div>
+    </div>
+
   </main>
 </div>
 
@@ -549,7 +606,7 @@ function showApp(name) {
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchPageTab(tab) {
   _currentPageTab = tab;
-  ['users','providers','modules'].forEach(t => {
+  ['users','providers','modules','migration'].forEach(t => {
     document.getElementById('page-' + t).style.display = t === tab ? 'block' : 'none';
     document.getElementById('tab-' + t).classList.toggle('active', t === tab);
   });
@@ -1580,6 +1637,156 @@ async function rhhSyncCommit() {
     setTimeout(rhhSyncLoad, 800);
     loadData();
   } catch(e) { msgEl.textContent = '❌ ' + e.message; }
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MIGRACIÓN
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let _auditData = null;
+
+async function runMigrationAudit() {
+  const wrap = document.getElementById('auditResult');
+  const btnFix = document.getElementById('btnFix');
+  const btnExport = document.getElementById('btnExport');
+  wrap.innerHTML = '<div style="color:#6366f1;font-weight:700;">Auditando bases de datos...</div>';
+  try {
+    _auditData = await api('/api/super-admin/migration/audit');
+    let html = `<div style="margin-bottom:12px;font-weight:700;color:#0f172a;">Resumen: ${_auditData.totalModules} módulos · ${_auditData.totalSizeMB} MB total · ${_auditData.totalIssues} problemas</div>`;
+    html += '<table style="width:100%;border-collapse:collapse;font-size:13px;">';
+    html += '<tr style="background:#f8fafc;"><th style="text-align:left;padding:8px 10px;">Módulo</th><th style="padding:8px 6px;">Colecciones</th><th style="padding:8px 6px;">Registros</th><th style="padding:8px 6px;">Tamaño</th><th style="padding:8px 6px;">Estado</th><th style="text-align:left;padding:8px 6px;">Problemas</th></tr>';
+    for (const m of _auditData.modules) {
+      const statusColor = m.status === 'ok' ? '#059669' : '#f59e0b';
+      const statusIcon = m.status === 'ok' ? '✅' : '⚠️';
+      const issueText = m.issues.length > 0
+        ? m.issues.map(i => `${i.type}: ${i.collection} (${i.count || i.ids?.length || 0})`).join('<br/>')
+        : '—';
+      html += `<tr style="border-bottom:1px solid #e2e8f0;">
+        <td style="padding:8px 10px;font-weight:700;">${m.label}</td>
+        <td style="padding:8px 6px;text-align:center;">${m.collections.length}</td>
+        <td style="padding:8px 6px;text-align:center;">${m.totalRecords?.toLocaleString() || '—'}</td>
+        <td style="padding:8px 6px;text-align:center;">${m.sizeMB} MB</td>
+        <td style="padding:8px 6px;text-align:center;color:${statusColor};font-weight:700;">${statusIcon}</td>
+        <td style="padding:8px 6px;font-size:12px;color:#94748b;">${issueText}</td>
+      </tr>`;
+    }
+    html += '</table>';
+
+    // Detalle de colecciones por módulo
+    html += '<details style="margin-top:16px;"><summary style="cursor:pointer;font-weight:700;font-size:13px;color:#6366f1;">Ver detalle de colecciones</summary>';
+    for (const m of _auditData.modules) {
+      html += `<div style="margin-top:10px;font-weight:700;">${m.label}</div><ul style="margin:4px 0 0 16px;font-size:12px;color:#64748b;">`;
+      for (const c of m.collections) {
+        html += `<li>${c.name}: ${c.count != null ? c.count + ' registros' : c.type + ' (' + c.keys + ' keys)'}</li>`;
+      }
+      html += '</ul>';
+    }
+    html += '</details>';
+
+    wrap.innerHTML = html;
+
+    if (_auditData.totalIssues > 0) {
+      btnFix.disabled = false;
+      btnExport.disabled = true;
+    } else {
+      btnFix.disabled = true;
+      btnExport.disabled = false;
+    }
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message}</div>`;
+  }
+}
+
+async function runMigrationFix() {
+  const wrap = document.getElementById('fixResult');
+  wrap.innerHTML = '<div style="color:#f59e0b;font-weight:700;">Corrigiendo problemas...</div>';
+  try {
+    const result = await api('/api/super-admin/migration/fix', { method: 'POST', body: JSON.stringify({}) });
+    if (result.totalFixes === 0) {
+      wrap.innerHTML = '<div style="color:#059669;font-weight:700;">No se encontraron problemas que corregir.</div>';
+    } else {
+      let html = `<div style="color:#059669;font-weight:700;margin-bottom:8px;">Se aplicaron ${result.totalFixes} correcciones:</div><ul style="font-size:12px;margin-left:16px;">`;
+      for (const f of result.fixes) {
+        html += `<li><strong>${f.module}</strong> → ${f.collection}: ${f.fix}${f.count ? ' (' + f.count + ')' : ''}${f.oldId != null ? ' id ' + f.oldId + ' → ' + f.newId : ''}</li>`;
+      }
+      html += '</ul>';
+      wrap.innerHTML = html;
+    }
+    // Re-auditar
+    document.getElementById('btnExport').disabled = false;
+    setTimeout(runMigrationAudit, 500);
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message}</div>`;
+  }
+}
+
+async function runMigrationExport() {
+  const wrap = document.getElementById('exportResult');
+  wrap.innerHTML = '<div style="color:#059669;font-weight:700;">Generando exportación...</div>';
+  try {
+    const token = localStorage.getItem(TOKEN_KEY);
+    const res = await fetch('/api/super-admin/migration/export', {
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!res.ok) throw new Error('Error al exportar');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `migration-export-${new Date().toISOString().slice(0,10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    wrap.innerHTML = `<div style="color:#059669;font-weight:700;">Archivo descargado: ${a.download}</div>`;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message}</div>`;
+  }
+}
+
+async function runMigrationImport() {
+  const wrap = document.getElementById('importResult');
+  const fileInput = document.getElementById('migrationFile');
+  if (!fileInput.files.length) {
+    wrap.innerHTML = '<div style="color:#dc2626;">Selecciona un archivo JSON primero.</div>';
+    return;
+  }
+  if (!confirm('⚠️ ESTO REEMPLAZARÁ TODOS LOS DATOS ACTUALES.\n\n¿Estás seguro de continuar con la importación?')) return;
+  if (!confirm('🔴 CONFIRMACIÓN FINAL: Se borrarán los datos actuales y se cargarán los del archivo.\n\n¿Confirmar?')) return;
+
+  wrap.innerHTML = '<div style="color:#f59e0b;font-weight:700;">Leyendo archivo...</div>';
+  try {
+    const text = await fileInput.files[0].text();
+    let data;
+    try { data = JSON.parse(text); } catch { throw new Error('El archivo no es un JSON válido'); }
+    if (!data._meta) throw new Error('El archivo no parece ser una exportación válida (falta _meta)');
+
+    wrap.innerHTML = '<div style="color:#f59e0b;font-weight:700;">Importando datos...</div>';
+    const result = await api('/api/super-admin/migration/import', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'MIGRATION_IMPORT_CONFIRMAR', data })
+    });
+
+    let html = `<div style="color:#059669;font-weight:700;margin-bottom:8px;">${result.message}</div>`;
+    if (result.imported.length) {
+      html += '<div style="font-weight:700;font-size:13px;margin-top:8px;">Módulos importados:</div><ul style="font-size:12px;margin-left:16px;">';
+      for (const m of result.imported) {
+        html += `<li><strong>${m.label}</strong>: ${m.totalRecords.toLocaleString()} registros en ${m.collections} colecciones</li>`;
+      }
+      html += '</ul>';
+    }
+    if (result.errors.length) {
+      html += '<div style="color:#dc2626;font-weight:700;font-size:13px;margin-top:8px;">Errores:</div><ul style="font-size:12px;margin-left:16px;color:#dc2626;">';
+      for (const e of result.errors) {
+        html += `<li><strong>${e.module}</strong>: ${e.error}</li>`;
+      }
+      html += '</ul>';
+    }
+    wrap.innerHTML = html;
+  } catch(e) {
+    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message}</div>`;
+  }
 }
 
 </script>

@@ -7,6 +7,9 @@ const { read: readProduccion, write: writeProduccion, nextId: nextIdProd } = req
 const { read: readInv, write: writeInv, nextId: nextIdInv } = require('../db-inventarios');
 const { read: readVal, write: writeVal, nextId: nextIdVal } = require('../db-validaciones');
 const { read: readFlujo, write: writeFlujo, nextId: nextIdFlujo } = require('../db-flujo');
+const { read: readVales, write: writeVales } = require('../db-vales');
+const { read: readMant, write: writeMant } = require('../db-mantenimiento');
+const { read: readPlanner, write: writePlanner, DEPARTAMENTOS: PLANNER_DEPTOS } = require('../db-planner');
 const router = express.Router();
 
 const SUPER_ADMIN_EMAIL = 'aelias@cuesto.com.mx';
@@ -1237,7 +1240,6 @@ router.post('/vacuum', superAdminRequired, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // PLANNER STAFF — asignacion de departamentos
 // ═══════════════════════════════════════════════════════════════════════════════
-const { read: readPlanner, write: writePlanner, DEPARTAMENTOS: PLANNER_DEPTOS } = require('../db-planner');
 
 // GET /api/super-admin/planner-users — lista usuarios internos con su asignacion planner
 router.get('/planner-users', superAdminRequired, (req, res) => {
@@ -1308,6 +1310,187 @@ router.patch('/planner-asignacion', superAdminRequired, (req, res) => {
 
   writePlanner(plannerDb);
   res.json({ ok: true, accion: 'asignado', planner_role, departamentos: validDeptos });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MIGRACIÓN — auditoría, exportación e importación de todas las bases de datos
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const MIGRATION_MODULES = [
+  { key: 'compras',       label: 'Compras',              read: readCompras,     write: writeCompras },
+  { key: 'rhh',           label: 'Recursos Humanos',     read: readRhh,         write: writeRhh },
+  { key: 'vales',         label: 'Vales / Calidad',      read: readVales,       write: writeVales },
+  { key: 'produccion',    label: 'Producción',           read: readProduccion,  write: writeProduccion },
+  { key: 'inventarios',   label: 'Inventarios',          read: readInv,         write: writeInv },
+  { key: 'mantenimiento', label: 'Mantenimiento',        read: readMant,        write: writeMant },
+  { key: 'validaciones',  label: 'Validaciones Almacén', read: readVal,         write: writeVal },
+  { key: 'flujo',         label: 'Flujo de Materiales',  read: readFlujo,       write: writeFlujo },
+  { key: 'planner',       label: 'Planner Staff',        read: readPlanner,     write: writePlanner },
+];
+
+function auditCollection(arr, colName) {
+  const issues = [];
+  if (!Array.isArray(arr)) return issues;
+  // Duplicados por ID
+  const ids = arr.filter(r => r && r.id != null).map(r => r.id);
+  const seen = new Set();
+  const dups = new Set();
+  for (const id of ids) {
+    if (seen.has(id)) dups.add(id);
+    seen.add(id);
+  }
+  if (dups.size > 0) {
+    issues.push({ type: 'duplicate_id', collection: colName, ids: [...dups], count: dups.size });
+  }
+  // Registros null o undefined
+  const nullCount = arr.filter(r => r == null).length;
+  if (nullCount > 0) {
+    issues.push({ type: 'null_records', collection: colName, count: nullCount });
+  }
+  // Registros con id faltante (si la colección usa ids)
+  if (ids.length > 0) {
+    const noId = arr.filter(r => r && r.id == null).length;
+    if (noId > 0) {
+      issues.push({ type: 'missing_id', collection: colName, count: noId });
+    }
+  }
+  return issues;
+}
+
+// GET /migration/audit — auditar todas las bases de datos
+router.get('/migration/audit', superAdminRequired, (req, res) => {
+  const results = [];
+  for (const mod of MIGRATION_MODULES) {
+    let db;
+    try { db = mod.read(); } catch (e) {
+      results.push({ module: mod.key, label: mod.label, error: e.message, collections: [], issues: [] });
+      continue;
+    }
+    const collections = [];
+    const issues = [];
+    for (const [key, val] of Object.entries(db)) {
+      if (Array.isArray(val)) {
+        collections.push({ name: key, count: val.length });
+        const colIssues = auditCollection(val, key);
+        issues.push(...colIssues);
+      } else if (val && typeof val === 'object') {
+        collections.push({ name: key, type: 'object', keys: Object.keys(val).length });
+      }
+    }
+    const totalRecords = collections.reduce((s, c) => s + (c.count || 0), 0);
+    const sizeEstimate = JSON.stringify(db).length;
+    results.push({
+      module: mod.key,
+      label: mod.label,
+      collections,
+      totalRecords,
+      sizeBytes: sizeEstimate,
+      sizeMB: (sizeEstimate / 1048576).toFixed(2),
+      issues,
+      status: issues.length === 0 ? 'ok' : 'warnings'
+    });
+  }
+  const totalIssues = results.reduce((s, r) => s + r.issues.length, 0);
+  const totalSize = results.reduce((s, r) => s + (r.sizeBytes || 0), 0);
+  res.json({
+    timestamp: new Date().toISOString(),
+    totalModules: results.length,
+    totalIssues,
+    totalSizeMB: (totalSize / 1048576).toFixed(2),
+    canExport: true,
+    modules: results
+  });
+});
+
+// POST /migration/fix — corregir problemas detectados (duplicados, nulls)
+router.post('/migration/fix', superAdminRequired, (req, res) => {
+  const fixes = [];
+  for (const mod of MIGRATION_MODULES) {
+    let db;
+    try { db = mod.read(); } catch { continue; }
+    let changed = false;
+    for (const [key, val] of Object.entries(db)) {
+      if (!Array.isArray(val)) continue;
+      // Eliminar registros null
+      const before = val.length;
+      db[key] = val.filter(r => r != null);
+      if (db[key].length < before) {
+        fixes.push({ module: mod.key, collection: key, fix: 'removed_nulls', count: before - db[key].length });
+        changed = true;
+      }
+      // Reparar IDs duplicados
+      const ids = new Set();
+      let maxId = 0;
+      for (const r of db[key]) {
+        if (r.id != null && r.id > maxId) maxId = r.id;
+      }
+      for (const r of db[key]) {
+        if (r.id != null && ids.has(r.id)) {
+          maxId++;
+          const oldId = r.id;
+          r.id = maxId;
+          fixes.push({ module: mod.key, collection: key, fix: 'reassigned_dup_id', oldId, newId: maxId });
+          changed = true;
+        }
+        if (r.id != null) ids.add(r.id);
+      }
+    }
+    if (changed) mod.write(db);
+  }
+  res.json({ ok: true, fixes, totalFixes: fixes.length });
+});
+
+// GET /migration/export — exportar TODAS las bases como un solo JSON descargable
+router.get('/migration/export', superAdminRequired, (req, res) => {
+  const exportData = { _meta: { exportedAt: new Date().toISOString(), version: '2.0' } };
+  for (const mod of MIGRATION_MODULES) {
+    try { exportData[mod.key] = mod.read(); } catch (e) {
+      exportData[mod.key] = { _error: e.message };
+    }
+  }
+  const filename = `migration-export-${new Date().toISOString().slice(0,10)}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.json(exportData);
+});
+
+// POST /migration/import — importar bases de datos desde JSON exportado
+router.post('/migration/import', superAdminRequired, (req, res) => {
+  const { confirm, data } = req.body || {};
+  if (confirm !== 'MIGRATION_IMPORT_CONFIRMAR') {
+    return res.status(400).json({ error: 'Debes enviar { confirm: "MIGRATION_IMPORT_CONFIRMAR", data: {...} }' });
+  }
+  if (!data || typeof data !== 'object') {
+    return res.status(400).json({ error: 'Se requiere "data" con el JSON exportado' });
+  }
+  const imported = [];
+  const errors = [];
+  for (const mod of MIGRATION_MODULES) {
+    if (!data[mod.key]) {
+      errors.push({ module: mod.key, error: 'No encontrado en el JSON importado' });
+      continue;
+    }
+    if (data[mod.key]._error) {
+      errors.push({ module: mod.key, error: `Datos con error original: ${data[mod.key]._error}` });
+      continue;
+    }
+    try {
+      mod.write(data[mod.key]);
+      const collections = Object.entries(data[mod.key])
+        .filter(([, v]) => Array.isArray(v))
+        .map(([k, v]) => ({ name: k, count: v.length }));
+      const totalRecords = collections.reduce((s, c) => s + c.count, 0);
+      imported.push({ module: mod.key, label: mod.label, totalRecords, collections: collections.length });
+    } catch (e) {
+      errors.push({ module: mod.key, error: e.message });
+    }
+  }
+  res.json({
+    ok: true,
+    message: `Importación completada: ${imported.length} módulos importados, ${errors.length} errores`,
+    imported,
+    errors
+  });
 });
 
 module.exports = router;
