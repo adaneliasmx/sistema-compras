@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>ERP Cuesto - Iniciar Sesion</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Arial,Helvetica,sans-serif}
+    :root{
+      --navy:#0f172a;--navy2:#1e293b;--blue:#1d4ed8;--blue-light:#dbeafe;
+      --teal:#0f766e;--text:#1f2937;--muted:#64748b;--line:#e2e8f0;--bg:#f0f4f8;
+    }
+    body{min-height:100vh;background:var(--bg);color:var(--text);display:flex;flex-direction:column}
+
+    header{background:var(--navy);color:#fff;padding:0 40px;height:70px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 2px 12px rgba(0,0,0,.25)}
+    .brand{display:flex;align-items:center;gap:14px}
+    .brand img{height:44px;object-fit:contain;filter:brightness(0) invert(1)}
+    .brand-text h1{font-size:18px;font-weight:800;letter-spacing:.5px}
+    .brand-text p{font-size:11px;color:#94a3b8;letter-spacing:1px;text-transform:uppercase;margin-top:1px}
+
+    .login-hero{background:linear-gradient(135deg,var(--navy) 0%,var(--navy2) 60%,#1e3a5f 100%);color:#fff;text-align:center;padding:56px 40px 72px;position:relative;overflow:hidden;flex:1;display:flex;align-items:center;justify-content:center}
+    .login-hero::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 70% 50%,rgba(29,78,216,.25) 0%,transparent 60%)}
+
+    .login-box{position:relative;z-index:1;background:#fff;border-radius:20px;padding:40px 36px;width:100%;max-width:400px;box-shadow:0 14px 38px rgba(0,0,0,.25);color:var(--text)}
+    .login-box h2{font-size:24px;font-weight:800;margin-bottom:6px;color:var(--navy)}
+    .login-box .subtitle{font-size:13px;color:var(--muted);margin-bottom:28px}
+
+    .field{margin-bottom:18px}
+    .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+    .field input{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:10px;font-size:14px;outline:none;transition:border-color .15s}
+    .field input:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(29,78,216,.1)}
+
+    .btn-login{width:100%;padding:13px;border:none;border-radius:12px;background:linear-gradient(135deg,var(--blue),var(--teal));color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:filter .15s;letter-spacing:.3px}
+    .btn-login:hover{filter:brightness(1.1)}
+    .btn-login:disabled{opacity:.6;cursor:not-allowed}
+
+    .msg{margin-top:14px;font-size:13px;text-align:center;min-height:20px}
+    .msg.error{color:#dc2626}
+    .msg.info{color:var(--muted)}
+
+    .access-note{margin-top:20px;padding:14px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;font-size:12px;color:var(--muted);line-height:1.5;text-align:center}
+
+    footer{background:var(--navy);color:#475569;text-align:center;font-size:12px;padding:18px}
+
+    @media(max-width:480px){
+      header{padding:0 18px}
+      .login-box{padding:28px 22px;margin:0 12px}
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <img src="/img/logo.png" alt="Cuesto Corporativo"/>
+      <div class="brand-text">
+        <h1>ERP Cuesto</h1>
+        <p>Sistema de gestion integral</p>
+      </div>
+    </div>
+  </header>
+
+  <div class="login-hero">
+    <div class="login-box">
+      <h2>Iniciar Sesion</h2>
+      <p class="subtitle">Ingresa tus credenciales para acceder al sistema</p>
+
+      <div class="field">
+        <label>Correo electronico</label>
+        <input type="email" id="email" placeholder="tu@correo.com" autocomplete="email"/>
+      </div>
+      <div class="field">
+        <label>Contrasena</label>
+        <input type="password" id="password" placeholder="Tu contrasena" autocomplete="current-password"/>
+      </div>
+
+      <button class="btn-login" id="loginBtn">Iniciar Sesion</button>
+
+      <div class="msg" id="msg"></div>
+
+      <div class="access-note">
+        Si no tienes cuenta o no puedes acceder, contacta al administrador del sistema para solicitar acceso.
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    &copy; 2026 ERP Cuesto v2.0 Cuesto Corporativo Todos los derechos reservados
+  </footer>
+
+<script>
+(function() {
+  const emailEl = document.getElementById('email');
+  const passEl  = document.getElementById('password');
+  const btn     = document.getElementById('loginBtn');
+  const msgEl   = document.getElementById('msg');
+
+  async function doLogin() {
+    const email = emailEl.value.trim();
+    const password = passEl.value;
+    if (!email || !password) {
+      msgEl.className = 'msg error';
+      msgEl.textContent = 'Ingresa correo y contrasena.';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = 'Verificando...';
+    msgEl.className = 'msg info';
+    msgEl.textContent = '';
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Credenciales incorrectas');
+      }
+      // Guardar datos de usuario en localStorage (el token va en httpOnly cookie)
+      localStorage.setItem('user', JSON.stringify(data.user));
+      window.location.href = '/home1';
+    } catch(e) {
+      msgEl.className = 'msg error';
+      msgEl.textContent = e.message || 'Error al iniciar sesion. Contacte al administrador para solicitar acceso.';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Iniciar Sesion';
+    }
+  }
+
+  btn.addEventListener('click', doLogin);
+  passEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doLogin();
+  });
+  emailEl.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') passEl.focus();
+  });
+})();
+
+document.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  if (e.key === 'F12') { e.preventDefault(); e.stopPropagation(); }
+  if (e.ctrlKey && e.shiftKey && ['I','J','C'].includes(e.key.toUpperCase())) { e.preventDefault(); e.stopPropagation(); }
+  if (e.ctrlKey && e.key.toUpperCase() === 'U') { e.preventDefault(); e.stopPropagation(); }
+});
+</script>
+</body>
+</html>

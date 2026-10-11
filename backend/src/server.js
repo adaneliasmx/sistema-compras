@@ -304,9 +304,20 @@ app.use('/api/empleados',      empleadosRoutes);
 
 // ── Rutas de módulos (SPA) ────────────────────────────────────────────────────
 // Portal principal
-app.get('/', (req, res) => {
-  res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
-});
+if (process.env.OPAQUE_ROUTES) {
+  // Railway: raíz = login, /home1 = portal de módulos
+  app.get('/', (req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'frontend/public/login.html'));
+  });
+  app.get('/home1', (req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
+  });
+} else {
+  // Render: comportamiento original
+  app.get('/', (req, res) => {
+    res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
+  });
+}
 
 // Módulo Compras
 app.get('/compras', (req, res) => {
