@@ -1493,4 +1493,29 @@ router.post('/migration/import', superAdminRequired, (req, res) => {
   });
 });
 
+// POST /migration/import-module — importar UN módulo a la vez (evita payloads gigantes)
+router.post('/migration/import-module', superAdminRequired, (req, res) => {
+  const { confirm, module: modKey, moduleData } = req.body || {};
+  if (confirm !== 'MIGRATION_IMPORT_CONFIRMAR') {
+    return res.status(400).json({ error: 'Confirmación inválida' });
+  }
+  if (!modKey || !moduleData || typeof moduleData !== 'object') {
+    return res.status(400).json({ error: 'Se requiere "module" y "moduleData"' });
+  }
+  const mod = MIGRATION_MODULES.find(m => m.key === modKey);
+  if (!mod) {
+    return res.status(400).json({ error: `Módulo "${modKey}" no reconocido` });
+  }
+  try {
+    mod.write(moduleData);
+    const collections = Object.entries(moduleData)
+      .filter(([, v]) => Array.isArray(v))
+      .map(([k, v]) => ({ name: k, count: v.length }));
+    const totalRecords = collections.reduce((s, c) => s + c.count, 0);
+    res.json({ ok: true, module: modKey, label: mod.label, totalRecords, collections: collections.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

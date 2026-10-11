@@ -1752,40 +1752,63 @@ async function runMigrationImport() {
     wrap.innerHTML = '<div style="color:#dc2626;">Selecciona un archivo JSON primero.</div>';
     return;
   }
-  if (!confirm('⚠️ ESTO REEMPLAZARÁ TODOS LOS DATOS ACTUALES.\n\n¿Estás seguro de continuar con la importación?')) return;
-  if (!confirm('🔴 CONFIRMACIÓN FINAL: Se borrarán los datos actuales y se cargarán los del archivo.\n\n¿Confirmar?')) return;
+  if (!confirm('ESTO REEMPLAZARA TODOS LOS DATOS ACTUALES.\n\nEstas seguro de continuar con la importacion?')) return;
+  if (!confirm('CONFIRMACION FINAL: Se borraran los datos actuales y se cargaran los del archivo.\n\nConfirmar?')) return;
 
   wrap.innerHTML = '<div style="color:#f59e0b;font-weight:700;">Leyendo archivo...</div>';
   try {
     const text = await fileInput.files[0].text();
     let data;
-    try { data = JSON.parse(text); } catch { throw new Error('El archivo no es un JSON válido'); }
-    if (!data._meta) throw new Error('El archivo no parece ser una exportación válida (falta _meta)');
+    try { data = JSON.parse(text); } catch(pe) { throw new Error('El archivo no es un JSON valido: ' + pe.message); }
+    if (!data._meta) throw new Error('El archivo no parece ser una exportacion valida (falta _meta)');
 
-    wrap.innerHTML = '<div style="color:#f59e0b;font-weight:700;">Importando datos...</div>';
-    const result = await api('/api/super-admin/migration/import', {
-      method: 'POST',
-      body: JSON.stringify({ confirm: 'MIGRATION_IMPORT_CONFIRMAR', data })
-    });
+    const moduleKeys = ['compras','rhh','vales','produccion','inventarios','mantenimiento','validaciones','flujo','planner'];
+    const found = moduleKeys.filter(k => data[k] && !data[k]._error);
+    const missing = moduleKeys.filter(k => !data[k] || data[k]._error);
 
-    let html = `<div style="color:#059669;font-weight:700;margin-bottom:8px;">${result.message}</div>`;
-    if (result.imported.length) {
-      html += '<div style="font-weight:700;font-size:13px;margin-top:8px;">Módulos importados:</div><ul style="font-size:12px;margin-left:16px;">';
-      for (const m of result.imported) {
-        html += `<li><strong>${m.label}</strong>: ${m.totalRecords.toLocaleString()} registros en ${m.collections} colecciones</li>`;
+    wrap.innerHTML = `<div style="color:#f59e0b;font-weight:700;">Importando ${found.length} modulos uno por uno...</div>`;
+
+    const results = [];
+    const errors = [];
+    for (let i = 0; i < found.length; i++) {
+      const key = found[i];
+      wrap.innerHTML = `<div style="color:#f59e0b;font-weight:700;">Importando modulo ${i+1}/${found.length}: ${key}...</div>`;
+      try {
+        const token = localStorage.getItem(TOKEN_KEY);
+        const res = await fetch('/api/super-admin/migration/import-module', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+          body: JSON.stringify({ confirm: 'MIGRATION_IMPORT_CONFIRMAR', module: key, moduleData: data[key] })
+        });
+        const json = await res.json().catch(() => null);
+        if (!res.ok) {
+          errors.push({ module: key, error: json?.error || res.statusText || ('HTTP ' + res.status) });
+        } else {
+          results.push({ module: key, ...json });
+        }
+      } catch(fe) {
+        errors.push({ module: key, error: fe.message || 'Error de red' });
       }
+    }
+
+    let html = `<div style="color:#059669;font-weight:700;margin-bottom:8px;">Importacion completada: ${results.length} modulos OK, ${errors.length} errores</div>`;
+    if (results.length) {
+      html += '<ul style="font-size:12px;margin-left:16px;">';
+      for (const r of results) html += `<li style="color:#059669;"><strong>${r.module}</strong>: ${r.totalRecords?.toLocaleString() || 0} registros</li>`;
       html += '</ul>';
     }
-    if (result.errors.length) {
+    if (missing.length) {
+      html += `<div style="color:#f59e0b;font-size:12px;margin-top:6px;">Modulos no encontrados en archivo: ${missing.join(', ')}</div>`;
+    }
+    if (errors.length) {
       html += '<div style="color:#dc2626;font-weight:700;font-size:13px;margin-top:8px;">Errores:</div><ul style="font-size:12px;margin-left:16px;color:#dc2626;">';
-      for (const e of result.errors) {
-        html += `<li><strong>${e.module}</strong>: ${e.error}</li>`;
-      }
+      for (const e of errors) html += `<li><strong>${e.module}</strong>: ${e.error}</li>`;
       html += '</ul>';
     }
     wrap.innerHTML = html;
   } catch(e) {
-    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message}</div>`;
+    console.error('Migration import error:', e);
+    wrap.innerHTML = `<div style="color:#dc2626;font-weight:700;">Error: ${e.message || e.toString() || 'Error desconocido'}</div>`;
   }
 }
 
