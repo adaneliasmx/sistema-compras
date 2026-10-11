@@ -132,8 +132,10 @@ router.post('/password-requests/:id/approve', (req, res) => {
 
   // Construir URL del sistema (prioridad: var de entorno > origin header > host con protocolo)
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const baseUrl = (process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '');
-  const resetUrl = `${baseUrl}#/reset-password?token=${token}`;
+  const comprasBase = process.env.OPAQUE_ROUTES
+    ? (process.env.APP_URL || `${proto}://${req.get('host')}`) + '/m/k8f2c4/compras'
+    : (process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '');
+  const resetUrl = `${comprasBase}#/reset-password?token=${token}`;
 
   const subject = `Cambio de contraseña autorizado · Sistema de Compras`;
   const body = `Hola ${request.user_name},\n\nTu solicitud de cambio de contraseña ha sido autorizada.\n\nHaz clic en el siguiente enlace para crear tu nueva contraseña:\n${resetUrl}\n\nEste enlace expira en 24 horas.\nSi no solicitaste este cambio, ignora este mensaje.`;

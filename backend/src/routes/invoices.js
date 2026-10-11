@@ -12,6 +12,8 @@ const JWT_SECRET = require('../jwt-secret');
 const router = express.Router();
 router.use(authRequired);
 
+const COMPRAS_PATH = process.env.OPAQUE_ROUTES ? '/m/k8f2c4/compras' : '/compras';
+
 // ── Codifica archivo en base64 para persistirlo en DB ─────────────────────────
 // Los XML se comprimen con gzip antes (ahorran ~75%). PDFs se guardan directo.
 function encodeFileForDb(filePath, fileType) {
@@ -121,7 +123,7 @@ router.post('/request/:po_id', allowRoles('comprador', 'admin'), (req, res) => {
     `Total de la orden: $${Number(po.total_amount || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} ${po.currency || 'MXN'}`,
     ``,
     `► Para cargar su factura (PDF y XML) ingrese al sistema:`,
-    `${baseUrl}/#/facturacion`,
+    `${baseUrl}${COMPRAS_PATH}#/facturacion`,
     ``,
     `► Ver detalle de esta orden:`,
     `${baseUrl}/api/public/po/${token}`,
@@ -258,7 +260,7 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
         `XML:             ${row.xml_original || 'No adjunto'}`,
         ``,
         `► Revisar en el sistema:`,
-        `${baseUrl}/#/facturacion`,
+        `${baseUrl}${COMPRAS_PATH}#/facturacion`,
         `────────────────────────────────────────────────────`
       ].join('\n');
       mailto_comprador = `mailto:${encodeURIComponent(buyerEmails)}?subject=${encodeURIComponent(notifSubject)}&body=${encodeURIComponent(notifBody)}`;
@@ -350,7 +352,7 @@ router.post('/monthly', allowRoles('comprador', 'proveedor', 'admin'), upload.fi
         `POs cubiertas: ${poFolios}`,
         `Total: $${Number(row.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`,
         ``,
-        `► Revisar en el sistema: ${baseUrl}/#/facturacion`
+        `► Revisar en el sistema: ${baseUrl}${COMPRAS_PATH}#/facturacion`
       ].join('\n');
       mailto_comprador = `mailto:${encodeURIComponent(buyerEmails)}?subject=${encodeURIComponent(notifSubject)}&body=${encodeURIComponent(notifBody)}`;
     }

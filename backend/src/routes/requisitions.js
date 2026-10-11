@@ -272,7 +272,10 @@ router.post('/:id/send', (req, res) => {
   const urgPrefix = isUrgent ? '🔴 URGENTE · ' : '';
   const subject = req.body.email_subject || `${urgPrefix}Requisición ${reqRow.folio}`;
   const proto = req.headers['x-forwarded-proto'] || req.protocol;
-  const previewUrl = `${(process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '')}#/requisiciones/${reqRow.id}`;
+  const comprasBase = process.env.OPAQUE_ROUTES
+    ? (process.env.APP_URL || `${proto}://${req.get('host')}`) + '/m/k8f2c4/compras'
+    : (process.env.FRONTEND_URL || `${proto}://${req.get('host')}/compras`).replace(/\/$/, '');
+  const previewUrl = `${comprasBase}#/requisiciones/${reqRow.id}`;
   const itemLines = lines.map(item => {
     const name = item.manual_item_name || (db.catalog_items.find(c => c.id === item.catalog_item_id) || {}).name || 'Artículo';
     const supplier = (db.suppliers.find(s => s.id === item.supplier_id) || {}).business_name || '';

@@ -370,7 +370,8 @@ router.post('/requisitions/:id/reject-all', allowRoles('autorizador', 'comprador
 router.get('/request-auth-mailto', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), (req, res) => {
   const db = read();
   const baseUrl = process.env.APP_URL || 'https://www.erp-cuesto.com';
-  const authUrl = `${baseUrl}/#/autorizaciones`;
+  const comprasPath = process.env.OPAQUE_ROUTES ? '/m/k8f2c4/compras' : '/compras';
+  const authUrl = `${baseUrl}${comprasPath}#/autorizaciones`;
 
   const pendingItems = db.requisition_items.filter(i => i.status === 'En autorización');
   if (!pendingItems.length) return res.json({ mailto: null, count: 0 });
