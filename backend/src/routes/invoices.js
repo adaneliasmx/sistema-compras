@@ -91,7 +91,7 @@ router.post('/request/:po_id', allowRoles('comprador', 'admin'), (req, res) => {
   po.invoice_requested_by = req.user.id;
   write(db);
 
-  const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+  const baseUrl = process.env.APP_URL || 'https://www.erp-cuesto.com';
   const secret = JWT_SECRET;
   const token = crypto.createHmac('sha256', secret).update(`po:${po.id}:${po.folio}`).digest('hex').slice(0, 32);
 
@@ -239,7 +239,7 @@ router.post('/', upload.fields([{ name: 'pdf', maxCount: 1 }, { name: 'xml', max
     const buyerEmails = [...new Set([...buyers, ...supplierUsers].map(u => u.email).filter(Boolean))].join(',');
     if (buyerEmails && po) {
       const supplier2 = (db.suppliers || []).find(s => s.id === po.supplier_id) || {};
-      const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+      const baseUrl = process.env.APP_URL || 'https://www.erp-cuesto.com';
       const notifSubject = `Factura registrada · ${po.folio} · ${row.invoice_number}`;
       const notifBody = [
         `Estimado(a) equipo de compras,`,
@@ -338,7 +338,7 @@ router.post('/monthly', allowRoles('comprador', 'proveedor', 'admin'), upload.fi
     const buyerEmails = buyers.map(u => u.email).filter(Boolean).join(',');
     if (buyerEmails) {
       const supplier2 = (db.suppliers || []).find(s => s.id === supplierId) || {};
-      const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+      const baseUrl = process.env.APP_URL || 'https://www.erp-cuesto.com';
       const poFolios = selectedPOs.map(p => p.folio).join(', ');
       const notifSubject = `Factura mensual registrada · ${row.invoice_number} · ${supplier2.business_name || ''}`;
       const notifBody = [

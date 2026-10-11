@@ -94,6 +94,16 @@ const app = express();
 // ── Confiar en el proxy de Render para X-Forwarded-Proto / IP ─────────────────
 app.set('trust proxy', 1);
 
+// ── Redirección Render → Railway (activar con REDIRECT_TARGET en Render) ─────
+if (process.env.REDIRECT_TARGET) {
+  const target = process.env.REDIRECT_TARGET.replace(/\/$/, '');
+  app.use((req, res, next) => {
+    // Health check sigue funcionando para que Render no mate el servicio
+    if (req.path === '/api/health') return next();
+    res.redirect(301, target + req.originalUrl);
+  });
+}
+
 // ── Seguridad de headers HTTP (helmet) ────────────────────────────────────────
 app.use(helmet({
   contentSecurityPolicy: {

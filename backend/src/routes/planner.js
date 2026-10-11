@@ -725,7 +725,7 @@ function buildMailto(act, accion) {
     `Asignado por: ${act.creado_por_nombre}`,
     '',
     'Accede al sistema para ver detalles:',
-    'https://cuestocompras.onrender.com/planner-staff'
+    (process.env.APP_URL || 'https://www.erp-cuesto.com') + (process.env.OPAQUE_ROUTES ? '/m/p4s6j8/planner-staff' : '/planner-staff')
   ].join('\n');
 
   return `mailto:${encodeURIComponent(act.responsable_email || '')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;

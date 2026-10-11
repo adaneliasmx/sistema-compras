@@ -369,7 +369,7 @@ router.post('/requisitions/:id/reject-all', allowRoles('autorizador', 'comprador
 // Generar mailto de recordatorio de autorización (para botón "Solicitar autorización")
 router.get('/request-auth-mailto', allowRoles('comprador', 'autorizador', 'pagos', 'admin'), (req, res) => {
   const db = read();
-  const baseUrl = process.env.APP_URL || 'https://sistema-compras.onrender.com';
+  const baseUrl = process.env.APP_URL || 'https://www.erp-cuesto.com';
   const authUrl = `${baseUrl}/#/autorizaciones`;
 
   const pendingItems = db.requisition_items.filter(i => i.status === 'En autorización');

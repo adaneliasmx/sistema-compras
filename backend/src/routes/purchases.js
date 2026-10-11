@@ -7,7 +7,9 @@ const router = express.Router();
 router.use(authRequired);
 
 // URL de la plataforma — se usa en correos para que proveedores accedan al portal
-const PORTAL_LOGIN_URL = 'https://cuestocompras.onrender.com/compras#/login';
+const PORTAL_LOGIN_URL = process.env.OPAQUE_ROUTES
+  ? (process.env.APP_URL || 'https://www.erp-cuesto.com') + '/'
+  : (process.env.APP_URL || 'https://www.erp-cuesto.com') + '/compras#/login';
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });

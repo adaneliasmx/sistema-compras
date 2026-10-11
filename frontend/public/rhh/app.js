@@ -14081,7 +14081,7 @@ async function catEnviarWhatsApp(empId, username, fullName, phone) {
 
   const usuario = r.username;
   const contrasena = r.password;
-  const link = 'https://cuestocompras.onrender.com/empleados/';
+  const link = location.origin + '/empleados/';
 
   const msg = `Hola *${fullName}*,\n\n`
     + `Te invitamos a consultar la plataforma de empleados, donde podras consultar tus incidencias, evaluaciones, nomina y solicitar vacaciones.\n\n`
@@ -14117,7 +14117,7 @@ async function catResetYEnviarWA(empId, fullName, phone) {
 
   toast(`Contraseña restablecida. Usuario: ${r.username} / Pass: ${r.password}`, 'success');
 
-  const link = 'https://cuestocompras.onrender.com/empleados/';
+  const link = location.origin + '/empleados/';
   const msg = `Hola *${fullName}*,\n\n`
     + `Tu contraseña del portal de empleados ha sido restablecida.\n\n`
     + `*Tus nuevas credenciales de acceso:*\n`
