@@ -315,24 +315,47 @@ router.patch('/unified-users/role', superAdminRequired, (req, res) => {
   res.json({ ok: true });
 });
 
-// PATCH /api/super-admin/unified-users/password — resetear contraseña en todos los módulos vinculados
+// PATCH /api/super-admin/unified-users/password — resetear contraseña en TODOS los módulos vinculados
 router.patch('/unified-users/password', superAdminRequired, (req, res) => {
   const { compras_user_id, rhh_user_id, new_password } = req.body || {};
   if (!new_password || new_password.length < 4) return res.status(400).json({ error: 'Contraseña mínimo 4 caracteres' });
   const hash = bcrypt.hashSync(String(new_password), 10);
   const now = new Date().toISOString();
 
+  // Recopilar email para buscar en módulos con tabla de usuarios independiente
+  let emailLow = null;
+
   const updated = [];
   if (compras_user_id && Number(compras_user_id) > 0) {
     const db = readCompras();
     const u = (db.users || []).find(u => u.id === Number(compras_user_id));
-    if (u) { u.password_hash = hash; u.updated_at = now; writeCompras(db); updated.push('compras'); }
+    if (u) { u.password_hash = hash; u.updated_at = now; writeCompras(db); updated.push('compras'); emailLow = (u.email || '').toLowerCase(); }
   }
   if (rhh_user_id && Number(rhh_user_id) > 0) {
     const db = readRhh();
     const u = (db.rhh_users || []).find(u => u.id === Number(rhh_user_id));
-    if (u) { u.password_hash = hash; u.updated_at = now; writeRhh(db); updated.push('rhh'); }
+    if (u) { u.password_hash = hash; u.updated_at = now; writeRhh(db); updated.push('rhh'); if (!emailLow) emailLow = (u.email || '').toLowerCase(); }
   }
+
+  // Actualizar en módulos con tabla de usuarios independiente (por email)
+  if (emailLow) {
+    try {
+      const valDb = readVal();
+      const valUser = (valDb.usuarios_val || []).find(u => u.email === emailLow);
+      if (valUser) { valUser.password_hash = hash; writeVal(valDb); updated.push('validaciones'); }
+    } catch (_) {}
+    try {
+      const flujoDb = readFlujo();
+      const flujoUser = (flujoDb.usuarios_flujo || []).find(u => u.email === emailLow);
+      if (flujoUser) { flujoUser.password_hash = hash; writeFlujo(flujoDb); updated.push('flujo'); }
+    } catch (_) {}
+    try {
+      const invDb = readInv();
+      const invUser = (invDb.usuarios_inv || []).find(u => u.email === emailLow);
+      if (invUser) { invUser.password_hash = hash; writeInv(invDb); updated.push('inventarios'); }
+    } catch (_) {}
+  }
+
   if (updated.length === 0) return res.status(404).json({ error: 'No se encontró ningún usuario con los IDs proporcionados' });
   res.json({ ok: true, message: `Contraseña actualizada en: ${updated.join(', ')}` });
 });
