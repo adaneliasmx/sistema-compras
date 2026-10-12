@@ -1518,4 +1518,71 @@ router.post('/migration/import-module', superAdminRequired, (req, res) => {
   }
 });
 
+// POST /api/super-admin/diagnose-user — diagnosticar problemas de login de un usuario
+router.post('/diagnose-user', superAdminRequired, (req, res) => {
+  const { email, test_password } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Email requerido' });
+  const emailLow = email.toLowerCase().trim();
+
+  const comprasDb = readCompras();
+  const rhhDb = readRhh();
+
+  const comprasUser = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  const rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+
+  const result = { email: emailLow, compras: null, rhh: null };
+
+  if (comprasUser) {
+    const hasHash = !!comprasUser.password_hash;
+    const hashPrefix = hasHash ? comprasUser.password_hash.slice(0, 10) + '...' : null;
+    let passwordMatch = null;
+    if (test_password && hasHash) {
+      passwordMatch = bcrypt.compareSync(String(test_password), comprasUser.password_hash);
+    }
+    result.compras = {
+      id: comprasUser.id,
+      full_name: comprasUser.full_name,
+      email: comprasUser.email,
+      role_code: comprasUser.role_code,
+      active: comprasUser.active,
+      active_truthy: !!comprasUser.active,
+      active_not_false: comprasUser.active !== false,
+      has_password_hash: hasHash,
+      hash_prefix: hashPrefix,
+      password_match: passwordMatch,
+      updated_at: comprasUser.updated_at || null
+    };
+  }
+
+  if (rhhUser) {
+    const hasHash = !!rhhUser.password_hash;
+    const hashPrefix = hasHash ? rhhUser.password_hash.slice(0, 10) + '...' : null;
+    let passwordMatch = null;
+    if (test_password && hasHash) {
+      passwordMatch = bcrypt.compareSync(String(test_password), rhhUser.password_hash);
+    }
+    result.rhh = {
+      id: rhhUser.id,
+      full_name: rhhUser.full_name,
+      email: rhhUser.email,
+      role: rhhUser.role,
+      active: rhhUser.active,
+      active_truthy: !!rhhUser.active,
+      has_password_hash: hasHash,
+      hash_prefix: hashPrefix,
+      password_match: passwordMatch
+    };
+  }
+
+  if (!comprasUser && !rhhUser) {
+    // Buscar coincidencias parciales
+    const partial = (comprasDb.users || [])
+      .filter(u => (u.email || '').toLowerCase().includes(emailLow.split('@')[0]))
+      .map(u => ({ id: u.id, email: u.email, full_name: u.full_name, active: u.active }));
+    result.partial_matches = partial;
+  }
+
+  res.json(result);
+});
+
 module.exports = router;
