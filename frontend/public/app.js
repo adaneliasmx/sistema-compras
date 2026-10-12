@@ -2933,6 +2933,19 @@ async function purchasesView() {
         if (item) openItemEditModal(item);
       };
     });
+    // Cancelar requisición completa (DELETE)
+    tableEl.querySelectorAll('.cancel-req').forEach(btn => {
+      btn.onclick = async () => {
+        const folio = btn.dataset.folio;
+        const reqId = btn.dataset.reqId;
+        if (!confirm(`¿Eliminar la requisición ${folio} y todos sus ítems?\n\nEsta acción no se puede deshacer.`)) return;
+        try {
+          await api(`/api/requisitions/${reqId}`, { method: 'DELETE' });
+          alert(`Requisición ${folio} eliminada correctamente.`);
+          render();
+        } catch (e) { alert('No se pudo eliminar: ' + e.message); }
+      };
+    });
     // Select all
     const selAll = tableEl.querySelector('#selectAllCheck');
     if (selAll) selAll.onchange = () => tableEl.querySelectorAll('.po-check').forEach(c => c.checked = selAll.checked);
@@ -3166,7 +3179,7 @@ async function purchasesView() {
     const gMap = new Map();
     items.forEach(i => {
       const key = i.requisition_folio || 'Sin requisición';
-      if (!gMap.has(key)) gMap.set(key, { folio: key, requester: i.requester_name, date: i.request_date, urgency: i.urgency || 'Medio', items: [] });
+      if (!gMap.has(key)) gMap.set(key, { folio: key, requester: i.requester_name, date: i.request_date, urgency: i.urgency || 'Medio', requisition_id: i.requisition_id, items: [] });
       gMap.get(key).items.push(i);
     });
     return [...gMap.values()].map(g => {
@@ -3178,6 +3191,7 @@ async function purchasesView() {
             <span class="muted" style="font-size:12px"> · ${escapeHtml(g.requester || '-')}</span>
             <span style="margin-left:6px">${urgencyBadge(g.urgency)}</span>
             <span style="font-size:11px;color:#9ca3af;margin-left:6px">${g.items.length} ítem(s)</span>
+            ${g.requisition_id ? `<button class="btn-danger cancel-req" data-req-id="${g.requisition_id}" data-folio="${escapeHtml(g.folio)}" style="margin-left:10px;padding:2px 8px;font-size:11px">🗑 Cancelar req.</button>` : ''}
             <b style="float:right;font-size:12px">$${gTotal.toLocaleString('es-MX',{minimumFractionDigits:2})}</b>
           </td>
         </tr>
