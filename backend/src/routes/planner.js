@@ -10,6 +10,7 @@ const { read: readRhh } = require('../db-rhh');
 const { read: readFlujo } = require('../db-flujo');
 const { authRequired } = require('../middleware/auth');
 const router = express.Router();
+const rules = require('../planner-rules');
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -36,6 +37,25 @@ function plannerAdmin(req, res, next) {
 
 router.use(authRequired);
 router.use(plannerRequired);
+// Validate before any handler changes cached objects.
+router.use((req, res, next) => {
+  for (const key of ['fecha', 'desde', 'hasta']) {
+    if (req.query[key] && !rules.validDate(req.query[key])) return res.status(400).json({ error: 'Fecha invalida: ' + key });
+  }
+  if (req.query.desde && req.query.hasta && req.query.desde > req.query.hasta) return res.status(400).json({ error: 'Rango de fechas invertido' });
+  if (req.path.startsWith('/integracion/') && req.path.endsWith('/cpk') && !!req.query.desde !== !!req.query.hasta) return res.status(400).json({ error: 'Indica desde y hasta' });
+  if (['POST', 'PATCH'].includes(req.method) && req.path.startsWith('/actividades')) {
+    const b = req.body || {};
+    const err = rules.assignmentError(b, read(), readCompras());
+    if (err) return res.status(400).json({ error: err });
+    for (const field of ['fecha_compromiso', 'fecha_inicio', 'fecha_fin', 'fecha_reclamo']) {
+      if (b[field] && !rules.validDate(b[field])) return res.status(400).json({ error: 'Fecha invalida: ' + field });
+    }
+    if (b.estatus && !(req.path.includes('/sub/') ? VALID_SUB_ESTATUS : VALID_ESTATUS).includes(b.estatus)) return res.status(400).json({ error: 'Estatus invalido' });
+    if (b.urgencia && !VALID_URGENCIA.includes(b.urgencia)) return res.status(400).json({ error: 'Urgencia invalida' });
+  }
+  next();
+});
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -111,11 +131,9 @@ router.get('/staff', (req, res) => {
 
 // Todos los usuarios internos disponibles (para selector de responsable)
 router.get('/staff/disponibles', (req, res) => {
-  const comprasDb = readCompras();
-  const internos = (comprasDb.users || [])
-    .filter(u => u.active !== false && u.role_code !== 'proveedor')
-    .map(u => ({ id: u.id, nombre: u.full_name, email: u.email, role: u.role_code }));
-  res.json(internos);
+  if (req.query.todos && req.plannerUser.planner_role !== 'admin') return res.status(403).json({ error: 'Solo admin puede consultar usuarios sin acceso' });
+  const usuarios = req.query.todos ? (readCompras().users || []).filter(u => u.active !== false && u.role_code !== 'proveedor') : rules.eligibleUsers(read(), readCompras());
+  res.json(usuarios.map(u => ({ id: u.id, nombre: u.full_name, email: u.email, role: u.role_code })));
 });
 
 // Asignar/revocar acceso planner (solo admin planner)
@@ -178,20 +196,8 @@ router.get('/me', (req, res) => {
 
 router.get('/actividades', (req, res) => {
   const db = read();
-  let list = db.actividades || [];
-
-  // Auto-overdue: marcar estatus vencidos en memoria (sin write bloqueante)
   const hoy = nowMxDate();
-  for (const act of list) {
-    if (['sin_empezar', 'en_proceso'].includes(act.estatus) && act.fecha_compromiso && act.fecha_compromiso < hoy) {
-      act.estatus = 'atrasada';
-    }
-    for (const sub of act.sub_actividades || []) {
-      if (['sin_empezar', 'en_proceso'].includes(sub.estatus) && sub.fecha_compromiso && sub.fecha_compromiso < hoy) {
-        sub.estatus = 'atrasada';
-      }
-    }
-  }
+  let list = (db.actividades || []).map(a => rules.activityView(a, hoy));
 
   const { depto, estatus, urgencia, responsable, buscar, desde, hasta, mis, creadas_por } = req.query;
   if (depto) list = list.filter(a => a.departamento === depto);
@@ -203,7 +209,7 @@ router.get('/actividades', (req, res) => {
     const uid = Number(mis);
     list = list.filter(a =>
       a.responsable_id === uid ||
-      (a.sub_actividades || []).some(s => s.responsable_id === uid)
+      (a.sub_actividades || []).some(s => s.responsable_id === uid) || (a.colaboradores || []).some(c => c.id === uid)
     );
   }
   if (creadas_por) list = list.filter(a => a.creado_por === Number(creadas_por));
@@ -243,9 +249,10 @@ router.get('/actividades', (req, res) => {
     creado_por: a.creado_por,
     correlacion_daily: a.correlacion_daily || null,
     correlacion_compras: a.correlacion_compras || null,
-    origen_formulario: a.origen_formulario || null,
+    origen_formulario: rules.formOf(a),
     colaboradores: a.colaboradores || [],
     comentarios_count: (a.comentarios || []).length,
+    mis_subactividades: (a.sub_actividades || []).filter(s => s.responsable_id === req.user.id).map(s => ({ id: s.id, nombre: s.nombre, estatus: s.estatus, fecha_compromiso: s.fecha_compromiso, responsable_nombre: s.responsable_nombre })),
     sub_count: (a.sub_actividades || []).length,
     sub_responsables: (a.sub_actividades || []).filter(s => s.responsable_id).map(s => ({ id: s.responsable_id, nombre: s.responsable_nombre, sub_id: s.id })),
     traza_count: (a.trazabilidad || []).length
@@ -273,7 +280,7 @@ router.post('/actividades', (req, res) => {
   if (!responsable) return res.status(400).json({ error: 'Responsable no encontrado' });
 
   const db = read();
-  const id = formatActId(nextActNum(db.actividades || []));
+  const id = formatActId(nextActNum((db.actividades || []).concat(db.actividades_eliminadas || [])));
 
   const actividad = {
     id,
@@ -291,7 +298,7 @@ router.post('/actividades', (req, res) => {
     fecha_fin: null,
     correlacion_daily: correlacion_daily || null,
     correlacion_compras: correlacion_compras || null,
-    origen_formulario: origen_formulario || null,
+    origen_formulario: correlacion_daily?.formulario || origen_formulario || null,
     creado_por: req.user.id,
     creado_por_nombre: req.user.full_name,
     fecha_creacion: nowMxDate(),
@@ -324,7 +331,7 @@ router.get('/actividades/:id', (req, res) => {
   const db = read();
   const act = (db.actividades || []).find(a => a.id === req.params.id);
   if (!act) return res.status(404).json({ error: 'Actividad no encontrada' });
-  res.json(act);
+  res.json(rules.activityView(act, nowMxDate()));
 });
 
 router.patch('/actividades/:id', (req, res) => {
@@ -350,7 +357,8 @@ router.patch('/actividades/:id', (req, res) => {
     cambios.push(`${act.estatus} -> ${body.estatus}`);
     act.estatus = body.estatus;
     if (body.estatus === 'en_proceso' && !act.fecha_inicio) act.fecha_inicio = nowMxDate();
-    if (body.estatus === 'cerrada' && !act.fecha_fin) act.fecha_fin = nowMxDate();
+    if (body.estatus === 'cerrada') { act.fecha_fin = act.fecha_fin || nowMxDate(); act.avance = 100; }
+    else if (prevEstatus === 'cerrada') act.fecha_fin = null;
   }
   if (body.urgencia && body.urgencia !== act.urgencia) {
     if (!VALID_URGENCIA.includes(body.urgencia)) return res.status(400).json({ error: 'Urgencia invalida' });
@@ -510,7 +518,7 @@ router.post('/actividades/8d', (req, res) => {
   if (!responsable) return res.status(400).json({ error: 'Responsable no encontrado' });
 
   const db = read();
-  const id = formatActId(nextActNum(db.actividades || []));
+  const id = formatActId(nextActNum((db.actividades || []).concat(db.actividades_eliminadas || [])));
 
   const actividad = {
     id,
@@ -613,6 +621,7 @@ router.patch('/actividades/:id/sub/:subId', (req, res) => {
   const sub = (act.sub_actividades || []).find(s => s.id === req.params.subId);
   if (!sub) return res.status(404).json({ error: 'Sub-actividad no encontrada' });
 
+  const beforeSub = JSON.stringify(sub);
   const cambios = [];
   if (body.nombre !== undefined) { sub.nombre = body.nombre; }
   if (body.descripcion !== undefined) { sub.descripcion = body.descripcion; }
@@ -622,6 +631,7 @@ router.patch('/actividades/:id/sub/:subId', (req, res) => {
     sub.estatus = body.estatus;
     if (body.estatus === 'en_proceso' && !sub.fecha_inicio) sub.fecha_inicio = nowMxDate();
     if (body.estatus === 'cerrada' && !sub.fecha_fin) sub.fecha_fin = nowMxDate();
+    else if (body.estatus !== 'cerrada') sub.fecha_fin = null;
   }
   if (body.fecha_compromiso !== undefined) sub.fecha_compromiso = body.fecha_compromiso || null;
   if (body.fecha_inicio !== undefined) sub.fecha_inicio = body.fecha_inicio || null;
@@ -633,8 +643,8 @@ router.patch('/actividades/:id/sub/:subId', (req, res) => {
     if (resp) { sub.responsable_id = resp.id; sub.responsable_nombre = resp.full_name; }
   }
 
-  if (cambios.length > 0) {
-    addTraza(act, req.user.id, req.user.full_name, 'sub_editada', cambios.join('. '));
+  if (JSON.stringify(sub) !== beforeSub) {
+    addTraza(act, req.user.id, req.user.full_name, 'sub_editada', cambios.join('. ') || sub.id + ': responsable, fechas, descripcion o evidencia actualizados');
   }
   write(db);
   res.json({ ok: true, sub });
@@ -674,7 +684,7 @@ router.post('/actividades/:id/comentario', (req, res) => {
   act.comentarios.push(com);
   addTraza(act, req.user.id, req.user.full_name, 'comentario', `"${texto.slice(0, 60)}"`);
   write(db);
-  res.status(201).json(com);
+  res.status(201).json({ ...com, mailto: rules.mentionMail(texto, act, rules.eligibleUsers(db, readCompras())) });
 });
 
 // ── COMENTARIOS EN SUB-ACTIVIDADES ──────────────────────────────────────────
@@ -702,7 +712,7 @@ router.post('/actividades/:id/sub/:subId/comentario', (req, res) => {
   sub.comentarios.push(com);
   addTraza(act, req.user.id, req.user.full_name, 'comentario', `${sub.id}: "${texto.slice(0, 60)}"`);
   write(db);
-  res.status(201).json(com);
+  res.status(201).json({ ...com, mailto: rules.mentionMail(texto, act, rules.eligibleUsers(db, readCompras())) });
 });
 
 // ── CORREO (mailto) ─────────────────────────────────────────────────────────
@@ -739,7 +749,7 @@ router.get('/actividades/:id/mailto', (req, res) => {
   const accion = req.query.accion || 'Nueva actividad asignada';
   const mailto = buildMailto(act, accion);
 
-  addTraza(act, req.user.id, req.user.full_name, 'correo_enviado', `Correo enviado a ${act.responsable_nombre} (${act.responsable_email})`);
+  addTraza(act, req.user.id, req.user.full_name, 'correo_preparado', `Correo preparado para ${act.responsable_nombre} (${act.responsable_email})`);
   write(db);
 
   res.json({ mailto, responsable: act.responsable_nombre, email: act.responsable_email });
@@ -748,7 +758,7 @@ router.get('/actividades/:id/mailto', (req, res) => {
 // ── DAILY — formularios por departamento ─────────────────────────────────────
 
 const DAILY_FORMS = {
-  smya: ['accidentes', 'condiciones_inseguras', 'epp', 'ptar'],
+  smya: ['accidentes', 'condiciones_inseguras', 'epp', 'ptar', 'scrap'],
   rhh: ['ausentismo', 'personal_disponible', 'vacantes_criticas', 'incapacidades', 'horas_extra', 'personal_capacitacion', 'necesidades_personal'],
   produccion: ['piezas_procesadas', 'eficiencias', 'paros_lineas', 'material_pendiente', 'riesgos_incumplimiento'],
   calidad: ['rechazos_internos', 'rechazos_cliente', 'problemas_calidad', 'liberaciones_pendientes', 'reprocesos'],
@@ -808,55 +818,80 @@ router.get('/daily/:depto/:formulario', (req, res) => {
   const reg = (db.daily_registros || []).find(r =>
     r.departamento === depto && r.formulario === formulario && r.fecha === fecha
   );
-  res.json({ registro: reg || null, fecha });
+  res.json({ registro: reg || null, fecha, datos_sugeridos: !reg ? rules.dailySuggestions(db.daily_registros || [], depto, formulario, fecha) : null });
 });
 
 // Guardar/actualizar registro daily
 router.post('/daily/:depto/:formulario', (req, res) => {
   const { depto, formulario } = req.params;
-  if (!DAILY_FORMS[depto] || !DAILY_FORMS[depto].includes(formulario)) {
-    return res.status(400).json({ error: 'Departamento o formulario invalido' });
-  }
-
+  if (!DAILY_FORMS[depto]?.includes(formulario)) return res.status(400).json({ error: 'Departamento o formulario invalido' });
   const body = safeBody(req.body);
   const fecha = body.fecha || nowMxDate();
-  const datos = body.datos || {};
-
+  if (!rules.validDate(fecha)) return res.status(400).json({ error: 'Fecha invalida' });
+  if (!body.datos || typeof body.datos !== 'object' || Array.isArray(body.datos)) return res.status(400).json({ error: 'Datos invalidos' });
   const db = read();
-  db.daily_registros = db.daily_registros || [];
-
-  const idx = db.daily_registros.findIndex(r =>
-    r.departamento === depto && r.formulario === formulario && r.fecha === fecha
-  );
-
-  if (idx >= 0) {
-    // Actualizar existente
-    db.daily_registros[idx].datos = datos;
-    db.daily_registros[idx].fecha_llenado = nowMxDate();
-    db.daily_registros[idx].hora_llenado = nowMxTime();
-    db.daily_registros[idx].llenado_por = req.user.id;
-    db.daily_registros[idx].llenado_por_nombre = req.user.full_name;
-    write(db);
-    res.json({ ok: true, registro: db.daily_registros[idx] });
-  } else {
-    // Crear nuevo
-    const id = formatDlyId(nextDlyNum(db.daily_registros));
-    const reg = {
-      id,
-      departamento: depto,
-      formulario,
-      fecha,
-      llenado_por: req.user.id,
-      llenado_por_nombre: req.user.full_name,
-      fecha_llenado: nowMxDate(),
-      hora_llenado: nowMxTime(),
-      datos,
-      actividades_creadas: []
-    };
-    db.daily_registros.push(reg);
-    write(db);
-    res.status(201).json({ ok: true, registro: reg });
+  db.daily_registros ||= [];
+  const reg = db.daily_registros.find(r => r.departamento === depto && r.formulario === formulario && r.fecha === fecha);
+  if (body.version !== undefined && Number(body.version) !== Number(reg?.version || 0)) return res.status(409).json({ error: 'Otra persona modifico este formulario. Recarga antes de guardar.' });
+  const datos = rules.clone(body.datos);
+  const openLinked = (db.actividades || []).filter(a => a.departamento === depto && rules.formOf(a) === formulario && !['cerrada', 'cancelada'].includes(a.estatus));
+  if (datos.sin_novedad && openLinked.length) { datos.sin_novedad = false; datos.estado_revision = 'revisado_con_pendientes'; }
+  else datos.estado_revision = datos.sin_novedad ? 'sin_incidencias' : 'revisado';
+  if (formulario === 'ptar' && datos.cantidad_lodos_kg != null && (typeof datos.cantidad_lodos_kg !== 'number' || !Number.isFinite(datos.cantidad_lodos_kg) || datos.cantidad_lodos_kg < 0)) {
+    return res.status(400).json({ error: 'La cantidad de lodos debe ser un número no negativo en kg' });
   }
+  if (formulario === 'scrap' && datos.cantidad_piezas != null && (typeof datos.cantidad_piezas !== 'number' || !Number.isSafeInteger(datos.cantidad_piezas) || datos.cantidad_piezas < 0)) {
+    return res.status(400).json({ error: 'El scrap debe ser una cantidad entera no negativa de piezas' });
+  }
+  if (formulario === 'ptar' && datos.retrolavado?.aplica) {
+    const retro = datos.retrolavado;
+    if (retro.realizado && !retro.evidencia_url?.trim()) return res.status(400).json({ error: 'Agrega la URL de evidencia del retrolavado' });
+    if (!retro.realizado && (!retro.razones?.trim() || !retro.plan_accion?.trim())) return res.status(400).json({ error: 'Indica razones y plan de accion del retrolavado pendiente' });
+  }
+  if (formulario === 'piezas_procesadas' && datos.clientes) {
+    for (const cliente of rules.CLIENTES) for (const campo of ['procesadas', 'objetivo']) {
+      const value = datos.clientes[cliente]?.[campo];
+      if (value != null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || !Number.isInteger(value))) return res.status(400).json({ error: cliente + ': las piezas deben ser enteros no negativos' });
+    }
+  }
+  if (formulario === 'rechazos_internos') {
+    for (const l of rules.LINEAS) if (datos[l]?.procesadas != null && Number(datos[l].rechazadas) > Number(datos[l].procesadas)) return res.status(400).json({ error: l + ': rechazadas no puede superar procesadas' });
+  }
+  if (formulario === 'reprocesos') {
+    const detalle = rules.reprocesos(db.daily_registros, fecha);
+    datos.detalle = detalle;
+    for (const l of rules.LINEAS) datos[l] = detalle[l].porcentaje;
+  }
+  // Equipment keys persist in the Daily: saving twice updates the same task.
+  const linkedIds = [];
+  if (depto === 'mantenimiento' && formulario === 'equipos_fuera' && !datos.sin_novedad) {
+    for (const eq of datos.equipos || []) {
+      if (!eq.nombre?.trim()) continue;
+      const key = [eq.nombre.trim().toLowerCase(), (eq.area || '').trim().toLowerCase(), eq.fecha_inhabilitado || fecha].join('|');
+      let act = (db.actividades || []).find(a => a.equipo_clave === key);
+      if (!act) {
+        db.actividades ||= [];
+        act = { id: formatActId(nextActNum(db.actividades.concat(db.actividades_eliminadas || []))), titulo: 'Recuperar equipo: ' + eq.nombre, descripcion: eq.diagnostico || '', departamento: depto,
+          responsable_id: req.user.id, responsable_nombre: req.user.full_name, responsable_email: req.user.email || '', urgencia: 'alta', estatus: 'sin_empezar', avance: 0,
+          fecha_compromiso: null, fecha_inicio: null, fecha_fin: null, fecha_creacion: nowMxDate(), hora_creacion: nowMxTime(), creado_por: req.user.id, creado_por_nombre: req.user.full_name,
+          correlacion_daily: { departamento: depto, formulario, fecha }, origen_formulario: formulario, equipo_clave: key, colaboradores: [], comentarios: [], sub_actividades: [], trazabilidad: [] };
+        addTraza(act, req.user.id, req.user.full_name, 'creada', 'Creada automaticamente desde equipo fuera de operacion');
+        db.actividades.push(act);
+      }
+      eq.actividad_id = act.id;
+      linkedIds.push(act.id);
+    }
+  }
+  const target = reg || { id: formatDlyId(nextDlyNum(db.daily_registros)), departamento: depto, formulario, fecha, revisiones: [] };
+  if (reg) { target.revisiones ||= []; target.revisiones.push(rules.revision(reg)); }
+  Object.assign(target, { datos, version: Number(target.version || 0) + 1, fecha_llenado: nowMxDate(), hora_llenado: nowMxTime(), llenado_por: req.user.id, llenado_por_nombre: req.user.full_name, actividades_creadas: [...new Set([...(target.actividades_creadas || []), ...linkedIds])] });
+  if (!reg) db.daily_registros.push(target);
+  if (depto === 'rhh' && formulario === 'personal_disponible') {
+    db.plantilla_historico ||= [];
+    db.plantilla_historico.push({ fecha, fecha_captura: nowMxDate(), version: target.version, usuario_id: req.user.id, datos: rules.clone(datos) });
+  }
+  write(db);
+  res.status(reg ? 200 : 201).json({ ok: true, registro: target });
 });
 
 // Historial de un formulario
@@ -887,6 +922,7 @@ router.get('/config/ptar', (req, res) => {
 });
 
 router.patch('/config/ptar', (req, res) => {
+  if (!(req.plannerUser.departamentos || []).includes('smya')) return res.status(403).json({ error: 'Solo usuarios asignados a SMYA pueden configurar PTAR' });
   const body = safeBody(req.body);
   if (!Array.isArray(body.dias_retrolavado)) {
     return res.status(400).json({ error: 'dias_retrolavado debe ser un array de numeros (0-6)' });
@@ -954,7 +990,7 @@ router.get('/integracion/produccion/kpis', (req, res) => {
       rendimiento: vals.rendimiento != null ? Math.round(vals.rendimiento * 100) : null
     };
   }
-  res.json({ fecha: data.fecha, kpis });
+  res.json({ fecha: data.fecha, kpis, objetivos: prodRouter._getPlannerObjectives(), piezas: data.piezas || {} });
 });
 
 // Paros de produccion agrupados por linea
@@ -972,10 +1008,14 @@ router.get('/integracion/produccion/paros', (req, res) => {
   const result = {};
   for (const { key, linea } of lineas) {
     const allParos = prodDb[key] || [];
-    const del_dia = allParos.filter(p => p.fecha_inicio === fecha);
+    // L3 y L4 comparten paros; Baker y L1 tienen arreglos propios.
+    const del_dia = allParos.filter(p =>
+      p.fecha_inicio === fecha && (key !== 'paros' || p.linea === linea)
+    );
     result[linea] = {
       total: del_dia.length,
       minutos_total: del_dia.reduce((s, p) => s + (p.duracion_min || 0), 0),
+      por_turno: Object.entries(del_dia.reduce((acc, p) => { const t = p.turno || 'Sin turno'; acc[t] = (acc[t] || 0) + (Number(p.duracion_min) || 0); return acc; }, {})).map(([turno, minutos]) => ({ turno, minutos })),
       activos: del_dia.filter(p => p.estado === 'activo').length,
       paros: del_dia.map(p => ({
         id: p.id,
@@ -986,7 +1026,8 @@ router.get('/integracion/produccion/paros', (req, res) => {
         hora_fin: p.hora_fin,
         duracion_min: p.duracion_min,
         estado: p.estado,
-        ot_folio: p.ot_folio
+        ot_folio: p.ot_folio,
+        turno: p.turno || 'Sin turno'
       }))
     };
   }
@@ -1079,42 +1120,7 @@ router.get('/integracion/inventarios/criticos', (req, res) => {
 
 // Compras: resumen de items por estatus
 router.get('/integracion/compras/resumen', (req, res) => {
-  const comprasDb = readCompras();
-  const reqItems = comprasDb.requisition_items || [];
-  const pos = comprasDb.purchase_orders || [];
-  const suppliers = comprasDb.suppliers || [];
-
-  const statusGroups = {};
-  for (const ri of reqItems) {
-    const st = ri.status || 'Sin estado';
-    if (!statusGroups[st]) statusGroups[st] = { count: 0, total_mxn: 0, items: [] };
-    statusGroups[st].count++;
-    statusGroups[st].total_mxn += (ri.unit_cost || 0) * (ri.quantity || 0);
-    if (statusGroups[st].items.length < 20) {
-      const po = ri.purchase_order_id ? pos.find(p => p.id === ri.purchase_order_id) : null;
-      statusGroups[st].items.push({
-        id: ri.id,
-        descripcion: ri.manual_item_name || `Item #${ri.id}`,
-        cantidad: ri.quantity,
-        unidad: ri.unit || 'pz',
-        costo_unit: ri.unit_cost,
-        moneda: ri.currency || 'MXN',
-        po_folio: po ? po.folio : null,
-        po_status: po ? po.status : null,
-        proveedor: ri.supplier_id ? (suppliers.find(s => s.id === ri.supplier_id) || {}).business_name : null
-      });
-    }
-  }
-
-  // POs urgentes/atrasadas
-  const urgentes = pos.filter(p => ['Enviada', 'Aceptada', 'En proceso'].includes(p.status));
-
-  res.json({
-    por_estatus: statusGroups,
-    total_items: reqItems.length,
-    pos_activas: urgentes.length,
-    pos_total: pos.length
-  });
+  res.json(rules.purchasesAttention(readCompras(), nowMxDate()));
 });
 
 // RHH: Ausentismo del dia (incidencias, excluyendo "labora")
@@ -1144,8 +1150,8 @@ router.get('/integracion/rhh/ausentismo', (req, res) => {
     const d = a.fecha || a.date;
     const tipo = a.incidencia_type || a.status;
     if (d !== fecha) continue;
-    if (['labora', 'festivo', 'descanso'].includes(tipo)) continue;
     seen.add(Number(a.employee_id));
+    if (tipo === 'labora') continue;
     const emp = employees.find(e => e.id === Number(a.employee_id));
     const mapped = TIPO_MAP[tipo] || tipo;
     const pos = emp ? positions.find(p => p.id === emp.position_id) : null;
@@ -1181,6 +1187,9 @@ router.get('/integracion/rhh/ausentismo', (req, res) => {
     });
   }
 
+  for (const emp of employees.filter(e => e.status === 'active' && !seen.has(Number(e.id)))) {
+    result.push({ employee_id: emp.id, nombre: emp.full_name, puesto: emp.position_id, puesto_nombre: positions.find(p => p.id === emp.position_id)?.name || '', status: 'sin_registro', notes: 'Sin incidencia registrada para la fecha' });
+  }
   // Contar por tipo
   const resumen = {};
   for (const r of result) {
@@ -1242,42 +1251,15 @@ router.get('/integracion/rhh/horas-extra', (req, res) => {
 
 // RHH: Plantilla de puestos (headcount requerido vs actual)
 router.get('/integracion/rhh/plantilla', (req, res) => {
-  const rhhDb = readRhh();
-  const positions = rhhDb.rhh_positions || [];
-  const employees = (rhhDb.rhh_employees || []).filter(e => e.status === 'active');
-  const departments = rhhDb.rhh_departments || [];
-
-  const puestos = positions.map(p => {
-    const dept = departments.find(d => d.id === p.department_id);
-    const actual = employees.filter(e => e.position_id === p.id).length;
-    const requerido = p.headcount_requerido || 0;
-    const pct = requerido > 0 ? Math.round((actual / requerido) * 100) : (actual > 0 ? 100 : 0);
-    return {
-      id: p.id,
-      puesto: p.name,
-      departamento: dept ? dept.name : '',
-      requerido,
-      actual,
-      porcentaje: pct,
-      vacantes_abiertas: Math.max(0, requerido - actual)
-    };
-  });
-
-  const totalReq = puestos.reduce((s, r) => s + r.requerido, 0);
-  const totalAct = puestos.reduce((s, r) => s + r.actual, 0);
-  const vacAbiertas = puestos.filter(p => p.vacantes_abiertas > 0);
-
-  res.json({
-    puestos,
-    vacantes_no_cubiertas: vacAbiertas,
-    resumen: {
-      total_requerido: totalReq,
-      total_actual: totalAct,
-      porcentaje_global: totalReq > 0 ? Math.round((totalAct / totalReq) * 100) : 0,
-      vacantes_abiertas: vacAbiertas.reduce((s, p) => s + p.vacantes_abiertas, 0)
-    }
-  });
+  res.json({ ...rules.plantilla(readRhh()), fecha_datos: nowMxDate() });
 });
+
+router.get('/integracion/calidad/reprocesos', (req, res) => {
+  const fecha = req.query.fecha || nowMxDate();
+  res.json({ fecha, detalle: rules.reprocesos(read().daily_registros || [], fecha) });
+});
+
+// CPK: ultimas
 
 // CPK: ultimas titulaciones con estado
 router.get('/integracion/vales/cpk', (req, res) => {
@@ -1285,12 +1267,13 @@ router.get('/integracion/vales/cpk', (req, res) => {
   const headers = valesDb.titulaciones_header || [];
   const detalles = valesDb.titulaciones_detalle || [];
   const params = valesDb.parametros_titulacion || [];
+  const rango = req.query.desde ? { inicio: req.query.desde, fin: req.query.hasta } : rules.calendarWeek(nowMxDate());
 
   // Ultimas 4 titulaciones por linea
   const lineas = ['Baker', 'L1', 'L3', 'L4'];
   const result = {};
   for (const linea of lineas) {
-    const lineaHeaders = headers.filter(h => h.linea === linea).sort((a, b) => {
+    const lineaHeaders = headers.filter(h => h.linea === linea && h.fecha >= rango.inicio && h.fecha <= rango.fin).sort((a, b) => {
       const da = (b.fecha || '') + (b.numero_titulacion || '');
       const db2 = (a.fecha || '') + (a.numero_titulacion || '');
       return da.localeCompare(db2);
@@ -1315,24 +1298,11 @@ router.get('/integracion/vales/cpk', (req, res) => {
 
   // CPK Peso Fosfato — mismos IDs que pizarron CPK de /vales/
   // 85: T16: MACRO (Baker), 92: T18: MICRO (Baker), 52: T16: MICRO 2 (L3)
-  const PESO_FOSFATO_IDS = [85, 92, 52];
+  const PESO_FOSFATO_IDS = params.filter(p => /peso.*fosfato|fosfato.*peso/i.test(p.nombre_parametro || '') && p.activo !== false).map(p => p.id);
   const cpkParams = [];
 
   // Rango de fechas: si se proporcionan desde/hasta usar esos, sino semana en curso
-  let semIni, semFin;
-  if (req.query.desde && req.query.hasta) {
-    semIni = req.query.desde;
-    semFin = req.query.hasta;
-  } else {
-    const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-    const dayW = now.getDay();
-    const diffMon = dayW === 0 ? -6 : 1 - dayW;
-    const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
-    const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
-    const fmtD = d => d.toISOString().slice(0, 10);
-    semIni = fmtD(mon);
-    semFin = fmtD(sun);
-  }
+  const semIni = rango.inicio, semFin = rango.fin;
 
   // Filtrar headers de la semana (excluir paro_linea)
   const weekHeaders = headers.filter(h => h.fecha >= semIni && h.fecha <= semFin && h.estado !== 'paro_linea');
@@ -1373,7 +1343,8 @@ router.get('/integracion/vales/cpk', (req, res) => {
 // CPK Empaque: datos de muestras Tenneco (altura_axial, rugosidad)
 router.get('/integracion/empaque/cpk', (req, res) => {
   const flujoDb = readFlujo();
-  const muestras = flujoDb.muestras_tenneco || [];
+  const rango = req.query.desde ? { inicio: req.query.desde, fin: req.query.hasta } : rules.calendarWeek(nowMxDate());
+  const muestras = (flujoDb.muestras_tenneco || []).filter(m => m.fecha >= rango.inicio && m.fecha <= rango.fin);
   const specs = flujoDb.cat_tenneco_specs || [];
 
   // Get unique numero_parte with data
@@ -1383,8 +1354,7 @@ router.get('/integracion/empaque/cpk', (req, res) => {
   const result = partes.map(np => {
     const spec = specs.find(s => String(s.numero_parte).trim() === np);
     const npMuestras = muestras.filter(m => String(m.numero_parte).trim() === np)
-      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''))
-      .slice(0, 10);
+      .sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
 
     const rugVals = npMuestras.filter(m => m.rugosidad_prom != null).map(m => m.rugosidad_prom);
     const altVals = npMuestras.filter(m => m.altura_axial_prom != null).map(m => m.altura_axial_prom);
@@ -1429,14 +1399,14 @@ router.get('/integracion/empaque/cpk', (req, res) => {
     };
   });
 
-  res.json({ partes: result, total: partes.length });
+  res.json({ partes: result, total: partes.length, semana: { ini: rango.inicio, fin: rango.fin } });
 });
 
 // ── KPIs rapidos ─────────────────────────────────────────────────────────────
 
 router.get('/kpis', (req, res) => {
   const db = read();
-  const acts = db.actividades || [];
+  const acts = (db.actividades || []).map(a => rules.activityView(a, nowMxDate()));
   const { depto } = req.query;
   const filtered = depto ? acts.filter(a => a.departamento === depto) : acts;
 
@@ -1457,7 +1427,7 @@ router.get('/kpis', (req, res) => {
 router.get('/dashboard/resumen', (req, res) => {
   const fecha = req.query.fecha || nowMxDate();
   const db = read();
-  const acts = db.actividades || [];
+  const acts = (db.actividades || []).map(a => rules.activityView(a, nowMxDate()));
   const dailyRegs = db.daily_registros || [];
 
   const deptos = DEPARTAMENTOS.map(d => {
@@ -1468,11 +1438,9 @@ router.get('/dashboard/resumen', (req, res) => {
 
     // Actividades por cerrar esta semana
     const hoy = new Date(fecha + 'T12:00:00');
-    const finSemana = new Date(hoy);
-    finSemana.setDate(hoy.getDate() + (7 - hoy.getDay()));
-    const finSemStr = finSemana.toISOString().slice(0, 10);
+    const finSemStr = rules.calendarWeek(fecha).fin;
     const porCerrar = deptoActs.filter(a =>
-      a.fecha_compromiso && a.fecha_compromiso <= finSemStr &&
+      a.fecha_compromiso && a.fecha_compromiso >= fecha && a.fecha_compromiso <= finSemStr &&
       !['cerrada', 'cancelada'].includes(a.estatus)
     ).length;
 
@@ -1532,7 +1500,7 @@ router.get('/dashboard/:depto', (req, res) => {
   const { depto } = req.params;
   const fecha = req.query.fecha || nowMxDate();
   const db = read();
-  const acts = (db.actividades || []).filter(a => a.departamento === depto);
+  const acts = (db.actividades || []).filter(a => a.departamento === depto).map(a => rules.activityView(a, nowMxDate())).filter(a => depto !== 'compras' || rules.purchaseActivityAttention(a, nowMxDate()));
   const dailyRegs = db.daily_registros || [];
   const forms = DAILY_FORMS[depto] || [];
   const dailyHoy = dailyRegs.filter(r => r.departamento === depto && r.fecha === fecha);
@@ -1552,14 +1520,12 @@ router.get('/dashboard/:depto', (req, res) => {
 
   // Actividades agrupadas
   const hoy = new Date(fecha + 'T12:00:00');
-  const finSemana = new Date(hoy);
-  finSemana.setDate(hoy.getDate() + (7 - hoy.getDay()));
-  const finSemStr = finSemana.toISOString().slice(0, 10);
+  const finSemStr = rules.calendarWeek(fecha).fin;
 
   const atrasadas = acts.filter(a => a.estatus === 'atrasada');
-  const pendientes = acts.filter(a => ['sin_empezar', 'en_proceso'].includes(a.estatus));
+  const pendientes = acts.filter(a => ['sin_empezar', 'en_proceso', 'pospuesta'].includes(a.estatus));
   const porCerrar = acts.filter(a =>
-    a.fecha_compromiso && a.fecha_compromiso <= finSemStr &&
+    a.fecha_compromiso && a.fecha_compromiso >= fecha && a.fecha_compromiso <= finSemStr &&
     !['cerrada', 'cancelada'].includes(a.estatus)
   );
   const sinFecha = acts.filter(a => !a.fecha_compromiso && !['cerrada', 'cancelada'].includes(a.estatus));
@@ -1580,17 +1546,25 @@ router.get('/dashboard/:depto', (req, res) => {
     });
   }
 
+  const slideComments = act => ({
+    comentarios: (act.comentarios || []).map(c => ({ usuario_nombre: c.usuario_nombre, fecha: c.fecha, hora: c.hora, texto: c.texto })),
+    sub_actividades: (act.sub_actividades || []).filter(s => s.comentarios?.length).map(s => ({ id: s.id, nombre: s.nombre, comentarios: s.comentarios.map(c => ({ usuario_nombre: c.usuario_nombre, fecha: c.fecha, hora: c.hora, texto: c.texto })) }))
+  });
   res.json({
     depto,
     fecha,
+    objetivos: prodRouter._getPlannerObjectives(),
+    piezas_semana: depto === 'produccion' ? rules.piecesSummary(dailyRegs, fecha) : null,
+    scrap_semana: depto === 'smya' ? rules.scrapSummary(dailyRegs, fecha) : null,
+    compras_pendientes: depto === 'compras' ? rules.purchasesAttention(readCompras(), nowMxDate()) : null,
     formularios,
     actividades: {
-      total: acts.length,
-      atrasadas: atrasadas.slice().sort((a, b) => (a.fecha_compromiso || '').localeCompare(b.fecha_compromiso || '')).map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, urgencia: a.urgencia })),
-      pendientes: pendientes.slice().sort((a, b) => (a.fecha_compromiso || 'z').localeCompare(b.fecha_compromiso || 'z')).map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus, urgencia: a.urgencia })),
-      por_cerrar_semana: porCerrar.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus })),
-      sin_fecha: sinFecha.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, urgencia: a.urgencia })),
-      recientes: recientes.map(a => ({ id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, estatus: a.estatus, fecha_creacion: a.fecha_creacion }))
+      total: acts.filter(a => !['cerrada', 'cancelada'].includes(a.estatus)).length,
+      atrasadas: atrasadas.slice().sort((a, b) => (a.fecha_compromiso || '').localeCompare(b.fecha_compromiso || '')).map(a => ({ ...slideComments(a), origen_formulario: rules.formOf(a), correlacion_daily: a.correlacion_daily || null, estatus: a.estatus, id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, urgencia: a.urgencia })),
+      pendientes: pendientes.slice().sort((a, b) => (a.fecha_compromiso || 'z').localeCompare(b.fecha_compromiso || 'z')).map(a => ({ ...slideComments(a), origen_formulario: rules.formOf(a), correlacion_daily: a.correlacion_daily || null, estatus: a.estatus, id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus, urgencia: a.urgencia })),
+      por_cerrar_semana: porCerrar.map(a => ({ ...slideComments(a), origen_formulario: rules.formOf(a), correlacion_daily: a.correlacion_daily || null, estatus: a.estatus, id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, fecha_compromiso: a.fecha_compromiso, estatus: a.estatus })),
+      sin_fecha: sinFecha.map(a => ({ ...slideComments(a), origen_formulario: rules.formOf(a), correlacion_daily: a.correlacion_daily || null, estatus: a.estatus, id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, urgencia: a.urgencia })),
+      recientes: recientes.map(a => ({ ...slideComments(a), origen_formulario: rules.formOf(a), correlacion_daily: a.correlacion_daily || null, estatus: a.estatus, id: a.id, titulo: a.titulo, responsable: a.responsable_nombre, estatus: a.estatus, fecha_creacion: a.fecha_creacion }))
     },
     tendencia
   });
@@ -1599,23 +1573,15 @@ router.get('/dashboard/:depto', (req, res) => {
 // ── DASHBOARD SEMANAL — datos para gráficas por departamento ────────────────
 router.get('/dashboard/:depto/semanal', (req, res) => {
   const { depto } = req.params;
-  // Determinar semana: lunes = si hoy es lunes usar semana anterior, sino semana actual
-  const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
-  const dayW = now.getDay(); // 0=dom, 1=lun...
-  // Lunes: mostrar semana anterior; Mar-Sáb: semana actual; Dom: semana que termina
-  const diffMon = dayW === 0 ? -6 : (dayW === 1 ? -7 : 1 - dayW);
-  const mon = new Date(now); mon.setDate(now.getDate() + diffMon);
-  const fmtD = d => d.toISOString().slice(0, 10);
-  const weekStart = fmtD(mon);
-  const weekDays = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(mon); d.setDate(mon.getDate() + i);
-    weekDays.push(fmtD(d));
-  }
-  const weekEnd = weekDays[6];
+  if (!DAILY_FORMS[depto]) return res.status(400).json({ error: 'Departamento invalido' });
+  const fecha = req.query.fecha || nowMxDate();
+  let selectedPeriod;
+  try { selectedPeriod = rules.period(fecha, req.query.periodo || 'semana'); }
+  catch (err) { return res.status(400).json({ error: err.message }); }
+  const { inicio: weekStart, fin: weekEnd, dias: weekDays } = selectedPeriod;
 
   const db = read();
-  const acts = (db.actividades || []).filter(a => a.departamento === depto);
+  const acts = (db.actividades || []).filter(a => a.departamento === depto).map(a => rules.activityView(a, nowMxDate()));
   const dailyRegs = db.daily_registros || [];
   const forms = DAILY_FORMS[depto] || [];
 
@@ -1650,6 +1616,7 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
         return { fecha: d, kpis };
       });
       integracion.kpis_por_dia = kpisPorDia;
+      integracion.objetivos = prodRouter._getPlannerObjectives();
 
       // Paros de produccion por dia + causas para pareto
       const pdb = readProd();
@@ -1672,16 +1639,16 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
 
       // Piezas procesadas por dia (del daily planner)
       const piezasDailys = dailyRegs.filter(r => r.departamento === 'produccion' && r.formulario === 'piezas_procesadas' && weekDays.includes(r.fecha));
-      if (piezasDailys.length > 0) {
+      if (piezasDailys.some(r => rules.LINEAS.some(l => r.datos?.[l]?.procesadas != null))) {
         integracion.piezas_por_dia = weekDays.map(d => {
           const reg = piezasDailys.find(r => r.fecha === d);
-          if (!reg || !reg.datos) return { fecha: d, Baker: 0, L1: 0, L3: 0, L4: 0 };
+          if (!reg || !reg.datos) return { fecha: d, Baker: null, L1: null, L3: null, L4: null };
           return {
             fecha: d,
-            Baker: (reg.datos.Baker && reg.datos.Baker.procesadas) || 0,
-            L1: (reg.datos.L1 && reg.datos.L1.procesadas) || 0,
-            L3: (reg.datos.L3 && reg.datos.L3.procesadas) || 0,
-            L4: (reg.datos.L4 && reg.datos.L4.procesadas) || 0
+            Baker: reg.datos.Baker?.procesadas ?? null,
+            L1: reg.datos.L1?.procesadas ?? null,
+            L3: reg.datos.L3?.procesadas ?? null,
+            L4: reg.datos.L4?.procesadas ?? null
           };
         });
       }
@@ -1689,10 +1656,10 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
     if (depto === 'mantenimiento') {
       const mdb = readMant();
       const ots = mdb.ordenes_mantenimiento || [];
-      const otsWeek = ots.filter(o => o.fecha_creacion >= weekStart && o.fecha_creacion <= weekEnd);
+      const otsWeek = ots;
       integracion.ots_por_dia = weekDays.map(d => ({
         fecha: d,
-        creadas: otsWeek.filter(o => o.fecha_creacion === d).length,
+        creadas: otsWeek.filter(o => (o.fecha_solicitud || o.fecha_creacion) === d).length,
         cerradas: otsWeek.filter(o => o.fecha_cierre === d).length
       }));
     }
@@ -1712,24 +1679,25 @@ router.get('/dashboard/:depto/semanal', (req, res) => {
         count: titsWeek.filter(h => h.fecha === d).length,
         fuera: titsWeek.filter(h => h.fecha === d && h.estado === 'fuera_de_rango').length
       }));
-      // Pareto causas rechazo — from daily rechazos_internos
-      const rechDailys = dailyRegs.filter(r => r.departamento === 'calidad' && r.formulario === 'rechazos_internos' && weekDays.includes(r.fecha));
-      integracion.calidad_por_dia = weekDays.map(d => {
-        const reg = rechDailys.find(r => r.fecha === d);
-        if (!reg || !reg.datos) return { fecha: d, Baker: null, L1: null, L3: null, L4: null };
-        return {
-          fecha: d,
-          Baker: reg.datos.Baker ? reg.datos.Baker.calidad : null,
-          L1: reg.datos.L1 ? reg.datos.L1.calidad : null,
-          L3: reg.datos.L3 ? reg.datos.L3.calidad : null,
-          L4: reg.datos.L4 ? reg.datos.L4.calidad : null
-        };
-      });
-    }
-  } catch (_) { /* integración no critica */ }
+      integracion.calidad_por_dia = integracion.kpis_por_dia.map(row => ({ fecha: row.fecha, ...Object.fromEntries(rules.LINEAS.map(l => [l, row.kpis[l]?.calidad ?? null])) }));
+      const causas = {};
+      for (const d of weekDays) for (const row of prodRouter._getPlannerDefects(d)) causas[row.defecto] = (causas[row.defecto] || 0) + row.cantidad;
+      integracion.pareto_rechazos = Object.entries(causas).map(([motivo, cantidad]) => ({ motivo, cantidad })).sort((a, b) => b.cantidad - a.cantidad);
 
+
+    }
+  } catch (err) { return res.status(500).json({ error: 'No fue posible consultar las integraciones del periodo' }); }
+
+  const piezasCliente = dailyRegs.filter(r => r.departamento === 'produccion' && r.formulario === 'piezas_procesadas' && r.fecha >= weekStart && r.fecha <= weekEnd);
+  if (depto === 'produccion') integracion.piezas_por_cliente = weekDays.map(fecha => {
+    const reg = piezasCliente.find(r => r.fecha === fecha);
+    return { fecha, ...Object.fromEntries(rules.CLIENTES.map(c => [c, reg?.datos?.clientes?.[c]?.procesadas ?? null])) };
+  });
+  const historico = dailyRegs.filter(r => r.departamento === depto && r.fecha >= weekStart && r.fecha <= weekEnd).map(r => ({ id: r.id, fecha: r.fecha, formulario: r.formulario, datos: r.datos, llenado_por_nombre: r.llenado_por_nombre }));
   res.json({
     depto,
+    periodo: selectedPeriod,
+    historico,
     semana: { inicio: weekStart, fin: weekEnd, dias: weekDays },
     daily_compliance: dailyCompliance,
     actividades_trend: actTrend,

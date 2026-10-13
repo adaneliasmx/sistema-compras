@@ -129,6 +129,24 @@ tr:hover{background:#f8fafc}
 
 /* Empty */
 .empty{text-align:center;padding:30px;color:var(--muted);font-size:13px}
+.planner-deck{--primary:#13343d;--accent:#137e91;--green:#16764a;--red:#b63239;--muted:#62777d;max-width:1480px;margin:auto;color:var(--primary)}
+.planner-deck-toolbar,.planner-date-nav,.planner-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.planner-deck-toolbar{justify-content:space-between;margin-bottom:22px}.planner-date-nav input,.planner-period-controls select{padding:10px 14px;border:1px solid #ccdadd;border-radius:9px;background:white;font:inherit;color:#13343d}.planner-deck-header{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:28px 32px;border-radius:20px;background:#12343e;color:#fff}.planner-eyebrow{display:block;font-size:11px;font-weight:700;letter-spacing:.14em}.planner-deck-header .planner-eyebrow{color:#a2d4d5}.planner-deck-header h1{font-size:clamp(24px,3vw,38px);margin:10px 0 7px}.planner-deck-header p{font-size:18px;color:#d0e6e7;margin:0}.planner-deck-status{text-align:right}.planner-deck-status>strong{display:block;font-size:42px;margin-top:12px;font-variant-numeric:tabular-nums}.planner-deck-status small{font-size:17px;color:#a2c0c6}.planner-status{display:inline-block;padding:7px 12px;border-radius:20px;background:#234d55;color:#d7f2e7;font-size:12px}.planner-status.pending{background:#69452b;color:#ffdbac}.planner-slide-tabs{display:flex;gap:8px;overflow-x:auto;padding:18px 0}.planner-slide-tabs button,.planner-department-tabs button{border:1px solid #d0dfe1;border-radius:10px;background:#fff;color:#405f66;padding:10px 13px;font:inherit;font-size:12px;white-space:nowrap;cursor:pointer}.planner-slide-tabs button span{margin-right:7px;opacity:.6}.planner-slide-tabs button.active,.planner-department-tabs button.active{background:#137e91;border-color:#137e91;color:white}.planner-slide-content{background:white;border:1px solid #d6e3e5;border-radius:18px;padding:clamp(18px,2.5vw,36px);min-height:390px;overflow-x:auto;box-shadow:0 8px 28px #153b4610}.planner-slide-content h3{font-size:22px!important}.planner-slide-content h4{font-size:17px!important}.planner-slide-content table{width:100%;border-collapse:collapse;font-size:14px!important}.planner-slide-content th{background:#edf4f4;color:#4b646a;font-size:11px;text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:12px}.planner-slide-content td{padding:12px;border-bottom:1px solid #e3eded;line-height:1.45;font-size:14px!important}.planner-slide-content td small{font-size:11px}.planner-slide-content tr:last-child td{border-bottom:0}.planner-deck-footer{display:flex;justify-content:space-between;align-items:center;padding:18px 0;gap:12px}.planner-deck-footer div{text-align:center;font-size:13px}.planner-deck-footer small{display:block;color:var(--muted);font-size:11px;margin-top:4px}.planner-department-tabs{display:flex;gap:7px;flex-wrap:wrap;padding-top:16px;border-top:1px solid #d6e3e5}.planner-metric-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin:16px 0}.planner-metric{padding:26px 22px;border:1px solid #d7e4e5;border-radius:14px;background:#f7fafb;display:flex;flex-direction:column;gap:9px}.planner-metric strong{font-size:clamp(32px,4vw,54px);letter-spacing:-.03em;font-variant-numeric:tabular-nums}.planner-metric.good{border-top:5px solid #26865b;background:#f2faf5}.planner-metric.bad{border-top:5px solid #bd4249;background:#fdf5f5}.planner-metric.neutral{border-top:5px solid #9aafb4}.planner-metric.good strong{color:#16764a}.planner-metric.bad strong{color:#b63239}.planner-metric footer{border-top:1px solid #d7e4e5;padding-top:12px;margin-top:8px;font-size:13px;color:#62777d}.planner-period-controls{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #d7e4e5}.planner-period-controls span{color:#62777d;font-size:13px}.planner-history-entry{padding:18px;border:1px solid #d7e4e5;border-radius:10px;margin:12px 0;overflow-x:auto}.planner-history-entry>div:first-child{margin-bottom:12px}.planner-history-entry span{color:#62777d}.planner-revision{padding:12px;border-left:3px solid #adcbcf;margin:10px}.planner-period-history{margin-top:20px}.planner-period-history summary{cursor:pointer;font-weight:700;padding:12px;background:#eef5f5;border-radius:8px}.planner-task-group{margin-bottom:24px}.planner-task-group h3{margin:12px 0}.planner-form-card{padding:18px;border:1px solid #d6e3e5;border-radius:12px;background:white}.planner-form-card h3{margin-bottom:14px}.planner-form-card label{display:block;font-size:12px;margin:10px 0 5px}.planner-form-card input{width:100%;padding:10px;border:1px solid #ccdadd;border-radius:7px}.planner-big-number{font-size:32px}.planner-help{color:#62777d;font-size:13px;margin-bottom:14px}.planner-actions{margin-top:16px}.planner-mention{color:#13697d;background:#e3f2f6;padding:2px 5px;border-radius:4px}.planner-focus .sidebar,.planner-focus .topbar{display:none}.planner-focus .main{margin-left:0!important}.planner-focus .content{padding:18px 30px}.planner-deck button:disabled{opacity:.4;cursor:default}.planner-deck button:focus-visible{outline:3px solid #df9e44;outline-offset:2px}
+@media(max-width:800px){.planner-deck-header{padding:22px}.planner-deck-status>strong{font-size:30px}.planner-period-controls{flex-wrap:wrap}.planner-focus .content{padding:12px}.planner-slide-content [style*="grid-template-columns:repeat(4"]{grid-template-columns:repeat(2,1fr)!important}.planner-deck-footer small{display:none}.planner-deck-toolbar{gap:10px}.planner-date-nav input{max-width:150px}}
+.planner-week-total{display:block;font-size:28px;color:#13343d;margin:8px 0;font-variant-numeric:tabular-nums}.planner-metric footer small{display:block;line-height:1.5}.planner-selected-day{background:#eaf6f6}.planner-selected-day td{font-weight:700}.planner-open-tasks{margin-top:26px;padding-top:20px;border-top:1px solid #d6e3e5}.planner-slide-content td:first-child{white-space:nowrap}.planner-slide-content canvas{max-height:330px}.planner-slide-content .planner-help{margin:12px 0}
+@media(max-width:800px){.planner-slide-content [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}.planner-deck-status{min-width:100px}}
+.planner-data-list{margin:0}.planner-data-list>div{padding:8px 0;border-bottom:1px solid #e4eded}.planner-data-list dt{font-weight:600;color:#526f75}.planner-data-list dd{margin:5px 0 0 12px;line-height:1.5}.planner-data-list ol{padding-left:22px}
+.planner-comment-field{margin-top:18px}.planner-comment-field small{display:block;color:var(--muted);margin-top:5px}.planner-slide-comments{margin-top:22px;padding:20px;border:1px solid #bcdadd;border-left:4px solid #137e91;border-radius:12px;background:#f2f9f9;text-align:left}.planner-slide-comments h3{margin:0 0 16px}.planner-slide-comments article+article{margin-top:16px;padding-top:16px;border-top:1px solid #d5e6e7}.planner-slide-comments h4,.planner-slide-comments header{margin:0 0 8px;color:#46636b;font-size:13px!important}.planner-comment-text{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.65;font-size:16px;font-weight:400;color:#13343d}.planner-activity-comments td{white-space:normal!important}.planner-activity-comments .planner-slide-comments{margin:0;border:0}.planner-period-comments{margin-top:24px}
+@media(prefers-reduced-motion:reduce){.planner-deck *{animation:none!important;transition:none!important}}
+
+
+.planner-pending-panel{position:sticky;top:0;z-index:50;margin-bottom:20px;border:1px solid #d7e4e5;border-radius:14px;background:#f7fafb;box-shadow:0 5px 18px #153b460b;padding:10px 14px;color:#48616a}
+.planner-pending-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.planner-pending-heading h2{font-size:12px;font-weight:600;letter-spacing:.02em}.planner-pending-heading h2 span{font-weight:400;color:#60777f}.planner-pending-add{width:30px;height:30px;flex-shrink:0;border:1px solid #c6dadc;border-radius:50%;background:#e9f3f3;color:#176b78;font-size:24px;line-height:1;cursor:pointer}.planner-pending-add:hover{background:#dbeeee}
+.planner-pending-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px;max-height:108px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#bdd0d3 transparent;list-style:none;padding:0;margin:0}.planner-pending-list li{min-width:0}.planner-pending-item{display:block;width:100%;height:100%;padding:9px 11px;text-align:left;border:1px solid #e0e9eb;border-radius:9px;background:#fff;color:#324e58;cursor:pointer;font:inherit}.planner-pending-item:hover{border-color:#9fbdc2;background:#f0f7f8}.planner-pending-item strong{display:block;font-size:12px;font-weight:600;line-height:1.4;overflow-wrap:anywhere}.planner-pending-item small{display:block;margin-top:5px;font-size:11px;color:#61777d;line-height:1.4}.planner-pending-item.late{border-left:3px solid #cd9290}.planner-pending-item.is-new{background:#eaf6f0;border-color:#9ac9b1}.planner-pending-new{font-size:10px;color:#26714f;font-weight:600;margin-right:5px}.planner-pending-empty,.planner-pending-message{font-size:12px;line-height:1.5}.planner-pending-message:empty{display:none}.planner-pending-message{margin-top:6px;color:#26714f}
+@media(max-width:600px){.planner-pending-panel{padding:8px 10px;margin-bottom:12px}.planner-pending-list{grid-template-columns:1fr;max-height:92px}.planner-pending-heading h2 span{display:block;margin-top:2px}}
+
+.planner-lodos-field,.planner-scrap-capture{display:flex;align-items:center;justify-content:space-between;gap:24px;background:#f0f7f5;border:1px solid #d5e5df;border-radius:14px;padding:20px;margin:16px 0}.planner-lodos-field h3,.planner-scrap-capture h3{color:#24594b;margin:8px 0}.planner-lodos-field p,.planner-scrap-capture p{font-size:13px;color:#627b73;line-height:1.6}.planner-lodos-field .form-group,.planner-scrap-capture .form-group{margin:0;min-width:180px}.planner-lodos-field input,.planner-scrap-capture input{font-size:24px;font-variant-numeric:tabular-nums}.planner-scrap-title{margin:24px 0 16px}.planner-scrap-title h3{margin:8px 0;color:#244f49}.planner-scrap-title p{font-size:13px;color:#647d77}.planner-scrap-summary .planner-eyebrow,.planner-lodos-field .planner-eyebrow,.planner-scrap-capture .planner-eyebrow{color:#64847a}
+.planner-scrap-metrics{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px}.planner-scrap-metrics>div,.planner-lodos-metric{border:1px solid #d4e5df;background:#f3f9f6;border-radius:14px;padding:22px}.planner-scrap-metrics>div:last-child{background:#edf5f7;border-color:#d1e3e8}.planner-scrap-metrics span,.planner-lodos-metric>span{display:block;color:#59736b;font-size:13px}.planner-scrap-metrics strong,.planner-lodos-metric strong{display:block;margin-top:8px;font-size:clamp(28px,3vw,42px);color:#285e4e;font-variant-numeric:tabular-nums}.planner-scrap-metrics strong small,.planner-lodos-metric strong small{font-size:14px;font-weight:400;color:#6a837a}.planner-scrap-metrics p,.planner-lodos-metric p{font-size:12px;color:#6a837a;margin-top:8px}.planner-lodos-metric{margin-bottom:16px}.planner-scrap-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px}.planner-scrap-days article{border:1px solid #dfe9e6;padding:12px 9px;border-radius:10px;background:#fff;min-width:0}.planner-scrap-days article.selected{border-color:#93b6aa;background:#f1f8f5}.planner-scrap-days span{font-size:12px;color:#647b73}.planner-scrap-days strong{display:block;font-size:19px;color:#35594c;margin:10px 0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}.planner-scrap-days small{display:block;font-size:10px;line-height:1.6;color:#72877f}.planner-scrap-bar{height:4px;background:#eaf0ed;border-radius:4px;margin-bottom:9px;overflow:hidden}.planner-scrap-bar i{display:block;height:100%;background:#87b2a2;border-radius:4px}
+@media(max-width:850px){.planner-scrap-days{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:600px){.planner-scrap-metrics{grid-template-columns:1fr}.planner-scrap-days{grid-template-columns:repeat(2,minmax(0,1fr))}.planner-lodos-field,.planner-scrap-capture{flex-direction:column;align-items:stretch;gap:14px}}
 </style>
 </head>
 <body>
@@ -143,6 +161,11 @@ let currentUser = null;
 let _currentView = 'tareas';
 let _currentDepto = '';
 let _actividadesCache = [];
+let _plannerObjectives = {};
+let _dailyVersion = 0;
+let _dailySaving = false;
+let _rhhPlantillaSnapshot = null;
+let _rhhHorasSnapshot = null;
 let _tareasFilterMode = 'todas'; // 'todas' | 'mis' | 'creadas'
 
 // ── Auth ─────────────────────────────────────────────────────────────────────
@@ -164,6 +187,7 @@ function apiFetch(path, opts = {}) {
     }
     const data = await r.json().catch(() => null);
     if (!r.ok) throw new Error((data && data.error) || r.statusText);
+    if (data?.objetivos) _plannerObjectives = data.objetivos;
     return data;
   });
 }
@@ -232,7 +256,7 @@ async function initApp() {
 const DEPTOS = [
   { id: 'smya', nombre: 'SMYA', icon: '🛡' },
   { id: 'rhh', nombre: 'RHH', icon: '👥' },
-  { id: 'produccion', nombre: 'Produccion', icon: '🏭' },
+  { id: 'produccion', nombre: 'Producción', icon: '🏭' },
   { id: 'calidad', nombre: 'Calidad', icon: '✅' },
   { id: 'mantenimiento', nombre: 'Mantenimiento', icon: '🔧' },
   { id: 'procesos', nombre: 'Procesos/Ing.', icon: '⚙' },
@@ -284,6 +308,9 @@ function renderApp() {
 }
 
 function navigateTo(view) {
+  _ds.loadRequest = (_ds.loadRequest || 0) + 1;
+  document.body.classList.remove('planner-focus');
+  disposePlannerCharts();
   _currentView = view;
   // Update sidebar active
   document.querySelectorAll('.nav-item,.nav-sub').forEach(el => el.classList.remove('active'));
@@ -412,7 +439,8 @@ async function cargarActividades() {
     return;
   }
 
-  const showRol = _tareasFilterMode === 'mis';
+  if (_tareasFilterMode === 'mis') { tabla.innerHTML = renderMyTasks(data); return; }
+  const showRol = false;
   tabla.innerHTML = `
     <table>
       <thead><tr>
@@ -452,6 +480,7 @@ async function cargarActividades() {
 // ── MODAL: Nueva Actividad ───────────────────────────────────────────────────
 
 let _staffDisponibles = [];
+let _savingNewActivity = false;
 
 async function openNewActModal(presets) {
   if (!_staffDisponibles.length) {
@@ -486,7 +515,7 @@ async function openNewActModal(presets) {
             </div>
             <div class="form-group">
               <label>Departamento *</label>
-              <select id="naDepto">
+              <select id="naDepto" ${p.presentation ? 'disabled' : ''}>
                 ${DEPTOS.map(d => `<option value="${d.id}" ${p.departamento === d.id ? 'selected' : ''}>${d.nombre}</option>`).join('')}
               </select>
             </div>
@@ -499,9 +528,9 @@ async function openNewActModal(presets) {
             <div class="form-group">
               <label>Urgencia *</label>
               <select id="naUrg">
-                <option value="alta">Alta</option>
-                <option value="media" selected>Media</option>
-                <option value="baja">Baja</option>
+                <option value="alta" ${p.urgencia === 'alta' ? 'selected' : ''}>Alta</option>
+                <option value="media" ${!p.urgencia || p.urgencia === 'media' ? 'selected' : ''}>Media</option>
+                <option value="baja" ${p.urgencia === 'baja' ? 'selected' : ''}>Baja</option>
               </select>
             </div>
           </div>
@@ -524,6 +553,7 @@ async function openNewActModal(presets) {
 }
 
 async function saveNewAct(sendEmail) {
+  if (_savingNewActivity) return;
   const titulo = document.getElementById('naTitle').value.trim();
   const descripcion = document.getElementById('naDesc').value.trim();
   const responsable_id = Number(document.getElementById('naResp').value);
@@ -536,25 +566,39 @@ async function saveNewAct(sendEmail) {
     return;
   }
 
+  _savingNewActivity = true;
+  const saveButtons = document.querySelectorAll('#newActModal .modal-footer button');
+  saveButtons.forEach(b => b.disabled = true);
+  let created = false;
   try {
     const colabSel = document.getElementById('naColabs');
     const colaboradores = colabSel ? Array.from(colabSel.selectedOptions).map(o => Number(o.value)) : [];
     const act = await apiFetch('/api/planner/actividades', {
       method: 'POST',
-      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, colaboradores, correlacion_daily: window._newActPresets?.correlacion_daily || null })
+      body: JSON.stringify({ titulo, descripcion, responsable_id, departamento, fecha_compromiso, urgencia, colaboradores, correlacion_daily: window._newActPresets?.correlacion_daily || null, origen_formulario: window._newActPresets?.correlacion_daily?.formulario || window._newActPresets?.origen_formulario || null, correlacion_compras: window._newActPresets?.correlacion_compras || null })
     });
     if (!act) return;
 
+    created = true;
+    const presenting = showCreatedPresentationActivity(act);
+    closeModal('newActModal');
+    if (presenting) await refreshPresentationActivities();
+    else {
+      alert('Actividad creada: ' + act.id);
+      if (_currentView === 'tareas') cargarActividades();
+      else if (_currentView.startsWith('daily-')) selectDailyForm(_dailyDepto, _dailyActiveForm);
+    }
     if (sendEmail) {
       const r = await apiFetch(`/api/planner/actividades/${act.id}/mailto?accion=Nueva+actividad+asignada`);
       if (r && r.mailto) window.open(r.mailto, '_blank');
     }
-
-    closeModal('newActModal');
-    alert('Actividad creada: ' + act.id);
-    if (_currentView === 'tareas') cargarActividades();
   } catch (e) {
-    document.getElementById('naErr').textContent = e.message;
+    const error = document.getElementById('naErr');
+    if (!created && error) error.textContent = e.message;
+    else alert('La actividad fue guardada, pero no se pudo completar la acción posterior: ' + e.message);
+  } finally {
+    _savingNewActivity = false;
+    saveButtons.forEach(b => b.disabled = false);
   }
 }
 
@@ -566,6 +610,7 @@ function closeModal(id) {
 // ── MODAL: Detalle de Actividad ──────────────────────────────────────────────
 
 async function verDetalle(actId) {
+  _staffDisponibles = await apiFetch('/api/planner/staff/disponibles') || [];
   const act = await apiFetch('/api/planner/actividades/' + actId);
   if (!act) return;
 
@@ -592,6 +637,7 @@ async function verDetalle(actId) {
             <div class="form-group">
               <label>Responsable</label>
               <select id="deResp" style="padding:5px 8px;font-size:13px;border:1.5px solid var(--line);border-radius:6px">
+                ${!_staffDisponibles.some(u => u.id === act.responsable_id) ? `<option value="" selected>${esc(act.responsable_nombre)} (sin acceso actual)</option>` : ''}
                 ${_staffDisponibles.map(u => `<option value="${u.id}" ${u.id === act.responsable_id ? 'selected' : ''}>${esc(u.nombre)}</option>`).join('')}
               </select>
             </div>
@@ -674,12 +720,12 @@ async function verDetalle(actId) {
           </div>
           ${(act.comentarios || []).length > 0 ? `
             <div style="max-height:160px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:10px;margin-bottom:10px">
-              ${act.comentarios.map(c => `<div style="font-size:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${esc(c.texto)}</div>`).join('')}
+              ${act.comentarios.map(c => `<div style="font-size:12px;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${plannerComment(c.texto)}</div>`).join('')}
             </div>
           ` : '<div class="empty" style="margin-bottom:10px">Sin comentarios</div>'}
           <div style="display:flex;gap:8px;margin-bottom:18px">
             <input type="text" id="deComentario" placeholder="Escribe un comentario..." style="flex:1;padding:6px 10px;font-size:13px;border:1.5px solid var(--line);border-radius:6px" onkeydown="if(event.key==='Enter'){addActComment('${act.id}')}">
-            <button class="btn btn-accent btn-sm" onclick="addActComment('${act.id}')">Enviar</button>
+            <button class="btn btn-accent btn-sm" onclick="addActComment('${act.id}')">Enviar</button><button class="btn btn-outline btn-sm" onclick="openCommentModal('${act.id}','')">Mencionar @</button>
             <button class="btn btn-outline btn-sm" onclick="openCommentModal('${act.id}','')" title="Comentario con @mención">@</button>
           </div>
 
@@ -737,6 +783,8 @@ async function guardarDetalle(actId) {
 
     closeModal('detalleModal');
     if (_currentView === 'tareas') cargarActividades();
+    else if (_currentView.startsWith('daily-')) selectDailyForm(_dailyDepto, _dailyActiveForm);
+    else if (document.getElementById('plannerPendingPanel')) await refreshPresentationActivities();
   } catch (e) {
     alert('Error: ' + e.message);
   }
@@ -759,6 +807,8 @@ async function eliminarActividad(actId) {
       closeModal('detalleModal');
       alert('Actividad eliminada');
       if (_currentView === 'tareas') cargarActividades();
+    else if (_currentView.startsWith('daily-')) selectDailyForm(_dailyDepto, _dailyActiveForm);
+    else if (document.getElementById('plannerPendingPanel')) await refreshPresentationActivities();
     }
   } catch (e) {
     alert('Error: ' + e.message);
@@ -864,7 +914,7 @@ async function openEditSubModal(actId, subId) {
             <div style="margin-top:10px">
               <label style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase">Comentarios</label>
               <div style="max-height:120px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:8px;margin-top:4px">
-                ${sub.comentarios.map(c => `<div style="font-size:12px;margin-bottom:6px"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${esc(c.texto)}</div>`).join('')}
+                ${sub.comentarios.map(c => `<div style="font-size:12px;margin-bottom:6px"><b>${esc(c.usuario_nombre)}</b> <span style="color:var(--muted)">${c.fecha} ${c.hora}</span><br>${plannerComment(c.texto)}</div>`).join('')}
               </div>
             </div>
           ` : ''}
@@ -921,6 +971,7 @@ async function addActComment(actId) {
       body: JSON.stringify({ texto })
     });
     closeModal('detalleModal');
+    await refreshPlannerCommentSlides();
     verDetalle(actId);
   } catch (e) { alert('Error: ' + e.message); }
 }
@@ -991,9 +1042,11 @@ async function submitComment(actId, subId) {
     ? `/api/planner/actividades/${actId}/sub/${subId}/comentario`
     : `/api/planner/actividades/${actId}/comentario`;
   try {
-    await apiFetch(url, { method: 'POST', body: JSON.stringify({ texto }) });
+    const result = await apiFetch(url, { method: 'POST', body: JSON.stringify({ texto }) });
+    if (result?.mailto && confirm('Comentario guardado. ¿Preparar correo para las personas mencionadas?')) window.open(result.mailto, '_blank');
     closeModal('commentModal');
     closeModal('detalleModal');
+    await refreshPlannerCommentSlides();
     verDetalle(actId);
   } catch (e) { document.getElementById('cmErr').textContent = e.message; }
 }
@@ -1009,7 +1062,8 @@ const DAILY_FORMS_META = {
     { id: 'accidentes', nombre: 'Accidentes/Incidentes', icon: '🚨' },
     { id: 'condiciones_inseguras', nombre: 'Condiciones inseguras', icon: '⚠' },
     { id: 'epp', nombre: 'EPP y cumplimiento', icon: '🦺' },
-    { id: 'ptar', nombre: 'PTAR', icon: '💧' }
+    { id: 'ptar', nombre: 'PTAR', icon: '💧' },
+    { id: 'scrap', nombre: 'Scrap', icon: '♻️' }
   ],
   produccion: [
     { id: 'piezas_procesadas', nombre: 'Piezas procesadas', icon: '🔩' },
@@ -1148,7 +1202,10 @@ async function selectDailyForm(deptoId, formId) {
 
   const data = await apiFetch(`/api/planner/daily/${deptoId}/${formId}?fecha=${_dailyDate}`);
   if (!data) return;
-  _dailyRegistro = data.registro;
+  _dailyRegistro = data.registro || (data.datos_sugeridos ? { datos: data.datos_sugeridos, sugerido: true } : null);
+  _dailyVersion = data.registro?.version || 0;
+  _rhhPlantillaSnapshot = data.registro?.datos?.plantilla || null;
+  _rhhHorasSnapshot = data.registro?.datos?.registros || null;
 
   // Render form based on department + form
   if (deptoId === 'smya') renderSmyaForm(formId, container);
@@ -1242,9 +1299,12 @@ function renderSmyaForm(formId, container) {
       porcentaje: Number(document.getElementById('df_porcentaje')?.value) || 0,
       quien_no_cumplio: document.getElementById('df_quien')?.value?.trim() || ''
     }));
+  } else if (formId === 'scrap') {
+    renderScrapForm(container, datos);
   } else if (formId === 'ptar') {
     renderPtarForm(container, datos);
   }
+  if (['accidentes','condiciones_inseguras','epp'].includes(formId)) container.insertAdjacentHTML('beforeend', plannerTaskLinksButton('smya', formId));
 }
 
 async function renderPtarForm(container, datos) {
@@ -1253,8 +1313,9 @@ async function renderPtarForm(container, datos) {
   }
   const diasRetro = (_ptarConfig && _ptarConfig.dias_retrolavado) || [1, 3, 5];
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
-  const dateObj = new Date(_dailyDate + 'T12:00:00');
-  const dayOfWeek = dateObj.getDay();
+  const retroFecha = plannerDateShift(_dailyDate, -1);
+  const dateObj = new Date(retroFecha + 'T12:00:00Z');
+  const dayOfWeek = dateObj.getUTCDay();
   const retroAplica = diasRetro.includes(dayOfWeek);
   const retro = datos.retrolavado || {};
 
@@ -1280,16 +1341,17 @@ async function renderPtarForm(container, datos) {
       </div>
     </div>
 
+    <section class="planner-lodos-field"><div><span class="planner-eyebrow">CONTROL AMBIENTAL</span><h3>Lodos de PTAR</h3><p>Registra la cantidad del día en kilogramos.</p></div><div class="form-group"><label for="df_lodos_kg">Cantidad de lodos (kg)</label><input type="number" id="df_lodos_kg" min="0" step="0.01" placeholder="Sin captura" value="${datos.cantidad_lodos_kg ?? ''}"></div></section>
     <div style="margin-top:16px;padding:14px;border:1.5px solid ${retroAplica ? 'var(--accent)' : 'var(--line)'};border-radius:8px;background:${retroAplica ? '#eaf2f8' : '#f8fafc'}">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
         <b style="font-size:13px;color:var(--primary)">Retrolavado</b>
         <span class="badge ${retroAplica ? 'en_proceso' : 'sin_empezar'}" style="font-size:11px">
-          ${retroAplica ? 'Aplica hoy (' + dayNames[dayOfWeek] + ')' : 'No aplica hoy (' + dayNames[dayOfWeek] + ')'}
+          ${retroAplica ? 'Confirmar ' + retroFecha + ' (' + dayNames[dayOfWeek] + ')' : 'Sin retrolavado programado el ' + retroFecha}
         </span>
       </div>
       <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
         Dias programados: ${diasRetro.map(d => dayNames[d]).join(', ')}
-        <button class="btn btn-outline btn-sm" onclick="openPtarConfigModal()" style="margin-left:8px;font-size:10px">Configurar</button>
+        ${(currentUser.departamentos || []).includes('smya') ? '<button class="btn btn-outline btn-sm" onclick="openPtarConfigModal()" style="margin-left:8px;font-size:10px">Configurar</button>' : ''}
       </div>
       ${retroAplica ? `
         <div class="form-group">
@@ -1321,11 +1383,13 @@ async function renderPtarForm(container, datos) {
       litros_ingresados_pipas: Number(document.getElementById('df_lit_ing_pipas').value) || 0,
       litros_tratados_ptar: Number(document.getElementById('df_lit_trat_ptar').value) || 0,
       litros_tratados_salida: Number(document.getElementById('df_lit_trat_sal').value) || 0,
+      cantidad_lodos_kg: plannerNumber('df_lodos_kg'),
       retrolavado: {}
     };
     if (retroAplica) {
       result.retrolavado = {
         aplica: true,
+        fecha_programada: retroFecha,
         realizado: document.getElementById('df_retro_realizado').value === 'true',
         evidencia_url: document.getElementById('df_retro_evidencia')?.value?.trim() || '',
         razones: document.getElementById('df_retro_razones')?.value?.trim() || '',
@@ -1424,6 +1488,7 @@ function renderRhhForm(formId, container) {
       notas: document.getElementById('df_notas').value.trim()
     }));
   } else if (formId === 'personal_disponible') {
+    _rhhPlantillaSnapshot = datos.plantilla || null;
     // Auto-pull plantilla from RHH
     container.innerHTML = dailyFormWrap('Personal disponible vs requerido', `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -1436,7 +1501,7 @@ function renderRhhForm(formId, container) {
         <div class="kpi"><label>% Cobertura</label><div class="val" id="df_kpi_cob" style="color:${(datos.porcentaje||0) >= 100 ? 'var(--green)' : 'var(--red)'}">${datos.porcentaje || 0}%</div></div>
         <div class="kpi red"><label>Vacantes</label><div class="val" id="df_kpi_vacantes">${datos.vacantes_abiertas || 0}</div></div>
       </div>
-      <div id="df_plantilla_table" style="font-size:12px;margin-bottom:12px">${datos._plantilla_html || '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener datos de plantilla</p>'}</div>
+      <div id="df_plantilla_table" style="font-size:12px;margin-bottom:12px">${datos.plantilla ? plannerSnapshotTable(datos.plantilla.puestos, [['puesto','Puesto'],['departamento','Departamento'],['requerido','Requerido'],['actual','Actual'],['vacantes_abiertas','Vacantes']]) : '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener datos de plantilla</p>'}</div>
       <input type="hidden" id="df_requeridos" value="${datos.requeridos || 0}">
       <input type="hidden" id="df_disponibles" value="${datos.disponibles || 0}">
       <input type="hidden" id="df_vacantes_ab" value="${datos.vacantes_abiertas || 0}">
@@ -1448,6 +1513,7 @@ function renderRhhForm(formId, container) {
       const req = Number(document.getElementById('df_requeridos').value) || 0;
       const dis = Number(document.getElementById('df_disponibles').value) || 0;
       return {
+        plantilla: _rhhPlantillaSnapshot,
         requeridos: req,
         disponibles: dis,
         porcentaje: req > 0 ? Math.round(dis / req * 100) : 0,
@@ -1501,6 +1567,7 @@ function renderRhhForm(formId, container) {
       return { registros: list };
     });
   } else if (formId === 'horas_extra') {
+    _rhhHorasSnapshot = datos.registros || [];
     // Auto-pull from RHH overtime vales
     container.innerHTML = dailyFormWrap('Horas extra autorizadas (semana)', `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
@@ -1512,7 +1579,7 @@ function renderRhhForm(formId, container) {
         <div class="kpi"><label>Hrs pendientes</label><div class="val" id="df_kpi_hrs_pend">${datos.horas_pendientes || 0}</div></div>
         <div class="kpi"><label>Personas</label><div class="val" id="df_kpi_personas">${datos.personas || 0}</div></div>
       </div>
-      <div id="df_he_table" style="font-size:12px;margin-bottom:12px">${datos._he_html || '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener vales de la semana</p>'}</div>
+      <div id="df_he_table" style="font-size:12px;margin-bottom:12px">${datos.registros ? plannerSnapshotTable(datos.registros, [['nombre','Nombre'],['fecha','Fecha'],['horas','Horas'],['razon','Razón'],['status','Estado']]) : '<p style="color:var(--muted)">Presiona "Cargar de RHH" para obtener vales de la semana</p>'}</div>
       <input type="hidden" id="df_total_he" value="${datos.total_horas || 0}">
       <input type="hidden" id="df_personas_he" value="${datos.personas || 0}">
       <input type="hidden" id="df_hrs_aut" value="${datos.horas_autorizadas || 0}">
@@ -1522,6 +1589,7 @@ function renderRhhForm(formId, container) {
         <textarea id="df_notas_he" rows="3">${esc(datos.notas || '')}</textarea>
       </div>
     `, () => ({
+      registros: _rhhHorasSnapshot || [],
       total_horas: Number(document.getElementById('df_total_he').value) || 0,
       horas_autorizadas: Number(document.getElementById('df_hrs_aut').value) || 0,
       horas_pendientes: Number(document.getElementById('df_hrs_pend').value) || 0,
@@ -1651,6 +1719,7 @@ async function _loadRhhPlantilla() {
   const data = await apiFetch('/api/planner/integracion/rhh/plantilla');
   if (!data) return;
   const { puestos, resumen } = data;
+  _rhhPlantillaSnapshot = data;
 
   const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
   set('df_kpi_req', resumen.total_requerido);
@@ -1682,12 +1751,13 @@ async function _loadRhhVacantes() {
   const data = await apiFetch('/api/planner/integracion/rhh/plantilla');
   if (!data) return;
   const vacantes = data.puestos.filter(p => p.vacantes_abiertas > 0);
+  const registradas = data.vacantes || [];
   const list = document.getElementById('df_vacantes_list');
   if (!list) return;
   list.innerHTML = '';
   vacantes.forEach(v => {
     for (let i = 0; i < v.vacantes_abiertas; i++) {
-      list.insertAdjacentHTML('beforeend', vacantRow(0, { puesto: v.puesto + ' (' + v.departamento + ')', fecha_apertura: '', prioridad: 'media' }));
+      list.insertAdjacentHTML('beforeend', vacantRow(0, { puesto: v.puesto + ' (' + v.departamento + ')', fecha_apertura: registradas.filter(r => r.puesto === v.puesto)[i]?.fecha_apertura || '', prioridad: registradas.filter(r => r.puesto === v.puesto)[i]?.prioridad || 'media' }));
     }
   });
   if (vacantes.length === 0) {
@@ -1697,6 +1767,7 @@ async function _loadRhhVacantes() {
 
 async function _loadRhhHorasExtra() {
   const data = await apiFetch('/api/planner/integracion/rhh/horas-extra?fecha=' + _dailyDate);
+  _rhhHorasSnapshot = data?.registros || [];
   if (!data) return;
   const { registros, resumen } = data;
 
@@ -1731,29 +1802,8 @@ function renderProduccionForm(formId, container) {
   const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
 
   if (formId === 'piezas_procesadas') {
-    const lineas = ['Baker', 'L1', 'L3', 'L4'];
-    container.innerHTML = dailyFormWrap('Piezas procesadas por cliente/linea', `
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Registra las piezas procesadas del dia por linea y cliente.</p>
-      ${lineas.map(l => `
-        <div style="border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px">
-          <b style="font-size:13px;color:var(--primary)">${l}</b>
-          <div class="form-row" style="margin-top:8px">
-            <div class="form-group" style="margin:0"><label style="font-size:11px">Piezas procesadas</label><input type="number" id="df_pz_${l}" min="0" value="${(datos[l] && datos[l].procesadas) || 0}"></div>
-            <div class="form-group" style="margin:0"><label style="font-size:11px">Piezas objetivo</label><input type="number" id="df_obj_${l}" min="0" value="${(datos[l] && datos[l].objetivo) || 0}"></div>
-          </div>
-        </div>
-      `).join('')}
-      <div class="form-group"><label>Observaciones</label><textarea id="df_obs_pz" rows="2">${esc(datos.observaciones || '')}</textarea></div>
-    `, () => {
-      const r = { observaciones: document.getElementById('df_obs_pz').value.trim() };
-      ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
-        r[l] = {
-          procesadas: Number(document.getElementById('df_pz_' + l).value) || 0,
-          objetivo: Number(document.getElementById('df_obj_' + l).value) || 0
-        };
-      });
-      return r;
-    });
+    renderPiezasClientes(container, datos);
+
   } else if (formId === 'eficiencias') {
     renderEficienciasForm(container, datos);
   } else if (formId === 'paros_lineas') {
@@ -1807,6 +1857,8 @@ function renderProduccionForm(formId, container) {
         const desc = r.querySelector('.ries-desc')?.value?.trim();
         if (desc) list.push({
           cliente: r.querySelector('.ries-cli')?.value || '',
+          numero_parte: r.querySelector('.ries-np')?.value?.trim() || '',
+          cantidad: Number(r.querySelector('.ries-cant')?.value) || 0,
           descripcion: desc,
           impacto: r.querySelector('.ries-imp')?.value || 'medio'
         });
@@ -1832,10 +1884,11 @@ function addMatPendRow() { document.getElementById('df_mat_list').insertAdjacent
 
 function riesgoRow(i, it) {
   it = it || {};
-  return `<div class="df-riesgo-row" style="display:grid;grid-template-columns:1fr 3fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
+  return `<div class="df-riesgo-row" style="display:grid;grid-template-columns:1fr 1fr 1fr 2fr 1fr auto;gap:8px;align-items:end;margin-bottom:8px">
     <div class="form-group" style="margin:0"><label style="font-size:11px">Cliente</label>
       <select class="ries-cli"><option value="SKF" ${it.cliente==='SKF'?'selected':''}>SKF</option><option value="Amsted" ${it.cliente==='Amsted'?'selected':''}>Amsted</option><option value="Tenneco" ${it.cliente==='Tenneco'?'selected':''}>Tenneco</option><option value="General" ${it.cliente==='General'||!it.cliente?'selected':''}>General</option></select>
     </div>
+    <div class="form-group"><label>No. parte</label><input class="ries-np" value="${esc(it.numero_parte || '')}"></div><div class="form-group"><label>Cantidad</label><input type="number" min="0" class="ries-cant" value="${it.cantidad || 0}"></div>
     <div class="form-group" style="margin:0"><label style="font-size:11px">Descripcion del riesgo</label><input type="text" class="ries-desc" value="${esc(it.descripcion || '')}"></div>
     <div class="form-group" style="margin:0"><label style="font-size:11px">Impacto</label>
       <select class="ries-imp"><option value="alto" ${it.impacto==='alto'?'selected':''}>Alto</option><option value="medio" ${it.impacto==='medio'||!it.impacto?'selected':''}>Medio</option><option value="bajo" ${it.impacto==='bajo'?'selected':''}>Bajo</option></select>
@@ -1864,7 +1917,7 @@ async function renderEficienciasForm(container, datos) {
         const manual = datos[l] || {};
         const ef = manual.eficiencia !== undefined ? manual.eficiencia : (k.eficiencia !== null ? k.eficiencia : '');
         const cal = manual.calidad !== undefined ? manual.calidad : (k.calidad !== null ? k.calidad : '');
-        const disp = manual.disponibilidad !== undefined ? manual.disponibilidad : (k.disponibilidad !== null ? k.disponibilidad : '');
+        const disp = manual.disponibilidad !== undefined ? manual.disponibilidad : (k.disponibilidad != null ? k.disponibilidad : '');
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:10px">
           <b style="font-size:13px;color:var(--primary)">${l}</b>
           ${k.eficiencia !== null ? '<span style="font-size:10px;color:var(--green);margin-left:6px">auto</span>' : '<span style="font-size:10px;color:var(--orange);margin-left:6px">sin datos</span>'}
@@ -1935,7 +1988,7 @@ async function renderParosForm(container, datos) {
   `, () => ({
     observaciones: document.getElementById('df_obs_paros').value.trim(),
     resumen: { total_paros: totalParos, total_min: totalMin },
-    lineas: Object.fromEntries(lineas.map(l => [l, { total: paros[l]?.total || 0, minutos_total: paros[l]?.minutos_total || 0, paros: (paros[l]?.paros || []).map(p => ({ folio: p.folio, motivo: p.motivo, sub_motivo: p.sub_motivo, hora_inicio: p.hora_inicio, hora_fin: p.hora_fin, duracion_min: p.duracion_min, estado: p.estado })) }]))
+    lineas: Object.fromEntries(lineas.map(l => [l, { por_turno: paros[l]?.por_turno || [], total: paros[l]?.total || 0, minutos_total: paros[l]?.minutos_total || 0, paros: (paros[l]?.paros || []).map(p => ({ folio: p.folio, motivo: p.motivo, sub_motivo: p.sub_motivo, hora_inicio: p.hora_inicio, hora_fin: p.hora_fin, duracion_min: p.duracion_min, estado: p.estado })) }]))
   }));
 }
 
@@ -1953,29 +2006,10 @@ function renderCalidadForm(formId, container) {
   } else if (formId === 'liberaciones_pendientes') {
     renderIssueFormDaily(container, 'calidad', 'liberaciones_pendientes', 'Liberaciones pendientes — producto retenido', datos);
   } else if (formId === 'reprocesos') {
-    const sinRep = datos.sin_novedad;
-    container.innerHTML = dailyFormWrap('% Reprocesos', `
-      <div style="margin-bottom:14px">
-        <button onclick="saveSinNovedadForm('calidad','reprocesos','Sin reprocesos')" style="width:100%;padding:12px;border:2px solid var(--green);background:#d5f5e3;border-radius:8px;cursor:pointer;font-size:14px;font-weight:700;color:var(--green);transition:opacity .15s${sinRep ? ';opacity:.65' : ''}" onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='${sinRep ? '.65' : '1'}'">
-          ${sinRep ? '&#10003; Sin reprocesos (revisado)' : '&#10003; Sin reprocesos'}
-        </button>
-      </div>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">O registra porcentaje de reprocesos por linea:</p>
-      <div class="form-row">
-        ${['Baker', 'L1', 'L3', 'L4'].map(l => `
-          <div class="form-group">
-            <label>${l} — % reprocesos</label>
-            <input type="number" id="df_rep_${l}" min="0" max="100" step="0.1" value="${datos[l] || 0}">
-          </div>
-        `).join('')}
-      </div>
-      <div class="form-group"><label>Observaciones</label><textarea id="df_obs_rep" rows="2">${esc(datos.observaciones || '')}</textarea></div>
-    `, () => {
-      const r = { observaciones: document.getElementById('df_obs_rep').value.trim() };
-      ['Baker', 'L1', 'L3', 'L4'].forEach(l => { r[l] = Number(document.getElementById('df_rep_' + l).value) || 0; });
-      return r;
-    });
+    renderReprocesosCalculados(container, datos);
   }
+
+
 }
 
 async function renderRechazosInternosForm(container, datos) {
@@ -1999,6 +2033,7 @@ async function renderRechazosInternosForm(container, datos) {
           <b style="font-size:13px;color:var(--primary)">${l}</b>
           ${isAuto ? '<span style="font-size:10px;color:var(--green);margin-left:4px">auto</span>' : '<span style="font-size:10px;color:var(--orange);margin-left:4px">manual</span>'}
           <div class="form-group" style="margin:8px 0 4px"><label style="font-size:10px">% Calidad</label><input type="number" id="df_rcal_${l}" min="0" max="100" value="${calVal}"></div>
+          <div class="form-group"><label>Pzas procesadas</label><input type="number" min="0" id="df_procesadas_${l}" value="${manual.procesadas ?? kpiData?.piezas?.[l] ?? ''}"></div>
           <div class="form-group" style="margin:4px 0 0"><label style="font-size:10px">Pzas rechazadas</label><input type="number" id="df_rech_${l}" min="0" value="${manual.rechazadas || 0}"></div>
         </div>`;
       }).join('')}
@@ -2009,6 +2044,7 @@ async function renderRechazosInternosForm(container, datos) {
     ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
       r[l] = {
         calidad: Number(document.getElementById('df_rcal_' + l).value) || 0,
+        procesadas: plannerNumber('df_procesadas_' + l),
         rechazadas: Number(document.getElementById('df_rech_' + l).value) || 0
       };
     });
@@ -2136,7 +2172,7 @@ async function renderDisponibilidadForm(container, datos) {
         const k = kpis[l] || {};
         const manual = datos[l] || {};
         const disp = manual.disponibilidad !== undefined ? manual.disponibilidad : (k.disponibilidad !== null ? k.disponibilidad : '');
-        const color = disp !== '' && Number(disp) >= 85 ? 'var(--green)' : disp !== '' ? 'var(--red)' : 'var(--muted)';
+        const color = disp !== '' && disp != null ? plannerMetricColor(l, 'disponibilidad', Number(disp)) : 'var(--muted)';
         return `<div style="border:1px solid var(--line);border-radius:8px;padding:14px;text-align:center">
           <b style="font-size:13px;color:var(--primary)">${l}</b>
           ${k.disponibilidad !== null ? '<span style="font-size:10px;color:var(--green);margin-left:4px">auto</span>' : ''}
@@ -2149,7 +2185,7 @@ async function renderDisponibilidadForm(container, datos) {
   `, () => {
     const r = { observaciones: document.getElementById('df_obs_disp').value.trim() };
     ['Baker', 'L1', 'L3', 'L4'].forEach(l => {
-      r[l] = { disponibilidad: Number(document.getElementById('df_disp_m_' + l).value) || 0 };
+      r[l] = { disponibilidad: plannerNumber('df_disp_m_' + l) };
     });
     return r;
   });
@@ -2213,60 +2249,26 @@ async function renderMateriasCriticasForm(container, datos) {
   }));
 }
 
+function plannerPurchasesHtml(comp) {
+  if (!comp) return '<p class="planner-help">No se pudieron cargar las compras pendientes.</p>';
+  const groups = Array.isArray(comp.por_estatus) ? comp.por_estatus : Object.entries(comp.por_estatus || {}).map(([estatus,g])=>({...g,estatus}));
+  const items = groups.flatMap(g=>(g.items || []).filter(i=>i.vencida || i.urgente).map(i=>({...i,estatus:g.estatus})));
+  return `<h3>Compras pendientes · Vencidas o urgentes</h3><p class="planner-help">Pendientes al ${plannerDate(comp.fecha)}. Vencidas: compromiso anterior a esta fecha. Urgentes: prioridad alta.</p>
+    ${dsKpiGrid([[items.length,'Partidas pendientes','var(--primary)'],[items.filter(i=>i.vencida).length,'Vencidas','var(--red)'],[items.filter(i=>i.urgente).length,'Urgentes','var(--orange)']])}
+    ${items.length ? '<table><thead><tr><th>Descripción</th><th>Cantidad</th><th>PO / Proveedor</th><th>Compromiso</th><th>Motivo</th><th></th></tr></thead><tbody>' + items.map(i=>`<tr><td>${esc(i.descripcion)}<small style="display:block;color:var(--muted)">${esc(i.estatus)}</small></td><td>${plannerFmt(i.cantidad)} ${esc(i.unidad)}</td><td>${esc(i.po_folio || 'Sin PO')}<small style="display:block">${esc(i.proveedor || '')}</small></td><td>${i.fecha_compromiso ? plannerDate(i.fecha_compromiso) : 'Sin fecha'}</td><td>${i.vencida ? '<span class="badge atrasada">Vencida</span> ' : ''}${i.urgente ? '<span class="badge alta">Urgente</span>' : ''}</td><td><button class="btn btn-outline btn-sm" aria-label="Crear actividad de seguimiento" onclick="${esc('openNewActModal(' + JSON.stringify({titulo:'Seguimiento ' + (i.po_folio || 'compra') + ': ' + i.descripcion,departamento:'compras',urgencia:i.urgente ? 'alta' : 'media',fecha_compromiso:i.fecha_compromiso || '',correlacion_daily:{departamento:'compras',formulario:'ordenes_compra',fecha:document.getElementById('plannerPendingPanel') ? _ds.fecha : _dailyDate}}) + ')')}">+</button></td></tr>`).join('') + '</tbody></table>' : '<div class="empty">Sin compras pendientes vencidas o urgentes.</div>'}`;
+}
 async function renderOrdenesCompraForm(container, datos) {
+  const draftComments = document.getElementById('df_wrap_comments')?.value ?? datos.comentarios;
+  const draftObs = document.getElementById('df_obs_oc')?.value ?? datos.observaciones;
   container.innerHTML = '<div class="spinner"></div>';
   const comp = await apiFetch('/api/planner/integracion/compras/resumen');
-  const porEstatus = comp ? comp.por_estatus : {};
-
-  const statusOrder = ['En cotizacion', 'En autorizacion', 'Autorizado', 'Enviada', 'En proceso'];
-  const allStatus = Object.keys(porEstatus);
-
-  container.innerHTML = dailyFormWrap('Ordenes de compra — resumen por estatus', `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:8px">
-      <button class="btn btn-outline btn-sm" onclick="renderOrdenesCompraForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Recargar</button>
-    </div>
-    <div class="kpi-row" style="margin-bottom:14px">
-      <div class="kpi"><label>Items totales</label><div class="val">${comp ? comp.total_items : 0}</div></div>
-      <div class="kpi orange"><label>POs activas</label><div class="val">${comp ? comp.pos_activas : 0}</div></div>
-      <div class="kpi"><label>POs totales</label><div class="val">${comp ? comp.pos_total : 0}</div></div>
-    </div>
-    ${allStatus.length === 0 ? '<div class="empty">Sin items de compra</div>' : `
-      ${statusOrder.filter(s => porEstatus[s]).map(st => {
-        const g = porEstatus[st];
-        return `
-          <div style="margin-bottom:14px;border:1px solid var(--line);border-radius:8px;padding:12px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <b style="font-size:13px;color:var(--primary)">${st}</b>
-              <span class="badge en_proceso" style="font-size:11px">${g.count} items</span>
-            </div>
-            ${g.items.length > 0 ? `
-              <table style="font-size:11px">
-                <thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th><th></th></tr></thead>
-                <tbody>
-                  ${g.items.slice(0, 10).map(i => `<tr>
-                    <td style="max-width:200px">${esc((i.descripcion || '').slice(0, 50))}</td>
-                    <td>${i.cantidad} ${i.unidad}</td>
-                    <td style="font-family:monospace;font-size:10px">${i.po_folio || '—'}</td>
-                    <td style="font-size:10px">${esc((i.proveedor || '').slice(0, 25))}</td>
-                    <td><button class="btn btn-outline btn-sm" style="padding:2px 8px;font-size:10px" onclick="openNewActModal({titulo:'Seguimiento ${esc((i.po_folio||'PO').replace(/'/g,"\\\\'"))}: ${esc((i.descripcion||'').slice(0,40).replace(/'/g,"\\\\'"))}',departamento:'compras',urgencia:'media',correlacion_daily:{departamento:'compras',formulario:'ordenes_compra',fecha:'${_dailyDate}'}})">+</button></td>
-                  </tr>`).join('')}
-                  ${g.items.length > 10 ? `<tr><td colspan="5" style="color:var(--muted);text-align:center">... y ${g.count - 10} mas</td></tr>` : ''}
-                </tbody>
-              </table>
-            ` : ''}
-          </div>`;
-      }).join('')}
-      ${allStatus.filter(s => !statusOrder.includes(s) && porEstatus[s]).map(st => {
-        const g = porEstatus[st];
-        return `<div style="font-size:12px;color:var(--muted);margin-bottom:4px"><b>${st}:</b> ${g.count} items</div>`;
-      }).join('')}
-    `}
-    <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_oc" rows="2">${esc(datos.observaciones || '')}</textarea></div>
-  `, () => ({
-    observaciones: document.getElementById('df_obs_oc').value.trim(),
-    resumen: { pos_activas: comp ? comp.pos_activas : 0, total_items: comp ? comp.total_items : 0 },
-    por_estatus: Object.entries(porEstatus).map(function(e) { return { estatus: e[0], count: e[1].count, items: (e[1].items || []).slice(0, 8).map(function(i) { return { descripcion: (i.descripcion || '').slice(0, 50), cantidad: i.cantidad, unidad: i.unidad, po_folio: i.po_folio, proveedor: (i.proveedor || '').slice(0, 25) }; }) }; })
-  }));
+  container.innerHTML = dailyFormWrap('Compras pendientes · Vencidas o urgentes', `
+    <div style="display:flex;justify-content:flex-end;margin-bottom:8px"><button class="btn btn-outline btn-sm" onclick="renderOrdenesCompraForm(document.getElementById('dailyFormContent'),(_dailyRegistro&&_dailyRegistro.datos)||{})">Actualizar compras</button></div>
+    ${plannerPurchasesHtml(comp)}
+    <div class="form-group" style="margin-top:12px"><label for="df_obs_oc">Observaciones</label><textarea id="df_obs_oc" rows="2">${esc(draftObs || '')}</textarea></div>
+  `, () => ({ observaciones: document.getElementById('df_obs_oc').value.trim(),fecha:comp?.fecha,criterio:'vencidas_o_urgentes',
+    resumen:{pos_activas:comp?.pos_activas || 0,total_items:comp?.total_items || 0},
+    por_estatus:Object.entries(comp?.por_estatus || {}).map(([estatus,g])=>({...g,estatus})) }), draftComments);
 }
 
 async function renderInventariosCriticosForm(container, datos) {
@@ -2320,13 +2322,24 @@ function renderProcesosForm(formId, container) {
 
 async function renderCpkForm(container) {
   const datos = (_dailyRegistro && _dailyRegistro.datos) || {};
-  container.innerHTML = '<div class="spinner"></div>';
+  const commentsDraft = document.getElementById('df_wrap_comments')?.value ?? datos.comentarios ?? '';
+  const observationsDraft = document.getElementById('df_obs_cpk')?.value ?? datos.observaciones ?? '';
+  // Leer y validar antes de reemplazar los campos por el indicador de carga.
   const cpkDesde = document.getElementById('cpk_desde')?.value || '';
   const cpkHasta = document.getElementById('cpk_hasta')?.value || '';
+  if ((cpkDesde || cpkHasta) && !(cpkDesde && cpkHasta)) {
+    alert('Selecciona ambas fechas: Desde y Hasta.');
+    return;
+  }
+  if (cpkDesde && cpkHasta && cpkDesde > cpkHasta) {
+    alert('La fecha Desde no puede ser posterior a la fecha Hasta.');
+    return;
+  }
+  container.innerHTML = '<div class="spinner"></div>';
   const cpkQs = cpkDesde && cpkHasta ? `?desde=${cpkDesde}&hasta=${cpkHasta}` : '';
   const [cpkData, empData] = await Promise.all([
     apiFetch('/api/planner/integracion/vales/cpk' + cpkQs),
-    apiFetch('/api/planner/integracion/empaque/cpk')
+    apiFetch('/api/planner/integracion/empaque/cpk' + cpkQs)
   ]);
   const tits = cpkData ? cpkData.titulaciones : {};
   const cpkParamsList = cpkData ? (cpkData.cpk_params || []) : [];
@@ -2367,7 +2380,7 @@ async function renderCpkForm(container) {
           '<td style="font-size:10px">' + esc(h.analista || '') + '</td></tr>').join('') +
         '</tbody></table></div>';
     }).join('')}
-    <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK Peso Fosfato ${cpkSemana ? '<span style="font-size:11px;color:var(--muted);font-weight:400">(Semana ' + cpkSemana.ini + ' al ' + cpkSemana.fin + ')</span>' : ''}</h4>
+    <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK Peso Fosfato ${cpkSemana ? '<span style="font-size:11px;color:var(--muted);font-weight:400">(Periodo ' + cpkSemana.ini + ' al ' + cpkSemana.fin + ')</span>' : ''}</h4>
     ${cpkParamsList.length === 0 ? '<p style="font-size:12px;color:var(--muted)">Sin datos de Peso Fosfato disponibles</p>' :
       '<table style="font-size:11px;width:100%"><thead><tr><th>Tanque</th><th>n</th><th style="text-align:center">Media</th><th style="text-align:center">Sigma</th><th style="text-align:center">LSL – USL</th><th style="text-align:center">Cp</th><th style="text-align:center">Cpk</th></tr></thead><tbody>' +
       cpkParamsList.map(p => '<tr>' +
@@ -2380,7 +2393,7 @@ async function renderCpkForm(container) {
         '<td style="text-align:center">' + cpkBadge(p.cpk) + '</td>' +
       '</tr>').join('') +
       '</tbody></table>'}
-    <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK Empaque (Tenneco)</h4>
+    <h4 style="margin:20px 0 10px;font-size:14px;color:var(--primary)">CPK Empaque (Tenneco) ${cpkSemana ? '<span style="font-size:11px;color:var(--muted);font-weight:400">(Periodo ' + cpkSemana.ini + ' al ' + cpkSemana.fin + ')</span>' : ''}</h4>
     ${empPartes.length === 0 ? '<p style="font-size:12px;color:var(--muted)">Sin datos de empaque disponibles</p>' :
       '<table style="font-size:11px;width:100%"><thead><tr><th>N. Parte</th><th>n</th><th style="text-align:center">Rugosidad CPK</th><th style="text-align:center">Rug. Media</th><th style="text-align:center">Rug. Limites</th><th style="text-align:center">Alt. Axial CPK</th><th style="text-align:center">Alt. Media</th><th style="text-align:center">Alt. Limites</th></tr></thead><tbody>' +
       empPartes.map(p => '<tr>' +
@@ -2394,13 +2407,14 @@ async function renderCpkForm(container) {
         '<td style="text-align:center;font-size:10px;color:var(--muted)">' + (p.altura_axial.lsl ?? '—') + ' – ' + (p.altura_axial.usl ?? '—') + '</td>' +
       '</tr>').join('') +
       '</tbody></table>'}
-    <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_cpk" rows="2">${esc(datos.observaciones || '')}</textarea></div>
+    <div class="form-group" style="margin-top:12px"><label>Observaciones</label><textarea id="df_obs_cpk" rows="2">${esc(observationsDraft)}</textarea></div>
   `, () => ({
     observaciones: document.getElementById('df_obs_cpk').value.trim(),
+    periodo: cpkSemana,
     titulaciones: tits,
     cpk_params: cpkParamsList.map(function(p) { return { tanque: p.tanque, unidad: p.unidad, n: p.n, mean: p.mean, sigma: p.sigma, lsl: p.lsl, usl: p.usl, cp: p.cp, cpk: p.cpk }; }),
     empaque_partes: empPartes.map(function(p) { return { numero_parte: p.numero_parte, muestras: p.muestras, rug_cpk: p.rugosidad.cpk, rug_na: !!p.rugosidad.na, alt_cpk: p.altura_axial.cpk }; })
-  }));
+  }), commentsDraft);
 }
 
 // ── SGC Daily Forms ─────────────────────────────────────────────────────────
@@ -2425,7 +2439,8 @@ async function render8DForm(container) {
   const linked = acts.filter(a => a.correlacion_daily && a.correlacion_daily.formulario === '8ds_abiertos');
   const abiertas = linked.filter(a => !['cerrada', 'cancelada'].includes(a.estatus));
 
-  container.innerHTML = `
+  const datos = _dailyRegistro?.datos || {};
+  container.innerHTML = dailyFormWrap("8D's Abiertos", `
     <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <h4 style="font-size:14px;color:var(--primary)">8D's Abiertos</h4>
@@ -2446,7 +2461,7 @@ async function render8DForm(container) {
           </tbody>
         </table>
       `}
-    </div>`;
+    </div>`, () => ({ ...datos, sin_novedad: abiertas.length === 0, actividades_abiertas: abiertas.length }));
 }
 
 async function open8DModal() {
@@ -2642,6 +2657,8 @@ async function saveEdit8D(actId) {
     closeModal('detalleModal');
     alert('8D actualizado');
     if (_currentView === 'tareas') cargarActividades();
+    else if (_currentView.startsWith('daily-')) selectDailyForm(_dailyDepto, _dailyActiveForm);
+    else if (document.getElementById('plannerPendingPanel')) await refreshPresentationActivities();
     // Refresh 8D list if in daily view
     const container = document.getElementById('dailyFormContent');
     if (container && _dailyActiveForm === '8ds_abiertos') render8DForm(container);
@@ -2680,7 +2697,8 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
   const btnIcon = sinNovedadChecked ? '&#10003;' : (openLinked.length > 0 ? '&#9888;' : '&#10003;');
 
   _currentDailyGetData = () => ({
-    sin_novedad: true,
+    sin_novedad: openLinked.length === 0,
+    estado_revision: openLinked.length ? 'revisado_con_pendientes' : 'sin_incidencias',
     actividades_abiertas: openLinked.length,
     comentarios: document.getElementById('df_task_comments')?.value?.trim() || ''
   });
@@ -2711,7 +2729,7 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
           </tbody>
         </table>
       `}
-      <div class="form-group"><label>Comentarios</label><textarea id="df_task_comments" rows="2" placeholder="Notas adicionales...">${esc(datos.comentarios || '')}</textarea></div>
+      <div id="dailySaveMsg" role="status"></div>${plannerDailyCommentField('df_task_comments', datos.comentarios)}
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:10px">
         <button class="btn btn-outline btn-sm" onclick="viewDailyHistory()">Historial</button>
         <button class="btn btn-primary" onclick="saveDailyForm()">Guardar</button>
@@ -2720,57 +2738,27 @@ async function renderTaskFormDaily(container, deptoId, formId, titulo) {
 }
 
 async function saveTaskFormRevisado(deptoId, formId) {
-  const comentarios = document.getElementById('df_task_comments')?.value?.trim() || '';
-  try {
-    await apiFetch('/api/planner/daily/' + deptoId + '/' + formId, {
-      method: 'POST',
-      body: JSON.stringify({ fecha: _dailyDate, datos: { sin_novedad: true, comentarios } })
-    });
-    selectDailyForm(deptoId, formId);
-    // Refresh tabs
-    const resumen = await apiFetch('/api/planner/daily/' + deptoId + '/resumen?fecha=' + _dailyDate);
-    if (resumen) {
-      _dailyResumen = resumen;
-      const tabs = document.querySelectorAll('#dailyTabs .tab');
-      tabs.forEach(t => {
-        const fid = t.dataset.form;
-        const info = resumen.formularios.find(x => x.id === fid);
-        const forms = getDailyForms(deptoId);
-        const fm = forms.find(f => f.id === fid);
-        if (info && fm) t.innerHTML = (info.llenado ? '&#x1F7E2;' : '&#x26AA;') + ' ' + fm.icon + ' ' + fm.nombre;
-      });
-    }
-  } catch (e) { alert('Error: ' + e.message); }
+  await saveDailyForm();
 }
 
 async function saveSinNovedadForm(deptoId, formId, label) {
-  const comentarios = document.getElementById('df_wrap_comments')?.value?.trim() || '';
+  if (_dailySaving) return;
+  const current = _currentDailyGetData ? _currentDailyGetData() : {};
+  const hasRows = ['items', 'issues', 'equipos', 'registros'].some(k => current[k]?.length);
+  if (hasRows && !confirm('Hay datos capturados. ¿Confirmas registrar "' + label + '" y retirar las filas actuales? La version guardada anterior se conserva en el historial.')) return;
+  const datos = { sin_novedad: true, items: [], issues: [], equipos: [], comentarios: current.comentarios || '' };
+  _dailySaving = true;
   try {
-    await apiFetch('/api/planner/daily/' + deptoId + '/' + formId, {
-      method: 'POST',
-      body: JSON.stringify({ fecha: _dailyDate, datos: { sin_novedad: true, items: [], comentarios } })
-    });
-    selectDailyForm(deptoId, formId);
-    const resumen = await apiFetch('/api/planner/daily/' + deptoId + '/resumen?fecha=' + _dailyDate);
-    if (resumen) {
-      _dailyResumen = resumen;
-      const tabs = document.querySelectorAll('#dailyTabs .tab');
-      tabs.forEach(t => {
-        const fid = t.dataset.form;
-        const info = resumen.formularios.find(x => x.id === fid);
-        const forms = getDailyForms(deptoId);
-        const fm = forms.find(f => f.id === fid);
-        if (info && fm) t.innerHTML = (info.llenado ? '&#x1F7E2;' : '&#x26AA;') + ' ' + fm.icon + ' ' + fm.nombre;
-      });
-    }
-  } catch (e) { alert('Error: ' + e.message); }
+    const r = await apiFetch('/api/planner/daily/' + deptoId + '/' + formId, { method: 'POST', body: JSON.stringify({ fecha: _dailyDate, version: _dailyVersion, datos }) });
+    if (r?.ok) { _dailyVersion = r.registro.version; await selectDailyForm(deptoId, formId); }
+  } catch (e) { alert(e.message); } finally { _dailySaving = false; }
 }
 
 // ── Daily: helpers comunes ────────────────────────────────────────────────────
 
 let _currentDailyGetData = null;
 
-function dailyFormWrap(titulo, fieldsHtml, getDataFn) {
+function dailyFormWrap(titulo, fieldsHtml, getDataFn, commentsOverride) {
   // Wrap getDataFn to include the comments field
   const origGetData = getDataFn;
   _currentDailyGetData = () => {
@@ -2778,14 +2766,14 @@ function dailyFormWrap(titulo, fieldsHtml, getDataFn) {
     d.comentarios = document.getElementById('df_wrap_comments')?.value?.trim() || '';
     return d;
   };
-  const info = _dailyRegistro ? `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ultimo registro: ${_dailyRegistro.fecha_llenado} ${_dailyRegistro.hora_llenado} por ${esc(_dailyRegistro.llenado_por_nombre)}</div>` : '';
-  const existingComments = (_dailyRegistro && _dailyRegistro.datos && _dailyRegistro.datos.comentarios) || '';
+  const info = _dailyRegistro && !_dailyRegistro.sugerido ? `<div style="font-size:11px;color:var(--muted);margin-bottom:12px">Ultimo registro: ${_dailyRegistro.fecha_llenado} ${_dailyRegistro.hora_llenado} por ${esc(_dailyRegistro.llenado_por_nombre)}</div>` : '';
+  const existingComments = commentsOverride ?? ((_dailyRegistro && _dailyRegistro.datos && _dailyRegistro.datos.comentarios) || '');
   return `
     <div style="background:var(--card);border:1px solid var(--line);border-radius:10px;padding:20px">
       <h4 style="font-size:14px;color:var(--primary);margin-bottom:4px">${titulo}</h4>
       ${info}
       ${fieldsHtml}
-      <div class="form-group" style="margin-top:14px"><label>Comentarios</label><textarea id="df_wrap_comments" rows="2" placeholder="Notas adicionales...">${esc(existingComments)}</textarea></div>
+      ${plannerDailyCommentField('df_wrap_comments', existingComments)}
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--line)">
         <div id="dailySaveMsg" style="font-size:12px;min-height:16px"></div>
         <div style="display:flex;gap:8px">
@@ -2803,20 +2791,24 @@ function toggleDailyFields(selectId, blockId, invertLogic) {
 }
 
 async function saveDailyForm() {
-  if (!_currentDailyGetData) return;
+  if (!_currentDailyGetData || _dailySaving) return;
   const datos = _currentDailyGetData();
-  const msg = document.getElementById('dailySaveMsg');
+  const msg = document.getElementById('dailySaveMsg') || document.createElement('span');
+  _dailySaving = true;
 
   try {
     msg.textContent = 'Guardando...';
     msg.style.color = 'var(--accent)';
     const r = await apiFetch(`/api/planner/daily/${_dailyDepto}/${_dailyActiveForm}`, {
       method: 'POST',
-      body: JSON.stringify({ fecha: _dailyDate, datos })
+      body: JSON.stringify({ fecha: _dailyDate, version: _dailyVersion, datos })
     });
     if (r && r.ok) {
+      _dailyRegistro = r.registro;
+      _dailyVersion = r.registro.version;
       msg.textContent = 'Guardado correctamente';
       msg.style.color = 'var(--green)';
+      if (_dailyDepto === 'smya' && _dailyActiveForm === 'scrap') await refreshScrapSummary();
       // Refresh resumen badges
       const resumen = await apiFetch(`/api/planner/daily/${_dailyDepto}/resumen?fecha=${_dailyDate}`);
       if (resumen) {
@@ -2845,75 +2837,35 @@ async function saveDailyForm() {
   } catch (e) {
     msg.textContent = e.message;
     msg.style.color = 'var(--red)';
-  }
+    alert(e.message);
+  } finally { _dailySaving = false; }
 }
 
 function formatDailyDatos(datos) {
-  if (!datos || typeof datos !== 'object') return '<span style="color:var(--muted)">—</span>';
-  const lines = [];
-  for (const [k, v] of Object.entries(datos)) {
-    const label = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-    if (v === null || v === undefined || v === '') continue;
-    if (Array.isArray(v)) {
-      if (!v.length) continue;
-      if (typeof v[0] === 'object') {
-        lines.push(`<b>${esc(label)}</b>: ${v.length} registro(s)`);
-        v.forEach((item, i) => {
-          const vals = Object.entries(item).filter(([,val]) => val !== null && val !== undefined && val !== '').map(([ik, iv]) => `${esc(ik.replace(/_/g,' '))}: ${esc(String(iv))}`).join(', ');
-          if (vals) lines.push(`&nbsp;&nbsp;${i+1}. ${vals}`);
-        });
-      } else {
-        lines.push(`<b>${esc(label)}</b>: ${v.map(x => esc(String(x))).join(', ')}`);
-      }
-    } else if (typeof v === 'object') {
-      const vals = Object.entries(v).filter(([,val]) => val !== null && val !== undefined && val !== '').map(([ik, iv]) => `${esc(ik.replace(/_/g,' '))}: ${esc(String(iv))}`).join(', ');
-      if (vals) lines.push(`<b>${esc(label)}</b>: ${vals}`);
-    } else {
-      lines.push(`<b>${esc(label)}</b>: ${esc(String(v))}`);
-    }
+  function valueHtml(value, key = '') {
+    if (value == null || value === '') return '—';
+    if (typeof value === 'boolean') return value ? 'Sí' : 'No';
+    if (typeof value === 'number') return /(^id$|_id$|numero_parte)/.test(key) ? esc(String(value)) : plannerFmt(value, 2);
+    if (typeof value === 'string') return /^\d{4}-\d{2}-\d{2}$/.test(value) ? plannerDate(value) : esc(plannerLabel(value));
+    if (Array.isArray(value)) return value.length ? '<ol>' + value.map(v => '<li>' + valueHtml(v) + '</li>').join('') + '</ol>' : 'Sin registros';
+    return '<dl class="planner-data-list">' + Object.entries(value).filter(([k]) => !['_plantilla_html','_he_html'].includes(k)).map(([k,v]) => '<div><dt>' + esc(dsLabel(k)) + '</dt><dd>' + valueHtml(v,k) + '</dd></div>').join('') + '</dl>';
   }
-  return lines.length ? lines.join('<br>') : '<span style="color:var(--muted)">Sin datos</span>';
+  return valueHtml(datos || {});
 }
 
-async function viewDailyHistory() {
+async function viewDailyHistory(desde = '', hasta = '') {
   if (!_dailyDepto || !_dailyActiveForm) return;
-  const hist = await apiFetch(`/api/planner/daily/${_dailyDepto}/${_dailyActiveForm}/historial?desde=&hasta=`);
-  if (!hist || !hist.length) { alert('Sin historial disponible'); return; }
-
-  const fm = getDailyForms(_dailyDepto)?.find(f => f.id === _dailyActiveForm);
-  const html = `
-    <div class="modal-overlay open" id="dailyHistModal" style="z-index:1100">
-      <div class="modal-box wide">
-        <div class="modal-header">
-          <h3>Historial — ${fm ? fm.nombre : _dailyActiveForm}</h3>
-          <button class="modal-close" onclick="closeModal('dailyHistModal')">&times;</button>
-        </div>
-        <div class="modal-body" style="max-height:60vh;overflow-y:auto">
-          <table>
-            <thead><tr><th>Fecha</th><th>Llenado por</th><th>Hora</th><th>Datos</th></tr></thead>
-            <tbody>
-              ${hist.map(r => `<tr>
-                <td style="font-weight:600;white-space:nowrap">${r.fecha}</td>
-                <td>${esc(r.llenado_por_nombre)}</td>
-                <td style="white-space:nowrap">${r.hora_llenado || ''}</td>
-                <td style="font-size:11px;max-width:500px">${formatDailyDatos(r.datos)}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline" onclick="closeModal('dailyHistModal')">Cerrar</button>
-        </div>
-      </div>
-    </div>`;
-  document.body.insertAdjacentHTML('beforeend', html);
+  const hist = await apiFetch('/api/planner/daily/' + _dailyDepto + '/' + _dailyActiveForm + '/historial?desde=' + desde + '&hasta=' + hasta);
+  if (!hist) return;
+  document.getElementById('dailyHistModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend', '<div class="modal-overlay open" id="dailyHistModal" style="z-index:1100"><div class="modal-box wide"><div class="modal-header"><h3>Historial y versiones</h3><button onclick="closeModal(\'dailyHistModal\')">Cerrar</button></div><div class="modal-body"><div class="planner-actions"><input type="date" id="histDesde" value="' + desde + '"><input type="date" id="histHasta" value="' + hasta + '"><button class="btn btn-outline" onclick="viewDailyHistory(document.getElementById(\'histDesde\').value,document.getElementById(\'histHasta\').value)">Consultar</button></div>' + (hist.length ? plannerHistoryMarkup(hist) : '<p>Sin registros en el periodo.</p>') + '</div></div></div>');
 }
 
-// ── Issue + Task form (problemas, liberaciones) ──────────────────────────────
 
 function renderIssueFormDaily(container, depto, formulario, titulo, datos) {
   const issues = datos.issues || [];
   container.innerHTML = dailyFormWrap(titulo, `
+    <button class="btn btn-outline" onclick="saveSinNovedadForm('${depto}','${formulario}','Sin incidencias')">Sin incidencias hoy</button>
     <div id="df_issues_list">
       ${issues.map((iss, i) => issueRow(i, iss)).join('')}
     </div>
@@ -2931,6 +2883,8 @@ function renderIssueFormDaily(container, depto, formulario, titulo, datos) {
       const problema = r.querySelector('.iss-prob')?.value?.trim();
       if (problema) list.push({
         problema,
+        cliente: r.querySelector('.iss-cliente')?.value || '',
+        motivo: r.querySelector('.iss-motivo')?.value?.trim() || '',
         fecha: r.querySelector('.iss-fecha')?.value || '',
         comentario: r.querySelector('.iss-com')?.value?.trim() || ''
       });
@@ -2941,14 +2895,14 @@ function renderIssueFormDaily(container, depto, formulario, titulo, datos) {
   // Load linked tasks
   setTimeout(async () => {
     const tasks = await apiFetch('/api/planner/actividades?depto=' + depto);
-    const linked = (tasks || []).filter(t => t.origen_formulario === formulario);
+    const linked = (tasks || []).filter(t => plannerFormOf(t) === formulario);
     const tc = document.getElementById('df_issue_tasks');
     if (!tc) return;
     if (linked.length === 0) {
       tc.innerHTML = '<p style="font-size:12px;color:var(--muted)">Sin actividades vinculadas</p>';
     } else {
       tc.innerHTML = '<table style="font-size:12px;width:100%"><thead><tr><th>ID</th><th>Titulo</th><th>Responsable</th><th>Estatus</th><th>Fecha limite</th></tr></thead><tbody>' +
-        linked.slice(0, 20).map(t => '<tr><td style="font-family:monospace;font-size:11px">' + esc(t.id) + '</td><td>' + esc(t.titulo || '') + '</td><td style="color:var(--muted)">' + esc(t.responsable_nombre || '') + '</td><td><span class="badge ' + (t.estatus || 'sin_empezar') + '" style="font-size:10px">' + (t.estatus || '') + '</span></td><td>' + (t.fecha_limite || '—') + '</td></tr>').join('') +
+        linked.slice(0, 20).map(t => '<tr><td style="font-family:monospace;font-size:11px">' + esc(t.id) + '</td><td>' + esc(t.titulo || '') + '</td><td style="color:var(--muted)">' + esc(t.responsable_nombre || '') + '</td><td><span class="badge ' + (t.estatus || 'sin_empezar') + '" style="font-size:10px">' + (t.estatus || '') + '</span></td><td>' + (t.fecha_compromiso || '—') + '</td></tr>').join('') +
         '</tbody></table>';
     }
     tc.insertAdjacentHTML('beforeend', '<button class="btn btn-outline btn-sm" onclick="_crearTareaDesdeIssue(\'' + depto + '\',\'' + formulario + '\',\'' + esc(titulo) + '\')" style="margin-top:8px">+ Crear actividad vinculada</button>');
@@ -2958,6 +2912,9 @@ function renderIssueFormDaily(container, depto, formulario, titulo, datos) {
 function issueRow(i, iss) {
   iss = iss || {};
   return '<div class="df-issue-row" style="display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end;margin-bottom:8px">' +
+    (
+      _dailyActiveForm === 'rechazos_cliente' ? '<div class="form-group"><label>Cliente</label><select class="iss-cliente">' + ['SKF','Amsted','Tenneco'].map(c => '<option ' + (c === iss.cliente ? 'selected' : '') + '>' + c + '</option>').join('') + '</select></div><div class="form-group"><label>Motivo</label><input class="iss-motivo" value="' + esc(iss.motivo || '') + '"></div>' : ''
+    ) +
     '<div class="form-group" style="margin:0"><label style="font-size:11px">Problema</label><input type="text" class="iss-prob" value="' + esc(iss.problema || '') + '"></div>' +
     '<div class="form-group" style="margin:0"><label style="font-size:11px">Fecha</label><input type="date" class="iss-fecha" value="' + (iss.fecha || '') + '"></div>' +
     '<div class="form-group" style="margin:0"><label style="font-size:11px">Comentario</label><input type="text" class="iss-com" value="' + esc(iss.comentario || '') + '"></div>' +
@@ -2968,26 +2925,8 @@ function addIssueRow() {
 }
 
 async function _crearTareaDesdeIssue(depto, formulario, titulo) {
-  const nombre = prompt('Titulo de la actividad:');
-  if (!nombre || !nombre.trim()) return;
-  const res = await apiFetch('/api/planner/actividades', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      titulo: nombre.trim(),
-      departamento: depto,
-      origen_formulario: formulario,
-      descripcion: 'Creada desde daily: ' + titulo,
-      urgencia: 'media'
-    })
-  });
-  if (res) {
-    alert('Actividad creada: ' + (res.id || ''));
-    // Refresh the tasks section
-    const deptoId = _currentView.replace('daily-', '');
-    const activeTab = document.querySelector('#dailyTabs .tab.active');
-    if (activeTab) selectDailyForm(deptoId, activeTab.dataset.form);
-  }
+  const datos = _currentDailyGetData ? _currentDailyGetData() : {};
+  openNewActModal({ departamento: depto, titulo, descripcion: (datos.issues || []).map(i => [i.cliente, i.problema, i.motivo, i.fecha, i.comentario].filter(Boolean).join(' · ')).join('\n'), correlacion_daily: { departamento: depto, formulario, fecha: _dailyDate } });
 }
 
 // ── Daily placeholder (para deptos Fase 3-4) ─────────────────────────────────
@@ -3017,7 +2956,7 @@ async function renderEquipo() {
 
   const [staff, disponibles] = await Promise.all([
     apiFetch('/api/planner/staff'),
-    apiFetch('/api/planner/staff/disponibles')
+    apiFetch('/api/planner/staff/disponibles?todos=1')
   ]);
   if (!disponibles) { m.innerHTML = '<div class="empty-state"><p>Error cargando usuarios</p></div>'; return; }
 
@@ -3118,10 +3057,14 @@ async function guardarAsignacion(userId) {
 let _dashData = null;
 
 async function renderDashboard() {
+  _ds.loadRequest = (_ds.loadRequest || 0) + 1;
+  _ds.slides = [];
+  _ds.deptoId = '';
+  disposePlannerCharts();
   const m = document.getElementById('mainContent');
   m.innerHTML = '<div class="spinner"></div>';
 
-  _dashData = await apiFetch('/api/planner/dashboard/resumen');
+  _dashData = await apiFetch('/api/planner/dashboard/resumen?fecha=' + (_ds.fecha || todayMx()));
   if (!_dashData) return;
 
   const g = _dashData.global;
@@ -3134,7 +3077,7 @@ async function renderDashboard() {
   m.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="color:var(--primary);margin:0">Dashboard Ejecutivo</h3>
-      <span style="font-size:12px;color:var(--muted)">${_dashData.fecha}</span>
+      <input type="date" aria-label="Fecha del dashboard" value="${_dashData.fecha}" onchange="if(this.value){_ds.fecha=this.value;renderDashboard()}">
     </div>
 
     <!-- KPIs globales -->
@@ -3228,7 +3171,7 @@ async function loadWeeklyChart(deptoId) {
   if (!card) return;
   const di = DEPTOS.find(x => x.id === deptoId) || {};
   card.innerHTML = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;justify-content:center"><span style="font-size:18px">' + (di.icon||'') + '</span><b style="font-size:13px;color:var(--primary)">' + (di.nombre||deptoId) + '</b></div><div class="spinner"></div><div style="font-size:11px;color:var(--muted);margin-top:6px">Cargando...</div>';
-  const data = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal');
+  const data = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal?fecha=' + (_dashData?.fecha || todayMx()));
   if (!data) { card.innerHTML = '<div style="color:var(--red);font-size:12px;padding:16px">Error al cargar datos</div><button class="btn btn-outline btn-sm" onclick="loadWeeklyChart(\'' + deptoId + '\')" style="font-size:11px">Reintentar</button>'; return; }
   const canvasId = 'weekChart_' + deptoId;
   const intCanvasId = 'weekIntChart_' + deptoId;
@@ -3387,6 +3330,7 @@ var _ds = { deptoId: '', fecha: '', slides: [], idx: 0 };
 // Keyboard nav
 document.addEventListener('keydown', function(e) {
   if (!_ds.slides.length || _currentView !== 'dashboard') return;
+  if (document.querySelector('.modal-overlay.open') || e.target.closest?.('button,[contenteditable="true"]')) return;
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); if (_ds.idx < _ds.slides.length - 1) { _ds.idx++; paintSlide(); } }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); if (_ds.idx > 0) { _ds.idx--; paintSlide(); } }
@@ -3403,6 +3347,7 @@ var DS_LABELS = {
   cumplimiento:'¿Cumplimiento 100%?', porcentaje:'% Cumplimiento',
   quien_no_cumplio:'¿Quién no cumplió?',
   // PTAR
+  cantidad_lodos_kg:'Cantidad de lodos (kg)', cantidad_piezas:'Scrap del día (piezas)',
   litros_ingresados_ptar:'Litros ingresados PTAR', litros_ingresados_pipas:'Litros ingresados pipas',
   litros_tratados_ptar:'Litros tratados PTAR', litros_tratados_salida:'Litros tratados salida',
   retrolavado:'Retrolavado',
@@ -3537,9 +3482,9 @@ function dsCustomRender(formId, datos) {
       if (isPiezas) {
         var proc = Number(v.procesadas) || 0;
         var obj = Number(v.objetivo) || 0;
-        var okPz = obj > 0 ? proc >= obj : true;
-        var borderPz = okPz ? '2px solid var(--green)' : '2px solid var(--red)';
-        var bgPz = okPz ? '#f0fdf4' : '#fef2f2';
+        var okPz = obj > 0 ? proc >= obj : null;
+        var borderPz = okPz == null ? '1px solid var(--line)' : okPz ? '2px solid var(--green)' : '2px solid var(--red)';
+        var bgPz = okPz == null ? '#f5f7f8' : okPz ? '#f0fdf4' : '#fef2f2';
         h += '<div style="border:' + borderPz + ';border-radius:10px;padding:14px;text-align:center;background:' + bgPz + '">' +
           '<b style="font-size:15px;color:var(--primary)">' + l + '</b>' +
           '<div style="margin-top:8px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">Procesadas</div>' +
@@ -3552,7 +3497,7 @@ function dsCustomRender(formId, datos) {
         Object.keys(v).forEach(function(k) {
           var val = v[k];
           var isPct = /eficiencia|calidad|disponibilidad/.test(k);
-          var color = isPct ? (Number(val) >= 85 ? 'var(--green)' : Number(val) >= 70 ? 'var(--orange)' : 'var(--red)') : 'var(--primary)';
+          var color = isPct ? plannerMetricColor(l, k, val) : 'var(--primary)';
           h += '<div style="margin-top:6px"><div style="font-size:9px;color:var(--muted);text-transform:uppercase;font-weight:700">' + esc(dsLabel(k)) + '</div>' +
             '<div style="font-size:28px;font-weight:800;color:' + color + '">' + val + (isPct ? '%' : '') + '</div></div>';
         });
@@ -3587,6 +3532,7 @@ function dsCustomRender(formId, datos) {
         '<div style="font-size:28px;font-weight:800;color:var(--primary);margin-top:4px">' + (datos[p[0]] || 0) + '</div></div>';
     });
     h += '</div>';
+    h += '<section class="planner-lodos-metric"><span>Lodos de PTAR</span><strong>' + plannerFmt(datos.cantidad_lodos_kg, 2) + ' <small>kg</small></strong><p>' + (datos.cantidad_lodos_kg == null ? 'Sin captura de lodos' : 'Cantidad registrada del día') + '</p></section>';
     var r = datos.retrolavado;
     if (r && typeof r === 'object') {
       h += '<div style="padding:12px;border:1.5px solid var(--line);border-radius:8px;margin-bottom:10px">' +
@@ -3656,7 +3602,7 @@ function dsCustomRender(formId, datos) {
       h += '<div style="border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center">' +
         '<b style="font-size:14px;color:var(--primary)">' + l + '</b>' +
         '<div style="font-size:28px;font-weight:800;color:' + (minT > 0 ? 'var(--red)' : 'var(--green)') + ';margin-top:6px">' + minT + '</div>' +
-        '<div style="font-size:10px;color:var(--muted);font-weight:600">min (' + cnt + ' paros)</div></div>';
+        '<div style="font-size:10px;color:var(--muted);font-weight:600">min (' + cnt + ' paros)</div>' + (ld?.por_turno || []).map(t => '<div style="font-size:14px;margin-top:8px">' + esc(t.turno) + ': <b>' + t.minutos + ' min</b></div>').join('') + '</div>';
     });
     h += '</div>';
     return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
@@ -3687,23 +3633,7 @@ function dsCustomRender(formId, datos) {
   }
 
   // ── Ordenes compra con desglose ──
-  if (formId === 'ordenes_compra' && datos.por_estatus) {
-    var rs = datos.resumen || {};
-    h = dsKpiGrid([[rs.total_items||0,'Items totales','var(--primary)'],[rs.pos_activas||0,'POs activas','var(--orange)']]);
-    datos.por_estatus.forEach(function(g) {
-      h += '<div style="margin-bottom:10px;border:1px solid var(--line);border-radius:8px;padding:10px">' +
-        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
-        '<b style="font-size:13px;color:var(--primary)">' + esc(g.estatus) + '</b>' +
-        '<span class="badge en_proceso" style="font-size:11px">' + g.count + ' items</span></div>';
-      if (g.items && g.items.length) {
-        h += '<table style="font-size:11px;width:100%"><thead><tr><th>Descripcion</th><th>Cant.</th><th>PO</th><th>Proveedor</th></tr></thead><tbody>' +
-          g.items.map(function(i) { return '<tr><td>' + esc(i.descripcion||'') + '</td><td>' + (i.cantidad||'') + ' ' + esc(i.unidad||'') + '</td><td style="font-family:monospace;font-size:10px">' + esc(i.po_folio||'—') + '</td><td style="font-size:10px">' + esc(i.proveedor||'') + '</td></tr>'; }).join('') +
-          '</tbody></table>';
-      }
-      h += '</div>';
-    });
-    return h + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
-  }
+  if (formId === 'ordenes_compra' && datos.por_estatus) return plannerPurchasesHtml(datos) + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
 
   // ── Inventarios criticos con detalle ──
   if (formId === 'inventarios_criticos' && datos.items_detalle) {
@@ -3788,11 +3718,11 @@ function dsActRow(a) {
   var isLate = a.estatus === 'atrasada';
   return '<tr style="' + (isLate ? 'background:#fef2f2;' : '') + '">' +
     '<td style="font-family:monospace;font-size:11px;font-weight:700;color:var(--primary)">' + esc(a.id) + '</td>' +
-    '<td style="font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(a.titulo) + '</td>' +
+    '<td style="font-size:14px;min-width:220px;white-space:normal">' + esc(a.titulo) + '</td>' +
     '<td style="font-size:12px">' + esc(a.responsable) + '</td>' +
-    '<td style="font-size:11px;color:' + (isLate ? 'var(--red)' : 'inherit') + ';font-weight:' + (isLate ? '700' : '400') + '">' + (a.fecha_compromiso || '—') + '</td>' +
-    '<td><span class="badge ' + (isLate ? 'atrasada' : a.estatus) + '">' + (isLate ? a.urgencia : (a.estatus||'').replace('_',' ')) + '</span></td>' +
-    '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 10px">Ver</button></td></tr>';
+    '<td style="font-size:11px;color:' + (isLate ? 'var(--red)' : 'inherit') + ';font-weight:' + (isLate ? '700' : '400') + '">' + plannerDate(a.fecha_compromiso) + '</td>' +
+    '<td><span class="badge ' + (isLate ? 'atrasada' : a.estatus) + '">' + plannerLabel(isLate ? 'atrasada' : a.estatus) + '</span></td>' +
+    '<td><button class="btn btn-primary btn-sm" onclick="verDetalle(\'' + a.id + '\')" style="font-size:10px;padding:3px 10px">Ver</button></td></tr>' + plannerActivityComments(a);
 }
 
 function dsChangeDate(delta) {
@@ -3802,21 +3732,29 @@ function dsChangeDate(delta) {
   openDeptoSlides(_ds.deptoId);
 }
 
-async function openDeptoSlides(deptoId) {
+async function openDeptoSlides(deptoId, options = {}) {
   var m = document.getElementById('mainContent');
-  m.innerHTML = '<div class="spinner"></div>';
+  const previous = options.preserve && _ds.deptoId === deptoId ? { idx: _ds.idx, slides: _ds.slides, weeklyData: _ds.weeklyData, scroll: m.scrollTop } : null;
+  if (!previous) { m.innerHTML = '<div class="spinner"></div>'; _ds.newActivityId = null; _ds.pendingMessage = ''; }
+  const requestId = _ds.loadRequest = (_ds.loadRequest || 0) + 1;
 
   if (!_ds.fecha) _ds.fecha = yesterdayMx();
   var data = await apiFetch('/api/planner/dashboard/' + deptoId + '?fecha=' + _ds.fecha);
-  if (!data) { renderDashboard(); return; }
+  if (requestId !== _ds.loadRequest) return;
+  if (!data) { if (previous) throw Error('No se pudo actualizar la presentación'); renderDashboard(); return; }
 
+  _plannerObjectives = data.objetivos || {};
   _ds.deptoId = deptoId;
   _ds.fecha = data.fecha;
+  _ds.piezasSemana = data.piezas_semana;
+  _ds.scrapSemana = data.scrap_semana;
   _ds.slides = [];
 
   var di = DEPTOS.find(function(x) { return x.id === deptoId; }) || {};
   var forms = data.formularios || [];
   var acts = data.actividades || {};
+  _ds.comprasPendientes = data.compras_pendientes;
+  _ds.activities = plannerPendingActivities(acts);
   var llenados = forms.filter(function(f) { return f.llenado; }).length;
   var pct = forms.length ? Math.round(llenados / forms.length * 100) : 0;
 
@@ -3831,7 +3769,7 @@ async function openDeptoSlides(deptoId) {
     '<h2 style="color:var(--primary);margin:0 0 20px;font-size:22px">' + esc(di.nombre||deptoId) + '</h2>' +
     '<div style="display:flex;justify-content:center;gap:14px;margin-bottom:26px;flex-wrap:wrap">' +
       kpiCard(pct + '%', 'Daily (' + llenados + '/' + forms.length + ')', pct===100?'var(--green)':'var(--orange)') +
-      kpiCard(acts.total||0, 'Actividades', 'var(--primary)') +
+      kpiCard(acts.total||0, 'Actividades abiertas', 'var(--primary)') +
       ((acts.atrasadas||[]).length ? kpiCard(acts.atrasadas.length, 'Atrasadas', 'var(--red)') : '') +
       ((acts.pendientes||[]).length ? kpiCard(acts.pendientes.length, 'Pendientes', 'var(--orange)') : '') +
     '</div>' +
@@ -3850,14 +3788,16 @@ async function openDeptoSlides(deptoId) {
   _ds.slides.push({ titulo: 'Resumen', tipo: 'resumen', html: s0 });
 
   // ── Slides 1..N: formularios ──
-  forms.forEach(function(f) {
+  forms.forEach(function(savedForm) {
+    const slideNotes = plannerSplitSlideNotes(savedForm.datos);
+    const f = { ...savedForm, datos: slideNotes.datos };
     var fm = (DAILY_FORMS_META[deptoId]||[]).find(function(x) { return x.id === f.id; });
     var nombre = fm ? fm.icon + ' ' + fm.nombre : f.id;
     var isTaskForm = DS_TASK_FORMS.indexOf(f.id) >= 0;
     var html;
     if (isTaskForm) {
       // Formularios tipo actividad — no guardan datos, gestionan tareas
-      var linkedActs = (acts.pendientes||[]).concat(acts.atrasadas||[]).filter(function(a) { return a.origen_formulario === f.id; });
+      var linkedActs = (acts.pendientes||[]).concat(acts.atrasadas||[]).filter(function(a) { return plannerFormOf(a) === f.id; });
       var dailyComment = f.datos && f.datos.comentarios ? f.datos.comentarios : '';
       var sinNov = f.datos && f.datos.sin_novedad;
       if (linkedActs.length === 0 && (sinNov || f.llenado)) {
@@ -3877,6 +3817,12 @@ async function openDeptoSlides(deptoId) {
           (dailyComment ? '<div style="margin-top:14px;padding:10px 16px;background:var(--bg);border:1px solid var(--line);border-radius:8px;font-size:13px;text-align:left"><b style="font-size:10px;color:var(--muted);text-transform:uppercase">Comentarios</b><br>' + esc(dailyComment) + '</div>' : '') +
           '</div>';
       }
+    } else if (f.id === 'ordenes_compra' && _ds.comprasPendientes) {
+      html = plannerPurchasesHtml(_ds.comprasPendientes);
+    } else if (f.id === 'scrap' && _ds.scrapSemana) {
+      html = plannerScrapSummary(_ds.scrapSemana);
+    } else if (f.id === 'piezas_procesadas' && _ds.piezasSemana) {
+      html = plannerPiecesSlide(_ds.piezasSemana, f.datos || {});
     } else if (!f.llenado) {
       html = '<div style="text-align:center;padding:50px 0">' +
         '<div style="width:80px;height:80px;border-radius:50%;border:3px dashed var(--line);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:32px;color:var(--muted)">○</div>' +
@@ -3890,9 +3836,18 @@ async function openDeptoSlides(deptoId) {
           '<span style="background:#f0fdf4;color:var(--green);padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700">LLENADO</span>' +
           '<span style="font-size:12px;color:var(--muted)">' + esc(f.llenado_por||'') + ' &middot; ' + (f.hora||'') + '</span>' +
         '</div></div>' +
-        (dsCustomRender(f.id, f.datos || {}) || dsFormBody(f.datos || {})) + '</div>';
+        plannerPresentation(f.id, f.datos || {}) + '</div>';
     }
-    _ds.slides.push({ titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html: html });
+    html += plannerSlideNotes(slideNotes.notes);
+    const openForForm = (acts.pendientes || []).concat(acts.atrasadas || []).filter(a => plannerFormOf(a) === f.id && !['cerrada', 'cancelada'].includes(a.estatus));
+    if (isTaskForm || openForForm.length) html += plannerOpenTasks(openForForm);
+    const slide = { titulo: nombre, tipo: isTaskForm ? 'tareas' : (f.llenado ? 'llenado' : 'pendiente'), html };
+    if (f.id === 'cpk') {
+      slide.tipo = 'cpk';
+      slide.cpk = { range: f.datos.periodo?.ini && f.datos.periodo?.fin ? f.datos.periodo : plannerCpkCalendarRange(data.fecha), loaded: false, loading: false, notesHtml: plannerSlideNotes(slideNotes.notes), tasksHtml: openForForm.length ? plannerOpenTasks(openForForm) : '' };
+      slide.html = plannerCpkSlideHtml(slide);
+    }
+    _ds.slides.push(slide);
   });
 
   // ── Slide semanal: boton para cargar graficas bajo demanda ──
@@ -3910,13 +3865,13 @@ async function openDeptoSlides(deptoId) {
   var ah = '<div style="padding:6px 0">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--line)">' +
     '<h3 style="color:var(--primary);margin:0;font-size:17px">Actividades del area</h3>' +
-    '<button class="btn btn-accent btn-sm" onclick="openNewActModal({departamento:\'' + deptoId + '\'})">+ Nueva actividad</button></div>';
+    '<button class="btn btn-accent btn-sm" onclick="openPresentationActivity()">+ Nueva actividad</button></div>';
   if ((acts.atrasadas||[]).length) {
     ah += '<div style="margin-bottom:18px">' +
       '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px"><div style="width:4px;height:18px;background:var(--red);border-radius:2px"></div>' +
       '<h4 style="font-size:13px;color:var(--red);margin:0">Atrasadas (' + acts.atrasadas.length + ')</h4></div>' +
       '<div style="border-radius:8px;overflow:hidden;border:1px solid var(--line)">' +
-      '<table style="font-size:12px;width:100%;margin:0"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Urgencia</th><th></th></tr></thead><tbody>' +
+      '<table style="font-size:12px;width:100%;margin:0"><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estado</th><th></th></tr></thead><tbody>' +
       acts.atrasadas.map(dsActRow).join('') + '</tbody></table></div></div>';
   }
   if ((acts.pendientes||[]).length) {
@@ -3932,74 +3887,99 @@ async function openDeptoSlides(deptoId) {
   }
   ah += '</div>';
   _ds.slides.push({ titulo: 'Actividades', tipo: 'actividades', html: ah });
+  for (const [titulo, rows] of [['Por cerrar esta semana', acts.por_cerrar_semana || []], ['Sin fecha compromiso', acts.sin_fecha || []]]) {
+    _ds.slides.push({ titulo, tipo: 'actividades', html: '<h3>' + titulo + '</h3>' + (rows.length ? '<table><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Compromiso</th><th>Estado</th><th></th></tr></thead><tbody>' + rows.map(dsActRow).join('') + '</tbody></table>' : '<div class="empty">Sin pendientes en este grupo.</div>') });
+  }
 
-  _ds.idx = 0;
+  _ds.idx = previous ? Math.min(previous.idx, _ds.slides.length - 1) : 0;
+  if (previous) {
+    const oldCpk = previous.slides.find(s => s.cpk);
+    const newCpk = _ds.slides.find(s => s.cpk);
+    if (oldCpk && newCpk) {
+      newCpk.cpk = { ...oldCpk.cpk, loaded: oldCpk.cpk.loaded && !oldCpk.cpk.loading, loading: false, notesHtml: newCpk.cpk.notesHtml, tasksHtml: newCpk.cpk.tasksHtml };
+      newCpk.html = plannerCpkSlideHtml(newCpk);
+    }
+    if (previous.weeklyData) {
+      _ds.weeklyData = previous.weeklyData;
+      const weekly = _ds.slides.find(s => s.tipo === 'semanal');
+      const oldWeekly = previous.slides.find(s => s.tipo === 'semanal');
+      if (weekly && oldWeekly) weekly.html = oldWeekly.html;
+    }
+  }
   paintSlide();
+  if (previous) m.scrollTop = previous.scroll;
+}
+
+function plannerPurchaseActivityAttention(a) {
+  return !['cerrada','cancelada'].includes(a.estatus) && (a.urgencia === 'alta' || (a.fecha_compromiso && a.fecha_compromiso < todayMx()));
+}
+function plannerPendingActivities(groups) {
+  const unique = new Map();
+  for (const a of [...(groups.atrasadas || []), ...(groups.pendientes || []), ...(groups.sin_fecha || [])]) {
+    if (a.id && !['cerrada', 'cancelada'].includes(a.estatus) && (_ds.deptoId !== 'compras' || plannerPurchaseActivityAttention(a))) unique.set(a.id, a);
+  }
+  return [...unique.values()].sort((a,b) => (b.estatus === 'atrasada') - (a.estatus === 'atrasada') || (a.fecha_compromiso || 'z').localeCompare(b.fecha_compromiso || 'z'));
+}
+function plannerPendingPanel() {
+  const area = DEPTOS.find(d => d.id === _ds.deptoId) || {};
+  const rows = [...(_ds.activities || [])].filter(a => _ds.deptoId !== 'compras' || plannerPurchaseActivityAttention(a)).sort((a,b) => (b.id === _ds.newActivityId) - (a.id === _ds.newActivityId));
+  return `<aside id="plannerPendingPanel" class="planner-pending-panel" aria-label="Actividades pendientes del departamento">
+    <div class="planner-pending-heading"><h2>${_ds.deptoId === 'compras' ? 'Vencidas o urgentes' : 'Pendientes'} · ${plannerFmt(rows.length, 0)} <span> / ${esc(area.nombre || _ds.deptoId)}</span></h2><button class="planner-pending-add" type="button" aria-label="Agregar actividad a ${esc(area.nombre || _ds.deptoId)}" title="Agregar actividad" onclick="openPresentationActivity()">+</button></div>
+    ${rows.length ? '<ul class="planner-pending-list">' + rows.map(a => `<li><button type="button" class="planner-pending-item ${a.estatus === 'atrasada' ? 'late' : ''} ${a.id === _ds.newActivityId ? 'is-new' : ''}" onclick="verDetalle('${esc(a.id)}')"><strong>${a.id === _ds.newActivityId ? '<span class="planner-pending-new">Nueva</span>' : ''}${esc(a.titulo)}</strong><small>${esc(a.responsable || a.responsable_nombre || 'Sin responsable')} · ${a.fecha_compromiso ? plannerDate(a.fecha_compromiso) : 'Sin fecha'} · ${plannerLabel(a.estatus)}</small></button></li>`).join('') + '</ul>' : '<p class="planner-pending-empty">' + (_ds.deptoId === 'compras' ? 'Sin actividades vencidas o urgentes.' : 'Sin actividades pendientes.') + ' Puedes agregar una con +.</p>'}
+    <p class="planner-pending-message" role="status">${esc(_ds.pendingMessage || '')}</p></aside>`;
+}
+function openPresentationActivity() {
+  return openNewActModal({ departamento: _ds.deptoId, presentation: true, urgencia: _ds.deptoId === 'compras' ? 'alta' : 'media' });
+}
+function showCreatedPresentationActivity(act) {
+  if (!document.getElementById('plannerPendingPanel')) return false;
+  if (act.departamento === _ds.deptoId) {
+    _ds.activities = [act, ...(_ds.activities || []).filter(a => a.id !== act.id)];
+    _ds.newActivityId = act.id;
+    _ds.pendingMessage = _ds.deptoId === 'compras' && !plannerPurchaseActivityAttention(act) ? 'Actividad guardada. Se mostrará aquí cuando esté vencida o tenga urgencia alta.' : 'Actividad agregada: ' + act.id;
+  } else {
+    _ds.pendingMessage = 'Actividad agregada a ' + (DEPTOS.find(d => d.id === act.departamento)?.nombre || act.departamento);
+  }
+  document.getElementById('plannerPendingPanel').outerHTML = plannerPendingPanel();
+  return true;
+}
+async function refreshPresentationActivities() {
+  if (!document.getElementById('plannerPendingPanel')) return;
+  try { await openDeptoSlides(_ds.deptoId, { preserve: true }); }
+  catch (_) {
+    _ds.pendingMessage = 'Actividad guardada. No se pudo actualizar el resto de la presentación.';
+    const panel = document.getElementById('plannerPendingPanel');
+    if (panel) panel.outerHTML = plannerPendingPanel();
+  }
 }
 
 function paintSlide() {
-  var m = document.getElementById('mainContent');
-  var s = _ds.slides[_ds.idx];
-  var total = _ds.slides.length;
-  var di = DEPTOS.find(function(x) { return x.id === _ds.deptoId; }) || {};
-  var deptoId = _ds.deptoId;
-
-  // ── Header bar ──
-  var hdr = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:8px 14px;background:var(--card);border:1px solid var(--line);border-radius:10px">' +
-    '<button class="btn btn-outline btn-sm" onclick="renderDashboard()" style="padding:5px 10px;font-size:12px">← Dashboard</button>' +
-    '<div style="width:1px;height:24px;background:var(--line)"></div>' +
-    '<span style="font-size:18px">' + (di.icon||'') + '</span>' +
-    '<b style="color:var(--primary);font-size:14px">' + esc(di.nombre||deptoId) + '</b>' +
-    '<div style="flex:1"></div>' +
-    '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(-1)" style="padding:4px 10px;font-size:15px;font-weight:700" title="Dia anterior">◄</button>' +
-    '<input type="date" value="' + _ds.fecha + '" onchange="_ds.fecha=this.value;openDeptoSlides(\'' + deptoId + '\')" style="padding:5px 10px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;font-weight:600;color:var(--primary);cursor:pointer">' +
-    '<button class="btn btn-outline btn-sm" onclick="dsChangeDate(1)" style="padding:4px 10px;font-size:15px;font-weight:700" title="Dia siguiente">►</button>' +
-    '<div style="width:1px;height:24px;background:var(--line);margin:0 4px"></div>' +
-    '<span style="font-size:13px;color:var(--muted);font-weight:700;min-width:38px;text-align:center">' + (_ds.idx+1) + '/' + total + '</span>' +
-  '</div>';
-
-  // ── Progress bar + dots ──
-  var pctBar = Math.round((_ds.idx / (total - 1)) * 100);
-  var nav = '<div style="margin-bottom:14px">' +
-    '<div style="height:3px;background:var(--line);border-radius:2px;margin-bottom:10px;overflow:hidden"><div style="height:100%;width:' + pctBar + '%;background:var(--accent);border-radius:2px;transition:width .3s ease"></div></div>' +
-    '<div style="display:flex;justify-content:center;gap:4px;flex-wrap:wrap">';
-  _ds.slides.forEach(function(sl, i) {
-    var active = i === _ds.idx;
-    var bg, border;
-    if (active) { bg = 'var(--primary)'; border = 'var(--primary)'; }
-    else if (sl.tipo === 'llenado') { bg = 'var(--green)'; border = 'var(--green)'; }
-    else if (sl.tipo === 'pendiente') { bg = '#e0e4ea'; border = '#e0e4ea'; }
-    else { bg = 'var(--accent)'; border = 'var(--accent)'; }
-    var size = active ? 'width:28px;height:10px' : (sl.tipo === 'resumen' || sl.tipo === 'actividades' ? 'width:18px;height:10px' : 'width:10px;height:10px');
-    nav += '<div onclick="_ds.idx=' + i + ';paintSlide()" style="' + size + ';border-radius:5px;cursor:pointer;transition:all .2s ease;background:' + bg + ';opacity:' + (active?'1':'.65') + '" title="' + esc(sl.titulo) + '"></div>';
-  });
-  nav += '</div></div>';
-
-  // ── Slide content with animation ──
-  var content = '<div id="dsSlideBox" style="background:var(--card);border:1px solid var(--line);border-radius:14px;padding:28px;min-height:340px;animation:dsFadeIn .25s ease">' + s.html + '</div>';
-
-  // ── Footer navigation ──
-  var prevDis = _ds.idx === 0 ? 'opacity:.4;pointer-events:none;' : '';
-  var nextDis = _ds.idx === total - 1 ? 'opacity:.4;pointer-events:none;' : '';
-  var footer = '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px">' +
-    '<button onclick="_ds.idx=Math.max(0,_ds.idx-1);paintSlide()" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);transition:all .15s;' + prevDis + '" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--line)\'">' +
-      '<span style="font-size:16px">←</span> Anterior</button>' +
-    '<div style="display:flex;gap:4px">' +
-      DEPTOS.map(function(d) {
-        var isCur = d.id === deptoId;
-        return '<button onclick="openDeptoSlides(\'' + d.id + '\')" title="' + d.nombre + '" style="width:34px;height:34px;border-radius:8px;border:1.5px solid ' + (isCur?'var(--accent)':'var(--line)') + ';background:' + (isCur?'var(--accent)':'var(--card)') + ';cursor:pointer;font-size:15px;transition:all .15s;display:flex;align-items:center;justify-content:center" onmouseover="if(!' + isCur + ')this.style.borderColor=\'var(--accent)\'" onmouseout="if(!' + isCur + ')this.style.borderColor=\'var(--line)\'">' + d.icon + '</button>';
-      }).join('') +
-    '</div>' +
-    '<button onclick="_ds.idx=Math.min(' + (total-1) + ',_ds.idx+1);paintSlide()" style="display:flex;align-items:center;gap:6px;padding:8px 18px;border:1.5px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;font-size:13px;font-weight:600;color:var(--primary);transition:all .15s;' + nextDis + '" onmouseover="this.style.borderColor=\'var(--accent)\'" onmouseout="this.style.borderColor=\'var(--line)\'">Siguiente <span style="font-size:16px">→</span></button>' +
-  '</div>';
-
-  m.innerHTML = '<style>@keyframes dsFadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}</style>' + hdr + nav + content + footer;
-
-  // Renderizar graficas si es slide semanal
-  if (s.tipo === 'semanal' && _ds.weeklyData && typeof Chart !== 'undefined') {
-    setTimeout(function() { dsRenderWeeklyCharts(_ds.weeklyData); }, 80);
-  }
+  const m = document.getElementById('mainContent');
+  const s = _ds.slides[_ds.idx];
+  if (!s) return;
+  disposePlannerCharts();
+  const total = _ds.slides.length;
+  const area = DEPTOS.find(d => d.id === _ds.deptoId) || {};
+  const status = s.tipo === 'pendiente' ? 'Sin captura' : s.tipo === 'llenado' ? 'Captura registrada' : s.tipo === 'tareas' ? 'Seguimiento de actividades' : 'Revisión de staff';
+  m.innerHTML = `<section class="planner-deck">${plannerPendingPanel()}
+    <div class="planner-deck-toolbar"><button class="btn btn-outline" onclick="document.body.classList.remove('planner-focus');renderDashboard()">← Dashboard</button>
+      <div class="planner-date-nav"><button class="btn btn-outline" onclick="dsChangeDate(-1)" aria-label="Día anterior">‹</button><input type="date" aria-label="Fecha de presentación" value="${_ds.fecha}" onchange="if(this.value){_ds.fecha=this.value;openDeptoSlides('${_ds.deptoId}')}"><button class="btn btn-outline" onclick="dsChangeDate(1)" aria-label="Día siguiente">›</button></div>
+      <button class="btn btn-outline" aria-pressed="${document.body.classList.contains('planner-focus')}" onclick="const active=document.body.classList.toggle('planner-focus');this.textContent=active?'Restaurar vista':'Ampliar vista';this.setAttribute('aria-pressed',active)">${document.body.classList.contains('planner-focus') ? 'Restaurar vista' : 'Ampliar vista'}</button>
+    </div>
+    <header class="planner-deck-header"><div><span class="planner-eyebrow">CUESTO · REUNIÓN DE STAFF</span><h1>${area.icon || ''} ${esc(area.nombre || _ds.deptoId)}</h1><p>${esc(s.titulo)}</p></div><div class="planner-deck-status"><span class="planner-status ${s.tipo === 'pendiente' ? 'pending' : ''}">${status}</span><strong>${String(_ds.idx + 1).padStart(2, '0')}<small> / ${total}</small></strong></div></header>
+    <nav class="planner-slide-tabs" aria-label="Diapositivas">${_ds.slides.map((slide, i) => `<button class="${i === _ds.idx ? 'active' : ''}" aria-current="${i === _ds.idx ? 'step' : 'false'}" onclick="_ds.idx=${i};paintSlide()"><span>${i + 1}</span>${esc(slide.titulo)}</button>`).join('')}</nav>
+    <article id="dsSlideBox" class="planner-slide-content">${s.html}</article>
+    <footer class="planner-deck-footer"><button class="btn btn-outline" ${_ds.idx === 0 ? 'disabled' : ''} onclick="_ds.idx--;paintSlide()">← Anterior</button><div><span>${plannerDate(_ds.fecha)} · ${esc(area.nombre || '')}</span><small>Usa las flechas del teclado para avanzar</small></div><button class="btn btn-primary" ${_ds.idx === total - 1 ? 'disabled' : ''} onclick="_ds.idx++;paintSlide()">Siguiente →</button></footer>
+    <nav class="planner-department-tabs" aria-label="Departamentos">${DEPTOS.map(d => `<button class="${d.id === _ds.deptoId ? 'active' : ''}" onclick="openDeptoSlides('${d.id}')">${d.icon} ${esc(d.nombre)}</button>`).join('')}</nav>
+  </section>`;
+  plannerFormatVisibleNumbers(document.getElementById('dsSlideBox'));
+  if (s.cpk && !s.cpk.loaded && !s.cpk.loading) refreshPlannerCpkSlide(s);
+  if (s.tipo === 'semanal' && _ds.weeklyData && typeof Chart !== 'undefined') dsRenderWeeklyCharts(_ds.weeklyData);
 }
+function disposePlannerCharts() {
+  if (typeof Chart !== 'undefined' && Chart.instances) Object.values(Chart.instances).forEach(chart => chart.destroy());
+}
+
 
 async function dsLoadWeeklySlide(deptoId, semanalIdx) {
   // Mostrar spinner en el slide actual
@@ -4007,7 +3987,10 @@ async function dsLoadWeeklySlide(deptoId, semanalIdx) {
     _ds.slides[semanalIdx].html = '<div style="text-align:center;padding:30px 0"><div class="spinner"></div><div style="font-size:12px;color:var(--muted);margin-top:8px">Cargando datos semanales...</div></div>';
     paintSlide();
   }
-  var wdata = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal');
+  const requestedDate = _ds.fecha, requestedPeriod = _ds.periodo;
+  var wdata = null;
+  try { wdata = await apiFetch('/api/planner/dashboard/' + deptoId + '/semanal?fecha=' + requestedDate + '&periodo=' + (requestedPeriod || 'semana')); } catch (_) {}
+  if (_ds.deptoId !== deptoId || _ds.fecha !== requestedDate || _ds.periodo !== requestedPeriod || _currentView !== 'dashboard') return;
   if (!wdata) {
     if (_ds.slides[semanalIdx]) {
       _ds.slides[semanalIdx].html = '<div style="text-align:center;padding:30px 0"><div style="color:var(--red);font-size:14px;margin-bottom:14px">Error al cargar datos</div><button class="btn btn-outline" onclick="dsLoadWeeklySlide(\'' + deptoId + '\',' + semanalIdx + ')" style="font-size:13px">Reintentar</button></div>';
@@ -4017,7 +4000,7 @@ async function dsLoadWeeklySlide(deptoId, semanalIdx) {
   }
   _ds.weeklyData = wdata;
   var int = wdata.integracion || {};
-  var h = '<h3 style="color:var(--primary);margin:0 0 16px;font-size:17px">Resumen Semanal (' + wdata.semana.inicio + ' al ' + wdata.semana.fin + ')</h3>';
+  var h = plannerPeriodControls(deptoId, semanalIdx) + '<h3>Resumen del periodo · ' + plannerDate(wdata.semana.inicio) + ' al ' + plannerDate(wdata.semana.fin) + '</h3>';
   if (int.kpis_por_dia && (deptoId === 'produccion' || deptoId === 'calidad' || deptoId === 'mantenimiento')) {
     h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">';
     h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">% Eficiencia por linea</div><canvas id="dsWkEfi" height="140"></canvas></div>';
@@ -4041,6 +4024,10 @@ async function dsLoadWeeklySlide(deptoId, semanalIdx) {
   if (int.ots_por_dia) {
     h += '<div style="background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;color:var(--primary);margin-bottom:6px">Ordenes de trabajo</div><canvas id="dsWkOTs" height="140"></canvas></div>';
   }
+  if (int.piezas_por_cliente) h += '<div class="planner-form-card"><h4>Piezas procesadas por cliente</h4><canvas id="dsWkClientes"></canvas></div>';
+  if (int.pareto_rechazos?.length) h += '<div class="planner-form-card"><h4>Pareto de causas de rechazo</h4><canvas id="dsWkRechazos"></canvas></div>';
+  h += plannerPeriodComments(wdata);
+  h += plannerRenderPeriodHistory(wdata);
   if (h.indexOf('canvas') < 0) h += '<div style="color:var(--muted);font-size:14px;text-align:center;padding:20px">Sin datos de integracion para este departamento</div>';
   if (_ds.slides[semanalIdx]) _ds.slides[semanalIdx].html = h;
   paintSlide();
@@ -4055,22 +4042,22 @@ function dsRenderWeeklyCharts(wdata) {
 
   if (int.kpis_por_dia) {
     var efiEl = document.getElementById('dsWkEfi');
-    if (efiEl) new Chart(efiEl, { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.kpis_por_dia.map(function(d){return d.kpis[l]?d.kpis[l].eficiencia:null}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+    if (efiEl) new Chart(efiEl, { type:'line', data:{ labels:labels, datasets:plannerKpiDatasets(int, labels, 'eficiencia', COLORS)}, options:lineOpts });
     var dispEl = document.getElementById('dsWkDisp');
-    if (dispEl) new Chart(dispEl, { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.kpis_por_dia.map(function(d){return d.kpis[l]?d.kpis[l].disponibilidad:null}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+    if (dispEl) new Chart(dispEl, { type:'line', data:{ labels:labels, datasets:plannerKpiDatasets(int, labels, 'disponibilidad', COLORS)}, options:lineOpts });
   }
   if (int.calidad_por_dia) {
     var calEl = document.getElementById('dsWkCal');
-    if (calEl) new Chart(calEl, { type:'line', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.calidad_por_dia.map(function(d){return d[l]}),borderColor:COLORS[l],backgroundColor:'transparent',tension:.3,pointRadius:3,spanGaps:true}})}, options:lineOpts });
+    if (calEl) new Chart(calEl, { type:'line', data:{ labels:labels, datasets:plannerKpiDatasets(int, labels, 'calidad', COLORS)}, options:lineOpts });
   }
   if (int.paros_por_dia) {
     var parosEl = document.getElementById('dsWkParos');
     if (parosEl) new Chart(parosEl, { type:'bar', data:{ labels:labels, datasets:[{label:'Min. paro',data:int.paros_por_dia.map(function(d){return d.min_total}),backgroundColor:'rgba(192,57,43,.6)',borderRadius:3}]}, options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}} });
   }
-  if (int.pareto_paros && int.pareto_paros.length) {
-    var paretoEl = document.getElementById('dsWkPareto');
-    if (paretoEl) { var pp = int.pareto_paros; new Chart(paretoEl, { type:'bar', data:{ labels:pp.map(function(p){return p.motivo.slice(0,20)}), datasets:[{label:'Min.',data:pp.map(function(p){return p.min_total}),backgroundColor:'rgba(192,57,43,.6)',borderRadius:3}]}, options:{responsive:true,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{font:{size:9}}},y:{ticks:{font:{size:9}}}}} }); }
-  }
+  plannerParetoChart(document.getElementById('dsWkPareto'), int.pareto_paros || [], 'min_total', 'Minutos');
+  plannerParetoChart(document.getElementById('dsWkRechazos'), int.pareto_rechazos || [], 'cantidad', 'Defectos');
+  if (int.piezas_por_cliente && document.getElementById('dsWkClientes')) new Chart(document.getElementById('dsWkClientes'), { type: 'bar', data: { labels, datasets: ['SKF','Amsted','Tenneco'].map((c, i) => ({ label: c, data: int.piezas_por_cliente.map(d => d[c]), backgroundColor: ['#218b9f','#4d9873','#cb9540'][i] })) }, options: lineOpts });
+
   if (int.piezas_por_dia) {
     var pzasEl = document.getElementById('dsWkPzas');
     if (pzasEl) new Chart(pzasEl, { type:'bar', data:{ labels:labels, datasets:LNS.map(function(l){return{label:l,data:int.piezas_por_dia.map(function(d){return d[l]||0}),backgroundColor:COLORS[l],borderRadius:3}})}, options:{responsive:true,plugins:{legend:{position:'bottom',labels:{boxWidth:10,font:{size:10}}}},scales:{y:{beginAtZero:true,ticks:{font:{size:10}}},x:{ticks:{font:{size:10}}}}} });
@@ -4081,7 +4068,250 @@ function dsRenderWeeklyCharts(wdata) {
   }
 }
 
+// Common presentation and capture helpers.
+function plannerFmt(value, decimals = 1) {
+  return value == null || value === '' || !Number.isFinite(Number(value)) ? '—' : Number(value).toLocaleString('en-US', { maximumFractionDigits: decimals });
+}
+function plannerDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value || '') ? new Date(value + 'T12:00:00Z').toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }) : 'Sin fecha';
+}
+function plannerLabel(value) {
+  return ({ sin_empezar: 'Por iniciar', en_proceso: 'En proceso', atrasada: 'Vencida', pospuesta: 'Pospuesta', cerrada: 'Cerrada', cancelada: 'Cancelada' })[value] || String(value || '').replaceAll('_', ' ');
+}
+function plannerOpenTasks(rows) {
+  return '<section class="planner-open-tasks"><h3>Actividades abiertas · ' + plannerFmt(rows.length, 0) + '</h3>' + (rows.length ? '<table><thead><tr><th>ID</th><th>Actividad</th><th>Responsable</th><th>Fecha compromiso</th><th>Estado</th><th></th></tr></thead><tbody>' + rows.map(dsActRow).join('') + '</tbody></table>' : '<p class="planner-help">Sin actividades abiertas vinculadas.</p>') + '</section>';
+}
+function plannerPiecesSlide(week, datos) {
+  const clientes = ['SKF', 'Amsted', 'Tenneco'];
+  const cards = clientes.map(cliente => {
+    const c = week.clientes[cliente];
+    return `<article class="planner-metric neutral"><span class="planner-eyebrow">${cliente}</span><span>Del día · ${plannerDate(week.hasta)}</span><strong>${plannerFmt(c.dia, 0)}</strong><span>piezas procesadas</span><footer><span>Acumulado semanal</span><b class="planner-week-total">${plannerFmt(c.acumulado, 0)}</b><small>${c.dias_capturados} día(s) con captura hasta la fecha seleccionada</small></footer></article>`;
+  }).join('');
+  const dias = week.clientes.SKF.diario;
+  return `<h3>Piezas procesadas por cliente</h3><p class="planner-help">Semana del ${plannerDate(week.inicio)} al ${plannerDate(week.fin)} · lunes a domingo</p><div class="planner-metric-grid">${cards}</div><table><thead><tr><th>Día</th>${clientes.map(c => '<th>' + c + '</th>').join('')}</tr></thead><tbody>${dias.map((d, i) => `<tr ${d.fecha === week.hasta ? 'class="planner-selected-day"' : ''}><td>${new Date(d.fecha + 'T12:00:00Z').toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'short', timeZone: 'UTC' })}</td>${clientes.map(c => '<td>' + plannerFmt(week.clientes[c].diario[i].piezas, 0) + '</td>').join('')}</tr>`).join('')}</tbody></table><p class="planner-help">— indica que no hay captura. El acumulado suma desde el lunes hasta la fecha seleccionada.</p>${!datos.clientes && ['Baker','L1','L3','L4'].some(l => datos[l]) ? '<details><summary>Captura histórica por línea</summary>' + dsCustomRender('piezas_procesadas', datos) + '</details>' : ''}${dsObsBox(datos.observaciones)}${dsObsBox(datos.comentarios)}`;
+}
+function plannerFormatVisibleNumbers(root) {
+  if (!root) return;
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach(node => {
+    if (node.parentElement.closest('button,input,textarea,select,script,canvas,.planner-slide-comments')) return;
+    const match = node.textContent.match(/^(\s*)(-?\d{4,}(?:\.\d+)?)(\s*(?:%|h|min|piezas)?\s*)$/);
+    if (match) node.textContent = match[1] + plannerFmt(match[2], 2) + match[3];
+  });
+}
+
+function plannerCpkCalendarRange(fecha) {
+  const day = new Date(fecha + 'T12:00:00Z').getUTCDay();
+  const ini = plannerDateShift(fecha, day === 0 ? -6 : 1 - day);
+  return { ini, fin: plannerDateShift(ini, 6) };
+}
+function plannerCpkSlideHtml(slide) {
+  const c = slide.cpk;
+  const controls = `<div class="planner-period-controls"><div class="planner-actions"><label for="slide_cpk_desde">Desde</label><input type="date" id="slide_cpk_desde" value="${esc(c.range.ini)}"><label for="slide_cpk_hasta">Hasta</label><input type="date" id="slide_cpk_hasta" value="${esc(c.range.fin)}"><button class="btn btn-primary" onclick="refreshPlannerCpkSlide()" ${c.loading ? 'disabled' : ''}>Consultar todos los CPK</button></div></div><p class="planner-help">Un mismo periodo para peso de fosfato, rugosidad y altura axial. Esta consulta no modifica la captura Daily.</p>`;
+  let body = c.loading || !c.loaded ? '<div role="status">Consultando todos los CPK…</div>' : c.error ? '<p role="alert" style="color:var(--red)">' + esc(c.error) + '</p>' : `<h3>Periodo consultado: ${plannerDate(c.range.ini)} al ${plannerDate(c.range.fin)}</h3>${dsCustomRender('cpk', { cpk_params: c.data.cpk_params, empaque_partes: c.data.empaque_partes }) || ''}<details style="margin-top:20px"><summary>Titulaciones del mismo periodo</summary>${dsCustomRender('cpk', { titulaciones: c.data.titulaciones }) || '<p>Sin titulaciones en el periodo.</p>'}</details>`;
+  if (c.loaded && !c.error && !c.loading && !c.data.cpk_params.length && !c.data.empaque_partes.length) body += '<p class="planner-help">Sin muestras de CPK en el periodo seleccionado.</p>';
+  return controls + body + c.notesHtml + c.tasksHtml;
+}
+async function refreshPlannerCpkSlide(initialSlide) {
+  const slide = initialSlide || _ds.slides[_ds.idx];
+  if (!slide?.cpk) return;
+  const c = slide.cpk;
+  const range = initialSlide ? c.range : { ini: document.getElementById('slide_cpk_desde')?.value, fin: document.getElementById('slide_cpk_hasta')?.value };
+  if (!range.ini || !range.fin) { alert('Selecciona ambas fechas: Desde y Hasta.'); return; }
+  if (range.ini > range.fin) { alert('La fecha Desde no puede ser posterior a la fecha Hasta.'); return; }
+  const requestId = (c.requestId || 0) + 1;
+  Object.assign(c, { requestId, range, loading: true, error: null });
+  slide.html = plannerCpkSlideHtml(slide);
+  if (_ds.slides[_ds.idx] === slide) paintSlide();
+  try {
+    const qs = '?desde=' + encodeURIComponent(range.ini) + '&hasta=' + encodeURIComponent(range.fin);
+    const [fosfato, empaque] = await Promise.all([apiFetch('/api/planner/integracion/vales/cpk' + qs), apiFetch('/api/planner/integracion/empaque/cpk' + qs)]);
+    if (!fosfato || !empaque) throw new Error('No fue posible consultar todos los CPK. Reintenta.');
+    if ([fosfato, empaque].some(data => data.semana?.ini !== range.ini || data.semana?.fin !== range.fin)) throw new Error('Los periodos recibidos no coinciden. Reintenta la consulta.');
+    if (c.requestId !== requestId) return;
+    c.data = { titulaciones: fosfato.titulaciones || {}, cpk_params: fosfato.cpk_params || [], empaque_partes: (empaque.partes || []).map(p => ({numero_parte:p.numero_parte,muestras:p.muestras,rug_cpk:p.rugosidad?.cpk,rug_na:!!p.rugosidad?.na,alt_cpk:p.altura_axial?.cpk})) };
+  } catch (err) {
+    if (c.requestId !== requestId) return;
+    c.error = err.message;
+  }
+  if (c.requestId !== requestId) return;
+  c.loaded = true; c.loading = false;
+  slide.html = plannerCpkSlideHtml(slide);
+  if (_ds.slides[_ds.idx] === slide) paintSlide();
+}
+
+function plannerDailyCommentField(id, value) {
+  return `<div class="form-group planner-comment-field"><label for="${id}">Comentarios para la reunión</label><textarea id="${id}" rows="4" placeholder="Escribe aquí los comentarios que se mostrarán en el slide de este tema.">${esc(value || '')}</textarea><small>Al guardar, estos comentarios aparecen completos en la presentación.</small></div>`;
+}
+function plannerSplitSlideNotes(datos) {
+  const notes = [];
+  function visit(value, path) {
+    if (Array.isArray(value)) return value.map((row, i) => visit(row, path.concat(row?.nombre || row?.numero_parte || row?.puesto || row?.cliente || 'Registro ' + (i + 1))));
+    if (!value || typeof value !== 'object') return value;
+    const result = {};
+    for (const [key, entry] of Object.entries(value)) {
+      if (['comentarios', 'comentario', 'observaciones', 'observacion', 'notas', 'notes'].includes(key) && typeof entry === 'string') {
+        if (entry.trim()) notes.push({ label: [...path, dsLabel(key)].join(' · '), texto: entry });
+      } else result[key] = visit(entry, path.concat(dsLabel(key)));
+    }
+    return result;
+  }
+  return { datos: visit(datos || {}, []), notes };
+}
+function plannerSlideNotes(notes, title = 'Comentarios y observaciones') {
+  if (!notes.length) return '';
+  return `<section class="planner-slide-comments"><h3>${esc(title)}</h3>${notes.map(n => `<article><h4>${esc(n.label)}</h4><div class="planner-comment-text">${plannerComment(n.texto)}</div></article>`).join('')}</section>`;
+}
+function plannerActivityComments(act) {
+  const groups = [{ nombre: 'Actividad ' + act.id, comentarios: act.comentarios || [] }, ...(act.sub_actividades || []).map(s => ({ nombre: 'Subtarea: ' + (s.nombre || s.id), comentarios: s.comentarios || [] }))].filter(g => g.comentarios.length);
+  if (!groups.length) return '';
+  return '<tr class="planner-activity-comments"><td colspan="6">' + groups.map(g => `<section class="planner-slide-comments"><h4>${esc(g.nombre)} · Comentarios</h4>${g.comentarios.map(c => `<article><header><b>${esc(c.usuario_nombre || 'Sin autor')}</b> · ${plannerDate(c.fecha)} ${esc(c.hora || '')}</header><div class="planner-comment-text">${plannerComment(c.texto || '')}</div></article>`).join('')}</section>`).join('') + '</td></tr>';
+}
+function plannerPeriodComments(wdata) {
+  const rows = (wdata.historico || []).map(r => ({ ...r, notes: plannerSplitSlideNotes(r.datos).notes })).filter(r => r.notes.length);
+  if (!rows.length) return '';
+  const names = DAILY_FORMS_META[wdata.depto] || [];
+  return '<section class="planner-period-comments"><h3>Comentarios del periodo</h3>' + rows.map(r => plannerSlideNotes(r.notes, plannerDate(r.fecha) + ' · ' + (names.find(f => f.id === r.formulario)?.nombre || dsLabel(r.formulario)))).join('') + '</section>';
+}
+async function refreshPlannerCommentSlides() {
+  if (_currentView !== 'dashboard' || !_ds.deptoId) return;
+  await openDeptoSlides(_ds.deptoId, { preserve: true });
+}
+
+function renderScrapForm(container, datos) {
+  container.innerHTML = dailyFormWrap('Scrap · Control diario', `
+    <section class="planner-scrap-capture"><div><span class="planner-eyebrow">SMYA · CONTROL DE SCRAP</span><h3>Cada día cuenta</h3><p>Registra el total de piezas de scrap del día. Usa 0 cuando no hubo scrap.</p></div>
+    <div class="form-group"><label for="df_scrap_piezas">Scrap del día (piezas)</label><input type="number" id="df_scrap_piezas" min="0" step="1" placeholder="Sin captura" value="${datos.cantidad_piezas ?? ''}"></div></section>
+    <div id="scrapWeeklySummary" aria-live="polite"><p class="planner-help">Cargando avance semanal…</p></div>`, () => ({cantidad_piezas: plannerNumber('df_scrap_piezas')}));
+  refreshScrapSummary();
+}
+async function refreshScrapSummary() {
+  const container = document.getElementById('scrapWeeklySummary');
+  if (!container) return;
+  const fecha = _dailyDate;
+  try {
+    const data = await apiFetch('/api/planner/dashboard/smya?fecha=' + fecha);
+    if (document.getElementById('scrapWeeklySummary') !== container || fecha !== _dailyDate) return;
+    container.innerHTML = data?.scrap_semana ? plannerScrapSummary(data.scrap_semana) : '<p class="planner-help">No se pudo cargar el avance semanal.</p>';
+  } catch (_) {
+    if (document.getElementById('scrapWeeklySummary') === container) container.innerHTML = '<p class="planner-help">No se pudo cargar el avance semanal. <button type="button" class="btn btn-outline btn-sm" onclick="refreshScrapSummary()">Reintentar</button></p>';
+  }
+}
+function plannerScrapSummary(week) {
+  const rows = week.diario || [], max = Math.max(1, ...rows.map(d => d.piezas || 0));
+  return `<section class="planner-scrap-summary"><div class="planner-scrap-title"><span class="planner-eyebrow">SMYA · SCRAP</span><h3>Avance semanal</h3><p>${plannerDate(week.inicio)} al ${plannerDate(week.fin)} · lunes a domingo</p></div>
+    <div class="planner-scrap-metrics"><div><span>Scrap del día · ${plannerDate(week.hasta)}</span><strong>${plannerFmt(week.dia, 0)} <small>piezas</small></strong></div><div><span>Acumulado hasta ${plannerDate(week.hasta)}</span><strong>${plannerFmt(week.acumulado, 0)} <small>piezas</small></strong><p>${week.dias_capturados} día(s) con captura</p></div></div>
+    <div class="planner-scrap-days" role="list" aria-label="Scrap diario de lunes a domingo">${rows.map(d => `<article role="listitem" class="${d.fecha === week.hasta ? 'selected' : ''}"><span>${new Date(d.fecha + 'T12:00:00Z').toLocaleDateString('es-MX',{weekday:'short',day:'numeric',timeZone:'UTC'})}</span><strong>${plannerFmt(d.piezas, 0)}</strong><div class="planner-scrap-bar" aria-hidden="true"><i style="width:${d.piezas == null ? 0 : d.piezas / max * 100}%"></i></div><small>${d.piezas == null ? 'Sin captura' : 'piezas registradas'}</small><small>Acum. ${plannerFmt(d.acumulado, 0)}</small></article>`).join('')}</div>
+    <p class="planner-help">El acumulado suma las capturas desde el lunes hasta la fecha seleccionada. — indica que no hay captura; 0 indica que no hubo scrap.</p></section>`;
+}
+
+function plannerSnapshotTable(rows, columns) {
+  if (!rows?.length) return '<p class="planner-help">Sin registros en la captura guardada.</p>';
+  return '<table><thead><tr>' + columns.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr></thead><tbody>' + rows.map(row => '<tr>' + columns.map(c => '<td>' + esc(String(row[c[0]] ?? '—')) + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+}
+function plannerNumber(id) {
+  const value = document.getElementById(id)?.value;
+  return value === '' || value == null ? null : Number(value);
+}
+function plannerDateShift(fecha, dias) {
+  const date = new Date(fecha + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + dias);
+  return date.toISOString().slice(0, 10);
+}
+function plannerFormOf(a) {
+  return a.correlacion_daily?.formulario || (a.origen_formulario === '8d' ? '8ds_abiertos' : a.origen_formulario);
+}
+function plannerComment(text) {
+  return esc(text).replace(/@\[([^\]]+)\]\((\d+)\)/g, '<span class="planner-mention">@$1</span>');
+}
+function plannerMetricColor(linea, key, value) {
+  const target = _plannerObjectives[linea]?.[key];
+  if (value == null || target == null) return 'var(--muted)';
+  return Number(value) >= Number(target) ? 'var(--green)' : 'var(--red)';
+}
+function renderMyTasks(acts) {
+  const uid = currentUser.usuario_id;
+  const table = (title, rows, sub) => `<section class="planner-task-group"><h3>${title} <span class="badge">${rows.length}</span></h3>${rows.length ? `<table><thead><tr><th>Actividad</th><th>Compromiso</th><th>Estatus</th><th></th></tr></thead><tbody>${rows.map(r => `<tr><td><b>${esc(sub ? r.nombre : r.titulo)}</b><br><small>${esc(sub ? r.parentTitle + ' · ' + r.id : r.id)}</small></td><td>${esc(r.fecha_compromiso || 'Sin fecha')}</td><td><span class="badge ${r.estatus}">${esc(r.estatus.replaceAll('_', ' '))}</span></td><td><button class="btn btn-outline btn-sm" onclick="${sub ? `openEditSubModal('${r.parentId}','${r.id}')` : `verDetalle('${r.id}')`}">Abrir</button></td></tr>`).join('')}</tbody></table>` : '<p class="empty">Sin actividades en este grupo.</p>'}</section>`;
+  const mine = acts.filter(a => a.responsable_id === uid);
+  const subs = acts.flatMap(a => (a.mis_subactividades || []).map(s => ({ ...s, parentId: a.id, parentTitle: a.titulo })));
+  const collab = acts.filter(a => a.responsable_id !== uid && (a.colaboradores || []).some(c => c.id === uid));
+  return table('Mis tareas', mine, false) + table('Mis subtareas', subs, true) + (collab.length ? table('Colaboro en', collab, false) : '');
+}
+function renderPiezasClientes(container, datos) {
+  const clientes = ['SKF', 'Amsted', 'Tenneco'];
+  const legacy = ['Baker', 'L1', 'L3', 'L4'].filter(l => datos[l]);
+  container.innerHTML = dailyFormWrap('Piezas procesadas por cliente', `
+    <p class="planner-help">Captura las cantidades de ${esc(_dailyDate)}. Deja el objetivo vacío cuando no esté definido.</p>
+    <div class="planner-metric-grid">${clientes.map(c => `<div class="planner-form-card"><h3>${c}</h3><label>Piezas procesadas</label><input type="number" min="0" id="pz_${c}" value="${datos.clientes?.[c]?.procesadas ?? ''}"><label>Objetivo del día</label><input type="number" min="0" id="obj_${c}" value="${datos.clientes?.[c]?.objetivo ?? ''}"></div>`).join('')}</div>
+    ${legacy.length ? `<details><summary>Registro anterior por línea</summary><p>Estos valores se conservan; no se asignan automáticamente a un cliente.</p>${legacy.map(l => `<p>${l}: ${datos[l].procesadas ?? '—'} piezas</p>`).join('')}</details>` : ''}
+    <label>Observaciones</label><textarea id="df_obs_pz">${esc(datos.observaciones || '')}</textarea>`, () => ({ ...datos,
+      clientes: Object.fromEntries(clientes.map(c => [c, { procesadas: plannerNumber('pz_' + c), objetivo: plannerNumber('obj_' + c) }])),
+      observaciones: document.getElementById('df_obs_pz').value.trim()
+    }));
+}
+async function renderReprocesosCalculados(container, datos) {
+  const result = await apiFetch('/api/planner/integracion/calidad/reprocesos?fecha=' + _dailyDate);
+  if (!result) return;
+  const detalle = result.detalle;
+  container.innerHTML = dailyFormWrap('Reprocesos del día', `<p class="planner-help">Se calcula con las piezas rechazadas y procesadas del formulario Rechazos internos. Sin denominador se muestra “Sin datos”.</p><div class="planner-metric-grid">${Object.entries(detalle).map(([l, d]) => `<div class="planner-form-card"><h3>${l}</h3><strong class="planner-big-number">${d.porcentaje == null ? '—' : d.porcentaje + '%'}</strong><p>${d.rechazadas ?? '—'} rechazadas / ${d.procesadas ?? '—'} procesadas</p></div>`).join('')}</div><label>Observaciones</label><textarea id="df_obs_rep">${esc(datos.observaciones || '')}</textarea>`, () => ({ detalle, ...Object.fromEntries(Object.entries(detalle).map(([l, d]) => [l, d.porcentaje])), observaciones: document.getElementById('df_obs_rep').value.trim() }));
+}
+function createDailyTask(depto, form, titulo) {
+  const datos = _currentDailyGetData ? _currentDailyGetData() : {};
+  openNewActModal({ titulo, descripcion: [datos.que_paso, datos.que_se_hizo, datos.quien_no_cumplio].filter(Boolean).join('\n'), departamento: depto, correlacion_daily: { departamento: depto, formulario: form, fecha: _dailyDate } });
+}
+function plannerTaskLinksButton(depto, form) {
+  return `<div class="planner-actions"><button class="btn btn-accent" onclick="createDailyTask('${depto}','${form}','Seguimiento ${form.replaceAll('_', ' ')}')">Crear actividad de seguimiento</button><button class="btn btn-outline" onclick="viewDailyLinkedTasks('${depto}','${form}')">Ver actividades vinculadas</button></div>`;
+}
+async function viewDailyLinkedTasks(depto, form) {
+  const acts = await apiFetch('/api/planner/actividades?depto=' + depto);
+  if (!acts) return;
+  const rows = acts.filter(a => plannerFormOf(a) === form);
+  document.getElementById('linkedTasksModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend', `<div class="modal-overlay open" id="linkedTasksModal"><div class="modal-box wide"><div class="modal-header"><h3>Actividades vinculadas</h3><button onclick="closeModal('linkedTasksModal')">Cerrar</button></div><div class="modal-body">${rows.length ? rows.map(a => `<p><button class="btn btn-outline" onclick="closeModal('linkedTasksModal');verDetalle('${a.id}')">${esc(a.id)} · ${esc(a.titulo)}</button> ${esc(a.estatus)}</p>`).join('') : '<p>Sin actividades vinculadas.</p>'}</div></div></div>`);
+}
+function plannerHistoryMarkup(rows) {
+  return rows.map(r => `<article class="planner-history-entry"><div><b>${esc(r.fecha)}</b> · ${esc(r.llenado_por_nombre || '')} <span>${esc(r.formulario || '')}</span></div>${formatDailyDatos(r.datos || {})}${(r.revisiones || []).length ? `<details><summary>${r.revisiones.length} versiones anteriores</summary>${r.revisiones.map(v => `<div class="planner-revision"><b>${esc(v.fecha_llenado)} ${esc(v.hora_llenado)} · ${esc(v.llenado_por_nombre)}</b>${formatDailyDatos(v.datos || {})}</div>`).join('')}</details>` : ''}</article>`).join('');
+}
+function plannerPresentation(formId, datos) {
+  if (formId === 'piezas_procesadas' && datos.clientes) {
+    return `<div class="planner-metric-grid">${Object.entries(datos.clientes).map(([cliente, d]) => {
+      const defined = d.objetivo != null && d.objetivo > 0 && d.procesadas != null;
+      const state = !defined ? 'neutral' : d.procesadas >= d.objetivo ? 'good' : 'bad';
+      return `<article class="planner-metric ${state}"><span class="planner-eyebrow">${esc(cliente)}</span><strong>${d.procesadas ?? '—'}</strong><span>piezas procesadas</span><footer>${d.objetivo > 0 ? 'Objetivo ' + d.objetivo : 'Sin objetivo definido'}</footer></article>`;
+    }).join('')}</div>` + dsObsBox(datos.observaciones) + dsObsBox(datos.comentarios);
+  }
+  if (formId === 'reprocesos') return `<div class="planner-metric-grid">${['Baker', 'L1', 'L3', 'L4'].map(l => `<article class="planner-metric neutral"><span class="planner-eyebrow">${l}</span><strong>${datos[l] == null ? '—' : datos[l] + '%'}</strong><span>${datos[l] == null ? 'Sin datos suficientes' : 'Reprocesos'}</span></article>`).join('')}</div>` + dsObsBox(datos.comentarios);
+  const result = dsCustomRender(formId, datos) || dsFormBody(datos);
+  return result + (datos.comentarios && !result.includes(esc(datos.comentarios)) ? dsObsBox(datos.comentarios) : '');
+}
+function plannerPeriodControls(depto, idx) {
+  return `<div class="planner-period-controls"><label>Periodo <select id="plannerPeriod" onchange="_ds.periodo=this.value;dsLoadWeeklySlide('${depto}',${idx})"><option value="dia" ${_ds.periodo === 'dia' ? 'selected' : ''}>Día</option><option value="semana" ${!_ds.periodo || _ds.periodo === 'semana' ? 'selected' : ''}>Semana</option><option value="mes" ${_ds.periodo === 'mes' ? 'selected' : ''}>Mes</option></select></label><span>Fecha de referencia: ${plannerDate(_ds.fecha)}</span></div>`;
+}
+function plannerRenderPeriodHistory(wdata) {
+  const rows = (wdata.historico || []).filter(r => ['rechazos_cliente', 'problemas_calidad', 'liberaciones_pendientes', 'reprocesos', 'personal_disponible', 'personal_capacitacion', 'incapacidades'].includes(r.formulario));
+  return `<details class="planner-period-history"><summary>Registros del periodo · ${rows.length}</summary>${rows.length ? plannerHistoryMarkup(rows) : '<p>Sin registros en el periodo seleccionado.</p>'}</details>`;
+}
+function plannerParetoChart(element, rows, key, unit) {
+  if (!element || !rows.length) return;
+  const total = rows.reduce((s, r) => s + Number(r[key] || 0), 0);
+  let accum = 0;
+  new Chart(element, { type: 'bar', data: { labels: rows.map(r => r.motivo), datasets: [
+    { label: unit, data: rows.map(r => r[key]), backgroundColor: '#218b9f', yAxisID: 'y' },
+    { label: '% acumulado', type: 'line', data: rows.map(r => { accum += Number(r[key] || 0); return total ? Math.round(accum / total * 1000) / 10 : 0; }), borderColor: '#ce7c28', yAxisID: 'pct', pointRadius: 3 }
+  ] }, options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: true }, pct: { position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } } } } });
+}
+function plannerKpiDatasets(int, labels, key, colors) {
+  const rows = int.kpis_por_dia || [];
+  return ['Baker', 'L1', 'L3', 'L4'].flatMap(l => [
+    { label: l, data: rows.map(d => d.kpis[l]?.[key] ?? null), borderColor: colors[l], backgroundColor: 'transparent', tension: .2, pointRadius: 3, spanGaps: false },
+    { label: 'Meta ' + l, data: labels.map(() => int.objetivos?.[l]?.[key] ?? null), borderColor: colors[l], borderDash: [5, 5], pointRadius: 0, borderWidth: 1 }
+  ]);
+}
+
 // ── Init ─────────────────────────────────────────────────────────────────────
+if (typeof Chart !== 'undefined') Chart.defaults.locale = 'en-US';
 initApp();
 </script>
 </body>

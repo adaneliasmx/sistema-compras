@@ -6284,6 +6284,7 @@ router._getDailyKpis = function _getDailyKpis(fecha) {
       const totalMins = window.minutos_calculo;
       const dispMins = Math.max(0, totalMins - tParosDisp);
       result['L4'] = {
+        piezas_total: tPz,
         eficiencia: r3(live.eficiencia),
         calidad: tNVQ > 0 ? r3(tBQ / tNVQ) : null,
         capacidad: tPzO > 0 ? r3(tPz / tPzO) : null,
@@ -6320,6 +6321,7 @@ router._getDailyKpis = function _getDailyKpis(fecha) {
     const dTotalMins = dSlots * 60;
     const dDispMins = Math.max(0, dTotalMins - dParosDisp);
     result[lineaLabel] = {
+      piezas_total: dPz,
       eficiencia: r3(dObjElap > 0 ? dCEff / dObjElap : (dCompletedSlots > 0 && dCEff === 0 ? 1 : null)),
       calidad: dNVQ > 0 ? r3(dBQ / dNVQ) : null,
       capacidad: dPzO > 0 ? r3(dPz / dPzO) : null,
@@ -6331,7 +6333,10 @@ router._getDailyKpis = function _getDailyKpis(fecha) {
   addLine('Baker', buildSlotsForBaker);
   addLine('L1', buildSlotsForL1);
 
-  return { fecha: targetDate, kpis: result };
+  return { fecha: targetDate, kpis: result, piezas: Object.fromEntries(Object.entries(result).map(([linea, values]) => [linea, values.piezas_total ?? null])) };
 };
+
+router._getPlannerObjectives = () => Object.fromEntries(['Baker', 'L1', 'L3', 'L4'].map(l => [l, getKpiObjectives(dbProd.read().config || {}, l)]));
+router._getPlannerDefects = fecha => ['Baker', 'L1', 'L3', 'L4'].flatMap(l => buildParetoDefectos(dbProd.read(), l, fecha).map(row => ({ ...row, linea: l })));
 
 module.exports = router;
