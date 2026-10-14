@@ -1107,6 +1107,207 @@ router.get('/resumen/paros', (req, res) => {
   res.json({ total: paros.length, paros });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// GET /resumen/piezas — Piezas procesadas aggregation (scorecard)
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/resumen/piezas', (req, res) => {
+  const { desde, hasta } = req.query;
+  if (!desde || !hasta) return res.status(400).json({ error: 'desde y hasta son requeridos' });
+
+  const pdb = dbProd.read();
+
+  // ── Collect all completed cargas across all lines ──────────────────────────
+  const allCargas = [];
+
+  // L3 / L4 (stored in pdb.cargas with linea field)
+  for (const c of (pdb.cargas || [])) {
+    if (!c.fecha_turno || c.fecha_turno < desde || c.fecha_turno > hasta) continue;
+    if (c.estado !== 'procesado' && c.estado !== 'defecto') continue;
+    const linea = c.linea || 'L3';
+    const piezas = Number(c.cantidad || 0);
+    const semana = c.semana || getISOWeek(new Date(c.fecha_turno + 'T12:00:00'));
+    const mes = c.fecha_turno.slice(0, 7); // YYYY-MM
+    allCargas.push({
+      linea, piezas, ciclos: 1, semana, mes,
+      cliente: c.cliente || 'Sin cliente',
+      componente: c.componente || 'Sin componente',
+      no_skf: null,
+      proceso: c.proceso || 'Sin proceso',
+      sub_proceso: c.acabado || null // L3/L4 use acabado as secondary classification
+    });
+  }
+
+  // Baker & L1
+  for (const suffix of ['baker', 'l1']) {
+    const lineaLabel = suffix === 'baker' ? 'Baker' : 'L1';
+    for (const c of (pdb[`cargas_${suffix}`] || [])) {
+      if (!c.fecha_turno || c.fecha_turno < desde || c.fecha_turno > hasta) continue;
+      if (c.estado !== 'procesado' && c.estado !== 'defecto') continue;
+      const semana = c.semana || getISOWeek(new Date(c.fecha_turno + 'T12:00:00'));
+      const mes = c.fecha_turno.slice(0, 7);
+      const proceso = c.proceso || 'Sin proceso';
+      const sub_proceso = c.sub_proceso || null;
+
+      if (c.herramental_tipo === 'barril' && Array.isArray(c.cavidades)) {
+        // Barrel: each cavity is its own entry with its own client/part
+        for (const cv of c.cavidades) {
+          if (cv.es_vacia) continue;
+          allCargas.push({
+            linea: lineaLabel,
+            piezas: Number(cv.cantidad || 0),
+            ciclos: 0, // ciclo counted once at carga level below
+            semana, mes,
+            cliente: cv.cliente || 'Sin cliente',
+            componente: cv.componente || 'Sin componente',
+            no_skf: cv.no_skf || null,
+            proceso, sub_proceso
+          });
+        }
+        // Count 1 ciclo for the whole barrel carga
+        allCargas.push({
+          linea: lineaLabel, piezas: 0, ciclos: 1, semana, mes,
+          cliente: c.cliente || (c.cavidades.find(cv => !cv.es_vacia) || {}).cliente || 'Sin cliente',
+          componente: '_ciclo_only_', no_skf: null,
+          proceso, sub_proceso
+        });
+      } else {
+        // Rack type
+        const piezas = Number(c.varillas || c.cantidad || 0);
+        allCargas.push({
+          linea: lineaLabel, piezas, ciclos: 1, semana, mes,
+          cliente: c.cliente || 'Sin cliente',
+          componente: c.componente || 'Sin componente',
+          no_skf: c.no_skf || null,
+          proceso, sub_proceso
+        });
+      }
+    }
+  }
+
+  // ── Build period labels ────────────────────────────────────────────────────
+  const weekSet = new Set();
+  const monthSet = new Set();
+  for (const c of allCargas) { weekSet.add(c.semana); monthSet.add(c.mes); }
+  const weeks = [...weekSet].sort((a, b) => a - b);
+  const months = [...monthSet].sort();
+  const weeksLabels = weeks.map(w => 'S' + w);
+  const monthsLabels = months.map(m => {
+    const [y, mo] = m.split('-');
+    const d = new Date(Number(y), Number(mo) - 1, 15);
+    return d.toLocaleDateString('es-MX', { month: 'short' }).replace('.', '') + ' ' + y.slice(2);
+  });
+
+  // ── Aggregation helpers ────────────────────────────────────────────────────
+  function byPeriod(items, periods, periodField) {
+    return periods.map(p => {
+      const match = items.filter(c => c[periodField] === p);
+      return {
+        piezas: match.reduce((s, c) => s + c.piezas, 0),
+        ciclos: match.reduce((s, c) => s + c.ciclos, 0)
+      };
+    });
+  }
+
+  // ── Table 1: por_linea → cliente → parte ───────────────────────────────────
+  const LINEAS = ['Baker', 'L1', 'L3', 'L4'];
+  const por_linea = LINEAS.map(linea => {
+    const lCargas = allCargas.filter(c => c.linea === linea);
+    const totalPiezas = lCargas.reduce((s, c) => s + c.piezas, 0);
+    const totalCiclos = lCargas.reduce((s, c) => s + c.ciclos, 0);
+
+    // Group by client
+    const clienteMap = {};
+    for (const c of lCargas) {
+      if (!clienteMap[c.cliente]) clienteMap[c.cliente] = [];
+      clienteMap[c.cliente].push(c);
+    }
+    const clientes = Object.entries(clienteMap)
+      .map(([nombre, items]) => {
+        // Group by part (no_skf for Baker/L1, componente for L3/L4)
+        const parteMap = {};
+        for (const c of items) {
+          if (c.componente === '_ciclo_only_') continue; // skip ciclo-only entries for part breakdown
+          const key = (linea === 'Baker' || linea === 'L1')
+            ? (c.no_skf || c.componente || 'Sin parte')
+            : (c.componente || 'Sin componente');
+          if (!parteMap[key]) parteMap[key] = { componente: c.componente, items: [] };
+          parteMap[key].items.push(c);
+        }
+        const partes = Object.entries(parteMap).map(([parte, d]) => ({
+          parte,
+          componente: d.items[0]?.componente || parte,
+          piezas: d.items.reduce((s, c) => s + c.piezas, 0),
+          ciclos: d.items.reduce((s, c) => s + c.ciclos, 0),
+          by_week: byPeriod(d.items, weeks, 'semana'),
+          by_month: byPeriod(d.items, months, 'mes')
+        })).sort((a, b) => b.piezas - a.piezas);
+
+        return {
+          nombre,
+          piezas: items.reduce((s, c) => s + c.piezas, 0),
+          ciclos: items.reduce((s, c) => s + c.ciclos, 0),
+          by_week: byPeriod(items, weeks, 'semana'),
+          by_month: byPeriod(items, months, 'mes'),
+          partes
+        };
+      })
+      .sort((a, b) => b.piezas - a.piezas);
+
+    return {
+      linea, piezas: totalPiezas, ciclos: totalCiclos,
+      by_week: byPeriod(lCargas, weeks, 'semana'),
+      by_month: byPeriod(lCargas, months, 'mes'),
+      clientes
+    };
+  });
+
+  // ── Table 2: por_proceso → sub_proceso ─────────────────────────────────────
+  const procesoMap = {};
+  for (const c of allCargas) {
+    if (c.componente === '_ciclo_only_' && c.piezas === 0) continue; // skip ciclo-only for proceso (still count ciclos)
+    const key = c.proceso;
+    if (!procesoMap[key]) procesoMap[key] = [];
+    procesoMap[key].push(c);
+  }
+  const por_proceso = Object.entries(procesoMap)
+    .map(([nombre, items]) => {
+      const subMap = {};
+      for (const c of items) {
+        const sk = c.sub_proceso || '—';
+        if (!subMap[sk]) subMap[sk] = [];
+        subMap[sk].push(c);
+      }
+      const subs = Object.entries(subMap).map(([sub, si]) => ({
+        nombre: sub,
+        piezas: si.reduce((s, c) => s + c.piezas, 0),
+        ciclos: si.reduce((s, c) => s + c.ciclos, 0),
+        by_week: byPeriod(si, weeks, 'semana'),
+        by_month: byPeriod(si, months, 'mes')
+      })).sort((a, b) => b.piezas - a.piezas);
+
+      return {
+        nombre,
+        piezas: items.reduce((s, c) => s + c.piezas, 0),
+        ciclos: items.reduce((s, c) => s + c.ciclos, 0),
+        by_week: byPeriod(items, weeks, 'semana'),
+        by_month: byPeriod(items, months, 'mes'),
+        subs
+      };
+    })
+    .sort((a, b) => b.piezas - a.piezas);
+
+  // ── Filtros disponibles ────────────────────────────────────────────────────
+  const procesos = [...new Set(allCargas.map(c => c.proceso))].sort();
+  const sub_procesos = [...new Set(allCargas.map(c => c.sub_proceso).filter(Boolean))].sort();
+
+  res.json({
+    por_linea, por_proceso,
+    weeks_labels: weeksLabels, months_labels: monthsLabels,
+    weeks, months,
+    filtros: { procesos, sub_procesos }
+  });
+});
+
 // GET /stats/operador-semana?operador_id=X&fecha_ini=Y&fecha_fin=Z
 // Retorna per-dia los ciclos, eficiencia y minutos de paro (rend) del operador en todas las líneas
 router.get('/stats/operador-semana', produccionAllowRoles('produccion', 'admin'), cachedProductionGet('/stats/operador-semana', (req, res) => {

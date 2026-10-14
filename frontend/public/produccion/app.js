@@ -7851,6 +7851,7 @@ async function viewResumenTurno(el) {
       <button class="rt-stab rt-stab-on" data-st="detalle" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;color:#2563eb;border-bottom:2px solid #2563eb;margin-bottom:-2px">📑 Detalle</button>
       <button class="rt-stab" data-st="analisis" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-2px">📊 Análisis Semanal</button>
       <button class="rt-stab" data-st="scorecard" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-2px">🏆 Score Card</button>
+      <button class="rt-stab" data-st="piezas" style="padding:8px 16px;border:none;background:none;cursor:pointer;font-size:13px;color:#6b7280;border-bottom:2px solid transparent;margin-bottom:-2px">📦 Piezas Procesadas</button>
     </div>
     <div id="rt-resultado"><div class="empty-state"><div class="icon">⏳</div><p>Cargando...</p></div></div>`;
 
@@ -7903,6 +7904,7 @@ async function viewResumenTurno(el) {
   function renderSubTab() {
     const res = getEl('rt-resultado');
     if (activeSubTab === 'scorecard') { renderScorecardView(res); return; }
+    if (activeSubTab === 'piezas') { renderPiezasProcesadasView(res); return; }
     if (!lastSnaps.length) { res.innerHTML = '<div class="empty-state"><div class="icon">📑</div><p>Sin datos para estos filtros.</p></div>'; return; }
     if (activeSubTab === 'detalle') {
       res.innerHTML = renderResumenTurnoTable(lastSnaps, activeTab);
@@ -8051,6 +8053,249 @@ async function viewResumenTurno(el) {
             ${renderSVGBarChart(mkSeries('Rendimiento', '#6366f1', kpiByDay.rend), DIAS_SEMANA, barOpts(kpiTarget(activeTab, 'rendimiento')))}
           </div>
         </div>`;
+    } catch (e) {
+      container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PIEZAS PROCESADAS — Score Card style view
+  // ══════════════════════════════════════════════════════════════════════════
+  async function renderPiezasProcesadasView(container) {
+    container.innerHTML = '<div class="empty-state"><div class="icon">⏳</div><p>Cargando Piezas Procesadas...</p></div>';
+    const desdeVal = getEl('rt-desde').value || today;
+    const hastaVal = getEl('rt-hasta').value || today;
+
+    try {
+      const data = await GET('/resumen/piezas?desde=' + desdeVal + '&hasta=' + hastaVal);
+      if (!data || !data.por_linea) { container.innerHTML = '<div class="empty-state"><div class="icon">📦</div><p>Sin datos de piezas para este rango.</p></div>'; return; }
+
+      let ppPeriod = 'week';  // 'week' | 'month'
+      let ppMetric = 'piezas'; // 'piezas' | 'ciclos'
+      let ppFilterProceso = '';
+      let ppFilterSubProceso = '';
+      let expandedLineas = {};   // { Baker: true }
+      let expandedClientes = {}; // { 'Baker::Amsted': true }
+      let expandedProcesos = {}; // { 'Macro-Sello': true }
+
+      function renderPP() {
+        const TH_BG = '#f1f5f9';
+        const SEC_BG = '#1e3a5f';
+        const periods = ppPeriod === 'week' ? data.weeks_labels : data.months_labels;
+        const byKey = ppPeriod === 'week' ? 'by_week' : 'by_month';
+        const metricKey = ppMetric; // 'piezas' or 'ciclos'
+        const fmtN = v => v != null && v > 0 ? Number(v).toLocaleString('es-MX') : '—';
+        const cols = 2 + periods.length;
+
+        const thCols = periods.map(p => `<th style="text-align:right;padding:6px 10px;white-space:nowrap;background:${TH_BG};color:#111;font-size:11px">${escHtml(p)}</th>`).join('');
+
+        // ── Filtros UI ──────────────────────────────────────────────────────
+        const procOpts = (data.filtros?.procesos || []).map(p =>
+          `<option value="${escHtml(p)}" ${ppFilterProceso === p ? 'selected' : ''}>${escHtml(p)}</option>`
+        ).join('');
+        const subProcOpts = (data.filtros?.sub_procesos || []).map(p =>
+          `<option value="${escHtml(p)}" ${ppFilterSubProceso === p ? 'selected' : ''}>${escHtml(p)}</option>`
+        ).join('');
+
+        // ── Table 1: Por Linea / Cliente / Parte ────────────────────────────
+        function buildLineaTable() {
+          let filteredData = data.por_linea;
+
+          // Apply proceso/subproceso filters to underlying data
+          // Filters are applied server-side if needed; for now filter display
+          const lineaRows = filteredData.map(ld => {
+            const isExp = !!expandedLineas[ld.linea];
+            const byP = ld[byKey] || [];
+            const total = ld[metricKey];
+            const rowCells = byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111;font-size:12px">${fmtN(p[metricKey])}</td>`).join('');
+
+            let subRows = '';
+            if (isExp) {
+              subRows = ld.clientes.map(cl => {
+                const clKey = ld.linea + '::' + cl.nombre;
+                const clExp = !!expandedClientes[clKey];
+                const clByP = cl[byKey] || [];
+                const clCells = clByP.map(p => `<td style="text-align:right;padding:5px 10px;color:#4b5563;font-size:11px">${fmtN(p[metricKey])}</td>`).join('');
+
+                let parteRows = '';
+                if (clExp && cl.partes && cl.partes.length) {
+                  parteRows = cl.partes.map(pt => {
+                    const ptByP = pt[byKey] || [];
+                    const ptCells = ptByP.map(p => `<td style="text-align:right;padding:4px 10px;color:#6b7280;font-size:10px">${fmtN(p[metricKey])}</td>`).join('');
+                    const label = (ld.linea === 'Baker' || ld.linea === 'L1')
+                      ? `${escHtml(pt.parte)}${pt.componente && pt.componente !== pt.parte ? ' <span style="color:#9ca3af">(' + escHtml(pt.componente) + ')</span>' : ''}`
+                      : `${escHtml(pt.componente)}${pt.parte !== pt.componente ? ' <span style="color:#9ca3af">(' + escHtml(pt.parte) + ')</span>' : ''}`;
+                    return `<tr style="background:#f5f3ff">
+                      <td style="padding:4px 10px 4px 52px;font-size:10px;color:#4b5563">⤷ ${label}</td>
+                      <td style="text-align:right;padding:4px 10px;font-weight:600;color:#6b7280;font-size:10px">${fmtN(pt[metricKey])}</td>
+                      ${ptCells}
+                    </tr>`;
+                  }).join('');
+                }
+
+                const hasPartes = cl.partes && cl.partes.length > 0;
+                return `<tr class="pp-cliente-row" data-clkey="${escHtml(clKey)}" style="background:#f0f5ff;cursor:${hasPartes ? 'pointer' : 'default'}" title="${hasPartes ? 'Clic para ver partes' : ''}">
+                  <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">${hasPartes ? (clExp ? '▼ ' : '▶ ') : ''}↳ <b>${escHtml(cl.nombre)}</b></td>
+                  <td style="text-align:right;padding:5px 10px;font-weight:600;color:#4b5563;font-size:11px">${fmtN(cl[metricKey])}</td>
+                  ${clCells}
+                </tr>${parteRows}`;
+              }).join('');
+            }
+
+            return `<tr class="pp-linea-row" data-linea="${escHtml(ld.linea)}" style="cursor:pointer;background:${isExp ? '#eff6ff' : '#fff'};border-top:2px solid #e5e7eb">
+              <td style="padding:7px 12px;font-weight:600;color:#111">${isExp ? '▼ ' : '▶ '}<b>${escHtml(ld.linea)}</b></td>
+              <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmtN(total)}</td>
+              ${rowCells}
+            </tr>${subRows}`;
+          }).join('');
+
+          // Grand total
+          const grandTotal = filteredData.reduce((s, ld) => s + ld[metricKey], 0);
+          const grandByP = periods.map((_, i) => filteredData.reduce((s, ld) => s + ((ld[byKey] || [])[i]?.[metricKey] || 0), 0));
+          const grandCells = grandByP.map(v => `<td style="text-align:right;padding:7px 10px;font-weight:700">${fmtN(v)}</td>`).join('');
+
+          return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:24px">
+            <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
+              <thead><tr>
+                <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:1">Linea / Cliente / Parte</th>
+                <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111;position:sticky;left:220px;z-index:1">Total</th>
+                ${thCols}
+              </tr></thead>
+              <tbody>${lineaRows}</tbody>
+              <tfoot><tr style="background:${SEC_BG};color:#fff;border-top:3px solid ${SEC_BG}">
+                <td style="padding:7px 12px;font-weight:700;font-size:12px">TOTAL</td>
+                <td style="text-align:right;padding:7px 10px;font-weight:700">${fmtN(grandTotal)}</td>
+                ${grandCells}
+              </tr></tfoot>
+            </table>
+          </div>`;
+        }
+
+        // ── Table 2: Por Proceso / SubProceso ───────────────────────────────
+        function buildProcesoTable() {
+          let filteredProc = data.por_proceso;
+          if (ppFilterProceso) filteredProc = filteredProc.filter(p => p.nombre === ppFilterProceso);
+          if (ppFilterSubProceso) filteredProc = filteredProc.map(p => ({
+            ...p, subs: p.subs.filter(s => s.nombre === ppFilterSubProceso)
+          })).filter(p => p.subs.length > 0);
+
+          const procRows = filteredProc.map(pr => {
+            const isExp = !!expandedProcesos[pr.nombre];
+            const byP = pr[byKey] || [];
+            const total = pr[metricKey];
+            const rowCells = byP.map(p => `<td style="text-align:right;padding:7px 10px;color:#111;font-size:12px">${fmtN(p[metricKey])}</td>`).join('');
+            const hasSubs = pr.subs && pr.subs.length > 1;
+
+            let subRows = '';
+            if (isExp && pr.subs) {
+              subRows = pr.subs.map(sub => {
+                const sbyP = sub[byKey] || [];
+                const sCells = sbyP.map(p => `<td style="text-align:right;padding:5px 10px;color:#4b5563;font-size:11px">${fmtN(p[metricKey])}</td>`).join('');
+                return `<tr style="background:#f0f5ff">
+                  <td style="padding:5px 12px 5px 28px;font-size:11px;color:#111">↳ <b>${escHtml(sub.nombre)}</b></td>
+                  <td style="text-align:right;padding:5px 10px;font-weight:600;color:#4b5563;font-size:11px">${fmtN(sub[metricKey])}</td>
+                  ${sCells}
+                </tr>`;
+              }).join('');
+            }
+
+            return `<tr class="pp-proceso-row" data-proc="${escHtml(pr.nombre)}" style="cursor:${hasSubs ? 'pointer' : 'default'};background:${isExp ? '#eff6ff' : '#fff'};border-top:2px solid #e5e7eb" title="${hasSubs ? 'Clic para ver subprocesos' : ''}">
+              <td style="padding:7px 12px;font-weight:600;color:#111">${hasSubs ? (isExp ? '▼ ' : '▶ ') : ''}<b>${escHtml(pr.nombre)}</b></td>
+              <td style="text-align:right;padding:7px 10px;font-weight:600;color:#111">${fmtN(total)}</td>
+              ${rowCells}
+            </tr>${subRows}`;
+          }).join('');
+
+          const grandTotal = filteredProc.reduce((s, pr) => s + pr[metricKey], 0);
+          const grandByP = periods.map((_, i) => filteredProc.reduce((s, pr) => s + ((pr[byKey] || [])[i]?.[metricKey] || 0), 0));
+          const grandCells = grandByP.map(v => `<td style="text-align:right;padding:7px 10px;font-weight:700">${fmtN(v)}</td>`).join('');
+
+          return `<div style="overflow-x:auto;-webkit-overflow-scrolling:touch">
+            <table style="font-size:12px;border-collapse:collapse;min-width:max-content;width:100%">
+              <thead><tr>
+                <th style="text-align:left;padding:6px 12px;background:${TH_BG};color:#111;min-width:220px;position:sticky;left:0;z-index:1">Proceso / SubProceso</th>
+                <th style="text-align:right;padding:6px 10px;background:${TH_BG};color:#111;position:sticky;left:220px;z-index:1">Total</th>
+                ${thCols}
+              </tr></thead>
+              <tbody>${procRows}</tbody>
+              <tfoot><tr style="background:${SEC_BG};color:#fff;border-top:3px solid ${SEC_BG}">
+                <td style="padding:7px 12px;font-weight:700;font-size:12px">TOTAL</td>
+                <td style="text-align:right;padding:7px 10px;font-weight:700">${fmtN(grandTotal)}</td>
+                ${grandCells}
+              </tr></tfoot>
+            </table>
+          </div>`;
+        }
+
+        // ── Render full view ────────────────────────────────────────────────
+        container.innerHTML = `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+            <span style="font-size:15px;font-weight:700">📦 Piezas Procesadas — ${escHtml(desdeVal)} a ${escHtml(hastaVal)}</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+              <div style="display:flex;gap:3px">
+                <button class="pp-period-btn" data-p="week" style="padding:4px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:${ppPeriod==='week'?'#1e3a5f':'#fff'};color:${ppPeriod==='week'?'#fff':'#374151'}">Por semana</button>
+                <button class="pp-period-btn" data-p="month" style="padding:4px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:${ppPeriod==='month'?'#1e3a5f':'#fff'};color:${ppPeriod==='month'?'#fff':'#374151'}">Por mes</button>
+              </div>
+              <div style="display:flex;gap:3px">
+                <button class="pp-metric-btn" data-m="piezas" style="padding:4px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:${ppMetric==='piezas'?'#1e3a5f':'#fff'};color:${ppMetric==='piezas'?'#fff':'#374151'}">Piezas</button>
+                <button class="pp-metric-btn" data-m="ciclos" style="padding:4px 14px;font-size:12px;border:1px solid #d1d5db;border-radius:6px;cursor:pointer;background:${ppMetric==='ciclos'?'#1e3a5f':'#fff'};color:${ppMetric==='ciclos'?'#fff':'#374151'}">Ciclos</button>
+              </div>
+              <select id="pp-filter-proc" style="padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+                <option value="">Todos los procesos</option>
+                ${procOpts}
+              </select>
+              <select id="pp-filter-subproc" style="padding:4px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px">
+                <option value="">Todos los subprocesos</option>
+                ${subProcOpts}
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-bottom:8px">
+            <div style="background:#1e3a5f;color:#fff;padding:6px 12px;border-radius:6px 6px 0 0;font-size:12px;font-weight:700">📊 PIEZAS POR LINEA / CLIENTE / PARTE</div>
+            ${buildLineaTable()}
+          </div>
+
+          <div>
+            <div style="background:#1e3a5f;color:#fff;padding:6px 12px;border-radius:6px 6px 0 0;font-size:12px;font-weight:700">⚙️ PIEZAS POR PROCESO / SUBPROCESO</div>
+            ${buildProcesoTable()}
+          </div>`;
+
+        // ── Bind events ─────────────────────────────────────────────────────
+        container.querySelectorAll('.pp-period-btn').forEach(btn => {
+          btn.addEventListener('click', () => { ppPeriod = btn.dataset.p; renderPP(); });
+        });
+        container.querySelectorAll('.pp-metric-btn').forEach(btn => {
+          btn.addEventListener('click', () => { ppMetric = btn.dataset.m; renderPP(); });
+        });
+        container.querySelectorAll('.pp-linea-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const l = row.dataset.linea;
+            expandedLineas[l] = !expandedLineas[l];
+            renderPP();
+          });
+        });
+        container.querySelectorAll('.pp-cliente-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const k = row.dataset.clkey;
+            expandedClientes[k] = !expandedClientes[k];
+            renderPP();
+          });
+        });
+        container.querySelectorAll('.pp-proceso-row').forEach(row => {
+          row.addEventListener('click', () => {
+            const p = row.dataset.proc;
+            expandedProcesos[p] = !expandedProcesos[p];
+            renderPP();
+          });
+        });
+        const procSelect = document.getElementById('pp-filter-proc');
+        if (procSelect) procSelect.addEventListener('change', () => { ppFilterProceso = procSelect.value; renderPP(); });
+        const subProcSelect = document.getElementById('pp-filter-subproc');
+        if (subProcSelect) subProcSelect.addEventListener('change', () => { ppFilterSubProceso = subProcSelect.value; renderPP(); });
+      }
+
+      renderPP();
     } catch (e) {
       container.innerHTML = `<div class="alert alert-warn">⚠️ ${escHtml(e.message)}</div>`;
     }
