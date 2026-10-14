@@ -1116,6 +1116,31 @@ router.get('/resumen/piezas', (req, res) => {
 
   const pdb = dbProd.read();
 
+  // ── Build catalogue lookups for normalizing names ─────────────────────────
+  // componentes_baker / componentes_l1: { id, nombre, cliente, no_skf }
+  const compLookup = {}; // { 'baker': { byId: {}, bySkf: {} }, 'l1': {...} }
+  for (const suffix of ['baker', 'l1']) {
+    const byId = {}, bySkf = {};
+    for (const comp of (pdb[`componentes_${suffix}`] || [])) {
+      if (comp.id) byId[String(comp.id)] = comp;
+      if (comp.no_skf) bySkf[String(comp.no_skf).trim().toUpperCase()] = comp;
+    }
+    compLookup[suffix] = { byId, bySkf };
+  }
+
+  // Normalize client/componente/no_skf using catalogue
+  function resolveComp(suffix, compId, noSkf, rawCliente, rawComponente) {
+    const lk = compLookup[suffix];
+    let cat = null;
+    if (compId) cat = lk.byId[String(compId)];
+    if (!cat && noSkf) cat = lk.bySkf[String(noSkf).trim().toUpperCase()];
+    return {
+      cliente:    (cat?.cliente || rawCliente || '').trim() || 'Sin cliente',
+      componente: (cat?.nombre || rawComponente || '').trim() || 'Sin componente',
+      no_skf:     (cat?.no_skf || noSkf || '').trim() || null
+    };
+  }
+
   // ── Collect all completed cargas across all lines ──────────────────────────
   const allCargas = [];
 
@@ -1129,15 +1154,15 @@ router.get('/resumen/piezas', (req, res) => {
     const mes = c.fecha_turno.slice(0, 7); // YYYY-MM
     allCargas.push({
       linea, piezas, ciclos: 1, semana, mes,
-      cliente: c.cliente || 'Sin cliente',
-      componente: c.componente || 'Sin componente',
+      cliente: (c.cliente || '').trim() || 'Sin cliente',
+      componente: (c.componente || '').trim() || 'Sin componente',
       no_skf: null,
       proceso: c.proceso || 'Sin proceso',
       sub_proceso: c.acabado || null // L3/L4 use acabado as secondary classification
     });
   }
 
-  // Baker & L1
+  // Baker & L1 — both barrel and rack types
   for (const suffix of ['baker', 'l1']) {
     const lineaLabel = suffix === 'baker' ? 'Baker' : 'L1';
     for (const c of (pdb[`cargas_${suffix}`] || [])) {
@@ -1149,35 +1174,43 @@ router.get('/resumen/piezas', (req, res) => {
       const sub_proceso = c.sub_proceso || null;
 
       if (c.herramental_tipo === 'barril' && Array.isArray(c.cavidades)) {
-        // Barrel: each cavity is its own entry with its own client/part
-        for (const cv of c.cavidades) {
-          if (cv.es_vacia) continue;
+        // ── BARREL: each cavity has its own client/component/no_skf ──────
+        const nonEmpty = c.cavidades.filter(cv => !cv.es_vacia);
+        for (const cv of nonEmpty) {
+          const resolved = resolveComp(suffix, cv.componente_id, cv.no_skf, cv.cliente, cv.componente);
           allCargas.push({
             linea: lineaLabel,
             piezas: Number(cv.cantidad || 0),
-            ciclos: 0, // ciclo counted once at carga level below
+            ciclos: 0, // ciclo counted per-carga, not per-cavity
             semana, mes,
-            cliente: cv.cliente || 'Sin cliente',
-            componente: cv.componente || 'Sin componente',
-            no_skf: cv.no_skf || null,
+            cliente: resolved.cliente,
+            componente: resolved.componente,
+            no_skf: resolved.no_skf,
             proceso, sub_proceso
           });
         }
-        // Count 1 ciclo for the whole barrel carga
-        allCargas.push({
-          linea: lineaLabel, piezas: 0, ciclos: 1, semana, mes,
-          cliente: c.cliente || (c.cavidades.find(cv => !cv.es_vacia) || {}).cliente || 'Sin cliente',
-          componente: '_ciclo_only_', no_skf: null,
-          proceso, sub_proceso
-        });
+        // Count 1 ciclo attributed to each distinct client proportionally
+        // If barrel has 3 Amsted cavities and 1 SKF → 1 ciclo for each client present
+        const clientesInBarrel = [...new Set(nonEmpty.map(cv => {
+          const r = resolveComp(suffix, cv.componente_id, cv.no_skf, cv.cliente, cv.componente);
+          return r.cliente;
+        }))];
+        for (const cli of clientesInBarrel) {
+          allCargas.push({
+            linea: lineaLabel, piezas: 0, ciclos: 1, semana, mes,
+            cliente: cli, componente: '_ciclo_only_', no_skf: null,
+            proceso, sub_proceso
+          });
+        }
       } else {
-        // Rack type
+        // ── RACK: client/component/no_skf at top level of carga ─────────
+        const resolved = resolveComp(suffix, c.componente_id, c.no_skf, c.cliente, c.componente);
         const piezas = Number(c.varillas || c.cantidad || 0);
         allCargas.push({
           linea: lineaLabel, piezas, ciclos: 1, semana, mes,
-          cliente: c.cliente || 'Sin cliente',
-          componente: c.componente || 'Sin componente',
-          no_skf: c.no_skf || null,
+          cliente: resolved.cliente,
+          componente: resolved.componente,
+          no_skf: resolved.no_skf,
           proceso, sub_proceso
         });
       }
