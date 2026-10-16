@@ -1167,7 +1167,7 @@ router.get('/resumen/piezas', (req, res) => {
     const lineaLabel = suffix === 'baker' ? 'Baker' : 'L1';
     for (const c of (pdb[`cargas_${suffix}`] || [])) {
       if (!c.fecha_turno || c.fecha_turno < desde || c.fecha_turno > hasta) continue;
-      if (c.estado !== 'procesado' && c.estado !== 'defecto') continue;
+      if (c.estado !== 'procesado' && c.estado !== 'defecto' && c.estado !== 'descargado') continue;
       const semana = c.semana || getISOWeek(new Date(c.fecha_turno + 'T12:00:00'));
       const mes = c.fecha_turno.slice(0, 7);
       const proceso = c.proceso || 'Sin proceso';
