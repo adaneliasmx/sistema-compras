@@ -92,8 +92,9 @@ router.get('/ordenes', (req, res) => {
       o.atendida_por_user_id === req.mantUser.id
     );
   }
-  // Supervisor: ve sus propias solicitudes + órdenes automáticas (producción) en_validacion
-  if (req.mantUser.mant_role === 'supervisor_mant') {
+  // Supervisor: por defecto ve sus propias solicitudes + automáticas en_validacion
+  // Con ?scope=all ve TODAS las órdenes (para vista "Todas las solicitudes")
+  if (req.mantUser.mant_role === 'supervisor_mant' && req.query.scope !== 'all') {
     ordenes = ordenes.filter(o =>
       o.solicitante_user_id === req.mantUser.id ||
       (o.status === 'en_validacion' && o.origen_produccion)

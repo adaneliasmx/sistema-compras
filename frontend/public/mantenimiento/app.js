@@ -377,16 +377,25 @@ function ordenCard(o) {
 async function viewOrdenes(el, soloMias) {
   const role = state.user.mant_role;
   const isAdminRole = ['admin','superadmin_mant'].includes(role);
-  const ordenes = await apiFetch('/ordenes');
+  const isSupervisor = role === 'supervisor_mant';
+
+  // Supervisor: toggle entre "mis solicitudes" y "todas las solicitudes"
+  if (state._verTodasSolic === undefined) state._verTodasSolic = false;
+  const fetchAll = soloMias && isSupervisor && state._verTodasSolic;
+  const ordenes = await apiFetch(fetchAll ? '/ordenes?scope=all' : '/ordenes');
   const tecnicos = isAdminRole ? await apiFetch('/tecnicos') : [];
 
   if (soloMias) {
-    const title = role === 'supervisor_mant' ? '📋 Mis solicitudes' : '📋 Mis órdenes';
+    const verTodas = isSupervisor && state._verTodasSolic;
+    const title = isSupervisor
+      ? (verTodas ? '📋 Todas las solicitudes' : '📋 Mis solicitudes')
+      : '📋 Mis órdenes';
     const tabs = [
       { id: 'sin_atender', label: '⏳ Sin atender', statuses: ['abierta','asignada'] },
       { id: 'en_proceso',  label: '🟣 En proceso',  statuses: ['en_proceso'] },
       { id: 'cerradas',    label: '✅ Cerradas',     statuses: ['cerrada','en_validacion'] },
     ];
+    if (verTodas) tabs.push({ id: 'historial', label: '📜 Historial', statuses: ['cerrada','cancelada'] });
     if (!state._ordenesTab || !tabs.find(t => t.id === state._ordenesTab)) state._ordenesTab = 'sin_atender';
 
     const renderTabs = () => {
@@ -394,8 +403,11 @@ async function viewOrdenes(el, soloMias) {
       const filtered = ordenes.filter(o => active.statuses.includes(o.status));
       el.innerHTML = `
         <div style="margin-bottom:16px">
-          <h2 style="margin:0 0 12px;font-size:18px">${title}</h2>
-          <div style="display:flex;gap:0;border-bottom:2px solid #e2e8f0">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+            <h2 style="margin:0;font-size:18px">${title}</h2>
+            ${isSupervisor ? `<button id="btn-toggle-todas" style="background:${verTodas?'#2563eb':'#f1f5f9'};color:${verTodas?'#fff':'#374151'};border:1px solid ${verTodas?'#2563eb':'#d1d5db'};border-radius:6px;padding:6px 14px;font-size:12px;cursor:pointer;font-weight:500;transition:all .15s">${verTodas ? '👤 Solo mis solicitudes' : '👁 Ver todas las solicitudes'}</button>` : ''}
+          </div>
+          <div style="display:flex;gap:0;border-bottom:2px solid #e2e8f0;flex-wrap:wrap">
             ${tabs.map(t => {
               const count = ordenes.filter(o => t.statuses.includes(o.status)).length;
               const isAct = t.id === state._ordenesTab;
@@ -409,6 +421,10 @@ async function viewOrdenes(el, soloMias) {
       el.querySelectorAll('.tab-ord-btn').forEach(btn => {
         btn.onclick = () => { state._ordenesTab = btn.dataset.tab; renderTabs(); };
       });
+      const toggleBtn = document.getElementById('btn-toggle-todas');
+      if (toggleBtn) {
+        toggleBtn.onclick = () => { state._verTodasSolic = !state._verTodasSolic; state._ordenesTab = 'sin_atender'; loadView('mis-ordenes'); };
+      }
       bindOrdenesTable(tecnicos);
     };
     renderTabs();
