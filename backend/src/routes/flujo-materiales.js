@@ -193,6 +193,18 @@ router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
       rechazos = [{ defecto: 'Fuera de especificacion', cantidad: fdeTotal }, ...rechazos.filter(r => r.defecto !== 'Fuera de especificacion')];
     }
 
+    // Proteccion sobre-inyeccion: no procesar mas piezas que las recibidas en el lote
+    if (lote.estado === 'enviado') continue; // lote ya enviado, ignorar
+    const existingMu = (db.muestras_tenneco || []).find(m =>
+      m.lote_id === Number(rec.lote_id) && m.num_muestra === parseInt(rec.num_muestra)
+    );
+    const deltaAcept = pzAceptadas - (existingMu ? (existingMu.piezas_aceptadas || 0) : 0);
+    const deltaScrap = scrap - (existingMu ? (existingMu.scrap || 0) : 0);
+    const currentProcessed = (lote.material_terminado || 0) + (lote.scrap_total || 0);
+    if (deltaAcept + deltaScrap > 0 && (currentProcessed + deltaAcept + deltaScrap) > lote.cantidad_recibida) {
+      continue; // rechazar silenciosamente registros que exceden la cantidad del lote
+    }
+
     const muestra = {
       lote_id: Number(rec.lote_id),
       num_muestra: parseInt(rec.num_muestra),
@@ -220,11 +232,8 @@ router.post('/sync/muestras', flujoSyncKeyRequired, (req, res) => {
     };
 
     db.muestras_tenneco = db.muestras_tenneco || [];
-    const existing = db.muestras_tenneco.find(m =>
-      m.lote_id === muestra.lote_id && m.num_muestra === muestra.num_muestra
-    );
-    if (existing) {
-      Object.assign(existing, muestra);
+    if (existingMu) {
+      Object.assign(existingMu, muestra);
       updated++;
     } else {
       muestra.id = nextId(db.muestras_tenneco);
@@ -908,15 +917,35 @@ router.post('/tenneco/remisiones', flujoAllowRoles('supervisor'), (req, res) => 
       const po = (db.pos_tenneco || []).find(p => p.id === poId);
       if (!po) return res.status(400).json({ error: `PO ID ${poId} no encontrada` });
       if (po.estado !== 'activa') return res.status(400).json({ error: `PO ${po.no_po} no esta activa` });
+      // Validar a nivel PO total
       let yaEnviada = 0;
       for (const rem of (db.remisiones_tenneco || [])) {
         for (const rl of (rem.lotes || [])) {
           if (rl.po_id === poId) yaEnviada += (rl.cantidad || 0);
         }
       }
-      const disponible = po.cantidad_po - yaEnviada;
-      if (cantidadRem > disponible)
-        return res.status(400).json({ error: `PO ${po.no_po}: disponible ${disponible} pzas, lote requiere ${cantidadRem}` });
+      // Sumar lotes anteriores en esta misma remision (mismo PO)
+      const yaEnEstaRem = lotesData.filter(ld => ld.po_id === poId).reduce((s, ld) => s + (ld.cantidad || 0), 0);
+      const disponibleTotal = po.cantidad_po - yaEnviada - yaEnEstaRem;
+      if (cantidadRem > disponibleTotal)
+        return res.status(400).json({ error: `PO ${po.no_po}: disponible ${disponibleTotal} pzas total, lote requiere ${cantidadRem}` });
+      // Validar a nivel parte/diametro para POs cerradas
+      if (po.tipo === 'cerrada' && lote.diametro) {
+        const parte = (po.partes || []).find(p => String(p.diametro).trim() === String(lote.diametro).trim());
+        if (parte && parte.cantidad) {
+          let enviadaParte = 0;
+          for (const rem of (db.remisiones_tenneco || [])) {
+            for (const rl of (rem.lotes || [])) {
+              if (rl.po_id === poId && String(rl.diametro).trim() === String(lote.diametro).trim())
+                enviadaParte += (rl.cantidad || 0);
+            }
+          }
+          const yaEnEstaRemParte = lotesData.filter(ld => ld.po_id === poId && String(ld.diametro).trim() === String(lote.diametro).trim()).reduce((s, ld) => s + (ld.cantidad || 0), 0);
+          const disponibleParte = parte.cantidad - enviadaParte - yaEnEstaRemParte;
+          if (cantidadRem > disponibleParte)
+            return res.status(400).json({ error: `PO ${po.no_po} diam. ${lote.diametro}: disponible ${disponibleParte} pzas para esta parte, lote requiere ${cantidadRem}` });
+        }
+      }
     }
 
     lotesData.push({
@@ -1172,6 +1201,7 @@ router.get('/tenneco/pos/:id', (req, res) => {
   const po = (db.pos_tenneco || []).find(p => p.id === Number(req.params.id));
   if (!po) return res.status(404).json({ error: 'PO no encontrada' });
 
+  const lotes = db.lotes_tenneco || [];
   const remisiones = (db.remisiones_tenneco || []).filter(r =>
     (r.lotes || []).some(l => l.po_id === po.id)
   ).map(r => ({
@@ -1180,20 +1210,38 @@ router.get('/tenneco/pos/:id', (req, res) => {
     cantidad_po_rem: (r.lotes || []).filter(l => l.po_id === po.id).reduce((s, l) => s + (l.cantidad || 0), 0)
   }));
 
+  // Calcular enviada y en_proceso por diametro
   const porDiametro = {};
+  for (const parte of (po.partes || [])) {
+    const key = parte.diametro || 'Sin diametro';
+    if (!porDiametro[key]) porDiametro[key] = { diametro: key, numero_parte: parte.numero_parte, cantidad_parte: parte.cantidad || null, enviada: 0, en_proceso: 0 };
+  }
   for (const rem of remisiones) {
     for (const l of rem.lotes_po) {
       const key = l.diametro || 'Sin diametro';
-      if (!porDiametro[key]) porDiametro[key] = { diametro: key, enviada: 0 };
+      if (!porDiametro[key]) porDiametro[key] = { diametro: key, numero_parte: l.numero_parte || '', cantidad_parte: null, enviada: 0, en_proceso: 0 };
       porDiametro[key].enviada += (l.cantidad || 0);
     }
   }
+  for (const lt of lotes) {
+    if (lt.po_id === po.id && lt.estado !== 'enviado') {
+      const key = lt.diametro || 'Sin diametro';
+      if (!porDiametro[key]) porDiametro[key] = { diametro: key, numero_parte: lt.numero_parte || '', cantidad_parte: null, enviada: 0, en_proceso: 0 };
+      porDiametro[key].en_proceso += (lt.material_terminado || 0);
+    }
+  }
+  // Calcular disponible por diametro
+  for (const d of Object.values(porDiametro)) {
+    d.disponible = d.cantidad_parte != null ? Math.max(0, d.cantidad_parte - d.enviada) : null;
+  }
 
   let totalEnviada = remisiones.reduce((s, r) => s + r.cantidad_po_rem, 0);
+  const totalEnProceso = Object.values(porDiametro).reduce((s, d) => s + d.en_proceso, 0);
 
   res.json({
     ...po,
     cantidad_enviada: totalEnviada,
+    cantidad_en_proceso: totalEnProceso,
     pct_disponible: po.cantidad_po > 0
       ? Math.round(((po.cantidad_po - totalEnviada) / po.cantidad_po) * 10000) / 100
       : 0,
@@ -1373,12 +1421,25 @@ router.patch('/tenneco/muestras/:id', flujoAllowRoles('admin'), (req, res) => {
     m.altura_axial = b.altura_axial.map(Number);
     m.altura_axial_prom = Math.round((m.altura_axial.reduce((a, v) => a + (v || 0), 0) / 3) * 100) / 100;
   }
-  if (b.piezas_aceptadas !== undefined) m.piezas_aceptadas = parseInt(b.piezas_aceptadas) || 0;
+  const newAcept = b.piezas_aceptadas !== undefined ? (parseInt(b.piezas_aceptadas) || 0) : m.piezas_aceptadas;
+  const newScrap = b.scrap !== undefined ? (parseInt(b.scrap) || 0) : m.scrap;
+
+  // Proteccion sobre-inyeccion: no exceder cantidad_recibida del lote
+  const lote = (db.lotes_tenneco || []).find(l => l.id === m.lote_id);
+  if (lote) {
+    const deltaAcept = newAcept - (m.piezas_aceptadas || 0);
+    const deltaScrap = newScrap - (m.scrap || 0);
+    const currentProcessed = (lote.material_terminado || 0) + (lote.scrap_total || 0);
+    if (deltaAcept + deltaScrap > 0 && (currentProcessed + deltaAcept + deltaScrap) > lote.cantidad_recibida) {
+      return res.status(400).json({ error: `No se puede exceder la cantidad recibida del lote (${lote.cantidad_recibida} pzas). Procesado actual: ${currentProcessed}, incremento: ${deltaAcept + deltaScrap}` });
+    }
+  }
+
+  if (b.piezas_aceptadas !== undefined) m.piezas_aceptadas = newAcept;
   if (Array.isArray(b.rechazos)) m.rechazos = b.rechazos;
-  if (b.scrap !== undefined) m.scrap = parseInt(b.scrap) || 0;
+  if (b.scrap !== undefined) m.scrap = newScrap;
 
   // Recalculate spec validation
-  const lote = (db.lotes_tenneco || []).find(l => l.id === m.lote_id);
   const specs = lote ? (db.cat_tenneco_specs || []).find(s =>
     String(s.numero_parte).trim() === String(lote.numero_parte).trim()
   ) : null;

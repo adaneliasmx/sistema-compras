@@ -743,9 +743,32 @@ async function showPODetail(poId) {
   const overlay = document.createElement('div');
   overlay.className = 'fm-modal-overlay';
 
-  const diamsHtml = (data.resumen_diametros || []).map(d =>
-    `<tr><td>${esc(d.diametro)} mm</td><td class="text-right">${fmtNum(d.enviada)}</td></tr>`
-  ).join('');
+  // Resumen por diametro enriquecido
+  const resumen = data.resumen_diametros || [];
+  const totEnviada = resumen.reduce((s, d) => s + (d.enviada || 0), 0);
+  const totEnProceso = resumen.reduce((s, d) => s + (d.en_proceso || 0), 0);
+  const totCantParte = resumen.reduce((s, d) => s + (d.cantidad_parte || 0), 0);
+  const totDisponible = data.cantidad_po - totEnviada;
+
+  const diamsHtml = resumen.map(d => {
+    const disp = d.cantidad_parte != null ? d.cantidad_parte - d.enviada : null;
+    const dispColor = disp != null ? (disp <= 0 ? 'var(--fm-danger)' : disp < (d.cantidad_parte * 0.1) ? 'var(--fm-warn)' : 'var(--fm-success)') : '';
+    return `<tr>
+      <td>${esc(d.diametro)} mm</td>
+      <td class="mono" style="font-size:12px">${esc(d.numero_parte || '')}</td>
+      <td class="text-right">${d.cantidad_parte != null ? fmtNum(d.cantidad_parte) : '<span style="color:var(--fm-muted)">—</span>'}</td>
+      <td class="text-right">${fmtNum(d.en_proceso || 0)}</td>
+      <td class="text-right">${fmtNum(d.enviada)}</td>
+      <td class="text-right" style="font-weight:700;${dispColor ? 'color:' + dispColor : ''}">${disp != null ? fmtNum(disp) : '<span style="color:var(--fm-muted)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  const totalsRow = `<tr style="background:#1e3a5f;color:#fff;font-weight:700">
+    <td colspan="2">TOTAL</td>
+    <td class="text-right">${fmtNum(data.cantidad_po)}</td>
+    <td class="text-right">${fmtNum(totEnProceso)}</td>
+    <td class="text-right">${fmtNum(totEnviada)}</td>
+    <td class="text-right">${fmtNum(totDisponible)}</td>
+  </tr>`;
 
   const remsHtml = (data.remisiones_detalle || []).map(r =>
     `<tr>
@@ -762,23 +785,23 @@ async function showPODetail(poId) {
     `<span style="display:inline-block;background:var(--fm-primary-light);color:var(--fm-primary-dark);padding:3px 10px;border-radius:999px;font-size:12px;font-weight:600;margin:2px">${esc(p.diametro)} mm — ${esc(p.numero_parte)}${p.cantidad ? ' (' + fmtNum(p.cantidad) + ' pzas)' : ''}</span>`
   ).join('');
 
-  overlay.innerHTML = `<div class="fm-modal" style="width:720px">
+  overlay.innerHTML = `<div class="fm-modal" style="width:780px">
     <h3>PO #${esc(data.no_po)}</h3>
     <div style="display:flex;gap:20px;flex-wrap:wrap;font-size:13px;margin-bottom:14px">
-      <div><strong>Cantidad:</strong> ${fmtNum(data.cantidad_po)}</div>
+      <div><strong>Cantidad PO:</strong> ${fmtNum(data.cantidad_po)}</div>
       <div><strong>Tipo:</strong> ${data.tipo}</div>
       <div><strong>Fecha:</strong> ${esc(data.fecha_po)}</div>
-      <div><strong>Enviada:</strong> ${fmtNum(data.cantidad_enviada)}</div>
-      <div><strong>Disponible:</strong> <span style="font-weight:700;color:${data.pct_disponible > 50 ? 'var(--fm-success)' : data.pct_disponible > 10 ? 'var(--fm-warn)' : 'var(--fm-danger)'}">${data.pct_disponible}%</span></div>
+      <div><strong>Enviada:</strong> <span style="font-weight:700">${fmtNum(data.cantidad_enviada)}</span></div>
+      <div><strong>Disponible:</strong> <span style="font-weight:700;color:${data.pct_disponible > 50 ? 'var(--fm-success)' : data.pct_disponible > 10 ? 'var(--fm-warn)' : 'var(--fm-danger)'}">${fmtNum(totDisponible)} pzas (${data.pct_disponible}%)</span></div>
     </div>
     <div style="margin-bottom:12px">${partesHtml}</div>
     ${data.pdf_filename ? `<p style="margin-bottom:12px"><a href="/storage/flujo-pos/${encodeURIComponent(data.pdf_filename)}" target="_blank" style="color:var(--fm-primary);font-weight:600">Descargar PDF de PO</a></p>` : ''}
 
-    ${(data.resumen_diametros || []).length > 0 ? `<h4 style="font-size:14px;margin:14px 0 8px">Resumen por Diametro</h4>
+    <h4 style="font-size:14px;margin:14px 0 8px">Resumen por Parte</h4>
     <div class="fm-table-wrap"><table class="fm-table fm-table-sm">
-      <thead><tr><th>Diametro</th><th class="text-right">Enviada</th></tr></thead>
-      <tbody>${diamsHtml}</tbody>
-    </table></div>` : ''}
+      <thead><tr><th>Diametro</th><th>N/P</th><th class="text-right">Cant. PO</th><th class="text-right">En Proceso</th><th class="text-right">Enviada</th><th class="text-right">Disponible</th></tr></thead>
+      <tbody>${diamsHtml}${totalsRow}</tbody>
+    </table></div>
 
     <h4 style="font-size:14px;margin:14px 0 8px">Remisiones</h4>
     ${(data.remisiones_detalle || []).length === 0
@@ -833,7 +856,8 @@ async function viewSalidaTenneco(el) {
     lotesHtml = `<div class="fm-table-wrap"><table class="fm-table">
       <thead><tr><th><input type="checkbox" id="chk-all"/></th><th>Lote</th><th>N/P</th><th>Diam.</th><th>Cliente</th><th>Cantidad</th><th>Fecha ingreso</th></tr></thead>
       <tbody>${diamKeys.map(d => {
-        const groupHeader = `<tr style="background:#e2e8f0"><td colspan="7" style="font-weight:700;font-size:12px;padding:6px 10px">Diametro: ${esc(d)} mm — N/P: ${esc(lotesByDiam[d][0].numero_parte)} (${lotesByDiam[d].length} lote${lotesByDiam[d].length > 1 ? 's' : ''})</td></tr>`;
+        const totalPzasGrp = lotesByDiam[d].reduce((s, l) => s + (l.material_terminado || 0), 0);
+        const groupHeader = `<tr style="background:#e2e8f0"><td colspan="7" style="font-weight:700;font-size:12px;padding:6px 10px">Diametro: ${esc(d)} mm — N/P: ${esc(lotesByDiam[d][0].numero_parte)} (${lotesByDiam[d].length} lote${lotesByDiam[d].length > 1 ? 's' : ''}) — <span style="color:var(--fm-primary)">Total: ${fmtNum(totalPzasGrp)} pzas</span></td></tr>`;
         const rows = lotesByDiam[d].map(l => `<tr>
           <td><input type="checkbox" class="chk-lote" value="${l.id}" data-diam="${esc(l.diametro)}"/></td>
           <td class="mono">${esc(l.lote)}</td><td class="mono">${esc(l.numero_parte)}</td>
@@ -863,7 +887,8 @@ async function viewSalidaTenneco(el) {
     scrapHtml = `<div class="fm-table-wrap"><table class="fm-table">
       <thead><tr><th><input type="checkbox" id="chk-all-scrap"/></th><th>Lote</th><th>N/P</th><th>Diam.</th><th>Cliente</th><th class="text-right">Scrap (pzas)</th><th class="text-right">% Scrap</th><th>Estado lote</th></tr></thead>
       <tbody>${scrapKeys.map(d => {
-        const groupHeader = `<tr style="background:#fef3c7"><td colspan="8" style="font-weight:700;font-size:12px;padding:6px 10px;color:#92400e">Diametro: ${esc(d)} mm — N/P: ${esc(scrapByDiam[d][0].numero_parte)} (${scrapByDiam[d].length} lote${scrapByDiam[d].length > 1 ? 's' : ''})</td></tr>`;
+        const totalScrapGrp = scrapByDiam[d].reduce((s, l) => s + (l.scrap_total || 0), 0);
+        const groupHeader = `<tr style="background:#fef3c7"><td colspan="8" style="font-weight:700;font-size:12px;padding:6px 10px;color:#92400e">Diametro: ${esc(d)} mm — N/P: ${esc(scrapByDiam[d][0].numero_parte)} (${scrapByDiam[d].length} lote${scrapByDiam[d].length > 1 ? 's' : ''}) — Total scrap: ${fmtNum(totalScrapGrp)} pzas</td></tr>`;
         const rows = scrapByDiam[d].map(l => `<tr>
           <td><input type="checkbox" class="chk-scrap" value="${l.id}" data-diam="${esc(l.diametro)}"/></td>
           <td class="mono">${esc(l.lote)}</td><td class="mono">${esc(l.numero_parte)}</td>
@@ -1792,6 +1817,9 @@ async function viewEmpaqueTenneco(el) {
   const proyNames = proyectos.map(p => p.nombre);
   const diams = [...new Set(muestras.map(m => m.diametro).filter(Boolean))].sort();
 
+  // Estado de ordenamiento para empaque
+  let empSortCol = null, empSortAsc = true;
+
   el.innerHTML = `
     <div class="fm-card">
       <div class="fm-toolbar" style="flex-wrap:wrap;gap:8px">
@@ -1802,16 +1830,25 @@ async function viewEmpaqueTenneco(el) {
         <select class="fm-input" id="emp-proy" style="width:140px"><option value="">Proyecto</option>${proyNames.map(n => `<option>${esc(n)}</option>`).join('')}</select>
         <select class="fm-input" id="emp-diam" style="width:110px"><option value="">Diametro</option>${diams.map(d => `<option>${esc(d)}</option>`).join('')}</select>
         <input class="fm-input" id="emp-lote" placeholder="Buscar lote..." style="width:130px"/>
+        <input class="fm-input" id="emp-fecha-desde" type="date" title="Fecha desde" style="width:130px"/>
+        <input class="fm-input" id="emp-fecha-hasta" type="date" title="Fecha hasta" style="width:130px"/>
       </div>
       <div class="fm-table-wrap"><table class="fm-table fm-table-sm">
         <thead><tr>
-          <th>Diametro</th><th>N/P</th><th>Lote</th><th class="text-center">#</th>
+          <th class="emp-sortable" data-col="diametro" style="cursor:pointer">Diametro</th>
+          <th class="emp-sortable" data-col="numero_parte" style="cursor:pointer">N/P</th>
+          <th class="emp-sortable" data-col="lote" style="cursor:pointer">Lote</th>
+          <th class="text-center">#</th>
           <th class="text-center">Muestra</th>
-          <th class="text-right">Rug. Prom</th><th class="text-right">Alt. Ax. Prom</th>
-          <th class="text-right">Acept.</th>
+          <th class="text-right emp-sortable" data-col="rugosidad_prom" style="cursor:pointer">Rug. Prom</th>
+          <th class="text-right emp-sortable" data-col="altura_axial_prom" style="cursor:pointer">Alt. Ax. Prom</th>
+          <th class="text-right emp-sortable" data-col="piezas_aceptadas" style="cursor:pointer">Acept.</th>
           ${defectoNames.map(d => `<th class="text-right" title="${esc(d)}" style="font-size:10px;max-width:70px;overflow:hidden;text-overflow:ellipsis">${esc(d.length > 10 ? d.slice(0, 10) + '..' : d)}</th>`).join('')}
-          <th class="text-right">Scrap</th><th class="text-center">QC</th>
-          <th>Fecha</th><th>Hora</th><th>Analista</th>
+          <th class="text-right emp-sortable" data-col="scrap" style="cursor:pointer">Scrap</th>
+          <th class="text-center">QC</th>
+          <th class="emp-sortable" data-col="fecha" style="cursor:pointer">Fecha</th>
+          <th class="emp-sortable" data-col="hora" style="cursor:pointer">Hora</th>
+          <th class="emp-sortable" data-col="analista" style="cursor:pointer">Analista</th>
           ${S.user?.role === 'admin' ? '<th></th>' : ''}
         </tr></thead>
         <tbody id="tbody-muestras"></tbody>
@@ -1822,15 +1859,37 @@ async function viewEmpaqueTenneco(el) {
     const fProy = ($('#emp-proy')?.value || '');
     const fDiam = ($('#emp-diam')?.value || '');
     const fLote = ($('#emp-lote')?.value || '').toLowerCase();
+    const fDesde = ($('#emp-fecha-desde')?.value || '');
+    const fHasta = ($('#emp-fecha-hasta')?.value || '');
     let data = [...S.muestras];
     if (fProy) data = data.filter(m => m.proyecto === fProy);
     if (fDiam) data = data.filter(m => m.diametro === fDiam);
     if (fLote) data = data.filter(m => String(m.lote || '').toLowerCase().includes(fLote));
+    if (fDesde) data = data.filter(m => (m.fecha || '').slice(0, 10) >= fDesde);
+    if (fHasta) data = data.filter(m => (m.fecha || '').slice(0, 10) <= fHasta);
 
-    // Sort by lote, then num_muestra
-    data.sort((a, b) => {
-      const cmp = String(a.lote || '').localeCompare(String(b.lote || ''));
-      return cmp !== 0 ? cmp : (a.num_muestra || 0) - (b.num_muestra || 0);
+    // Sort: user column or default (lote + num_muestra)
+    if (empSortCol) {
+      data.sort((a, b) => {
+        let va = a[empSortCol], vb = b[empSortCol];
+        if (va == null) va = '';
+        if (vb == null) vb = '';
+        const cmp = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb));
+        return empSortAsc ? cmp : -cmp;
+      });
+    } else {
+      data.sort((a, b) => {
+        const cmp = String(a.lote || '').localeCompare(String(b.lote || ''));
+        return cmp !== 0 ? cmp : (a.num_muestra || 0) - (b.num_muestra || 0);
+      });
+    }
+
+    // Update sort indicators
+    $$('.emp-sortable').forEach(th => {
+      const col = th.dataset.col;
+      const arrow = col === empSortCol ? (empSortAsc ? ' ▲' : ' ▼') : '';
+      const base = th.textContent.replace(/ [▲▼]$/, '');
+      th.textContent = base + arrow;
     });
 
     const tbody = $('#tbody-muestras');
@@ -1906,6 +1965,16 @@ async function viewEmpaqueTenneco(el) {
   renderMuestras();
   ['emp-proy', 'emp-diam'].forEach(id => { if ($('#' + id)) $('#' + id).addEventListener('change', renderMuestras); });
   if ($('#emp-lote')) $('#emp-lote').addEventListener('input', renderMuestras);
+  ['emp-fecha-desde', 'emp-fecha-hasta'].forEach(id => { if ($('#' + id)) $('#' + id).addEventListener('change', renderMuestras); });
+  // Column sorting
+  $$('.emp-sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (empSortCol === col) { empSortAsc = !empSortAsc; }
+      else { empSortCol = col; empSortAsc = true; }
+      renderMuestras();
+    });
+  });
 }
 
 async function showModalEditMuestra(mu, onSave) {
