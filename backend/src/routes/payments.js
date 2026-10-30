@@ -141,7 +141,7 @@ router.get('/', allowRoles('pagos', 'comprador', 'admin'), (req, res) => {
 });
 
 // ── Registrar pago (con comprobante adjunto) ──────────────────────────────────
-router.post('/', allowRoles('pagos', 'admin'), upload.single('proof'), (req, res) => {
+router.post('/', allowRoles('pagos', 'comprador', 'admin'), upload.single('proof'), (req, res) => {
   const db = read();
   const proofFile = req.file;
   const row = {
