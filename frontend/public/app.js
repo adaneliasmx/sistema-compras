@@ -39,7 +39,8 @@ const MENU_BY_ROLE = {
   proveedor: ['cotizaciones', 'facturacion'],
   pagos: ['dashboard', 'pagos', 'seguimiento', 'facturacion', 'autorizaciones', 'kpis'],
   inventarios: ['dashboard', 'inventarios'],
-  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'kpis', 'inventarios', 'auditoria', 'admin']
+  admin: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'kpis', 'inventarios', 'auditoria', 'admin'],
+  muestra: ['dashboard', 'requisiciones', 'seguimiento', 'autorizaciones', 'compras', 'catalogos', 'cotizaciones', 'facturacion', 'pagos', 'kpis', 'inventarios', 'auditoria']
 };
 
 const app = document.getElementById('app');
@@ -75,6 +76,11 @@ async function api(path, options = {}) {
     logout();
     return;
   }
+  // Manejar bloqueo demo con toast amigable en lugar de error
+  if (res.status === 403 && data?.demo) {
+    if (typeof _showDemoToast === 'function') _showDemoToast(data.error || 'Operacion no permitida en modo demostracion');
+    return null;
+  }
   if (!res.ok) {
     const err = new Error(data?.error || data || 'Error');
     err.responseData = data;
@@ -88,6 +94,8 @@ function setAuth(token, user) {
   // token is stored in httpOnly cookie (set by server); we only keep user data locally
   state.user = user;
   localStorage.setItem('user', JSON.stringify(user));
+  // Activar sandbox si es usuario muestra
+  if (user && user.role === 'muestra') initDemoSandbox();
 }
 
 function logout() {
@@ -97,6 +105,94 @@ function logout() {
   location.hash = '#/login';
   render();
 }
+
+// ── Demo Sandbox: protecciones para usuario "muestra" ────────────────────────
+function isDemoUser() { return state.user?.role === 'muestra'; }
+
+function initDemoSandbox() {
+  // 1) Banner persistente de modo demo
+  if (!document.getElementById('demoBanner')) {
+    const banner = document.createElement('div');
+    banner.id = 'demoBanner';
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(90deg,#7c3aed,#2563eb);color:#fff;text-align:center;padding:6px 16px;font-size:13px;font-weight:700;letter-spacing:.5px;box-shadow:0 2px 8px rgba(0,0,0,.2)';
+    banner.textContent = 'MODO DEMOSTRACION — Los cambios no se guardan. Datos enmascarados.';
+    document.body.prepend(banner);
+    document.body.style.paddingTop = '32px';
+  }
+
+  // 2) Bloquear consola DevTools (defensa en profundidad — server es la barrera real)
+  _blockDevToolsForDemo();
+
+  // 3) Interceptar formularios (defensa UI, el server bloquea de todos modos)
+  document.addEventListener('submit', function _demoFormBlock(e) {
+    if (!isDemoUser()) return;
+    e.preventDefault();
+    e.stopPropagation();
+    _showDemoToast('Los formularios estan deshabilitados en modo demostracion');
+  }, true);
+
+  // 4) Observer para deshabilitar botones de accion despues de cada render
+  const obs = new MutationObserver(() => { if (isDemoUser()) _disableDemoActions(); });
+  obs.observe(document.body, { childList: true, subtree: true });
+  setTimeout(() => _disableDemoActions(), 500);
+}
+
+function _disableDemoActions() {
+  // Deshabilitar botones que implican acciones de escritura
+  const actionWords = ['guardar', 'crear', 'enviar', 'eliminar', 'borrar', 'aprobar', 'rechazar',
+    'cancelar', 'generar', 'importar', 'exportar', 'descargar', 'subir', 'upload',
+    'save', 'create', 'delete', 'remove', 'submit', 'approve', 'reject'];
+  document.querySelectorAll('button, input[type="submit"], .btn').forEach(btn => {
+    if (btn.id === 'logoutBtn' || btn.id === 'changePwdBtn' || btn.closest('#demoBanner')) return;
+    const txt = (btn.textContent || btn.value || '').toLowerCase();
+    if (actionWords.some(w => txt.includes(w)) || btn.classList.contains('btn-danger') || btn.classList.contains('btn-success')) {
+      btn.disabled = true;
+      btn.style.opacity = '0.4';
+      btn.style.cursor = 'not-allowed';
+      btn.title = 'No disponible en modo demostracion';
+    }
+  });
+  // Deshabilitar enlaces de descarga
+  document.querySelectorAll('a[download], a[href*="export"], a[href*="download"], a[href*="csv"]').forEach(a => {
+    a.onclick = (e) => { e.preventDefault(); _showDemoToast('Descargas no disponibles en modo demostracion'); };
+    a.style.opacity = '0.4';
+    a.style.cursor = 'not-allowed';
+  });
+}
+
+function _showDemoToast(msg) {
+  let toast = document.getElementById('demoToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'demoToast';
+    toast.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:#1e293b;color:#fff;padding:12px 24px;border-radius:12px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);transition:opacity .3s;pointer-events:none';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.style.opacity = '1';
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 3000);
+}
+
+function _blockDevToolsForDemo() {
+  // Bloquear atajos de teclado comunes de DevTools
+  document.addEventListener('keydown', function(e) {
+    if (!isDemoUser()) return;
+    // F12
+    if (e.key === 'F12') { e.preventDefault(); _showDemoToast('Herramientas de desarrollo no disponibles'); return; }
+    // Ctrl+Shift+I/J/C
+    if (e.ctrlKey && e.shiftKey && ['I','i','J','j','C','c'].includes(e.key)) { e.preventDefault(); _showDemoToast('Herramientas de desarrollo no disponibles'); return; }
+    // Ctrl+U (view source)
+    if (e.ctrlKey && (e.key === 'U' || e.key === 'u')) { e.preventDefault(); return; }
+  }, true);
+  // Bloquear menu contextual (click derecho)
+  document.addEventListener('contextmenu', function(e) {
+    if (!isDemoUser()) return;
+    e.preventDefault();
+    _showDemoToast('Menu contextual deshabilitado en modo demostracion');
+  }, true);
+}
+// ── Fin Demo Sandbox ─────────────────────────────────────────────────────────
 
 function statusPill(status) {
   const map = {
@@ -9522,4 +9618,5 @@ async function kpiView() {
 
 window.addEventListener('hashchange', () => { render().then(() => { if (state.user) initNotifications(); }); });
 if (state.user) initInactivityWatcher();
+if (state.user && state.user.role === 'muestra') initDemoSandbox();
 render().then(() => { if (state.user) initNotifications(); });

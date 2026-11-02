@@ -23,6 +23,8 @@ function flujoAllowRoles(...roles) {
   return (req, res, next) => {
     if (!req.flujoUser) return res.status(401).json({ error: 'No autenticado' });
     if (req.flujoUser.role === 'admin') return next();
+    // Rol muestra: solo lectura (escrituras bloqueadas por demoGuard)
+    if (req.flujoUser.role === 'muestra' && req.method === 'GET') return next();
     if (roles.includes(req.flujoUser.role)) return next();
     return res.status(403).json({ error: 'Permisos insuficientes' });
   };

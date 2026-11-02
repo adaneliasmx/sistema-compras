@@ -27,6 +27,8 @@ function produccionAllowRoles(...roles) {
   return (req, res, next) => {
     if (!req.prodUser) return res.status(401).json({ error: 'No autenticado' });
     if (req.prodUser.role === 'admin') return next();
+    // Rol muestra: solo lectura (escrituras bloqueadas por demoGuard)
+    if (req.prodUser.role === 'muestra' && req.method === 'GET') return next();
     if (roles.includes(req.prodUser.role)) return next();
     return res.status(403).json({ error: 'Permisos insuficientes' });
   };

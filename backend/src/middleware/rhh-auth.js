@@ -54,6 +54,8 @@ function rhhAuthRequired(req, res, next) {
 function rhhRequireRole(...roles) {
   return (req, res, next) => {
     if (!req.rhhUser) return res.status(401).json({ error: 'No autenticado' });
+    // Rol muestra: solo lectura (escrituras bloqueadas por demoGuard)
+    if (req.rhhUser.role === 'muestra' && req.method === 'GET') return next();
     if (!roles.includes(req.rhhUser.role)) {
       return res.status(403).json({ error: 'Acceso no autorizado para este rol' });
     }

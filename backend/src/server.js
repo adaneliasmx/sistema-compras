@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const path = require('path');
+const { demoGuard, getDemoAuditLog } = require('./middleware/demo-guard');
 
 // ── Validación de seguridad al arrancar ───────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -149,6 +150,9 @@ app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), {
   maxAge: '1h',
   etag: true
 }));
+
+// ── Demo Guard: bloquear escrituras/exports para rol "muestra" ───────────────
+app.use('/api', demoGuard);
 
 // ── API Health + memoria ──────────────────────────────────────────────────────
 app.get('/api/health', (req, res) => {

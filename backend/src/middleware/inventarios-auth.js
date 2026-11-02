@@ -29,6 +29,8 @@ function invAllowRoles(...roles) {
   return (req, res, next) => {
     if (!req.invUser) return res.status(401).json({ error: 'No autenticado' });
     if (req.invUser.role === 'admin') return next();
+    // Rol muestra: solo lectura (escrituras bloqueadas por demoGuard)
+    if (req.invUser.role === 'muestra' && req.method === 'GET') return next();
     if (roles.includes(req.invUser.role)) return next();
     return res.status(403).json({ error: 'Permisos insuficientes' });
   };
@@ -41,6 +43,7 @@ function invCanAccessType(inv_type) {
     if (!req.invUser) return res.status(401).json({ error: 'No autenticado' });
     const { role, permisos_inv } = req.invUser;
     if (role === 'admin' || role === 'recepcion' || role === 'comprador') return next();
+    if (role === 'muestra' && req.method === 'GET') return next();
     // Si permisos_inv está vacío el rol inventarios tiene acceso a todos los tipos
     if (role === 'inventarios' && (!(permisos_inv || []).length || permisos_inv.includes(inv_type))) return next();
     return res.status(403).json({ error: 'Sin acceso a este inventario' });

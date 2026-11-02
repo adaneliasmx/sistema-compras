@@ -1608,4 +1608,181 @@ router.post('/diagnose-user', superAdminRequired, (req, res) => {
   res.json(result);
 });
 
+// ── Auditoría del usuario muestra ─────────────────────────────────────────────
+const { getDemoAuditLog } = require('../middleware/demo-guard');
+router.get('/demo-audit', superAdminRequired, (req, res) => {
+  res.json({ log: getDemoAuditLog() });
+});
+
+// ── Provisionar usuario "muestra" en todos los módulos ───────────────────────
+// POST /api/super-admin/provision-demo
+// Crea o actualiza el usuario muestra en todos los módulos del sistema
+router.post('/provision-demo', superAdminRequired, (req, res) => {
+  const { email, password, full_name } = req.body || {};
+  if (!email || !password) return res.status(400).json({ error: 'email y password requeridos' });
+  if (!full_name) return res.status(400).json({ error: 'full_name requerido' });
+
+  const emailLow = email.toLowerCase().trim();
+  const pwdHash = bcrypt.hashSync(String(password), 10);
+  const now = new Date().toISOString();
+  const results = [];
+
+  // 1. Compras (tabla central) — con roles para todos los módulos que comparten db.users
+  const comprasDb = readCompras();
+  let comprasUser = (comprasDb.users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (comprasUser) {
+    comprasUser.role_code = 'muestra';
+    comprasUser.full_name = full_name;
+    comprasUser.password_hash = pwdHash;
+    comprasUser.vales_role = 'muestra';
+    comprasUser.produccion_role = 'muestra';
+    comprasUser.mant_role = 'muestra';
+    comprasUser.active = true;
+    comprasUser.updated_at = now;
+    results.push({ module: 'compras', action: 'updated', id: comprasUser.id });
+  } else {
+    comprasDb.users = comprasDb.users || [];
+    comprasUser = {
+      id: nextIdCompras(comprasDb.users),
+      full_name, email: emailLow, password_hash: pwdHash,
+      role_code: 'muestra', department: 'DEMO',
+      supplier_id: null, default_cost_center_id: null,
+      default_sub_cost_center_id: null, allowed_scc_ids: [],
+      active: true, vales_role: 'muestra',
+      produccion_role: 'muestra', mant_role: 'muestra',
+      created_at: now
+    };
+    comprasDb.users.push(comprasUser);
+    results.push({ module: 'compras', action: 'created', id: comprasUser.id });
+  }
+  writeCompras(comprasDb);
+
+  // 2. RHH
+  const rhhDb = readRhh();
+  let rhhUser = (rhhDb.rhh_users || []).find(u => (u.email || '').toLowerCase() === emailLow);
+  if (rhhUser) {
+    rhhUser.role = 'muestra';
+    rhhUser.full_name = full_name;
+    rhhUser.password_hash = pwdHash;
+    rhhUser.active = true;
+    rhhUser.updated_at = now;
+    results.push({ module: 'rhh', action: 'updated', id: rhhUser.id });
+  } else {
+    rhhDb.rhh_users = rhhDb.rhh_users || [];
+    rhhUser = {
+      id: nextIdRhh(rhhDb.rhh_users), full_name, email: emailLow,
+      password_hash: pwdHash, role: 'muestra', employee_id: null,
+      active: true, created_at: now
+    };
+    rhhDb.rhh_users.push(rhhUser);
+    results.push({ module: 'rhh', action: 'created', id: rhhUser.id });
+  }
+  writeRhh(rhhDb);
+
+  // 3. Inventarios (tabla separada)
+  const invDb = readInv();
+  invDb.usuarios_inv = invDb.usuarios_inv || [];
+  let invUser = invDb.usuarios_inv.find(u => u.email === emailLow);
+  if (invUser) {
+    invUser.role = 'muestra'; invUser.nombre = full_name;
+    invUser.password_hash = pwdHash; invUser.activo = true;
+    results.push({ module: 'inventarios', action: 'updated', id: invUser.id });
+  } else {
+    invUser = {
+      id: nextIdInv(invDb.usuarios_inv), nombre: full_name, email: emailLow,
+      password_hash: pwdHash, role: 'muestra', permisos_inv: [], activo: true, created_at: now
+    };
+    invDb.usuarios_inv.push(invUser);
+    results.push({ module: 'inventarios', action: 'created', id: invUser.id });
+  }
+  writeInv(invDb);
+
+  // 4. Flujo de Materiales (tabla separada)
+  const flujoDb = readFlujo();
+  flujoDb.usuarios_flujo = flujoDb.usuarios_flujo || [];
+  let flujoUser = flujoDb.usuarios_flujo.find(u => u.email === emailLow);
+  if (flujoUser) {
+    flujoUser.role = 'muestra'; flujoUser.nombre = full_name;
+    flujoUser.password_hash = pwdHash; flujoUser.activo = true;
+    results.push({ module: 'flujo', action: 'updated', id: flujoUser.id });
+  } else {
+    flujoUser = {
+      id: nextIdFlujo(flujoDb.usuarios_flujo), nombre: full_name, email: emailLow,
+      password_hash: pwdHash, role: 'muestra', activo: true, created_at: now
+    };
+    flujoDb.usuarios_flujo.push(flujoUser);
+    results.push({ module: 'flujo', action: 'created', id: flujoUser.id });
+  }
+  writeFlujo(flujoDb);
+
+  // 5. Validaciones Almacen (tabla separada)
+  const valDb = readVal();
+  valDb.usuarios_val = valDb.usuarios_val || [];
+  let valUser = valDb.usuarios_val.find(u => u.email === emailLow);
+  if (valUser) {
+    valUser.role = 'muestra'; valUser.nombre = full_name;
+    valUser.password_hash = pwdHash; valUser.activo = true;
+    results.push({ module: 'validaciones', action: 'updated', id: valUser.id });
+  } else {
+    valUser = {
+      id: nextIdVal(valDb.usuarios_val), nombre: full_name, email: emailLow,
+      password_hash: pwdHash, role: 'muestra', activo: true, created_at: now
+    };
+    valDb.usuarios_val.push(valUser);
+    results.push({ module: 'validaciones', action: 'created', id: valUser.id });
+  }
+  writeVal(valDb);
+
+  // 6. Planner Staff (asignación — requiere usuario en compras)
+  const plannerDb = readPlanner();
+  plannerDb.asignaciones = plannerDb.asignaciones || [];
+  const plannerIdx = plannerDb.asignaciones.findIndex(a => a.usuario_id === comprasUser.id);
+  if (plannerIdx !== -1) {
+    plannerDb.asignaciones[plannerIdx].planner_role = 'staff';
+    plannerDb.asignaciones[plannerIdx].departamentos = PLANNER_DEPTOS.map(d => d.id);
+    results.push({ module: 'planner', action: 'updated' });
+  } else {
+    plannerDb.asignaciones.push({
+      usuario_id: comprasUser.id, nombre: full_name, email: emailLow,
+      planner_role: 'staff', departamentos: PLANNER_DEPTOS.map(d => d.id)
+    });
+    results.push({ module: 'planner', action: 'created' });
+  }
+  writePlanner(plannerDb);
+
+  res.json({
+    ok: true,
+    message: `Usuario muestra "${full_name}" (${emailLow}) provisionado en ${results.length} modulos`,
+    results
+  });
+});
+
+// GET /api/super-admin/demo-status — verificar estado del usuario muestra
+router.get('/demo-status', superAdminRequired, (req, res) => {
+  const comprasDb = readCompras();
+  const demoUsers = (comprasDb.users || []).filter(u => u.role_code === 'muestra');
+  if (!demoUsers.length) return res.json({ provisioned: false, modules: [] });
+
+  const user = demoUsers[0];
+  const emailLow = (user.email || '').toLowerCase();
+  const modules = [
+    { module: 'compras', active: user.active !== false, role: user.role_code },
+    { module: 'vales', active: !!user.vales_role, role: user.vales_role },
+    { module: 'produccion', active: !!user.produccion_role, role: user.produccion_role },
+    { module: 'mantenimiento', active: !!user.mant_role, role: user.mant_role },
+  ];
+
+  // Módulos con tablas separadas
+  try { const db = readRhh(); const u = (db.rhh_users || []).find(u => u.email === emailLow); modules.push({ module: 'rhh', active: !!(u && u.active !== false), role: u?.role }); } catch { modules.push({ module: 'rhh', active: false }); }
+  try { const db = readInv(); const u = (db.usuarios_inv || []).find(u => u.email === emailLow); modules.push({ module: 'inventarios', active: !!(u && u.activo !== false), role: u?.role }); } catch { modules.push({ module: 'inventarios', active: false }); }
+  try { const db = readFlujo(); const u = (db.usuarios_flujo || []).find(u => u.email === emailLow); modules.push({ module: 'flujo', active: !!(u && u.activo !== false), role: u?.role }); } catch { modules.push({ module: 'flujo', active: false }); }
+  try { const db = readVal(); const u = (db.usuarios_val || []).find(u => u.email === emailLow); modules.push({ module: 'validaciones', active: !!(u && u.activo !== false), role: u?.role }); } catch { modules.push({ module: 'validaciones', active: false }); }
+
+  res.json({
+    provisioned: true,
+    user: { id: user.id, full_name: user.full_name, email: user.email },
+    modules
+  });
+});
+
 module.exports = router;

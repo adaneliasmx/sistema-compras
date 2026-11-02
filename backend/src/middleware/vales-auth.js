@@ -30,6 +30,8 @@ function valesAllowRoles(...roles) {
   return (req, res, next) => {
     if (!req.valesUser) return res.status(401).json({ error: 'No autenticado' });
     if (req.valesUser.vales_role === 'admin') return next();
+    // Rol muestra: solo lectura (escrituras bloqueadas por demoGuard)
+    if (req.valesUser.vales_role === 'muestra' && req.method === 'GET') return next();
     if (roles.includes(req.valesUser.vales_role)) return next();
     return res.status(403).json({ error: 'Permisos insuficientes' });
   };
