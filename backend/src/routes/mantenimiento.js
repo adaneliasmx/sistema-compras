@@ -914,7 +914,7 @@ router.patch('/usuarios/:id/rol', mantAllowRoles('admin'), (req, res) => {
   const user = (db.users || []).find(u => u.id === Number(req.params.id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   const { mant_role } = req.body;
-  const roles_validos = ['supervisor_mant', 'tecnico_mant', 'admin', null];
+  const roles_validos = ['supervisor_mant', 'tecnico_mant', 'admin', 'muestra', null];
   if (!roles_validos.includes(mant_role)) return res.status(400).json({ error: 'Rol inválido' });
   user.mant_role = mant_role || null;
   writeMain(db);

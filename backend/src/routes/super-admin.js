@@ -557,8 +557,8 @@ router.patch('/rhh/users/:id', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/vales-role — asignar rol Calidad
 router.patch('/unified-users/vales-role', superAdminRequired, (req, res) => {
   const { user_id, email, vales_role } = req.body || {};
-  if (vales_role && !['admin', 'operador', 'consulta'].includes(vales_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta o null' });
+  if (vales_role && !['admin', 'operador', 'consulta', 'muestra'].includes(vales_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta, muestra o null' });
   const db = readCompras();
   const rhhDb = readRhh();
   let user = email
@@ -678,9 +678,9 @@ router.get('/val-users', superAdminRequired, (req, res) => {
 router.patch('/unified-users/val-role', superAdminRequired, (req, res) => {
   const { email, val_role } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email requerido' });
-  const validRoles = ['admin', 'viewer', 'skf'];
+  const validRoles = ['admin', 'viewer', 'skf', 'muestra'];
   if (val_role && !validRoles.includes(val_role))
-    return res.status(400).json({ error: 'Rol invalido. Use: admin, viewer, skf o null' });
+    return res.status(400).json({ error: 'Rol invalido. Use: admin, viewer, skf, muestra o null' });
 
   const emailLow = email.toLowerCase();
   const valDb = readVal();
@@ -752,9 +752,9 @@ router.get('/flujo-users', superAdminRequired, (req, res) => {
 router.patch('/unified-users/flujo-role', superAdminRequired, (req, res) => {
   const { email, flujo_role } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email requerido' });
-  const validRoles = ['admin', 'supervisor', 'calidad', 'aux.calidad'];
+  const validRoles = ['admin', 'supervisor', 'calidad', 'aux.calidad', 'muestra'];
   if (flujo_role && !validRoles.includes(flujo_role))
-    return res.status(400).json({ error: 'Rol invalido. Use: admin, supervisor, calidad, aux.calidad o null' });
+    return res.status(400).json({ error: 'Rol invalido. Use: admin, supervisor, calidad, aux.calidad, muestra o null' });
 
   const emailLow = email.toLowerCase();
   const flujoDb = readFlujo();
@@ -812,8 +812,8 @@ router.patch('/flujo-users/password', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/mant-role
 router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
   const { user_id, email, mant_role } = req.body || {};
-  if (mant_role && !['supervisor_mant', 'tecnico_mant', 'admin', 'superadmin_mant'].includes(mant_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: supervisor_mant, tecnico_mant, admin o null' });
+  if (mant_role && !['supervisor_mant', 'tecnico_mant', 'admin', 'superadmin_mant', 'muestra'].includes(mant_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: supervisor_mant, tecnico_mant, admin, muestra o null' });
   const db = readCompras();
   const rhhDb = readRhh();
   let user = email
@@ -828,8 +828,8 @@ router.patch('/unified-users/mant-role', superAdminRequired, (req, res) => {
 // PATCH /api/super-admin/unified-users/produccion-role
 router.patch('/unified-users/produccion-role', superAdminRequired, (req, res) => {
   const { user_id, email, produccion_role } = req.body || {};
-  if (produccion_role && !['pizarron', 'produccion', 'admin'].includes(produccion_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: pizarron, produccion, admin o null' });
+  if (produccion_role && !['pizarron', 'produccion', 'admin', 'muestra'].includes(produccion_role))
+    return res.status(400).json({ error: 'Rol inválido. Use: pizarron, produccion, admin, muestra o null' });
   const db = readCompras();
   const rhhDb = readRhh();
   let user = email
@@ -897,9 +897,9 @@ router.get('/inv-users', superAdminRequired, (req, res) => {
 router.patch('/unified-users/inv-role', superAdminRequired, (req, res) => {
   const { email, inv_role, permisos_inv } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email requerido' });
-  const validRoles = ['admin', 'inventarios', 'recepcion', 'comprador'];
+  const validRoles = ['admin', 'inventarios', 'recepcion', 'comprador', 'muestra'];
   if (inv_role && !validRoles.includes(inv_role))
-    return res.status(400).json({ error: 'Rol inválido. Use: admin, inventarios, recepcion, comprador o null' });
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, inventarios, recepcion, comprador, muestra o null' });
 
   const emailLow = email.toLowerCase();
   const invDb = readInv();
@@ -1291,8 +1291,8 @@ router.get('/planner-users', superAdminRequired, (req, res) => {
 router.patch('/planner-asignacion', superAdminRequired, (req, res) => {
   const { usuario_id, planner_role, departamentos } = req.body || {};
   if (!usuario_id) return res.status(400).json({ error: 'usuario_id requerido' });
-  if (planner_role && !['admin', 'staff'].includes(planner_role)) {
-    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff o null' });
+  if (planner_role && !['admin', 'staff', 'muestra'].includes(planner_role)) {
+    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff, muestra o null' });
   }
   if (departamentos && !Array.isArray(departamentos)) {
     return res.status(400).json({ error: 'departamentos debe ser un array' });

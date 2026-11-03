@@ -140,8 +140,8 @@ router.get('/staff/disponibles', (req, res) => {
 router.patch('/staff/asignar', plannerAdmin, (req, res) => {
   const { usuario_id, planner_role, departamentos } = safeBody(req.body);
   if (!usuario_id) return res.status(400).json({ error: 'usuario_id requerido' });
-  if (planner_role && !['admin', 'staff'].includes(planner_role)) {
-    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff o null' });
+  if (planner_role && !['admin', 'staff', 'muestra'].includes(planner_role)) {
+    return res.status(400).json({ error: 'planner_role invalido. Use: admin, staff, muestra o null' });
   }
   if (departamentos && !Array.isArray(departamentos)) {
     return res.status(400).json({ error: 'departamentos debe ser un array' });

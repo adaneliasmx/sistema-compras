@@ -761,8 +761,8 @@ router.patch('/usuarios/:id/vales-role', valesAllowRoles('admin'), (req, res) =>
   const user = dbMain.users.find(u => u.id === Number(req.params.id));
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
   const { vales_role } = req.body;
-  if (vales_role !== null && vales_role !== undefined && !['admin', 'operador', 'consulta'].includes(vales_role)) {
-    return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta, o null' });
+  if (vales_role !== null && vales_role !== undefined && !['admin', 'operador', 'consulta', 'muestra'].includes(vales_role)) {
+    return res.status(400).json({ error: 'Rol inválido. Use: admin, operador, consulta, muestra, o null' });
   }
   user.vales_role = vales_role || null;
   writeUsers(dbMain);
