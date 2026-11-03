@@ -15,28 +15,29 @@ const JWT_SECRET = require('../jwt-secret');
 // ── Constantes ────────────────────────────────────────────────────────────────
 
 // Rutas de login/logout (permitidas siempre, incluso POST)
+// NOTA: sin prefijo /api porque el middleware se monta en app.use('/api', demoGuard)
 const AUTH_WHITELIST = [
-  '/api/auth/login',
-  '/api/auth/logout',
-  '/api/auth/me',
-  '/api/vales/auth/login',
-  '/api/rhh/auth/login',
-  '/api/produccion/auth/login',
-  '/api/mant/auth/login',
-  '/api/inv/auth/login',
-  '/api/val/auth/login',
-  '/api/flujo/auth/login',
-  '/api/empleados/auth/login',
+  '/auth/login',
+  '/auth/logout',
+  '/auth/me',
+  '/vales/auth/login',
+  '/rhh/auth/login',
+  '/produccion/auth/login',
+  '/mant/auth/login',
+  '/inv/auth/login',
+  '/val/auth/login',
+  '/flujo/auth/login',
+  '/empleados/auth/login',
 ];
 
 // Rutas 100% bloqueadas (ni GET) para usuario muestra
 const BLOCKED_PATHS = [
-  '/api/super-admin',         // todo super-admin
-  '/api/admin/users',         // gestión de usuarios
-  '/api/auth/change-password',
-  '/api/auth/request-reset',
-  '/api/auth/reset-password',
-  '/api/auth/verify-password',
+  '/super-admin',             // todo super-admin
+  '/admin/users',             // gestión de usuarios
+  '/auth/change-password',
+  '/auth/request-reset',
+  '/auth/reset-password',
+  '/auth/verify-password',
 ];
 
 // Patrones de export/download a bloquear
