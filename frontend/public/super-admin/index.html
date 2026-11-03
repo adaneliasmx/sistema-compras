@@ -378,6 +378,7 @@
           <option value="pagos">Pagos</option>
           <option value="inventarios">Inventarios</option>
           <option value="admin">Admin</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -390,6 +391,7 @@
           <option value="supervisor">Supervisor</option>
           <option value="rh">RH</option>
           <option value="admin">Admin</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -402,6 +404,7 @@
           <option value="consulta">Consulta (solo lectura)</option>
           <option value="operador">Operador (crear vales)</option>
           <option value="admin">Admin (acceso total)</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -414,6 +417,7 @@
           <option value="pizarron">Pizarrón (solo vista)</option>
           <option value="produccion">Producción (operador)</option>
           <option value="admin">Admin (acceso total)</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -427,6 +431,7 @@
           <option value="tecnico_mant">Técnico de Mantenimiento</option>
           <option value="admin">Admin (acceso total)</option>
           <option value="superadmin_mant">⭐ Super Admin (puede borrar)</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -439,6 +444,7 @@
           <option value="skf">SKF (solo consulta)</option>
           <option value="viewer">Viewer (solo lectura)</option>
           <option value="admin">Admin (acceso total)</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -452,6 +458,7 @@
           <option value="supervisor">Supervisor</option>
           <option value="calidad">Calidad</option>
           <option value="aux.calidad">Aux. Calidad</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
       <div style="border:1.5px solid var(--line);border-radius:10px;padding:10px 14px;">
@@ -463,6 +470,7 @@
         <select class="modal-input" id="cm-planner-role" disabled style="margin-top:8px;font-size:13px;">
           <option value="staff">Staff</option>
           <option value="admin">Admin (acceso total)</option>
+          <option value="muestra">👁️ Muestra (solo lectura)</option>
         </select>
       </div>
     </div>
@@ -543,8 +551,8 @@
 
 <script>
 const TOKEN_KEY = 'sa_token';
-const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin', sin_rol:'Solo módulos' };
-const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin' };
+const ROLE_LABELS_COMPRAS    = { cliente_requisicion:'Requisición', comprador:'Comprador', autorizador:'Autorizador', pagos:'Pagos', proveedor:'Proveedor', inventarios:'Inventarios', admin:'Admin', sin_rol:'Solo módulos', muestra:'👁️ Muestra' };
+const ROLE_LABELS_RHH        = { empleado:'Empleado', supervisor:'Supervisor', rh:'RH', admin:'Admin', muestra:'👁️ Muestra' };
 const ROLE_LABELS_CALIDAD    = { consulta:'Consulta', operador:'Operador', admin:'Admin' };
 const ROLE_LABELS_PRODUCCION = { admin:'Admin' };
 const ROLE_LABELS_MANT       = { supervisor_mant:'Supervisor', tecnico_mant:'Técnico', admin:'Admin', superadmin_mant:'⭐ Super Admin' };
@@ -680,6 +688,7 @@ function renderUsersTable() {
              <option value="consulta"  ${vr==='consulta' ?'selected':''}>Consulta</option>
              <option value="operador"  ${vr==='operador' ?'selected':''}>Operador</option>
              <option value="admin"     ${vr==='admin'    ?'selected':''}>Admin</option>
+             <option value="muestra"  ${vr==='muestra'  ?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 
@@ -692,6 +701,7 @@ function renderUsersTable() {
              <option value="pizarron"  ${pr==='pizarron'  ?'selected':''}>Pizarrón</option>
              <option value="produccion"${pr==='produccion'?'selected':''}>Producción</option>
              <option value="admin"     ${pr==='admin'     ?'selected':''}>Admin</option>
+             <option value="muestra"  ${pr==='muestra'  ?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 
@@ -705,6 +715,7 @@ function renderUsersTable() {
              <option value="tecnico_mant"     ${mr==='tecnico_mant'   ?'selected':''}>Técnico</option>
              <option value="admin"            ${mr==='admin'           ?'selected':''}>Admin</option>
              <option value="superadmin_mant"  ${mr==='superadmin_mant' ?'selected':''}>⭐ Super Admin</option>
+             <option value="muestra"         ${mr==='muestra'        ?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 
@@ -719,6 +730,7 @@ function renderUsersTable() {
              <option value="inventarios" ${ir==='inventarios' ?'selected':''}>Inventarios</option>
              <option value="recepcion"   ${ir==='recepcion'   ?'selected':''}>Recepción</option>
              <option value="comprador"   ${ir==='comprador'   ?'selected':''}>Comprador</option>
+             <option value="muestra"    ${ir==='muestra'    ?'selected':''}>👁️ Muestra</option>
            </select>
            ${ir === 'inventarios' ? `<button class="btn-add-mod" style="font-size:10px;padding:2px 6px;" onclick="openInvPermisosModal('${esc(u.email)}','${esc(u.full_name)}',${invUser?.id||'null'})">Permisos</button>` : ''}
          </div>`;
@@ -732,7 +744,8 @@ function renderUsersTable() {
              <option value="">— Sin acceso —</option>
              <option value="admin"  ${valR==='admin' ?'selected':''}>Admin</option>
              <option value="skf"    ${valR==='skf'   ?'selected':''}>SKF (solo consulta)</option>
-             <option value="viewer" ${valR==='viewer'?'selected':''}>Viewer</option>
+             <option value="viewer"  ${valR==='viewer' ?'selected':''}>Viewer</option>
+             <option value="muestra" ${valR==='muestra'?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 
@@ -747,6 +760,7 @@ function renderUsersTable() {
              <option value="supervisor"  ${flR==='supervisor'  ?'selected':''}>Supervisor</option>
              <option value="calidad"     ${flR==='calidad'     ?'selected':''}>Calidad</option>
              <option value="aux.calidad" ${flR==='aux.calidad' ?'selected':''}>Aux. Calidad</option>
+             <option value="muestra"    ${flR==='muestra'    ?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 
@@ -758,7 +772,8 @@ function renderUsersTable() {
              onchange="changePlannerRole(${u.compras?.id||'null'}, this.value, this, '${uidKey}')">
              <option value="">— Sin acceso —</option>
              <option value="staff"  ${plR==='staff' ?'selected':''}>Staff</option>
-             <option value="admin"  ${plR==='admin' ?'selected':''}>Admin</option>
+             <option value="admin"    ${plR==='admin'   ?'selected':''}>Admin</option>
+             <option value="muestra" ${plR==='muestra'?'selected':''}>👁️ Muestra</option>
            </select>
          </div>`;
 

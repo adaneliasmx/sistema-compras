@@ -1341,7 +1341,7 @@ async function catalogsView() {
     if (!wrap) return;
     try {
       const assignUsers = await api('/api/catalogs/user-scc-assignments');
-      const roleLabel = { cliente_requisicion: 'Cliente', comprador: 'Comprador', autorizador: 'Autorizador', pagos: 'Pagos', admin: 'Admin' };
+      const roleLabel = { cliente_requisicion: 'Cliente', comprador: 'Comprador', autorizador: 'Autorizador', pagos: 'Pagos', admin: 'Admin', muestra: 'Muestra' };
 
       wrap.innerHTML = `
         <div style="overflow-x:auto">
@@ -7661,7 +7661,7 @@ async function adminView() {
           <div><label>Departamento</label><input id="usrDept" placeholder="MANT"/></div>
         </div>
         <div class="row-3">
-          <div><label>Rol</label><select id="usrRole"><option>cliente_requisicion</option><option>comprador</option><option>autorizador</option><option>pagos</option><option>proveedor</option><option>admin</option></select></div>
+          <div><label>Rol</label><select id="usrRole"><option>cliente_requisicion</option><option>comprador</option><option>autorizador</option><option>pagos</option><option>proveedor</option><option>admin</option><option>muestra</option></select></div>
           <div><label>Proveedor (si rol=proveedor)</label><select id="usrSupplier"><option value="">Ninguno</option>${suppliers.map(s => `<option value="${s.id}">${s.business_name}</option>`).join('')}</select></div>
           <div><label>Contraseña <span class="muted small">(dejar vacío para no cambiar)</span></label><input id="usrPass" placeholder="Nueva contraseña"/></div>
         </div>
