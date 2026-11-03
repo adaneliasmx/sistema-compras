@@ -128,8 +128,8 @@ function buildNav() {
     return btn;
   };
 
-  // Recepcion: admin + recepcion (todos los tipos) | inventarios (solo quimicos)
-  if (role === 'admin' || role === 'recepcion') {
+  // Recepcion: admin + muestra + recepcion (todos los tipos) | inventarios (solo quimicos)
+  if (role === 'admin' || role === 'recepcion' || role === 'muestra') {
     addGroup('Recepcion');
     addLink('📥', 'Registrar Recepcion', 'recepcion');
     addLink('📋', 'Historial Recepciones', 'recepcion-hist');
@@ -145,8 +145,8 @@ function buildNav() {
     addLink('📋', 'Historial Salidas', 'salida-hist', { inv_type: 'quimicos_proceso' });
   }
 
-  // Conteos: admin + inventarios (por permisos)
-  if (role === 'admin' || role === 'inventarios') {
+  // Conteos: admin + inventarios (por permisos) + muestra
+  if (role === 'admin' || role === 'inventarios' || role === 'muestra') {
     addGroup('Conteo Semanal');
     const types = INV_TYPES;
     for (const t of types) {
@@ -154,8 +154,8 @@ function buildNav() {
     }
   }
 
-  // Vista Comprador: admin + comprador
-  if (role === 'admin' || role === 'comprador') {
+  // Vista Comprador: admin + comprador + muestra
+  if (role === 'admin' || role === 'comprador' || role === 'muestra') {
     addGroup('Vista Comprador');
     for (const t of INV_TYPES) {
       addLink(t.icon, t.label, 'comprador', { inv_type: t.key });
@@ -165,8 +165,8 @@ function buildNav() {
     addLink('⚠️', 'Cuarentena Quimicos', 'cuarentena');
   }
 
-  // Vales EPP: admin + inventarios
-  if (role === 'admin' || role === 'inventarios') {
+  // Vales EPP: admin + inventarios + muestra
+  if (role === 'admin' || role === 'inventarios' || role === 'muestra') {
     addGroup('EPP');
     addLink('📝', 'Nuevo Vale EPP', 'vale-epp-nuevo');
     addLink('📋', 'Historial Vales EPP', 'vale-epp-hist');

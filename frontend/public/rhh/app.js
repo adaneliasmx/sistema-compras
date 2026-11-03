@@ -64,6 +64,22 @@ const MENU_BY_ROLE = {
     ['kpi', '📈 KPI'],
     ['quejas-rh', '📢 Quejas'],
     ['aclaraciones-rh', '💬 Aclaraciones']
+  ],
+  muestra: [
+    ['dashboard', '📊 Dashboard'],
+    ['checador', '🕐 Checador'],
+    ['catalogo-empleados', '👥 Catálogo Empleados'],
+    ['asistencias', '🗓️ Control Asistencias'],
+    ['incidencias', '📋 Incidencias Semanales'],
+    ['autorizaciones', '✅ Autorizaciones'],
+    ['lista-raya', '💰 Lista de Raya'],
+    ['vacantes', '🔍 Vacantes'],
+    ['plantilla-personal', '📊 Plantilla'],
+    ['evaluaciones', '⭐ Evaluaciones'],
+    ['reportes', '📊 Reportes'],
+    ['kpi', '📈 KPI'],
+    ['quejas-rh', '📢 Quejas'],
+    ['aclaraciones-rh', '💬 Aclaraciones']
   ]
 };
 

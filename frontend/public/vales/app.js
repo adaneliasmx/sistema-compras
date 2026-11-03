@@ -243,6 +243,22 @@ const MENU = {
     ['importar-excel-tit', '📊', 'Importar Titulaciones Excel'],
     ['importar-sqlite', '🗄️', 'Importar SQLite'],
     ['exportar-db',     '💾', 'Exportar BD']
+  ],
+  muestra: [
+    ['consulta-vales',     '📋', 'Consulta Vales'],
+    ['reportes',           '📊', 'Reportes'],
+    ['inventario',         '📦', 'Inventario'],
+    ['kardex',             '📜', 'Kardex'],
+    ['---', '', 'Titulaciones'],
+    ['tit-reporte',        '📊', 'Reporte'],
+    ['tit-estadisticas',   '📈', 'Estadísticas'],
+    ['---', '', 'KPI Procesos'],
+    ['kpi-procesos',       '📊', 'Pizarrón CPK'],
+    ['kpi-sixpack',        '🔬', 'Capability Sixpack'],
+    ['kpi-empaque-cpk',    '📊', 'Pizarrón CPK Empaque'],
+    ['kpi-empaque-sixpack','🔬', 'Sixpack Empaque'],
+    ['---', '', 'Certificados'],
+    ['cert-calidad',       '📄', 'Certificados SKF']
   ]
 };
 

@@ -88,6 +88,27 @@ const MENU = {
   pizarron: [
     ['pizarron',       '📋', 'Pizarrón KPI'],
     ['resumen-turno',  '📑', 'Resumen de Turno']
+  ],
+  muestra: [
+    ['dashboard',      '📊', 'Dashboard'],
+    ['linea-3',        '🏭', 'Línea 3'],
+    ['linea-4',        '🏭', 'Línea 4'],
+    ['linea-baker',    '🔧', 'Baker'],
+    ['linea-l1',       '🏭', 'Línea 1'],
+    ['reportes',       '📈', 'Reportes'],
+    ['paros',          '⏸', 'Paros'],
+    ['pizarron',       '📋', 'Pizarrón KPI'],
+    ['kpi-historico',  '📊', 'KPI Histórico'],
+    ['resumen-turno',  '📑', 'Resumen de Turno'],
+    ['monitor',        '📡', 'Monitor en vivo'],
+    ['monitor-grafico','📊', 'Monitoreo Gráfico'],
+    ['---', '', 'Catálogos'],
+    ['catalogos-l3',   '📦', 'Catálogos L3'],
+    ['catalogos-l4',   '📦', 'Catálogos L4'],
+    ['catalogos-baker','📦', 'Catálogos Baker'],
+    ['catalogos-l1',   '📦', 'Catálogos L1'],
+    ['---', '', 'SCRAP'],
+    ['scrap',          '🗑️', 'SCRAP']
   ]
 };
 
@@ -240,7 +261,7 @@ function tryRestore() {
   if (t && u) {
     try {
       const user = JSON.parse(u);
-      const validRoles = ['admin', 'produccion', 'pizarron'];
+      const validRoles = ['admin', 'produccion', 'pizarron', 'muestra'];
       if (!validRoles.includes(user.role)) {
         localStorage.removeItem('prod_token');
         localStorage.removeItem('prod_user');
@@ -687,7 +708,7 @@ function bindLogin() {
 }
 
 // ── Layout (sidebar + main) ───────────────────────────────────────────────────
-const ROLE_LABELS_PROD = { admin: 'Admin', produccion: 'Producción', pizarron: 'Pizarrón' };
+const ROLE_LABELS_PROD = { admin: 'Admin', produccion: 'Producción', pizarron: 'Pizarrón', muestra: 'Muestra' };
 
 function renderLayout() {
   const role = state.user.role || 'pizarron';

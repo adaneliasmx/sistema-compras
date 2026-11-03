@@ -268,9 +268,10 @@ function startApp(user) {
   document.getElementById('appPage').style.flexDirection = 'column';
   const roleLabel = user.role === 'skf' ? 'SKF · solo consulta'
     : user.role === 'viewer' ? 'Viewer · solo lectura'
+    : user.role === 'muestra' ? 'Muestra · solo lectura'
     : user.role;
   document.getElementById('headerUser').textContent = user.nombre + ' (' + roleLabel + ')';
-  if (user.role === 'admin') {
+  if (user.role === 'admin' || user.role === 'muestra') {
     document.getElementById('tabSync').style.display = '';
     document.getElementById('tabRecuperar').style.display = '';
   }

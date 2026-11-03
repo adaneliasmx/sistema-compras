@@ -285,7 +285,7 @@ function renderApp() {
         <div class="nav-item" data-view="dashboard" onclick="navigateTo('dashboard')" style="margin-top:8px">
           <span>📊</span> <span>Dashboard</span>
         </div>
-        ${currentUser.planner_role === 'admin' ? `
+        ${(currentUser.planner_role === 'admin' || currentUser.planner_role === 'muestra') ? `
         <div class="nav-item" data-view="equipo" onclick="navigateTo('equipo')" style="margin-top:4px">
           <span>👥</span> <span>Equipo</span>
         </div>` : ''}

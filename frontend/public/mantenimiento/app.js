@@ -166,17 +166,18 @@ function renderApp() {
 
 function buildNavItems(role) {
   const isAdmin = role === 'admin' || role === 'superadmin_mant';
+  const isDemo  = role === 'muestra';
   const items = [];
-  if (isAdmin || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
+  if (isAdmin || isDemo || role === 'tecnico_mant') items.push({ id: 'urgencias', label: '🚨 Urgencias' });
   if (isAdmin || role === 'supervisor_mant') items.push({ id: 'nueva', label: '➕ Nueva solicitud' });
   if (role === 'supervisor_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis solicitudes' });
-  if (role === 'supervisor_mant' || isAdmin) items.push({ id: 'validacion', label: '🔍 En validación' });
+  if (role === 'supervisor_mant' || isAdmin || isDemo) items.push({ id: 'validacion', label: '🔍 En validación' });
   if (role === 'tecnico_mant') items.push({ id: 'mis-ordenes', label: '📋 Mis órdenes' });
-  if (isAdmin || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
-  if (isAdmin || role === 'supervisor_mant') items.push({ id: 'semana', label: '📅 Plan semanal' });
-  if (isAdmin) items.push({ id: 'programados', label: '🗓 Programados' });
-  if (isAdmin) items.push({ id: 'kpis', label: '📊 KPIs' });
-  if (isAdmin) items.push({ id: 'catalogos', label: '⚙️ Catálogos' });
+  if (isAdmin || isDemo || role === 'tecnico_mant') items.push({ id: 'ordenes', label: '📋 Todas las órdenes' });
+  if (isAdmin || isDemo || role === 'supervisor_mant') items.push({ id: 'semana', label: '📅 Plan semanal' });
+  if (isAdmin || isDemo) items.push({ id: 'programados', label: '🗓 Programados' });
+  if (isAdmin || isDemo) items.push({ id: 'kpis', label: '📊 KPIs' });
+  if (isAdmin || isDemo) items.push({ id: 'catalogos', label: '⚙️ Catálogos' });
   return items;
 }
 
