@@ -6126,9 +6126,9 @@ async function buildEvalFormsTab(forms) {
     const totalPts = items.reduce((s, i) => s + (i.ponderacion || 0), 0);
     const itemRows = items.map((it, idx) => `
       <tr>
-        <td style="font-size:13px">${escHtml(it.name)}</td>
+        <td><input class="eval-item-name" data-idx="${idx}" value="${escHtml(it.name)}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;width:100%;border:1px solid #e5e7eb;border-radius:4px;" oninput="window._evalFormItems[${idx}].name=this.value" /></td>
         <td style="text-align:center">
-          <select onchange="window._evalFormItems[${idx}].ponderacion=Number(this.value)" style="font-size:12px;padding:3px;">
+          <select class="eval-item-pond" data-idx="${idx}" onchange="window._evalFormItems[${idx}].ponderacion=Number(this.value)" style="font-size:12px;padding:3px;">
             <option value="3" ${it.ponderacion===3?'selected':''}>3 — Muy Alta</option>
             <option value="2" ${it.ponderacion===2?'selected':''}>2 — Media</option>
             <option value="1" ${it.ponderacion===1?'selected':''}>1 — Muy Baja</option>
@@ -6773,10 +6773,10 @@ async function evalAsignar(sessionId) {
 function evalAddItem() {
   if (!window._evalFormGroupName) { toast('Selecciona un grupo primero', 'warning'); return; }
   if (!window._evalFormItems) window._evalFormItems = [];
-  const tbody = document.getElementById('eval-items-tbody');
-  if (!tbody) { evaluacionesView(); return; }
   const idx = window._evalFormItems.length;
   window._evalFormItems.push({ id: 0, name: '', ponderacion: 2 });
+  const tbody = document.getElementById('eval-items-tbody');
+  if (!tbody) { evaluacionesView(); return; }
   const row = document.createElement('tr');
   row.innerHTML = `
     <td><input class="eval-item-name" data-idx="${idx}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;width:100%;"/></td>
