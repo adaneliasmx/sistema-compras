@@ -6775,8 +6775,20 @@ function evalAddItem() {
   if (!window._evalFormItems) window._evalFormItems = [];
   const idx = window._evalFormItems.length;
   window._evalFormItems.push({ id: 0, name: '', ponderacion: 2 });
-  const tbody = document.getElementById('eval-items-tbody');
-  if (!tbody) { evaluacionesView(); return; }
+  let tbody = document.getElementById('eval-items-tbody');
+  if (!tbody) {
+    // Empty state visible — replace with table structure without re-fetching
+    const emptyEl = document.querySelector('#app .empty-state');
+    if (emptyEl) {
+      const tbl = document.createElement('table');
+      tbl.innerHTML = '<thead><tr><th>Item</th><th style="text-align:center">Ponderacion</th><th style="text-align:center">Pts</th><th></th></tr></thead>'
+        + '<tbody id="eval-items-tbody"></tbody>'
+        + '<tfoot><tr style="background:#eff6ff;font-weight:700;"><td colspan="2">TOTAL (puntos maximos)</td><td style="text-align:center;color:#2563eb">0</td><td></td></tr></tfoot>';
+      emptyEl.replaceWith(tbl);
+      tbody = document.getElementById('eval-items-tbody');
+    }
+    if (!tbody) return;
+  }
   const row = document.createElement('tr');
   row.innerHTML = `
     <td><input class="eval-item-name" data-idx="${idx}" placeholder="Nombre del ítem" style="font-size:13px;padding:4px 8px;width:100%;"/></td>
