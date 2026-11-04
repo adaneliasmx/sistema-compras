@@ -324,6 +324,19 @@ if (process.env.OPAQUE_ROUTES) {
     res.sendFile(path.resolve(process.cwd(), 'frontend/public/login.html'));
   });
   app.get('/home1', (req, res) => {
+    // Verificar cookie de sesión antes de servir el portal
+    const cookieHeader = req.headers.cookie || '';
+    let token = null;
+    for (const part of cookieHeader.split(';')) {
+      const [k, ...v] = part.trim().split('=');
+      if (k === 'session') { token = v.join('='); break; }
+    }
+    if (!token) return res.redirect('/');
+    try {
+      require('jsonwebtoken').verify(token, require('./jwt-secret'));
+    } catch (_) {
+      return res.redirect('/');
+    }
     res.sendFile(path.resolve(process.cwd(), 'frontend/public/portal.html'));
   });
 } else {
