@@ -1267,11 +1267,16 @@ function renderSmyaForm(formId, container) {
           <label>¿Que se hizo al respecto?</label>
           <textarea id="df_que_se_hizo" rows="3">${esc(datos.que_se_hizo || '')}</textarea>
         </div>
+        <div class="form-group">
+          <label>Evidencia fotográfica (link de consulta)</label>
+          <input type="url" id="df_evidencia_fotos_url" placeholder="https://drive.google.com/..." value="${esc(datos.evidencia_fotos_url || '')}">
+        </div>
       </div>
     `, () => ({
       hubo: document.getElementById('df_hubo').value === 'true',
       que_paso: document.getElementById('df_que_paso')?.value?.trim() || '',
-      que_se_hizo: document.getElementById('df_que_se_hizo')?.value?.trim() || ''
+      que_se_hizo: document.getElementById('df_que_se_hizo')?.value?.trim() || '',
+      evidencia_fotos_url: document.getElementById('df_evidencia_fotos_url')?.value?.trim() || ''
     }));
   } else if (formId === 'epp') {
     container.innerHTML = dailyFormWrap('EPP y cumplimiento', `
@@ -1294,10 +1299,15 @@ function renderSmyaForm(formId, container) {
           <textarea id="df_quien" rows="3">${esc(datos.quien_no_cumplio || '')}</textarea>
         </div>
       </div>
+      <div class="form-group" style="margin-top:12px">
+        <label>Evidencia de cumplimiento EPP (link de consulta)</label>
+        <input type="url" id="df_evidencia_epp_url" placeholder="https://drive.google.com/..." value="${esc(datos.evidencia_epp_url || '')}">
+      </div>
     `, () => ({
       cumplimiento: document.getElementById('df_cumplimiento').value === 'true',
       porcentaje: Number(document.getElementById('df_porcentaje')?.value) || 0,
-      quien_no_cumplio: document.getElementById('df_quien')?.value?.trim() || ''
+      quien_no_cumplio: document.getElementById('df_quien')?.value?.trim() || '',
+      evidencia_epp_url: document.getElementById('df_evidencia_epp_url')?.value?.trim() || ''
     }));
   } else if (formId === 'scrap') {
     renderScrapForm(container, datos);
@@ -3466,10 +3476,41 @@ function dsCpkBadge(v) {
   return '<span style="color:' + c + ';font-weight:700">' + v.toFixed(2) + '</span>';
 }
 
+function dsEvidenciaLink(url, label) {
+  if (!url) return '';
+  return '<div style="margin-top:10px;padding:10px 14px;background:#eef6ff;border:1.5px solid var(--accent);border-radius:8px;display:flex;align-items:center;gap:10px">' +
+    '<span style="font-size:20px">📎</span>' +
+    '<div style="flex:1"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700">' + esc(label) + '</div>' +
+    '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="font-size:13px;color:var(--accent);font-weight:600;word-break:break-all">' + esc(url) + '</a></div>' +
+    '<a href="' + esc(url) + '" target="_blank" rel="noopener" style="padding:6px 14px;background:var(--accent);color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;white-space:nowrap">Abrir ↗</a></div>';
+}
 function dsCustomRender(formId, datos) {
   if (!datos || !Object.keys(datos).length) return null;
   var LINEAS = ['Baker', 'L1', 'L3', 'L4'];
   var h = '';
+
+  // ── EPP y cumplimiento ──
+  if (formId === 'epp') {
+    var ok = datos.cumplimiento !== false;
+    h = '<div style="text-align:center;margin-bottom:14px">' +
+      '<div style="width:80px;height:80px;border-radius:50%;border:3px solid ' + (ok ? 'var(--green)' : 'var(--red)') + ';display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:36px;color:' + (ok ? 'var(--green)' : 'var(--red)') + ';background:' + (ok ? '#f0fdf4' : '#fef2f2') + '">' + (ok ? '✓' : '✗') + '</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + (ok ? 'var(--green)' : 'var(--red)') + '">' + (ok ? 'Cumplimiento al 100%' : (datos.porcentaje || 0) + '% de cumplimiento') + '</div></div>';
+    if (!ok && datos.quien_no_cumplio) h += '<div style="padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;margin-bottom:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:3px">Quien no cumplio / Detalles</div><div style="font-size:13px">' + esc(datos.quien_no_cumplio) + '</div></div>';
+    h += dsEvidenciaLink(datos.evidencia_epp_url, 'Evidencia de cumplimiento EPP');
+    return h + dsObsBox(datos.comentarios);
+  }
+
+  // ── Condiciones inseguras ──
+  if (formId === 'condiciones_inseguras') {
+    var hubo = datos.hubo;
+    h = '<div style="text-align:center;margin-bottom:14px">' +
+      '<div style="width:80px;height:80px;border-radius:50%;border:3px solid ' + (!hubo ? 'var(--green)' : 'var(--orange)') + ';display:flex;align-items:center;justify-content:center;margin:0 auto 10px;font-size:36px;color:' + (!hubo ? 'var(--green)' : 'var(--orange)') + ';background:' + (!hubo ? '#f0fdf4' : '#fffbeb') + '">' + (!hubo ? '✓' : '⚠') + '</div>' +
+      '<div style="font-size:18px;font-weight:700;color:' + (!hubo ? 'var(--green)' : 'var(--orange)') + '">' + (!hubo ? 'Sin condiciones inseguras' : 'Se detectaron condiciones inseguras') + '</div></div>';
+    if (hubo && datos.que_paso) h += '<div style="padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;margin-bottom:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:3px">Que se detecto</div><div style="font-size:13px">' + esc(datos.que_paso) + '</div></div>';
+    if (hubo && datos.que_se_hizo) h += '<div style="padding:10px 14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;margin-bottom:8px"><div style="font-size:10px;color:var(--muted);text-transform:uppercase;font-weight:700;margin-bottom:3px">Que se hizo al respecto</div><div style="font-size:13px">' + esc(datos.que_se_hizo) + '</div></div>';
+    h += dsEvidenciaLink(datos.evidencia_fotos_url, 'Evidencia fotografica');
+    return h + dsObsBox(datos.comentarios);
+  }
 
   // ── Per-line cards: eficiencias, piezas_procesadas, rechazos_internos, disponibilidad ──
   var hasLineObj = LINEAS.some(function(l) { return datos[l] !== undefined && typeof datos[l] === 'object'; });
