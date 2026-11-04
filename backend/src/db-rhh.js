@@ -78,7 +78,9 @@ const EMPTY_DB = {
   rhh_txt_deudas: [],
   rhh_txt_pagos: [],
   rhh_bono_vales: [],
-  rhh_cumpleanos_incidencias: []
+  rhh_cumpleanos_incidencias: [],
+  // Tickets unificados de aclaracion (portal empleado → RHH)
+  rhh_tickets: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

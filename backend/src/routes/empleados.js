@@ -8,6 +8,9 @@ const router = express.Router();
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 }
+function nowMxTime() {
+  return new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', hour12: false }).slice(0, 5);
+}
 
 // Periodos 2026 (CONTPAQ, lun-dom) — fallback cuando rhh_periodos está vacío
 const PERIODOS_2026 = [
@@ -767,6 +770,75 @@ router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
 
   write(db);
   res.json({ ok: true });
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TICKETS UNIFICADOS DE ACLARACIÓN
+// ══════════════════════════════════════════════════════════════════════════════
+const TICKET_TIPOS = ['incidencia', 'nomina', 'vacaciones', 'queja'];
+
+router.post('/ticket', empAuthRequired, (req, res) => {
+  const { tipo, detalle } = req.body || {};
+  if (!tipo || !TICKET_TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de ticket invalido' });
+  if (!detalle || typeof detalle !== 'object') return res.status(400).json({ error: 'Detalle requerido' });
+
+  // Validar campos por tipo
+  if (tipo === 'incidencia' && (!detalle.fecha || !detalle.incidencia || !detalle.mensaje)) {
+    return res.status(400).json({ error: 'Fecha, incidencia y mensaje requeridos' });
+  }
+  if (tipo === 'nomina' && (!detalle.periodo_semana || !detalle.mensaje)) {
+    return res.status(400).json({ error: 'Periodo y mensaje requeridos' });
+  }
+  if (tipo === 'vacaciones' && !detalle.mensaje) {
+    return res.status(400).json({ error: 'Mensaje requerido' });
+  }
+  if (tipo === 'queja' && (!detalle.categoria || !detalle.mensaje)) {
+    return res.status(400).json({ error: 'Categoria y mensaje requeridos' });
+  }
+
+  const db = read();
+  if (!Array.isArray(db.rhh_tickets)) db.rhh_tickets = [];
+
+  // Buscar datos del empleado
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
+  const empName = emp ? (emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()) : 'Desconocido';
+  const empNumber = emp ? emp.employee_number : '';
+
+  const nextId = (db.rhh_tickets.reduce((m, t) => Math.max(m, t.id || 0), 0)) + 1;
+
+  // Sanitizar detalle
+  const safeDetalle = {};
+  for (const [k, v] of Object.entries(detalle)) {
+    if (['__proto__', 'constructor', 'prototype'].includes(k)) continue;
+    safeDetalle[k] = typeof v === 'string' ? v.trim().slice(0, 1000) : v;
+  }
+
+  const ticket = {
+    id: nextId,
+    tipo,
+    employee_id: req.empPayload.sub,
+    employee_name: empName,
+    employee_number: empNumber,
+    detalle: safeDetalle,
+    status: 'pendiente',
+    created_at: nowMxDate(),
+    created_time: nowMxTime(),
+    respuesta: null,
+    respondido_por: null,
+    respondido_at: null,
+  };
+
+  db.rhh_tickets.push(ticket);
+  write(db);
+  res.json({ ok: true, id: nextId });
+});
+
+router.get('/mis-tickets', empAuthRequired, (req, res) => {
+  const db = read();
+  const tickets = (db.rhh_tickets || [])
+    .filter(t => t.employee_id === req.empPayload.sub)
+    .sort((a, b) => b.id - a.id);
+  res.json(tickets);
 });
 
 module.exports = router;

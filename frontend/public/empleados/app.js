@@ -52,10 +52,11 @@ const SECTIONS = [
   { id: 'vacaciones',   icon: '🏖️',  label: 'Vacaciones' },
   { id: 'evaluaciones', icon: '⭐', label: 'Evaluaciones' },
   { id: 'queja',        icon: '📝', label: 'Queja Anónima' },
+  { id: 'mis_tickets',  icon: '🎫', label: 'Mis Tickets' },
 ];
 // Secciones en bottom nav (móvil) — máx 4 primarias + botón Más
 const NAV_PRIMARY = ['perfil', 'mi_rol', 'lista_raya', 'vacaciones'];
-const NAV_MORE    = ['incidencias', 'evaluaciones', 'queja'];
+const NAV_MORE    = ['incidencias', 'evaluaciones', 'queja', 'mis_tickets'];
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function tryRestore() {
@@ -154,7 +155,7 @@ function renderMain() {
   const el = document.getElementById('emp-main-content');
   if (!el) return;
   el.innerHTML = '<div class="emp-spinner">Cargando...</div>';
-  const views = { perfil, mi_rol, incidencias, lista_raya, vacaciones, evaluaciones, queja };
+  const views = { perfil, mi_rol, incidencias, lista_raya, vacaciones, evaluaciones, queja, mis_tickets };
   const fn = views[state.section];
   if (fn) fn(el);
 }
@@ -531,7 +532,7 @@ async function mi_rol(el) {
         ${d.notes ? `<div style="font-size:11px;color:#64748b;margin-top:2px">${esc(d.notes)}</div>` : ''}
       </td>
       <td style="padding:10px 8px;text-align:center">
-        ${canClarif ? `<button onclick="_rolAclaracion('${d.date}')" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:#475569">Aclarar</button>` : ''}
+        ${canClarif ? `<button onclick="_rolAclaracion('${d.date}','${esc(label)}')" style="background:none;border:1px solid #cbd5e1;border-radius:6px;padding:4px 8px;font-size:11px;cursor:pointer;color:#475569">Aclarar</button>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -576,12 +577,38 @@ async function mi_rol(el) {
   }, 30000);
 }
 
-async function _rolAclaracion(date) {
-  const msg = prompt('Describe tu aclaracion para este dia:');
-  if (!msg || !msg.trim()) return;
-  const r = await api('POST', '/mi-rol/aclaracion', { date, mensaje: msg.trim() });
+function _rolAclaracion(date, incLabel) {
+  // Mostrar formulario inline para aclarar incidencia
+  const existing = document.getElementById('rol-acl-form');
+  if (existing) existing.remove();
+  const row = event.target.closest('tr');
+  if (!row) return;
+  const formHtml = `<tr id="rol-acl-form"><td colspan="3" style="padding:12px 16px;background:#eff6ff;border:1px solid #bfdbfe">
+    <div style="font-size:13px;font-weight:700;color:#1e40af;margin-bottom:8px">Aclaracion para ${esc(date)}</div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:#475569;font-weight:600">Incidencia a aclarar</label>
+      <input type="text" id="rol-acl-inc" value="${esc(incLabel || '')}" style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;margin-top:2px" readonly>
+    </div>
+    <div style="margin-bottom:8px">
+      <label style="font-size:11px;color:#475569;font-weight:600">Mensaje</label>
+      <textarea id="rol-acl-msg" rows="2" placeholder="Describe por que necesitas aclarar esta incidencia..." style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;margin-top:2px;resize:vertical"></textarea>
+    </div>
+    <div style="display:flex;gap:6px">
+      <button onclick="_rolEnviarAclaracion('${date}')" style="flex:1;padding:7px;background:#2563eb;color:#fff;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer">Enviar</button>
+      <button onclick="document.getElementById('rol-acl-form')?.remove()" style="flex:1;padding:7px;background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;border-radius:6px;font-size:12px;cursor:pointer">Cancelar</button>
+    </div>
+  </td></tr>`;
+  row.insertAdjacentHTML('afterend', formHtml);
+  document.getElementById('rol-acl-msg')?.focus();
+}
+
+async function _rolEnviarAclaracion(date) {
+  const incidencia = document.getElementById('rol-acl-inc')?.value?.trim() || '';
+  const mensaje = document.getElementById('rol-acl-msg')?.value?.trim() || '';
+  if (!mensaje) { alert('Escribe un mensaje'); return; }
+  const r = await api('POST', '/ticket', { tipo: 'incidencia', detalle: { fecha: date, incidencia, mensaje } });
   if (r && r.ok) {
-    alert('Aclaracion enviada. RHH la revisara.');
+    alert('Ticket de aclaracion enviado. RHH lo revisara.');
     const el = document.getElementById('emp-main-content');
     if (el) mi_rol(el);
   } else {
@@ -890,13 +917,13 @@ async function lista_raya(el) {
     if (!msg) { err.textContent = 'Escribe tu aclaración'; return; }
     const btn = document.getElementById('btn-acl-send');
     btn.disabled = true; btn.textContent = 'Enviando...';
-    const res = await api('POST', '/aclaracion', { no_periodo: periodo.no_periodo, mensaje: msg });
+    const res = await api('POST', '/ticket', { tipo: 'nomina', detalle: { periodo_semana: `S${periodo.no_periodo} (${periodo.fecha_inicio||''} – ${periodo.fecha_fin||''})`, mensaje: msg } });
     if (!res || !res.ok) {
       err.textContent = (res&&res.data&&res.data.error) || 'Error al enviar';
       btn.disabled = false; btn.textContent = 'Enviar';
       return;
     }
-    // Recargar vista
+    alert('Ticket de aclaracion enviado. RHH lo revisara.');
     lista_raya(el);
   });
 }
@@ -1278,6 +1305,21 @@ async function vacaciones(el) {
   <!-- Resumen / Boarding Pass -->
   <div id="vac-summary" style="margin-bottom:14px"></div>
 
+  <!-- Aclaracion de vacaciones -->
+  <div class="emp-card" style="padding:14px;margin-bottom:14px;border:1px solid #e2e8f0">
+    <div style="font-size:13px;font-weight:700;color:#1e293b;margin-bottom:6px">¿Tienes dudas sobre tus dias?</div>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px">Si los dias tomados o disponibles no coinciden con tus registros, solicita una aclaracion.</div>
+    <button id="btn-vac-acl" class="emp-btn secondary" style="font-size:12px">✋ Solicitar aclaracion de vacaciones</button>
+    <div id="vac-acl-form" style="display:none;margin-top:10px">
+      <textarea id="vac-acl-msg" class="emp-textarea" rows="2" placeholder="Ej: Mis dias tomados no coinciden, tengo registro de 5 dias pero el sistema muestra 8..."></textarea>
+      <div style="display:flex;gap:6px;margin-top:6px">
+        <button id="btn-vac-acl-send" class="emp-btn" style="flex:1;font-size:12px">Enviar</button>
+        <button id="btn-vac-acl-cancel" class="emp-btn secondary" style="flex:1;font-size:12px">Cancelar</button>
+      </div>
+      <p class="emp-error" id="vac-acl-err"></p>
+    </div>
+  </div>
+
   <!-- Historial de solicitudes -->
   <div style="margin-top:6px">
     <div style="font-size:14px;font-weight:700;color:#1e293b;margin-bottom:10px">Mis solicitudes</div>
@@ -1285,6 +1327,32 @@ async function vacaciones(el) {
   </div>`;
 
   if (document.getElementById('vac-calendar')) _vacBuildCalendar();
+
+  // Aclaracion de vacaciones
+  document.getElementById('btn-vac-acl')?.addEventListener('click', () => {
+    document.getElementById('vac-acl-form').style.display = 'block';
+    document.getElementById('btn-vac-acl').style.display = 'none';
+  });
+  document.getElementById('btn-vac-acl-cancel')?.addEventListener('click', () => {
+    document.getElementById('vac-acl-form').style.display = 'none';
+    document.getElementById('btn-vac-acl').style.display = '';
+  });
+  document.getElementById('btn-vac-acl-send')?.addEventListener('click', async () => {
+    const msg = document.getElementById('vac-acl-msg').value.trim();
+    const errEl = document.getElementById('vac-acl-err');
+    errEl.textContent = '';
+    if (!msg) { errEl.textContent = 'Escribe tu aclaracion'; return; }
+    const btn = document.getElementById('btn-vac-acl-send');
+    btn.disabled = true; btn.textContent = 'Enviando...';
+    const r2 = await api('POST', '/ticket', { tipo: 'vacaciones', detalle: { dias_disponibles: vi.dias_disponibles ?? 0, dias_tomados: vi.dias_tomados ?? 0, dias_restantes: vi.dias_restantes ?? 0, mensaje: msg } });
+    if (!r2 || !r2.ok) {
+      errEl.textContent = (r2?.data?.error) || 'Error al enviar';
+      btn.disabled = false; btn.textContent = 'Enviar';
+      return;
+    }
+    alert('Ticket de aclaracion enviado. RHH lo revisara.');
+    vacaciones(el);
+  });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1458,37 +1526,54 @@ function evalVerDetalle(ev) {
 // VISTA: QUEJA ANÓNIMA
 // ══════════════════════════════════════════════════════════════════════════════
 function queja(el) {
+  // Generar opciones de semana (últimas 12 semanas)
+  const _qjSemanas = [];
+  const _now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(_now.getTime() - i * 7 * 86400000);
+    const jan1 = new Date(d.getFullYear(), 0, 1);
+    const wk = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
+    _qjSemanas.push(`S${wk} (${d.getFullYear()})`);
+  }
+
   el.innerHTML = `
-  <p class="emp-page-title">Queja Anónima</p>
+  <p class="emp-page-title">Queja / Aclaracion</p>
 
   <div class="emp-card" style="background:#eff6ff;border:none;margin-bottom:14px">
     <div style="font-size:13px;color:#1e40af;line-height:1.6">
-      <strong>Confidencialidad total.</strong> Tu queja no incluye tu nombre ni número de nómina. Solo RH puede ver el contenido.
+      Tu queja sera revisada por RH. Puedes ver el estado y respuesta en <strong>Mis Tickets</strong>.
     </div>
   </div>
 
   <div class="emp-card">
     <div id="queja-success" class="emp-success"></div>
     <div class="emp-form-group">
-      <label>Categoría</label>
+      <label>Semana de aclaracion</label>
+      <select class="emp-select" id="qj-semana">
+        ${_qjSemanas.map(s => `<option value="${s}">${s}</option>`).join('')}
+      </select>
+    </div>
+    <div class="emp-form-group">
+      <label>Categoria</label>
       <select class="emp-select" id="qj-cat">
         <option value="general">General</option>
         <option value="acoso">Acoso o maltrato</option>
         <option value="seguridad">Seguridad e higiene</option>
-        <option value="nomina">Nómina / pagos</option>
+        <option value="nomina">Nomina / pagos</option>
         <option value="instalaciones">Instalaciones</option>
         <option value="otro">Otro</option>
       </select>
     </div>
     <div class="emp-form-group">
-      <label>Describe tu queja o sugerencia</label>
-      <textarea class="emp-textarea" id="qj-msg" placeholder="Describe la situación con el mayor detalle posible..." style="min-height:140px"></textarea>
+      <label>Describe tu queja o aclaracion</label>
+      <textarea class="emp-textarea" id="qj-msg" placeholder="Describe la situacion con el mayor detalle posible..." style="min-height:140px"></textarea>
     </div>
     <p class="emp-error" id="qj-err"></p>
-    <button class="emp-btn" id="btn-qj">Enviar queja anónima</button>
+    <button class="emp-btn" id="btn-qj">Enviar</button>
   </div>`;
 
   document.getElementById('btn-qj').addEventListener('click', async () => {
+    const semana    = document.getElementById('qj-semana').value;
     const categoria = document.getElementById('qj-cat').value;
     const mensaje   = document.getElementById('qj-msg').value.trim();
     const err = document.getElementById('qj-err');
@@ -1497,17 +1582,81 @@ function queja(el) {
     if (!mensaje) { err.textContent = 'Escribe tu queja antes de enviar'; return; }
     const btn = document.getElementById('btn-qj');
     btn.disabled = true; btn.textContent = 'Enviando...';
-    const res = await api('POST', '/queja', { categoria, mensaje });
-    btn.disabled = false; btn.textContent = 'Enviar queja anónima';
+    const res = await api('POST', '/ticket', { tipo: 'queja', detalle: { semana, categoria, mensaje } });
+    btn.disabled = false; btn.textContent = 'Enviar';
     if (!res || !res.ok) {
       err.textContent = (res&&res.data&&res.data.error) || 'Error al enviar';
       return;
     }
-    suc.textContent = 'Tu queja fue recibida. Gracias por tu confianza.';
+    suc.textContent = 'Tu queja fue recibida. Puedes ver el estado en Mis Tickets.';
     suc.classList.add('show');
     document.getElementById('qj-msg').value = '';
     document.getElementById('qj-cat').value = 'general';
   });
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: MIS TICKETS
+// ══════════════════════════════════════════════════════════════════════════════
+const _tktStatusLabel = { pendiente: 'Pendiente', en_revision: 'En revision', resuelto: 'Resuelto' };
+const _tktStatusColor = { pendiente: '#d97706', en_revision: '#2563eb', resuelto: '#059669' };
+const _tktTipoLabel = { incidencia: 'Incidencia (Mi ROL)', nomina: 'Nomina (Lista de Raya)', vacaciones: 'Vacaciones', queja: 'Queja / Aclaracion' };
+const _tktTipoIcon = { incidencia: '📅', nomina: '💰', vacaciones: '🏖️', queja: '📝' };
+
+async function mis_tickets(el) {
+  el.innerHTML = '<p class="emp-page-title">Mis Tickets</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
+  const r = await api('GET', '/mis-tickets');
+  const tickets = (r && r.ok && Array.isArray(r.data)) ? r.data : [];
+
+  if (!tickets.length) {
+    el.innerHTML = `<p class="emp-page-title">Mis Tickets</p>
+      <div class="emp-empty"><div class="empty-icon">🎫</div><p>No tienes tickets de aclaracion.</p>
+      <p style="font-size:12px;color:#94a3b8">Puedes enviar aclaraciones desde Mi ROL, Lista de Raya, Vacaciones o Queja.</p></div>`;
+    return;
+  }
+
+  const ticketCards = tickets.map(t => {
+    const stLabel = _tktStatusLabel[t.status] || t.status;
+    const stColor = _tktStatusColor[t.status] || '#64748b';
+    const tipoLabel = _tktTipoLabel[t.tipo] || t.tipo;
+    const tipoIcon = _tktTipoIcon[t.tipo] || '🎫';
+    const d = t.detalle || {};
+
+    let detalleHtml = '';
+    if (t.tipo === 'incidencia') {
+      detalleHtml = `<div style="font-size:12px;color:#475569"><strong>Fecha:</strong> ${esc(d.fecha||'')}<br><strong>Incidencia:</strong> ${esc(d.incidencia||'')}<br><strong>Mensaje:</strong> ${esc(d.mensaje||'')}</div>`;
+    } else if (t.tipo === 'nomina') {
+      detalleHtml = `<div style="font-size:12px;color:#475569"><strong>Periodo:</strong> ${esc(d.periodo_semana||'')}<br><strong>Mensaje:</strong> ${esc(d.mensaje||'')}</div>`;
+    } else if (t.tipo === 'vacaciones') {
+      detalleHtml = `<div style="font-size:12px;color:#475569"><strong>Dias disponibles:</strong> ${d.dias_disponibles ?? ''} · <strong>Tomados:</strong> ${d.dias_tomados ?? ''} · <strong>Restantes:</strong> ${d.dias_restantes ?? ''}<br><strong>Mensaje:</strong> ${esc(d.mensaje||'')}</div>`;
+    } else if (t.tipo === 'queja') {
+      detalleHtml = `<div style="font-size:12px;color:#475569"><strong>Semana:</strong> ${esc(d.semana||'')}<br><strong>Categoria:</strong> ${esc(d.categoria||'')}<br><strong>Mensaje:</strong> ${esc(d.mensaje||'')}</div>`;
+    }
+
+    const respuestaHtml = t.respuesta
+      ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px;margin-top:8px">
+          <div style="font-size:10px;color:#1e40af;font-weight:700;text-transform:uppercase;margin-bottom:4px">Respuesta de RH</div>
+          <div style="font-size:13px;color:#1e293b">${esc(t.respuesta)}</div>
+          <div style="font-size:10px;color:#64748b;margin-top:4px">Respondido por ${esc(t.respondido_por||'RH')} el ${esc(t.respondido_at||'')}</div>
+        </div>`
+      : '';
+
+    return `<div class="emp-card" style="margin-bottom:10px;padding:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="display:flex;align-items:center;gap:6px">
+          <span style="font-size:18px">${tipoIcon}</span>
+          <span style="font-size:13px;font-weight:700;color:#1e293b">${tipoLabel}</span>
+          <span style="font-size:10px;color:#94a3b8">· #${t.id}</span>
+        </div>
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;color:#fff;background:${stColor}">${stLabel}</span>
+      </div>
+      <div style="font-size:11px;color:#94a3b8;margin-bottom:6px">${esc(t.created_at||'')} ${esc(t.created_time||'')}</div>
+      ${detalleHtml}
+      ${respuestaHtml}
+    </div>`;
+  }).join('');
+
+  el.innerHTML = `<p class="emp-page-title">Mis Tickets</p>${ticketCards}`;
 }
 
 // ── Inicialización ────────────────────────────────────────────────────────────

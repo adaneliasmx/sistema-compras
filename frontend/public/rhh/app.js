@@ -5312,42 +5312,61 @@ async function submitAclaracion() {
 }
 
 // ── Vista de aclaraciones para RH/Admin ───────────────────────────────────────
+const TKT_TIPO_LABEL = { incidencia: 'Incidencia (ROL)', nomina: 'Nómina', vacaciones: 'Vacaciones', queja: 'Queja' };
+const TKT_TIPO_ICON  = { incidencia: '📅', nomina: '💰', vacaciones: '🏖️', queja: '📝' };
+const TKT_STATUS_INFO = {
+  pendiente: { label: 'Pendiente', cls: 'pill pendiente' },
+  en_revision: { label: 'En revisión', cls: 'pill active' },
+  resuelto: { label: 'Resuelto', cls: 'pill aprobada' }
+};
+
+function _tktDetalleHtml(t) {
+  const d = t.detalle || {};
+  if (t.tipo === 'incidencia') return `<strong>Fecha:</strong> ${d.fecha||'—'} · <strong>Incidencia:</strong> ${d.incidencia||'—'}<br>${d.mensaje||''}`;
+  if (t.tipo === 'nomina') return `<strong>Periodo:</strong> ${d.periodo_semana||'—'}<br>${d.mensaje||''}`;
+  if (t.tipo === 'vacaciones') return `<strong>Disponibles:</strong> ${d.dias_disponibles??'—'} · <strong>Tomados:</strong> ${d.dias_tomados??'—'} · <strong>Restantes:</strong> ${d.dias_restantes??'—'}<br>${d.mensaje||''}`;
+  if (t.tipo === 'queja') return `<strong>Semana:</strong> ${d.semana||'—'} · <strong>Categoría:</strong> ${d.categoria||'—'}<br>${d.mensaje||''}`;
+  return JSON.stringify(d);
+}
+
 async function aclaracionesRHView() {
   const el = document.getElementById('app');
-  el.innerHTML = shell('<div class="loading-overlay">Cargando aclaraciones...</div>', 'aclaraciones-rh');
+  el.innerHTML = shell('<div class="loading-overlay">Cargando tickets...</div>', 'aclaraciones-rh');
 
   try {
-    const clarifications = await api('/api/rhh/incidences/payroll-clarifications') || [];
+    const tickets = await api('/api/rhh/incidences/tickets') || [];
+    const pendientes = tickets.filter(t => t.status === 'pendiente').length;
 
-    const rows = clarifications.map(c => {
-      const statusInfo = CLARIFICATION_STATUS[c.status] || { label: c.status, cls: 'pill gray' };
+    const rows = tickets.map(t => {
+      const st = TKT_STATUS_INFO[t.status] || { label: t.status, cls: 'pill gray' };
+      const tipoLabel = (TKT_TIPO_ICON[t.tipo]||'🎫') + ' ' + (TKT_TIPO_LABEL[t.tipo]||t.tipo);
       return `
         <tr>
-          <td><strong>${c.employee?.full_name || '—'}</strong><br><span class="small muted">${c.employee?.employee_number || ''}</span></td>
-          <td>${c.period}</td>
-          <td><span class="badge">${CLARIFICATION_REASONS[c.reason] || c.reason}</span></td>
-          <td style="max-width:220px;font-size:13px;">${c.description}</td>
-          <td><span class="${statusInfo.cls}">${statusInfo.label}</span></td>
-          <td style="font-size:12px;color:var(--muted);">${c.response || '—'}</td>
+          <td><strong>${t.employee_name || '—'}</strong><br><span class="small muted">${t.employee_number || ''}</span></td>
+          <td style="white-space:nowrap">${tipoLabel}</td>
+          <td style="max-width:320px;font-size:12px;">${_tktDetalleHtml(t)}</td>
+          <td><span class="${st.cls}">${st.label}</span></td>
+          <td style="font-size:12px;color:var(--muted);max-width:200px">${t.respuesta || '—'}</td>
+          <td style="white-space:nowrap;font-size:11px;color:var(--muted)">${t.created_at||''} ${t.created_time||''}</td>
           <td>
-            <button class="btn-ghost" style="font-size:12px;" onclick="responderAclaracion(${c.id},'${c.status}')">💬 Responder</button>
+            <button class="btn-ghost" style="font-size:12px;" onclick="responderTicket(${t.id},'${t.status}','${(t.respuesta||'').replace(/'/g,"\\'")}')">💬 Responder</button>
           </td>
         </tr>`;
     }).join('');
 
     const content = `
       <div class="module-title">
-        <h2>💬 Aclaraciones de Nómina</h2>
-        <span class="badge">${clarifications.filter(c => c.status === 'open').length} abiertas</span>
+        <h2>💬 Aclaraciones — Tickets del Portal Empleado</h2>
+        <span class="badge">${pendientes} pendientes</span>
       </div>
 
       <div class="card section table-wrap">
-        ${clarifications.length === 0
-          ? '<div class="empty-state"><div class="empty-icon">💬</div><p>No hay aclaraciones registradas</p></div>'
+        ${tickets.length === 0
+          ? '<div class="empty-state"><div class="empty-icon">💬</div><p>No hay tickets registrados</p></div>'
           : `<table>
                <thead><tr>
-                 <th>Empleado</th><th>Período</th><th>Motivo</th>
-                 <th>Descripción</th><th>Estado</th><th>Respuesta</th><th>Acciones</th>
+                 <th>Empleado</th><th>Tipo</th><th>Detalle</th>
+                 <th>Estado</th><th>Respuesta</th><th>Fecha</th><th>Acciones</th>
                </tr></thead>
                <tbody>${rows}</tbody>
              </table>`
@@ -5362,42 +5381,43 @@ async function aclaracionesRHView() {
   }
 }
 
-function responderAclaracion(id, currentStatus) {
+function responderTicket(id, currentStatus, currentResp) {
   const container = document.getElementById('acl-resp-container');
   if (!container) return;
 
   container.innerHTML = `
     <div class="card section" style="margin-top:12px;max-width:600px;">
-      <h4>Responder aclaración #${id}</h4>
+      <h4>Responder ticket #${id}</h4>
       <div style="margin-bottom:12px;">
         <label>Cambiar estado</label>
         <select id="ar-status">
-          <option value="open" ${currentStatus==='open'?'selected':''}>Abierta</option>
-          <option value="in_review" ${currentStatus==='in_review'?'selected':''}>En revisión</option>
-          <option value="resolved" ${currentStatus==='resolved'?'selected':''}>Resuelta</option>
+          <option value="pendiente" ${currentStatus==='pendiente'?'selected':''}>Pendiente</option>
+          <option value="en_revision" ${currentStatus==='en_revision'?'selected':''}>En revisión</option>
+          <option value="resuelto" ${currentStatus==='resuelto'?'selected':''}>Resuelto</option>
         </select>
       </div>
       <div>
-        <label>Respuesta</label>
-        <textarea id="ar-resp" rows="3" placeholder="Escribe la respuesta para el empleado..."></textarea>
+        <label>Respuesta para el empleado</label>
+        <textarea id="ar-resp" rows="3" placeholder="Escribe la respuesta...">${currentResp||''}</textarea>
       </div>
       <div style="margin-top:12px;">
-        <button class="btn-primary" onclick="saveRespAclaracion(${id})">💾 Guardar</button>
+        <button class="btn-primary" onclick="saveRespTicket(${id})">💾 Guardar</button>
         <button class="btn-ghost" onclick="document.getElementById('acl-resp-container').innerHTML=''">Cancelar</button>
       </div>
     </div>
   `;
+  document.getElementById('ar-resp')?.focus();
 }
 
-async function saveRespAclaracion(id) {
+async function saveRespTicket(id) {
   const status = document.getElementById('ar-status')?.value;
-  const response = document.getElementById('ar-resp')?.value?.trim() || null;
+  const respuesta = document.getElementById('ar-resp')?.value?.trim() || null;
   try {
-    await api(`/api/rhh/incidences/payroll-clarifications/${id}`, {
+    await api(`/api/rhh/incidences/tickets/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ status, response })
+      body: JSON.stringify({ status, respuesta })
     });
-    toast('Aclaración actualizada');
+    toast('Ticket actualizado');
     aclaracionesRHView();
   } catch (err) {
     toast(err.message, 'error');

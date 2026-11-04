@@ -702,4 +702,33 @@ router.delete('/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res)
   res.json({ ok: true });
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// TICKETS UNIFICADOS (portal empleado → RHH)
+// ══════════════════════════════════════════════════════════════════════════════
+router.get('/tickets', rhhAuthRequired, rhhRequireRole('rh', 'admin', 'supervisor', 'muestra'), (req, res) => {
+  const db = read();
+  const tickets = (db.rhh_tickets || []).sort((a, b) => b.id - a.id);
+  res.json(tickets);
+});
+
+router.patch('/tickets/:id', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const db = read();
+  if (!Array.isArray(db.rhh_tickets)) return res.status(404).json({ error: 'Sin tickets' });
+  const ticket = db.rhh_tickets.find(t => t.id === Number(req.params.id));
+  if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' });
+
+  const { status, respuesta } = req.body || {};
+  const VALID = ['pendiente', 'en_revision', 'resuelto'];
+  if (status && !VALID.includes(status)) return res.status(400).json({ error: 'Status invalido' });
+
+  if (status) ticket.status = status;
+  if (respuesta !== undefined) {
+    ticket.respuesta = typeof respuesta === 'string' ? respuesta.trim().slice(0, 1000) : respuesta;
+    ticket.respondido_por = req.rhhUser ? req.rhhUser.username : 'RH';
+    ticket.respondido_at = nowMxDate();
+  }
+  write(db);
+  res.json({ ok: true });
+});
+
 module.exports = router;
