@@ -512,6 +512,25 @@ async function renderRecepcionHist(main, invTypeFilter = null) {
         ? '<span style="color:#15803d;font-weight:600">✅ Liberado</span>'
         : '<span style="color:#dc2626;font-weight:600">⚠️ Cuarentena</span>';
     };
+    const cadBadge = row => {
+      if (row.inv_type !== 'quimicos_proceso' || !row.fecha_caducidad) return '<span style="color:#9ca3af">—</span>';
+      const diff = Math.floor((new Date(row.fecha_caducidad) - new Date()) / 86400000);
+      if (diff < 0) return `<span style="color:#dc2626;font-weight:600">❌ Vencida</span>`;
+      if (diff < 30) return `<span style="color:#dc2626;font-weight:600">🔴 ${row.fecha_caducidad}</span>`;
+      if (diff < 90) return `<span style="color:#d97706;font-weight:600">⚠️ ${row.fecha_caducidad}</span>`;
+      return `<span style="color:#15803d">${row.fecha_caducidad}</span>`;
+    };
+    const critBadge = row => {
+      if (row.inv_type !== 'quimicos_proceso') return '<span style="color:#9ca3af">—</span>';
+      const checks = [];
+      if (row.material_golpeado) checks.push('<span style="color:#dc2626" title="Material golpeado">📦❌</span>');
+      else checks.push('<span style="color:#15803d" title="Sin daño">📦✅</span>');
+      if (row.sellos_ok === false) checks.push('<span style="color:#dc2626" title="Sellos violados">🔓❌</span>');
+      else if (row.sellos_ok === true) checks.push('<span style="color:#15803d" title="Sellos OK">🔒✅</span>');
+      return checks.join(' ');
+    };
+    // Guardar datos para modal de detalle
+    window._rhRows = rows;
     const tbody = rows.map(row => `<tr>
       <td>${esc(row.fecha)}</td>
       <td>${esc(INV_TYPES.find(t=>t.key===row.inv_type)?.label || row.inv_type)}</td>
@@ -519,13 +538,19 @@ async function renderRecepcionHist(main, invTypeFilter = null) {
       <td class="text-right">${fmt(row.cantidad)}</td>
       <td class="text-right">${fmt(row.kg)} kg</td>
       <td>${esc(row.factura || '—')}</td>
+      <td>${esc(row.cert_calidad || '—')}</td>
+      <td>${cadBadge(row)}</td>
+      <td style="white-space:nowrap">${critBadge(row)}</td>
       <td>${qcBadge(row)}</td>
       <td>${esc(row.usuario_nombre)}</td>
-      ${ME.role === 'admin' ? `<td><button class="btn btn-danger btn-sm" onclick="delRecepcion(${row.id})">Eliminar</button></td>` : '<td></td>'}
+      <td style="white-space:nowrap">
+        <button class="btn btn-secondary btn-sm" onclick="verRecepcion(${row.id})">Ver</button>
+        ${ME.role === 'admin' ? `<button class="btn btn-danger btn-sm" onclick="delRecepcion(${row.id})">Eliminar</button>` : ''}
+      </td>
     </tr>`).join('');
     document.getElementById('rh-table').innerHTML = rows.length ? `
       <div class="table-wrap"><table>
-        <thead><tr><th>Fecha</th><th>Inventario</th><th>Item</th><th>Cantidad</th><th>Kg</th><th>Factura</th><th>Calidad</th><th>Usuario</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Inventario</th><th>Item</th><th>Cantidad</th><th>Kg</th><th>Factura</th><th>Cert. Calidad</th><th>Caducidad</th><th>Criterios</th><th>Estatus</th><th>Usuario</th><th></th></tr></thead>
         <tbody>${tbody}</tbody>
       </table></div>
     ` : '<div class="empty-msg">Sin registros</div>';
@@ -537,6 +562,82 @@ window.delRecepcion = async (id) => {
   if (!confirm('¿Eliminar esta recepcion?')) return;
   const r = await apiDel('/recepciones/' + id);
   if (r?.ok) navigate('recepcion-hist');
+};
+
+window.verRecepcion = (id) => {
+  const row = (window._rhRows || []).find(r => r.id === id);
+  if (!row) return;
+  const typeLbl = INV_TYPES.find(t => t.key === row.inv_type)?.label || row.inv_type;
+  const isQP = row.inv_type === 'quimicos_proceso';
+
+  // Caducidad con badge
+  let cadHtml = '—';
+  if (isQP && row.fecha_caducidad) {
+    const diff = Math.floor((new Date(row.fecha_caducidad) - new Date()) / 86400000);
+    if (diff < 0) cadHtml = `<span style="color:#dc2626;font-weight:600">❌ ${row.fecha_caducidad} — VENCIDA</span>`;
+    else if (diff < 30) cadHtml = `<span style="color:#dc2626;font-weight:600">🔴 ${row.fecha_caducidad} — ${diff} días (CRÍTICO)</span>`;
+    else if (diff < 90) cadHtml = `<span style="color:#d97706;font-weight:600">⚠️ ${row.fecha_caducidad} — ${diff} días</span>`;
+    else cadHtml = `<span style="color:#15803d">✅ ${row.fecha_caducidad} — ${diff} días</span>`;
+  }
+
+  // Estatus calidad
+  let estatusHtml = '—';
+  if (isQP && row.estatus_calidad) {
+    estatusHtml = row.estatus_calidad === 'liberado'
+      ? '<span style="color:#15803d;font-weight:600">✅ LIBERADO</span>'
+      : '<span style="color:#dc2626;font-weight:600">⚠️ EN CUARENTENA</span>';
+  }
+
+  const dl = (label, val) => `<div style="margin-bottom:10px"><div style="font-size:11px;color:#78716c;font-weight:600;text-transform:uppercase;margin-bottom:2px">${label}</div><div style="font-size:14px">${val}</div></div>`;
+
+  let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
+    ${dl('Fecha', esc(row.fecha))}
+    ${dl('Inventario', esc(typeLbl))}
+    ${dl('Item', esc(row.item_label))}
+    ${dl('Cantidad', fmt(row.cantidad))}
+    ${dl('Kilogramos', row.kg != null ? fmt(row.kg) + ' kg' : '—')}
+    ${dl('No. Factura / Remisión', esc(row.factura || '—'))}
+    ${dl('Orden de Compra (PO)', esc(row.po || '—'))}
+    ${dl('Registró', esc(row.usuario_nombre))}
+  </div>`;
+
+  if (isQP) {
+    html += `<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">
+    <div style="font-weight:700;font-size:13px;margin-bottom:10px">🔬 Control de Calidad</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
+      ${dl('No. Certificado de Calidad', esc(row.cert_calidad || '—'))}
+      ${dl('Fecha de Caducidad', cadHtml)}
+      ${dl('Material Golpeado', row.material_golpeado ? '<span style="color:#dc2626;font-weight:600">Sí — Daño detectado</span>' : '<span style="color:#15803d">No — Sin daño</span>')}
+      ${dl('Sellos Íntegros', row.sellos_ok === false ? '<span style="color:#dc2626;font-weight:600">No — Sellos violados</span>' : row.sellos_ok === true ? '<span style="color:#15803d">Sí — Sellos OK</span>' : '—')}
+      ${dl('Revisó', esc(row.reviso || '—'))}
+      ${dl('Estatus Calidad', estatusHtml)}
+      ${row.liberado_por ? dl('Liberado por', esc(row.liberado_por)) : ''}
+      ${row.fecha_liberacion ? dl('Fecha Liberación', esc(row.fecha_liberacion.slice(0, 10))) : ''}
+    </div>`;
+
+    // Resumen criterios de aceptación
+    const criterios = [];
+    if (!row.material_golpeado) criterios.push(['✅', 'Sin daño físico']);
+    else criterios.push(['❌', 'Material golpeado']);
+    if (row.sellos_ok === true) criterios.push(['✅', 'Sellos no violados']);
+    else if (row.sellos_ok === false) criterios.push(['❌', 'Sellos violados']);
+    if (row.fecha_caducidad) {
+      const diff = Math.floor((new Date(row.fecha_caducidad) - new Date()) / 86400000);
+      if (diff >= 30) criterios.push(['✅', 'Caducidad vigente (' + diff + ' días)']);
+      else if (diff >= 0) criterios.push(['❌', 'Caducidad crítica (' + diff + ' días)']);
+      else criterios.push(['❌', 'Material vencido']);
+    }
+    if (row.cert_calidad) criterios.push(['✅', 'Certificado de calidad presente']);
+    else criterios.push(['⚠️', 'Sin certificado de calidad']);
+
+    html += `<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0">
+    <div style="font-weight:700;font-size:13px;margin-bottom:8px">📋 Criterios de Aceptación</div>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 14px">
+      ${criterios.map(([ico, txt]) => `<div style="font-size:13px;margin-bottom:4px">${ico} ${esc(txt)}</div>`).join('')}
+    </div>`;
+  }
+
+  openModal('📦 Detalle de Recepción #' + row.id, html, { large: true });
 };
 
 // ── SALIDA DE INVENTARIO ──────────────────────────────────────────────────────
