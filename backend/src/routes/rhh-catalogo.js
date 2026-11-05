@@ -165,7 +165,7 @@ function enrich(emp, db) {
 
 // ── GET /api/rhh/catalogo/vacaciones-resumen ─────────────────────────────────
 // Tabla resumen de vacaciones de TODOS los empleados activos
-router.get('/vacaciones-resumen', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+router.get('/vacaciones-resumen', rhhAuthRequired, rhhRequireRole('admin', 'rh', 'muestra'), (req, res) => {
   const db = readFresh();
   if (!db) return res.status(500).json({ error: 'Error leyendo datos' });
   const today = nowMxDate();
