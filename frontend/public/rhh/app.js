@@ -34,6 +34,7 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
     ['catalogo-empleados', '👥 Catálogo Empleados'],
+    ['catalogo-vacaciones', '🏖️ Vacaciones'],
     ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
@@ -51,6 +52,7 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
     ['catalogo-empleados', '👥 Catálogo Empleados'],
+    ['catalogo-vacaciones', '🏖️ Vacaciones'],
     ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
@@ -69,6 +71,7 @@ const MENU_BY_ROLE = {
     ['dashboard', '📊 Dashboard'],
     ['checador', '🕐 Checador'],
     ['catalogo-empleados', '👥 Catálogo Empleados'],
+    ['catalogo-vacaciones', '🏖️ Vacaciones'],
     ['asistencias', '🗓️ Control Asistencias'],
     ['incidencias', '📋 Incidencias Semanales'],
     ['autorizaciones', '✅ Autorizaciones'],
@@ -11278,6 +11281,7 @@ function render() {
     checador: checadorView,
     asistencias: asistenciasView,
     'catalogo-empleados': catalogoEmpleadosView,
+    'catalogo-vacaciones': catalogoVacacionesView,
     kpi: kpiRhhView
   };
 
@@ -13563,6 +13567,297 @@ async function kpiRhhView() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CATÁLOGO VACACIONES — resumen de vacaciones de todos los empleados activos
+// ══════════════════════════════════════════════════════════════════════════════
+let _vacResumenData = [];
+
+function _vrModal(title, html, large) {
+  let ov = document.getElementById('vr-modal');
+  if (ov) ov.remove();
+  ov = document.createElement('div');
+  ov.id = 'vr-modal';
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal" style="max-width:${large ? '800px' : '550px'};width:95vw;max-height:90vh;overflow-y:auto">
+    <div class="modal-header" style="position:sticky;top:0;background:#fff;z-index:1;padding-bottom:12px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center">
+      <h3 style="margin:0;font-size:15px">${title}</h3>
+      <button onclick="document.getElementById('vr-modal')?.remove()" style="background:none;border:none;font-size:18px;cursor:pointer;color:#64748b">✕</button>
+    </div>
+    <div class="modal-body" style="padding:16px">${html}</div>
+  </div>`;
+  ov.addEventListener('click', e => { if (e.target === ov) ov.remove(); });
+  document.body.appendChild(ov);
+  return ov;
+}
+
+async function catalogoVacacionesView() {
+  const el = document.getElementById('app');
+  if (!el) return;
+
+  el.innerHTML = shell(`
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <h2 style="margin:0">🏖️ Vacaciones — Resumen General</h2>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="vr-search" class="form-input" placeholder="Buscar nombre o #..." style="width:200px"/>
+      <button class="btn-primary" onclick="vrBuscar()">🔍</button>
+      <button class="btn-ghost" onclick="vrExportar()">📥 Excel</button>
+    </div>
+  </div>
+  <div id="vr-body"><div class="loading-overlay">Cargando vacaciones...</div></div>
+  `, 'catalogo-vacaciones');
+
+  document.getElementById('vr-search')?.addEventListener('keydown', e => { if (e.key === 'Enter') vrBuscar(); });
+  vrCargar();
+}
+
+async function vrCargar() {
+  const body = document.getElementById('vr-body');
+  if (!body) return;
+  body.innerHTML = '<div class="loading-overlay">Cargando...</div>';
+
+  let data;
+  try {
+    data = await api('/api/rhh/catalogo/vacaciones-resumen');
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`;
+    return;
+  }
+  if (!data || !data.rows) {
+    body.innerHTML = '<div class="empty-state"><p>Error al cargar datos</p></div>';
+    return;
+  }
+
+  _vacResumenData = data.rows;
+  vrRender();
+}
+
+function vrBuscar() {
+  vrRender();
+}
+
+function vrRender() {
+  const body = document.getElementById('vr-body');
+  if (!body) return;
+  const q = (document.getElementById('vr-search')?.value || '').toLowerCase().trim();
+  let rows = _vacResumenData;
+  if (q) rows = rows.filter(r => (r.full_name || '').toLowerCase().includes(q) || (r.employee_number || '').includes(q));
+
+  if (!rows.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">🏖️</div><p>Sin empleados con ese filtro</p></div>';
+    return;
+  }
+
+  // Totales
+  const totDisp = rows.reduce((s, r) => s + (r.vac?.dias_disponibles || 0), 0);
+  const totTom  = rows.reduce((s, r) => s + (r.vac?.dias_tomados || 0), 0);
+  const totProg = rows.reduce((s, r) => s + ((r.vac?.dias_programados || 0) - (r.vac?.dias_tomados || 0)), 0);
+  const totRest = rows.reduce((s, r) => s + (r.vac?.dias_restantes || 0), 0);
+
+  const kpi = (label, val, color) => `<div style="text-align:center;background:#fff;border-radius:8px;padding:10px 16px;border:1px solid #e2e8f0;min-width:110px">
+    <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
+    <div style="font-size:11px;color:#64748b">${label}</div>
+  </div>`;
+
+  const trs = rows.map(r => {
+    const v = r.vac || {};
+    const tomados = v.dias_tomados ?? 0;
+    const programados = (v.dias_programados ?? 0) - tomados;
+    const restantes = v.dias_restantes ?? 0;
+    const restColor = restantes === 0 ? '#dc2626' : restantes <= 3 ? '#d97706' : '#15803d';
+    return `<tr>
+      <td style="font-weight:600">${esc(r.full_name)}</td>
+      <td style="text-align:center">${esc(r.employee_number)}</td>
+      <td style="text-align:center;color:#64748b;font-size:13px">${esc(r.start_date || '—')}</td>
+      <td style="text-align:center;font-weight:600">${v.dias_disponibles ?? 0}</td>
+      <td style="text-align:center;cursor:pointer;color:#2563eb;text-decoration:underline" onclick="vrVerTomadas(${r.id})">${tomados}</td>
+      <td style="text-align:center;cursor:pointer;color:#ea580c;text-decoration:underline" onclick="vrVerProgramadas(${r.id})">${programados > 0 ? programados : 0}</td>
+      <td style="text-align:center;font-weight:700;color:${restColor}">${restantes}</td>
+      <td style="white-space:nowrap">
+        <button class="btn-ghost btn-sm" onclick="vrAjustar(${r.id})" title="Ajustar días disponibles">✏️ Ajustar</button>
+        <button class="btn-ghost btn-sm" onclick="vrVerHistorial(${r.id})" title="Ver historial de ajustes">📋</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  body.innerHTML = `
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
+    ${kpi('Empleados', rows.length, '#0369a1')}
+    ${kpi('Días Disponibles', totDisp, '#0369a1')}
+    ${kpi('Días Tomados', totTom, '#16a34a')}
+    ${kpi('Programados', totProg, '#ea580c')}
+    ${kpi('Restantes', totRest, '#15803d')}
+  </div>
+  <div style="font-size:13px;color:#64748b;margin-bottom:8px">${rows.length} empleado${rows.length !== 1 ? 's' : ''} activos</div>
+  <div style="overflow-x:auto">
+  <table class="data-table">
+    <thead><tr>
+      <th>Nombre</th><th>No. Empleado</th><th>Fecha Ingreso</th>
+      <th style="text-align:center">Vac. Totales</th>
+      <th style="text-align:center">Tomadas</th>
+      <th style="text-align:center">Programadas</th>
+      <th style="text-align:center">Restantes</th>
+      <th></th>
+    </tr></thead>
+    <tbody>${trs}</tbody>
+  </table>
+  </div>`;
+}
+
+// Modal: detalle de vacaciones tomadas
+window.vrVerTomadas = function(empId) {
+  const r = _vacResumenData.find(x => x.id === empId);
+  if (!r) return;
+  const sems = r.semanas_tomadas || [];
+  if (!sems.length) {
+    _vrModal('Vacaciones tomadas — ' + r.full_name, '<div class="empty-state"><p>Sin vacaciones tomadas registradas</p></div>');
+    return;
+  }
+  const total = sems.reduce((s, x) => s + (x.dias || 0), 0);
+  const rows = sems.sort((a, b) => (a.period_key || '').localeCompare(b.period_key || '')).map(s => `<tr>
+    <td style="text-align:center">${esc(s.period_key)}</td>
+    <td style="text-align:center;font-weight:600">${s.dias}</td>
+    <td style="font-size:12px;color:#64748b">${esc(s.fuente)}</td>
+  </tr>`).join('');
+  _vrModal('Vacaciones tomadas — ' + r.full_name, `
+    <div style="margin-bottom:12px;font-size:14px">Total días tomados: <strong>${total}</strong></div>
+    <div style="max-height:350px;overflow:auto">
+    <table class="data-table" style="font-size:13px">
+      <thead><tr><th>Semana</th><th>Días</th><th>Fuente</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+  `);
+};
+
+// Modal: detalle de vacaciones programadas
+window.vrVerProgramadas = function(empId) {
+  const r = _vacResumenData.find(x => x.id === empId);
+  if (!r) return;
+  const progs = r.programadas || [];
+  if (!progs.length) {
+    _vrModal('Vacaciones programadas — ' + r.full_name, '<div class="empty-state"><p>Sin vacaciones programadas</p></div>');
+    return;
+  }
+  const estadoBadge = s => s === 'pendiente'
+    ? '<span style="background:#fef3c7;color:#d97706;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">Pendiente</span>'
+    : '<span style="background:#dcfce7;color:#16a34a;padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600">Aprobada</span>';
+  const rows = progs.map(p => `<tr>
+    <td>${p.fecha_inicio ? esc(p.fecha_inicio) + ' → ' + esc(p.fecha_fin || '') : '—'}</td>
+    <td style="text-align:center;font-weight:600">${p.dias}</td>
+    <td>${estadoBadge(p.estado)}</td>
+    <td style="font-size:12px;color:#64748b">${esc(p.origen)}</td>
+    <td style="font-size:12px;color:#64748b">${esc(p.notas)}</td>
+  </tr>`).join('');
+  _vrModal('Vacaciones programadas — ' + r.full_name, `
+    <div style="max-height:350px;overflow:auto">
+    <table class="data-table" style="font-size:13px">
+      <thead><tr><th>Fechas</th><th>Días</th><th>Estado</th><th>Origen</th><th>Notas</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+  `, true);
+};
+
+// Modal: ajustar días disponibles
+window.vrAjustar = function(empId) {
+  const r = _vacResumenData.find(x => x.id === empId);
+  if (!r) return;
+  const v = r.vac || {};
+  _vrModal('✏️ Ajustar días — ' + r.full_name, `
+    <div style="margin-bottom:12px;font-size:13px;color:#64748b">
+      Días actuales: <strong>${v.dias_disponibles ?? 0}</strong>
+      ${v.override_dias != null ? ' (editado por RHH)' : ` (LFT ciclo ${v.ciclos || '—'}: ${v.lft_dias} días)`}
+    </div>
+    <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:12px">
+      <div>
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Nuevos días disponibles</label>
+        <input type="number" id="vr-adj-dias" min="0" max="60" step="1" value="${v.dias_disponibles ?? ''}"
+          style="width:100px;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:14px"/>
+      </div>
+      <div style="flex:1">
+        <label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Motivo del ajuste *</label>
+        <input type="text" id="vr-adj-motivo" placeholder="Ej: Corrección por antigüedad real"
+          style="width:100%;padding:6px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:13px"/>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#78716c;margin-bottom:12px">Dejar vacío = restablecer cálculo automático LFT (${v.lft_dias} días ciclo ${v.ciclos || '—'})</div>
+    <div id="vr-adj-msg" style="font-size:12px;color:#dc2626;margin-bottom:8px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn-ghost" onclick="document.getElementById('vr-modal')?.remove()">Cancelar</button>
+      <button class="btn-primary" id="vr-adj-save">Guardar ajuste</button>
+    </div>
+  `);
+  document.getElementById('vr-adj-save').addEventListener('click', async () => {
+    const diasInput = document.getElementById('vr-adj-dias').value;
+    const motivo = document.getElementById('vr-adj-motivo').value;
+    const msgEl = document.getElementById('vr-adj-msg');
+    if (!motivo.trim()) { msgEl.textContent = 'El motivo es obligatorio'; return; }
+    const saveBtn = document.getElementById('vr-adj-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
+    try {
+      await api(`/api/rhh/catalogo/${empId}/vacaciones/ajuste`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dias_disponibles: diasInput !== '' ? Number(diasInput) : null, motivo }),
+      });
+      document.getElementById('vr-modal')?.remove();
+      toast('Días actualizados', 'success');
+      vrCargar();
+    } catch (e) {
+      msgEl.textContent = e.message || 'Error al guardar';
+      saveBtn.disabled = false; saveBtn.textContent = 'Guardar ajuste';
+    }
+  });
+};
+
+// Modal: historial de ajustes
+window.vrVerHistorial = function(empId) {
+  const r = _vacResumenData.find(x => x.id === empId);
+  if (!r) return;
+  const ajustes = r.ajustes || [];
+  if (!ajustes.length) {
+    _vrModal('Historial de ajustes — ' + r.full_name, '<div class="empty-state"><p>Sin ajustes registrados</p></div>');
+    return;
+  }
+  const rows = ajustes.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')).map(a => `<tr>
+    <td style="font-size:12px">${esc((a.created_at || '').slice(0, 16).replace('T', ' '))}</td>
+    <td style="text-align:center">${a.anterior ?? 'LFT'}</td>
+    <td style="text-align:center;font-weight:600">${a.nuevo ?? 'LFT'}</td>
+    <td style="font-size:12px">${esc(a.motivo || '—')}</td>
+    <td style="font-size:12px;color:#64748b">${esc(a.usuario || '—')}</td>
+  </tr>`).join('');
+  _vrModal('Historial de ajustes — ' + r.full_name, `
+    <div style="max-height:350px;overflow:auto">
+    <table class="data-table" style="font-size:13px">
+      <thead><tr><th>Fecha</th><th>Anterior</th><th>Nuevo</th><th>Motivo</th><th>Usuario</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>
+  `, true);
+};
+
+// Exportar a Excel
+window.vrExportar = function() {
+  if (!_vacResumenData.length) { toast('Sin datos para exportar', 'warn'); return; }
+  const rows = _vacResumenData.map(r => {
+    const v = r.vac || {};
+    return {
+      'No. Empleado': r.employee_number, 'Nombre': r.full_name,
+      'Fecha Ingreso': r.start_date || '', 'Ciclos': v.ciclos || 0,
+      'Vac. Totales (días)': v.dias_disponibles ?? 0, 'Vac. Tomadas': v.dias_tomados ?? 0,
+      'Vac. Programadas': Math.max(0, (v.dias_programados ?? 0) - (v.dias_tomados ?? 0)),
+      'Vac. Restantes': v.dias_restantes ?? 0, 'Override RHH': v.override_dias ?? '',
+    };
+  });
+  if (typeof XLSX !== 'undefined') {
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Vacaciones');
+    XLSX.writeFile(wb, 'vacaciones_resumen_' + new Date().toISOString().slice(0, 10) + '.xlsx');
+  } else {
+    toast('Librería Excel no disponible', 'error');
+  }
+};
+
 // CATÁLOGO EMPLEADOS — lee directo del JSON del repositorio
 // ══════════════════════════════════════════════════════════════════════════════
 let _catEmpDetalle = null; // id del empleado actualmente abierto

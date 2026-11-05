@@ -163,6 +163,95 @@ function enrich(emp, db) {
   };
 }
 
+// ── GET /api/rhh/catalogo/vacaciones-resumen ─────────────────────────────────
+// Tabla resumen de vacaciones de TODOS los empleados activos
+router.get('/vacaciones-resumen', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!db) return res.status(500).json({ error: 'Error leyendo datos' });
+  const today = nowMxDate();
+  const currentYear = new Date(today).getFullYear();
+
+  const emps = (db.rhh_employees || [])
+    .filter(e => {
+      const num = String(e.employee_number || '').trim();
+      return num.length >= 3 && /^\d+$/.test(num.replace(/^0+/, '') || '0') && e.status === 'active';
+    })
+    .sort((a, b) => String(a.employee_number).localeCompare(String(b.employee_number), undefined, { numeric: true }));
+
+  const rows = emps.map(e => {
+    const vi = calcVacInfo(e, db, today);
+
+    // Detalle de semanas tomadas (incidencias con vacaciones_dias > 0)
+    const incVac = (db.rhh_incidencias_semanales || []).filter(i =>
+      i.employee_id === e.id && Number(i.vacaciones_dias) > 0
+    );
+    const semanas_tomadas = incVac.map(i => ({
+      no_periodo: i.no_periodo, year: i.year || currentYear,
+      period_key: i.period_key || `${i.year || currentYear}-W${String(i.no_periodo).padStart(2, '0')}`,
+      dias: Number(i.vacaciones_dias), fuente: i._vac_fuente || 'CONTPAQ',
+    }));
+
+    // Solicitudes pendientes/aprobadas futuras (programadas)
+    const CUTOFF = '2026-08-11';
+    const sols = (db.rhh_vac_solicitudes || []).filter(r =>
+      r.employee_id === e.id && (r.created_at || '') >= CUTOFF
+    );
+    const programadas = sols
+      .filter(r => r.estado === 'pendiente' || (r.estado === 'aprobada' && r.fecha_inicio && r.fecha_inicio > today))
+      .map(r => ({
+        id: r.id, dias: r.dias, estado: r.estado, origen: r.origen || '—',
+        fecha_inicio: r.fecha_inicio || null, fecha_fin: r.fecha_fin || null,
+        notas: r.notas || '', created_at: r.created_at,
+      }));
+
+    // Historial de ajustes
+    const ajustes = (db.rhh_vac_ajustes || []).filter(a => a.employee_id === e.id);
+
+    return {
+      id: e.id, employee_number: e.employee_number, full_name: e.full_name,
+      start_date: e.start_date || e.fecha_ingreso || null,
+      vac: vi, semanas_tomadas, programadas, ajustes,
+    };
+  });
+
+  res.json({ rows });
+});
+
+// ── PATCH /api/rhh/catalogo/:id/vacaciones/ajuste ───────────────────────────
+// Ajuste de días disponibles con trazabilidad
+router.patch('/:id/vacaciones/ajuste', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = readFresh();
+  if (!db) return res.status(500).json({ error: 'Error leyendo datos' });
+
+  const empId = Number(req.params.id);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+
+  const { dias_disponibles, motivo } = req.body || {};
+  if (dias_disponibles === undefined) return res.status(400).json({ error: 'dias_disponibles requerido' });
+  if (!motivo || !motivo.trim()) return res.status(400).json({ error: 'motivo requerido' });
+
+  const anterior = emp.vac_dias_disponibles;
+  const nuevo = dias_disponibles !== null && dias_disponibles !== '' ? Number(dias_disponibles) : null;
+  emp.vac_dias_disponibles = nuevo;
+
+  // Registrar en rhh_vac_ajustes para trazabilidad
+  if (!Array.isArray(db.rhh_vac_ajustes)) db.rhh_vac_ajustes = [];
+  db.rhh_vac_ajustes.push({
+    id: (db.rhh_vac_ajustes.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1,
+    employee_id: empId,
+    anterior: anterior ?? null,
+    nuevo: nuevo,
+    motivo: motivo.trim(),
+    usuario: req.rhhUser?.nombre || req.rhhUser?.email || 'rh',
+    usuario_id: req.rhhUser?.id || null,
+    created_at: nowMxTs(),
+  });
+
+  write(db);
+  res.json({ ok: true });
+});
+
 // ── GET /api/rhh/catalogo ──────────────────────────────────────────────────────
 // Lista completa de empleados del catálogo (solo reales: employee_number numérico)
 router.get('/', rhhAuthRequired, (req, res) => {
