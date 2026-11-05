@@ -4447,7 +4447,7 @@ function renderTitLista(rows) {
   </div>`;
 }
 
-function renderTitPivot(rows) {
+function renderTitPivot(rows, filterTanque, filterParam) {
   // Agrupar por línea → tabla pivote: filas=titulaciones, columnas=params
   const lines = [...new Set(rows.map(r=>r.linea))].sort();
   return lines.map(linea => {
@@ -4464,7 +4464,13 @@ function renderTitPivot(rows) {
       if (!byTank[tk]) byTank[tk] = [];
       byTank[tk].push({ pid: Number(pid), ...p });
     });
+    if (filterTanque) Object.keys(byTank).forEach(tk => { if (tk !== filterTanque) delete byTank[tk]; });
+    if (filterParam) Object.keys(byTank).forEach(tk => {
+      byTank[tk] = byTank[tk].filter(p => p.nombre_parametro === filterParam);
+      if (!byTank[tk].length) delete byTank[tk];
+    });
     const tanks = Object.keys(byTank).sort();
+    if (!tanks.length) return '';
     // Ordenar params dentro de cada tanque por orden
     tanks.forEach(tk => byTank[tk].sort((a,b)=>(a.orden||0)-(b.orden||0)));
     const allParams = tanks.flatMap(tk => byTank[tk]);
@@ -4577,72 +4583,104 @@ function bindTitReporte() {
       </div>`;
 
       if (window._trVista === 'pivot') {
-        el.innerHTML = resumen + renderTitPivot(rows);
-        // Click en cabecera de parámetro → ver/editar especificaciones
-        el.querySelectorAll('th[data-pid]').forEach(th => {
-          th.addEventListener('click', async () => {
-            const pid = Number(th.dataset.pid);
-            const params = await GET('/parametros-titulacion').catch(() => []);
-            const p = params.find(x => x.id === pid);
-            if (!p) return;
-            const isAdmin = state.user?.vales_role === 'admin';
-            const rangoLabel = p.tipo_rango === 'entre' ? 'Entre (mín – máx)' : p.tipo_rango === 'maximo' ? 'Máximo' : p.tipo_rango === 'minimo' ? 'Mínimo' : 'Sin rango';
-            showModal(`
-              <h3 style="margin:0 0 4px">📋 ${p.nombre_parametro}</h3>
-              <p style="margin:0 0 16px;font-size:12px;color:#78716c">${p.no_tanque} — ${p.nombre_tanque}${p.quimico ? ' · ' + p.quimico : ''}</p>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Tipo de rango</label>
-                  ${isAdmin ? `<select id="ep-tipo" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
-                    <option value="ninguno" ${p.tipo_rango==='ninguno'?'selected':''}>Sin rango</option>
-                    <option value="entre" ${p.tipo_rango==='entre'?'selected':''}>Entre (mín – máx)</option>
-                    <option value="maximo" ${p.tipo_rango==='maximo'?'selected':''}>Máximo</option>
-                    <option value="minimo" ${p.tipo_rango==='minimo'?'selected':''}>Mínimo</option>
-                  </select>` : `<span style="font-size:13px">${rangoLabel}</span>`}
+        // Extraer tanques y params únicos para filtros pivot
+        const uniqTanques = new Set();
+        const uniqParams = new Set();
+        rows.forEach(h => (h.detalle||[]).forEach(d => {
+          const p = d.param || {};
+          if (p.no_tanque) uniqTanques.add(p.no_tanque);
+          if (p.nombre_parametro) uniqParams.add(p.nombre_parametro);
+        }));
+        const prevTk = document.getElementById('tr-pf-tanque')?.value || '';
+        const prevPm = document.getElementById('tr-pf-param')?.value || '';
+        const pivotFilters = `<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px;padding:10px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;align-items:flex-end">
+          <div><label class="flabel">Tanque</label><br>
+            <select id="tr-pf-tanque"><option value="">Todos</option>${[...uniqTanques].sort().map(t=>`<option value="${t}"${t===prevTk?' selected':''}>${t}</option>`).join('')}</select>
+          </div>
+          <div><label class="flabel">Parámetro</label><br>
+            <select id="tr-pf-param"><option value="">Todos</option>${[...uniqParams].sort().map(p=>`<option value="${p}"${p===prevPm?' selected':''}>${p}</option>`).join('')}</select>
+          </div>
+          <button class="btn btn-outline btn-sm" id="tr-pf-clear">Limpiar filtros</button>
+        </div>`;
+        el.innerHTML = resumen + pivotFilters + '<div id="tr-pivot-content"></div>';
+        const pivotEl = document.getElementById('tr-pivot-content');
+        const renderPivotFiltered = () => {
+          const ft = document.getElementById('tr-pf-tanque')?.value || '';
+          const fp = document.getElementById('tr-pf-param')?.value || '';
+          pivotEl.innerHTML = renderTitPivot(rows, ft, fp);
+          pivotEl.querySelectorAll('th[data-pid]').forEach(th => {
+            th.addEventListener('click', async () => {
+              const pid = Number(th.dataset.pid);
+              const params = await GET('/parametros-titulacion').catch(() => []);
+              const p = params.find(x => x.id === pid);
+              if (!p) return;
+              const isAdmin = state.user?.vales_role === 'admin';
+              const rangoLabel = p.tipo_rango === 'entre' ? 'Entre (mín – máx)' : p.tipo_rango === 'maximo' ? 'Máximo' : p.tipo_rango === 'minimo' ? 'Mínimo' : 'Sin rango';
+              showModal(`
+                <h3 style="margin:0 0 4px">📋 ${p.nombre_parametro}</h3>
+                <p style="margin:0 0 16px;font-size:12px;color:#78716c">${p.no_tanque} — ${p.nombre_tanque}${p.quimico ? ' · ' + p.quimico : ''}</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Tipo de rango</label>
+                    ${isAdmin ? `<select id="ep-tipo" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px">
+                      <option value="ninguno" ${p.tipo_rango==='ninguno'?'selected':''}>Sin rango</option>
+                      <option value="entre" ${p.tipo_rango==='entre'?'selected':''}>Entre (mín – máx)</option>
+                      <option value="maximo" ${p.tipo_rango==='maximo'?'selected':''}>Máximo</option>
+                      <option value="minimo" ${p.tipo_rango==='minimo'?'selected':''}>Mínimo</option>
+                    </select>` : `<span style="font-size:13px">${rangoLabel}</span>`}
+                  </div>
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unidad</label>
+                    ${isAdmin ? `<input id="ep-unidad" value="${p.unidad||''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.unidad||'—'}</span>`}
+                  </div>
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor mínimo</label>
+                    ${isAdmin ? `<input id="ep-min" type="number" step="any" value="${p.valor_min??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_min??'—'}</span>`}
+                  </div>
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor máximo</label>
+                    ${isAdmin ? `<input id="ep-max" type="number" step="any" value="${p.valor_max??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_max??'—'}</span>`}
+                  </div>
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Objetivo</label>
+                    ${isAdmin ? `<input id="ep-obj" type="number" step="any" value="${p.objetivo??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.objetivo??'—'}</span>`}
+                  </div>
+                  <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Frecuencia</label>
+                    <span style="font-size:13px">${p.frecuencia===1?'1× por turno':'2× por turno'}</span>
+                  </div>
                 </div>
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Unidad</label>
-                  ${isAdmin ? `<input id="ep-unidad" value="${p.unidad||''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.unidad||'—'}</span>`}
-                </div>
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor mínimo</label>
-                  ${isAdmin ? `<input id="ep-min" type="number" step="any" value="${p.valor_min??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_min??'—'}</span>`}
-                </div>
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Valor máximo</label>
-                  ${isAdmin ? `<input id="ep-max" type="number" step="any" value="${p.valor_max??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.valor_max??'—'}</span>`}
-                </div>
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Objetivo</label>
-                  ${isAdmin ? `<input id="ep-obj" type="number" step="any" value="${p.objetivo??''}" style="width:100%;padding:6px;border:1px solid #d1d5db;border-radius:6px;font-size:13px"/>` : `<span style="font-size:13px">${p.objetivo??'—'}</span>`}
-                </div>
-                <div><label style="font-size:12px;font-weight:600;display:block;margin-bottom:4px">Frecuencia</label>
-                  <span style="font-size:13px">${p.frecuencia===1?'1× por turno':'2× por turno'}</span>
-                </div>
-              </div>
-              <div id="ep-msg" style="font-size:12px;color:#dc2626;margin-bottom:8px"></div>
-              <div class="modal-actions">
-                <button class="btn btn-outline" onclick="closeModal()">Cerrar</button>
-                ${isAdmin ? `<button class="btn btn-primary" id="ep-save-btn">💾 Guardar cambios</button>` : ''}
-              </div>`);
-            if (isAdmin) {
-              document.getElementById('ep-save-btn').addEventListener('click', async () => {
-                const saveBtn = document.getElementById('ep-save-btn');
-                const msgEl = document.getElementById('ep-msg');
-                saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
-                try {
-                  const payload = {
-                    tipo_rango: document.getElementById('ep-tipo').value,
-                    unidad: document.getElementById('ep-unidad').value,
-                    valor_min: document.getElementById('ep-min').value !== '' ? parseFloat(document.getElementById('ep-min').value) : null,
-                    valor_max: document.getElementById('ep-max').value !== '' ? parseFloat(document.getElementById('ep-max').value) : null,
-                    objetivo: document.getElementById('ep-obj').value !== '' ? parseFloat(document.getElementById('ep-obj').value) : null
-                  };
-                  await PATCH('/parametros-titulacion/' + pid, payload);
-                  closeModal();
-                  buscar();
-                } catch(e) {
-                  msgEl.textContent = e.message || 'Error al guardar';
-                  saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar cambios';
-                }
-              });
-            }
+                <div id="ep-msg" style="font-size:12px;color:#dc2626;margin-bottom:8px"></div>
+                <div class="modal-actions">
+                  <button class="btn btn-outline" onclick="closeModal()">Cerrar</button>
+                  ${isAdmin ? `<button class="btn btn-primary" id="ep-save-btn">💾 Guardar cambios</button>` : ''}
+                </div>`);
+              if (isAdmin) {
+                document.getElementById('ep-save-btn').addEventListener('click', async () => {
+                  const saveBtn = document.getElementById('ep-save-btn');
+                  const msgEl = document.getElementById('ep-msg');
+                  saveBtn.disabled = true; saveBtn.textContent = 'Guardando...';
+                  try {
+                    const payload = {
+                      tipo_rango: document.getElementById('ep-tipo').value,
+                      unidad: document.getElementById('ep-unidad').value,
+                      valor_min: document.getElementById('ep-min').value !== '' ? parseFloat(document.getElementById('ep-min').value) : null,
+                      valor_max: document.getElementById('ep-max').value !== '' ? parseFloat(document.getElementById('ep-max').value) : null,
+                      objetivo: document.getElementById('ep-obj').value !== '' ? parseFloat(document.getElementById('ep-obj').value) : null
+                    };
+                    await PATCH('/parametros-titulacion/' + pid, payload);
+                    closeModal();
+                    buscar();
+                  } catch(e) {
+                    msgEl.textContent = e.message || 'Error al guardar';
+                    saveBtn.disabled = false; saveBtn.textContent = '💾 Guardar cambios';
+                  }
+                });
+              }
+            });
           });
+        };
+        renderPivotFiltered();
+        document.getElementById('tr-pf-tanque').addEventListener('change', renderPivotFiltered);
+        document.getElementById('tr-pf-param').addEventListener('change', renderPivotFiltered);
+        document.getElementById('tr-pf-clear').addEventListener('click', () => {
+          document.getElementById('tr-pf-tanque').value = '';
+          document.getElementById('tr-pf-param').value = '';
+          renderPivotFiltered();
         });
       } else {
         el.innerHTML = resumen + renderTitLista(rows);
