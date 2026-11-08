@@ -10,6 +10,7 @@ const { createRateLimiter } = require('../rate-limit');
 const {
   buildConsolidatedSummary,
   buildConsolidatedWorkbookBuffer,
+  buildEmbarquesDetailBuffer,
 } = require('../utils/validaciones-consolidado');
 const _rl = createRateLimiter();
 
@@ -315,6 +316,23 @@ router.get('/resumen-consolidado/excel', valAuthRequired, (req, res) => {
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="resumen-skf-cuesto_${period}.xlsx"`);
     res.send(workbook);
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+router.get('/resumen-consolidado/excel-embarques', valAuthRequired, (req, res) => {
+  try {
+    const direction = req.query.direccion || 'ambas';
+    const buffer = buildEmbarquesDetailBuffer(read(), req.query, direction);
+    const desde = String(req.query.desde || '').trim();
+    const hasta = String(req.query.hasta || '').trim();
+    const period = desde || hasta
+      ? `${desde || 'inicio'}_${hasta || 'hoy'}`
+      : 'todas-las-fechas';
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="embarques-detalle_${period}.xlsx"`);
+    res.send(buffer);
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

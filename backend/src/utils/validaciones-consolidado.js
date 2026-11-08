@@ -200,8 +200,91 @@ function buildConsolidatedWorkbookBuffer(summary, direction = 'ambas') {
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
 }
 
+function extractTurno(numeroEmbarque) {
+  if (!numeroEmbarque) return '';
+  const m = String(numeroEmbarque).match(/^(\d+)\./);
+  return m ? m[1] : '';
+}
+
+function buildEmbarquesDetailBuffer(db, range = {}, direction = 'ambas') {
+  const { desde, hasta } = validateDateRange(range.desde, range.hasta);
+  const busqueda = String(range.busqueda || '').trim();
+  if (busqueda.length > 120) throw new Error('El filtro de busqueda no puede exceder 120 caracteres');
+
+  const validDirections = ['ambas', 'skf_a_cuesto', 'cuesto_a_skf'];
+  if (!validDirections.includes(direction)) throw new Error('Direccion de reporte no valida');
+
+  const embarques = (db.val_embarques || []).filter(e => {
+    if (direction !== 'ambas' && e.flujo !== direction) return false;
+    return embarqueMatchesDate(e, desde, hasta) && embarqueMatchesSearch(e, busqueda);
+  });
+
+  const rows = [];
+  for (const emb of embarques) {
+    const esSKF = emb.flujo === 'skf_a_cuesto';
+    const turno = extractTurno(emb.numero_embarque);
+    for (const it of (emb.items || [])) {
+      rows.push([
+        getItemId(it, esSKF),                                       // Dispatch
+        getComponente(it, esSKF),                                   // Componente
+        getPartNumber(it, esSKF),                                   // SKF
+        getQty(it, esSKF),                                          // Cantidad
+        String(esSKF ? (it.QR_SKF || '') : (it.qr || '')),          // QR Escaneado
+        emb.fecha_envio || '',                                      // Fecha de salida
+        emb.hora_envio || '',                                       // Hora de salida
+        turno,                                                      // Turno de envio
+        emb.uuid || emb.numero_embarque || '',                      // Codigo de embarque
+      ]);
+    }
+  }
+
+  // Ordenar por fecha desc, luego por codigo embarque
+  rows.sort((a, b) => (b[5] || '').localeCompare(a[5] || '') || (a[8] || '').localeCompare(b[8] || ''));
+
+  const period = desde || hasta
+    ? `${desde || 'Inicio'} a ${hasta || 'Hoy'}`
+    : 'Todas las fechas';
+  const dirLabel = direction === 'ambas' ? 'Ambas direcciones'
+    : direction === 'skf_a_cuesto' ? 'SKF a CUESTO' : 'CUESTO a SKF';
+
+  const sheetRows = [
+    ['Detalle de embarques'],
+    [`Periodo: ${period}${busqueda ? ` | Filtro: ${busqueda}` : ''}`],
+    [`Direccion: ${dirLabel}`],
+    [],
+    ['Dispatch', 'Componente', 'SKF', 'Cantidad', 'QR Escaneado', 'Fecha de salida', 'Hora de salida', 'Turno de envio', 'Codigo de embarque'],
+    ...rows,
+  ];
+
+  const worksheet = XLSX.utils.aoa_to_sheet(sheetRows);
+  worksheet['!cols'] = [
+    { wch: 18 }, // Dispatch
+    { wch: 24 }, // Componente
+    { wch: 22 }, // SKF
+    { wch: 12 }, // Cantidad
+    { wch: 22 }, // QR Escaneado
+    { wch: 15 }, // Fecha de salida
+    { wch: 15 }, // Hora de salida
+    { wch: 15 }, // Turno de envio
+    { wch: 28 }, // Codigo de embarque
+  ];
+  const lastDataRow = Math.max(5, 5 + rows.length);
+  worksheet['!autofilter'] = { ref: `A5:I${lastDataRow}` };
+
+  const workbook = XLSX.utils.book_new();
+  workbook.Props = {
+    Title: 'Detalle de embarques SKF - CUESTO',
+    Subject: 'Items por embarque con trazabilidad',
+    Company: 'Corporativo Cuesto',
+    CreatedDate: new Date(),
+  };
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Embarques');
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx', compression: true });
+}
+
 module.exports = {
   buildConsolidatedSummary,
   buildConsolidatedWorkbookBuffer,
+  buildEmbarquesDetailBuffer,
   validateDateRange,
 };

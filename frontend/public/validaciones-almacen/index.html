@@ -451,7 +451,8 @@ async function renderConsolidado() {
       </div>
       <button class="btn-buscar" onclick="loadConsolidatedResults()">Consultar</button>
       <button class="btn-clear" onclick="clearConsolidatedFilters()">Limpiar</button>
-      <button class="btn-excel" onclick="downloadConsolidatedExcel(this)">Exportar Excel</button>
+      <button class="btn-excel" onclick="downloadConsolidatedExcel(this)">Exportar Consolidado</button>
+      <button class="btn-excel" onclick="downloadEmbarquesExcel(this)" style="background:#2980b9">Exportar Embarques</button>
     </div>
     <div id="consolidadoResult"><div class="spinner"></div></div>`;
   await loadConsolidatedResults();
@@ -642,6 +643,41 @@ async function downloadConsolidatedExcel(button) {
     const disposition = response.headers.get('Content-Disposition') || '';
     const match = disposition.match(/filename="?([^";]+)"?/i);
     const filename = match?.[1] || 'resumen-skf-cuesto.xlsx';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+async function downloadEmbarquesExcel(button) {
+  const originalText = button.textContent;
+  try {
+    const { params } = consolidatedFilters();
+    button.disabled = true;
+    button.textContent = 'Generando...';
+    const token = localStorage.getItem('val_token');
+    const response = await fetch('/api/val/resumen-consolidado/excel-embarques?' + params.toString(), {
+      headers: token ? { Authorization: 'Bearer ' + token } : {}
+    });
+    if (response.status === 401) { doLogout(); return; }
+    if (!response.ok) {
+      const error = await response.json().catch(() => null);
+      throw new Error(error?.error || 'No se pudo generar el archivo Excel.');
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get('Content-Disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    const filename = match?.[1] || 'embarques-detalle.xlsx';
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
