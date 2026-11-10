@@ -9,9 +9,11 @@ const {
   canonicalPeriod,
   comparePeriods,
   effectivePeriodYear,
+  isoWeekPeriod,
   samePeriod,
   upsertCanonicalPeriod,
   upsertEmployeePeriodSnapshot,
+  validWeek,
 } = require('../utils/rhh-periods');
 const { materializeAttendanceWeekTemplate, mondayOfWeek } = require('../utils/rhh-attendance-template');
 
@@ -178,31 +180,55 @@ router.get('/vacaciones-resumen', rhhAuthRequired, rhhRequireRole('admin', 'rh',
     })
     .sort((a, b) => String(a.employee_number).localeCompare(String(b.employee_number), undefined, { numeric: true }));
 
+  const todayPeriod = isoWeekPeriod(today);
+  const currentWeek = todayPeriod ? todayPeriod.no_periodo : 53;
+
   const rows = emps.map(e => {
     const vi = calcVacInfo(e, db, today);
 
-    // Detalle de semanas tomadas (incidencias con vacaciones_dias > 0)
+    // Detalle de semanas con vacaciones_dias > 0 del año actual
     const incVac = (db.rhh_incidencias_semanales || []).filter(i =>
       i.employee_id === e.id && Number(i.vacaciones_dias) > 0
+      && effectivePeriodYear(i) === currentYear
     );
-    const semanas_tomadas = incVac.map(i => ({
-      no_periodo: i.no_periodo, year: i.year || currentYear,
-      period_key: i.period_key || `${i.year || currentYear}-W${String(i.no_periodo).padStart(2, '0')}`,
-      dias: Number(i.vacaciones_dias), fuente: i._vac_fuente || 'CONTPAQ',
-    }));
 
-    // Solicitudes pendientes/aprobadas futuras (programadas)
+    // Separar en tomadas (semana <= actual) y futuras (semana > actual)
+    const semanas_tomadas = [];
+    const semanas_futuras = [];
+    for (const i of incVac) {
+      const row = {
+        no_periodo: i.no_periodo, year: i.year || currentYear,
+        period_key: i.period_key || `${i.year || currentYear}-W${String(i.no_periodo).padStart(2, '0')}`,
+        dias: Number(i.vacaciones_dias), fuente: i._vac_fuente || 'CONTPAQ',
+      };
+      const w = validWeek(i.no_periodo);
+      if (w && w > currentWeek) {
+        semanas_futuras.push(row);
+      } else {
+        semanas_tomadas.push(row);
+      }
+    }
+
+    // Solicitudes pendientes (sin incidencia aún)
     const CUTOFF = '2026-08-11';
     const sols = (db.rhh_vac_solicitudes || []).filter(r =>
       r.employee_id === e.id && (r.created_at || '') >= CUTOFF
     );
-    const programadas = sols
-      .filter(r => r.estado === 'pendiente' || (r.estado === 'aprobada' && r.fecha_inicio && r.fecha_inicio > today))
-      .map(r => ({
+    const solsPendientes = sols.filter(r => r.estado === 'pendiente');
+
+    // Programadas = incidencias futuras + solicitudes pendientes
+    const programadas = [
+      ...semanas_futuras.map(sf => ({
+        id: null, dias: sf.dias, estado: 'aprobada', origen: sf.fuente,
+        fecha_inicio: null, fecha_fin: null,
+        notas: `Semana ${sf.no_periodo}`, created_at: null,
+      })),
+      ...solsPendientes.map(r => ({
         id: r.id, dias: r.dias, estado: r.estado, origen: r.origen || '—',
         fecha_inicio: r.fecha_inicio || null, fecha_fin: r.fecha_fin || null,
         notas: r.notas || '', created_at: r.created_at,
-      }));
+      })),
+    ];
 
     // Historial de ajustes
     const ajustes = (db.rhh_vac_ajustes || []).filter(a => a.employee_id === e.id);
