@@ -14,6 +14,8 @@ const state = {
   rhhUsers: []
 };
 
+const EMPLEADOS_PATH = location.pathname.startsWith('/m/') ? '/apps/e6v3m8/empleados' : '/empleados';
+
 // ── Menú por rol ──────────────────────────────────────────────────────────────
 const MENU_BY_ROLE = {
   empleado: [
@@ -13958,7 +13960,7 @@ async function catCargar() {
         <button class="btn-ghost btn-sm" onclick="event.stopPropagation();catVerDetalle(${e.id})">Ver</button>
         ${resetBtn}
         ${waBtn}
-        ${e.status === 'active' ? `<a href="/empleados" target="_blank" class="btn-ghost btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">🏭 Portal</a>` : ''}
+        ${e.status === 'active' && state.user.role !== 'muestra' ? `<a href="${EMPLEADOS_PATH}" target="_blank" class="btn-ghost btn-sm" onclick="event.stopPropagation()" style="text-decoration:none">🏭 Portal</a>` : ''}
       </td>
     </tr>`;
   }).join('');
@@ -14114,7 +14116,7 @@ async function catVerDetalle(empId) {
     <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
       <button class="btn-ghost btn-sm" onclick="catResetCredencial(${e.id})">🔄 Resetear contraseña</button>
       <button class="btn-ghost btn-sm" style="color:#25d366" onclick="catEnviarWhatsApp(${e.id},'${esc(e.portal_username || '')}','${esc(e.full_name || '')}','${esc(e.phone || '')}')">📱 Enviar por WhatsApp</button>
-      <a href="/empleados" target="_blank" class="btn-ghost btn-sm" style="text-decoration:none">🏭 Ir al portal</a>
+      ${state.user.role !== 'muestra' ? `<a href="${EMPLEADOS_PATH}" target="_blank" class="btn-ghost btn-sm" style="text-decoration:none">🏭 Ir al portal</a>` : ''}
     </div>
   </div>` : `<div style="color:#94a3b8;font-size:13px">Sin acceso al portal configurado</div>`;
 
@@ -14424,7 +14426,7 @@ async function catEnviarWhatsApp(empId, username, fullName, phone) {
 
   const usuario = r.username;
   const contrasena = r.password;
-  const link = location.origin + '/empleados/';
+  const link = location.origin + EMPLEADOS_PATH;
 
   const msg = `Hola *${fullName}*,\n\n`
     + `Te invitamos a consultar la plataforma de empleados, donde podras consultar tus incidencias, evaluaciones, nomina y solicitar vacaciones.\n\n`
@@ -14460,7 +14462,7 @@ async function catResetYEnviarWA(empId, fullName, phone) {
 
   toast(`Contraseña restablecida. Usuario: ${r.username} / Pass: ${r.password}`, 'success');
 
-  const link = location.origin + '/empleados/';
+  const link = location.origin + EMPLEADOS_PATH;
   const msg = `Hola *${fullName}*,\n\n`
     + `Tu contraseña del portal de empleados ha sido restablecida.\n\n`
     + `*Tus nuevas credenciales de acceso:*\n`
