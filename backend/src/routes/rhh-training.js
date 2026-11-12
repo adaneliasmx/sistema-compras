@@ -739,16 +739,26 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
   if (!db.rhh_training_quizzes) db.rhh_training_quizzes = [];
   let seedData;
   try {
-    seedData = require('../../data/quizzes-seed.json');
+    const seedPath = require('path').join(__dirname, '../../data/quizzes-seed.json');
+    seedData = JSON.parse(require('fs').readFileSync(seedPath, 'utf8'));
   } catch (e) {
     return res.status(500).json({ error: 'No se encontro archivo quizzes-seed.json' });
   }
   const quizzes = Array.isArray(seedData) ? seedData : seedData.quizzes || [];
-  let added = 0;
+  let added = 0, updated = 0;
   for (const q of quizzes) {
     if (!q.doc_codigo || !q.preguntas) continue;
-    const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo);
-    if (exists) continue;
+    const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo || baseCode(x.doc_codigo) === baseCode(q.doc_codigo));
+    if (exists) {
+      // Actualizar preguntas si el seed tiene mas
+      if (q.preguntas.length > (exists.preguntas || []).length) {
+        exists.preguntas = q.preguntas.map((p, i) => ({ ...p, id: i + 1 }));
+        exists.doc_nombre = q.doc_nombre || exists.doc_nombre;
+        exists.doc_tipo = q.doc_tipo || exists.doc_tipo;
+        updated++;
+      }
+      continue;
+    }
     const numbered = (q.preguntas || []).map((p, i) => ({ ...p, id: i + 1 }));
     db.rhh_training_quizzes.push({
       id: nextId(db.rhh_training_quizzes),
@@ -760,8 +770,8 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
     });
     added++;
   }
-  if (added > 0) await write(db);
-  res.json({ ok: true, added, total: db.rhh_training_quizzes.length });
+  if (added > 0 || updated > 0) await write(db);
+  res.json({ ok: true, added, updated, total: db.rhh_training_quizzes.length });
 });
 
 // PATCH /quizzes/:id — editar preguntas de un cuestionario
@@ -1020,9 +1030,8 @@ router.post('/assignments/refresh-quizzes', rhhRequireRole('admin', 'rh'), async
   let updated = 0;
   for (const a of assignments) {
     for (const d of (a.documentos || [])) {
-      if (d.quiz_id) continue; // ya tiene quiz vinculado
       const quiz = findQuizByCode(quizzes, d.doc_codigo);
-      if (quiz) {
+      if (quiz && d.quiz_id !== quiz.id) {
         d.quiz_id = quiz.id;
         updated++;
       }
