@@ -11276,8 +11276,8 @@ async function capDashboard(wrap) {
   const plansLoaded = (plans || []).length > 0;
   const quizzesLoaded = (quizzes || []).length > 0;
   const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
-  const quizSeedBtn = quizzesLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar cuestionarios (33 quizzes)</button>`;
-  const refreshBtn = quizzesLoaded ? `<button class="btn btn-secondary" id="btn-cap-refresh" style="margin-bottom:12px;margin-left:8px;">Revincular examenes</button>` : '';
+  const quizSeedBtn = `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar/actualizar cuestionarios</button>`;
+  const refreshBtn = `<button class="btn btn-secondary" id="btn-cap-refresh" style="margin-bottom:12px;margin-left:8px;">Revincular examenes</button>`;
   const assignBtn = `<button class="btn btn-primary" id="btn-cap-assign" style="margin-bottom:12px;margin-left:8px;">Asignar plan a empleados activos</button>`;
 
   const porPuestoRows = Object.entries(dash.porPuesto || {}).map(([puesto, d]) => {
@@ -11321,7 +11321,7 @@ async function capDashboard(wrap) {
   if (btnQuizSeed) btnQuizSeed.onclick = async () => {
     btnQuizSeed.disabled = true; btnQuizSeed.textContent = 'Importando...';
     const r = await api('/api/rhh/training/quizzes/seed', { method: 'POST' });
-    if (r && r.ok) toast(`${r.added} cuestionarios importados (${r.total} total)`, 'success');
+    if (r && r.ok) toast(`${r.added} nuevos, ${r.updated || 0} actualizados (${r.total} total)`, 'success');
     else toast('Error al importar cuestionarios', 'error');
     capacitacionView();
   };
