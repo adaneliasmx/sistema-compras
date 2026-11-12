@@ -1,4 +1,5 @@
 const express = require('express');
+const { createHash } = require('crypto');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
@@ -20,6 +21,16 @@ function normPos(s) {
 // Extraer codigo base sin revision: "2-PR-08 Rev. 2" → "2-PR-08"
 function baseCode(codigo) {
   return (codigo || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+}
+
+// Ignore database IDs when comparing the question bank installed from the seed.
+function questionBankHash(questions) {
+  const content = questions.map(question => [
+    question.texto,
+    question.imagen_url || '',
+    (question.opciones || []).map(option => [option.texto, option.correcta])
+  ]);
+  return createHash('sha256').update(JSON.stringify(content)).digest('hex');
 }
 
 // Buscar quiz por codigo (primero exacto, luego por codigo base)
@@ -750,8 +761,11 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
     if (!q.doc_codigo || !q.preguntas) continue;
     const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo || baseCode(x.doc_codigo) === baseCode(q.doc_codigo));
     if (exists) {
-      // Actualizar preguntas si el seed tiene mas
-      if (q.preguntas.length > (exists.preguntas || []).length) {
+      const installed = exists.preguntas || [];
+      const replacesPreviousText = q.revision_anterior_sha256 && exists.doc_codigo === q.doc_codigo
+        && installed.length === q.preguntas.length
+        && questionBankHash(installed) === q.revision_anterior_sha256;
+      if (q.preguntas.length > installed.length || replacesPreviousText) {
         exists.preguntas = q.preguntas.map((p, i) => ({ ...p, id: i + 1 }));
         exists.doc_nombre = q.doc_nombre || exists.doc_nombre;
         exists.doc_tipo = q.doc_tipo || exists.doc_tipo;
