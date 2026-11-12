@@ -11274,7 +11274,9 @@ async function capDashboard(wrap) {
   if (!dash) { wrap.innerHTML = '<p>Error cargando dashboard</p>'; return; }
 
   const plansLoaded = (plans || []).length > 0;
+  const quizzesLoaded = (quizzes || []).length > 0;
   const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
+  const quizSeedBtn = quizzesLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar cuestionarios (33 quizzes)</button>`;
   const assignBtn = `<button class="btn btn-primary" id="btn-cap-assign" style="margin-bottom:12px;margin-left:8px;">Asignar plan a empleados activos</button>`;
 
   const porPuestoRows = Object.entries(dash.porPuesto || {}).map(([puesto, d]) => {
@@ -11288,7 +11290,7 @@ async function capDashboard(wrap) {
 
   wrap.innerHTML = `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-      ${seedBtn}${assignBtn}
+      ${seedBtn}${quizSeedBtn}${assignBtn}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
       <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.totalPlanes}</div><div style="color:#64748b;">Planes</div></div>
@@ -11314,6 +11316,14 @@ async function capDashboard(wrap) {
     else toast('Error al cargar planes', 'error');
     capacitacionView();
   };
+  const btnQuizSeed = document.getElementById('btn-cap-quiz-seed');
+  if (btnQuizSeed) btnQuizSeed.onclick = async () => {
+    btnQuizSeed.disabled = true; btnQuizSeed.textContent = 'Importando...';
+    const r = await api('/api/rhh/training/quizzes/seed', { method: 'POST' });
+    if (r && r.ok) toast(`${r.added} cuestionarios importados (${r.total} total)`, 'success');
+    else toast('Error al importar cuestionarios', 'error');
+    capacitacionView();
+  };
   const btnAssign = document.getElementById('btn-cap-assign');
   if (btnAssign) btnAssign.onclick = async () => {
     btnAssign.disabled = true; btnAssign.textContent = 'Asignando...';
@@ -11333,79 +11343,101 @@ async function capPlanes(wrap) {
   const rows = plans.map(p => {
     const totalDocs = (p.documentos || []).length + (p.docs_generales || []).length;
     return `<tr>
-      <td><strong>${p.puesto_sgc}</strong></td>
+      <td style="cursor:pointer;" onclick="capTogglePlan(this,${p.id})"><span class="cap-arrow">&#9654;</span> <strong>${p.puesto_sgc}</strong></td>
       <td>${p.eval_group}</td>
       <td>${(p.position_names || []).join(', ')}</td>
       <td>${totalDocs}</td>
-      <td><button class="btn btn-sm btn-secondary" onclick="capVerPlan(${p.id})">Ver docs</button></td>
+    </tr>
+    <tr class="cap-plan-expand" id="cap-plan-row-${p.id}" style="display:none;">
+      <td colspan="4" style="padding:0;"><div id="cap-plan-inner-${p.id}" style="padding:8px 16px;background:#f8fafc;"></div></td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `
     <div style="overflow-x:auto;">
-      <table class="table"><thead><tr><th>Puesto SGC</th><th>Grupo Evaluacion</th><th>Nombres de puesto</th><th>Docs</th><th></th></tr></thead>
+      <table class="table"><thead><tr><th>Puesto SGC</th><th>Grupo Evaluacion</th><th>Nombres de puesto</th><th>Docs</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
-    <div id="cap-plan-detail"></div>
   `;
 }
 
-window.capVerPlan = async function(planId) {
+window.capTogglePlan = async function(td, planId) {
+  const row = document.getElementById('cap-plan-row-' + planId);
+  if (!row) return;
+  const arrow = td.querySelector('.cap-arrow');
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    if (arrow) arrow.innerHTML = '&#9654;';
+    return;
+  }
+  row.style.display = '';
+  if (arrow) arrow.innerHTML = '&#9660;';
+  const inner = document.getElementById('cap-plan-inner-' + planId);
+  if (!inner || inner.dataset.loaded) return;
+  inner.innerHTML = '<span class="spinner" style="font-size:12px;">Cargando...</span>';
   const plan = await api(`/api/rhh/training/plans/${planId}`);
-  if (!plan) return;
-  const det = document.getElementById('cap-plan-detail');
-  if (!det) return;
+  if (!plan) { inner.innerHTML = 'Error'; return; }
+  inner.dataset.loaded = '1';
   const genRows = (plan.docs_generales || []).map(d =>
-    `<tr style="background:#eff6ff;"><td>${d.codigo}</td><td>${d.nombre}</td><td>${d.tipo}</td><td>General</td></tr>`
+    `<tr style="background:#eff6ff;"><td style="padding:4px 8px;">${d.codigo}</td><td style="padding:4px 8px;">${d.nombre}</td><td style="padding:4px 8px;">${d.tipo}</td><td style="padding:4px 8px;color:#3b82f6;">General</td></tr>`
   ).join('');
   const mandRows = (plan.documentos || []).map(d =>
-    `<tr><td>${d.codigo}</td><td>${d.nombre}</td><td>${d.tipo}</td><td>Mandatorio</td></tr>`
+    `<tr><td style="padding:4px 8px;">${d.codigo}</td><td style="padding:4px 8px;">${d.nombre}</td><td style="padding:4px 8px;">${d.tipo}</td><td style="padding:4px 8px;">Mandatorio</td></tr>`
   ).join('');
-  det.innerHTML = `
-    <div class="card" style="margin-top:16px;padding:16px;">
-      <h3>${plan.puesto_sgc}</h3>
-      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Categoria</th></tr></thead>
-      <tbody>${genRows}${mandRows}</tbody></table>
-    </div>
+  inner.innerHTML = `
+    <table class="table" style="margin:0;font-size:12px;"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Categoria</th></tr></thead>
+    <tbody>${genRows}${mandRows}</tbody></table>
   `;
 };
 
 async function capCuestionarios(wrap) {
   const quizzes = await api('/api/rhh/training/quizzes');
   if (!quizzes || quizzes.length === 0) {
-    wrap.innerHTML = '<p>No hay cuestionarios cargados aun. Se generaran desde los documentos del SGC.</p>';
+    wrap.innerHTML = '<p>No hay cuestionarios cargados aun. Ve al Dashboard e importa los cuestionarios semilla.</p>';
     return;
   }
   const rows = quizzes.map(q =>
-    `<tr><td>${q.doc_codigo}</td><td>${q.doc_nombre}</td><td>${q.doc_tipo || ''}</td><td>${q.total_preguntas}</td>
-     <td><button class="btn btn-sm btn-secondary" onclick="capVerQuiz(${q.id})">Ver</button></td></tr>`
+    `<tr>
+      <td style="cursor:pointer;" onclick="capToggleQuiz(this,${q.id})"><span class="cap-arrow">&#9654;</span> <strong>${q.doc_codigo}</strong></td>
+      <td>${q.doc_nombre}</td><td>${q.doc_tipo || ''}</td><td>${q.total_preguntas}</td>
+    </tr>
+    <tr class="cap-quiz-expand" id="cap-quiz-row-${q.id}" style="display:none;">
+      <td colspan="4" style="padding:0;"><div id="cap-quiz-inner-${q.id}" style="padding:8px 16px;background:#f8fafc;max-height:400px;overflow-y:auto;"></div></td>
+    </tr>`
   ).join('');
   wrap.innerHTML = `
     <div style="overflow-x:auto;">
-      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th><th></th></tr></thead>
+      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
-    <div id="cap-quiz-detail"></div>
   `;
 }
 
-window.capVerQuiz = async function(quizId) {
+window.capToggleQuiz = async function(td, quizId) {
+  const row = document.getElementById('cap-quiz-row-' + quizId);
+  if (!row) return;
+  const arrow = td.querySelector('.cap-arrow');
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    if (arrow) arrow.innerHTML = '&#9654;';
+    return;
+  }
+  row.style.display = '';
+  if (arrow) arrow.innerHTML = '&#9660;';
+  const inner = document.getElementById('cap-quiz-inner-' + quizId);
+  if (!inner || inner.dataset.loaded) return;
+  inner.innerHTML = '<span class="spinner" style="font-size:12px;">Cargando...</span>';
   const quiz = await api(`/api/rhh/training/quizzes/${quizId}`);
-  if (!quiz) return;
-  const det = document.getElementById('cap-quiz-detail');
-  if (!det) return;
+  if (!quiz) { inner.innerHTML = 'Error'; return; }
+  inner.dataset.loaded = '1';
   const qRows = (quiz.preguntas || []).map((p, i) => {
     const opts = (p.opciones || []).map(o =>
-      `<span style="display:inline-block;margin:2px 6px;padding:2px 8px;border-radius:4px;font-size:12px;${o.correcta ? 'background:#dcfce7;color:#166534;font-weight:600;' : 'background:#f1f5f9;'}">${o.texto}</span>`
+      `<span style="display:inline-block;margin:2px 4px;padding:2px 6px;border-radius:4px;font-size:11px;${o.correcta ? 'background:#dcfce7;color:#166534;font-weight:600;' : 'background:#f1f5f9;'}">${o.texto}</span>`
     ).join('');
-    return `<tr><td>${i + 1}</td><td>${p.texto}</td><td>${opts}</td></tr>`;
+    return `<tr><td style="padding:4px 8px;vertical-align:top;">${i + 1}</td><td style="padding:4px 8px;">${p.texto}</td><td style="padding:4px 8px;">${opts}</td></tr>`;
   }).join('');
-  det.innerHTML = `
-    <div class="card" style="margin-top:16px;padding:16px;">
-      <h3>${quiz.doc_codigo} - ${quiz.doc_nombre}</h3>
-      <p>${quiz.preguntas.length} preguntas</p>
-      <table class="table"><thead><tr><th>#</th><th>Pregunta</th><th>Opciones (verde=correcta)</th></tr></thead>
-      <tbody>${qRows}</tbody></table>
-    </div>
+  inner.innerHTML = `
+    <table class="table" style="margin:0;font-size:12px;"><thead><tr><th style="width:30px;">#</th><th>Pregunta</th><th>Opciones <span style="color:#166534;">(verde=correcta)</span></th></tr></thead>
+    <tbody>${qRows}</tbody></table>
   `;
 };
 
@@ -11415,13 +11447,16 @@ async function capSeguimiento(wrap) {
     wrap.innerHTML = '<p>No hay asignaciones. Ve al Dashboard y asigna planes a empleados.</p>';
     return;
   }
+  // Filtro por nombre
+  const filterHtml = `<div style="margin-bottom:10px;"><input id="cap-seg-filter" type="text" placeholder="Buscar empleado..." style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:260px;" oninput="capFilterSeg()"></div>`;
   const rows = assignments.map(a => {
     const color = a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
-    return `<tr>
+    const statusLabel = a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
+    return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})">
       <td>${a.employee_number || ''}</td>
-      <td>${a.employee_name}</td>
+      <td><span class="cap-arrow">&#9654;</span> <strong>${a.employee_name}</strong></td>
       <td>${a.position_name}</td>
-      <td><span style="color:${color};font-weight:600;">${a.status}</span></td>
+      <td><span style="color:${color};font-weight:600;">${statusLabel}</span></td>
       <td>${a.docs_aprobados}/${a.total_docs}</td>
       <td>
         <div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;min-width:120px;">
@@ -11429,24 +11464,52 @@ async function capSeguimiento(wrap) {
           <span style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:11px;font-weight:600;">${a.progreso_pct}%</span>
         </div>
       </td>
-      <td><button class="btn btn-sm btn-secondary" onclick="capVerHoja(${a.employee_id})">Hoja</button></td>
+    </tr>
+    <tr class="cap-hoja-expand" id="cap-hoja-row-${a.employee_id}" style="display:none;">
+      <td colspan="6" style="padding:0;"><div id="cap-hoja-inner-${a.employee_id}" style="padding:8px 16px;background:#f8fafc;"></div></td>
     </tr>`;
   }).join('');
   wrap.innerHTML = `
+    ${filterHtml}
     <div style="overflow-x:auto;">
-      <table class="table"><thead><tr><th>#</th><th>Empleado</th><th>Puesto</th><th>Status</th><th>Aprobados</th><th style="min-width:140px;">Progreso</th><th></th></tr></thead>
+      <table class="table"><thead><tr><th>#</th><th>Empleado</th><th>Puesto</th><th>Status</th><th>Aprobados</th><th style="min-width:140px;">Progreso</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
-    <div id="cap-hoja-detail"></div>
   `;
 }
 
-window.capVerHoja = async function(empId) {
+window.capFilterSeg = function() {
+  const q = (document.getElementById('cap-seg-filter')?.value || '').toLowerCase();
+  document.querySelectorAll('.cap-seg-row').forEach(r => {
+    const match = !q || (r.dataset.name || '').includes(q);
+    r.style.display = match ? '' : 'none';
+    const next = r.nextElementSibling;
+    if (next && next.classList.contains('cap-hoja-expand') && !match) next.style.display = 'none';
+  });
+};
+
+window.capToggleHoja = async function(tr, empId) {
+  const row = document.getElementById('cap-hoja-row-' + empId);
+  if (!row) return;
+  const arrow = tr.querySelector('.cap-arrow');
+  if (row.style.display !== 'none') {
+    row.style.display = 'none';
+    if (arrow) arrow.innerHTML = '&#9654;';
+    return;
+  }
+  row.style.display = '';
+  if (arrow) arrow.innerHTML = '&#9660;';
+  const inner = document.getElementById('cap-hoja-inner-' + empId);
+  if (!inner || inner.dataset.loaded) return;
+  inner.innerHTML = '<span class="spinner" style="font-size:12px;">Cargando...</span>';
+  await capRenderHoja(inner, empId);
+};
+
+async function capRenderHoja(inner, empId) {
   const a = await api(`/api/rhh/training/assignments/${empId}`);
-  if (!a) return;
-  const det = document.getElementById('cap-hoja-detail');
-  if (!det) return;
-  const sigIcon = (f) => f && f.firmado ? '<span style="color:#22c55e;font-weight:700;">SI</span>' : '<span style="color:#cbd5e1;">--</span>';
+  if (!a) { inner.innerHTML = 'Error'; return; }
+  inner.dataset.loaded = '1';
+  const sigIcon = (f) => f && f.firmado ? '<span style="color:#22c55e;font-weight:700;">&#10003;</span>' : '<span style="color:#cbd5e1;">--</span>';
   const statusBadge = (s) => {
     if (s === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
     if (s === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
@@ -11454,40 +11517,36 @@ window.capVerHoja = async function(empId) {
   };
   const docRows = (a.documentos || []).map(d => {
     const firmaBtn = (d.status === 'aprobado' && state.user?.role !== 'muestra')
-      ? `<button class="btn btn-sm btn-primary" onclick="capFirmar(${a.id},'${d.doc_codigo}','instructor')">Firma Inst.</button>
-         <button class="btn btn-sm btn-primary" onclick="capFirmar(${a.id},'${d.doc_codigo}','rh')" style="margin-left:4px;">Firma RH</button>`
+      ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmar(${a.id},'${d.doc_codigo}','instructor',${empId})" style="font-size:11px;padding:2px 8px;">Firma Inst.</button>
+         <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmar(${a.id},'${d.doc_codigo}','rh',${empId})" style="margin-left:4px;font-size:11px;padding:2px 8px;">Firma RH</button>`
       : '';
     return `<tr>
-      <td>${d.doc_codigo}</td><td>${d.doc_nombre}</td><td>${d.doc_tipo}</td>
-      <td>${statusBadge(d.status)}</td><td>${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
-      <td>${d.intentos || 0}</td>
-      <td>${sigIcon(d.firma_empleado)}</td><td>${sigIcon(d.firma_instructor)}</td><td>${sigIcon(d.firma_rh)}</td>
-      <td>${firmaBtn}</td>
+      <td style="padding:4px 8px;">${d.doc_codigo}</td><td style="padding:4px 8px;">${d.doc_nombre}</td><td style="padding:4px 8px;">${d.doc_tipo}</td>
+      <td style="padding:4px 8px;">${statusBadge(d.status)}</td><td style="padding:4px 8px;">${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
+      <td style="padding:4px 8px;">${d.intentos || 0}</td>
+      <td style="padding:4px 8px;">${sigIcon(d.firma_empleado)}</td><td style="padding:4px 8px;">${sigIcon(d.firma_instructor)}</td><td style="padding:4px 8px;">${sigIcon(d.firma_rh)}</td>
+      <td style="padding:4px 8px;">${firmaBtn}</td>
     </tr>`;
   }).join('');
-
-  det.innerHTML = `
-    <div class="card" style="margin-top:16px;padding:16px;">
-      <h3>Hoja de Evaluacion - ${a.employee_name} (${a.employee_number || ''})</h3>
-      <p>Puesto: <strong>${a.position_name}</strong> | Progreso: <strong>${a.progreso_pct}%</strong> | Status: <strong>${a.status}</strong></p>
-      <div style="overflow-x:auto;">
-        <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Status</th><th>Cal.</th><th>Int.</th><th>Emp</th><th>Inst</th><th>RH</th><th>Acciones</th></tr></thead>
-        <tbody>${docRows}</tbody></table>
-      </div>
-    </div>
+  inner.innerHTML = `
+    <div style="margin-bottom:4px;font-size:13px;"><strong>${a.employee_name}</strong> (${a.employee_number || ''}) &mdash; ${a.position_name} &mdash; Progreso: ${a.progreso_pct}%</div>
+    <table class="table" style="margin:0;font-size:12px;"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Status</th><th>Cal.</th><th>Int.</th><th>Emp</th><th>Inst</th><th>RH</th><th>Acciones</th></tr></thead>
+    <tbody>${docRows}</tbody></table>
   `;
-};
+}
 
-window.capFirmar = async function(assignId, docCodigo, tipoFirma) {
+window.capFirmar = async function(assignId, docCodigo, tipoFirma, empId) {
   const r = await api(`/api/rhh/training/assignments/${assignId}/firma`, {
     method: 'PATCH',
     body: JSON.stringify({ doc_codigo: docCodigo, tipo_firma: tipoFirma })
   });
   if (r && r.ok) toast('Firma registrada', 'success');
   else toast('Error al firmar', 'error');
-  // Refrescar hoja
-  const a = await api(`/api/rhh/training/assignments/${assignId}`);
-  if (a) window.capVerHoja(a.employee_id);
+  // Refrescar hoja inline
+  if (empId) {
+    const inner = document.getElementById('cap-hoja-inner-' + empId);
+    if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+  }
 };
 
 // ══════════════════════════════════════════════════════════════════════════════

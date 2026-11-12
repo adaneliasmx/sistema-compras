@@ -666,6 +666,37 @@ router.post('/quizzes/bulk', rhhRequireRole('admin', 'rh'), async (req, res) => 
   res.json({ ok: true, added, total: db.rhh_training_quizzes.length });
 });
 
+// POST /quizzes/seed — cargar cuestionarios semilla desde archivo
+router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = await read();
+  if (!db.rhh_training_quizzes) db.rhh_training_quizzes = [];
+  let seedData;
+  try {
+    seedData = require('../../data/quizzes-seed.json');
+  } catch (e) {
+    return res.status(500).json({ error: 'No se encontro archivo quizzes-seed.json' });
+  }
+  const quizzes = Array.isArray(seedData) ? seedData : seedData.quizzes || [];
+  let added = 0;
+  for (const q of quizzes) {
+    if (!q.doc_codigo || !q.preguntas) continue;
+    const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo);
+    if (exists) continue;
+    const numbered = (q.preguntas || []).map((p, i) => ({ ...p, id: i + 1 }));
+    db.rhh_training_quizzes.push({
+      id: nextId(db.rhh_training_quizzes),
+      doc_codigo: q.doc_codigo,
+      doc_nombre: q.doc_nombre || q.doc_codigo,
+      doc_tipo: q.doc_tipo || 'Procedimiento',
+      preguntas: numbered,
+      created_at: nowMxDate()
+    });
+    added++;
+  }
+  if (added > 0) await write(db);
+  res.json({ ok: true, added, total: db.rhh_training_quizzes.length });
+});
+
 // PATCH /quizzes/:id — editar preguntas de un cuestionario
 router.patch('/quizzes/:id', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = await read();
