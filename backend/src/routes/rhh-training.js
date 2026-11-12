@@ -623,7 +623,7 @@ router.get('/quizzes', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res
 // GET /quizzes/excel-all — Descargar TODOS los cuestionarios en un ZIP
 router.get('/quizzes/excel-all', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const XLSX = require('xlsx');
-  const archiver = require('archiver');
+  const { ZipArchive } = require('archiver');
   const db = await read();
   const quizzes = db.rhh_training_quizzes || [];
   if (quizzes.length === 0) return res.status(404).json({ error: 'No hay cuestionarios' });
@@ -631,7 +631,7 @@ router.get('/quizzes/excel-all', rhhRequireRole('admin', 'rh'), async (req, res)
   res.setHeader('Content-Disposition', 'attachment; filename="cuestionarios_capacitacion.zip"');
   res.setHeader('Content-Type', 'application/zip');
 
-  const archive = archiver('zip', { zlib: { level: 5 } });
+  const archive = new ZipArchive({ zlib: { level: 5 } });
   archive.pipe(res);
 
   for (const quiz of quizzes) {
