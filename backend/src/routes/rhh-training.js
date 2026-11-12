@@ -667,7 +667,9 @@ router.get('/quizzes/excel-all', rhhRequireRole('admin', 'rh'), async (req, res)
     XLSX.utils.book_append_sheet(wb, meta, 'Info');
     const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
     wb.Sheets = {};
-    const fname = `quiz_${quiz.doc_codigo.replace(/\s+/g, '_').replace(/[\/\\]/g, '-')}.xlsx`;
+    const safeName = (quiz.doc_nombre || '').replace(/[\/\\:*?"<>|]/g, '').replace(/\s+/g, '_').substring(0, 80);
+    const safeCode = quiz.doc_codigo.replace(/\s+/g, '_').replace(/[\/\\:*?"<>|]/g, '-');
+    const fname = `${safeCode}_${safeName}.xlsx`;
     archive.append(buf, { name: fname });
   }
 
@@ -822,7 +824,9 @@ router.get('/quizzes/:id/excel', rhhRequireRole('admin', 'rh'), async (req, res)
 
   const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   wb.Sheets = {};
-  const filename = `quiz_${quiz.doc_codigo.replace(/\s+/g, '_')}.xlsx`;
+  const safeName = (quiz.doc_nombre || '').replace(/[\/\\:*?"<>|]/g, '').replace(/\s+/g, '_').substring(0, 80);
+  const safeCode = quiz.doc_codigo.replace(/\s+/g, '_').replace(/[\/\\:*?"<>|]/g, '-');
+  const filename = `${safeCode}_${safeName}.xlsx`;
   res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);

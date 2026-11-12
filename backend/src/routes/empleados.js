@@ -914,7 +914,7 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
     // Tomar 3 incorrectas aleatorias
     const wrongPool = [...incorrectas];
     const wrong3 = [];
-    for (let i = 0; i < Math.min(3, wrongPool.length); i++) {
+    for (let i = 0; i < (p.imagen_url ? 5 : 3) && wrongPool.length > 0; i++) {
       const idx = Math.floor(Math.random() * wrongPool.length);
       wrong3.push(wrongPool.splice(idx, 1)[0]);
     }
@@ -924,7 +924,7 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
       .map(o => ({ texto: o.texto }))
       .sort(() => Math.random() - 0.5);
 
-    return { id: p.id, texto: p.texto, opciones };
+    return { id: p.id, texto: p.texto, opciones, ...(p.imagen_url ? { imagen_url: p.imagen_url } : {}) };
   });
 
   res.json({

@@ -145,6 +145,7 @@ app.use(cors({
 app.use(compression({ threshold: 1024 }));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 app.use('/storage', express.static(path.resolve(process.cwd(), 'storage')));
 app.use(express.static(path.resolve(process.cwd(), 'frontend/public'), {
   index: false,

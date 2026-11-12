@@ -15368,6 +15368,4257 @@
           ]
         }
       ]
+    },
+    {
+      "doc_codigo": "1-CA-01 Rev. 3",
+      "doc_nombre": "Manual de Fallas Visuales",
+      "doc_tipo": "Manual",
+      "preguntas": [
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img001.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img002.png",
+          "opciones": [
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img003.png",
+          "opciones": [
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p05_img004.png",
+          "opciones": [
+            {
+              "texto": "Estampa polvosa",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p05_img005.png",
+          "opciones": [
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p06_img006.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p06_img007.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img008.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img009.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img010.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img011.png",
+          "opciones": [
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p08_img012.png",
+          "opciones": [
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p08_img013.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img014.png",
+          "opciones": [
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img015.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img016.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p11_img017.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": true
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p11_img018.png",
+          "opciones": [
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": true
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p12_img019.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p12_img020.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img021.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img022.png",
+          "opciones": [
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": true
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img023.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img024.png",
+          "opciones": [
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img025.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img026.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": true
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img027.png",
+          "opciones": [
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img028.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img029.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img030.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p16_img031.png",
+          "opciones": [
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Adhesivo no uniforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-01_p16_img032.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img033.png",
+          "opciones": [
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img034.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img035.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p18_img036.png",
+          "opciones": [
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img037.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img038.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del sandblasteo, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img039.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion en sandblasteo",
+              "correcta": true
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del desengrase, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p20_img040.png",
+          "opciones": [
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Mal desengrase",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del desengrase, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img041.png",
+          "opciones": [
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del desengrase, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img042.png",
+          "opciones": [
+            {
+              "texto": "Mal desengrase",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": true
+            },
+            {
+              "texto": "Material danado en sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Despues del desengrase, que falla se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img043.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de sandblasteo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion en desengrase",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Que disposicion indica el manual para este lote de estampas con oxido?",
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img001.png",
+          "opciones": [
+            {
+              "texto": "Cambiar la etiqueta y enviar a empaque",
+              "correcta": false
+            },
+            {
+              "texto": "Aceptar el material sin otras verificaciones",
+              "correcta": false
+            },
+            {
+              "texto": "Liberar las piezas despues de un conteo visual",
+              "correcta": false
+            },
+            {
+              "texto": "Liberar el lote solo por inspeccion de color",
+              "correcta": false
+            },
+            {
+              "texto": "Rechazar y reprocesar el lote",
+              "correcta": true
+            },
+            {
+              "texto": "Aprobar el lote por el numero de parte",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: oxido?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_01.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa polvosa?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_02.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa deforme?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_03.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampas mezcladas?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_04.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": true
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: puntos sin fosfato?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_05.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa tallada?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_06.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa humeda?",
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_07.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "doc_codigo": "1-CA-03 Rev. 2",
+      "doc_nombre": "Manual de Fallas Visuales de Fosfato de Manganeso",
+      "doc_tipo": "Manual",
+      "preguntas": [
+        {
+          "texto": "Al recibir este material virgen, que condicion se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img001.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Al recibir este material virgen, que condicion se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img002.png",
+          "opciones": [
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Al recibir este material virgen, que condicion se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-03_p03_img003.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Al recibir este material virgen, que condicion se observa?",
+          "imagen_url": "/uploads/fallas/1-CA-03_p03_img004.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": true
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p04_img005.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p04_img006.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p05_img007.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p05_img008.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p06_img009.png",
+          "opciones": [
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p06_img010.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img011.png",
+          "opciones": [
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img012.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img013.png",
+          "opciones": [
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img014.png",
+          "opciones": [
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p09_img015.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img016.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img017.png",
+          "opciones": [
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": true
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img018.png",
+          "opciones": [
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": true
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img019.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p11_img020.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p12_img021.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": true
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p13_img022.png",
+          "opciones": [
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Grasa o residuos no usuales",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p13_img023.png",
+          "opciones": [
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p14_img024.png",
+          "opciones": [
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Desprendimiento de recubrimiento",
+              "correcta": true
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p15_img025.png",
+          "opciones": [
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Chaflan en diferente sentido",
+              "correcta": false
+            },
+            {
+              "texto": "Material deforme o roto",
+              "correcta": false
+            },
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-03_p15_img026.png",
+          "opciones": [
+            {
+              "texto": "Material polvoso",
+              "correcta": false
+            },
+            {
+              "texto": "Material humedo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Materiales mezclados",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Al recibir material virgen con oxido, que indica el manual?",
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img001.png",
+          "opciones": [
+            {
+              "texto": "Aprobar el lote por el numero de parte",
+              "correcta": false
+            },
+            {
+              "texto": "Aceptar el material sin otras verificaciones",
+              "correcta": false
+            },
+            {
+              "texto": "Liberar el lote solo por inspeccion de color",
+              "correcta": false
+            },
+            {
+              "texto": "Cambiar la etiqueta y enviar a empaque",
+              "correcta": false
+            },
+            {
+              "texto": "Retener el material y consultar al area de calidad",
+              "correcta": true
+            },
+            {
+              "texto": "Liberar las piezas despues de un conteo visual",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: oxido?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_01.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: material polvoso?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_02.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: material deforme o roto?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_03.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: materiales mezclados?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_04.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": true
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: puntos sin fosfato?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_05.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: material humedo?",
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_06.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "doc_codigo": "1-CA-04 Rev. 1",
+      "doc_nombre": "Manual de Fallas Visuales Amsted",
+      "doc_tipo": "Manual",
+      "preguntas": [
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img001.png",
+          "opciones": [
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": true
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img002.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Carro identificado",
+              "correcta": true
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img003.png",
+          "opciones": [
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img004.png",
+          "opciones": [
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza con grabado",
+              "correcta": true
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img005.png",
+          "opciones": [
+            {
+              "texto": "Marca de rodillo",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img006.png",
+          "opciones": [
+            {
+              "texto": "Marca mecanica",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img007.png",
+          "opciones": [
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pitting",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img008.png",
+          "opciones": [
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img009.png",
+          "opciones": [
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img010.png",
+          "opciones": [
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img011.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p06_img012.png",
+          "opciones": [
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": true
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p06_img013.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": true
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p07_img014.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p07_img015.png",
+          "opciones": [
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": true
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img016.png",
+          "opciones": [
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img017.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img018.png",
+          "opciones": [
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p09_img019.png",
+          "opciones": [
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p09_img020.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "El plan de control de esta estampa Rail indica un acabado distinto al observado. Que falla corresponde?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p10_img022.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": true
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img023.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img024.png",
+          "opciones": [
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img025.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": true
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img026.png",
+          "opciones": [
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img027.png",
+          "opciones": [
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": true
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img028.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img029.png",
+          "opciones": [
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img030.png",
+          "opciones": [
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img031.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img032.png",
+          "opciones": [
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img033.png",
+          "opciones": [
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img034.png",
+          "opciones": [
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": true
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p14_img035.png",
+          "opciones": [
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": true
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p14_img036.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p15_img037.png",
+          "opciones": [
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p15_img038.png",
+          "opciones": [
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img039.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img040.png",
+          "opciones": [
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img041.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img042.png",
+          "opciones": [
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pitting",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img043.png",
+          "opciones": [
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": true
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img044.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion del fosfatado",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": true
+            },
+            {
+              "texto": "Marca de rodillo",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p18_img045.png",
+          "opciones": [
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Pieza sin grabado",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": true
+            }
+          ]
+        },
+        {
+          "texto": "Identifica la falla visual que muestra la imagen.",
+          "imagen_url": "/uploads/fallas/1-CA-04_p18_img046.png",
+          "opciones": [
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa polvosa",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas en fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Cambio de tono",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img047.png",
+          "opciones": [
+            {
+              "texto": "Marca mecanica",
+              "correcta": false
+            },
+            {
+              "texto": "Manchas negras con escasez de fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampas mezcladas",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img048.png",
+          "opciones": [
+            {
+              "texto": "Estampa tallada",
+              "correcta": false
+            },
+            {
+              "texto": "Zona clara en pieza reprocesada",
+              "correcta": true
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Exceso de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Carro sin identificacion",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img049.png",
+          "opciones": [
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            },
+            {
+              "texto": "Dos tonos con manchas negras",
+              "correcta": true
+            },
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Puntos sin fosfato",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Que condicion se observa en la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p20_img050.png",
+          "opciones": [
+            {
+              "texto": "Contaminacion externa sobre el fosfato",
+              "correcta": true
+            },
+            {
+              "texto": "Proceso equivocado",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa deforme",
+              "correcta": false
+            },
+            {
+              "texto": "Escasez de fosfato",
+              "correcta": false
+            },
+            {
+              "texto": "Estampa humeda",
+              "correcta": false
+            },
+            {
+              "texto": "Oxido",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "Ante este cambio de tono, que debe verificarse para aceptar la pieza?",
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img042.png",
+          "opciones": [
+            {
+              "texto": "Aprobar el lote por el numero de parte",
+              "correcta": false
+            },
+            {
+              "texto": "Verificar que la rugosidad y el peso de fosfato esten dentro de rango",
+              "correcta": true
+            },
+            {
+              "texto": "Liberar el lote solo por inspeccion de color",
+              "correcta": false
+            },
+            {
+              "texto": "Aceptar el material sin otras verificaciones",
+              "correcta": false
+            },
+            {
+              "texto": "Cambiar la etiqueta y enviar a empaque",
+              "correcta": false
+            },
+            {
+              "texto": "Liberar las piezas despues de un conteo visual",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: oxido?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_01.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa polvosa?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_02.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa deforme?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_03.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampas mezcladas?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_04.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": true
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: puntos sin fosfato?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_05.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa tallada?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_06.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        },
+        {
+          "texto": "De las cuatro imagenes, cual corresponde a esta condicion: estampa humeda?",
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_07.png",
+          "opciones": [
+            {
+              "texto": "Imagen A",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen B",
+              "correcta": false
+            },
+            {
+              "texto": "Imagen C",
+              "correcta": true
+            },
+            {
+              "texto": "Imagen D",
+              "correcta": false
+            },
+            {
+              "texto": "Ninguna de las cuatro",
+              "correcta": false
+            },
+            {
+              "texto": "Mas de una imagen",
+              "correcta": false
+            }
+          ]
+        }
+      ]
     }
   ]
 }

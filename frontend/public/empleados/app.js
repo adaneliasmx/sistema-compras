@@ -1716,6 +1716,7 @@ function _capRenderExamen(el) {
   `;
   s.preguntas.forEach((p, i) => {
     html += `<div style="background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.08);">
+      ${p.imagen_url ? '<img src="' + esc(p.imagen_url) + '" alt="Pieza para inspeccion visual" style="display:block;max-width:100%;max-height:300px;object-fit:contain;margin-bottom:8px;">' : ''}
       <p style="font-weight:600;margin-bottom:8px;">${i + 1}. ${esc(p.texto)}</p>`;
     (p.opciones || []).forEach((o, j) => {
       const checked = s.respuestas[p.id] === o.texto ? 'checked' : '';
