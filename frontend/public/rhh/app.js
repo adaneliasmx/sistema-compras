@@ -11413,13 +11413,31 @@ async function capCuestionarios(wrap) {
       <td colspan="4" style="padding:0;"><div id="cap-quiz-inner-${q.id}" style="padding:8px 16px;background:#f8fafc;max-height:400px;overflow-y:auto;"></div></td>
     </tr>`
   ).join('');
+  const isMuestra = state.user?.role === 'muestra';
+  const zipBtn = !isMuestra ? `<div style="margin-bottom:10px;"><button class="btn btn-primary" onclick="capDownloadAllZip()" style="font-size:13px;">Descargar todos los cuestionarios (.zip)</button></div>` : '';
   wrap.innerHTML = `
+    ${zipBtn}
     <div style="overflow-x:auto;">
       <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
   `;
 }
+
+window.capDownloadAllZip = async function() {
+  toast('Generando ZIP...', 'info');
+  const headers = { 'Authorization': 'Bearer ' + state.token };
+  const res = await fetch('/api/rhh/training/quizzes/excel-all', { headers });
+  if (!res.ok) { toast('Error al generar ZIP', 'error'); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cuestionarios_capacitacion.zip';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('ZIP descargado', 'success');
+};
 
 window.capToggleQuiz = async function(td, quizId) {
   const row = document.getElementById('cap-quiz-row-' + quizId);

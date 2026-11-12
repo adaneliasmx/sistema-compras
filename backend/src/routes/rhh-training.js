@@ -620,6 +620,60 @@ router.get('/quizzes', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res
   res.json(quizzes);
 });
 
+// GET /quizzes/excel-all — Descargar TODOS los cuestionarios en un ZIP
+router.get('/quizzes/excel-all', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const XLSX = require('xlsx');
+  const archiver = require('archiver');
+  const db = await read();
+  const quizzes = db.rhh_training_quizzes || [];
+  if (quizzes.length === 0) return res.status(404).json({ error: 'No hay cuestionarios' });
+
+  res.setHeader('Content-Disposition', 'attachment; filename="cuestionarios_capacitacion.zip"');
+  res.setHeader('Content-Type', 'application/zip');
+
+  const archive = archiver('zip', { zlib: { level: 5 } });
+  archive.pipe(res);
+
+  for (const quiz of quizzes) {
+    const rows = (quiz.preguntas || []).map((p, i) => {
+      const correcta = (p.opciones || []).find(o => o.correcta);
+      const incorrectas = (p.opciones || []).filter(o => !o.correcta);
+      return {
+        '#': i + 1,
+        'Pregunta': p.texto,
+        'Respuesta Correcta': correcta ? correcta.texto : '',
+        'Validacion (SI/NO)': '',
+        'Correccion': '',
+        'Imagen URL': p.imagen_url || '',
+        'Incorrecta 1': incorrectas[0] ? incorrectas[0].texto : '',
+        'Incorrecta 2': incorrectas[1] ? incorrectas[1].texto : '',
+        'Incorrecta 3': incorrectas[2] ? incorrectas[2].texto : '',
+        'Incorrecta 4': incorrectas[3] ? incorrectas[3].texto : '',
+        'Incorrecta 5': incorrectas[4] ? incorrectas[4].texto : ''
+      };
+    });
+    const ws = XLSX.utils.json_to_sheet(rows);
+    ws['!cols'] = [
+      { wch: 4 }, { wch: 60 }, { wch: 50 }, { wch: 14 }, { wch: 50 }, { wch: 30 },
+      { wch: 45 }, { wch: 45 }, { wch: 45 }, { wch: 45 }, { wch: 45 }
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Cuestionario');
+    const meta = XLSX.utils.json_to_sheet([{
+      doc_codigo: quiz.doc_codigo, doc_nombre: quiz.doc_nombre,
+      doc_tipo: quiz.doc_tipo || '', quiz_id: quiz.id,
+      total_preguntas: (quiz.preguntas || []).length
+    }]);
+    XLSX.utils.book_append_sheet(wb, meta, 'Info');
+    const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    wb.Sheets = {};
+    const fname = `quiz_${quiz.doc_codigo.replace(/\s+/g, '_').replace(/[\/\\]/g, '-')}.xlsx`;
+    archive.append(buf, { name: fname });
+  }
+
+  archive.finalize();
+});
+
 // GET /quizzes/:id — cuestionario completo (con preguntas)
 router.get('/quizzes/:id', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res) => {
   const db = await read();
