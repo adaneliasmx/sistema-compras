@@ -11438,16 +11438,65 @@ window.capToggleQuiz = async function(td, quizId) {
   const quiz = await api(`/api/rhh/training/quizzes/${quizId}`);
   if (!quiz) { inner.innerHTML = 'Error'; return; }
   inner.dataset.loaded = '1';
+  const isMuestra = state.user?.role === 'muestra';
+  const excelBtns = !isMuestra ? `
+    <div style="display:flex;gap:8px;margin-bottom:8px;">
+      <button class="btn btn-sm btn-secondary" style="font-size:11px;" onclick="event.stopPropagation();capDownloadQuizExcel(${quizId})">Descargar Excel</button>
+      <button class="btn btn-sm btn-primary" style="font-size:11px;" onclick="event.stopPropagation();capUploadQuizExcel(${quizId})">Cargar Excel editado</button>
+    </div>` : '';
   const qRows = (quiz.preguntas || []).map((p, i) => {
+    const imgCol = p.imagen_url ? `<img src="${p.imagen_url}" style="max-width:80px;max-height:60px;border-radius:4px;">` : '';
     const opts = (p.opciones || []).map(o =>
       `<span style="display:inline-block;margin:2px 4px;padding:2px 6px;border-radius:4px;font-size:11px;${o.correcta ? 'background:#dcfce7;color:#166534;font-weight:600;' : 'background:#f1f5f9;'}">${o.texto}</span>`
     ).join('');
-    return `<tr><td style="padding:4px 8px;vertical-align:top;">${i + 1}</td><td style="padding:4px 8px;">${p.texto}</td><td style="padding:4px 8px;">${opts}</td></tr>`;
+    return `<tr><td style="padding:4px 8px;vertical-align:top;">${i + 1}</td><td style="padding:4px 8px;">${imgCol ? imgCol + '<br>' : ''}${p.texto}</td><td style="padding:4px 8px;">${opts}</td></tr>`;
   }).join('');
   inner.innerHTML = `
+    ${excelBtns}
     <table class="table" style="margin:0;font-size:12px;"><thead><tr><th style="width:30px;">#</th><th>Pregunta</th><th>Opciones <span style="color:#166534;">(verde=correcta)</span></th></tr></thead>
     <tbody>${qRows}</tbody></table>
   `;
+};
+
+window.capDownloadQuizExcel = async function(quizId) {
+  const headers = { 'Authorization': 'Bearer ' + state.token };
+  const res = await fetch(`/api/rhh/training/quizzes/${quizId}/excel`, { headers });
+  if (!res.ok) { toast('Error al descargar', 'error'); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] || `quiz_${quizId}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+window.capUploadQuizExcel = function(quizId) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.xlsx,.xls';
+  input.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1];
+      const r = await api(`/api/rhh/training/quizzes/${quizId}/excel`, {
+        method: 'POST',
+        body: JSON.stringify({ file_base64: base64 })
+      });
+      if (r && r.ok) {
+        toast(`Cuestionario actualizado: ${r.total_preguntas} preguntas`, 'success');
+        // Recargar tab
+        _capTab = 'cuestionarios';
+        capacitacionView();
+      } else {
+        toast(r?.error || 'Error al cargar Excel', 'error');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
 };
 
 async function capSeguimiento(wrap) {

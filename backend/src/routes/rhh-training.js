@@ -722,6 +722,116 @@ router.patch('/quizzes/:id', rhhRequireRole('admin', 'rh'), async (req, res) => 
   res.json({ ok: true, total_preguntas: quiz.preguntas.length });
 });
 
+// GET /quizzes/:id/excel — Exportar cuestionario a Excel
+router.get('/quizzes/:id/excel', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const XLSX = require('xlsx');
+  const db = await read();
+  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === Number(req.params.id));
+  if (!quiz) return res.status(404).json({ error: 'Cuestionario no encontrado' });
+
+  const rows = (quiz.preguntas || []).map((p, i) => {
+    const correcta = (p.opciones || []).find(o => o.correcta);
+    const incorrectas = (p.opciones || []).filter(o => !o.correcta);
+    return {
+      '#': i + 1,
+      'Pregunta': p.texto,
+      'Respuesta Correcta': correcta ? correcta.texto : '',
+      'Validacion (SI/NO)': '',
+      'Correccion': '',
+      'Imagen URL': p.imagen_url || '',
+      'Incorrecta 1': incorrectas[0] ? incorrectas[0].texto : '',
+      'Incorrecta 2': incorrectas[1] ? incorrectas[1].texto : '',
+      'Incorrecta 3': incorrectas[2] ? incorrectas[2].texto : '',
+      'Incorrecta 4': incorrectas[3] ? incorrectas[3].texto : '',
+      'Incorrecta 5': incorrectas[4] ? incorrectas[4].texto : ''
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  // Anchos de columna
+  ws['!cols'] = [
+    { wch: 4 }, { wch: 60 }, { wch: 50 }, { wch: 14 }, { wch: 50 }, { wch: 30 },
+    { wch: 45 }, { wch: 45 }, { wch: 45 }, { wch: 45 }, { wch: 45 }
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Cuestionario');
+
+  // Hoja metadata
+  const meta = XLSX.utils.json_to_sheet([{
+    doc_codigo: quiz.doc_codigo,
+    doc_nombre: quiz.doc_nombre,
+    doc_tipo: quiz.doc_tipo || '',
+    quiz_id: quiz.id,
+    total_preguntas: (quiz.preguntas || []).length
+  }]);
+  XLSX.utils.book_append_sheet(wb, meta, 'Info');
+
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  wb.Sheets = {};
+  const filename = `quiz_${quiz.doc_codigo.replace(/\s+/g, '_')}.xlsx`;
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
+// POST /quizzes/:id/excel — Importar/actualizar cuestionario desde Excel
+router.post('/quizzes/:id/excel', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const XLSX = require('xlsx');
+  const db = await read();
+  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === Number(req.params.id));
+  if (!quiz) return res.status(404).json({ error: 'Cuestionario no encontrado' });
+
+  // Recibir archivo como base64 en body
+  const { file_base64 } = req.body;
+  if (!file_base64) return res.status(400).json({ error: 'Falta file_base64' });
+
+  let wb;
+  try {
+    const buf = Buffer.from(file_base64, 'base64');
+    wb = XLSX.read(buf, { type: 'buffer' });
+  } catch (e) {
+    return res.status(400).json({ error: 'Archivo Excel invalido' });
+  }
+
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  if (!ws) return res.status(400).json({ error: 'Hoja vacia' });
+  const rows = XLSX.utils.sheet_to_json(ws);
+  wb.Sheets = {};
+
+  const preguntas = [];
+  for (const row of rows) {
+    const texto = (row['Pregunta'] || '').trim();
+    if (!texto) continue;
+    const correcta = (row['Respuesta Correcta'] || row['Correccion'] || '').trim();
+    const validacion = (row['Validacion (SI/NO)'] || '').trim().toUpperCase();
+    // Si validacion=NO y hay correccion, usar la correccion como respuesta correcta
+    let respCorrecta = correcta;
+    if (validacion === 'NO' && (row['Correccion'] || '').trim()) {
+      respCorrecta = (row['Correccion'] || '').trim();
+    }
+    if (!respCorrecta) continue;
+
+    const opciones = [{ texto: respCorrecta, correcta: true }];
+    for (let i = 1; i <= 5; i++) {
+      const inc = (row[`Incorrecta ${i}`] || '').trim();
+      if (inc) opciones.push({ texto: inc, correcta: false });
+    }
+
+    preguntas.push({
+      texto,
+      imagen_url: (row['Imagen URL'] || '').trim() || undefined,
+      opciones
+    });
+  }
+
+  if (preguntas.length === 0) return res.status(400).json({ error: 'No se encontraron preguntas validas' });
+
+  quiz.preguntas = preguntas.map((p, i) => ({ ...p, id: i + 1 }));
+  quiz.updated_at = nowMxDate();
+  await write(db);
+  res.json({ ok: true, total_preguntas: quiz.preguntas.length });
+});
+
 // ══════════════════════════════════════════════════════════════════════════════
 // ASIGNACIONES (HOJA DE EVALUACION POR EMPLEADO)
 // ══════════════════════════════════════════════════════════════════════════════
