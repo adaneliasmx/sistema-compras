@@ -50,13 +50,14 @@ const SECTIONS = [
   { id: 'incidencias',  icon: '📋', label: 'Incidencias' },
   { id: 'lista_raya',   icon: '💰', label: 'Lista de Raya' },
   { id: 'vacaciones',   icon: '🏖️',  label: 'Vacaciones' },
-  { id: 'evaluaciones', icon: '⭐', label: 'Evaluaciones' },
-  { id: 'queja',        icon: '📝', label: 'Queja Anónima' },
-  { id: 'mis_tickets',  icon: '🎫', label: 'Mis Tickets' },
+  { id: 'evaluaciones',  icon: '⭐', label: 'Evaluaciones' },
+  { id: 'capacitacion',  icon: '📚', label: 'Capacitación' },
+  { id: 'queja',         icon: '📝', label: 'Queja Anónima' },
+  { id: 'mis_tickets',   icon: '🎫', label: 'Mis Tickets' },
 ];
 // Secciones en bottom nav (móvil) — máx 4 primarias + botón Más
 const NAV_PRIMARY = ['perfil', 'mi_rol', 'lista_raya', 'vacaciones'];
-const NAV_MORE    = ['incidencias', 'evaluaciones', 'queja', 'mis_tickets'];
+const NAV_MORE    = ['incidencias', 'evaluaciones', 'capacitacion', 'queja', 'mis_tickets'];
 
 // ── Auth helpers ──────────────────────────────────────────────────────────────
 function tryRestore() {
@@ -155,7 +156,7 @@ function renderMain() {
   const el = document.getElementById('emp-main-content');
   if (!el) return;
   el.innerHTML = '<div class="emp-spinner">Cargando...</div>';
-  const views = { perfil, mi_rol, incidencias, lista_raya, vacaciones, evaluaciones, queja, mis_tickets };
+  const views = { perfil, mi_rol, incidencias, lista_raya, vacaciones, evaluaciones, capacitacion, queja, mis_tickets };
   const fn = views[state.section];
   if (fn) fn(el);
 }
@@ -1596,6 +1597,202 @@ function queja(el) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════════
+// VISTA: CAPACITACION
+// ══════════════════════════════════════════════════════════════════════════════
+let _capExamState = null; // { doc_codigo, preguntas, respuestas, enviado, resultado }
+
+async function capacitacion(el) {
+  el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
+
+  // Si hay examen en curso, mostrar examen
+  if (_capExamState && !_capExamState.enviado) {
+    _capRenderExamen(el);
+    return;
+  }
+  // Si hay resultado, mostrar resultado
+  if (_capExamState && _capExamState.enviado && _capExamState.resultado) {
+    _capRenderResultado(el);
+    return;
+  }
+
+  const r = await api('GET', '/capacitacion');
+  if (!r || !r.ok) { el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><p>Error al cargar datos.</p>'; return; }
+  const data = r.data;
+  if (!data.asignado) {
+    el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><div class="emp-empty"><div class="empty-icon">📚</div><p>Aun no tienes un plan de capacitacion asignado.</p></div>';
+    return;
+  }
+
+  // Header con progreso
+  const progressColor = data.progreso_pct >= 80 ? '#22c55e' : data.progreso_pct >= 40 ? '#f59e0b' : '#3b82f6';
+  let html = `
+    <p class="emp-page-title">Mi Capacitacion</p>
+    <div style="background:#fff;border-radius:12px;padding:16px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div><strong>Puesto:</strong> ${esc(data.position_name)}</div>
+        <div style="font-size:13px;color:#64748b;">${data.docs_aprobados}/${data.total_docs} aprobados</div>
+      </div>
+      <div style="background:#e5e7eb;border-radius:8px;height:22px;position:relative;overflow:hidden;">
+        <div style="background:${progressColor};height:100%;border-radius:8px;width:${data.progreso_pct}%;transition:width .3s;"></div>
+        <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:12px;font-weight:700;color:#1e293b;">${data.progreso_pct}%</span>
+      </div>
+    </div>
+  `;
+
+  // Lista de documentos
+  const docs = data.documentos || [];
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  for (const d of docs) {
+    const icon = d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
+    const calTxt = d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--';
+    const canExam = d.tiene_quiz && d.status !== 'aprobado';
+    const canSign = d.status === 'aprobado' && d.firma_empleado && !d.firma_empleado.firmado;
+    const firmas = [
+      d.firma_empleado?.firmado ? '👤✓' : '👤✗',
+      d.firma_instructor?.firmado ? '👨‍🏫✓' : '👨‍🏫✗',
+      d.firma_rh?.firmado ? '🏢✓' : '🏢✗'
+    ].join(' ');
+
+    html += `
+      <div style="background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,.08);">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:14px;">${icon} ${esc(d.doc_nombre)}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:2px;">${esc(d.doc_codigo)} | ${esc(d.doc_tipo)} | Cal: ${calTxt} | Int: ${d.intentos || 0}</div>
+            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Firmas: ${firmas}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:100px;align-items:flex-end;">
+            ${canExam ? `<button class="emp-btn-primary" style="font-size:12px;padding:4px 10px;" onclick="_capIniciarExamen('${esc(d.doc_codigo)}')">Presentar</button>` : ''}
+            ${canSign ? `<button class="emp-btn-outline" style="font-size:12px;padding:4px 10px;" onclick="_capFirmar('${esc(d.doc_codigo)}')">Firmar</button>` : ''}
+            ${!d.tiene_quiz ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
+          </div>
+        </div>
+      </div>
+    `;
+  }
+  html += '</div>';
+  el.innerHTML = html;
+}
+
+window._capIniciarExamen = async function(docCodigo) {
+  const el = document.getElementById('emp-main-content');
+  if (!el) return;
+  el.innerHTML = '<div class="emp-empty"><div class="empty-icon">...</div><p>Cargando examen...</p></div>';
+
+  const r = await api('GET', `/capacitacion/examen/${encodeURIComponent(docCodigo)}`);
+  if (!r || !r.ok || !r.data.preguntas) {
+    el.innerHTML = '<p>Error al cargar examen.</p><button class="emp-btn-primary" onclick="_capExamState=null;navigate(\'capacitacion\')">Volver</button>';
+    return;
+  }
+  _capExamState = {
+    doc_codigo: docCodigo,
+    doc_nombre: r.data.doc_nombre,
+    preguntas: r.data.preguntas,
+    respuestas: {},
+    enviado: false,
+    resultado: null
+  };
+  _capRenderExamen(el);
+};
+
+function _capRenderExamen(el) {
+  const s = _capExamState;
+  if (!s) return;
+
+  let html = `
+    <p class="emp-page-title">Examen: ${esc(s.doc_nombre)}</p>
+    <p style="color:#64748b;margin-bottom:16px;">${s.preguntas.length} preguntas - Selecciona una opcion por pregunta</p>
+    <form id="cap-exam-form">
+  `;
+  s.preguntas.forEach((p, i) => {
+    html += `<div style="background:#fff;border-radius:10px;padding:14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(0,0,0,.08);">
+      <p style="font-weight:600;margin-bottom:8px;">${i + 1}. ${esc(p.texto)}</p>`;
+    (p.opciones || []).forEach((o, j) => {
+      const checked = s.respuestas[p.id] === o.texto ? 'checked' : '';
+      html += `<label style="display:block;padding:6px 10px;margin:4px 0;border-radius:6px;cursor:pointer;background:${checked ? '#eff6ff' : '#f8fafc'};">
+        <input type="radio" name="q_${p.id}" value="${esc(o.texto)}" ${checked} style="margin-right:8px;" onchange="_capExamState.respuestas[${p.id}]=this.value"> ${esc(o.texto)}
+      </label>`;
+    });
+    html += '</div>';
+  });
+  html += `
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button type="submit" class="emp-btn-primary" style="flex:1;">Enviar respuestas</button>
+      <button type="button" class="emp-btn-outline" onclick="_capExamState=null;navigate('capacitacion')">Cancelar</button>
+    </div></form>
+  `;
+  el.innerHTML = html;
+
+  document.getElementById('cap-exam-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const total = s.preguntas.length;
+    const answered = Object.keys(s.respuestas).length;
+    if (answered < total) {
+      alert(`Faltan ${total - answered} preguntas por responder.`);
+      return;
+    }
+    const respuestas = s.preguntas.map(p => ({
+      pregunta_id: p.id,
+      respuesta_texto: s.respuestas[p.id]
+    }));
+    const btn = e.target.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Calificando...';
+    const r = await api('POST', `/capacitacion/examen/${encodeURIComponent(s.doc_codigo)}`, { respuestas });
+    if (r && r.ok) {
+      s.enviado = true;
+      s.resultado = r.data;
+      _capRenderResultado(el);
+    } else {
+      btn.disabled = false; btn.textContent = 'Enviar respuestas';
+      alert('Error al enviar respuestas.');
+    }
+  };
+}
+
+function _capRenderResultado(el) {
+  const s = _capExamState;
+  if (!s || !s.resultado) return;
+  const res = s.resultado;
+  const color = res.aprobado ? '#22c55e' : '#ef4444';
+  const badge = res.aprobado ? 'APROBADO' : 'REPROBADO';
+
+  let html = `
+    <p class="emp-page-title">Resultado: ${esc(s.doc_nombre)}</p>
+    <div style="text-align:center;padding:24px;background:#fff;border-radius:12px;margin-bottom:16px;box-shadow:0 1px 3px rgba(0,0,0,.1);">
+      <div style="font-size:48px;font-weight:800;color:${color};">${res.calificacion}%</div>
+      <div style="font-size:18px;font-weight:700;color:${color};margin-top:4px;">${badge}</div>
+      <div style="color:#64748b;margin-top:8px;">${res.correctas}/${res.total} respuestas correctas</div>
+    </div>
+  `;
+
+  // Detalle de respuestas
+  html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+  (res.detalle || []).forEach((d, i) => {
+    const bg = d.correcta ? '#f0fdf4' : '#fef2f2';
+    const icon = d.correcta ? '✅' : '❌';
+    html += `<div style="background:${bg};border-radius:8px;padding:10px;">
+      <div style="font-weight:600;font-size:13px;">${icon} ${i + 1}. ${esc(d.pregunta_texto || '')}</div>
+      <div style="font-size:12px;margin-top:4px;">Tu respuesta: <strong>${esc(d.respuesta || '')}</strong></div>
+      ${!d.correcta ? `<div style="font-size:12px;color:#166534;margin-top:2px;">Correcta: <strong>${esc(d.respuesta_correcta || '')}</strong></div>` : ''}
+    </div>`;
+  });
+  html += '</div>';
+
+  html += `<button class="emp-btn-primary" style="margin-top:16px;width:100%;" onclick="_capExamState=null;navigate('capacitacion')">Volver a mi capacitacion</button>`;
+  el.innerHTML = html;
+}
+
+window._capFirmar = async function(docCodigo) {
+  const r = await api('POST', '/capacitacion/firma', { doc_codigo: docCodigo });
+  if (r && r.ok) {
+    alert('Firma registrada');
+    navigate('capacitacion');
+  } else {
+    alert('Error al firmar');
+  }
+};
+
 // VISTA: MIS TICKETS
 // ══════════════════════════════════════════════════════════════════════════════
 const _tktStatusLabel = { pendiente: 'Pendiente', en_revision: 'En revision', resuelto: 'Resuelto' };

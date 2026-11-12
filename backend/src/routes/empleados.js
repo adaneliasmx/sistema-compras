@@ -841,4 +841,196 @@ router.get('/mis-tickets', empAuthRequired, (req, res) => {
   res.json(tickets);
 });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// CAPACITACION — Portal Empleado
+// ══════════════════════════════════════════════════════════════════════════════
+
+// GET /capacitacion — Mi plan de capacitacion + progreso
+router.get('/capacitacion', empAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.empPayload.sub;
+  const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
+  if (!assignment) return res.json({ asignado: false });
+  // No enviar quiz_id detallado, solo resumen
+  const docs = (assignment.documentos || []).map(d => ({
+    doc_codigo: d.doc_codigo,
+    doc_nombre: d.doc_nombre,
+    doc_tipo: d.doc_tipo,
+    status: d.status,
+    mejor_calificacion: d.mejor_calificacion,
+    intentos: d.intentos,
+    tiene_quiz: !!d.quiz_id,
+    firma_empleado: d.firma_empleado,
+    firma_instructor: d.firma_instructor,
+    firma_rh: d.firma_rh
+  }));
+  res.json({
+    asignado: true,
+    position_name: assignment.position_name,
+    status: assignment.status,
+    progreso_pct: assignment.progreso_pct,
+    total_docs: docs.length,
+    docs_aprobados: docs.filter(d => d.status === 'aprobado').length,
+    documentos: docs
+  });
+});
+
+// GET /capacitacion/examen/:docCodigo — Obtener 10 preguntas aleatorias (4 opciones c/u)
+router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.empPayload.sub;
+  const docCodigo = decodeURIComponent(req.params.docCodigo);
+
+  // Verificar que el empleado tiene este doc asignado
+  const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
+  if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
+  const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
+  if (!docEntry || !docEntry.quiz_id) return res.status(404).json({ error: 'Documento sin cuestionario' });
+
+  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === docEntry.quiz_id);
+  if (!quiz || !quiz.preguntas || quiz.preguntas.length === 0) {
+    return res.status(404).json({ error: 'Cuestionario vacio' });
+  }
+
+  // Seleccionar 10 preguntas aleatorias (o menos si hay menos)
+  const pool = [...quiz.preguntas];
+  const count = Math.min(10, pool.length);
+  const selected = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.floor(Math.random() * pool.length);
+    selected.push(pool.splice(idx, 1)[0]);
+  }
+
+  // Para cada pregunta, seleccionar 4 opciones aleatorias (1 correcta + 3 incorrectas)
+  const preguntas = selected.map(p => {
+    const correcta = (p.opciones || []).find(o => o.correcta);
+    const incorrectas = (p.opciones || []).filter(o => !o.correcta);
+    // Tomar 3 incorrectas aleatorias
+    const wrongPool = [...incorrectas];
+    const wrong3 = [];
+    for (let i = 0; i < Math.min(3, wrongPool.length); i++) {
+      const idx = Math.floor(Math.random() * wrongPool.length);
+      wrong3.push(wrongPool.splice(idx, 1)[0]);
+    }
+    // Mezclar opciones (solo texto, SIN marcar correcta)
+    const opciones = [correcta, ...wrong3]
+      .filter(Boolean)
+      .map(o => ({ texto: o.texto }))
+      .sort(() => Math.random() - 0.5);
+
+    return { id: p.id, texto: p.texto, opciones };
+  });
+
+  res.json({
+    doc_codigo: quiz.doc_codigo,
+    doc_nombre: quiz.doc_nombre,
+    total_preguntas: preguntas.length,
+    preguntas
+  });
+});
+
+// POST /capacitacion/examen/:docCodigo — Enviar respuestas y calificar
+router.post('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.empPayload.sub;
+  const docCodigo = decodeURIComponent(req.params.docCodigo);
+  const { respuestas } = req.body; // [{ pregunta_id, respuesta_texto }]
+
+  if (!Array.isArray(respuestas)) return res.status(400).json({ error: 'Formato invalido' });
+
+  const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
+  if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
+  const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
+  if (!docEntry || !docEntry.quiz_id) return res.status(404).json({ error: 'Documento sin cuestionario' });
+
+  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === docEntry.quiz_id);
+  if (!quiz) return res.status(404).json({ error: 'Cuestionario no encontrado' });
+
+  // Calificar
+  let correctas = 0;
+  const detalle = respuestas.map(r => {
+    const pregunta = (quiz.preguntas || []).find(p => p.id === r.pregunta_id);
+    if (!pregunta) return { pregunta_id: r.pregunta_id, correcta: false };
+    const opCorrecta = (pregunta.opciones || []).find(o => o.correcta);
+    const esCorrecta = opCorrecta && opCorrecta.texto === r.respuesta_texto;
+    if (esCorrecta) correctas++;
+    return {
+      pregunta_id: r.pregunta_id,
+      pregunta_texto: pregunta.texto,
+      respuesta: r.respuesta_texto,
+      respuesta_correcta: opCorrecta ? opCorrecta.texto : '',
+      correcta: !!esCorrecta
+    };
+  });
+
+  const total = respuestas.length;
+  const calificacion = total > 0 ? Math.round((correctas / total) * 100) : 0;
+  const aprobado = calificacion >= 70;
+
+  // Guardar resultado
+  if (!db.rhh_training_results) db.rhh_training_results = [];
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  const maxId = db.rhh_training_results.length > 0
+    ? Math.max(...db.rhh_training_results.map(r => r.id)) + 1
+    : 1;
+  const result = {
+    id: maxId,
+    employee_id: empId,
+    employee_name: emp ? emp.full_name : '',
+    quiz_id: quiz.id,
+    doc_codigo: docCodigo,
+    doc_nombre: quiz.doc_nombre,
+    preguntas_presentadas: total,
+    respuestas_correctas: correctas,
+    calificacion,
+    aprobado,
+    detalle,
+    created_at: nowMxDate(),
+    created_time: nowMxTime()
+  };
+  db.rhh_training_results.push(result);
+
+  // Actualizar asignacion
+  docEntry.intentos = (docEntry.intentos || 0) + 1;
+  docEntry.ultimo_intento = nowMxDate();
+  if (aprobado) {
+    docEntry.status = 'aprobado';
+    if (!docEntry.mejor_calificacion || calificacion > docEntry.mejor_calificacion) {
+      docEntry.mejor_calificacion = calificacion;
+    }
+  } else {
+    if (docEntry.status !== 'aprobado') docEntry.status = 'reprobado';
+    if (!docEntry.mejor_calificacion || calificacion > docEntry.mejor_calificacion) {
+      docEntry.mejor_calificacion = calificacion;
+    }
+  }
+
+  // Recalcular progreso
+  const totalDocs = assignment.documentos.length;
+  const aprobados = assignment.documentos.filter(d => d.status === 'aprobado').length;
+  assignment.progreso_pct = totalDocs > 0 ? Math.round((aprobados / totalDocs) * 100) : 0;
+  assignment.status = aprobados === totalDocs ? 'completado' : aprobados > 0 ? 'en_progreso' : 'pendiente';
+
+  write(db);
+  res.json({ ok: true, calificacion, aprobado, correctas, total, detalle });
+});
+
+// POST /capacitacion/firma — Firma digital del empleado
+router.post('/capacitacion/firma', empAuthRequired, (req, res) => {
+  const db = read();
+  const empId = req.empPayload.sub;
+  const { doc_codigo } = req.body;
+  if (!doc_codigo) return res.status(400).json({ error: 'Falta doc_codigo' });
+
+  const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
+  if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
+  const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === doc_codigo);
+  if (!docEntry) return res.status(404).json({ error: 'Documento no encontrado' });
+  if (docEntry.status !== 'aprobado') return res.status(400).json({ error: 'Debe aprobar el examen primero' });
+
+  docEntry.firma_empleado = { fecha: nowMxDate(), firmado: true };
+  write(db);
+  res.json({ ok: true });
+});
+
 module.exports = router;

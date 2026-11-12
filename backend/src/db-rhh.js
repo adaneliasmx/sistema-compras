@@ -80,7 +80,12 @@ const EMPTY_DB = {
   rhh_bono_vales: [],
   rhh_cumpleanos_incidencias: [],
   // Tickets unificados de aclaracion (portal empleado → RHH)
-  rhh_tickets: []
+  rhh_tickets: [],
+  // Módulo Capacitación por Puesto (2026-11-11)
+  rhh_training_plans: [],       // Plan de capacitación: puesto → documentos obligatorios
+  rhh_training_quizzes: [],     // Banco de preguntas por documento/procedimiento
+  rhh_training_assignments: [], // Asignación de plan a empleado (hoja de evaluación)
+  rhh_training_results: []      // Resultados de exámenes individuales
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

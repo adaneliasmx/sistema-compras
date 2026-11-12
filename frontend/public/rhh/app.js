@@ -44,6 +44,7 @@ const MENU_BY_ROLE = {
     ['vacantes', '🔍 Vacantes'],
     ['plantilla-personal', '📊 Plantilla'],
     ['evaluaciones', '⭐ Evaluaciones'],
+    ['capacitacion', '📚 Capacitación'],
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['reportes', '📊 Reportes'],
     ['kpi', '📈 KPI'],
@@ -62,6 +63,7 @@ const MENU_BY_ROLE = {
     ['vacantes', '🔍 Vacantes'],
     ['plantilla-personal', '📊 Plantilla'],
     ['evaluaciones', '⭐ Evaluaciones'],
+    ['capacitacion', '📚 Capacitación'],
     ['mis-evaluaciones', '⭐ Mis Evaluaciones'],
     ['catalogos', '📁 Catálogos'],
     ['reportes', '📊 Reportes'],
@@ -81,6 +83,7 @@ const MENU_BY_ROLE = {
     ['vacantes', '🔍 Vacantes'],
     ['plantilla-personal', '📊 Plantilla'],
     ['evaluaciones', '⭐ Evaluaciones'],
+    ['capacitacion', '📚 Capacitación'],
     ['reportes', '📊 Reportes'],
     ['kpi', '📈 KPI'],
     ['quejas-rh', '📢 Quejas'],
@@ -11230,6 +11233,264 @@ async function asisExportExcel() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// CAPACITACION POR PUESTO
+// ══════════════════════════════════════════════════════════════════════════════
+let _capTab = 'dashboard'; // dashboard | planes | cuestionarios | seguimiento | hoja
+
+async function capacitacionView() {
+  const el = document.getElementById('app');
+  if (!el) return;
+  const tabs = [
+    ['dashboard', 'Dashboard'],
+    ['planes', 'Planes por Puesto'],
+    ['cuestionarios', 'Cuestionarios'],
+    ['seguimiento', 'Seguimiento'],
+  ];
+  const tabsHtml = tabs.map(([id, label]) =>
+    `<button class="btn ${_capTab === id ? 'btn-primary' : 'btn-secondary'}" onclick="_capTab='${id}';capacitacionView()" style="font-size:13px;padding:6px 14px;">${label}</button>`
+  ).join('');
+
+  el.innerHTML = shell(`
+    <h2>Capacitacion por Puesto</h2>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">${tabsHtml}</div>
+    <div id="cap-content"><div class="spinner">Cargando...</div></div>
+  `, 'capacitacion');
+
+  const wrap = document.getElementById('cap-content');
+  if (!wrap) return;
+
+  if (_capTab === 'dashboard') await capDashboard(wrap);
+  else if (_capTab === 'planes') await capPlanes(wrap);
+  else if (_capTab === 'cuestionarios') await capCuestionarios(wrap);
+  else if (_capTab === 'seguimiento') await capSeguimiento(wrap);
+}
+
+async function capDashboard(wrap) {
+  const [dash, plans, quizzes] = await Promise.all([
+    api('/api/rhh/training/dashboard'),
+    api('/api/rhh/training/plans'),
+    api('/api/rhh/training/quizzes')
+  ]);
+  if (!dash) { wrap.innerHTML = '<p>Error cargando dashboard</p>'; return; }
+
+  const plansLoaded = (plans || []).length > 0;
+  const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
+  const assignBtn = `<button class="btn btn-primary" id="btn-cap-assign" style="margin-bottom:12px;margin-left:8px;">Asignar plan a empleados activos</button>`;
+
+  const porPuestoRows = Object.entries(dash.porPuesto || {}).map(([puesto, d]) => {
+    const avg = d.total > 0 ? Math.round(d.progreso_sum / d.total) : 0;
+    return `<tr><td>${puesto}</td><td>${d.total}</td><td>${d.completados}</td><td>
+      <div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;">
+        <div style="background:#3b82f6;height:100%;border-radius:4px;width:${avg}%;"></div>
+        <span style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:11px;font-weight:600;color:#1e293b;">${avg}%</span>
+      </div></td></tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+      ${seedBtn}${assignBtn}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.totalPlanes}</div><div style="color:#64748b;">Planes</div></div>
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.totalQuizzes}</div><div style="color:#64748b;">Cuestionarios</div></div>
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.totalEmps}</div><div style="color:#64748b;">Empleados asignados</div></div>
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.avgProgreso}%</div><div style="color:#64748b;">Progreso promedio</div></div>
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;color:#22c55e;">${dash.completados}</div><div style="color:#64748b;">Completados</div></div>
+      <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;color:#f59e0b;">${dash.enProgreso}</div><div style="color:#64748b;">En progreso</div></div>
+    </div>
+    ${porPuestoRows ? `
+    <h3>Progreso por puesto</h3>
+    <div style="overflow-x:auto;">
+      <table class="table"><thead><tr><th>Puesto</th><th>Empleados</th><th>Completados</th><th style="min-width:200px;">Progreso</th></tr></thead>
+      <tbody>${porPuestoRows}</tbody></table>
+    </div>` : ''}
+  `;
+
+  const btnSeed = document.getElementById('btn-cap-seed');
+  if (btnSeed) btnSeed.onclick = async () => {
+    btnSeed.disabled = true; btnSeed.textContent = 'Cargando...';
+    const r = await api('/api/rhh/training/plans/seed', { method: 'POST' });
+    if (r && r.ok) toast(`${r.added} planes cargados`, 'success');
+    else toast('Error al cargar planes', 'error');
+    capacitacionView();
+  };
+  const btnAssign = document.getElementById('btn-cap-assign');
+  if (btnAssign) btnAssign.onclick = async () => {
+    btnAssign.disabled = true; btnAssign.textContent = 'Asignando...';
+    const r = await api('/api/rhh/training/assign', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.ok) toast(`${r.assigned} empleados asignados`, 'success');
+    else toast('Error al asignar', 'error');
+    capacitacionView();
+  };
+}
+
+async function capPlanes(wrap) {
+  const plans = await api('/api/rhh/training/plans');
+  if (!plans || plans.length === 0) {
+    wrap.innerHTML = '<p>No hay planes cargados. Ve al Dashboard y carga los planes semilla.</p>';
+    return;
+  }
+  const rows = plans.map(p => {
+    const totalDocs = (p.documentos || []).length + (p.docs_generales || []).length;
+    return `<tr>
+      <td><strong>${p.puesto_sgc}</strong></td>
+      <td>${p.eval_group}</td>
+      <td>${(p.position_names || []).join(', ')}</td>
+      <td>${totalDocs}</td>
+      <td><button class="btn btn-sm btn-secondary" onclick="capVerPlan(${p.id})">Ver docs</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="table"><thead><tr><th>Puesto SGC</th><th>Grupo Evaluacion</th><th>Nombres de puesto</th><th>Docs</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+    <div id="cap-plan-detail"></div>
+  `;
+}
+
+window.capVerPlan = async function(planId) {
+  const plan = await api(`/api/rhh/training/plans/${planId}`);
+  if (!plan) return;
+  const det = document.getElementById('cap-plan-detail');
+  if (!det) return;
+  const genRows = (plan.docs_generales || []).map(d =>
+    `<tr style="background:#eff6ff;"><td>${d.codigo}</td><td>${d.nombre}</td><td>${d.tipo}</td><td>General</td></tr>`
+  ).join('');
+  const mandRows = (plan.documentos || []).map(d =>
+    `<tr><td>${d.codigo}</td><td>${d.nombre}</td><td>${d.tipo}</td><td>Mandatorio</td></tr>`
+  ).join('');
+  det.innerHTML = `
+    <div class="card" style="margin-top:16px;padding:16px;">
+      <h3>${plan.puesto_sgc}</h3>
+      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Categoria</th></tr></thead>
+      <tbody>${genRows}${mandRows}</tbody></table>
+    </div>
+  `;
+};
+
+async function capCuestionarios(wrap) {
+  const quizzes = await api('/api/rhh/training/quizzes');
+  if (!quizzes || quizzes.length === 0) {
+    wrap.innerHTML = '<p>No hay cuestionarios cargados aun. Se generaran desde los documentos del SGC.</p>';
+    return;
+  }
+  const rows = quizzes.map(q =>
+    `<tr><td>${q.doc_codigo}</td><td>${q.doc_nombre}</td><td>${q.doc_tipo || ''}</td><td>${q.total_preguntas}</td>
+     <td><button class="btn btn-sm btn-secondary" onclick="capVerQuiz(${q.id})">Ver</button></td></tr>`
+  ).join('');
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+    <div id="cap-quiz-detail"></div>
+  `;
+}
+
+window.capVerQuiz = async function(quizId) {
+  const quiz = await api(`/api/rhh/training/quizzes/${quizId}`);
+  if (!quiz) return;
+  const det = document.getElementById('cap-quiz-detail');
+  if (!det) return;
+  const qRows = (quiz.preguntas || []).map((p, i) => {
+    const opts = (p.opciones || []).map(o =>
+      `<span style="display:inline-block;margin:2px 6px;padding:2px 8px;border-radius:4px;font-size:12px;${o.correcta ? 'background:#dcfce7;color:#166534;font-weight:600;' : 'background:#f1f5f9;'}">${o.texto}</span>`
+    ).join('');
+    return `<tr><td>${i + 1}</td><td>${p.texto}</td><td>${opts}</td></tr>`;
+  }).join('');
+  det.innerHTML = `
+    <div class="card" style="margin-top:16px;padding:16px;">
+      <h3>${quiz.doc_codigo} - ${quiz.doc_nombre}</h3>
+      <p>${quiz.preguntas.length} preguntas</p>
+      <table class="table"><thead><tr><th>#</th><th>Pregunta</th><th>Opciones (verde=correcta)</th></tr></thead>
+      <tbody>${qRows}</tbody></table>
+    </div>
+  `;
+};
+
+async function capSeguimiento(wrap) {
+  const assignments = await api('/api/rhh/training/assignments');
+  if (!assignments || assignments.length === 0) {
+    wrap.innerHTML = '<p>No hay asignaciones. Ve al Dashboard y asigna planes a empleados.</p>';
+    return;
+  }
+  const rows = assignments.map(a => {
+    const color = a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
+    return `<tr>
+      <td>${a.employee_number || ''}</td>
+      <td>${a.employee_name}</td>
+      <td>${a.position_name}</td>
+      <td><span style="color:${color};font-weight:600;">${a.status}</span></td>
+      <td>${a.docs_aprobados}/${a.total_docs}</td>
+      <td>
+        <div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;min-width:120px;">
+          <div style="background:#3b82f6;height:100%;border-radius:4px;width:${a.progreso_pct}%;"></div>
+          <span style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:11px;font-weight:600;">${a.progreso_pct}%</span>
+        </div>
+      </td>
+      <td><button class="btn btn-sm btn-secondary" onclick="capVerHoja(${a.employee_id})">Hoja</button></td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="table"><thead><tr><th>#</th><th>Empleado</th><th>Puesto</th><th>Status</th><th>Aprobados</th><th style="min-width:140px;">Progreso</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+    <div id="cap-hoja-detail"></div>
+  `;
+}
+
+window.capVerHoja = async function(empId) {
+  const a = await api(`/api/rhh/training/assignments/${empId}`);
+  if (!a) return;
+  const det = document.getElementById('cap-hoja-detail');
+  if (!det) return;
+  const sigIcon = (f) => f && f.firmado ? '<span style="color:#22c55e;font-weight:700;">SI</span>' : '<span style="color:#cbd5e1;">--</span>';
+  const statusBadge = (s) => {
+    if (s === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
+    if (s === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
+    return '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Pendiente</span>';
+  };
+  const docRows = (a.documentos || []).map(d => {
+    const firmaBtn = (d.status === 'aprobado' && state.user?.role !== 'muestra')
+      ? `<button class="btn btn-sm btn-primary" onclick="capFirmar(${a.id},'${d.doc_codigo}','instructor')">Firma Inst.</button>
+         <button class="btn btn-sm btn-primary" onclick="capFirmar(${a.id},'${d.doc_codigo}','rh')" style="margin-left:4px;">Firma RH</button>`
+      : '';
+    return `<tr>
+      <td>${d.doc_codigo}</td><td>${d.doc_nombre}</td><td>${d.doc_tipo}</td>
+      <td>${statusBadge(d.status)}</td><td>${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
+      <td>${d.intentos || 0}</td>
+      <td>${sigIcon(d.firma_empleado)}</td><td>${sigIcon(d.firma_instructor)}</td><td>${sigIcon(d.firma_rh)}</td>
+      <td>${firmaBtn}</td>
+    </tr>`;
+  }).join('');
+
+  det.innerHTML = `
+    <div class="card" style="margin-top:16px;padding:16px;">
+      <h3>Hoja de Evaluacion - ${a.employee_name} (${a.employee_number || ''})</h3>
+      <p>Puesto: <strong>${a.position_name}</strong> | Progreso: <strong>${a.progreso_pct}%</strong> | Status: <strong>${a.status}</strong></p>
+      <div style="overflow-x:auto;">
+        <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Status</th><th>Cal.</th><th>Int.</th><th>Emp</th><th>Inst</th><th>RH</th><th>Acciones</th></tr></thead>
+        <tbody>${docRows}</tbody></table>
+      </div>
+    </div>
+  `;
+};
+
+window.capFirmar = async function(assignId, docCodigo, tipoFirma) {
+  const r = await api(`/api/rhh/training/assignments/${assignId}/firma`, {
+    method: 'PATCH',
+    body: JSON.stringify({ doc_codigo: docCodigo, tipo_firma: tipoFirma })
+  });
+  if (r && r.ok) toast('Firma registrada', 'success');
+  else toast('Error al firmar', 'error');
+  // Refrescar hoja
+  const a = await api(`/api/rhh/training/assignments/${assignId}`);
+  if (a) window.capVerHoja(a.employee_id);
+};
+
+// ══════════════════════════════════════════════════════════════════════════════
 // ROUTER
 // ══════════════════════════════════════════════════════════════════════════════
 function render() {
@@ -11284,7 +11545,8 @@ function render() {
     asistencias: asistenciasView,
     'catalogo-empleados': catalogoEmpleadosView,
     'catalogo-vacaciones': catalogoVacacionesView,
-    kpi: kpiRhhView
+    kpi: kpiRhhView,
+    capacitacion: capacitacionView
   };
 
   const viewFn = views[hash];
