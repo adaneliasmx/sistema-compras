@@ -17,6 +17,17 @@ function normPos(s) {
     .replace(/\s+/g, ' ');
 }
 
+// Extraer codigo base sin revision: "2-PR-08 Rev. 2" → "2-PR-08"
+function baseCode(codigo) {
+  return (codigo || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+}
+
+// Buscar quiz por codigo (primero exacto, luego por codigo base)
+function findQuizByCode(quizzes, docCodigo) {
+  return quizzes.find(q => q.doc_codigo === docCodigo)
+    || quizzes.find(q => baseCode(q.doc_codigo) === baseCode(docCodigo));
+}
+
 // ── Documentos generales (aplican a TODOS los puestos) ────────────────────────
 const DOCS_GENERALES = [
   { codigo: '1-GC-02 Rev. 7', nombre: 'Manual de Calidad Corp. Cuesto', tipo: 'Manual' },
@@ -743,19 +754,20 @@ router.post('/assign', rhhRequireRole('admin', 'rh'), async (req, res) => {
     // Construir lista de documentos (generales + mandatorios)
     const allDocs = [...(plan.docs_generales || DOCS_GENERALES), ...plan.documentos];
     const documentos = allDocs.map(d => {
-      const quiz = quizzes.find(q => q.doc_codigo === d.codigo);
+      const quiz = findQuizByCode(quizzes, d.codigo);
       return {
         doc_codigo: d.codigo,
         doc_nombre: d.nombre,
         doc_tipo: d.tipo,
         quiz_id: quiz ? quiz.id : null,
+        responsables: [],
         status: 'pendiente',
         mejor_calificacion: null,
         intentos: 0,
         ultimo_intento: null,
-        firma_empleado: { fecha: null, firmado: false },
-        firma_instructor: { nombre: null, fecha: null, firmado: false },
-        firma_rh: { nombre: null, fecha: null, firmado: false }
+        firma_empleado: { fecha: null, hora: null, firmado: false },
+        firma_instructor: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false },
+        firma_rh: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false }
       };
     });
 
@@ -805,23 +817,83 @@ router.get('/assignments/:empId', rhhRequireRole('admin', 'rh', 'muestra'), asyn
   res.json(a);
 });
 
-// PATCH /assignments/:id/firma — registrar firma de instructor o RH
+// PATCH /assignments/:id/firma — registrar firma de instructor o RH (con comentarios y hora)
 router.patch('/assignments/:id/firma', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = await read();
   const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
   if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
-  const { doc_codigo, tipo_firma, nombre_firmante } = req.body;
+  const { doc_codigo, tipo_firma, nombre_firmante, comentarios } = req.body;
   if (!doc_codigo || !tipo_firma) return res.status(400).json({ error: 'Faltan campos' });
   const doc = (a.documentos || []).find(d => d.doc_codigo === doc_codigo);
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado en asignacion' });
 
+  const firmaData = {
+    nombre: nombre_firmante || req.user.name,
+    fecha: nowMxDate(),
+    hora: nowMxTime(),
+    comentarios: comentarios || null,
+    firmado: true
+  };
   if (tipo_firma === 'instructor') {
-    doc.firma_instructor = { nombre: nombre_firmante || req.user.name, fecha: nowMxDate(), firmado: true };
+    doc.firma_instructor = firmaData;
   } else if (tipo_firma === 'rh') {
-    doc.firma_rh = { nombre: nombre_firmante || req.user.name, fecha: nowMxDate(), firmado: true };
+    doc.firma_rh = firmaData;
   }
   await write(db);
   res.json({ ok: true });
+});
+
+// POST /assignments/refresh-quizzes — revincular quiz_id en asignaciones existentes
+router.post('/assignments/refresh-quizzes', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = await read();
+  const quizzes = db.rhh_training_quizzes || [];
+  const assignments = db.rhh_training_assignments || [];
+  if (quizzes.length === 0) return res.json({ ok: true, updated: 0, msg: 'No hay quizzes importados' });
+  let updated = 0;
+  for (const a of assignments) {
+    for (const d of (a.documentos || [])) {
+      if (d.quiz_id) continue; // ya tiene quiz vinculado
+      const quiz = findQuizByCode(quizzes, d.doc_codigo);
+      if (quiz) {
+        d.quiz_id = quiz.id;
+        updated++;
+      }
+    }
+  }
+  if (updated > 0) await write(db);
+  res.json({ ok: true, updated });
+});
+
+// PATCH /assignments/:id/responsables — asignar responsables (supervisores) a un documento
+router.patch('/assignments/:id/responsables', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = await read();
+  const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  const { doc_codigo, responsables } = req.body;
+  if (!doc_codigo) return res.status(400).json({ error: 'Falta doc_codigo' });
+  const doc = (a.documentos || []).find(d => d.doc_codigo === doc_codigo);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado' });
+  doc.responsables = Array.isArray(responsables) ? responsables : [];
+  await write(db);
+  res.json({ ok: true });
+});
+
+// POST /assignments/bulk-responsables — asignar responsables masivo por doc_codigo
+router.post('/assignments/bulk-responsables', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const db = await read();
+  const { doc_codigo, responsables } = req.body;
+  if (!doc_codigo || !Array.isArray(responsables)) return res.status(400).json({ error: 'Faltan campos' });
+  const assignments = db.rhh_training_assignments || [];
+  let updated = 0;
+  for (const a of assignments) {
+    const doc = (a.documentos || []).find(d => d.doc_codigo === doc_codigo);
+    if (doc) {
+      doc.responsables = responsables;
+      updated++;
+    }
+  }
+  if (updated > 0) await write(db);
+  res.json({ ok: true, updated });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

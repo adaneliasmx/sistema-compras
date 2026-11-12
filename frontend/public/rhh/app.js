@@ -11277,6 +11277,7 @@ async function capDashboard(wrap) {
   const quizzesLoaded = (quizzes || []).length > 0;
   const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
   const quizSeedBtn = quizzesLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar cuestionarios (33 quizzes)</button>`;
+  const refreshBtn = quizzesLoaded ? `<button class="btn btn-secondary" id="btn-cap-refresh" style="margin-bottom:12px;margin-left:8px;">Revincular examenes</button>` : '';
   const assignBtn = `<button class="btn btn-primary" id="btn-cap-assign" style="margin-bottom:12px;margin-left:8px;">Asignar plan a empleados activos</button>`;
 
   const porPuestoRows = Object.entries(dash.porPuesto || {}).map(([puesto, d]) => {
@@ -11290,7 +11291,7 @@ async function capDashboard(wrap) {
 
   wrap.innerHTML = `
     <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
-      ${seedBtn}${quizSeedBtn}${assignBtn}
+      ${seedBtn}${quizSeedBtn}${refreshBtn}${assignBtn}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:20px;">
       <div class="card" style="padding:16px;text-align:center;"><div style="font-size:28px;font-weight:700;">${dash.totalPlanes}</div><div style="color:#64748b;">Planes</div></div>
@@ -11322,6 +11323,14 @@ async function capDashboard(wrap) {
     const r = await api('/api/rhh/training/quizzes/seed', { method: 'POST' });
     if (r && r.ok) toast(`${r.added} cuestionarios importados (${r.total} total)`, 'success');
     else toast('Error al importar cuestionarios', 'error');
+    capacitacionView();
+  };
+  const btnRefresh = document.getElementById('btn-cap-refresh');
+  if (btnRefresh) btnRefresh.onclick = async () => {
+    btnRefresh.disabled = true; btnRefresh.textContent = 'Vinculando...';
+    const r = await api('/api/rhh/training/assignments/refresh-quizzes', { method: 'POST' });
+    if (r && r.ok) toast(`${r.updated} documentos vinculados a examenes`, 'success');
+    else toast('Error al revincular', 'error');
     capacitacionView();
   };
   const btnAssign = document.getElementById('btn-cap-assign');
@@ -11509,44 +11518,107 @@ async function capRenderHoja(inner, empId) {
   const a = await api(`/api/rhh/training/assignments/${empId}`);
   if (!a) { inner.innerHTML = 'Error'; return; }
   inner.dataset.loaded = '1';
-  const sigIcon = (f) => f && f.firmado ? '<span style="color:#22c55e;font-weight:700;">&#10003;</span>' : '<span style="color:#cbd5e1;">--</span>';
+  const sigCell = (f, label) => {
+    if (!f || !f.firmado) return '<span style="color:#cbd5e1;">--</span>';
+    const tip = `${f.nombre || ''}${f.fecha ? ' ' + f.fecha : ''}${f.hora ? ' ' + f.hora : ''}${f.comentarios ? '\\n' + f.comentarios : ''}`;
+    return `<span style="color:#22c55e;font-weight:700;cursor:help;" title="${tip}">&#10003;</span>`;
+  };
   const statusBadge = (s) => {
     if (s === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
     if (s === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
     return '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Pendiente</span>';
   };
+  const isMuestra = state.user?.role === 'muestra';
   const docRows = (a.documentos || []).map(d => {
-    const firmaBtn = (d.status === 'aprobado' && state.user?.role !== 'muestra')
-      ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmar(${a.id},'${d.doc_codigo}','instructor',${empId})" style="font-size:11px;padding:2px 8px;">Firma Inst.</button>
-         <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmar(${a.id},'${d.doc_codigo}','rh',${empId})" style="margin-left:4px;font-size:11px;padding:2px 8px;">Firma RH</button>`
-      : '';
+    const resp = (d.responsables || []).join(', ') || '<span style="color:#94a3b8;font-size:11px;">Sin asignar</span>';
+    const respEdit = !isMuestra ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capEditResp(${a.id},'${d.doc_codigo}',${empId})" title="Editar responsable">&#9998;</span>` : '';
+    const firmaInst = d.firma_instructor?.firmado ? '' :
+      (!isMuestra ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmarConComentario(${a.id},'${d.doc_codigo}','instructor',${empId})" style="font-size:11px;padding:2px 8px;">Firma Inst.</button>` : '');
+    const firmaRh = d.firma_rh?.firmado ? '' :
+      (!isMuestra ? `<button class="btn btn-sm btn-primary" onclick="event.stopPropagation();capFirmarConComentario(${a.id},'${d.doc_codigo}','rh',${empId})" style="margin-left:4px;font-size:11px;padding:2px 8px;">Firma RH</button>` : '');
     return `<tr>
       <td style="padding:4px 8px;">${d.doc_codigo}</td><td style="padding:4px 8px;">${d.doc_nombre}</td><td style="padding:4px 8px;">${d.doc_tipo}</td>
+      <td style="padding:4px 8px;">${resp}${respEdit}</td>
       <td style="padding:4px 8px;">${statusBadge(d.status)}</td><td style="padding:4px 8px;">${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
       <td style="padding:4px 8px;">${d.intentos || 0}</td>
-      <td style="padding:4px 8px;">${sigIcon(d.firma_empleado)}</td><td style="padding:4px 8px;">${sigIcon(d.firma_instructor)}</td><td style="padding:4px 8px;">${sigIcon(d.firma_rh)}</td>
-      <td style="padding:4px 8px;">${firmaBtn}</td>
+      <td style="padding:4px 8px;">${sigCell(d.firma_empleado)}</td><td style="padding:4px 8px;">${sigCell(d.firma_instructor)}</td><td style="padding:4px 8px;">${sigCell(d.firma_rh)}</td>
+      <td style="padding:4px 8px;">${firmaInst}${firmaRh}</td>
     </tr>`;
   }).join('');
   inner.innerHTML = `
     <div style="margin-bottom:4px;font-size:13px;"><strong>${a.employee_name}</strong> (${a.employee_number || ''}) &mdash; ${a.position_name} &mdash; Progreso: ${a.progreso_pct}%</div>
-    <table class="table" style="margin:0;font-size:12px;"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Status</th><th>Cal.</th><th>Int.</th><th>Emp</th><th>Inst</th><th>RH</th><th>Acciones</th></tr></thead>
+    <table class="table" style="margin:0;font-size:12px;"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Responsable</th><th>Status</th><th>Cal.</th><th>Int.</th><th>Emp</th><th>Inst</th><th>RH</th><th>Acciones</th></tr></thead>
     <tbody>${docRows}</tbody></table>
   `;
 }
 
-window.capFirmar = async function(assignId, docCodigo, tipoFirma, empId) {
-  const r = await api(`/api/rhh/training/assignments/${assignId}/firma`, {
-    method: 'PATCH',
-    body: JSON.stringify({ doc_codigo: docCodigo, tipo_firma: tipoFirma })
-  });
-  if (r && r.ok) toast('Firma registrada', 'success');
-  else toast('Error al firmar', 'error');
-  // Refrescar hoja inline
-  if (empId) {
-    const inner = document.getElementById('cap-hoja-inner-' + empId);
-    if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
-  }
+window.capFirmarConComentario = function(assignId, docCodigo, tipoFirma, empId) {
+  event.stopPropagation();
+  const label = tipoFirma === 'instructor' ? 'Instructor' : 'RH';
+  // Modal simple con prompt
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;padding:24px;border-radius:8px;max-width:420px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 12px 0;font-size:16px;">Firma ${label} - ${docCodigo}</h3>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">Comentarios:</label>
+      <textarea id="cap-firma-comentario" rows="3" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;resize:vertical;" placeholder="Observaciones de la capacitacion..."></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-secondary" id="cap-firma-cancel" style="font-size:13px;">Cancelar</button>
+        <button class="btn btn-primary" id="cap-firma-ok" style="font-size:13px;">Firmar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cap-firma-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#cap-firma-ok').onclick = async () => {
+    const comentarios = document.getElementById('cap-firma-comentario').value.trim();
+    overlay.remove();
+    const r = await api(`/api/rhh/training/assignments/${assignId}/firma`, {
+      method: 'PATCH',
+      body: JSON.stringify({ doc_codigo: docCodigo, tipo_firma: tipoFirma, comentarios })
+    });
+    if (r && r.ok) toast('Firma registrada', 'success');
+    else toast('Error al firmar', 'error');
+    if (empId) {
+      const inner = document.getElementById('cap-hoja-inner-' + empId);
+      if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+    }
+  };
+};
+
+window.capEditResp = function(assignId, docCodigo, empId) {
+  event.stopPropagation();
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;padding:24px;border-radius:8px;max-width:420px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 12px 0;font-size:16px;">Responsable - ${docCodigo}</h3>
+      <label style="font-size:13px;font-weight:600;display:block;margin-bottom:4px;">Nombre(s) del responsable (separar con coma):</label>
+      <input id="cap-resp-input" type="text" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;" placeholder="Ej: Juan Lopez, Maria Garcia">
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+        <button class="btn btn-secondary" id="cap-resp-cancel" style="font-size:13px;">Cancelar</button>
+        <button class="btn btn-primary" id="cap-resp-ok" style="font-size:13px;">Guardar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cap-resp-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#cap-resp-ok').onclick = async () => {
+    const val = document.getElementById('cap-resp-input').value.trim();
+    const responsables = val ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+    overlay.remove();
+    const r = await api(`/api/rhh/training/assignments/${assignId}/responsables`, {
+      method: 'PATCH',
+      body: JSON.stringify({ doc_codigo: docCodigo, responsables })
+    });
+    if (r && r.ok) toast('Responsable actualizado', 'success');
+    else toast('Error al guardar', 'error');
+    if (empId) {
+      const inner = document.getElementById('cap-hoja-inner-' + empId);
+      if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+    }
+  };
 };
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -860,6 +860,7 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
     mejor_calificacion: d.mejor_calificacion,
     intentos: d.intentos,
     tiene_quiz: !!d.quiz_id,
+    responsables: d.responsables || [],
     firma_empleado: d.firma_empleado,
     firma_instructor: d.firma_instructor,
     firma_rh: d.firma_rh
@@ -885,9 +886,14 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
   const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
   if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
   const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
-  if (!docEntry || !docEntry.quiz_id) return res.status(404).json({ error: 'Documento sin cuestionario' });
+  if (!docEntry) return res.status(404).json({ error: 'Documento no asignado' });
 
-  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === docEntry.quiz_id);
+  // Buscar quiz: primero por quiz_id, luego por codigo flexible
+  const quizzes = db.rhh_training_quizzes || [];
+  const baseCode = (c) => (c || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+  let quiz = docEntry.quiz_id ? quizzes.find(q => q.id === docEntry.quiz_id) : null;
+  if (!quiz) quiz = quizzes.find(q => q.doc_codigo === docCodigo) || quizzes.find(q => baseCode(q.doc_codigo) === baseCode(docCodigo));
+  if (!quiz) return res.status(404).json({ error: 'Documento sin cuestionario' });
   if (!quiz || !quiz.preguntas || quiz.preguntas.length === 0) {
     return res.status(404).json({ error: 'Cuestionario vacio' });
   }
@@ -941,9 +947,12 @@ router.post('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
   const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
   if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
   const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
-  if (!docEntry || !docEntry.quiz_id) return res.status(404).json({ error: 'Documento sin cuestionario' });
+  if (!docEntry) return res.status(404).json({ error: 'Documento no asignado' });
 
-  const quiz = (db.rhh_training_quizzes || []).find(q => q.id === docEntry.quiz_id);
+  const allQuizzes = db.rhh_training_quizzes || [];
+  const baseCode2 = (c) => (c || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+  let quiz = docEntry.quiz_id ? allQuizzes.find(q => q.id === docEntry.quiz_id) : null;
+  if (!quiz) quiz = allQuizzes.find(q => q.doc_codigo === docCodigo) || allQuizzes.find(q => baseCode2(q.doc_codigo) === baseCode2(docCodigo));
   if (!quiz) return res.status(404).json({ error: 'Cuestionario no encontrado' });
 
   // Calificar
@@ -1028,7 +1037,7 @@ router.post('/capacitacion/firma', empAuthRequired, (req, res) => {
   if (!docEntry) return res.status(404).json({ error: 'Documento no encontrado' });
   if (docEntry.status !== 'aprobado') return res.status(400).json({ error: 'Debe aprobar el examen primero' });
 
-  docEntry.firma_empleado = { fecha: nowMxDate(), firmado: true };
+  docEntry.firma_empleado = { fecha: nowMxDate(), hora: nowMxTime(), firmado: true };
   write(db);
   res.json({ ok: true });
 });

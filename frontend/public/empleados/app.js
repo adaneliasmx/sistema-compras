@@ -1648,11 +1648,19 @@ async function capacitacion(el) {
     const calTxt = d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--';
     const canExam = d.tiene_quiz && d.status !== 'aprobado';
     const canSign = d.status === 'aprobado' && d.firma_empleado && !d.firma_empleado.firmado;
+    const fmtFirma = (f, emoji) => {
+      if (!f || !f.firmado) return emoji + '✗';
+      let txt = emoji + '✓';
+      if (f.fecha) txt += ' ' + f.fecha;
+      if (f.hora) txt += ' ' + f.hora;
+      return txt;
+    };
     const firmas = [
-      d.firma_empleado?.firmado ? '👤✓' : '👤✗',
-      d.firma_instructor?.firmado ? '👨‍🏫✓' : '👨‍🏫✗',
-      d.firma_rh?.firmado ? '🏢✓' : '🏢✗'
+      fmtFirma(d.firma_empleado, '👤'),
+      fmtFirma(d.firma_instructor, '👨‍🏫'),
+      fmtFirma(d.firma_rh, '🏢')
     ].join(' ');
+    const respTxt = (d.responsables || []).length > 0 ? `Resp: ${d.responsables.join(', ')}` : '';
 
     html += `
       <div style="background:#fff;border-radius:10px;padding:12px;box-shadow:0 1px 2px rgba(0,0,0,.08);">
@@ -1660,6 +1668,7 @@ async function capacitacion(el) {
           <div style="flex:1;">
             <div style="font-weight:600;font-size:14px;">${icon} ${esc(d.doc_nombre)}</div>
             <div style="font-size:12px;color:#64748b;margin-top:2px;">${esc(d.doc_codigo)} | ${esc(d.doc_tipo)} | Cal: ${calTxt} | Int: ${d.intentos || 0}</div>
+            ${respTxt ? `<div style="font-size:11px;color:#2563eb;margin-top:2px;">${esc(respTxt)}</div>` : ''}
             <div style="font-size:11px;color:#94a3b8;margin-top:2px;">Firmas: ${firmas}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:4px;min-width:100px;align-items:flex-end;">
