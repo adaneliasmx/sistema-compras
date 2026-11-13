@@ -39,6 +39,79 @@ function findQuizByCode(quizzes, docCodigo) {
     || quizzes.find(q => baseCode(q.doc_codigo) === baseCode(docCodigo));
 }
 
+// ── Mapeo documento → instructor principal (fuente: 4-RH-28 Rev. 5) ──────────
+const DOC_INSTRUCTOR_MAP = {
+  "2-SE-02": "Adm. SYMA", "3-SE-01": "Adm. SYMA", "2-SE-03": "Adm. SYMA",
+  "2-SE-06": "Adm. SYMA", "2-SE-07": "Adm. SYMA", "2-SE-08": "Adm. SYMA",
+  "3-PR-01": "Adm. SYMA", "3-PR-39": "Adm. SYMA",
+  "4-RH-13": "Adm. RH", "2-RH-37": "Adm. RH", "2-RH-14": "Adm. RH",
+  "2-RH-09": "Adm. RH", "2-RH-07": "Adm. RH", "2-RH-21": "Adm. RH",
+  "2-RH-22": "Adm. RH", "2-RH-13": "Adm. RH", "2-RH-10": "Adm. RH",
+  "2-RH-12": "Adm. RH", "2-RH-38": "Adm. RH", "2-RH-26": "Adm. RH",
+  "2-RH-39": "Adm. RH", "4-RH-17": "Adm. RH", "2-RH-05": "Adm. RH",
+  "4-RH-10": "Adm. RH", "2-RH-03": "Adm. RH", "4-RH-23": "Adm. RH",
+  "4-RH-28": "Adm. RH", "2-RH-42": "Adm. RH", "2-RH-43": "Adm. RH",
+  "4-RH-20": "Adm. SGC", "1-CA-03": "Adm. SGC", "2-CA-07": "Adm. SGC",
+  "2-CA-09": "Adm. SGC", "2-CA-10": "Adm. SGC", "2-CA-11": "Adm. SGC",
+  "2-CA-37": "Adm. SGC", "2-CA-43": "Adm. SGC", "2-DG-02": "Adm. SGC",
+  "2-DG-03": "Adm. SGC", "2-DG-04": "Adm. SGC", "2-DG-07": "Adm. SGC",
+  "2-DG-13": "Adm. SGC", "2-DG-16": "Adm. SGC", "2-DG-17": "Adm. SGC",
+  "2-GC-01": "Adm. SGC", "2-GC-02": "Adm. SGC", "2-GC-03": "Adm. SGC",
+  "2-GC-06": "Adm. SGC", "2-GC-08": "Adm. SGC", "2-GC-09": "Adm. SGC",
+  "2-GC-10": "Adm. SGC", "4-CA-94": "Adm. SGC",
+  "2-CA-06": "Gte. Operaciones", "2-CA-19": "Gte. Operaciones",
+  "2-PR-01": "Gte. Operaciones", "2-PR-02": "Gte. Operaciones",
+  "2-PR-03": "Gte. Operaciones", "2-PR-04": "Gte. Operaciones",
+  "2-PR-07": "Gte. Operaciones", "2-PR-08": "Gte. Operaciones",
+  "2-PR-09": "Gte. Operaciones", "2-RH-01": "Gte. Operaciones",
+  "2-SE-04": "Gte. Operaciones", "3-CA-08": "Gte. Operaciones",
+  "3-CA-09": "Gte. Operaciones", "3-CA-10": "Gte. Operaciones",
+  "3-PR-02": "Gte. Operaciones", "3-PR-04": "Gte. Operaciones",
+  "3-PR-14": "Gte. Operaciones", "3-PR-30": "Gte. Operaciones",
+  "3-PR-45": "Gte. Operaciones", "4-MA-11": "Gte. Operaciones",
+  "4-PR-31": "Gte. Operaciones", "4-PR-39": "Gte. Operaciones",
+  "4-PR-40": "Gte. Operaciones", "4-RH-08": "Gte. Operaciones",
+  "1-CA-01": "Ing. Calidad", "1-CA-04": "Ing. Calidad",
+  "2-CA-05": "Ing. Calidad", "2-CA-25": "Ing. Calidad",
+  "2-CA-40": "Ing. Calidad", "2-CO-01": "Ing. Calidad",
+  "2-PR-11": "Ing. Calidad", "4-CA-122": "Ing. Calidad",
+  "4-CA-150": "Ing. Calidad", "4-CA-151": "Ing. Calidad",
+  "4-CA-153": "Ing. Calidad", "4-CA-156": "Ing. Calidad",
+  "4-CA-160": "Ing. Calidad", "4-CA-161": "Ing. Calidad",
+  "4-CA-162": "Ing. Calidad", "4-CA-168": "Ing. Calidad",
+  "4-CA-170": "Ing. Calidad", "4-CA-38": "Ing. Calidad",
+  "4-PR-22": "Ing. Calidad", "4-PR-28": "Ing. Calidad",
+  "4-PR-32": "Ing. Calidad", "4-PR-38": "Ing. Calidad",
+  "2-MA-01": "Ing. Mantenimiento", "3-CA-11": "Ing. Mantenimiento",
+  "3-PR-31": "Ing. Mantenimiento", "3-PR-33": "Ing. Mantenimiento",
+  "1-GC-02": "Ing. Procesos", "2-CA-01": "Ing. Procesos",
+  "2-CA-03": "Ing. Procesos", "2-CA-18": "Ing. Procesos",
+  "2-CA-33": "Ing. Procesos", "2-CA-36": "Ing. Procesos",
+  "2-CA-38": "Ing. Procesos", "2-CA-41": "Ing. Procesos",
+  "2-DG-12": "Ing. Procesos", "2-GC-05": "Ing. Procesos",
+  "4-CA-163": "Ing. Procesos", "4-CA-164": "Ing. Procesos",
+  "4-CA-165": "Ing. Procesos", "4-CA-166": "Ing. Procesos",
+  "4-MA-49": "Ing. Procesos", "4-MA-50": "Ing. Procesos",
+  "4-PR-29": "Ing. Procesos", "4-PR-30": "Ing. Procesos",
+  "2-GC-07": "Adm. SGC", "2-SE-10": "Adm. SYMA", "2-SE-11": "Adm. SYMA",
+  "4-SE-06": "Adm. SYMA", "2-SE-01": "Adm. SYMA", "2-SE-05": "Ing. Mantenimiento",
+  "2-RH-04": "Adm. RH", "2-RH-18": "Adm. SGC",
+  "LSA 52/53": "Adm. SYMA", "LSA 72": "Adm. SYMA",
+  "LSA 11": "Ing. Mantenimiento", "LSA 76": "Ing. Mantenimiento",
+  "LSA 79": "Ing. Mantenimiento", "LSA 94": "Ing. Mantenimiento",
+  "LSA 86": "Ing. Procesos", "LSA 42": "Gte. Operaciones",
+  "LSA 44": "Gte. Operaciones", "LSA 47": "Gte. Operaciones",
+  "LSA 61": "Gte. Operaciones", "LSA 64": "Gte. Operaciones",
+  "LSA 18": "Gte. Operaciones", "LSA 22": "Gte. Operaciones",
+  "LSA 48": "Gte. Operaciones", "LSA 50": "Gte. Operaciones",
+  "LSA 51": "Gte. Operaciones", "LSA 60": "Gte. Operaciones",
+  "LSA 75": "Gte. Operaciones", "LSA 65": "Gte. Operaciones",
+  "Adm. Compras": "Adm. Compras", "2-DG-01": "Adm. SGC",
+  "2-DG-09": "Adm. SGC", "2-DG-05": "Adm. SGC", "2-DG-08": "Adm. SGC",
+  "2-PR-06": "Ing. Procesos", "2-RH-02": "Adm. RH",
+  "1-CA-02": "Adm. SGC", "2-GC-07": "Adm. SGC"
+};
+
 // ── Documentos generales (aplican a TODOS los puestos) ────────────────────────
 const DOCS_GENERALES = [
   { codigo: '1-GC-02 Rev. 7', nombre: 'Manual de Calidad Corp. Cuesto', tipo: 'Manual' },
@@ -702,7 +775,10 @@ router.get('/quizzes/excel-all', rhhRequireRole('admin', 'rh'), async (req, res)
     wb.Sheets = {};
     const safeName = (quiz.doc_nombre || '').replace(/[\/\\:*?"<>|]/g, '').replace(/\s+/g, '_').substring(0, 80);
     const safeCode = quiz.doc_codigo.replace(/\s+/g, '_').replace(/[\/\\:*?"<>|]/g, '-');
-    const fname = `${safeCode}_${safeName}.xlsx`;
+    const docBase = baseCode(quiz.doc_codigo);
+    const instructor = DOC_INSTRUCTOR_MAP[docBase] || 'Sin asignar';
+    const folder = instructor.replace(/[\/\\:*?"<>|]/g, '').replace(/\s+/g, '_');
+    const fname = `${folder}/${safeCode}_${safeName}.xlsx`;
     archive.append(buf, { name: fname });
   }
 
