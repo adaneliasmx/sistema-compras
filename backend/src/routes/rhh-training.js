@@ -42,7 +42,7 @@ function findQuizByCode(quizzes, docCodigo) {
 // ── Documentos generales (aplican a TODOS los puestos) ────────────────────────
 const DOCS_GENERALES = [
   { codigo: '1-GC-02 Rev. 7', nombre: 'Manual de Calidad Corp. Cuesto', tipo: 'Manual' },
-  { codigo: '2-GC-07 Rev. 1', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
+  { codigo: '2-GC-07 Rev. 2', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
   { codigo: '2-RH-01 Rev. 5', nombre: 'Procedimiento de Comunicacion Organizacional', tipo: 'Procedimiento' },
   { codigo: '2-SE-06 Rev. 0', nombre: 'Plan de Atencion a Emergencias de Incendio', tipo: 'Procedimiento' },
   { codigo: '2-SE-08 Rev. 0', nombre: 'Procedimiento de Ingreso para Visitantes y Contratistas', tipo: 'Procedimiento' },
@@ -102,7 +102,7 @@ const TRAINING_PLANS_SEED = [
     eval_group: 'STAFF',
     documentos: [
       { codigo: '2-RH-23 Rev. 2', nombre: 'D.P. Ingeniero de Mantenimiento', tipo: 'DP' },
-      { codigo: '2-MA-01 Rev. 6', nombre: 'Procedimiento de Mantenimiento a Infraestructura y Maquinaria', tipo: 'Procedimiento' },
+      { codigo: '2-MA-01 Rev. 7', nombre: 'Procedimiento de Mantenimiento a Infraestructura y Maquinaria', tipo: 'Procedimiento' },
       { codigo: '2-DG-04 Rev. 6', nombre: 'Mapa del Proceso de Mantenimiento', tipo: 'Mapa' },
       { codigo: '2-GC-02 Rev. 6', nombre: 'Procedimiento de Acciones Correctivas y de Mejora', tipo: 'Procedimiento' },
       { codigo: '2-GC-08 Rev. 1', nombre: 'Procedimiento de Gestion de Riesgos', tipo: 'Procedimiento' },
@@ -149,11 +149,11 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-RH-24 Rev. 0', nombre: 'D.P. Administrador de Recursos Humanos', tipo: 'DP' },
       { codigo: '2-DG-03 Rev. 6', nombre: 'Mapa del Proceso de Recursos Humanos', tipo: 'Mapa' },
       { codigo: '2-RH-01 Rev. 5', nombre: 'Procedimiento de Comunicacion Organizacional', tipo: 'Procedimiento' },
-      { codigo: '2-RH-02 Rev. 2', nombre: 'Procedimiento de Capacitacion y Entrenamiento', tipo: 'Procedimiento' },
-      { codigo: '2-RH-03 Rev. 1', nombre: 'Procedimiento de Evaluacion del Desempeno', tipo: 'Procedimiento' },
+      { codigo: '2-RH-02 Rev. 3', nombre: 'Procedimiento de Capacitacion y Entrenamiento', tipo: 'Procedimiento' },
+      { codigo: '2-RH-03 Rev. 2', nombre: 'Procedimiento de Evaluacion del Desempeno', tipo: 'Procedimiento' },
       { codigo: '2-RH-04 Rev. 2', nombre: 'Procedimiento de Medicion del Clima Laboral', tipo: 'Procedimiento' },
       { codigo: '2-RH-05 Rev. 2', nombre: 'Procedimiento de Reclutamiento, Seleccion y Contratacion', tipo: 'Procedimiento' },
-      { codigo: '2-RH-42 Rev. 0', nombre: 'Procedimiento de Onboarding y Entrenamiento Inicial', tipo: 'Procedimiento' },
+      { codigo: '2-RH-42 Rev. 1', nombre: 'Procedimiento de Onboarding y Entrenamiento Inicial', tipo: 'Procedimiento' },
       { codigo: '2-RH-43 Rev. 0', nombre: 'Procedimiento de Renuncias y Bajas de Personal', tipo: 'Procedimiento' },
       { codigo: '2-GC-01 Rev. 5', nombre: 'Procedimiento de Informacion Documentada', tipo: 'Procedimiento' }
     ]
@@ -200,7 +200,7 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-GC-02 Rev. 6', nombre: 'Procedimiento de Acciones Correctivas y de Mejora', tipo: 'Procedimiento' },
       { codigo: '2-GC-03 Rev. 3', nombre: 'Procedimiento de Auditorias Internas y de Clientes', tipo: 'Procedimiento' },
       { codigo: '2-GC-06 Rev. 1', nombre: 'Procedimiento de las 8Ds', tipo: 'Procedimiento' },
-      { codigo: '2-GC-07 Rev. 1', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
+      { codigo: '2-GC-07 Rev. 2', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
       { codigo: '2-GC-08 Rev. 1', nombre: 'Procedimiento de Gestion de Riesgos', tipo: 'Procedimiento' },
       { codigo: '2-GC-09 Rev. 2', nombre: 'Procedimiento para la Mejora Continua', tipo: 'Procedimiento' },
       { codigo: '2-GC-10 Rev. 2', nombre: 'Procedimiento para la planificacion de los cambios', tipo: 'Procedimiento' },
@@ -218,7 +218,7 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-RH-46 Rev. 0', nombre: 'D.P. Administrador de Compras', tipo: 'DP' },
       { codigo: '2-DG-17 Rev. 1', nombre: 'Mapa del Proceso de Compras', tipo: 'Mapa' },
       { codigo: '2-CO-01 Rev. 6', nombre: 'Procedimiento de Compras', tipo: 'Procedimiento' },
-      { codigo: '2-RH-18 Rev. 4', nombre: 'Procedimiento de Seleccion y Evaluacion de Proveedores', tipo: 'Procedimiento' },
+      { codigo: '2-RH-18 Rev. 5', nombre: 'Procedimiento de Seleccion y Evaluacion de Proveedores', tipo: 'Procedimiento' },
       { codigo: '2-GC-01 Rev. 5', nombre: 'Procedimiento de Informacion Documentada', tipo: 'Procedimiento' },
       { codigo: '4-CO-07 Rev. 0', nombre: 'POE Llenado y Seguimiento de Requisiciones de Compras', tipo: 'POE' },
       { codigo: '4-PR-38 Rev. 0', nombre: 'POE Resumen de Quimicos e Insumos Inventariados', tipo: 'POE' }
@@ -312,7 +312,7 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-GC-02 Rev. 6', nombre: 'Procedimiento de Acciones Correctivas y de Mejora', tipo: 'Procedimiento' },
       { codigo: '2-GC-03 Rev. 3', nombre: 'Procedimiento de Auditorias Internas y de Clientes', tipo: 'Procedimiento' },
       { codigo: '2-GC-06 Rev. 1', nombre: 'Procedimiento de las 8Ds', tipo: 'Procedimiento' },
-      { codigo: '2-GC-07 Rev. 1', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
+      { codigo: '2-GC-07 Rev. 2', nombre: 'Procedimiento para la medicion del Sistema 5S', tipo: 'Procedimiento' },
       { codigo: '2-GC-08 Rev. 1', nombre: 'Procedimiento de Gestion de Riesgos', tipo: 'Procedimiento' },
       { codigo: '2-GC-09 Rev. 2', nombre: 'Procedimiento para la Mejora Continua', tipo: 'Procedimiento' },
       { codigo: '2-GC-10 Rev. 2', nombre: 'Procedimiento para la planificacion de los cambios', tipo: 'Procedimiento' },
@@ -345,7 +345,7 @@ const TRAINING_PLANS_SEED = [
     eval_group: 'Tecnico de Mantenimiento',
     documentos: [
       { codigo: '2-RH-12 Rev. 4', nombre: 'D.P. Tecnico de Mantenimiento', tipo: 'DP' },
-      { codigo: '2-MA-01 Rev. 6', nombre: 'Procedimiento de Mantenimiento a Infraestructura y Maquinaria', tipo: 'Procedimiento' },
+      { codigo: '2-MA-01 Rev. 7', nombre: 'Procedimiento de Mantenimiento a Infraestructura y Maquinaria', tipo: 'Procedimiento' },
       { codigo: '2-SE-05 Rev. 0', nombre: 'Procedimiento Seguridad Revision y Mtto. Maquinaria', tipo: 'Procedimiento' },
       { codigo: '4-MA-49 Rev. 0', nombre: 'POE Registro Ordenes Mtto. en Modulo', tipo: 'POE' },
       { codigo: '4-MA-50 Rev. 0', nombre: 'POE Flujo Paros Produccion-Mantenimiento', tipo: 'POE' },
@@ -378,7 +378,7 @@ const TRAINING_PLANS_SEED = [
       { codigo: '1-CA-01 Rev. 3', nombre: 'Manual de Fallas Visuales', tipo: 'Manual' },
       { codigo: '1-CA-03 Rev. 2', nombre: 'Manual de Fallas Visuales Fosfato de Manganeso', tipo: 'Manual' },
       { codigo: '3-PR-02 Rev. 1', nombre: 'Instructivo de Operacion Linea Baker', tipo: 'Instructivo' },
-      { codigo: '3-PR-04 Rev. 1', nombre: 'Instructivo de Operacion Linea 1', tipo: 'Instructivo' },
+      { codigo: '3-PR-04 Rev. 2', nombre: 'Instructivo de Operacion Linea 1', tipo: 'Instructivo' },
       { codigo: '3-PR-44 Rev. 0', nombre: 'IT Fosfatado Linea 3', tipo: 'IT' },
       { codigo: '3-PR-45 Rev. 0', nombre: 'Instructivo de Operacion Linea 3', tipo: 'Instructivo' },
       { codigo: '4-CA-163 Rev. 0', nombre: 'POE Arranque Linea 4', tipo: 'POE' },
@@ -588,7 +588,29 @@ router.get('/plans', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res) 
 router.post('/plans/seed', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = await read();
   if (!db.rhh_training_plans) db.rhh_training_plans = [];
-  let added = 0;
+  let added = 0, updated = 0;
+  const revisionUpdates = new Map([
+    ['2-GC-07 Rev. 1', '2-GC-07 Rev. 2'],
+    ['2-GC-08 Rev. 0', '2-GC-08 Rev. 1'],
+    ['2-RH-18 Rev. 4', '2-RH-18 Rev. 5'],
+    ['2-MA-01 Rev. 6', '2-MA-01 Rev. 7'],
+    ['2-RH-02 Rev. 2', '2-RH-02 Rev. 3'],
+    ['2-RH-03 Rev. 1', '2-RH-03 Rev. 2'],
+    ['2-RH-42 Rev. 0', '2-RH-42 Rev. 1'],
+    ['3-PR-04 Rev. 1', '3-PR-04 Rev. 2']
+  ]);
+  // Update only the specified document revisions; preserve other plan edits.
+  for (const plan of db.rhh_training_plans) {
+    let changed = false;
+    for (const docs of [plan.documentos, plan.docs_generales]) {
+      if (!Array.isArray(docs)) continue;
+      for (const doc of docs) {
+        const revision = revisionUpdates.get(doc.codigo);
+        if (revision) { doc.codigo = revision; changed = true; }
+      }
+    }
+    if (changed) updated++;
+  }
   for (const seed of TRAINING_PLANS_SEED) {
     const exists = db.rhh_training_plans.find(p => normPos(p.puesto_sgc) === normPos(seed.puesto_sgc));
     if (!exists) {
@@ -601,8 +623,8 @@ router.post('/plans/seed', rhhRequireRole('admin', 'rh'), async (req, res) => {
       added++;
     }
   }
-  if (added > 0) await write(db);
-  res.json({ ok: true, added, total: db.rhh_training_plans.length });
+  if (added > 0 || updated > 0) await write(db);
+  res.json({ ok: true, added, updated, total: db.rhh_training_plans.length });
 });
 
 // GET /plans/:id — detalle de un plan
@@ -759,14 +781,25 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
   let added = 0, updated = 0;
   for (const q of quizzes) {
     if (!q.doc_codigo || !q.preguntas) continue;
-    const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo || baseCode(x.doc_codigo) === baseCode(q.doc_codigo));
+    const exists = db.rhh_training_quizzes.find(x => x.doc_codigo === q.doc_codigo)
+      || db.rhh_training_quizzes.find(x => baseCode(x.doc_codigo) === baseCode(q.doc_codigo));
     if (exists) {
       const installed = exists.preguntas || [];
-      const replacesPreviousText = q.revision_anterior_sha256 && exists.doc_codigo === q.doc_codigo
+      const previousHashes = [
+        ...(q.revisiones_anteriores_sha256 || []),
+        q.revision_anterior_sha256
+      ].filter(Boolean);
+      const replacesPreviousText = previousHashes.length > 0
+        && baseCode(exists.doc_codigo) === baseCode(q.doc_codigo)
         && installed.length === q.preguntas.length
-        && questionBankHash(installed) === q.revision_anterior_sha256;
-      if (q.preguntas.length > installed.length || replacesPreviousText) {
+        && previousHashes.includes(questionBankHash(installed));
+      const expandsSameRevision = exists.doc_codigo === q.doc_codigo && q.preguntas.length > installed.length;
+      const seedHash = questionBankHash(q.preguntas);
+      const contentChanged = seedHash !== questionBankHash(installed);
+      const forceSync = req.body.force === true && contentChanged;
+      if (expandsSameRevision || replacesPreviousText || forceSync) {
         exists.preguntas = q.preguntas.map((p, i) => ({ ...p, id: i + 1 }));
+        if (replacesPreviousText) exists.doc_codigo = q.doc_codigo;
         exists.doc_nombre = q.doc_nombre || exists.doc_nombre;
         exists.doc_tipo = q.doc_tipo || exists.doc_tipo;
         updated++;

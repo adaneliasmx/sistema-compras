@@ -11276,7 +11276,8 @@ async function capDashboard(wrap) {
   const plansLoaded = (plans || []).length > 0;
   const quizzesLoaded = (quizzes || []).length > 0;
   const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
-  const quizSeedBtn = `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar/actualizar cuestionarios</button>`;
+  const quizSeedBtn = `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar/actualizar cuestionarios</button>`
+    + `<button class="btn btn-secondary" id="btn-cap-quiz-force" style="margin-bottom:12px;margin-left:8px;" title="Reescribe TODOS los cuestionarios del seed aunque el conteo no cambie">Forzar sync cuestionarios</button>`;
   const refreshBtn = `<button class="btn btn-secondary" id="btn-cap-refresh" style="margin-bottom:12px;margin-left:8px;">Revincular examenes</button>`;
   const assignBtn = `<button class="btn btn-primary" id="btn-cap-assign" style="margin-bottom:12px;margin-left:8px;">Asignar plan a empleados activos</button>`;
 
@@ -11313,7 +11314,7 @@ async function capDashboard(wrap) {
   if (btnSeed) btnSeed.onclick = async () => {
     btnSeed.disabled = true; btnSeed.textContent = 'Cargando...';
     const r = await api('/api/rhh/training/plans/seed', { method: 'POST' });
-    if (r && r.ok) toast(`${r.added} planes cargados`, 'success');
+    if (r && r.ok) toast(`${r.added} planes nuevos, ${r.updated || 0} actualizados`, 'success');
     else toast('Error al cargar planes', 'error');
     capacitacionView();
   };
@@ -11323,6 +11324,15 @@ async function capDashboard(wrap) {
     const r = await api('/api/rhh/training/quizzes/seed', { method: 'POST' });
     if (r && r.ok) toast(`${r.added} nuevos, ${r.updated || 0} actualizados (${r.total} total)`, 'success');
     else toast('Error al importar cuestionarios', 'error');
+    capacitacionView();
+  };
+  const btnQuizForce = document.getElementById('btn-cap-quiz-force');
+  if (btnQuizForce) btnQuizForce.onclick = async () => {
+    if (!confirm('Esto reescribira TODOS los cuestionarios del seed con contenido diferente. Continuar?')) return;
+    btnQuizForce.disabled = true; btnQuizForce.textContent = 'Sincronizando...';
+    const r = await api('/api/rhh/training/quizzes/seed', { method: 'POST', body: JSON.stringify({ force: true }) });
+    if (r && r.ok) toast(`${r.added} nuevos, ${r.updated || 0} actualizados (${r.total} total)`, 'success');
+    else toast('Error al forzar sincronizacion', 'error');
     capacitacionView();
   };
   const btnRefresh = document.getElementById('btn-cap-refresh');
