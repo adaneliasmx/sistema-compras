@@ -1,6 +1,7 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const { read, write, nextId, calcVacBalance, getSystemEmpIds } = require('../db-rhh');
+const { calcVacInfo } = require('../utils/rhh-vac-calc');
 const { read: readCompras } = require('../db');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
@@ -17,18 +18,20 @@ function enrichEmployee(emp, db) {
   const supervisor = emp.supervisor_id
     ? (db.rhh_employees || []).find(e => e.id === emp.supervisor_id) || null
     : null;
-  // Fuente única: calcVacBalance desde db-rhh (misma lógica que /vacation-balance/:id)
-  const vacBalance = calcVacBalance(db, emp.id, new Date().getFullYear()) || {};
+  // Fuente única: calcVacInfo (misma lógica que /rhh/catalogo/vacaciones-resumen y /empleados)
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const vi = calcVacInfo(emp, db, today) || {};
   return {
     ...emp,
     department: dept,
     position: pos,
     shift,
     supervisor: supervisor ? { id: supervisor.id, full_name: supervisor.full_name } : null,
-    vacation_used: vacBalance.vacation_used ?? 0,
-    vacation_remaining: vacBalance.vacation_remaining ?? (emp.total_vacation_days || 15),
-    vacation_pending: vacBalance.vacation_pending ?? 0,
-    total_vacation_days: vacBalance.total_vacation_days ?? emp.total_vacation_days ?? 15
+    vacation_used: vi.dias_tomados ?? 0,
+    vacation_remaining: vi.dias_restantes ?? 0,
+    vacation_pending: vi.dias_pendientes ?? 0,
+    total_vacation_days: vi.dias_disponibles ?? 0,
+    vac_info: vi,
   };
 }
 
@@ -488,9 +491,19 @@ router.get('/vacation-balance/:id', rhhAuthRequired, (req, res) => {
   if (req.rhhUser.role === 'empleado' && empId !== req.rhhUser.employee_id) {
     return res.status(403).json({ error: 'Acceso denegado' });
   }
-  const year = req.query.year ? Number(req.query.year) : new Date().getFullYear();
-  const balance = calcVacBalance(db, empId, year);
-  res.json(balance);
+  const emp = (db.rhh_employees || []).find(e => e.id === empId);
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+  const vi = calcVacInfo(emp, db, today);
+  res.json({
+    employee_id: empId,
+    employee_name: emp.full_name,
+    year: new Date(today).getFullYear(),
+    total_vacation_days: vi.dias_disponibles ?? 0,
+    vacation_used: vi.dias_tomados ?? 0,
+    vacation_pending: vi.dias_pendientes ?? 0,
+    vacation_remaining: vi.dias_restantes ?? 0,
+    detail: vi,
+  });
 });
 
 // POST /api/rhh/employees/:id/generate-doc

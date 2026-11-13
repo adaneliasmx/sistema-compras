@@ -888,7 +888,11 @@ router.patch('/:id/info', rhhAuthRequired, rhhRequireRole('admin', 'rh'), async 
   const emp = (db.rhh_employees || []).find(e => e.id === Number(req.params.id));
   if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
 
-  const { department_id, position_id, shift_id, project, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja } = req.body || {};
+  const { department_id, position_id, shift_id, project, status, phone, email, start_date, salary_daily, vac_dias_disponibles, fecha_baja, fecha_alta, motivo_baja, full_name } = req.body || {};
+  if (full_name !== undefined) {
+    const value = (full_name || '').trim() || null;
+    if (value && emp.full_name !== value) { emp.full_name = value; emp.manual_name_locked = true; }
+  }
   if (department_id !== undefined) {
     const value = department_id ? Number(department_id) : null;
     if (emp.department_id !== value) { emp.department_id = value; emp.manual_department_locked = true; }
@@ -1216,7 +1220,17 @@ router.post(
         import_batch_id: importBatchId,
       };
       if (existIdx !== -1) {
-        incList[existIdx] = { ...incList[existIdx], ...rec, ...canonicalFields, updated_at: nowMxTs() };
+        const existing = incList[existIdx];
+        // Proteger vacaciones: NUNCA sobreescribir vacaciones_dias de incidencias existentes.
+        // Los dias ya estan cuadrados en produccion (ajustes manuales, vac de año anterior, etc.)
+        // Solo se escriben vacaciones en semanas NUEVAS (el else de abajo).
+        const preserveVac = existing.vacaciones_dias !== undefined && existing.vacaciones_dias !== null;
+        if (preserveVac) {
+          const { vacaciones_dias: _dropVac, _vac_fuente: _dropFuente, ...recSafe } = rec;
+          incList[existIdx] = { ...existing, ...recSafe, ...canonicalFields, updated_at: nowMxTs() };
+        } else {
+          incList[existIdx] = { ...existing, ...rec, ...canonicalFields, updated_at: nowMxTs() };
+        }
       } else {
         incList.push({ id: nextId(incList), employee_id: emp.id,
                        faltas: 0, notas: '', created_at: nowMxTs(), ...rec, ...canonicalFields });
