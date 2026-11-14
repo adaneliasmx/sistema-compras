@@ -922,6 +922,8 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const employees   = weeklyTemplate.employees;
   const positions   = db.rhh_positions  || [];
   const shifts      = db.rhh_shifts     || [];
+  const holidays    = new Map((db.rhh_holidays || []).map(h => [h.date, h.name || 'Festivo']));
+  const vacSols     = (db.rhh_vac_solicitudes || []).filter(v => v.estado === 'aprobada');
 
   // Color por código de turno (mismos colores que el frontend)
   const SHIFT_COLORS = { T1: '#1d4ed8', T2: '#0f766e', T3: '#7c3aed', T4: '#b45309' };
@@ -970,10 +972,13 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   const d5 = new Date(dates[5] + 'T12:00:00');
   const semLbl = `${d0.getDate()} ${MES[d0.getMonth()]} al ${d5.getDate()} ${MES[d5.getMonth()]} ${d5.getFullYear()}`;
 
-  // Cabeceras de días con fecha
+  // Cabeceras de días con fecha (resaltar festivos)
   const dayHeaders = dates.map((dt, i) => {
     const d = new Date(dt + 'T12:00:00');
-    return `<th class="day-col">${DIAS_SHORT[i]}<br><span class="day-date">${d.getDate()} ${MES[d.getMonth()]}</span></th>`;
+    const isFest = holidays.has(dt);
+    const festStyle = isFest ? ' style="background:#3730a3;"' : '';
+    const festMark = isFest ? '<br><span style="font-size:7px;color:#c7d2fe;">FESTIVO</span>' : '';
+    return `<th class="day-col"${festStyle}>${DIAS_SHORT[i]}<br><span class="day-date">${d.getDate()} ${MES[d.getMonth()]}</span>${festMark}</th>`;
   }).join('');
 
   // Construir filas
@@ -999,10 +1004,26 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
     for (const r of sRows) {
       const posName = r.pos?.name || '—';
 
-      // Celdas de días: marca ✓ si trabaja, D si descansa
-      const dayCells = dates.map((_, di) => {
+      // Celdas de días: festivo, vacacion, cumpleaños, trabaja o descansa
+      const dayCells = dates.map((dt, di) => {
         const dow = di + 1;
         const works = workDays.includes(dow);
+        const isFest = holidays.has(dt);
+        const festName = holidays.get(dt) || '';
+        const isVac = vacSols.some(v =>
+          v.employee_id === r.emp?.id && dt >= v.fecha_inicio && dt <= v.fecha_fin
+        );
+        const isBday = !!(r.emp?.birth_date && r.emp.birth_date.slice(5) === dt.slice(5));
+        // Prioridad: festivo > cumpleaños > vacacion > trabaja/descansa
+        if (isFest) {
+          return `<td class="day-cell fest" title="${festName}">F</td>`;
+        }
+        if (isBday) {
+          return `<td class="day-cell bday" title="Cumpleaños">C</td>`;
+        }
+        if (isVac) {
+          return `<td class="day-cell vac">V</td>`;
+        }
         if (works) {
           return `<td class="day-cell work" style="--sc:${color};">✓</td>`;
         }
@@ -1048,6 +1069,9 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
   .day-cell { text-align: center; font-weight: 700; font-size: 10px; width: 38px; border: 1px solid #cbd5e1; }
   .day-cell.work { color: var(--sc, #16a34a); background: color-mix(in srgb, var(--sc, #16a34a) 10%, transparent); }
   .day-cell.rest { color: #94a3b8; background: #f1f5f9; font-size: 9px; }
+  .day-cell.fest { color: #3730a3; background: #e0e7ff; font-weight: 800; font-size: 9px; }
+  .day-cell.vac  { color: #1d4ed8; background: #dbeafe; font-weight: 800; font-size: 9px; }
+  .day-cell.bday { color: #9d174d; background: #fce7f3; font-weight: 800; font-size: 9px; }
   .legend { margin-top: 8px; display: flex; gap: 12px; flex-wrap: wrap; font-size: 10px; align-items: center; }
   .legend-item { display: flex; align-items: center; gap: 3px; }
   .legend-dot { width: 10px; height: 10px; border-radius: 2px; }
@@ -1093,6 +1117,9 @@ router.get('/rol/html', rhhAuthRequired, (req, res) => {
     return `<span class="legend-item"><span class="legend-dot" style="background:${c};"></span> ${name}</span>`;
   }).join('')}
   <span class="legend-item" style="margin-left:16px;"><span class="legend-dot" style="background:#f1f5f9;border:1px solid #cbd5e1;"></span> D = Descanso</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#e0e7ff;border:1px solid #3730a3;"></span> F = Festivo</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#dbeafe;border:1px solid #1d4ed8;"></span> V = Vacaciones</span>
+  <span class="legend-item"><span class="legend-dot" style="background:#fce7f3;border:1px solid #9d174d;"></span> C = Cumpleaños</span>
 </div>
 <div class="summary">Total empleados: ${rows.length} &nbsp;|&nbsp; Generado: ${new Date().toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' })}</div>
 </body></html>`;
