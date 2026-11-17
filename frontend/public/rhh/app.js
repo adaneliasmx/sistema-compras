@@ -14467,8 +14467,13 @@ function vrRenderValidaciones() {
   const vals = _vrValidaciones || [];
   const isAdmin = state.user && (state.user.role === 'admin' || state.user.role === 'rh');
 
+  const reconcileBtn = isAdmin ? `<div style="margin-bottom:12px">
+    <button class="btn-primary btn-sm" onclick="vrReconciliar()">Re-conciliar vacaciones portal vs CONTPAQ</button>
+    <span style="font-size:11px;color:#64748b;margin-left:8px">Limpia vacaciones del portal que ya fueron pagadas por CONTPAQ</span>
+  </div>` : '';
+
   if (!vals.length) {
-    body.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin discrepancias de vacaciones registradas</p></div>';
+    body.innerHTML = `${reconcileBtn}<div class="empty-state"><div class="empty-icon">✅</div><p>Sin discrepancias de vacaciones registradas</p></div>`;
     return;
   }
 
@@ -14509,7 +14514,7 @@ function vrRenderValidaciones() {
       <tbody>${rows}</tbody>
     </table></div>`;
 
-  let html = '';
+  let html = reconcileBtn;
   if (pendientes.length) {
     html += `<h4 style="margin:0 0 8px;color:#92400e">Pendientes (${pendientes.length})</h4>`;
     html += tableHtml(pendientes.map(renderRow).join(''));
@@ -14553,6 +14558,24 @@ window.vrResolveCustom = async function(id) {
       if (idx !== -1) _vrValidaciones[idx] = res.validacion;
       toast('Validación resuelta con valor custom');
       vrRenderValidaciones();
+    }
+  } catch (err) { toast(err.message, 'error'); }
+};
+
+window.vrReconciliar = async function() {
+  if (!confirm('¿Ejecutar re-conciliación de vacaciones? Esto limpiará vacaciones del portal que ya fueron pagadas por CONTPAQ.')) return;
+  try {
+    const res = await api('/api/rhh/catalogo/vac-reconciliar', { method: 'POST' });
+    if (res && res.ok) {
+      const n = res.fixes_count || 0;
+      if (n > 0) {
+        const details = (res.fixes || []).map(f => `${f.employee} (#${f.employee_number}): S${f.weekPortal} ${f.oldDias}d → 0d (CONTPAQ S${f.weekContpaq}: ${f.contpaqDias}d)`).join('\n');
+        toast(`${n} corrección(es) aplicada(s)`, 'success');
+        alert(`Correcciones aplicadas:\n\n${details}`);
+      } else {
+        toast('Sin correcciones necesarias', 'info');
+      }
+      vrCargar();
     }
   } catch (err) { toast(err.message, 'error'); }
 };

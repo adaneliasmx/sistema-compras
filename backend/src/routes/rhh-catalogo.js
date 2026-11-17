@@ -1950,6 +1950,78 @@ router.get('/debug-incidencias', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
   });
 });
 
+// ── POST /api/rhh/catalogo/vac-reconciliar — Re-conciliación manual ──────────
+// Limpia vacaciones del portal que ya fueron pagadas por CONTPAQ en semana N+1
+router.post('/vac-reconciliar', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = read();
+  if (!Array.isArray(db.rhh_vac_validaciones)) db.rhh_vac_validaciones = [];
+  const solicitudes = (db.rhh_vac_solicitudes || []).filter(s => s.estado === 'aprobada');
+  const incidencias = db.rhh_incidencias_semanales || [];
+  const fixes = [];
+  let changed = false;
+
+  // 1) Para cada solicitud aprobada, verificar si la incidencia de la semana del portal
+  //    tiene vacaciones_dias escritas por el portal (sin _vac_fuente o con 'solicitud_aprobada')
+  //    y si CONTPAQ ya pagó en la semana siguiente
+  const groups = new Map();
+  for (const sol of solicitudes) {
+    const wp = isoWeekPeriod(sol.fecha_inicio);
+    if (!wp) continue;
+    const key = `${sol.employee_id}:${wp.year}:${wp.no_periodo}`;
+    if (!groups.has(key)) groups.set(key, { employee_id: sol.employee_id, weekPortal: wp.no_periodo, year: wp.year, sols: [] });
+    groups.get(key).sols.push(sol);
+  }
+
+  for (const [, group] of groups) {
+    let weekC = group.weekPortal + 1;
+    let yearC = group.year;
+    if (weekC > 52) { weekC = 1; yearC++; }
+
+    // Buscar incidencia del portal (semana donde se tomaron)
+    const portalInc = incidencias.find(i =>
+      i.employee_id === group.employee_id && samePeriod(i, group.weekPortal, group.year)
+    );
+    // Buscar incidencia CONTPAQ (semana donde se pagaron)
+    const contpaqInc = incidencias.find(i =>
+      i.employee_id === group.employee_id && samePeriod(i, weekC, yearC)
+    );
+
+    const portalVacDias = portalInc ? (Number(portalInc.vacaciones_dias) || 0) : 0;
+    const portalFuente = portalInc ? portalInc._vac_fuente : null;
+    const contpaqVacDias = contpaqInc ? (Number(contpaqInc.vacaciones_dias) || 0) : 0;
+
+    const emp = (db.rhh_employees || []).find(e => e.id === group.employee_id);
+
+    // Si la incidencia del portal tiene vacaciones puestas por el portal (no manual_rhh)
+    // y CONTPAQ ya tiene un pago en la semana siguiente → limpiar la del portal
+    if (portalInc && portalVacDias > 0 && portalFuente !== 'manual_rhh' && portalFuente !== 'contpaq') {
+      if (contpaqVacDias > 0) {
+        // CONTPAQ ya pagó → quitar del portal para evitar doble conteo
+        const oldVal = portalInc.vacaciones_dias;
+        portalInc.vacaciones_dias = 0;
+        portalInc._vac_fuente = 'limpiado_reconciliacion';
+        portalInc.updated_at = nowMxTs();
+        changed = true;
+        fixes.push({
+          employee: emp?.full_name, employee_number: emp?.employee_number,
+          weekPortal: group.weekPortal, oldDias: oldVal, weekContpaq: weekC,
+          contpaqDias: contpaqVacDias, action: 'limpiado_portal'
+        });
+
+        // Marcar solicitudes como conciliadas
+        for (const sol of group.sols) {
+          sol.conciliada_contpaq = true;
+          sol.conciliada_semana_pago = weekC;
+          sol.conciliacion_pendiente = false;
+        }
+      }
+    }
+  }
+
+  if (changed) write(db);
+  res.json({ ok: true, fixes_count: fixes.length, fixes });
+});
+
 // ── GET /api/rhh/catalogo/vac-validaciones ────────────────────────────────────
 router.get('/vac-validaciones', rhhAuthRequired, rhhRequireRole('admin', 'rh', 'muestra'), (req, res) => {
   const db = read();
