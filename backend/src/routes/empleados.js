@@ -10,6 +10,30 @@ function demoGuard(req, res, next) {
   const db = read();
   const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload?.sub);
   if (emp?.demo_account) {
+    // Vacaciones: simular respuesta exitosa sin guardar datos
+    if (req.path === '/vacaciones' && req.method === 'POST' && req.body?.fecha_inicio) {
+      const { fecha_inicio, fecha_fin } = req.body;
+      const d1 = new Date(fecha_inicio + 'T12:00:00');
+      const d2 = new Date(fecha_fin + 'T12:00:00');
+      const totalNat = Math.round((d2 - d1) / 86400000) + 1;
+      const holidayDates = new Set((db.rhh_holidays || []).map(h => h.date));
+      const birthMD = emp.birth_date ? emp.birth_date.slice(5) : null;
+      let diasVac = 0, diasFestivo = 0, diasDescanso = 0, diasCumple = 0;
+      for (let i = 0; i < totalNat; i++) {
+        const dt = new Date(d1.getTime() + i * 86400000);
+        const iso = dt.toISOString().slice(0, 10);
+        if (dt.getDay() === 0) diasDescanso++;
+        else if (holidayDates.has(iso)) diasFestivo++;
+        else if (birthMD && iso.slice(5) === birthMD) diasCumple++;
+        else diasVac++;
+      }
+      const desglose = [];
+      if (diasVac) desglose.push(`${diasVac} dia${diasVac>1?'s':''} vacaciones`);
+      if (diasFestivo) desglose.push(`${diasFestivo} festivo${diasFestivo>1?'s':''}`);
+      if (diasDescanso) desglose.push(`${diasDescanso} domingo${diasDescanso>1?'s':''}`);
+      if (diasCumple) desglose.push(`${diasCumple} cumpleaños`);
+      return res.json({ ok: true, id: 0, dias: diasVac, dias_naturales: totalNat, desglose: desglose.join(' + '), demo: true });
+    }
     return res.status(403).json({ error: 'Cuenta de demostración — solo lectura' });
   }
   next();

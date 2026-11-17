@@ -995,7 +995,7 @@ function _vacBuildCalendar() {
     if (isStart && _vacCal.selEnd && type === 'habil') { border = '2px solid #1e40af'; }
     if (isEnd && type === 'habil') { border = '2px solid #1e40af'; }
 
-    const canClick = !isPast && type === 'habil' && _vacCal.diasRestantes > 0;
+    const canClick = !isPast && type === 'habil';
     html += `<div onclick="${canClick ? `_vacSelectDay('${iso}')` : ''}"
       style="position:relative;padding:6px 2px;border-radius:8px;background:${bg};color:${color};border:${border};
       opacity:${opacity};cursor:${cursor};font-size:13px;font-weight:${isSelected?'700':'500'};min-height:38px;
@@ -1033,7 +1033,6 @@ function _vacNavMonth(dir) {
 }
 
 function _vacSelectDay(iso) {
-  if (_vacCal.diasRestantes <= 0) return;
   if (!_vacCal.selStart || _vacCal.selEnd) {
     _vacCal.selStart = iso;
     _vacCal.selEnd = null;
@@ -1108,6 +1107,9 @@ function _vacUpdateSummary() {
     </div>
     <!-- Motivo + enviar -->
     <div style="padding:16px 18px">
+      ${vacDias > _vacCal.diasRestantes ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#991b1b">
+        Solicitas <strong>${vacDias}</strong> dias pero solo tienes <strong>${_vacCal.diasRestantes}</strong> restantes. RH evaluara tu solicitud.
+      </div>` : ''}
       <div style="margin-bottom:10px">
         <label style="font-size:12px;font-weight:600;color:#475569;display:block;margin-bottom:4px">Motivo (opcional)</label>
         <input type="text" id="vac-motivo" placeholder="Ej: Vacaciones familiares"
@@ -1294,11 +1296,11 @@ async function vacaciones(el) {
   </div>` : `<div class="emp-card" style="padding:16px;margin-bottom:14px">
     ${(vi.dias_restantes ?? 0) <= 0 ? `<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-bottom:12px;text-align:center">
       <div style="font-size:13px;font-weight:700;color:#991b1b">Ya programaste todos tus dias de vacaciones</div>
-      <div style="font-size:11px;color:#b91c1c;margin-top:2px">Si necesitas hacer cambios, usa los botones de tus solicitudes aprobadas o acude a RHH.</div>
+      <div style="font-size:11px;color:#b91c1c;margin-top:2px">Puedes solicitar dias adicionales — RH evaluara tu solicitud.</div>
     </div>` : ''}
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <div style="font-size:14px;font-weight:700;color:#1e293b">${(vi.dias_restantes ?? 0) > 0 ? 'Selecciona tus fechas' : 'Tus vacaciones programadas'}</div>
-      ${(vi.dias_restantes ?? 0) > 0 ? `<button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>` : ''}
+      <div style="font-size:14px;font-weight:700;color:#1e293b">Selecciona tus fechas</div>
+      <button onclick="_vacClearSelection()" style="background:none;border:1px solid #e2e8f0;border-radius:6px;padding:4px 10px;font-size:11px;cursor:pointer;color:#64748b">Limpiar</button>
     </div>
     <div id="vac-calendar"></div>
   </div>`}
