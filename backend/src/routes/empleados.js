@@ -902,9 +902,11 @@ router.post('/vacaciones', empAuthRequired, demoGuard, (req, res) => {
     return res.status(400).json({ error: `Ya tienes una solicitud (${overlap.fecha_inicio} → ${overlap.fecha_fin}) que se traslapa con estas fechas.` });
   }
 
-  // Reglas de anticipacion
+  // Reglas de anticipacion (ambas fechas como mediodía para evitar desfase TZ)
   const todayStr = nowMxDate();
-  const daysAhead = Math.floor((d1 - new Date(todayStr + 'T12:00:00')) / 86400000);
+  const todayMs = new Date(todayStr + 'T12:00:00').getTime();
+  const startMs = new Date(fecha_inicio + 'T12:00:00').getTime();
+  const daysAhead = Math.round((startMs - todayMs) / 86400000);
   if (diasVac <= 1) {
     if (daysAhead < 1) return res.status(400).json({ error: 'Para solicitar 1 dia de vacaciones necesitas al menos 1 dia habil de anticipacion.' });
   } else if (diasVac <= 3) {

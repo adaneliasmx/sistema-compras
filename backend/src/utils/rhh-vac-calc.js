@@ -73,17 +73,24 @@ function calcVacInfo(emp, db, today) {
     }
   }
 
-  // Solicitudes pendientes (aun no aprobadas → no tienen incidencia)
-  const CUTOFF = '2026-08-11';
+  // Solicitudes pendientes/aprobadas del año actual (no canceladas/rechazadas)
+  const yearPrefix = `${currentYear}-`;
   const solicitudes = (db.rhh_vac_solicitudes || []).filter(r =>
-    r.employee_id === emp.id && (r.created_at || '') >= CUTOFF
+    r.employee_id === emp.id
+    && (r.estado === 'pendiente' || r.estado === 'aprobada')
+    && r.cambio_solicitado !== 'cancelacion'
+    && (r.fecha_inicio || '').startsWith(yearPrefix)
   );
   const diasPendientes = solicitudes
     .filter(r => r.estado === 'pendiente')
     .reduce((s, r) => s + (r.dias || 0), 0);
+  // Aprobadas futuras (aún no pagadas por CONTPAQ → no están en incidencias)
+  const diasAprobFuturo = solicitudes
+    .filter(r => r.estado === 'aprobada' && r.fecha_fin >= today && !r.conciliada_contpaq)
+    .reduce((s, r) => s + (r.dias || 0), 0);
 
-  // programados = tomados + futuras (ya en incidencias) + pendientes (solo solicitudes)
-  const dias_programados = dias_tomados + dias_inc_futuras + diasPendientes;
+  // programados = tomados + futuras (en incidencias) + aprobadas futuras (no en incidencias) + pendientes
+  const dias_programados = dias_tomados + dias_inc_futuras + diasAprobFuturo + diasPendientes;
   const dias_restantes   = Math.max(0, dias_disponibles - dias_programados);
 
   return {
