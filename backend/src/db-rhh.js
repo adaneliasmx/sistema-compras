@@ -85,7 +85,9 @@ const EMPTY_DB = {
   rhh_training_plans: [],       // Plan de capacitación: puesto → documentos obligatorios
   rhh_training_quizzes: [],     // Banco de preguntas por documento/procedimiento
   rhh_training_assignments: [], // Asignación de plan a empleado (hoja de evaluación)
-  rhh_training_results: []      // Resultados de exámenes individuales
+  rhh_training_results: [],      // Resultados de exámenes individuales
+  // Validaciones vacaciones: discrepancias portal vs CONTPAQ (2026-11-17)
+  rhh_vac_validaciones: []
 };
 
 // Inicializa la base de datos (llamar una vez al arrancar el servidor)

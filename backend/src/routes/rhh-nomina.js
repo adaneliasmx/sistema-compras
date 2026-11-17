@@ -525,7 +525,7 @@ router.patch('/vac-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor
   s.autorizado_at  = new Date().toISOString();
   if (notas_respuesta) s.notas_respuesta = notas_respuesta;
 
-  // Al aprobar: actualizar incidencia semanal
+  // Al aprobar: actualizar incidencia semanal con _vac_fuente para conciliación
   if (estado === 'aprobada') {
     const lista  = db.rhh_incidencias_semanales || [];
     const year = effectivePeriodYear(s);
@@ -533,6 +533,7 @@ router.patch('/vac-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor
     const diasVac = Number(s.dias) || 0;
     if (incIdx !== -1) {
       lista[incIdx].vacaciones_dias = (Number(lista[incIdx].vacaciones_dias) || 0) + diasVac;
+      lista[incIdx]._vac_fuente = 'solicitud_aprobada';
       lista[incIdx].updated_at = new Date().toISOString();
     } else {
       lista.push({
@@ -540,6 +541,7 @@ router.patch('/vac-solicitudes/:id', rhhAuthRequired, rhhRequireRole('supervisor
         dias_pagados: 7, faltas: 0, horas_extras_total: 0, despensa: 1,
         bono_puntualidad_dias: null, bono_eficiencia_dias: null, bono_instructor: null,
         prima_dominical: 0, vacaciones_dias: diasVac, gratificacion: null, notas: '',
+        _vac_fuente: 'solicitud_aprobada',
         updated_by: req.rhhUser.id, updated_at: new Date().toISOString(), created_at: new Date().toISOString(),
       });
     }

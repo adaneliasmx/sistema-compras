@@ -983,6 +983,80 @@ router.patch('/lft-rules', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req,
   res.json(db.rhh_lft_rules);
 });
 
+// ── Conciliación vacaciones: portal solicitudes (semana N-1) vs CONTPAQ pago (semana N)
+// Se ejecuta después de cada import CONTPAQ.
+// - Si portal == CONTPAQ → auto-concilia (marca solicitud conciliada_contpaq)
+// - Si diferente → crea validación pendiente para RHH
+function reconcileVacacionesPortalContpaq(db, periodosImportados) {
+  if (!Array.isArray(db.rhh_vac_validaciones)) db.rhh_vac_validaciones = [];
+  const solicitudes = (db.rhh_vac_solicitudes || []).filter(s =>
+    s.estado === 'aprobada' && !s.conciliada_contpaq && !s.conciliacion_pendiente
+  );
+  if (!solicitudes.length) return { reconciled: 0, validations: 0, details: [] };
+
+  const incidencias = db.rhh_incidencias_semanales || [];
+  const importedPeriods = [...periodosImportados.values()];
+  const importedWeekSet = new Set(importedPeriods.map(p => `${p.year}:${p.no_periodo}`));
+  const details = [];
+  let reconciled = 0, validations = 0;
+
+  // Agrupar solicitudes por empleado + semana del portal
+  const groups = new Map();
+  for (const sol of solicitudes) {
+    const wp = isoWeekPeriod(sol.fecha_inicio);
+    if (!wp) continue;
+    const key = `${sol.employee_id}:${wp.year}:${wp.no_periodo}`;
+    if (!groups.has(key)) groups.set(key, { employee_id: sol.employee_id, weekPortal: wp.no_periodo, year: wp.year, sols: [] });
+    groups.get(key).sols.push(sol);
+  }
+
+  for (const [, group] of groups) {
+    // Vacaciones se pagan la semana siguiente en CONTPAQ
+    let weekC = group.weekPortal + 1;
+    let yearC = group.year;
+    if (weekC > 52) { weekC = 1; yearC++; }
+    const ck = `${yearC}:${weekC}`;
+    if (!importedWeekSet.has(ck)) continue; // semana CONTPAQ no importada aún
+
+    const contpaqInc = incidencias.find(i =>
+      i.employee_id === group.employee_id && samePeriod(i, weekC, yearC)
+    );
+    const contpaqDias = contpaqInc ? (Number(contpaqInc.vacaciones_dias) || 0) : 0;
+    const portalDias = group.sols.reduce((s, sol) => s + (Number(sol.dias) || 0), 0);
+    const emp = (db.rhh_employees || []).find(e => e.id === group.employee_id);
+
+    if (portalDias === contpaqDias && contpaqDias > 0) {
+      // Coinciden → auto-conciliar
+      for (const sol of group.sols) {
+        sol.conciliada_contpaq = true;
+        sol.conciliada_semana_pago = weekC;
+      }
+      reconciled += group.sols.length;
+      details.push({ employee: emp?.full_name, weekP: group.weekPortal, weekC, portal: portalDias, contpaq: contpaqDias, result: 'conciliada' });
+    } else if (portalDias !== contpaqDias) {
+      // Discrepancia → validación pendiente
+      for (const sol of group.sols) { sol.conciliacion_pendiente = true; }
+      db.rhh_vac_validaciones.push({
+        id: (db.rhh_vac_validaciones.reduce((m, r) => Math.max(m, r.id || 0), 0)) + 1,
+        employee_id: group.employee_id,
+        employee_name: emp?.full_name || '',
+        employee_number: emp?.employee_number || '',
+        semana_portal: group.weekPortal,
+        dias_portal: portalDias,
+        semana_contpaq: weekC,
+        year: yearC,
+        dias_contpaq: contpaqDias,
+        solicitud_ids: group.sols.map(s => s.id),
+        estado: 'pendiente',
+        created_at: nowMxTs(),
+      });
+      validations++;
+      details.push({ employee: emp?.full_name, weekP: group.weekPortal, weekC, portal: portalDias, contpaq: contpaqDias, result: 'validacion' });
+    }
+  }
+  return { reconciled, validations, details };
+}
+
 // ── POST /api/rhh/catalogo/import-contpaq ─────────────────────────────────────
 // Soporta dos formatos:
 //
@@ -1221,10 +1295,9 @@ router.post(
       };
       if (existIdx !== -1) {
         const existing = incList[existIdx];
-        // Proteger vacaciones: NUNCA sobreescribir vacaciones_dias de incidencias existentes.
-        // Los dias ya estan cuadrados en produccion (ajustes manuales, vac de año anterior, etc.)
-        // Solo se escriben vacaciones en semanas NUEVAS (el else de abajo).
-        const preserveVac = existing.vacaciones_dias !== undefined && existing.vacaciones_dias !== null;
+        // Solo proteger vacaciones ajustadas manualmente por RHH (manual_rhh).
+        // CONTPAQ es fuente primaria: sobrescribe valores de portal/import anteriores.
+        const preserveVac = existing._vac_fuente === 'manual_rhh';
         if (preserveVac) {
           const { vacaciones_dias: _dropVac, _vac_fuente: _dropFuente, ...recSafe } = rec;
           incList[existIdx] = { ...existing, ...recSafe, ...canonicalFields, updated_at: nowMxTs() };
@@ -1719,7 +1792,10 @@ router.post(
 
       const candidatos_pendientes = db.rhh_baja_candidatos.filter(c => c.state === 'pending');
 
-      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| candidatos_pendientes:', candidatos_pendientes.length);
+      // ── Conciliación vacaciones: portal (N-1) vs CONTPAQ (N) ────────────────
+      const vacReconcile = reconcileVacacionesPortalContpaq(db, periodosImportados);
+
+      console.log('[import-contpaq] Consolidado procesado — semanas:', semanasList, '| inc_upserted:', inc_upserted, '| updated:', updated, '| skipped:', skipped, '| nuevos:', nuevos.length, '| candidatos_pendientes:', candidatos_pendientes.length, '| vac_reconciled:', vacReconcile.reconciled, '| vac_validations:', vacReconcile.validations);
       return finishImport({
         ok: true, formato: 'consolidado',
         updated, created_depts, created_pos, skipped, inc_upserted,
@@ -1728,6 +1804,7 @@ router.post(
         ultimo_periodo: ultimaPeriod,
         snapshots_upserted: db.rhh_employee_period_snapshots.filter(s => periodosImportados.has(s.period_key)).length,
         candidatos_pendientes,
+        vac_conciliacion: vacReconcile,
       });
     }
 
@@ -1871,6 +1948,96 @@ router.get('/debug-incidencias', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
     periodos_con_datos: Object.keys(semanas).sort(),
     conteo_por_periodo: semanas,
   });
+});
+
+// ── GET /api/rhh/catalogo/vac-validaciones ────────────────────────────────────
+router.get('/vac-validaciones', rhhAuthRequired, rhhRequireRole('admin', 'rh', 'muestra'), (req, res) => {
+  const db = read();
+  res.json(db.rhh_vac_validaciones || []);
+});
+
+// ── PATCH /api/rhh/catalogo/vac-validaciones/:id ──────────────────────────────
+router.patch('/vac-validaciones/:id', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = read();
+  if (!Array.isArray(db.rhh_vac_validaciones)) return res.status(404).json({ error: 'No hay validaciones' });
+  const val = db.rhh_vac_validaciones.find(v => v.id === Number(req.params.id));
+  if (!val) return res.status(404).json({ error: 'Validación no encontrada' });
+
+  const { accion, dias_final } = req.body || {};
+  if (!['aceptar_contpaq', 'aceptar_portal', 'custom'].includes(accion))
+    return res.status(400).json({ error: 'accion debe ser aceptar_contpaq, aceptar_portal o custom' });
+
+  val.estado = 'resuelta';
+  val.accion = accion;
+  val.resuelta_por = req.rhhUser?.id || req.rhhUser?.email || 'rh';
+  val.resuelta_at = nowMxTs();
+
+  // Liberar solicitudes de conciliacion_pendiente
+  const sols = (db.rhh_vac_solicitudes || []).filter(s => (val.solicitud_ids || []).includes(s.id));
+  for (const sol of sols) {
+    sol.conciliacion_pendiente = false;
+    sol.conciliada_contpaq = true;
+    sol.conciliada_semana_pago = val.semana_contpaq;
+  }
+
+  // Si aceptan portal o custom: ajustar la incidencia CONTPAQ con los dias correctos
+  if (accion === 'aceptar_portal' || accion === 'custom') {
+    const diasCorrectos = accion === 'aceptar_portal' ? val.dias_portal : (Number(dias_final) || val.dias_portal);
+    const incList = db.rhh_incidencias_semanales || [];
+    const valYear = val.year || new Date().getFullYear();
+    const incIdx = incList.findIndex(i =>
+      i.employee_id === val.employee_id && samePeriod(i, val.semana_contpaq, valYear)
+    );
+    if (incIdx !== -1) {
+      incList[incIdx].vacaciones_dias = diasCorrectos;
+      incList[incIdx]._vac_fuente = 'validacion_rhh';
+      incList[incIdx].updated_at = nowMxTs();
+    }
+    val.dias_final = diasCorrectos;
+  } else {
+    val.dias_final = val.dias_contpaq;
+  }
+
+  write(db);
+  res.json({ ok: true, validacion: val });
+});
+
+// ── GET /api/rhh/catalogo/holidays ────────────────────────────────────────────
+router.get('/holidays', rhhAuthRequired, rhhRequireRole('admin', 'rh', 'muestra'), (req, res) => {
+  const db = read();
+  res.json((db.rhh_holidays || []).sort((a, b) => (a.date || '').localeCompare(b.date || '')));
+});
+
+// ── POST /api/rhh/catalogo/holidays ───────────────────────────────────────────
+router.post('/holidays', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const { date, name } = req.body || {};
+  if (!date || !name) return res.status(400).json({ error: 'date y name son requeridos' });
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: 'date debe ser YYYY-MM-DD' });
+
+  const db = read();
+  if (!Array.isArray(db.rhh_holidays)) db.rhh_holidays = [];
+  const existing = db.rhh_holidays.find(h => h.date === date);
+  if (existing) return res.status(409).json({ error: 'Ya existe un día feriado para esa fecha' });
+
+  const holiday = {
+    id: (db.rhh_holidays.reduce((m, h) => Math.max(m, h.id || 0), 0)) + 1,
+    date, name,
+    created_at: nowMxTs(),
+  };
+  db.rhh_holidays.push(holiday);
+  write(db);
+  res.json(holiday);
+});
+
+// ── DELETE /api/rhh/catalogo/holidays/:id ─────────────────────────────────────
+router.delete('/holidays/:id', rhhAuthRequired, rhhRequireRole('admin', 'rh'), (req, res) => {
+  const db = read();
+  if (!Array.isArray(db.rhh_holidays)) return res.status(404).json({ error: 'No hay feriados' });
+  const idx = db.rhh_holidays.findIndex(h => h.id === Number(req.params.id));
+  if (idx === -1) return res.status(404).json({ error: 'Feriado no encontrado' });
+  const removed = db.rhh_holidays.splice(idx, 1)[0];
+  write(db);
+  res.json({ ok: true, removed });
 });
 
 module.exports = router;

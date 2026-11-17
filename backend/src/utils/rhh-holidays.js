@@ -6,6 +6,7 @@ const UNION_HOLIDAY_RULES = [
   { key: 'lft-05-01', monthDay: '05-01', name: 'Día del Trabajo', startYear: 2026, source: 'lft' },
   { key: 'lft-09-16', monthDay: '09-16', name: 'Día de la Independencia', startYear: 2026, source: 'lft' },
   { key: 'lft-11-rev', nthMonday: { month: 11, nth: 3 }, name: 'Revolución Mexicana', startYear: 2026, source: 'lft' },
+  { key: 'union-12-12', monthDay: '12-12', name: '12 de diciembre — Posada empresa', startYear: 2026 },
   { key: 'union-12-24', monthDay: '12-24', name: '24 de diciembre — Acuerdo sindical', startYear: 2026 },
   { key: 'union-12-25', monthDay: '12-25', name: 'Navidad', startYear: 2026 },
   { key: 'union-12-31', monthDay: '12-31', name: '31 de diciembre — Otorgado por la empresa', startYear: 2026 },

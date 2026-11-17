@@ -14042,6 +14042,10 @@ async function kpiRhhView() {
 // CATÁLOGO VACACIONES — resumen de vacaciones de todos los empleados activos
 // ══════════════════════════════════════════════════════════════════════════════
 let _vacResumenData = [];
+let _vrSort = { col: 'employee_number', dir: 'asc' };
+let _vrFilter = 'todos'; // todos | con_programadas | con_restantes | sin_restantes
+let _vrHolidays = [];
+let _vrValidaciones = [];
 
 function _vrModal(title, html, large) {
   let ov = document.getElementById('vr-modal');
@@ -14066,13 +14070,24 @@ async function catalogoVacacionesView() {
   if (!el) return;
 
   el.innerHTML = shell(`
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
-    <h2 style="margin:0">🏖️ Vacaciones — Resumen General</h2>
-    <div style="display:flex;gap:8px;align-items:center">
-      <input id="vr-search" class="form-input" placeholder="Buscar nombre o #..." style="width:200px"/>
-      <button class="btn-primary" onclick="vrBuscar()">🔍</button>
-      <button class="btn-ghost" onclick="vrExportar()">📥 Excel</button>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:10px">
+    <h2 style="margin:0">🏖️ Vacaciones</h2>
+    <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+      <input id="vr-search" class="form-input" placeholder="Buscar nombre o #..." style="width:180px"/>
+      <select id="vr-filter" class="form-select" style="width:auto;font-size:12px" onchange="vrSetFilter(this.value)">
+        <option value="todos">Todos</option>
+        <option value="con_programadas">Con programadas</option>
+        <option value="con_restantes">Con restantes</option>
+        <option value="sin_restantes">Sin restantes</option>
+      </select>
+      <button class="btn-primary btn-sm" onclick="vrBuscar()">🔍</button>
+      <button class="btn-ghost btn-sm" onclick="vrExportar()">📥 Excel</button>
     </div>
+  </div>
+  <div style="display:flex;gap:4px;margin-bottom:12px;border-bottom:2px solid #e2e8f0;padding-bottom:0">
+    <button class="btn-ghost btn-sm" id="vr-tab-resumen" onclick="vrTab('resumen')" style="border-bottom:3px solid #2563eb;border-radius:0;font-weight:600">Resumen</button>
+    <button class="btn-ghost btn-sm" id="vr-tab-feriados" onclick="vrTab('feriados')" style="border-radius:0">Días Feriados</button>
+    <button class="btn-ghost btn-sm" id="vr-tab-validaciones" onclick="vrTab('validaciones')" style="border-radius:0">Validaciones <span id="vr-val-badge"></span></button>
   </div>
   <div id="vr-body"><div class="loading-overlay">Cargando vacaciones...</div></div>
   `, 'catalogo-vacaciones');
@@ -14086,25 +14101,51 @@ async function vrCargar() {
   if (!body) return;
   body.innerHTML = '<div class="loading-overlay">Cargando...</div>';
 
-  let data;
   try {
-    data = await api('/api/rhh/catalogo/vacaciones-resumen');
+    const [data, holidays, validaciones] = await Promise.all([
+      api('/api/rhh/catalogo/vacaciones-resumen'),
+      api('/api/rhh/catalogo/holidays').catch(() => []),
+      api('/api/rhh/catalogo/vac-validaciones').catch(() => []),
+    ]);
+    if (!data || !data.rows) {
+      body.innerHTML = '<div class="empty-state"><p>Error al cargar datos</p></div>';
+      return;
+    }
+    _vacResumenData = data.rows;
+    _vrHolidays = holidays || [];
+    _vrValidaciones = validaciones || [];
+    const pendCount = _vrValidaciones.filter(v => v.estado === 'pendiente').length;
+    const badge = document.getElementById('vr-val-badge');
+    if (badge) badge.innerHTML = pendCount ? `<span style="background:#dc2626;color:#fff;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px">${pendCount}</span>` : '';
   } catch (err) {
     body.innerHTML = `<div class="empty-state"><p>Error: ${err.message}</p></div>`;
     return;
   }
-  if (!data || !data.rows) {
-    body.innerHTML = '<div class="empty-state"><p>Error al cargar datos</p></div>';
-    return;
-  }
-
-  _vacResumenData = data.rows;
   vrRender();
 }
 
 function vrBuscar() {
   vrRender();
 }
+
+window.vrSetFilter = function(f) { _vrFilter = f; vrRender(); };
+
+window.vrSetSort = function(col) {
+  if (_vrSort.col === col) _vrSort.dir = _vrSort.dir === 'asc' ? 'desc' : 'asc';
+  else { _vrSort.col = col; _vrSort.dir = 'asc'; }
+  vrRender();
+};
+
+let _vrActiveTab = 'resumen';
+window.vrTab = function(tab) {
+  _vrActiveTab = tab;
+  document.querySelectorAll('[id^="vr-tab-"]').forEach(b => b.style.borderBottom = '3px solid transparent');
+  const active = document.getElementById('vr-tab-' + tab);
+  if (active) active.style.borderBottom = '3px solid #2563eb';
+  if (tab === 'resumen') vrRender();
+  else if (tab === 'feriados') vrRenderFeriados();
+  else if (tab === 'validaciones') vrRenderValidaciones();
+};
 
 function vrRender() {
   const body = document.getElementById('vr-body');
@@ -14113,12 +14154,31 @@ function vrRender() {
   let rows = _vacResumenData;
   if (q) rows = rows.filter(r => (r.full_name || '').toLowerCase().includes(q) || (r.employee_number || '').includes(q));
 
+  // Filtros
+  if (_vrFilter === 'con_programadas') rows = rows.filter(r => ((r.vac?.dias_programados || 0) - (r.vac?.dias_tomados || 0)) > 0);
+  else if (_vrFilter === 'con_restantes') rows = rows.filter(r => (r.vac?.dias_restantes || 0) > 0);
+  else if (_vrFilter === 'sin_restantes') rows = rows.filter(r => (r.vac?.dias_restantes || 0) === 0);
+
+  // Sorting
+  const sc = _vrSort.col;
+  const sd = _vrSort.dir === 'asc' ? 1 : -1;
+  rows = [...rows].sort((a, b) => {
+    let va, vb;
+    if (sc === 'employee_number') { va = Number(a.employee_number) || 0; vb = Number(b.employee_number) || 0; }
+    else if (sc === 'full_name') { va = (a.full_name || '').toLowerCase(); vb = (b.full_name || '').toLowerCase(); return va < vb ? -sd : va > vb ? sd : 0; }
+    else if (sc === 'dias_disponibles') { va = a.vac?.dias_disponibles || 0; vb = b.vac?.dias_disponibles || 0; }
+    else if (sc === 'dias_tomados') { va = a.vac?.dias_tomados || 0; vb = b.vac?.dias_tomados || 0; }
+    else if (sc === 'programadas') { va = (a.vac?.dias_programados || 0) - (a.vac?.dias_tomados || 0); vb = (b.vac?.dias_programados || 0) - (b.vac?.dias_tomados || 0); }
+    else if (sc === 'dias_restantes') { va = a.vac?.dias_restantes || 0; vb = b.vac?.dias_restantes || 0; }
+    else { va = Number(a.employee_number) || 0; vb = Number(b.employee_number) || 0; }
+    return (va - vb) * sd;
+  });
+
   if (!rows.length) {
     body.innerHTML = '<div class="empty-state"><div class="empty-icon">🏖️</div><p>Sin empleados con ese filtro</p></div>';
     return;
   }
 
-  // Totales
   const totDisp = rows.reduce((s, r) => s + (r.vac?.dias_disponibles || 0), 0);
   const totTom  = rows.reduce((s, r) => s + (r.vac?.dias_tomados || 0), 0);
   const totProg = rows.reduce((s, r) => s + ((r.vac?.dias_programados || 0) - (r.vac?.dias_tomados || 0)), 0);
@@ -14128,6 +14188,9 @@ function vrRender() {
     <div style="font-size:22px;font-weight:700;color:${color}">${val}</div>
     <div style="font-size:11px;color:#64748b">${label}</div>
   </div>`;
+
+  const sortIcon = col => _vrSort.col === col ? (_vrSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  const th = (label, col, center) => `<th style="${center ? 'text-align:center;' : ''}cursor:pointer;user-select:none" onclick="vrSetSort('${col}')">${label}${sortIcon(col)}</th>`;
 
   const trs = rows.map(r => {
     const v = r.vac || {};
@@ -14144,7 +14207,7 @@ function vrRender() {
       <td style="text-align:center;cursor:pointer;color:#ea580c;text-decoration:underline" onclick="vrVerProgramadas(${r.id})">${programados > 0 ? programados : 0}</td>
       <td style="text-align:center;font-weight:700;color:${restColor}">${restantes}</td>
       <td style="white-space:nowrap">
-        <button class="btn-ghost btn-sm" onclick="vrAjustar(${r.id})" title="Ajustar días disponibles">✏️ Ajustar</button>
+        <button class="btn-ghost btn-sm" onclick="vrAjustar(${r.id})" title="Ajustar días disponibles">✏️</button>
         <button class="btn-ghost btn-sm" onclick="vrVerHistorial(${r.id})" title="Ver historial de ajustes">📋</button>
       </td>
     </tr>`;
@@ -14158,15 +14221,16 @@ function vrRender() {
     ${kpi('Programados', totProg, '#ea580c')}
     ${kpi('Restantes', totRest, '#15803d')}
   </div>
-  <div style="font-size:13px;color:#64748b;margin-bottom:8px">${rows.length} empleado${rows.length !== 1 ? 's' : ''} activos</div>
   <div style="overflow-x:auto">
   <table class="data-table">
     <thead><tr>
-      <th>Nombre</th><th>No. Empleado</th><th>Fecha Ingreso</th>
-      <th style="text-align:center">Vac. Totales</th>
-      <th style="text-align:center">Tomadas</th>
-      <th style="text-align:center">Programadas</th>
-      <th style="text-align:center">Restantes</th>
+      ${th('Nombre', 'full_name', false)}
+      ${th('No. Emp', 'employee_number', true)}
+      <th>Ingreso</th>
+      ${th('Totales', 'dias_disponibles', true)}
+      ${th('Tomadas', 'dias_tomados', true)}
+      ${th('Progr.', 'programadas', true)}
+      ${th('Restantes', 'dias_restantes', true)}
       <th></th>
     </tr></thead>
     <tbody>${trs}</tbody>
@@ -14328,6 +14392,169 @@ window.vrExportar = function() {
   } else {
     toast('Librería Excel no disponible', 'error');
   }
+};
+
+// ── Días Feriados (tab) ────────────────────────────────────────────────────
+function vrRenderFeriados() {
+  const body = document.getElementById('vr-body');
+  if (!body) return;
+  const holidays = _vrHolidays || [];
+  const isAdmin = state.user && (state.user.role === 'admin' || state.user.role === 'rh');
+
+  const rows = holidays.map(h => {
+    const src = Array.isArray(h.sources) ? h.sources.join(', ') : (h.recurring_key ? 'recurrente' : 'manual');
+    const isRecurring = !!h.recurring_key;
+    return `<tr>
+      <td style="font-weight:600">${esc(h.date)}</td>
+      <td>${esc(h.name)}</td>
+      <td style="font-size:12px;color:#64748b">${esc(src)}</td>
+      <td style="text-align:center">${isAdmin && !isRecurring ? `<button class="btn-ghost btn-sm" onclick="vrDeleteHoliday(${h.id})" title="Eliminar">🗑️</button>` : (isRecurring ? '<span style="font-size:11px;color:#94a3b8">auto</span>' : '')}</td>
+    </tr>`;
+  }).join('');
+
+  const addForm = isAdmin ? `
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <input type="date" id="vr-hol-date" class="form-input" style="width:auto;font-size:13px">
+      <input type="text" id="vr-hol-name" class="form-input" placeholder="Nombre del día feriado" style="width:220px;font-size:13px">
+      <button class="btn-primary btn-sm" onclick="vrAddHoliday()">+ Agregar</button>
+    </div>` : '';
+
+  body.innerHTML = `
+    ${addForm}
+    ${holidays.length ? `<div style="overflow-x:auto">
+    <table class="data-table" style="font-size:13px">
+      <thead><tr><th>Fecha</th><th>Nombre</th><th>Origen</th><th style="width:60px"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    </div>` : '<div class="empty-state"><div class="empty-icon">📅</div><p>Sin días feriados registrados</p></div>'}
+  `;
+}
+
+window.vrAddHoliday = async function() {
+  const dateEl = document.getElementById('vr-hol-date');
+  const nameEl = document.getElementById('vr-hol-name');
+  if (!dateEl || !nameEl) return;
+  const date = dateEl.value.trim();
+  const name = nameEl.value.trim();
+  if (!date || !name) { toast('Fecha y nombre son requeridos', 'warn'); return; }
+  try {
+    const h = await api('/api/rhh/catalogo/holidays', {
+      method: 'POST', body: JSON.stringify({ date, name })
+    });
+    if (h && h.id) {
+      _vrHolidays.push(h);
+      _vrHolidays.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      toast('Día feriado agregado');
+      vrRenderFeriados();
+    }
+  } catch (err) { toast(err.message, 'error'); }
+};
+
+window.vrDeleteHoliday = async function(id) {
+  if (!confirm('¿Eliminar este día feriado?')) return;
+  try {
+    await api(`/api/rhh/catalogo/holidays/${id}`, { method: 'DELETE' });
+    _vrHolidays = _vrHolidays.filter(h => h.id !== id);
+    toast('Día feriado eliminado');
+    vrRenderFeriados();
+  } catch (err) { toast(err.message, 'error'); }
+};
+
+// ── Validaciones vacaciones (tab) ─────────────────────────────────────────
+function vrRenderValidaciones() {
+  const body = document.getElementById('vr-body');
+  if (!body) return;
+  const vals = _vrValidaciones || [];
+  const isAdmin = state.user && (state.user.role === 'admin' || state.user.role === 'rh');
+
+  if (!vals.length) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin discrepancias de vacaciones registradas</p></div>';
+    return;
+  }
+
+  const pendientes = vals.filter(v => v.estado === 'pendiente');
+  const resueltas = vals.filter(v => v.estado !== 'pendiente');
+
+  const statusBadge = v => v.estado === 'pendiente'
+    ? '<span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:9px;font-size:11px;font-weight:600">Pendiente</span>'
+    : `<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:9px;font-size:11px;font-weight:600">Resuelta (${esc(v.accion || '')})</span>`;
+
+  const renderRow = v => {
+    const actions = v.estado === 'pendiente' && isAdmin ? `
+      <div style="display:flex;gap:4px;flex-wrap:wrap">
+        <button class="btn-ghost btn-sm" style="font-size:11px" onclick="vrResolveVal(${v.id},'aceptar_contpaq')" title="Usar valor de CONTPAQ">Aceptar CONTPAQ (${v.dias_contpaq}d)</button>
+        <button class="btn-ghost btn-sm" style="font-size:11px" onclick="vrResolveVal(${v.id},'aceptar_portal')" title="Usar valor del portal">Aceptar Portal (${v.dias_portal}d)</button>
+        <button class="btn-ghost btn-sm" style="font-size:11px" onclick="vrResolveCustom(${v.id})" title="Ingresar valor custom">Custom</button>
+      </div>` : (v.estado !== 'pendiente' ? `<span style="font-size:11px;color:#64748b">${v.dias_final ?? '—'} días final</span>` : '');
+    return `<tr>
+      <td style="font-weight:600">${esc(v.employee_name)}</td>
+      <td style="text-align:center">${esc(v.employee_number)}</td>
+      <td style="text-align:center">S${v.semana_portal}</td>
+      <td style="text-align:center;font-weight:600;color:#2563eb">${v.dias_portal}</td>
+      <td style="text-align:center">S${v.semana_contpaq}</td>
+      <td style="text-align:center;font-weight:600;color:#059669">${v.dias_contpaq}</td>
+      <td style="text-align:center">${statusBadge(v)}</td>
+      <td>${actions}</td>
+    </tr>`;
+  };
+
+  const tableHtml = rows => `<div style="overflow-x:auto">
+    <table class="data-table" style="font-size:13px">
+      <thead><tr>
+        <th>Empleado</th><th>No.</th>
+        <th style="text-align:center">Sem. Portal</th><th style="text-align:center">Días Portal</th>
+        <th style="text-align:center">Sem. CONTPAQ</th><th style="text-align:center">Días CONTPAQ</th>
+        <th style="text-align:center">Estado</th><th>Acciones</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+
+  let html = '';
+  if (pendientes.length) {
+    html += `<h4 style="margin:0 0 8px;color:#92400e">Pendientes (${pendientes.length})</h4>`;
+    html += tableHtml(pendientes.map(renderRow).join(''));
+  }
+  if (resueltas.length) {
+    html += `<h4 style="margin:16px 0 8px;color:#166534">Resueltas (${resueltas.length})</h4>`;
+    html += tableHtml(resueltas.map(renderRow).join(''));
+  }
+  body.innerHTML = html;
+}
+
+window.vrResolveVal = async function(id, accion) {
+  const label = accion === 'aceptar_contpaq' ? 'CONTPAQ' : 'Portal';
+  if (!confirm(`¿Aceptar valor de ${label}?`)) return;
+  try {
+    const res = await api(`/api/rhh/catalogo/vac-validaciones/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ accion })
+    });
+    if (res && res.ok) {
+      const idx = _vrValidaciones.findIndex(v => v.id === id);
+      if (idx !== -1) _vrValidaciones[idx] = res.validacion;
+      toast('Validación resuelta');
+      vrRenderValidaciones();
+    }
+  } catch (err) { toast(err.message, 'error'); }
+};
+
+window.vrResolveCustom = async function(id) {
+  const val = _vrValidaciones.find(v => v.id === id);
+  if (!val) return;
+  const dias = prompt(`Días de vacaciones correctos para ${val.employee_name} (Portal: ${val.dias_portal}, CONTPAQ: ${val.dias_contpaq}):`);
+  if (dias === null) return;
+  const n = Number(dias);
+  if (isNaN(n) || n < 0) { toast('Número inválido', 'warn'); return; }
+  try {
+    const res = await api(`/api/rhh/catalogo/vac-validaciones/${id}`, {
+      method: 'PATCH', body: JSON.stringify({ accion: 'custom', dias_final: n })
+    });
+    if (res && res.ok) {
+      const idx = _vrValidaciones.findIndex(v => v.id === id);
+      if (idx !== -1) _vrValidaciones[idx] = res.validacion;
+      toast('Validación resuelta con valor custom');
+      vrRenderValidaciones();
+    }
+  } catch (err) { toast(err.message, 'error'); }
 };
 
 // CATÁLOGO EMPLEADOS — lee directo del JSON del repositorio
