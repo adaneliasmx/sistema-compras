@@ -944,8 +944,9 @@ function _vacDayType(iso) {
   if (dow === 0) return 'descanso';
   if (_vacCal.holidays.some(h => h.date === iso)) return 'festivo';
   if (_vacCal.birthMD && iso.slice(5) === _vacCal.birthMD) return 'cumple';
-  // Ya solicitado?
-  if (_vacCal.solicitudes.some(s => s.fecha_inicio <= iso && s.fecha_fin >= iso)) return 'ocupado';
+  // Ya solicitado? Diferenciar aprobado vs pendiente
+  const sol = _vacCal.solicitudes.find(s => s.fecha_inicio <= iso && s.fecha_fin >= iso);
+  if (sol) return sol.estado === 'aprobada' ? 'aprobado' : 'pendiente_cal';
   return 'habil';
 }
 
@@ -986,7 +987,8 @@ function _vacBuildCalendar() {
     else if (type === 'descanso') { bg = '#fee2e2'; color = '#991b1b'; cursor = 'default'; extra = 'Do'; }
     else if (type === 'festivo') { bg = '#fef3c7'; color = '#92400e'; cursor = 'default'; extra = _vacCal.holidays.find(h=>h.date===iso)?.name?.slice(0,8)||'Festivo'; }
     else if (type === 'cumple') { bg = '#fce7f3'; color = '#9d174d'; cursor = 'default'; extra = 'Cumple'; }
-    else if (type === 'ocupado') { bg = '#e0e7ff'; color = '#4338ca'; cursor = 'default'; extra = 'Solic.'; }
+    else if (type === 'aprobado') { bg = '#dcfce7'; color = '#166534'; cursor = 'default'; extra = 'Aprob.'; }
+    else if (type === 'pendiente_cal') { bg = '#e0e7ff'; color = '#4338ca'; cursor = 'default'; extra = 'Pend.'; }
 
     if (isSelected && !isPast) {
       if (type === 'habil') { bg = '#2563eb'; color = '#fff'; border = '1px solid #1d4ed8'; }
@@ -1011,7 +1013,8 @@ function _vacBuildCalendar() {
     <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fee2e2;border:1px solid #fca5a5"></span> Domingo</span>
     <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fef3c7;border:1px solid #fcd34d"></span> Festivo</span>
     <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#fce7f3;border:1px solid #f9a8d4"></span> Cumpleaños</span>
-    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#e0e7ff;border:1px solid #a5b4fc"></span> Solicitado</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#dcfce7;border:1px solid #86efac"></span> Aprobado</span>
+    <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#e0e7ff;border:1px solid #a5b4fc"></span> Pendiente</span>
     <span style="display:flex;align-items:center;gap:3px"><span style="width:10px;height:10px;border-radius:3px;background:#2563eb"></span> Seleccion</span>
   </div>`;
 
@@ -1071,6 +1074,7 @@ function _vacUpdateSummary() {
     if (type === 'descanso') domingos++;
     else if (type === 'festivo') { festivos++; const h = _vacCal.holidays.find(x=>x.date===iso); if(h) festNames.push(h.name); }
     else if (type === 'cumple') cumples++;
+    else if (type === 'aprobado' || type === 'pendiente_cal') { /* ya comprometido, no contar */ }
     else vacDias++;
   }
 
@@ -1196,6 +1200,7 @@ async function vacaciones(el) {
   const lista   = (rVac && rVac.ok && Array.isArray(rVac.data)) ? rVac.data : [];
   const vacInfo = (!Array.isArray(rInc?.data) ? rInc?.data?.vac_info : null) || {};
   const calData = (rCal && rCal.ok) ? rCal.data : {};
+  const todayMx = calData.today || new Date().toLocaleDateString('en-CA');
 
   // Inicializar estado calendario
   const now = new Date();
@@ -1213,10 +1218,13 @@ async function vacaciones(el) {
 
   // Badge estilo boarding pass para cada solicitud
   const listaHtml = lista.length ? lista.map(v => {
-    const stColor = v.status==='aprobado' ? '#16a34a' : v.status==='rechazado' ? '#dc2626' : '#d97706';
-    const stBg    = v.status==='aprobado' ? '#f0fdf4' : v.status==='rechazado' ? '#fef2f2' : '#fffbeb';
-    const stBorder = v.status==='aprobado' ? '#86efac' : v.status==='rechazado' ? '#fca5a5' : '#fcd34d';
-    const stLabel = v.status==='aprobado' ? 'APROBADO' : v.status==='rechazado' ? 'RECHAZADO' : 'PENDIENTE';
+    // Determinar si ya pasó la fecha (aprobadas cuya fecha_fin < hoy = TOMADO)
+    const yaPaso = v.status === 'aprobado' && v.fecha_fin && v.fecha_fin < todayMx;
+    const displayStatus = yaPaso ? 'tomado' : v.status;
+    const stColor = displayStatus==='tomado' ? '#059669' : displayStatus==='aprobado' ? '#16a34a' : displayStatus==='rechazado' ? '#dc2626' : '#d97706';
+    const stBg    = displayStatus==='tomado' ? '#ecfdf5' : displayStatus==='aprobado' ? '#f0fdf4' : displayStatus==='rechazado' ? '#fef2f2' : '#fffbeb';
+    const stBorder = displayStatus==='tomado' ? '#6ee7b7' : displayStatus==='aprobado' ? '#86efac' : displayStatus==='rechazado' ? '#fca5a5' : '#fcd34d';
+    const stLabel = displayStatus==='tomado' ? 'TOMADO' : displayStatus==='aprobado' ? 'APROBADO' : displayStatus==='rechazado' ? 'RECHAZADO' : 'PENDIENTE';
     return `
     <div style="background:#fff;border:1.5px solid #e2e8f0;border-radius:14px;margin-bottom:10px;overflow:hidden">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px">
@@ -1236,7 +1244,7 @@ async function vacaciones(el) {
         ${v.cambio_solicitado === 'cancelacion' ? 'Cancelacion solicitada' : 'Cambio solicitado'} — esperando respuesta de RH
         ${v.cambio_motivo ? ` · ${esc(v.cambio_motivo)}` : ''}</div>` : ''}
       ${v.cambio_respuesta ? `<div style="padding:8px 16px;font-size:11px;background:#eff6ff;border-top:1px solid #bfdbfe;color:#1e40af">RH: ${esc(v.cambio_respuesta)}</div>` : ''}
-      ${v.status === 'aprobado' && !v.cambio_solicitado ? `<div style="border-top:1px dashed #e2e8f0;padding:10px 16px">
+      ${v.status === 'aprobado' && !yaPaso && !v.cambio_solicitado ? `<div style="border-top:1px dashed #e2e8f0;padding:10px 16px">
         <div style="display:flex;gap:8px;margin-bottom:0">
           <button onclick="_vacSolicitarCambio(${v.id},'modificacion')" style="flex:1;padding:7px;border:1px solid #d97706;background:#fffbeb;color:#92400e;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Solicitar cambio</button>
           <button onclick="_vacSolicitarCambio(${v.id},'cancelacion')" style="flex:1;padding:7px;border:1px solid #dc2626;background:#fef2f2;color:#991b1b;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer">Cancelar vacaciones</button>

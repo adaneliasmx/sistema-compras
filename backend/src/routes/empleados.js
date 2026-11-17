@@ -820,7 +820,7 @@ router.get('/vacaciones/calendario', empAuthRequired, (req, res) => {
       && r.estado !== 'cancelada'
       && r.cambio_solicitado !== 'cancelacion')
     .map(r => ({ fecha_inicio: r.fecha_inicio, fecha_fin: r.fecha_fin, estado: r.estado }));
-  res.json({ holidays, birth_date, vac_info: vacInfo, solicitudes });
+  res.json({ holidays, birth_date, vac_info: vacInfo, solicitudes, today: nowMxDate() });
 });
 
 // ── GET /api/empleados/vacaciones ─────────────────────────────────────────────
@@ -887,6 +887,19 @@ router.post('/vacaciones', empAuthRequired, demoGuard, (req, res) => {
         error: `No tienes suficientes dias disponibles. Disponibles: ${vacInfo.dias_disponibles}, comprometidos: ${vacInfo.dias_programados}, restantes: ${vacInfo.dias_restantes}. Solicitas: ${diasVac} dias de vacaciones.`
       });
     }
+  }
+
+  // Validar traslape con solicitudes existentes (aprobadas o pendientes)
+  const existingSols = (db.rhh_vac_solicitudes || []).filter(r =>
+    r.employee_id === req.empPayload.sub
+    && (r.estado === 'aprobada' || r.estado === 'pendiente')
+    && r.cambio_solicitado !== 'cancelacion'
+  );
+  const overlap = existingSols.find(r =>
+    r.fecha_inicio <= fecha_fin && r.fecha_fin >= fecha_inicio
+  );
+  if (overlap) {
+    return res.status(400).json({ error: `Ya tienes una solicitud (${overlap.fecha_inicio} → ${overlap.fecha_fin}) que se traslapa con estas fechas.` });
   }
 
   // Reglas de anticipacion
