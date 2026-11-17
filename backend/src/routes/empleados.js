@@ -1,9 +1,186 @@
 const express = require('express');
-const { read, write } = require('../db-rhh');
+const { read, write, writeAsync } = require('../db-rhh');
 const { empAuthRequired } = require('../middleware/empleados-auth');
 const { calcVacInfo } = require('../utils/rhh-vac-calc');
 
 const router = express.Router();
+
+// ── Guard: cuenta demo no escribe en DB ──────────────────────────────────────
+function demoGuard(req, res, next) {
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload?.sub);
+  if (emp?.demo_account) {
+    return res.status(403).json({ error: 'Cuenta de demostración — solo lectura' });
+  }
+  next();
+}
+
+// ── Setup empleado demo (se ejecuta una vez al cargar el módulo) ─────────────
+(function ensureDemoEmployee() {
+  try {
+    const db = read();
+    if (!db) return;
+    const existing = (db.rhh_employees || []).find(e => String(e.employee_number) === '00');
+    if (existing) return; // ya existe
+
+    const demoId = (db.rhh_employees || []).reduce((m, e) => Math.max(m, e.id || 0), 0) + 1;
+
+    // 1. Departamento y puesto
+    let deptCalidad = (db.rhh_departments || []).find(d => /calidad/i.test(d.name));
+    if (!deptCalidad) {
+      deptCalidad = { id: (db.rhh_departments || []).reduce((m, d) => Math.max(m, d.id || 0), 0) + 1, name: 'Calidad' };
+      db.rhh_departments.push(deptCalidad);
+    }
+    let posAux = (db.rhh_positions || []).find(p => /aux.*calidad/i.test(p.name));
+    if (!posAux) {
+      posAux = { id: (db.rhh_positions || []).reduce((m, p) => Math.max(m, p.id || 0), 0) + 1, name: 'Aux. de Calidad', department_id: deptCalidad.id };
+      db.rhh_positions.push(posAux);
+    }
+    const shift1 = (db.rhh_shifts || []).find(s => /turno 1/i.test(s.name)) || (db.rhh_shifts || [])[0];
+
+    // 2. Empleado
+    const emp = {
+      id: demoId,
+      employee_number: '00',
+      full_name: 'TRABAJADOR DE PRUEBA CUESTO',
+      department_id: deptCalidad.id,
+      position_id: posAux.id,
+      shift_id: shift1?.id || null,
+      status: 'active',
+      start_date: '2023-03-15',
+      fecha_ingreso: '2023-03-15',
+      birth_date: '1995-12-23',
+      sal_diario: 450,
+      salary_daily: 450,
+      sdi: 473,
+      sbc: 520,
+      rfc: 'TRPC951223AB1',
+      curp: 'TRPC951223HJCRRS09',
+      nss: '12-34-56-7890-1',
+      phone: '33-1234-5678',
+      email: 'demo@cuesto.com',
+      vac_dias_disponibles: 20,
+      demo_account: true,
+      manual_name_locked: true,
+      emp_login: {
+        username: 'PRUEBARHH1',
+        password: 'Cuest0123.',
+        must_change: false,
+        enabled: true,
+      },
+      created_at: '2026-11-17',
+      updated_at: '2026-11-17',
+    };
+    db.rhh_employees.push(emp);
+
+    // 3. Incidencias semanales (nómina inventada — semanas 40-46)
+    if (!Array.isArray(db.rhh_incidencias_semanales)) db.rhh_incidencias_semanales = [];
+    const incBase = db.rhh_incidencias_semanales;
+    const nextIncId = () => incBase.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
+    const semanas = [
+      { no: 40, fi: '2026-09-28', ff: '2026-10-04', vac: 0, faltas: 0, he: 0, dp: 7 },
+      { no: 41, fi: '2026-10-05', ff: '2026-10-11', vac: 0, faltas: 0, he: 4, dp: 7 },
+      { no: 42, fi: '2026-10-12', ff: '2026-10-18', vac: 3, faltas: 0, he: 0, dp: 7 },
+      { no: 43, fi: '2026-10-19', ff: '2026-10-25', vac: 0, faltas: 1, he: 0, dp: 6 },
+      { no: 44, fi: '2026-10-26', ff: '2026-11-01', vac: 5, faltas: 0, he: 0, dp: 7 },
+      { no: 45, fi: '2026-11-02', ff: '2026-11-08', vac: 2, faltas: 0, he: 2, dp: 7 },
+      { no: 46, fi: '2026-11-09', ff: '2026-11-15', vac: 0, faltas: 0, he: 0, dp: 7 },
+    ];
+    for (const s of semanas) {
+      incBase.push({
+        id: nextIncId(), employee_id: demoId,
+        no_periodo: s.no, year: 2026, period_key: `2026-W${String(s.no).padStart(2,'0')}`,
+        fecha_inicio: s.fi, fecha_fin: s.ff,
+        dias_pagados: s.dp, faltas: s.faltas, horas_extras_total: s.he,
+        vacaciones_dias: s.vac, _vac_fuente: s.vac > 0 ? 'contpaq' : null,
+        despensa: 1, prima_dominical: 0, gratificacion: null,
+        percepciones: { '1 Sueldo': s.dp * 450, '3 Séptimo día': 450, '4 Horas extras': s.he * 56.25 },
+        deducciones: { '52 I.M.S.S': 180, '45 I.S.R. (mes)': s.dp * 450 * 0.09 },
+        total_perc_pdf: s.dp * 450 + 450 + s.he * 56.25,
+        total_ded_pdf: 180 + s.dp * 450 * 0.09,
+        neto_pdf: (s.dp * 450 + 450 + s.he * 56.25) - (180 + s.dp * 450 * 0.09),
+        notas: '', created_at: '2026-11-17',
+      });
+    }
+
+    // 4. Solicitudes de vacaciones (aprobada, rechazada, cancelada, pendiente)
+    if (!Array.isArray(db.rhh_vac_solicitudes)) db.rhh_vac_solicitudes = [];
+    const vacBase = db.rhh_vac_solicitudes;
+    const nextVacId = () => vacBase.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-10-12', fecha_fin: '2026-10-14', dias: 3,
+      estado: 'aprobada', origen: 'portal',
+      motivo: 'Viaje familiar', notas: '',
+      created_at: '2026-10-05T09:30:00', aprobada_at: '2026-10-06T11:00:00',
+      aprobada_por: 'RH',
+    });
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-10-26', fecha_fin: '2026-10-31', dias: 5,
+      estado: 'aprobada', origen: 'portal',
+      motivo: 'Dia de muertos', notas: '',
+      created_at: '2026-10-15T14:00:00', aprobada_at: '2026-10-16T10:00:00',
+      aprobada_por: 'RH',
+    });
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-11-02', fecha_fin: '2026-11-03', dias: 2,
+      estado: 'aprobada', origen: 'portal',
+      motivo: 'Asuntos personales', notas: '',
+      created_at: '2026-10-28T08:00:00', aprobada_at: '2026-10-29T09:30:00',
+      aprobada_por: 'RH',
+    });
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-12-07', fecha_fin: '2026-12-11', dias: 5,
+      estado: 'rechazada', origen: 'portal',
+      motivo: 'Vacaciones de fin de año', notas: 'No se puede en esas fechas, hay inventario.',
+      created_at: '2026-11-10T10:00:00', rechazada_at: '2026-11-11T08:30:00',
+      rechazada_por: 'RH',
+    });
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-11-23', fecha_fin: '2026-11-25', dias: 3,
+      estado: 'cancelado', origen: 'portal',
+      motivo: 'Cita medica programada',
+      cambio_solicitado: 'cancelacion', cambio_motivo: 'Ya no es necesario, se reprogramó la cita.',
+      created_at: '2026-11-05T16:00:00',
+    });
+    vacBase.push({
+      id: nextVacId(), employee_id: demoId,
+      fecha_inicio: '2026-12-22', fecha_fin: '2026-12-24', dias: 3,
+      estado: 'pendiente', origen: 'portal',
+      motivo: 'Navidad en familia', notas: '',
+      created_at: '2026-11-16T12:00:00',
+    });
+
+    // 5. Evaluación inventada
+    if (!Array.isArray(db.rhh_eval_results)) db.rhh_eval_results = [];
+    const evalBase = db.rhh_eval_results;
+    const nextEvalId = () => evalBase.reduce((m, r) => Math.max(m, r.id || 0), 0) + 1;
+    evalBase.push({
+      id: nextEvalId(), employee_id: demoId,
+      session_id: (db.rhh_eval_sessions || []).at(-1)?.id || 1,
+      evaluator_id: null, evaluator_name: 'Supervisor Calidad',
+      total_points: 100, points_obtained: 87,
+      items: [
+        { label: 'Puntualidad', max: 20, score: 18 },
+        { label: 'Calidad de trabajo', max: 20, score: 17 },
+        { label: 'Trabajo en equipo', max: 20, score: 19 },
+        { label: 'Uso de EPP', max: 20, score: 16 },
+        { label: 'Orden y limpieza', max: 20, score: 17 },
+      ],
+      comments: 'Buen desempeño general. Mejorar uso de EPP.',
+      created_at: '2026-10-30T14:00:00',
+    });
+
+    writeAsync(db).catch(err => console.error('[demo-employee] Error al guardar:', err.message));
+    console.log('[demo-employee] Empleado de prueba #00 creado con datos de demo');
+  } catch (err) {
+    console.error('[demo-employee] Error en setup:', err.message);
+  }
+})();
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -377,7 +554,7 @@ router.get('/lista-raya', empAuthRequired, (req, res) => {
 });
 
 // ── POST /api/empleados/aclaracion ────────────────────────────────────────────
-router.post('/aclaracion', empAuthRequired, (req, res) => {
+router.post('/aclaracion', empAuthRequired, demoGuard, (req, res) => {
   const { no_periodo, mensaje } = req.body || {};
   if (!no_periodo || !mensaje) return res.status(400).json({ error: 'Período y mensaje requeridos' });
 
@@ -406,7 +583,7 @@ router.post('/aclaracion', empAuthRequired, (req, res) => {
 });
 
 // ── POST /api/empleados/queja ─────────────────────────────────────────────────
-router.post('/queja', empAuthRequired, (req, res) => {
+router.post('/queja', empAuthRequired, demoGuard, (req, res) => {
   const { categoria, mensaje } = req.body || {};
   if (!mensaje) return res.status(400).json({ error: 'Mensaje requerido' });
 
@@ -578,7 +755,7 @@ router.get('/mi-rol', empAuthRequired, (req, res) => {
 });
 
 // ── POST /api/empleados/mi-rol/aclaracion — solicitar aclaracion por dia ─────
-router.post('/mi-rol/aclaracion', empAuthRequired, (req, res) => {
+router.post('/mi-rol/aclaracion', empAuthRequired, demoGuard, (req, res) => {
   const { date, mensaje } = req.body || {};
   if (!date || !mensaje) return res.status(400).json({ error: 'Fecha y mensaje requeridos' });
 
@@ -648,7 +825,7 @@ router.get('/vacaciones', empAuthRequired, (req, res) => {
 });
 
 // ── POST /api/empleados/vacaciones ────────────────────────────────────────────
-router.post('/vacaciones', empAuthRequired, (req, res) => {
+router.post('/vacaciones', empAuthRequired, demoGuard, (req, res) => {
   const { fecha_inicio, fecha_fin, motivo } = req.body || {};
   if (!fecha_inicio || !fecha_fin) return res.status(400).json({ error: 'Fechas requeridas' });
 
@@ -745,7 +922,7 @@ router.post('/vacaciones', empAuthRequired, (req, res) => {
 
 // ── POST /api/empleados/vacaciones/cambio ─────────────────────────────────────
 // Solicitar cambio o cancelación de vacaciones aprobadas
-router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
+router.post('/vacaciones/cambio', empAuthRequired, demoGuard, (req, res) => {
   const { vacacion_id, tipo, motivo, nueva_fecha_inicio, nueva_fecha_fin } = req.body || {};
   if (!vacacion_id || !['modificacion', 'cancelacion'].includes(tipo)) {
     return res.status(400).json({ error: 'vacacion_id y tipo (modificacion|cancelacion) son requeridos' });
@@ -777,7 +954,7 @@ router.post('/vacaciones/cambio', empAuthRequired, (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 const TICKET_TIPOS = ['incidencia', 'nomina', 'vacaciones', 'queja'];
 
-router.post('/ticket', empAuthRequired, (req, res) => {
+router.post('/ticket', empAuthRequired, demoGuard, (req, res) => {
   const { tipo, detalle } = req.body || {};
   if (!tipo || !TICKET_TIPOS.includes(tipo)) return res.status(400).json({ error: 'Tipo de ticket invalido' });
   if (!detalle || typeof detalle !== 'object') return res.status(400).json({ error: 'Detalle requerido' });
@@ -936,7 +1113,7 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
 });
 
 // POST /capacitacion/examen/:docCodigo — Enviar respuestas y calificar
-router.post('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
+router.post('/capacitacion/examen/:docCodigo', empAuthRequired, demoGuard, (req, res) => {
   const db = read();
   const empId = req.empPayload.sub;
   const docCodigo = decodeURIComponent(req.params.docCodigo);
@@ -1025,7 +1202,7 @@ router.post('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
 });
 
 // POST /capacitacion/firma — Firma digital del empleado
-router.post('/capacitacion/firma', empAuthRequired, (req, res) => {
+router.post('/capacitacion/firma', empAuthRequired, demoGuard, (req, res) => {
   const db = read();
   const empId = req.empPayload.sub;
   const { doc_codigo } = req.body;

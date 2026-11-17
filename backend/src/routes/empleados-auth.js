@@ -38,8 +38,8 @@ router.post('/login', (req, res) => {
     ok = bcrypt.compareSync(password, login.password_hash);
   } else if (login.password) {
     ok = password === String(login.password);
-    // Auto-migrar a bcrypt en login exitoso con texto plano
-    if (ok) {
+    // Auto-migrar a bcrypt en login exitoso con texto plano (excepto demo)
+    if (ok && !emp.demo_account) {
       login.password_hash = bcrypt.hashSync(password, 10);
       delete login.password;
       write(db);
@@ -67,14 +67,15 @@ router.post('/login', (req, res) => {
 
 // POST /api/empleados/auth/change-password
 router.post('/change-password', empAuthRequired, (req, res) => {
+  const db = read();
+  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
+  if (!emp || !emp.emp_login) return res.status(404).json({ error: 'Empleado no encontrado' });
+  if (emp.demo_account) return res.status(403).json({ error: 'Cuenta de demostración — solo lectura' });
+
   const { new_password } = req.body || {};
   if (!new_password || String(new_password).length < 6) {
     return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
   }
-
-  const db = read();
-  const emp = (db.rhh_employees || []).find(e => e.id === req.empPayload.sub);
-  if (!emp || !emp.emp_login) return res.status(404).json({ error: 'Empleado no encontrado' });
 
   emp.emp_login.password_hash = bcrypt.hashSync(String(new_password), 10);
   delete emp.emp_login.password; // eliminar contraseña inicial en texto plano
