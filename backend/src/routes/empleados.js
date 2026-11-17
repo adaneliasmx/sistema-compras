@@ -15,8 +15,8 @@ function demoGuard(req, res, next) {
   next();
 }
 
-// ── Setup empleado demo (se ejecuta una vez al cargar el módulo) ─────────────
-(function ensureDemoEmployee() {
+// ── Setup empleado demo (llamar DESPUÉS de initRhhDb) ────────────────────────
+async function ensureDemoEmployee() {
   try {
     const db = read();
     if (!db) return;
@@ -175,12 +175,12 @@ function demoGuard(req, res, next) {
       created_at: '2026-10-30T14:00:00',
     });
 
-    writeAsync(db).catch(err => console.error('[demo-employee] Error al guardar:', err.message));
+    await writeAsync(db);
     console.log('[demo-employee] Empleado de prueba #00 creado con datos de demo');
   } catch (err) {
     console.error('[demo-employee] Error en setup:', err.message);
   }
-})();
+}
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -1220,3 +1220,4 @@ router.post('/capacitacion/firma', empAuthRequired, demoGuard, (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureDemoEmployee = ensureDemoEmployee;

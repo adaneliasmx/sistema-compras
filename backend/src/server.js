@@ -58,6 +58,7 @@ const rhhTrainingRoutes    = require('./routes/rhh-training');
 // ── Módulo Empleados (autoservicio) ──────────────────────────────────────────
 const empleadosAuthRoutes = require('./routes/empleados-auth');
 const empleadosRoutes     = require('./routes/empleados');
+const { ensureDemoEmployee } = empleadosRoutes;
 
 // ── Módulo Producción ─────────────────────────────────────────────────────
 const produccionRoutes = require('./routes/produccion');
@@ -475,6 +476,7 @@ app.get('*', (req, res) => {
 const port = Number(process.env.PORT || 3000);
 
 Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb(), initPlannerDb()])
+  .then(() => ensureDemoEmployee())
   .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port} [build 2026-09-10]`);
