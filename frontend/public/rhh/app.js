@@ -2688,6 +2688,11 @@ let _autShowProgramar = false;
 // Cache de datos para la vista
 let _autVacAllSols = [];
 let _autVacResumen = [];
+// Gantt/Calendario: rango de fechas
+let _autGanttFrom = '';
+let _autGanttTo = '';
+let _autCalMonth = new Date().getMonth();
+let _autCalYear = new Date().getFullYear();
 
 // Helpers: detectar conflictos y alertas de timing
 function _autDateRangesOverlap(a1, a2, b1, b2) {
@@ -2716,6 +2721,233 @@ function _autFindConflicts(sol, allSols) {
     _autDateRangesOverlap(sol.fecha_inicio, sol.fecha_fin, o.fecha_inicio, o.fecha_fin)
   );
 }
+
+// ── Calendario mensual de vacaciones ──────────────────────────────────────────
+function _autBuildCalendario(pendientes, aprobadas) {
+  const y = _autCalYear, m = _autCalMonth;
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const firstDow = new Date(y, m, 1).getDay();
+
+  // Map: date -> [{name, estado}]
+  const dateMap = {};
+  const allSols = [...pendientes, ...aprobadas];
+  for (const s of allSols) {
+    if (!s.fecha_inicio || !s.fecha_fin) continue;
+    const d1 = new Date(s.fecha_inicio + 'T12:00:00');
+    const d2 = new Date(s.fecha_fin + 'T12:00:00');
+    for (let dt = new Date(d1); dt <= d2; dt.setDate(dt.getDate() + 1)) {
+      const iso = dt.toISOString().slice(0, 10);
+      if (!dateMap[iso]) dateMap[iso] = [];
+      dateMap[iso].push({ name: s.employee?.full_name || '—', estado: s.estado, dias: s.dias });
+    }
+  }
+
+  const nav = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <button class="btn-ghost" onclick="_autCalMonth--;if(_autCalMonth<0){_autCalMonth=11;_autCalYear--;}autorizacionesView()">&lt;</button>
+    <div style="font-size:16px;font-weight:700">${MESES[m]} ${y}</div>
+    <button class="btn-ghost" onclick="_autCalMonth++;if(_autCalMonth>11){_autCalMonth=0;_autCalYear++;}autorizacionesView()">&gt;</button>
+  </div>`;
+
+  const DIAS = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
+  let grid = '<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px">';
+  for (const d of DIAS) grid += `<div style="text-align:center;font-size:11px;font-weight:700;color:#64748b;padding:4px 0">${d}</div>`;
+  for (let i = 0; i < firstDow; i++) grid += '<div></div>';
+
+  for (let d = 1; d <= daysInMonth; d++) {
+    const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const entries = dateMap[iso] || [];
+    const apCount = entries.filter(e => e.estado === 'aprobada').length;
+    const peCount = entries.filter(e => e.estado === 'pendiente').length;
+    const dow = new Date(y, m, d).getDay();
+    const isWeekend = dow === 0;
+
+    let bg = '#fff', border = '1px solid #f1f5f9';
+    if (isWeekend) bg = '#fef2f2';
+    else if (apCount && peCount) bg = '#fef9c3';
+    else if (apCount) bg = '#f0fdf4';
+    else if (peCount) bg = '#eff6ff';
+
+    const dots = entries.slice(0, 3).map(e =>
+      `<div style="font-size:7px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;color:${e.estado==='aprobada'?'#166534':'#1d4ed8'}">${escHtml(e.name.split(' ').slice(0,2).join(' '))}</div>`
+    ).join('');
+    const more = entries.length > 3 ? `<div style="font-size:7px;color:#94a3b8">+${entries.length - 3} más</div>` : '';
+
+    grid += `<div style="border:${border};border-radius:6px;background:${bg};min-height:60px;padding:3px;cursor:${entries.length?'pointer':'default'}"
+      ${entries.length ? `onclick="_autCalDayDetail('${iso}')"` : ''}>
+      <div style="font-size:12px;font-weight:600;color:${isWeekend?'#dc2626':'#334155'}">${d}</div>
+      ${dots}${more}
+      ${apCount || peCount ? `<div style="display:flex;gap:2px;margin-top:1px">
+        ${apCount ? `<span style="background:#16a34a;color:#fff;border-radius:3px;padding:0 3px;font-size:8px;font-weight:700">${apCount}</span>` : ''}
+        ${peCount ? `<span style="background:#2563eb;color:#fff;border-radius:3px;padding:0 3px;font-size:8px;font-weight:700">${peCount}</span>` : ''}
+      </div>` : ''}
+    </div>`;
+  }
+  grid += '</div>';
+
+  const legend = `<div style="display:flex;gap:12px;margin-top:10px;font-size:11px;color:#64748b">
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#16a34a"></span> Aprobada</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#2563eb"></span> Pendiente</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef9c3;border:1px solid #fcd34d"></span> Ambas</span>
+  </div>`;
+
+  return nav + grid + legend + '<div id="aut-cal-detail" style="margin-top:12px"></div>';
+}
+
+window._autCalDayDetail = function(iso) {
+  const el = document.getElementById('aut-cal-detail');
+  if (!el) return;
+  const allSols = _autVacAllSols.filter(s =>
+    s.fecha_inicio && s.fecha_fin && s.fecha_inicio <= iso && s.fecha_fin >= iso
+  );
+  if (!allSols.length) { el.innerHTML = ''; return; }
+  const rows = allSols.map(s => {
+    const color = s.estado === 'aprobada' ? '#166534' : '#1d4ed8';
+    const bg = s.estado === 'aprobada' ? '#f0fdf4' : '#eff6ff';
+    return `<div style="background:${bg};border-radius:6px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <strong>${escHtml(s.employee?.full_name || '—')}</strong>
+        <span style="color:#64748b;font-size:11px;margin-left:6px">${s.employee?.employee_number || ''}</span>
+        <span style="color:#64748b;font-size:11px;margin-left:6px">${s.position?.name || ''}</span>
+      </div>
+      <div style="text-align:right">
+        <span style="color:${color};font-weight:700;font-size:12px">${s.estado === 'aprobada' ? 'APROBADA' : 'PENDIENTE'}</span>
+        <div style="font-size:11px;color:#64748b">${s.fecha_inicio} → ${s.fecha_fin} (${s.dias}d)</div>
+      </div>
+    </div>`;
+  }).join('');
+  el.innerHTML = `<div style="font-size:13px;font-weight:700;margin-bottom:8px">📅 ${iso}</div>
+    <div style="display:flex;flex-direction:column;gap:4px">${rows}</div>`;
+};
+
+// ── Vista Gantt de vacaciones ─────────────────────────────────────────────────
+function _autBuildGantt(pendientes, aprobadas) {
+  const allSols = [...pendientes, ...aprobadas].filter(s => s.fecha_inicio && s.fecha_fin);
+  if (!allSols.length) return '<div class="empty-state"><div class="empty-icon">📊</div><p>Sin solicitudes con fechas para mostrar</p></div>';
+
+  // Default: rango del mes actual si no hay filtro
+  if (!_autGanttFrom || !_autGanttTo) {
+    const now = new Date();
+    _autGanttFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+    _autGanttTo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  }
+
+  const filterBar = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <label style="font-size:12px;font-weight:600;color:#475569">Desde:</label>
+    <input type="date" value="${_autGanttFrom}" onchange="_autGanttFrom=this.value;autorizacionesView()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"/>
+    <label style="font-size:12px;font-weight:600;color:#475569">Hasta:</label>
+    <input type="date" value="${_autGanttTo}" onchange="_autGanttTo=this.value;autorizacionesView()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"/>
+    <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('mes')">Este mes</button>
+    <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('2sem')">2 semanas</button>
+    <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('3mes')">3 meses</button>
+  </div>`;
+
+  // Build date columns
+  const from = new Date(_autGanttFrom + 'T12:00:00');
+  const to = new Date(_autGanttTo + 'T12:00:00');
+  if (isNaN(from) || isNaN(to) || to < from) return filterBar + '<div class="empty-state"><p>Rango de fechas inválido</p></div>';
+
+  const dates = [];
+  for (let d = new Date(from); d <= to; d.setDate(d.getDate() + 1)) {
+    dates.push(d.toISOString().slice(0, 10));
+  }
+  if (dates.length > 90) return filterBar + '<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:10px;font-size:12px;color:#92400e">Rango muy amplio (máx 90 días). Ajusta las fechas.</div>';
+
+  // Filter sols that overlap the range
+  const filtered = allSols.filter(s => s.fecha_inicio <= _autGanttTo && s.fecha_fin >= _autGanttFrom);
+  // Group by employee
+  const empMap = new Map();
+  for (const s of filtered) {
+    const eid = s.employee_id || s.employee?.id || 0;
+    if (!empMap.has(eid)) empMap.set(eid, { name: s.employee?.full_name || '—', number: s.employee?.employee_number || '', position: s.position?.name || '', sols: [] });
+    empMap.get(eid).sols.push(s);
+  }
+  const employees = [...empMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+
+  if (!employees.length) return filterBar + '<div class="empty-state"><p>Sin vacaciones en este rango de fechas</p></div>';
+
+  // Build table
+  const thDates = dates.map(d => {
+    const dt = new Date(d + 'T12:00:00');
+    const dow = dt.getDay();
+    const dayNum = d.slice(8);
+    const isSun = dow === 0;
+    return `<th style="min-width:28px;max-width:28px;font-size:9px;text-align:center;padding:2px;writing-mode:vertical-lr;${isSun?'background:#fee2e2;color:#991b1b;':'color:#64748b;'}font-weight:${isSun?'700':'400'}">${dayNum}${dow===1?'<br><span style="font-size:7px">'+['Do','Lu','Ma','Mi','Ju','Vi','Sa'][dow]+'</span>':''}</th>`;
+  }).join('');
+
+  // Month headers
+  const monthSpans = [];
+  let curMonth = '', spanStart = 0;
+  const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  dates.forEach((d, i) => {
+    const ym = d.slice(0, 7);
+    if (ym !== curMonth) {
+      if (curMonth) monthSpans.push({ label: MESES_CORTO[Number(curMonth.slice(5))-1] + ' ' + curMonth.slice(0,4), span: i - spanStart });
+      curMonth = ym; spanStart = i;
+    }
+  });
+  if (curMonth) monthSpans.push({ label: MESES_CORTO[Number(curMonth.slice(5))-1] + ' ' + curMonth.slice(0,4), span: dates.length - spanStart });
+  const monthRow = monthSpans.map(ms => `<th colspan="${ms.span}" style="text-align:center;font-size:10px;background:#1e3a5f;color:#fff;padding:3px">${ms.label}</th>`).join('');
+
+  const bodyRows = employees.map(emp => {
+    const cells = dates.map(d => {
+      const dt = new Date(d + 'T12:00:00');
+      const isSun = dt.getDay() === 0;
+      const sol = emp.sols.find(s => s.fecha_inicio <= d && s.fecha_fin >= d);
+      if (sol) {
+        const bg = sol.estado === 'aprobada' ? '#16a34a' : '#3b82f6';
+        const label = sol.estado === 'aprobada' ? 'A' : 'P';
+        return `<td style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0" title="${escHtml(emp.name)} — ${sol.fecha_inicio}→${sol.fecha_fin} (${sol.dias}d) ${sol.estado}">${label}</td>`;
+      }
+      return `<td style="padding:0;${isSun?'background:#fef2f2':''}"></td>`;
+    }).join('');
+    return `<tr>
+      <td style="position:sticky;left:0;background:#fff;z-index:2;min-width:200px;padding:4px 8px;border-right:2px solid #e2e8f0;white-space:nowrap">
+        <strong style="font-size:12px">${escHtml(emp.name)}</strong>
+        <div style="font-size:9px;color:#64748b">${escHtml(emp.number)} · ${escHtml(emp.position)}</div>
+      </td>
+      ${cells}
+    </tr>`;
+  }).join('');
+
+  const legend = `<div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#64748b">
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#16a34a;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">A</span> Aprobada</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#3b82f6;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">P</span> Pendiente</span>
+  </div>`;
+
+  return filterBar + `<div style="overflow-x:auto;max-height:70vh">
+    <table class="data-table" style="font-size:11px;border-collapse:collapse">
+      <thead>
+        <tr><th style="position:sticky;left:0;z-index:3;background:#1e3a5f;color:#fff;min-width:200px">Empleado</th>${monthRow}</tr>
+        <tr><th style="position:sticky;left:0;z-index:3;background:#f1f5f9;min-width:200px"></th>${thDates}</tr>
+      </thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+  </div>` + legend;
+}
+
+window._autGanttQuick = function(preset) {
+  const now = new Date();
+  if (preset === 'mes') {
+    _autGanttFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
+    _autGanttTo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  } else if (preset === '2sem') {
+    const today = now.toLocaleDateString('en-CA');
+    _autGanttFrom = today;
+    const end = new Date(now.getTime() + 14 * 86400000);
+    _autGanttTo = end.toLocaleDateString('en-CA');
+  } else if (preset === '3mes') {
+    _autGanttFrom = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const endMonth = now.getMonth() + 3;
+    const endYear = now.getFullYear() + Math.floor(endMonth / 12);
+    const endM = endMonth % 12 || 12;
+    const lastDay = new Date(endYear, endM, 0).getDate();
+    _autGanttTo = `${endYear}-${String(endM).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+  }
+  autorizacionesView();
+};
 
 async function autorizacionesView() {
   const el = document.getElementById('app');
@@ -2908,6 +3140,8 @@ async function autorizacionesView() {
       `Vales T.Extra Asistencia <span class="badge" style="background:${ovPend.length>0?'#ea580c':'#6b7280'};font-size:10px;">${ovPend.length}</span>`,
       `Bonos <span class="badge" style="background:${bonoPend.length>0?'#7c3aed':'#6b7280'};font-size:10px;">${bonoPend.length}</span>`,
       `Vac. aprobadas <span class="badge" style="background:${cambiosPendOnly.length>0?'#d97706':'#16a34a'};font-size:10px;">${vacAprobadas.length}${cambiosPendOnly.length>0?' !':''}</span>`,
+      `📅 Calendario`,
+      `📊 Gantt`,
     ];
     const tabBar = tabs.map((t, i) =>
       `<button class="tab-btn ${autTabIdx===i?'active':''}" onclick="autTabIdx=${i};autorizacionesView()">${t}</button>`
@@ -2965,6 +3199,10 @@ async function autorizacionesView() {
              <table><thead><tr><th>Empleado</th><th>Bono</th><th>Fecha</th><th>Turno programado</th><th>Turno trabajado</th><th>Solicita</th><th>Acción</th></tr></thead><tbody>${bonoRows}</tbody></table>`
           : '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin bonos pendientes</p></div>')
         : '<div class="empty-state"><p>La autorización de bonos corresponde a RHH/Admin.</p></div>';
+    } else if (autTabIdx === 6) {
+      tabContent = _autBuildCalendario(vacPendientes, vacAprobadas);
+    } else if (autTabIdx === 7) {
+      tabContent = _autBuildGantt(vacPendientes, vacAprobadas);
     } else {
       const cambiosPendCount = cambiosPendOnly.length;
       tabContent = vacAprobContent
