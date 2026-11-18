@@ -2691,6 +2691,9 @@ let _autVacResumen = [];
 // Gantt/Calendario: rango de fechas
 let _autGanttFrom = '';
 let _autGanttTo = '';
+let _autGanttGroupBy = 'none'; // 'none' | 'puesto'
+let _autGanttFilterName = '';
+let _autGanttFilterPos = '';
 let _autCalMonth = new Date().getMonth();
 let _autCalYear = new Date().getFullYear();
 
@@ -2821,6 +2824,16 @@ window._autCalDayDetail = function(iso) {
 };
 
 // ── Vista Gantt de vacaciones ─────────────────────────────────────────────────
+const _STAFF_POSITIONS = new Set(['Administrador SGC','Administrador Sgc','Gerente de operaciones','Gerente de Operaciones',
+  'Ingeniero de Procesos','Ingeniero de procesos','Ingeniero de Calidad','Ingeniero de calidad',
+  'Ingeniero de Mantenimiento','Ingeniero de mantenimiento','SYMACompras','Administradora RRHH',
+  'Administradora Rrhh','Coordinador de Seguridad y Medio Ambiente','STAFF']);
+
+function _autGanttPuestoLabel(pos) {
+  if (!pos) return 'Sin puesto';
+  return _STAFF_POSITIONS.has(pos) ? 'Staff' : pos;
+}
+
 function _autBuildGantt(pendientes, aprobadas) {
   const allSols = [...pendientes, ...aprobadas].filter(s => s.fecha_inicio && s.fecha_fin);
   if (!allSols.length) return '<div class="empty-state"><div class="empty-icon">📊</div><p>Sin solicitudes con fechas para mostrar</p></div>';
@@ -2833,7 +2846,10 @@ function _autBuildGantt(pendientes, aprobadas) {
     _autGanttTo = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
   }
 
-  const filterBar = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+  // All positions for filter dropdown
+  const allPositions = [...new Set(allSols.map(s => _autGanttPuestoLabel(s.position?.name)))].sort();
+
+  const filterBar = `<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
     <label style="font-size:12px;font-weight:600;color:#475569">Desde:</label>
     <input type="date" value="${_autGanttFrom}" onchange="_autGanttFrom=this.value;autorizacionesView()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px"/>
     <label style="font-size:12px;font-weight:600;color:#475569">Hasta:</label>
@@ -2841,6 +2857,16 @@ function _autBuildGantt(pendientes, aprobadas) {
     <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('mes')">Este mes</button>
     <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('2sem')">2 semanas</button>
     <button class="btn-ghost" style="font-size:11px" onclick="_autGanttQuick('3mes')">3 meses</button>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <input type="text" placeholder="Buscar empleado..." value="${escHtml(_autGanttFilterName)}" oninput="_autGanttFilterName=this.value;autorizacionesView()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px;width:180px"/>
+    <select onchange="_autGanttFilterPos=this.value;autorizacionesView()" style="padding:5px 8px;border:1px solid #cbd5e1;border-radius:6px;font-size:12px">
+      <option value="">Todos los puestos</option>
+      ${allPositions.map(p => `<option value="${escHtml(p)}" ${_autGanttFilterPos===p?'selected':''}>${escHtml(p)}</option>`).join('')}
+    </select>
+    <label style="font-size:12px;color:#475569;display:flex;align-items:center;gap:4px;cursor:pointer">
+      <input type="checkbox" ${_autGanttGroupBy==='puesto'?'checked':''} onchange="_autGanttGroupBy=this.checked?'puesto':'none';autorizacionesView()"/> Agrupar por puesto
+    </label>
   </div>`;
 
   // Build date columns
@@ -2860,20 +2886,30 @@ function _autBuildGantt(pendientes, aprobadas) {
   const empMap = new Map();
   for (const s of filtered) {
     const eid = s.employee_id || s.employee?.id || 0;
-    if (!empMap.has(eid)) empMap.set(eid, { name: s.employee?.full_name || '—', number: s.employee?.employee_number || '', position: s.position?.name || '', sols: [] });
+    if (!empMap.has(eid)) empMap.set(eid, { name: s.employee?.full_name || '—', number: s.employee?.employee_number || '', position: s.position?.name || '', posLabel: _autGanttPuestoLabel(s.position?.name), dept: s.department?.name || '', sols: [] });
     empMap.get(eid).sols.push(s);
   }
-  const employees = [...empMap.values()].sort((a, b) => a.name.localeCompare(b.name));
+  let employees = [...empMap.values()];
 
-  if (!employees.length) return filterBar + '<div class="empty-state"><p>Sin vacaciones en este rango de fechas</p></div>';
+  // Apply filters
+  if (_autGanttFilterName) {
+    const q = _autGanttFilterName.toLowerCase();
+    employees = employees.filter(e => e.name.toLowerCase().includes(q) || e.number.includes(q));
+  }
+  if (_autGanttFilterPos) {
+    employees = employees.filter(e => e.posLabel === _autGanttFilterPos);
+  }
+  employees.sort((a, b) => a.name.localeCompare(b.name));
 
-  // Build table
+  if (!employees.length) return filterBar + '<div class="empty-state"><p>Sin vacaciones en este rango con esos filtros</p></div>';
+
+  // Build date headers
   const thDates = dates.map(d => {
     const dt = new Date(d + 'T12:00:00');
     const dow = dt.getDay();
     const dayNum = d.slice(8);
     const isSun = dow === 0;
-    return `<th style="min-width:28px;max-width:28px;font-size:9px;text-align:center;padding:2px;writing-mode:vertical-lr;${isSun?'background:#fee2e2;color:#991b1b;':'color:#64748b;'}font-weight:${isSun?'700':'400'}">${dayNum}${dow===1?'<br><span style="font-size:7px">'+['Do','Lu','Ma','Mi','Ju','Vi','Sa'][dow]+'</span>':''}</th>`;
+    return `<th style="min-width:28px;max-width:28px;font-size:9px;text-align:center;padding:2px;writing-mode:vertical-lr;${isSun?'background:#fee2e2;color:#991b1b;':'color:#64748b;'}font-weight:${isSun?'700':'400'}">${dayNum}</th>`;
   }).join('');
 
   // Month headers
@@ -2890,42 +2926,96 @@ function _autBuildGantt(pendientes, aprobadas) {
   if (curMonth) monthSpans.push({ label: MESES_CORTO[Number(curMonth.slice(5))-1] + ' ' + curMonth.slice(0,4), span: dates.length - spanStart });
   const monthRow = monthSpans.map(ms => `<th colspan="${ms.span}" style="text-align:center;font-size:10px;background:#1e3a5f;color:#fff;padding:3px">${ms.label}</th>`).join('');
 
-  const bodyRows = employees.map(emp => {
+  // Build employee row
+  const buildEmpRow = emp => {
+    const hasPend = emp.sols.some(s => s.estado === 'pendiente');
+    const pendSols = emp.sols.filter(s => s.estado === 'pendiente');
     const cells = dates.map(d => {
-      const dt = new Date(d + 'T12:00:00');
-      const isSun = dt.getDay() === 0;
+      const isSun = new Date(d + 'T12:00:00').getDay() === 0;
       const sol = emp.sols.find(s => s.fecha_inicio <= d && s.fecha_fin >= d);
       if (sol) {
-        const bg = sol.estado === 'aprobada' ? '#16a34a' : '#3b82f6';
-        const label = sol.estado === 'aprobada' ? 'A' : 'P';
-        return `<td style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0" title="${escHtml(emp.name)} — ${sol.fecha_inicio}→${sol.fecha_fin} (${sol.dias}d) ${sol.estado}">${label}</td>`;
+        const isPend = sol.estado === 'pendiente';
+        const bg = isPend ? '#3b82f6' : '#16a34a';
+        const label = isPend ? 'P' : 'A';
+        const click = isPend ? ` onclick="_autGanttAction(${sol.id})" style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0;cursor:pointer"` : ` style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0"`;
+        return `<td${click} title="${escHtml(emp.name)} — ${sol.fecha_inicio}→${sol.fecha_fin} (${sol.dias}d) ${sol.estado}${sol.created_at ? ' | Solicitado: '+sol.created_at : ''}">${label}</td>`;
       }
       return `<td style="padding:0;${isSun?'background:#fef2f2':''}"></td>`;
     }).join('');
-    return `<tr>
-      <td style="position:sticky;left:0;background:#fff;z-index:2;min-width:200px;padding:4px 8px;border-right:2px solid #e2e8f0;white-space:nowrap">
+    const pendInfo = pendSols.map(s =>
+      `<div style="font-size:8px;color:#3b82f6;line-height:1.2">${s.fecha_inicio}→${s.fecha_fin} (${s.dias}d)${s.created_at ? ' · sol:'+s.created_at.slice(0,10) : ''}</div>`
+    ).join('');
+    const pendBtns = hasPend ? pendSols.map(s =>
+      `<button style="font-size:8px;padding:1px 4px;background:#16a34a;color:#fff;border:none;border-radius:3px;cursor:pointer;margin:1px" onclick="aprobarVacSol(${s.id},'aprobada')" title="Aprobar ${s.fecha_inicio}→${s.fecha_fin}">✓</button><button style="font-size:8px;padding:1px 4px;background:#dc2626;color:#fff;border:none;border-radius:3px;cursor:pointer;margin:1px" onclick="aprobarVacSol(${s.id},'rechazada')" title="Rechazar">✗</button>`
+    ).join('') : '';
+    return `<tr${hasPend ? ' style="background:#eff6ff"' : ''}>
+      <td style="position:sticky;left:0;background:${hasPend?'#eff6ff':'#fff'};z-index:2;min-width:220px;padding:4px 8px;border-right:2px solid #e2e8f0;white-space:nowrap">
         <strong style="font-size:12px">${escHtml(emp.name)}</strong>
-        <div style="font-size:9px;color:#64748b">${escHtml(emp.number)} · ${escHtml(emp.position)}</div>
+        <div style="font-size:9px;color:#64748b">${escHtml(emp.number)} · ${escHtml(emp.posLabel)}</div>
+        ${pendInfo}${pendBtns ? `<div style="margin-top:2px">${pendBtns}</div>` : ''}
       </td>
       ${cells}
     </tr>`;
-  }).join('');
+  };
+
+  // Build group header row
+  const buildGroupHeader = (label, count) => {
+    const emptyCols = dates.map(() => '<td style="padding:0"></td>').join('');
+    return `<tr>
+      <td style="position:sticky;left:0;z-index:2;background:#1e3a5f;color:#fff;font-weight:700;font-size:12px;padding:6px 10px;border-right:2px solid #e2e8f0;white-space:nowrap">${escHtml(label)} <span style="font-weight:400;font-size:10px;opacity:.7">(${count})</span></td>
+      ${emptyCols}
+    </tr>`;
+  };
+
+  let bodyRows = '';
+  if (_autGanttGroupBy === 'puesto') {
+    // Group employees by posLabel
+    const groups = new Map();
+    for (const emp of employees) {
+      const key = emp.posLabel;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(emp);
+    }
+    // Sort groups: Staff last
+    const sortedKeys = [...groups.keys()].sort((a, b) => {
+      if (a === 'Staff') return 1;
+      if (b === 'Staff') return -1;
+      return a.localeCompare(b);
+    });
+    for (const key of sortedKeys) {
+      const emps = groups.get(key);
+      bodyRows += buildGroupHeader(key, emps.length);
+      for (const emp of emps) bodyRows += buildEmpRow(emp);
+    }
+  } else {
+    bodyRows = employees.map(buildEmpRow).join('');
+  }
 
   const legend = `<div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#64748b">
     <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#16a34a;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">A</span> Aprobada</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#3b82f6;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">P</span> Pendiente</span>
+    <span style="color:#94a3b8">${employees.length} empleado${employees.length!==1?'s':''}</span>
   </div>`;
 
   return filterBar + `<div style="overflow-x:auto;max-height:70vh">
     <table class="data-table" style="font-size:11px;border-collapse:collapse">
       <thead>
-        <tr><th style="position:sticky;left:0;z-index:3;background:#1e3a5f;color:#fff;min-width:200px">Empleado</th>${monthRow}</tr>
-        <tr><th style="position:sticky;left:0;z-index:3;background:#f1f5f9;min-width:200px"></th>${thDates}</tr>
+        <tr><th style="position:sticky;left:0;z-index:3;background:#1e3a5f;color:#fff;min-width:220px">Empleado</th>${monthRow}</tr>
+        <tr><th style="position:sticky;left:0;z-index:3;background:#f1f5f9;min-width:220px"></th>${thDates}</tr>
       </thead>
       <tbody>${bodyRows}</tbody>
     </table>
   </div>` + legend;
 }
+
+window._autGanttAction = function(solId) {
+  const sol = _autVacAllSols.find(s => s.id === solId);
+  if (!sol || sol.estado !== 'pendiente') return;
+  const name = sol.employee?.full_name || '—';
+  const r = confirm(`${name}\n${sol.fecha_inicio} → ${sol.fecha_fin} (${sol.dias} días)\n${sol.created_at ? 'Solicitado: ' + sol.created_at.slice(0,10) : ''}\n\n¿Aprobar? (Cancelar = Rechazar)`);
+  if (r) aprobarVacSol(solId, 'aprobada');
+  else if (confirm('¿Rechazar esta solicitud?')) aprobarVacSol(solId, 'rechazada');
+};
 
 window._autGanttQuick = function(preset) {
   const now = new Date();
