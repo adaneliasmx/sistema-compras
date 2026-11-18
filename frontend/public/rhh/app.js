@@ -2688,6 +2688,7 @@ let _autShowProgramar = false;
 // Cache de datos para la vista
 let _autVacAllSols = [];
 let _autVacResumen = [];
+let _autHolidays = [];
 // Gantt/Calendario: rango de fechas
 let _autGanttFrom = '';
 let _autGanttTo = '';
@@ -2764,12 +2765,17 @@ function _autBuildCalendario(pendientes, aprobadas) {
     const peCount = entries.filter(e => e.estado === 'pendiente').length;
     const dow = new Date(y, m, d).getDay();
     const isWeekend = dow === 0;
+    const holMatch = (_autHolidays || []).find(h => h.date === iso);
+    const isHoliday = !!holMatch;
 
     let bg = '#fff', border = '1px solid #f1f5f9';
-    if (isWeekend) bg = '#fef2f2';
+    if (isHoliday) bg = '#e0e7ff';
+    else if (isWeekend) bg = '#fef2f2';
     else if (apCount && peCount) bg = '#fef9c3';
     else if (apCount) bg = '#f0fdf4';
     else if (peCount) bg = '#eff6ff';
+
+    const holLabel = isHoliday ? `<div style="font-size:7px;color:#4338ca;font-weight:700;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%">${escHtml(holMatch.name.slice(0,15))}</div>` : '';
 
     const dots = entries.slice(0, 3).map(e =>
       `<div style="font-size:7px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;color:${e.estado==='aprobada'?'#166534':'#1d4ed8'}">${escHtml(e.name.split(' ').slice(0,2).join(' '))}</div>`
@@ -2778,7 +2784,8 @@ function _autBuildCalendario(pendientes, aprobadas) {
 
     grid += `<div style="border:${border};border-radius:6px;background:${bg};min-height:60px;padding:3px;cursor:${entries.length?'pointer':'default'}"
       ${entries.length ? `onclick="_autCalDayDetail('${iso}')"` : ''}>
-      <div style="font-size:12px;font-weight:600;color:${isWeekend?'#dc2626':'#334155'}">${d}</div>
+      <div style="font-size:12px;font-weight:600;color:${isHoliday?'#4338ca':isWeekend?'#dc2626':'#334155'}">${d}</div>
+      ${holLabel}
       ${dots}${more}
       ${apCount || peCount ? `<div style="display:flex;gap:2px;margin-top:1px">
         ${apCount ? `<span style="background:#16a34a;color:#fff;border-radius:3px;padding:0 3px;font-size:8px;font-weight:700">${apCount}</span>` : ''}
@@ -2792,6 +2799,7 @@ function _autBuildCalendario(pendientes, aprobadas) {
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#16a34a"></span> Aprobada</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#2563eb"></span> Pendiente</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#fef9c3;border:1px solid #fcd34d"></span> Ambas</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:3px;background:#e0e7ff"></span> Festivo</span>
   </div>`;
 
   return nav + grid + legend + '<div id="aut-cal-detail" style="margin-top:12px"></div>';
@@ -2903,13 +2911,21 @@ function _autBuildGantt(pendientes, aprobadas) {
 
   if (!employees.length) return filterBar + '<div class="empty-state"><p>Sin vacaciones en este rango con esos filtros</p></div>';
 
+  // Holiday set for quick lookup
+  const holidaySet = new Set((_autHolidays || []).map(h => h.date));
+  const holidayName = d => { const h = (_autHolidays || []).find(x => x.date === d); return h ? h.name : ''; };
+
   // Build date headers
   const thDates = dates.map(d => {
     const dt = new Date(d + 'T12:00:00');
     const dow = dt.getDay();
     const dayNum = d.slice(8);
     const isSun = dow === 0;
-    return `<th style="min-width:28px;max-width:28px;font-size:9px;text-align:center;padding:2px;writing-mode:vertical-lr;${isSun?'background:#fee2e2;color:#991b1b;':'color:#64748b;'}font-weight:${isSun?'700':'400'}">${dayNum}</th>`;
+    const isHol = holidaySet.has(d);
+    const bg = isHol ? 'background:#e0e7ff;color:#4338ca;' : isSun ? 'background:#fee2e2;color:#991b1b;' : 'color:#64748b;';
+    const fw = (isSun || isHol) ? '700' : '400';
+    const title = isHol ? ` title="${escHtml(holidayName(d))}"` : '';
+    return `<th style="min-width:28px;max-width:28px;font-size:9px;text-align:center;padding:2px;writing-mode:vertical-lr;${bg}font-weight:${fw}"${title}>${dayNum}${isHol?'*':''}</th>`;
   }).join('');
 
   // Month headers
@@ -2940,6 +2956,8 @@ function _autBuildGantt(pendientes, aprobadas) {
         const click = isPend ? ` onclick="_autGanttAction(${sol.id})" style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0;cursor:pointer"` : ` style="background:${bg};color:#fff;text-align:center;font-size:10px;font-weight:700;padding:0"`;
         return `<td${click} title="${escHtml(emp.name)} — ${sol.fecha_inicio}→${sol.fecha_fin} (${sol.dias}d) ${sol.estado}${sol.created_at ? ' | Solicitado: '+sol.created_at : ''}">${label}</td>`;
       }
+      const isHol = holidaySet.has(d);
+      if (isHol) return `<td style="padding:0;background:#e0e7ff;text-align:center;font-size:8px;color:#4338ca;font-weight:700" title="${escHtml(holidayName(d))}">F</td>`;
       return `<td style="padding:0;${isSun?'background:#fef2f2':''}"></td>`;
     }).join('');
     const pendInfo = pendSols.map(s =>
@@ -2994,6 +3012,7 @@ function _autBuildGantt(pendientes, aprobadas) {
   const legend = `<div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#64748b">
     <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#16a34a;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">A</span> Aprobada</span>
     <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#3b82f6;color:#fff;text-align:center;font-size:9px;font-weight:700;line-height:14px">P</span> Pendiente</span>
+    <span style="display:flex;align-items:center;gap:4px"><span style="width:14px;height:14px;border-radius:3px;background:#e0e7ff;color:#4338ca;text-align:center;font-size:9px;font-weight:700;line-height:14px">F</span> Festivo</span>
     <span style="color:#94a3b8">${employees.length} empleado${employees.length!==1?'s':''}</span>
   </div>`;
 
@@ -3045,15 +3064,18 @@ async function autorizacionesView() {
   try {
     const isRhAdmin = ['rh','admin'].includes(state.user?.role);
     const fetchResumen = (autTabIdx === 5) ? api('/api/rhh/nomina/vac-solicitudes/resumen') : Promise.resolve(null);
+    const fetchHolidays = (autTabIdx === 6 || autTabIdx === 7) ? api('/api/rhh/catalogo/holidays').catch(() => []) : Promise.resolve(null);
 
-    const [vacAll, teSols, incidences, ovVales, bonoVales, vacResumen] = await Promise.all([
+    const [vacAll, teSols, incidences, ovVales, bonoVales, vacResumen, holidays] = await Promise.all([
       api('/api/rhh/nomina/vac-solicitudes?estado=pendiente,aprobada'),
       api('/api/rhh/nomina/te-solicitudes'),
       api(`/api/rhh/incidences?status=pendiente&date_from=${new Date().getFullYear()}-01-01`),
       isRhAdmin ? api('/api/rhh/asistencia/overtime-vales?status=pendiente') : Promise.resolve([]),
       isRhAdmin ? api('/api/rhh/asistencia/bonos?status=pendiente') : Promise.resolve([]),
       fetchResumen,
+      fetchHolidays,
     ]);
+    if (holidays) _autHolidays = holidays;
 
     _autVacAllSols = vacAll || [];
     if (vacResumen) _autVacResumen = vacResumen;
