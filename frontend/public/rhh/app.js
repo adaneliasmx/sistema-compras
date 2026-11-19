@@ -12148,11 +12148,16 @@ async function init() {
 // MODULO CHECADOR — Reporte Semanal Integrado
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Seriales conocidos de checadores ZKTeco → tipo
+const CHECADOR_SERIALS = {
+  'AYK8261100155': 'asistencia',
+  'AYK8261100235': 'comedor',
+};
+
 const checadorState = {
   weekStart: null,
-  asistFile: null,   // { name, text, count }
-  comedorFile: null,  // { name, text, count }
-  report: null,       // respuesta de analyze-week
+  files: [],        // [{ name, text, count, type: 'asistencia'|'comedor'|'desconocido' }]
+  report: null,
   filterShift: '',
   filterMissing: false,
   filterNoComedor: false,
@@ -12181,16 +12186,27 @@ async function checadorView() {
   renderChecador();
 }
 
+function chDetectType(filename) {
+  const upper = filename.toUpperCase();
+  for (const [serial, type] of Object.entries(CHECADOR_SERIALS)) {
+    if (upper.includes(serial)) return type;
+  }
+  return 'desconocido';
+}
+
 async function chAnalyze() {
   const ws = checadorState.weekStart;
-  if (!checadorState.asistFile && !checadorState.comedorFile) {
-    toast('Sube al menos un archivo .dat', 'warning'); return;
-  }
+  const files = checadorState.files;
+  if (files.length === 0) { toast('Sube al menos un archivo .dat', 'warning'); return; }
+  if (files.some(f => f.type === 'desconocido')) { toast('Asigna tipo a todos los archivos antes de analizar', 'warning'); return; }
+
   toast('Analizando...', 'info');
   try {
+    const asistTexts = files.filter(f => f.type === 'asistencia').map(f => f.text);
+    const comedorTexts = files.filter(f => f.type === 'comedor').map(f => f.text);
     const body = { week_start: ws };
-    if (checadorState.asistFile) body.asistencia_text = checadorState.asistFile.text;
-    if (checadorState.comedorFile) body.comedor_text = checadorState.comedorFile.text;
+    if (asistTexts.length) body.asistencia_text = asistTexts.join('\n');
+    if (comedorTexts.length) body.comedor_text = comedorTexts.join('\n');
     const data = await api('/api/rhh/checador/analyze-week', {
       method: 'POST', body: JSON.stringify(body),
     });
@@ -12200,24 +12216,37 @@ async function chAnalyze() {
   } catch (err) { toast(err.message, 'error'); }
 }
 
-function chLoadFile(input, type) {
-  const file = input.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    const text = reader.result;
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
-    const info = { name: file.name, text, count: lines.length };
-    if (type === 'asistencia') checadorState.asistFile = info;
-    else checadorState.comedorFile = info;
-    renderChecador();
-  };
-  reader.readAsText(file);
+function chLoadFiles(input) {
+  const fileList = Array.from(input.files);
+  if (!fileList.length) return;
+  let pending = fileList.length;
+  for (const file of fileList) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = reader.result;
+      const lines = text.split(/\r?\n/).filter(l => l.trim());
+      const type = chDetectType(file.name);
+      checadorState.files.push({ name: file.name, text, count: lines.length, type });
+      pending--;
+      if (pending === 0) renderChecador();
+    };
+    reader.readAsText(file);
+  }
 }
 
-function chClearFile(type) {
-  if (type === 'asistencia') checadorState.asistFile = null;
-  else checadorState.comedorFile = null;
+function chRemoveFile(idx) {
+  checadorState.files.splice(idx, 1);
+  checadorState.report = null;
+  renderChecador();
+}
+
+function chChangeType(idx, newType) {
+  checadorState.files[idx].type = newType;
+  renderChecador();
+}
+
+function chClearFiles() {
+  checadorState.files = [];
   checadorState.report = null;
   renderChecador();
 }
@@ -12257,26 +12286,35 @@ function renderChecador() {
   const MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const weekLabel = wsD.getDate() + ' ' + MES[wsD.getMonth()] + ' - ' + weD.getDate() + ' ' + MES[weD.getMonth()] + ' ' + weD.getFullYear();
 
-  const af = checadorState.asistFile;
-  const cf = checadorState.comedorFile;
+  const files = checadorState.files;
   const rpt = checadorState.report;
 
   // Zona de carga
-  const fileBox = (label, icon, info, type) => {
-    if (info) {
-      return '<div style="flex:1;min-width:220px;border:1px solid #d1d5db;border-radius:10px;padding:12px 16px;background:#f9fafb;">'
-        + '<div style="font-weight:700;font-size:13px;margin-bottom:6px;">' + icon + ' ' + label + '</div>'
-        + '<div style="font-size:12px;color:#374151;">' + info.name + '</div>'
-        + '<div style="font-size:11px;color:#6b7280;">' + info.count.toLocaleString() + ' registros</div>'
-        + '<button class="btn-ghost" style="font-size:11px;margin-top:6px;color:#dc2626;" onclick="chClearFile(\'' + type + '\')">Quitar</button>'
-        + '</div>';
-    }
-    return '<div style="flex:1;min-width:220px;border:2px dashed #d1d5db;border-radius:10px;padding:16px;text-align:center;background:#fafafa;">'
-      + '<div style="font-weight:700;font-size:13px;margin-bottom:8px;">' + icon + ' ' + label + '</div>'
-      + '<label class="btn-primary" style="font-size:12px;padding:6px 14px;cursor:pointer;">Seleccionar .dat'
-      + '<input type="file" accept=".dat,.csv,.txt" style="display:none;" onchange="chLoadFile(this,\'' + type + '\')" /></label>'
-      + '</div>';
-  };
+  const TYPE_LABELS = { asistencia: '&#128203; Asistencia', comedor: '&#127860; Comedor', desconocido: '&#10067; Sin asignar' };
+  const TYPE_COLORS = { asistencia: '#1d4ed8', comedor: '#059669', desconocido: '#dc2626' };
+
+  let fileListHtml = '';
+  if (files.length > 0) {
+    fileListHtml = '<table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:12px;">'
+      + '<thead><tr style="background:#f1f5f9;"><th style="padding:6px 10px;text-align:left;">Archivo</th><th style="padding:6px 10px;text-align:right;">Registros</th><th style="padding:6px 10px;text-align:center;">Tipo</th><th style="padding:6px 10px;"></th></tr></thead><tbody>';
+    files.forEach((f, i) => {
+      const typeSel = '<select style="font-size:11px;padding:3px 6px;border:1px solid ' + TYPE_COLORS[f.type] + ';border-radius:6px;color:' + TYPE_COLORS[f.type] + ';font-weight:600;" onchange="chChangeType(' + i + ',this.value)">'
+        + '<option value="asistencia"' + (f.type === 'asistencia' ? ' selected' : '') + '>Asistencia</option>'
+        + '<option value="comedor"' + (f.type === 'comedor' ? ' selected' : '') + '>Comedor</option>'
+        + '<option value="desconocido"' + (f.type === 'desconocido' ? ' selected' : '') + '>Sin asignar</option>'
+        + '</select>';
+      fileListHtml += '<tr style="border-bottom:1px solid #e5e7eb;">'
+        + '<td style="padding:6px 10px;">' + f.name + '</td>'
+        + '<td style="padding:6px 10px;text-align:right;font-weight:600;">' + f.count.toLocaleString() + '</td>'
+        + '<td style="padding:6px 10px;text-align:center;">' + typeSel + '</td>'
+        + '<td style="padding:6px 10px;text-align:center;"><button style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;" onclick="chRemoveFile(' + i + ')" title="Quitar">&#10005;</button></td>'
+        + '</tr>';
+    });
+    fileListHtml += '</tbody></table>';
+  }
+
+  const hasUnknown = files.some(f => f.type === 'desconocido');
+  const analyzeDisabled = files.length === 0 || hasUnknown;
 
   const unmappedHtml = rpt && rpt.unmapped && rpt.unmapped.length > 0
     ? '<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:8px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">'
@@ -12285,11 +12323,15 @@ function renderChecador() {
     : '';
 
   const uploadSection = '<div class="card section" style="margin-bottom:16px;">'
-    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
-    + fileBox('Asistencia (.dat)', '&#128203;', af, 'asistencia')
-    + fileBox('Comedor (.dat)', '&#127860;', cf, 'comedor')
+    + '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">'
+    + '<label class="btn-primary" style="font-size:13px;padding:8px 16px;cursor:pointer;">&#128194; Seleccionar archivos .dat'
+    + '<input type="file" accept=".dat,.csv,.txt" multiple style="display:none;" onchange="chLoadFiles(this)" /></label>'
+    + (files.length > 0 ? '<button class="btn-ghost" style="font-size:11px;color:#dc2626;" onclick="chClearFiles()">Quitar todos</button>' : '')
+    + '<span style="font-size:12px;color:#6b7280;">' + (files.length === 0 ? 'Selecciona uno o mas archivos .dat del checador' : files.length + ' archivo' + (files.length > 1 ? 's' : '') + ' cargado' + (files.length > 1 ? 's' : '')) + '</span>'
     + '</div>'
-    + (af || cf ? '<button class="btn-primary" style="font-size:13px;padding:8px 20px;" onclick="chAnalyze()">Analizar semana</button>' : '')
+    + fileListHtml
+    + (hasUnknown ? '<div style="padding:6px 12px;background:#fee2e2;border-radius:8px;font-size:12px;color:#991b1b;margin-bottom:10px;">Asigna el tipo (Asistencia o Comedor) a todos los archivos antes de analizar.</div>' : '')
+    + (files.length > 0 ? '<button class="btn-primary" style="font-size:13px;padding:8px 20px;' + (analyzeDisabled ? 'opacity:.5;pointer-events:none;' : '') + '"' + (analyzeDisabled ? ' disabled' : '') + ' onclick="chAnalyze()">Analizar semana</button>' : '')
     + unmappedHtml
     + '</div>';
 
