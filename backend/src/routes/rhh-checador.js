@@ -630,22 +630,39 @@ function buildWeekReport(db, week_start) {
 
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-  // ── Misma plantilla que weekly-attendance (ROL + catálogo + snapshot) ──
-  const weekRols = (db.rhh_weekly_rol || []).filter(r => r.week_start === week_start && r.shift_id != null);
-  const weekRolIds = new Set(weekRols.map(r => r.id));
-  const assignedForWeek = (db.rhh_rol_assignments || [])
-    .filter(a => weekRolIds.has(a.rol_id))
-    .map(a => a.employee_id);
-  const template = buildAttendanceEmployeesForWeek(db, week_start, assignedForWeek);
+  // ── Plantilla: ROL puestos (shift_id != null) + attendance_control (shift_id == null) ──
+  const allRols = db.rhh_weekly_rol || [];
+  const allAsigs = db.rhh_rol_assignments || [];
+
+  // ROL por puestos (shift_id en el rol)
+  const scheduleRols = allRols.filter(r => r.week_start === week_start && r.shift_id != null);
+  const scheduleRolIds = new Set(scheduleRols.map(r => r.id));
+  const scheduleAssigned = allAsigs.filter(a => scheduleRolIds.has(a.rol_id)).map(a => a.employee_id);
+
+  // ROL attendance_control (shift_id == null en el rol, shift_id en cada assignment)
+  const attControlRol = allRols.find(r => r.week_start === week_start && r.shift_id == null);
+  const attControlAsigs = attControlRol
+    ? allAsigs.filter(a => a.rol_id === attControlRol.id)
+    : [];
+  const attControlAssigned = attControlAsigs.map(a => a.employee_id);
+
+  // Unir todos los employee IDs asignados para incluirlos en la plantilla
+  const allAssigned = [...new Set([...scheduleAssigned, ...attControlAssigned])];
+  const template = buildAttendanceEmployeesForWeek(db, week_start, allAssigned);
   const employees = template.employees || [];
 
-  // DEBUG: diagnóstico de turnos
-  const shiftStats = {};
-  for (const e of employees) {
-    const k = e.shift_id == null ? 'null' : String(e.shift_id);
-    shiftStats[k] = (shiftStats[k] || 0) + 1;
+  // Mapa de turno por assignment del Control de Asistencias (prioridad)
+  const attControlShiftMap = {};  // employee_id → shift_id
+  for (const a of attControlAsigs) {
+    if (a.shift_id != null) attControlShiftMap[a.employee_id] = a.shift_id;
   }
-  console.log(`[checador] buildWeekReport week=${week_start} emps=${employees.length} rols=${weekRols.length} assigned=${assignedForWeek.length} shifts:`, shiftStats);
+  // Mapa de turno por ROL puestos
+  const scheduleShiftMap = {};
+  for (const rol of scheduleRols) {
+    for (const a of allAsigs.filter(x => x.rol_id === rol.id)) {
+      scheduleShiftMap[a.employee_id] = rol.shift_id;
+    }
+  }
 
   const attendanceRecords = db.rhh_attendance || [];
   const incidences = db.rhh_incidences || [];
@@ -673,8 +690,9 @@ function buildWeekReport(db, week_start) {
   for (const emp of employees) {
     if (emp.template_status === 'baja') continue;
 
-    // Turno: exactamente igual que weekly-attendance (emp.shift_id del template)
-    const shift = shifts.find(s => s.id === emp.shift_id) || null;
+    // Turno: 1) assignment Control Asistencias, 2) ROL puestos, 3) catálogo
+    const resolvedShiftId = attControlShiftMap[emp.id] || scheduleShiftMap[emp.id] || emp.shift_id || null;
+    const shift = resolvedShiftId ? (shifts.find(s => s.id === resolvedShiftId) || null) : null;
 
     const days = [];
     let empScheduled = 0, empChecked = 0, empTE = 0;
@@ -835,7 +853,7 @@ function buildWeekReport(db, week_start) {
       id: emp.id,
       employee_number: emp.employee_number || '',
       full_name: emp.full_name,
-      shift_id: emp.shift_id || null,
+      shift_id: resolvedShiftId,
       shift_code: shift ? shift.code : '--',
       shift_name: shift ? shift.name : 'Sin turno',
       days,
@@ -844,8 +862,8 @@ function buildWeekReport(db, week_start) {
       te_total: empTE,
     };
 
-    // Agrupar por shift_id — idéntico a weekly-attendance (línea 760)
-    const groupKey = emp.shift_id || 'none';
+    // Agrupar por turno resuelto (Control Asist. → ROL → catálogo)
+    const groupKey = resolvedShiftId || 'none';
     if (!reportByShift[groupKey]) {
       reportByShift[groupKey] = { shift: shift || reportByShift['none'].shift, employees: [] };
     }
