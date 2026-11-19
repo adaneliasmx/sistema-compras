@@ -652,6 +652,20 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
   const template = buildAttendanceEmployeesForWeek(db, week_start);
   const templateEmps = template.employees || [];
 
+  // ── Construir mapa de turnos desde ROL Semanal ──
+  // rhh_weekly_rol: { id, week_start, shift_id }
+  // rhh_rol_assignments: { rol_id, slot_id, employee_id }
+  const weeklyRols = db.rhh_weekly_rol || [];
+  const rolAssignments = db.rhh_rol_assignments || [];
+  const rolShiftMap = {}; // employee_id → shift_id (desde ROL Semanal)
+  const rolsForWeek = weeklyRols.filter(r => r.week_start === week_start && r.shift_id != null);
+  for (const rol of rolsForWeek) {
+    const assignments = rolAssignments.filter(a => a.rol_id === rol.id);
+    for (const a of assignments) {
+      rolShiftMap[a.employee_id] = rol.shift_id;
+    }
+  }
+
   // Agrupar checadas de asistencia por employeeId + fecha → sesiones (entrada/salida)
   const asistByEmpDate = {}; // `${empId}_${date}` → [checadas]
   for (const r of asistWeek) {
@@ -683,9 +697,43 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
   let totalComplete = 0, totalMissing = 0, totalPartial = 0, totalNoComedor = 0, totalRetardos = 0;
   let totalScheduledDays = 0;
 
+  // Función para detectar turno por hora de entrada (fallback final)
+  const detectShift = (entryTimeMin) => {
+    if (entryTimeMin == null) return null;
+    let best = null, bestDiff = Infinity;
+    for (const s of shifts) {
+      if (!s.start_time) continue;
+      const [sh, sm] = s.start_time.split(':').map(Number);
+      const startMin = sh * 60 + sm;
+      let diff = Math.abs(entryTimeMin - startMin);
+      if (diff > 720) diff = 1440 - diff; // nocturno wrap
+      if (diff < bestDiff && diff <= 120) { // ±2h tolerancia
+        bestDiff = diff;
+        best = s;
+      }
+    }
+    return best;
+  };
+
   for (const emp of templateEmps) {
     if (emp.template_status === 'baja') continue;
-    const shift = shifts.find(s => s.id === emp.shift_id) || null;
+    // Prioridad: 1) ROL Semanal, 2) catálogo empleado, 3) detectar por hora entrada
+    const resolvedShiftId = rolShiftMap[emp.id] || emp.shift_id || null;
+    let shift = resolvedShiftId ? (shifts.find(s => s.id === resolvedShiftId) || null) : null;
+
+    // Fallback: detectar por primera checada de la semana
+    if (!shift) {
+      const empAsistKeys = weekDates.map(d => `${emp.id}_${d.date}`);
+      for (const k of empAsistKeys) {
+        const checks = asistByEmpDate[k];
+        if (checks && checks.length > 0) {
+          const sorted = [...checks].sort((a, b) => a.timeMin - b.timeMin);
+          shift = detectShift(sorted[0].timeMin);
+          if (shift) break;
+        }
+      }
+    }
+
     const workDays = shift ? (shift.work_days || []) : [];
 
     // Revisar si tiene sobrescritura de turno por fecha
