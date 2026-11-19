@@ -478,16 +478,6 @@ const port = Number(process.env.PORT || 3000);
 Promise.all([initDb(), initRhhDb(), initValesDb(), initProduccionDb(), initInventariosDb(), initMantDb(), initValDb(), initFlujoDb(), initPlannerDb()])
   .then(() => ensureDemoEmployee())
   .then(() => {
-    // ONE-TIME: reset super admin password — REMOVE after confirmed
-    try {
-      const bcrypt = require('bcryptjs');
-      const { read: _r, write: _w } = require('./db');
-      const _db = _r();
-      const _u = (_db.users || []).find(u => (u.email || '').toLowerCase() === 'aelias@cuesto.com.mx');
-      if (_u) { _u.password_hash = bcrypt.hashSync('0000', 10); _w(_db); console.log('[INIT] Super admin password reset OK'); }
-    } catch (e) { console.error('[INIT] SA reset failed:', e.message); }
-  })
-  .then(() => {
     app.listen(port, () => {
       console.log(`Servidor listo en http://localhost:${port} [build 2026-09-10]`);
     });
