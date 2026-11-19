@@ -45,6 +45,7 @@ const EMPTY_DB = {
   rhh_holidays: [],
   rhh_recurring_holidays: [],
   rhh_attendance_log: [],
+  rhh_checador_weekly: [],
   rhh_vacation_rules: [],
   rhh_lft_rules: [],         // Tabla LFT: [{ years, dias }] — días de vacaciones por antigüedad
   rhh_te_applications: [],

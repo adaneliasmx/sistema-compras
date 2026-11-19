@@ -12178,12 +12178,23 @@ function chNavWeek(dir) {
   d.setDate(d.getDate() + dir * 7);
   checadorState.weekStart = d.toISOString().slice(0, 10);
   checadorState.report = null;
-  renderChecador();
+  chLoadWeekReport();
 }
 
 async function checadorView() {
   if (!checadorState.weekStart) checadorState.weekStart = chGetMonday();
+  chLoadWeekReport();
+}
+
+async function chLoadWeekReport() {
   renderChecador();
+  try {
+    const data = await api('/api/rhh/checador/week-report?week_start=' + checadorState.weekStart);
+    if (data && (data.has_data || data.shift_groups)) {
+      checadorState.report = data;
+      renderChecador();
+    }
+  } catch (_) { /* sin datos guardados, OK */ }
 }
 
 function chDetectType(filename) {
@@ -12200,7 +12211,7 @@ async function chAnalyze() {
   if (files.length === 0) { toast('Sube al menos un archivo .dat', 'warning'); return; }
   if (files.some(f => f.type === 'desconocido')) { toast('Asigna tipo a todos los archivos antes de analizar', 'warning'); return; }
 
-  toast('Analizando...', 'info');
+  toast('Procesando y guardando...', 'info');
   try {
     const asistTexts = files.filter(f => f.type === 'asistencia').map(f => f.text);
     const comedorTexts = files.filter(f => f.type === 'comedor').map(f => f.text);
@@ -12211,7 +12222,8 @@ async function chAnalyze() {
       method: 'POST', body: JSON.stringify(body),
     });
     checadorState.report = data;
-    toast('Analisis completado', 'success');
+    const us = data.upload_summary || {};
+    toast(us.new_records + ' nuevos, ' + us.updated_records + ' actualizados. Datos guardados.', 'success');
     renderChecador();
   } catch (err) { toast(err.message, 'error'); }
 }
@@ -12331,7 +12343,7 @@ function renderChecador() {
     + '</div>'
     + fileListHtml
     + (hasUnknown ? '<div style="padding:6px 12px;background:#fee2e2;border-radius:8px;font-size:12px;color:#991b1b;margin-bottom:10px;">Asigna el tipo (Asistencia o Comedor) a todos los archivos antes de analizar.</div>' : '')
-    + (files.length > 0 ? '<button class="btn-primary" style="font-size:13px;padding:8px 20px;' + (analyzeDisabled ? 'opacity:.5;pointer-events:none;' : '') + '"' + (analyzeDisabled ? ' disabled' : '') + ' onclick="chAnalyze()">Analizar semana</button>' : '')
+    + (files.length > 0 ? '<button class="btn-primary" style="font-size:13px;padding:8px 20px;' + (analyzeDisabled ? 'opacity:.5;pointer-events:none;' : '') + '"' + (analyzeDisabled ? ' disabled' : '') + ' onclick="chAnalyze()">' + (rpt && rpt.has_data ? 'Actualizar checadas' : 'Cargar y guardar') + '</button>' : '')
     + unmappedHtml
     + '</div>';
 
@@ -12340,7 +12352,7 @@ function renderChecador() {
     + '<button class="btn-ghost" onclick="chNavWeek(-1)">&#8249; Sem anterior</button>'
     + '<span style="font-weight:700;font-size:14px;">' + weekLabel + '</span>'
     + '<button class="btn-ghost" onclick="chNavWeek(1)">Sig &#8250;</button>'
-    + '<button class="btn-ghost" style="font-size:12px;" onclick="checadorState.weekStart=chGetMonday();checadorState.report=null;renderChecador()">Hoy</button>'
+    + '<button class="btn-ghost" style="font-size:12px;" onclick="checadorState.weekStart=chGetMonday();checadorState.report=null;chLoadWeekReport()">Hoy</button>'
     + '</div>';
 
   // Filtros
@@ -12396,31 +12408,34 @@ function renderChecador() {
         let dayCells = '';
         for (const day of emp.days) {
           let cellBg, cellContent;
-          if (day.status === 'ok') {
-            cellBg = '#dcfce7';
-            cellContent = '<div style="font-weight:700;color:#166534;font-size:11px;">OK</div>';
-          } else if (day.status === 'retardo') {
-            cellBg = '#fef9c3';
-            cellContent = '<div style="font-weight:700;color:#854d0e;font-size:11px;">Retardo</div>';
-          } else if (day.status === 'sin_checada') {
-            cellBg = '#fee2e2';
-            cellContent = '<div style="font-weight:700;color:#991b1b;font-size:11px;">Sin checada</div>';
-          } else if (day.status === 'parcial') {
-            cellBg = '#ffedd5';
-            cellContent = '<div style="font-weight:700;color:#9a3412;font-size:11px;">1 checada</div>';
-          } else if (day.status === 'festivo') {
-            cellBg = '#e0e7ff';
-            cellContent = '<div style="font-size:11px;color:#3730a3;">Festivo</div>';
-          } else {
-            cellBg = '#f3f4f6';
-            cellContent = '<div style="font-size:11px;color:#9ca3af;">Descanso</div>';
-          }
+          const STATUS_STYLES = {
+            ok:            { bg: '#dcfce7', color: '#166534', label: 'OK' },
+            retardo:       { bg: '#fef9c3', color: '#854d0e', label: 'Retardo' },
+            sin_checada:   { bg: '#fee2e2', color: '#991b1b', label: 'Sin checada' },
+            parcial:       { bg: '#ffedd5', color: '#9a3412', label: '1 checada' },
+            festivo:       { bg: '#e0e7ff', color: '#3730a3', label: 'Festivo' },
+            descanso:      { bg: '#f3f4f6', color: '#9ca3af', label: 'Descanso' },
+            vacaciones:    { bg: '#dbeafe', color: '#1e40af', label: 'Vacaciones' },
+            permiso:       { bg: '#fae8ff', color: '#7e22ce', label: 'Permiso' },
+            permiso_sin_goce: { bg: '#fae8ff', color: '#7e22ce', label: 'Permiso s/g' },
+            incapacidad:   { bg: '#fef3c7', color: '#92400e', label: 'Incapacidad' },
+            cumpleanos:    { bg: '#fce7f3', color: '#be185d', label: 'Cumplea\u00f1os' },
+            cumpleanos_descanso: { bg: '#fce7f3', color: '#be185d', label: 'Cumpl. desc.' },
+            cumpleanos_trabajado: { bg: '#fce7f3', color: '#be185d', label: 'Cumpl. trab.' },
+            falta:         { bg: '#fee2e2', color: '#991b1b', label: 'Falta' },
+            paro_tecnico:  { bg: '#f3f4f6', color: '#6b7280', label: 'Paro t\u00e9cn.' },
+            baja:          { bg: '#f3f4f6', color: '#6b7280', label: 'Baja' },
+          };
+          const st = STATUS_STYLES[day.status] || STATUS_STYLES.descanso;
+          cellBg = st.bg;
+          cellContent = '<div style="font-weight:700;color:' + st.color + ';font-size:11px;">' + st.label + '</div>';
 
           if (day.entry) cellContent += '<div style="font-size:10px;color:#374151;">E ' + day.entry + '</div>';
           if (day.exit)  cellContent += '<div style="font-size:10px;color:#374151;">S ' + day.exit + '</div>';
           if (day.comedor) cellContent += '<div style="font-size:10px;color:#374151;">C ' + day.comedor + '</div>';
           else if (day.should_work && day.entry) cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
           if (day.shift_override) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:700;">' + day.shift_override + '</div>';
+          if (day.alerta_sin_registro) cellContent += '<div style="font-size:9px;color:#dc2626;font-weight:700;">&#9888; Labora sin reg.</div>';
 
           dayCells += '<td style="padding:3px 4px;background:' + cellBg + ';vertical-align:top;border:1px solid #e5e7eb;">' + cellContent + '</td>';
         }
@@ -12454,8 +12469,8 @@ function renderChecador() {
   } else {
     tableHtml = '<div class="card section" style="text-align:center;padding:40px;color:#6b7280;">'
       + '<div style="font-size:48px;margin-bottom:12px;">&#128196;</div>'
-      + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">Sin datos</div>'
-      + '<div style="font-size:12px;">Sube archivos .dat y presiona "Analizar semana"</div>'
+      + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">Sin datos de checador</div>'
+      + '<div style="font-size:12px;">Sube archivos .dat para cargar las checadas de esta semana</div>'
       + '</div>';
   }
 
@@ -12466,7 +12481,9 @@ function renderChecador() {
     const pctComplete = s.total_scheduled_days > 0 ? Math.round(s.complete / s.total_scheduled_days * 100) : 0;
     const barW = Math.min(pctComplete, 100);
     summaryHtml = '<div class="card section" style="margin-top:16px;">'
-      + '<div style="font-weight:700;font-size:13px;margin-bottom:10px;">Resumen de la semana</div>'
+      + '<div style="font-weight:700;font-size:13px;margin-bottom:10px;">Resumen de la semana'
+      + (rpt.has_data ? '' : '<span style="font-weight:400;font-size:11px;color:#6b7280;margin-left:8px;">Sin datos de checador cargados</span>')
+      + '</div>'
       + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">'
       + '<div>Total empleados: <strong>' + s.total_employees + '</strong></div>'
       + '<div style="color:#166534;">Checada completa (E+S): <strong>' + s.complete + '</strong></div>'
@@ -12474,6 +12491,8 @@ function renderChecador() {
       + '<div style="color:#9a3412;">Solo 1 checada: <strong>' + s.partial + '</strong></div>'
       + '<div style="color:#dc2626;">Sin comedor: <strong>' + s.no_comedor + '</strong></div>'
       + '<div style="color:#854d0e;">Retardos (>15 min): <strong>' + s.retardos + '</strong></div>'
+      + '<div style="color:#1e40af;">Justificadas: <strong>' + (s.justified || 0) + '</strong></div>'
+      + (s.alerts > 0 ? '<div style="color:#dc2626;font-weight:700;">&#9888; Alertas (labora sin registro): <strong>' + s.alerts + '</strong></div>' : '')
       + '</div>'
       + '<div style="margin-top:10px;background:#e5e7eb;border-radius:6px;height:16px;overflow:hidden;">'
       + '<div style="height:100%;background:#22c55e;width:' + barW + '%;transition:width .3s;border-radius:6px;"></div></div>'
