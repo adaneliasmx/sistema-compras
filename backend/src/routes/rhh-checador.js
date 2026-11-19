@@ -4,6 +4,7 @@
 const express = require('express');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
+const { buildAttendanceEmployeesForWeek } = require('../utils/rhh-attendance-template');
 const router = express.Router();
 
 // ── Utilidades ────────────────────────────────────────────────────────────────
@@ -21,6 +22,45 @@ function minToHHMM(total) {
   const h = Math.floor(Math.abs(total) / 60);
   const m = Math.abs(total) % 60;
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
+/**
+ * Parsea archivo .dat de ZKTeco.
+ * Formato: emp_id\tYYYY-MM-DD HH:MM:SS\t...  (tab-separated)
+ */
+function parseDatFile(text) {
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length < 2) continue;
+    const empIdStr = parts[0].trim();
+    const checadorId = parseInt(empIdStr, 10);
+    if (isNaN(checadorId) || checadorId <= 0) continue;
+    // parts[1] = "YYYY-MM-DD HH:MM:SS"
+    const dtMatch = parts[1].trim().match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2}):\d{2}$/);
+    if (!dtMatch) continue;
+    const dateIso = dtMatch[1];
+    const h = parseInt(dtMatch[2], 10);
+    const m = parseInt(dtMatch[3], 10);
+    const timeMin = h * 60 + m;
+    const timeStr = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    rows.push({ checadorId, checadorName: '', dateIso, timeMin, timeStr });
+  }
+  return rows;
+}
+
+/**
+ * Auto-detecta formato y parsea: .dat (tab + YYYY-MM-DD) o CSV (sName,sJobNo).
+ */
+function parseChecadorAuto(text) {
+  if (!text || !text.trim()) return [];
+  const firstLine = text.trim().split(/\r?\n/)[0] || '';
+  // Si la primera linea tiene tabs y parece fecha YYYY-MM-DD → formato .dat
+  if (firstLine.includes('\t') && /\d{4}-\d{2}-\d{2}/.test(firstLine)) {
+    return parseDatFile(text);
+  }
+  return parseChecadorCSV(text);
 }
 
 /**
@@ -534,6 +574,242 @@ router.delete('/records', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
   db.rhh_checador_records = [];
   write(db);
   res.json({ ok: true });
+});
+
+// ── POST /api/rhh/checador/analyze-week ─────────────────────────────────────
+// Cruza archivos .dat/.csv (Asistencia + Comedor) con turnos del ROL semanal.
+// No guarda nada en DB — solo analiza y retorna el reporte.
+router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, res) => {
+  const { asistencia_text, comedor_text, week_start } = req.body || {};
+  if (!week_start) return res.status(400).json({ error: 'week_start es requerido' });
+  if (!asistencia_text && !comedor_text) return res.status(400).json({ error: 'Sube al menos un archivo' });
+
+  const db = read();
+  const shifts    = db.rhh_shifts || [];
+  const employees = db.rhh_employees || [];
+  const mappings  = db.rhh_checador_mappings || [];
+  const holidays  = db.rhh_holidays || [];
+  const schedule  = db.rhh_schedule || [];
+
+  // Calcular rango de la semana (lunes a domingo)
+  const wsDate = new Date(week_start + 'T12:00:00');
+  const weekDates = [];
+  const DAY_NAMES = ['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(wsDate);
+    d.setDate(wsDate.getDate() + i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const holiday = holidays.find(h => h.date === dateStr);
+    weekDates.push({
+      date: dateStr,
+      label: `${DAY_NAMES[d.getDay()]} ${d.getDate()}`,
+      day_num: d.getDay(),
+      is_holiday: !!holiday,
+      holiday_name: holiday ? holiday.name : null,
+    });
+  }
+  const weekEnd = weekDates[6].date;
+
+  // Parsear ambos archivos
+  const asistRows = asistencia_text ? parseChecadorAuto(asistencia_text) : [];
+  const comedorRows = comedor_text ? parseChecadorAuto(comedor_text) : [];
+
+  // Filtrar solo registros de esta semana
+  const inWeek = r => r.dateIso >= week_start && r.dateIso <= weekEnd;
+  const asistWeek   = asistRows.filter(inWeek);
+  const comedorWeek = comedorRows.filter(inWeek);
+
+  // Construir mapa checadorId → employeeId (auto-match por employee_number + mappings guardados)
+  const resolvedMap = {}; // checadorId → { employee_id, employee_name, source }
+  const unmapped = [];
+
+  // Recopilar todos los checadorIds unicos de ambos archivos
+  const allChecadorIds = new Set();
+  for (const r of asistRows) allChecadorIds.add(r.checadorId);
+  for (const r of comedorRows) allChecadorIds.add(r.checadorId);
+
+  for (const cid of allChecadorIds) {
+    // 1. Mapeo guardado
+    const saved = mappings.find(m => m.checador_id === cid);
+    if (saved && saved.employee_id) {
+      const emp = employees.find(e => e.id === saved.employee_id);
+      resolvedMap[cid] = { employee_id: saved.employee_id, employee_name: emp ? emp.full_name : `#${saved.employee_id}`, source: 'mapping' };
+      continue;
+    }
+    // 2. Auto-match: checadorId === employee_number (como entero)
+    const empByNum = employees.find(e => e.employee_number && parseInt(e.employee_number, 10) === cid);
+    if (empByNum) {
+      resolvedMap[cid] = { employee_id: empByNum.id, employee_name: empByNum.full_name, source: 'auto' };
+      continue;
+    }
+    // 3. Sin mapear
+    const datName = asistRows.find(r => r.checadorId === cid)?.checadorName
+                 || comedorRows.find(r => r.checadorId === cid)?.checadorName || '';
+    unmapped.push({ checador_id: cid, checador_name: datName });
+  }
+
+  // Obtener empleados de la plantilla semanal (turnos reales por semana)
+  const template = buildAttendanceEmployeesForWeek(db, week_start);
+  const templateEmps = template.employees || [];
+
+  // Agrupar checadas de asistencia por employeeId + fecha → sesiones (entrada/salida)
+  const asistByEmpDate = {}; // `${empId}_${date}` → [checadas]
+  for (const r of asistWeek) {
+    const resolved = resolvedMap[r.checadorId];
+    if (!resolved) continue;
+    const key = `${resolved.employee_id}_${r.dateIso}`;
+    if (!asistByEmpDate[key]) asistByEmpDate[key] = [];
+    asistByEmpDate[key].push(r);
+  }
+
+  // Agrupar checadas de comedor por employeeId + fecha
+  const comedorByEmpDate = {}; // `${empId}_${date}` → [checadas]
+  for (const r of comedorWeek) {
+    const resolved = resolvedMap[r.checadorId];
+    if (!resolved) continue;
+    const key = `${resolved.employee_id}_${r.dateIso}`;
+    if (!comedorByEmpDate[key]) comedorByEmpDate[key] = [];
+    comedorByEmpDate[key].push(r);
+  }
+
+  // Construir reporte por empleado
+  const reportByShift = {};
+  for (const shift of shifts) {
+    reportByShift[shift.id] = { shift: { id: shift.id, name: shift.name, code: shift.code, color: shift.color, start_time: shift.start_time, end_time: shift.end_time }, employees: [] };
+  }
+  reportByShift['none'] = { shift: { id: null, name: 'Sin turno', code: '--', color: '#94a3b8', start_time: null, end_time: null }, employees: [] };
+
+  // Contadores globales
+  let totalComplete = 0, totalMissing = 0, totalPartial = 0, totalNoComedor = 0, totalRetardos = 0;
+  let totalScheduledDays = 0;
+
+  for (const emp of templateEmps) {
+    if (emp.template_status === 'baja') continue;
+    const shift = shifts.find(s => s.id === emp.shift_id) || null;
+    const workDays = shift ? (shift.work_days || []) : [];
+
+    // Revisar si tiene sobrescritura de turno por fecha
+    const getShiftForDate = (dateStr) => {
+      const override = schedule.find(s => s.employee_id === emp.id && s.date === dateStr);
+      if (override) return shifts.find(s => s.id === override.shift_id) || shift;
+      return shift;
+    };
+
+    const days = [];
+    let empScheduled = 0, empChecked = 0;
+
+    for (const day of weekDates) {
+      const dayShift = getShiftForDate(day.date);
+      const dayWorkDays = dayShift ? (dayShift.work_days || []) : [];
+      const shouldWork = dayWorkDays.includes(day.day_num) && !day.is_holiday;
+
+      const key = `${emp.id}_${day.date}`;
+      const asistChecks = asistByEmpDate[key] || [];
+      const comedorChecks = comedorByEmpDate[key] || [];
+
+      // Procesar asistencia: primera = entrada, ultima = salida (si > 1)
+      asistChecks.sort((a, b) => a.timeMin - b.timeMin);
+      comedorChecks.sort((a, b) => a.timeMin - b.timeMin);
+
+      const entry = asistChecks.length > 0 ? asistChecks[0].timeStr : null;
+      const exit  = asistChecks.length > 1 ? asistChecks[asistChecks.length - 1].timeStr : null;
+      const comedor = comedorChecks.length > 0 ? comedorChecks[0].timeStr : null;
+      const hasAsist = asistChecks.length > 0;
+
+      // Detectar retardo
+      let retardo = false;
+      if (hasAsist && dayShift) {
+        const shiftStart = timeToMin(dayShift.start_time);
+        const entryMin = asistChecks[0].timeMin;
+        if (entryMin - shiftStart > 15) retardo = true;
+      }
+
+      // Determinar status de la celda
+      let status;
+      if (day.is_holiday) {
+        status = 'festivo';
+      } else if (!shouldWork) {
+        status = 'descanso';
+      } else if (!hasAsist) {
+        status = 'sin_checada';
+        totalMissing++;
+      } else if (!exit) {
+        status = 'parcial';
+        totalPartial++;
+      } else if (retardo) {
+        status = 'retardo';
+        totalRetardos++;
+      } else {
+        status = 'ok';
+        totalComplete++;
+      }
+
+      if (shouldWork) {
+        totalScheduledDays++;
+        empScheduled++;
+        if (hasAsist) empChecked++;
+        if (hasAsist && !comedor) totalNoComedor++;
+      }
+
+      days.push({
+        date: day.date,
+        label: day.label,
+        day_num: day.day_num,
+        is_holiday: day.is_holiday,
+        holiday_name: day.holiday_name,
+        should_work: shouldWork,
+        status,
+        entry, exit, comedor, retardo,
+        checada_count: asistChecks.length,
+        shift_override: dayShift && shift && dayShift.id !== shift.id ? dayShift.code : null,
+      });
+    }
+
+    const empData = {
+      id: emp.id,
+      employee_number: emp.employee_number || '',
+      full_name: emp.full_name,
+      shift_code: shift ? shift.code : '--',
+      shift_name: shift ? shift.name : 'Sin turno',
+      days,
+      scheduled: empScheduled,
+      checked: empChecked,
+    };
+
+    const groupKey = shift ? shift.id : 'none';
+    if (!reportByShift[groupKey]) {
+      reportByShift[groupKey] = { shift: reportByShift['none'].shift, employees: [] };
+    }
+    reportByShift[groupKey].employees.push(empData);
+  }
+
+  // Ordenar empleados dentro de cada turno y filtrar turnos vacios
+  const shiftGroups = Object.values(reportByShift)
+    .filter(g => g.employees.length > 0)
+    .map(g => {
+      g.employees.sort((a, b) => a.full_name.localeCompare(b.full_name));
+      return g;
+    })
+    .sort((a, b) => (a.shift.id || 999) - (b.shift.id || 999));
+
+  res.json({
+    week_start,
+    week_end: weekEnd,
+    days: weekDates,
+    shift_groups: shiftGroups,
+    unmapped,
+    summary: {
+      total_employees: templateEmps.filter(e => e.template_status !== 'baja').length,
+      total_scheduled_days: totalScheduledDays,
+      complete: totalComplete,
+      missing: totalMissing,
+      partial: totalPartial,
+      no_comedor: totalNoComedor,
+      retardos: totalRetardos,
+    },
+    asistencia_records: asistWeek.length,
+    comedor_records: comedorWeek.length,
+  });
 });
 
 module.exports = router;

@@ -12145,87 +12145,332 @@ async function init() {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// MÓDULO CHECADOR
+// MODULO CHECADOR — Reporte Semanal Integrado
 // ══════════════════════════════════════════════════════════════════════════════
 
-// Estado local del módulo checador
 const checadorState = {
-  tab: 0,
-  preview: null,
-  csvText: '',
-  filterDate: '',
-  filterDateTo: '',
-  filterStatus: '',
-  filterEmp: '',
-  records: [],
-  mappings: [],
-  absences: [],
-  absenceFrom: '',
-  absenceTo: '',
-  absenceLoading: false,
-  parseFrom: '',
-  parseTo: '',
-  calWeekOff: 0,
+  weekStart: null,
+  asistFile: null,   // { name, text, count }
+  comedorFile: null,  // { name, text, count }
+  report: null,       // respuesta de analyze-week
+  filterShift: '',
+  filterMissing: false,
+  filterNoComedor: false,
+  filterSearch: '',
+  showMapModal: false,
 };
 
-const CHECADOR_TABS = ['📥 Importar', '🔗 Mapear trabajadores', '📋 Registros', '✅ Validar', '🚫 Inasistencias', '📅 Calendario', '🗑 Limpieza'];
-const TURNO_COLORS = { 'Turno 1': '#1d4ed8', 'Turno 2': '#0f766e', 'Turno 3': '#7c3aed', 'Administrativo': '#b45309', 'Turno Administrativo': '#10b981' };
-
-function turnoChip(name) {
-  const color = TURNO_COLORS[name] || '#64748b';
-  return '<span style="background:' + color + '22;color:' + color + ';border:1px solid ' + color + '55;border-radius:9999px;padding:2px 8px;font-size:11px;font-weight:600;">' + name + '</span>';
+function chGetMonday(d) {
+  const dt = d ? new Date(d + 'T12:00:00') : new Date();
+  const day = dt.getDay();
+  const diff = dt.getDate() - day + (day === 0 ? -6 : 1);
+  dt.setDate(diff);
+  return dt.toISOString().slice(0, 10);
 }
 
-function statusChipCh(status) {
-  const map = { pendiente: ['#b45309','Pendiente'], validado: ['#15803d','Validado'], ignorado: ['#64748b','Ignorado'] };
-  const [c, label] = map[status] || ['#64748b', status];
-  return '<span style="background:' + c + '22;color:' + c + ';border:1px solid ' + c + '55;border-radius:9999px;padding:2px 8px;font-size:11px;font-weight:600;">' + label + '</span>';
-}
-
-function fmtWorked(minutes) {
-  const h = Math.floor(Math.abs(minutes) / 60);
-  const m = Math.abs(minutes) % 60;
-  return h + 'h ' + String(m).padStart(2,'0') + 'm';
-}
-
-function diaSemana(dateIso) {
-  const dias = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'];
-  return dias[new Date(dateIso + 'T12:00:00Z').getUTCDay()];
+function chNavWeek(dir) {
+  const d = new Date(checadorState.weekStart + 'T12:00:00');
+  d.setDate(d.getDate() + dir * 7);
+  checadorState.weekStart = d.toISOString().slice(0, 10);
+  checadorState.report = null;
+  renderChecador();
 }
 
 async function checadorView() {
-  const el = document.getElementById('app');
-  el.innerHTML = shell('<div class="loading-overlay">Cargando checador...</div>', 'checador');
-  try {
-    const [mappingsRes, recordsRes] = await Promise.all([
-      api('/api/rhh/checador/mappings'),
-      api('/api/rhh/checador/records'),
-    ]);
-    checadorState.mappings = mappingsRes || [];
-    checadorState.records  = recordsRes  || [];
-  } catch (_) {}
+  if (!checadorState.weekStart) checadorState.weekStart = chGetMonday();
   renderChecador();
+}
+
+async function chAnalyze() {
+  const ws = checadorState.weekStart;
+  if (!checadorState.asistFile && !checadorState.comedorFile) {
+    toast('Sube al menos un archivo .dat', 'warning'); return;
+  }
+  toast('Analizando...', 'info');
+  try {
+    const body = { week_start: ws };
+    if (checadorState.asistFile) body.asistencia_text = checadorState.asistFile.text;
+    if (checadorState.comedorFile) body.comedor_text = checadorState.comedorFile.text;
+    const data = await api('/api/rhh/checador/analyze-week', {
+      method: 'POST', body: JSON.stringify(body),
+    });
+    checadorState.report = data;
+    toast('Analisis completado', 'success');
+    renderChecador();
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+function chLoadFile(input, type) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    const text = reader.result;
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const info = { name: file.name, text, count: lines.length };
+    if (type === 'asistencia') checadorState.asistFile = info;
+    else checadorState.comedorFile = info;
+    renderChecador();
+  };
+  reader.readAsText(file);
+}
+
+function chClearFile(type) {
+  if (type === 'asistencia') checadorState.asistFile = null;
+  else checadorState.comedorFile = null;
+  checadorState.report = null;
+  renderChecador();
+}
+
+async function chOpenMapModal() {
+  checadorState.showMapModal = true;
+  renderChecador();
+}
+
+function chCloseMapModal() {
+  checadorState.showMapModal = false;
+  renderChecador();
+}
+
+async function chSaveMappings() {
+  const rows = document.querySelectorAll('[data-map-cid]');
+  const mappings = [];
+  rows.forEach(row => {
+    const cid = Number(row.dataset.mapCid);
+    const sel = row.querySelector('select');
+    const empId = sel ? Number(sel.value) : null;
+    if (cid && empId) mappings.push({ checador_id: cid, employee_id: empId, checador_name: row.dataset.mapName || '' });
+  });
+  if (mappings.length === 0) { toast('Sin cambios', 'info'); return; }
+  try {
+    await api('/api/rhh/checador/mappings', { method: 'POST', body: JSON.stringify({ mappings }) });
+    toast('Mapeo guardado. Vuelve a Analizar para actualizar.', 'success');
+    chCloseMapModal();
+  } catch (err) { toast(err.message, 'error'); }
 }
 
 function renderChecador() {
   const el = document.getElementById('app');
-  const tabsHtml = CHECADOR_TABS.map((t, i) =>
-    '<button class="tab-btn' + (checadorState.tab === i ? ' active' : '') + '" onclick="checadorSetTab(' + i + ')">' + t + '</button>'
-  ).join('');
-  let body = '';
-  if      (checadorState.tab === 0) body = renderChecadorImportar();
-  else if (checadorState.tab === 1) body = renderChecadorMapear();
-  else if (checadorState.tab === 2) body = renderChecadorRegistros();
-  else if (checadorState.tab === 3) body = renderChecadorValidar();
-  else if (checadorState.tab === 4) body = renderChecadorInasistencias();
-  else if (checadorState.tab === 5) body = renderChecadorCalendario();
-  else if (checadorState.tab === 6) body = renderChecadorLimpieza();
-  const content = '<div class="section-header"><h2>&#128336; Checador &mdash; Importaci&oacute;n y An&aacute;lisis</h2></div>' +
-    '<div class="tab-bar" style="margin-bottom:16px;">' + tabsHtml + '</div>' + body;
+  const ws = checadorState.weekStart;
+  const wsD = new Date(ws + 'T12:00:00');
+  const weD = new Date(wsD); weD.setDate(wsD.getDate() + 6);
+  const MES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const weekLabel = wsD.getDate() + ' ' + MES[wsD.getMonth()] + ' - ' + weD.getDate() + ' ' + MES[weD.getMonth()] + ' ' + weD.getFullYear();
+
+  const af = checadorState.asistFile;
+  const cf = checadorState.comedorFile;
+  const rpt = checadorState.report;
+
+  // Zona de carga
+  const fileBox = (label, icon, info, type) => {
+    if (info) {
+      return '<div style="flex:1;min-width:220px;border:1px solid #d1d5db;border-radius:10px;padding:12px 16px;background:#f9fafb;">'
+        + '<div style="font-weight:700;font-size:13px;margin-bottom:6px;">' + icon + ' ' + label + '</div>'
+        + '<div style="font-size:12px;color:#374151;">' + info.name + '</div>'
+        + '<div style="font-size:11px;color:#6b7280;">' + info.count.toLocaleString() + ' registros</div>'
+        + '<button class="btn-ghost" style="font-size:11px;margin-top:6px;color:#dc2626;" onclick="chClearFile(\'' + type + '\')">Quitar</button>'
+        + '</div>';
+    }
+    return '<div style="flex:1;min-width:220px;border:2px dashed #d1d5db;border-radius:10px;padding:16px;text-align:center;background:#fafafa;">'
+      + '<div style="font-weight:700;font-size:13px;margin-bottom:8px;">' + icon + ' ' + label + '</div>'
+      + '<label class="btn-primary" style="font-size:12px;padding:6px 14px;cursor:pointer;">Seleccionar .dat'
+      + '<input type="file" accept=".dat,.csv,.txt" style="display:none;" onchange="chLoadFile(this,\'' + type + '\')" /></label>'
+      + '</div>';
+  };
+
+  const unmappedHtml = rpt && rpt.unmapped && rpt.unmapped.length > 0
+    ? '<div style="margin-top:10px;padding:8px 12px;background:#fef3c7;border-radius:8px;font-size:12px;color:#92400e;display:flex;align-items:center;gap:8px;">'
+      + '<strong>' + rpt.unmapped.length + ' ID' + (rpt.unmapped.length > 1 ? 's' : '') + ' sin mapear</strong> - no se cruzan con empleados.'
+      + ' <button class="btn-ghost" style="font-size:11px;border-color:#f59e0b;color:#92400e;" onclick="chOpenMapModal()">Configurar mapeo</button></div>'
+    : '';
+
+  const uploadSection = '<div class="card section" style="margin-bottom:16px;">'
+    + '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:10px;">'
+    + fileBox('Asistencia (.dat)', '&#128203;', af, 'asistencia')
+    + fileBox('Comedor (.dat)', '&#127860;', cf, 'comedor')
+    + '</div>'
+    + (af || cf ? '<button class="btn-primary" style="font-size:13px;padding:8px 20px;" onclick="chAnalyze()">Analizar semana</button>' : '')
+    + unmappedHtml
+    + '</div>';
+
+  // Navegacion semana
+  const navSection = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">'
+    + '<button class="btn-ghost" onclick="chNavWeek(-1)">&#8249; Sem anterior</button>'
+    + '<span style="font-weight:700;font-size:14px;">' + weekLabel + '</span>'
+    + '<button class="btn-ghost" onclick="chNavWeek(1)">Sig &#8250;</button>'
+    + '<button class="btn-ghost" style="font-size:12px;" onclick="checadorState.weekStart=chGetMonday();checadorState.report=null;renderChecador()">Hoy</button>'
+    + '</div>';
+
+  // Filtros
+  let filtersHtml = '';
+  if (rpt) {
+    const shiftOpts = (rpt.shift_groups || []).map(g =>
+      '<option value="' + (g.shift.code || g.shift.name) + '"' + (checadorState.filterShift === (g.shift.code || g.shift.name) ? ' selected' : '') + '>' + g.shift.name + '</option>'
+    ).join('');
+    filtersHtml = '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">'
+      + '<select style="font-size:12px;padding:5px 8px;" onchange="checadorState.filterShift=this.value;renderChecador()">'
+      + '<option value="">Turno: todos</option>' + shiftOpts + '</select>'
+      + '<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">'
+      + '<input type="checkbox" ' + (checadorState.filterMissing ? 'checked' : '') + ' onchange="checadorState.filterMissing=this.checked;renderChecador()" /> Solo sin checadas</label>'
+      + '<label style="font-size:12px;display:flex;align-items:center;gap:4px;cursor:pointer;">'
+      + '<input type="checkbox" ' + (checadorState.filterNoComedor ? 'checked' : '') + ' onchange="checadorState.filterNoComedor=this.checked;renderChecador()" /> Solo sin comedor</label>'
+      + '<input type="text" placeholder="Buscar nombre..." value="' + (checadorState.filterSearch || '') + '" style="font-size:12px;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;width:180px;" oninput="checadorState.filterSearch=this.value;renderChecador()" />'
+      + '</div>';
+  }
+
+  // Tabla reporte
+  let tableHtml = '';
+  if (rpt) {
+    const days = rpt.days || [];
+    const dayHeaders = days.map(d => '<th style="text-align:center;min-width:120px;font-size:11px;">' + d.label + (d.is_holiday ? '<br><span style="font-size:10px;">&#127884; ' + d.holiday_name + '</span>' : '') + '</th>').join('');
+
+    let rowsHtml = '';
+    for (const sg of (rpt.shift_groups || [])) {
+      if (checadorState.filterShift && (sg.shift.code || sg.shift.name) !== checadorState.filterShift) continue;
+
+      const shiftColor = sg.shift.color || '#64748b';
+      const timeRange = sg.shift.start_time && sg.shift.end_time ? ' (' + sg.shift.start_time + '-' + sg.shift.end_time + ')' : '';
+
+      // Filtrar empleados
+      let emps = sg.employees;
+      if (checadorState.filterSearch) {
+        const q = checadorState.filterSearch.toLowerCase();
+        emps = emps.filter(e => e.full_name.toLowerCase().includes(q));
+      }
+      if (checadorState.filterMissing) {
+        emps = emps.filter(e => e.days.some(d => d.status === 'sin_checada'));
+      }
+      if (checadorState.filterNoComedor) {
+        emps = emps.filter(e => e.days.some(d => d.should_work && d.entry && !d.comedor));
+      }
+      if (emps.length === 0) continue;
+
+      const totalCols = 3 + days.length;
+      rowsHtml += '<tr style="background:' + shiftColor + ';color:#fff;">'
+        + '<td colspan="' + totalCols + '" style="padding:8px 12px;font-weight:800;font-size:12px;letter-spacing:.5px;">'
+        + sg.shift.name + timeRange + ' &middot; ' + emps.length + ' empleado' + (emps.length !== 1 ? 's' : '') + '</td></tr>';
+
+      for (const emp of emps) {
+        let dayCells = '';
+        for (const day of emp.days) {
+          let cellBg, cellContent;
+          if (day.status === 'ok') {
+            cellBg = '#dcfce7';
+            cellContent = '<div style="font-weight:700;color:#166534;font-size:11px;">OK</div>';
+          } else if (day.status === 'retardo') {
+            cellBg = '#fef9c3';
+            cellContent = '<div style="font-weight:700;color:#854d0e;font-size:11px;">Retardo</div>';
+          } else if (day.status === 'sin_checada') {
+            cellBg = '#fee2e2';
+            cellContent = '<div style="font-weight:700;color:#991b1b;font-size:11px;">Sin checada</div>';
+          } else if (day.status === 'parcial') {
+            cellBg = '#ffedd5';
+            cellContent = '<div style="font-weight:700;color:#9a3412;font-size:11px;">1 checada</div>';
+          } else if (day.status === 'festivo') {
+            cellBg = '#e0e7ff';
+            cellContent = '<div style="font-size:11px;color:#3730a3;">Festivo</div>';
+          } else {
+            cellBg = '#f3f4f6';
+            cellContent = '<div style="font-size:11px;color:#9ca3af;">Descanso</div>';
+          }
+
+          if (day.entry) cellContent += '<div style="font-size:10px;color:#374151;">E ' + day.entry + '</div>';
+          if (day.exit)  cellContent += '<div style="font-size:10px;color:#374151;">S ' + day.exit + '</div>';
+          if (day.comedor) cellContent += '<div style="font-size:10px;color:#374151;">C ' + day.comedor + '</div>';
+          else if (day.should_work && day.entry) cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
+          if (day.shift_override) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:700;">' + day.shift_override + '</div>';
+
+          dayCells += '<td style="padding:3px 4px;background:' + cellBg + ';vertical-align:top;border:1px solid #e5e7eb;">' + cellContent + '</td>';
+        }
+
+        const pct = emp.scheduled > 0 ? Math.round(emp.checked / emp.scheduled * 100) : 0;
+        const pctColor = pct >= 90 ? '#166534' : pct >= 70 ? '#854d0e' : '#991b1b';
+
+        rowsHtml += '<tr>'
+          + '<td style="padding:6px 8px;font-size:12px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#fff;z-index:1;border:1px solid #e5e7eb;">' + (emp.employee_number || '') + '</td>'
+          + '<td style="padding:6px 8px;font-size:12px;white-space:nowrap;position:sticky;left:50px;background:#fff;z-index:1;border:1px solid #e5e7eb;" title="' + emp.full_name + '">' + emp.full_name + '</td>'
+          + dayCells
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700;font-size:12px;color:' + pctColor + ';border:1px solid #e5e7eb;">' + emp.checked + '/' + emp.scheduled + '</td>'
+          + '</tr>';
+      }
+    }
+
+    if (!rowsHtml) {
+      rowsHtml = '<tr><td colspan="' + (3 + (rpt.days || []).length) + '" style="text-align:center;padding:32px;color:#6b7280;">Sin resultados con los filtros actuales</td></tr>';
+    }
+
+    tableHtml = '<div style="overflow-x:auto;border:1px solid #e5e7eb;border-radius:10px;">'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background:#f1f5f9;">'
+      + '<th style="padding:8px;text-align:left;font-size:11px;position:sticky;left:0;background:#f1f5f9;z-index:2;min-width:50px;">#</th>'
+      + '<th style="padding:8px;text-align:left;font-size:11px;position:sticky;left:50px;background:#f1f5f9;z-index:2;min-width:160px;">Nombre</th>'
+      + dayHeaders
+      + '<th style="padding:8px;text-align:center;font-size:11px;min-width:60px;">Checadas</th>'
+      + '</tr></thead>'
+      + '<tbody>' + rowsHtml + '</tbody>'
+      + '</table></div>';
+  } else {
+    tableHtml = '<div class="card section" style="text-align:center;padding:40px;color:#6b7280;">'
+      + '<div style="font-size:48px;margin-bottom:12px;">&#128196;</div>'
+      + '<div style="font-size:14px;font-weight:600;margin-bottom:4px;">Sin datos</div>'
+      + '<div style="font-size:12px;">Sube archivos .dat y presiona "Analizar semana"</div>'
+      + '</div>';
+  }
+
+  // Resumen
+  let summaryHtml = '';
+  if (rpt && rpt.summary) {
+    const s = rpt.summary;
+    const pctComplete = s.total_scheduled_days > 0 ? Math.round(s.complete / s.total_scheduled_days * 100) : 0;
+    const barW = Math.min(pctComplete, 100);
+    summaryHtml = '<div class="card section" style="margin-top:16px;">'
+      + '<div style="font-weight:700;font-size:13px;margin-bottom:10px;">Resumen de la semana</div>'
+      + '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;">'
+      + '<div>Total empleados: <strong>' + s.total_employees + '</strong></div>'
+      + '<div style="color:#166534;">Checada completa (E+S): <strong>' + s.complete + '</strong></div>'
+      + '<div style="color:#991b1b;">Sin checada: <strong>' + s.missing + '</strong></div>'
+      + '<div style="color:#9a3412;">Solo 1 checada: <strong>' + s.partial + '</strong></div>'
+      + '<div style="color:#dc2626;">Sin comedor: <strong>' + s.no_comedor + '</strong></div>'
+      + '<div style="color:#854d0e;">Retardos (>15 min): <strong>' + s.retardos + '</strong></div>'
+      + '</div>'
+      + '<div style="margin-top:10px;background:#e5e7eb;border-radius:6px;height:16px;overflow:hidden;">'
+      + '<div style="height:100%;background:#22c55e;width:' + barW + '%;transition:width .3s;border-radius:6px;"></div></div>'
+      + '<div style="font-size:11px;color:#6b7280;margin-top:4px;">' + pctComplete + '% de dias laborales con checada completa</div>'
+      + '</div>';
+  }
+
+  // Modal mapeo
+  let mapModalHtml = '';
+  if (checadorState.showMapModal && rpt && rpt.unmapped) {
+    const empOpts = '<option value="">-- Sin asignar --</option>'
+      + (state.employees || []).filter(e => e.status === 'active').sort((a, b) => a.full_name.localeCompare(b.full_name))
+        .map(e => '<option value="' + e.id + '">' + (e.employee_number || '') + ' - ' + e.full_name + '</option>').join('');
+
+    const mapRows = rpt.unmapped.map(u =>
+      '<tr data-map-cid="' + u.checador_id + '" data-map-name="' + (u.checador_name || '').replace(/"/g, '') + '">'
+      + '<td style="padding:8px;font-weight:700;">' + u.checador_id + '</td>'
+      + '<td style="padding:8px;">' + (u.checador_name || '--') + '</td>'
+      + '<td style="padding:8px;"><select style="width:100%;font-size:12px;padding:4px;">' + empOpts + '</select></td>'
+      + '</tr>'
+    ).join('');
+
+    mapModalHtml = '<div style="position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:9999;display:grid;place-items:center;" onclick="if(event.target===this)chCloseMapModal()">'
+      + '<div style="background:#fff;border-radius:16px;padding:24px;width:min(560px,95vw);max-height:80vh;overflow-y:auto;box-shadow:0 16px 48px rgba(0,0,0,.2);">'
+      + '<h3 style="margin:0 0 16px;">Mapeo Checador &rarr; Empleado</h3>'
+      + '<table style="width:100%;border-collapse:collapse;font-size:12px;">'
+      + '<thead><tr style="background:#f1f5f9;"><th style="padding:8px;text-align:left;">ID Checador</th><th style="padding:8px;text-align:left;">Nombre (.dat)</th><th style="padding:8px;text-align:left;">Empleado</th></tr></thead>'
+      + '<tbody>' + mapRows + '</tbody></table>'
+      + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">'
+      + '<button class="btn-ghost" onclick="chCloseMapModal()">Cancelar</button>'
+      + '<button class="btn-primary" onclick="chSaveMappings()">Guardar mapeo</button>'
+      + '</div></div></div>';
+  }
+
+  const content = '<div class="module-title"><h2>&#128340; Checador &mdash; Reporte Semanal</h2></div>'
+    + uploadSection + navSection + filtersHtml + tableHtml + summaryHtml + mapModalHtml;
+
   el.innerHTML = shell(content, 'checador');
 }
-
-function checadorSetTab(i) { checadorState.tab = i; renderChecador(); }
 
 window.addEventListener('hashchange', render);
 document.addEventListener('DOMContentLoaded', init);
@@ -12866,1028 +13111,6 @@ async function createEmpFromCompras(candidate) {
 
 
 
-// ── Tab 0: Importar ───────────────────────────────────────────────────────────
-function renderChecadorImportar() {
-  const preview = checadorState.preview;
-  const hasRecords = checadorState.records.length > 0;
-  return `
-    <div class="card section">
-      <h3>Paso 1 — Importar CSV del reloj checador</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:12px;">
-        Pega o carga el archivo CSV exportado del reloj checador.<br>
-        Formato esperado: <code>sName, sJobNo, sCard, Date (DD/MM/YYYY), Time, IN/OUT, ...</code>
-      </p>
-      <div style="margin-bottom:12px;">
-        <label style="font-size:13px;font-weight:600;">Cargar archivo .csv</label>
-        <input type="file" accept=".csv,.txt" onchange="checadorLoadFile(this)"
-          style="display:block;margin-top:4px;font-size:13px;" />
-      </div>
-      <label style="font-size:13px;font-weight:600;">O pegar CSV aquí:</label>
-      <textarea id="ch-csv-text" rows="8" style="width:100%;font-family:monospace;font-size:12px;margin-top:4px;border:1px solid var(--line);border-radius:6px;padding:8px;resize:vertical;"
-        oninput="checadorState.csvText=this.value">${checadorState.csvText}</textarea>
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px;">
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Filtrar desde</label>
-          <input type="date" value="${checadorState.parseFrom}"
-            onchange="checadorState.parseFrom=this.value"
-            style="font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;" />
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Filtrar hasta</label>
-          <input type="date" value="${checadorState.parseTo}"
-            onchange="checadorState.parseTo=this.value"
-            style="font-size:13px;padding:5px 8px;border:1px solid var(--line);border-radius:6px;" />
-        </div>
-        <button class="btn" onclick="checadorParsear()">🔍 Analizar CSV</button>
-        ${hasRecords ? `<button class="btn btn-secondary" onclick="checadorProcesar(true)">↩️ Reemplazar registros guardados</button>` : ''}
-        ${preview ? `<button class="btn" style="background:#15803d;" onclick="checadorProcesar(false)">💾 Guardar registros procesados</button>` : ''}
-      </div>
-    </div>
-    ${preview ? renderChecadorPreview() : ''}
-    ${hasRecords ? `
-      <div class="card section" style="background:#f0fdf4;border:1px solid #bbf7d0;">
-        <p style="margin:0;color:#15803d;font-weight:600;">
-          ✅ ${checadorState.records.length} registros almacenados en el sistema.
-          <button class="btn btn-secondary" style="margin-left:12px;font-size:12px;" onclick="checadorSetTab(2)">Ver registros →</button>
-        </p>
-      </div>` : ''}
-  `;
-}
-
-function renderChecadorPreview() {
-  const p = checadorState.preview;
-  const unmapped = p.workers.filter(w => !w.mapped);
-  return `
-    <div class="card section">
-      <h3>Vista previa del análisis</h3>
-      <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:16px;">
-        <div><span style="font-size:22px;font-weight:700;">${p.total_rows}</span><br><span style="color:var(--muted);font-size:12px;">Registros en CSV</span></div>
-        <div><span style="font-size:22px;font-weight:700;">${p.total_sessions}</span><br><span style="color:var(--muted);font-size:12px;">Sesiones detectadas</span></div>
-        <div><span style="font-size:22px;font-weight:700;">${p.workers.length}</span><br><span style="color:var(--muted);font-size:12px;">Trabajadores</span></div>
-        <div><span style="font-size:22px;font-weight:700;color:${unmapped.length > 0 ? '#dc2626' : '#15803d'};">${unmapped.length}</span><br><span style="color:var(--muted);font-size:12px;">Sin mapear</span></div>
-      </div>
-      ${unmapped.length > 0 ? `
-        <div class="notice warning" style="margin-bottom:12px;">
-          ⚠️ ${unmapped.length} trabajador(es) del checador no están vinculados a un empleado del sistema.
-          <button class="btn btn-secondary" style="margin-left:8px;font-size:12px;" onclick="checadorSetTab(1)">Ir a Mapear →</button>
-        </div>` : ''}
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID Checador</th><th>Nombre checador</th><th>Empleado vinculado</th><th>Estado</th></tr></thead>
-          <tbody>
-            ${p.workers.map(w => `
-              <tr>
-                <td>${w.checador_id}</td>
-                <td>${w.checador_name}</td>
-                <td>${w.employee_name || '<span style="color:#dc2626;">Sin vincular</span>'}</td>
-                <td>${w.mapped
-                  ? '<span style="color:#15803d;font-weight:600;">✅ Vinculado</span>'
-                  : '<span style="color:#dc2626;font-weight:600;">⚠️ Sin mapear</span>'}</td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="card section">
-      <h3>Registros procesados (primeros 50 por fecha)</h3>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno detectado</th><th>Entrada</th><th>Salida</th><th>Tiempo trabajado</th><th>Retardo</th></tr></thead>
-          <tbody>
-            ${[...p.records].sort((a,b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).slice(0, 50).map(r => {
-              const empName = r.employee_id
-                ? (checadorState.mappings.find(m => m.checador_id === r.checador_id) || {}).employee_name || r.checador_name
-                : r.checador_name;
-              return `
-              <tr>
-                <td>${empName}</td>
-                <td>${r.date}</td>
-                <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
-                <td>${turnoChip(r.shift_name)}</td>
-                <td>${r.entry_time}</td>
-                <td>${r.exit_time || '<span style="color:#dc2626;">Sin salida</span>'}</td>
-                <td>${r.worked_minutes != null ? fmtWorked(r.worked_minutes) : '--'}</td>
-                <td>${r.retardo_minutes > 0
-                  ? `<span style="color:#dc2626;font-weight:600;">⏱ ${fmtWorked(r.retardo_minutes)}</span>`
-                  : '<span style="color:#15803d;">Sin retardo</span>'}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      ${p.records.length > 50 ? `<p style="color:var(--muted);font-size:12px;margin-top:8px;">Mostrando 50 de ${p.records.length} registros por fecha. Guarda para ver todos.</p>` : ''}
-    </div>
-  `;
-}
-
-// ── Tab 1: Mapear ────────────────────────────────────────────────────────────
-function renderChecadorMapear() {
-  const workers = checadorState.preview
-    ? checadorState.preview.workers
-    : checadorState.mappings.map(m => ({
-        checador_id: m.checador_id, checador_name: m.checador_name,
-        employee_id: m.employee_id, employee_name: m.employee_name,
-        mapped: !!m.employee_id,
-      }));
-
-  if (workers.length === 0) {
-    return `
-      <div class="card section">
-        <div class="empty-state">
-          <div class="empty-icon">🔗</div>
-          <p>Primero importa un CSV para ver los trabajadores del checador.</p>
-          <button class="btn" onclick="checadorSetTab(0)">← Ir a Importar</button>
-        </div>
-      </div>`;
-  }
-
-  const activeEmps = state.employees.filter(e=>e.status==='active')
-    .sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''));
-
-  return `
-    <div class="card section">
-      <h3>Paso 2 — Vincular ID del checador con empleados del sistema</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
-        Cada trabajador del reloj tiene un número de ID propio. Aquí los vinculas con el empleado correcto del sistema.
-        Esta vinculación se guarda y no hay que repetirla en futuros imports.
-      </p>
-      <datalist id="emplist-ch">
-        ${activeEmps.map(e=>`<option value="${e.full_name}"></option>`).join('')}
-      </datalist>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>ID Checador</th><th>Nombre en checador</th><th>Empleado en sistema</th><th>Estado</th></tr></thead>
-          <tbody>
-            ${workers.map(w => {
-              const currentName = w.employee_id
-                ? (activeEmps.find(e=>e.id===w.employee_id)||{}).full_name || ''
-                : '';
-              return `
-              <tr>
-                <td><strong>${w.checador_id}</strong></td>
-                <td>${w.checador_name}</td>
-                <td>
-                  <input type="text" list="emplist-ch"
-                    id="chmap-${w.checador_id}"
-                    value="${currentName.replace(/"/g,'&quot;')}"
-                    placeholder="Escribe para buscar empleado..."
-                    style="width:100%;font-size:13px;padding:4px 6px;border:1px solid var(--line);border-radius:5px;"
-                    oninput="checadorSelectEmpByText(${w.checador_id},'${(w.checador_name||'').replace(/'/g,"\\'")}',this.value)" />
-                  <div style="margin-top:4px;">
-                    <button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;"
-                      onclick="checadorNuevoEmpleado()">+ Nuevo empleado</button>
-                  </div>
-                </td>
-                <td id="chmap-st-${w.checador_id}">
-                  ${w.mapped
-                    ? '<span style="color:#15803d;font-weight:600;">✅ Vinculado</span>'
-                    : '<span style="color:#dc2626;font-weight:600;">⚠️ Sin mapear</span>'}
-                </td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top:16px;">
-        <button class="btn" onclick="checadorGuardarMapeos()">💾 Guardar vinculaciones</button>
-      </div>
-    </div>
-  `;
-}
-
-// ── Tab 2: Registros ──────────────────────────────────────────────────────────
-function renderChecadorRegistros() {
-  if (checadorState.records.length === 0) {
-    return `
-      <div class="card section">
-        <div class="empty-state">
-          <div class="empty-icon">📋</div>
-          <p>No hay registros procesados. Importa un CSV para comenzar.</p>
-          <button class="btn" onclick="checadorSetTab(0)">← Ir a Importar</button>
-        </div>
-      </div>`;
-  }
-
-  let recs = checadorState.records;
-  if (checadorState.filterDate)    recs = recs.filter(r => r.date >= checadorState.filterDate);
-  if (checadorState.filterDateTo)  recs = recs.filter(r => r.date <= checadorState.filterDateTo);
-  if (checadorState.filterStatus)  recs = recs.filter(r => r.status === checadorState.filterStatus);
-  if (checadorState.filterEmp)     recs = recs.filter(r => String(r.employee_id) === checadorState.filterEmp);
-
-  const totalRetardo  = checadorState.records.filter(r => r.retardo_minutes > 0).length;
-  const totalOvertime = checadorState.records.filter(r => r.overtime_minutes > 0).length;
-  const sinSalida     = checadorState.records.filter(r => !r.exit_time).length;
-  const sinVincular   = checadorState.records.filter(r => !r.employee_id).length;
-
-  const empOptions = state.employees.filter(e=>e.status==='active')
-    .sort((a,b)=>(a.full_name||'').localeCompare(b.full_name||''))
-    .map(e=>`<option value="${e.id}" ${checadorState.filterEmp===String(e.id)?'selected':''}>${e.full_name}</option>`)
-    .join('');
-
-  return `
-    <div class="card section">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-        <h3 style="margin:0;">Historial de registros del checador</h3>
-        <button class="btn btn-secondary" style="color:#dc2626;border-color:#dc2626;" onclick="checadorLimpiarRegistros()">🗑 Limpiar todos</button>
-      </div>
-      <div style="display:flex;gap:20px;flex-wrap:wrap;margin-bottom:16px;">
-        <div><span style="font-size:20px;font-weight:700;">${checadorState.records.length}</span><br><span style="color:var(--muted);font-size:12px;">Total registros</span></div>
-        <div><span style="font-size:20px;font-weight:700;color:#dc2626;">${totalRetardo}</span><br><span style="color:var(--muted);font-size:12px;">Con retardo</span></div>
-        <div><span style="font-size:20px;font-weight:700;color:#7c3aed;">${totalOvertime}</span><br><span style="color:var(--muted);font-size:12px;">Tiempo extra</span></div>
-        <div><span style="font-size:20px;font-weight:700;color:#b45309;">${sinSalida}</span><br><span style="color:var(--muted);font-size:12px;">Sin salida</span></div>
-        <div><span style="font-size:20px;font-weight:700;color:#64748b;">${sinVincular}</span><br><span style="color:var(--muted);font-size:12px;">Sin vincular</span></div>
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
-        <input type="date" value="${checadorState.filterDate}"
-          onchange="checadorState.filterDate=this.value;renderChecador()"
-          style="font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;" />
-        <input type="date" value="${checadorState.filterDateTo}"
-          onchange="checadorState.filterDateTo=this.value;renderChecador()"
-          style="font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;" />
-        <select onchange="checadorState.filterStatus=this.value;renderChecador()"
-          style="font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;">
-          <option value="" ${!checadorState.filterStatus?'selected':''}>Todos los estados</option>
-          <option value="pendiente" ${checadorState.filterStatus==='pendiente'?'selected':''}>Pendiente</option>
-          <option value="validado"  ${checadorState.filterStatus==='validado'?'selected':''}>Validado</option>
-          <option value="ignorado"  ${checadorState.filterStatus==='ignorado'?'selected':''}>Ignorado</option>
-        </select>
-        <select onchange="checadorState.filterEmp=this.value;renderChecador()"
-          style="font-size:13px;padding:4px 8px;border:1px solid var(--line);border-radius:6px;">
-          <option value="">Todos los empleados</option>
-          ${empOptions}
-        </select>
-        ${(checadorState.filterDate||checadorState.filterDateTo||checadorState.filterStatus||checadorState.filterEmp)
-          ? `<button class="btn btn-secondary" style="font-size:12px;"
-               onclick="checadorState.filterDate='';checadorState.filterDateTo='';checadorState.filterStatus='';checadorState.filterEmp='';renderChecador()">✕ Limpiar</button>`
-          : ''}
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno detectado</th>
-              <th>Entrada</th><th>Salida</th><th>Tiempo trabajado</th><th>Retardo</th><th>T. Extra</th>
-              <th>Estado</th><th>Acciones</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${recs.length === 0
-              ? '<tr><td colspan="11" style="text-align:center;color:var(--muted);padding:24px;">Sin registros para los filtros seleccionados</td></tr>'
-              : recs.map(r => `
-              <tr style="${!r.employee_id ? 'background:#fef9c3;' : r.retardo_minutes>0 ? 'background:#fef2f2;' : r.overtime_minutes>0 ? 'background:#f5f3ff;' : ''}">
-                <td>
-                  <div style="font-weight:600;">${r.employee_name || r.checador_name}</div>
-                  <div style="font-size:11px;color:var(--muted);">ID checador: ${r.checador_id}${!r.employee_id ? ' · <span style="color:#dc2626;">Sin vincular</span>' : ''}</div>
-                </td>
-                <td>${r.date}</td>
-                <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
-                <td>${turnoChip(r.shift_name)}</td>
-                <td style="font-weight:600;">${r.entry_time}</td>
-                <td>${r.exit_time
-                  ? (r.exit_date && r.exit_date !== r.date
-                    ? `${r.exit_time} <span style="font-size:10px;color:var(--muted);">(+1 día)</span>`
-                    : r.exit_time)
-                  : '<span style="color:#dc2626;font-size:12px;">Sin registro</span>'}</td>
-                <td>${r.worked_minutes != null ? fmtWorked(r.worked_minutes) : '--'}</td>
-                <td>${r.retardo_minutes > 0
-                  ? `<span style="color:#dc2626;font-weight:600;">⏱ ${fmtWorked(r.retardo_minutes)}</span>`
-                  : '<span style="color:#15803d;font-size:12px;">Sin retardo</span>'}</td>
-                <td>
-                  ${r.overtime_minutes > 0
-                  ? `<span style="display:inline-flex;align-items:center;gap:4px;">
-                       <span style="color:#7c3aed;font-weight:600;">+${fmtWorked(r.overtime_minutes)}</span>
-                       <button onclick="checadorBorrarOvertime(${r.id})" title="Borrar tiempo extra"
-                         style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:12px;padding:0 2px;line-height:1;">🗑</button>
-                     </span>`
-                  : '<span style="color:var(--muted);font-size:12px;">—</span>'}</td>
-                <td>${statusChipCh(r.status)}</td>
-                <td>
-                  <div style="display:flex;gap:4px;">
-                    ${r.status !== 'validado'
-                      ? `<button class="btn" style="font-size:11px;padding:2px 8px;background:#15803d;" onclick="checadorSetStatus(${r.id},'validado')" title="Validar">✅</button>`
-                      : ''}
-                    ${r.status !== 'ignorado'
-                      ? `<button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="checadorSetStatus(${r.id},'ignorado')" title="Ignorar">✕</button>`
-                      : ''}
-                    ${r.status !== 'pendiente'
-                      ? `<button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="checadorSetStatus(${r.id},'pendiente')" title="Revertir a pendiente">↩</button>`
-                      : ''}
-                  </div>
-                </td>
-              </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-      <p style="color:var(--muted);font-size:12px;margin-top:8px;">Mostrando ${recs.length} de ${checadorState.records.length} registros.</p>
-    </div>
-  `;
-}
-
-// ── Tab 3: Validar ────────────────────────────────────────────────────────────
-function renderChecadorValidar() {
-  if (checadorState.records.length === 0) {
-    return `
-      <div class="card section">
-        <div class="empty-state">
-          <div class="empty-icon">✅</div>
-          <p>Primero importa y valida registros del checador.</p>
-          <button class="btn" onclick="checadorSetTab(0)">← Ir a Importar</button>
-        </div>
-      </div>`;
-  }
-
-  const validated  = checadorState.records.filter(r => r.status === 'validado');
-  const retardos   = validated.filter(r => r.retardo_minutes > 0);
-  const sinSalida  = validated.filter(r => !r.exit_time);
-  const overtimes  = validated.filter(r => r.overtime_minutes > 0);
-
-  return `
-    <div class="card section">
-      <h3>Validación de incidencias detectadas</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
-        Compara los registros del checador con los del sistema. Desde aquí puedes crear incidencias
-        de retardo, falta o tiempo extra para los registros validados.
-      </p>
-      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;">
-        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;flex:1;min-width:150px;">
-          <div style="font-size:24px;font-weight:700;color:#15803d;">${validated.length}</div>
-          <div style="color:#15803d;font-size:13px;">Registros validados</div>
-        </div>
-        <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:16px;flex:1;min-width:150px;">
-          <div style="font-size:24px;font-weight:700;color:#dc2626;">${retardos.length}</div>
-          <div style="color:#dc2626;font-size:13px;">Con retardo detectado</div>
-        </div>
-        <div style="background:#f5f3ff;border:1px solid #ddd6fe;border-radius:8px;padding:16px;flex:1;min-width:150px;">
-          <div style="font-size:24px;font-weight:700;color:#7c3aed;">${overtimes.length}</div>
-          <div style="color:#7c3aed;font-size:13px;">Con tiempo extra</div>
-        </div>
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:16px;flex:1;min-width:150px;">
-          <div style="font-size:24px;font-weight:700;color:#b45309;">${sinSalida.length}</div>
-          <div style="color:#b45309;font-size:13px;">Sin registro de salida</div>
-        </div>
-      </div>
-
-      ${retardos.length > 0 ? `
-        <div style="margin-bottom:24px;">
-          <h4 style="margin:0 0 8px;color:#dc2626;">Retardos detectados por checador (${retardos.length})</h4>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Trabajador</th><th>Fecha</th><th>Turno</th><th>Hora entrada</th><th>Retardo</th><th>Acción</th></tr>
-              </thead>
-              <tbody>
-                ${retardos.map(r => `
-                <tr style="background:#fef2f2;">
-                  <td>${r.employee_name || r.checador_name}</td>
-                  <td>${r.date}</td>
-                  <td>${turnoChip(r.shift_name)}</td>
-                  <td style="font-weight:600;">${r.entry_time}</td>
-                  <td><span style="color:#dc2626;font-weight:600;">⏱ ${fmtWorked(r.retardo_minutes)}</span></td>
-                  <td>
-                    ${r.employee_id
-                      ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#dc2626;"
-                           onclick="checadorCrearRetardo(${r.id},${r.employee_id},'${r.date}',${r.retardo_minutes},'${(r.shift_name||'').replace(/'/g,"\\'")}')">
-                           + Crear retardo</button>`
-                      : '<span style="color:#64748b;font-size:12px;">Sin vincular</span>'}
-                  </td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>` : ''}
-
-      ${overtimes.length > 0 ? `
-        <div style="margin-bottom:24px;">
-          <h4 style="margin:0 0 8px;color:#7c3aed;">Tiempo extra detectado (${overtimes.length})</h4>
-          <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
-            Salida tardía (&gt;15 min sobre fin de turno) o llegada anticipada (&gt;80 min antes del turno).
-            Confirma antes de crear el registro de tiempo extra.
-          </p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Trabajador</th><th>Fecha</th><th>Día</th><th>Turno</th><th>Entrada</th><th>Salida</th><th>T. Extra</th><th>Tipo</th><th>Acción</th></tr>
-              </thead>
-              <tbody>
-                ${overtimes.map(r => `
-                <tr style="background:#f5f3ff;">
-                  <td>${r.employee_name || r.checador_name}</td>
-                  <td>${r.date}</td>
-                  <td style="color:var(--muted);font-size:12px;">${diaSemana(r.date)}</td>
-                  <td>${turnoChip(r.shift_name)}</td>
-                  <td>${r.entry_time}</td>
-                  <td>${r.exit_time || '—'}</td>
-                  <td><span style="color:#7c3aed;font-weight:600;">+${fmtWorked(r.overtime_minutes)}</span></td>
-                  <td><span style="font-size:11px;color:var(--muted);">${
-                    r.overtime_type === 'salida' ? 'Salida tardía' :
-                    r.overtime_type === 'llegada_anticipada' ? '⚠️ Llegada anticipada' :
-                    r.overtime_type === 'ambos' ? 'Salida + Llegada' : '—'
-                  }</span></td>
-                  <td>
-                    ${r.employee_id
-                      ? `<button class="btn" style="font-size:11px;padding:3px 10px;background:#7c3aed;"
-                           onclick="checadorCrearOvertime(${r.id},${r.employee_id},'${r.date}',${r.overtime_minutes},'${(r.shift_name||'').replace(/'/g,"\\'")}','${r.overtime_type||''}')">
-                           + Tiempo extra</button>`
-                      : '<span style="color:#64748b;font-size:12px;">Sin vincular</span>'}
-                  </td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>` : ''}
-
-      ${sinSalida.length > 0 ? `
-        <div>
-          <h4 style="margin:0 0 4px;color:#b45309;">Sin registro de salida — posible inasistencia (${sinSalida.length})</h4>
-          <p style="color:var(--muted);font-size:12px;margin-bottom:8px;">
-            Solo 1 checada registrada. Puede ser falta parcial o error del reloj. Revisa antes de crear incidencia.
-          </p>
-          <div class="table-wrap">
-            <table>
-              <thead>
-                <tr><th>Trabajador</th><th>Fecha</th><th>Turno detectado</th><th>Checada única</th><th>Acción</th></tr>
-              </thead>
-              <tbody>
-                ${sinSalida.map(r => `
-                <tr style="background:#fffbeb;">
-                  <td>${r.employee_name || r.checador_name}</td>
-                  <td>${r.date}</td>
-                  <td>${turnoChip(r.shift_name)}</td>
-                  <td>${r.entry_time}</td>
-                  <td>
-                    ${r.employee_id
-                      ? `<button class="btn btn-secondary" style="font-size:11px;padding:3px 10px;"
-                           onclick="checadorCrearFalta(${r.id},${r.employee_id},'${r.date}')">
-                           ⚠️ Registrar falta</button>`
-                      : '<span style="color:#64748b;font-size:12px;">Sin vincular</span>'}
-                  </td>
-                </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
-        </div>` : ''}
-
-      ${validated.length === 0
-        ? `<div class="empty-state"><div class="empty-icon">⚠️</div>
-           <p>No hay registros validados. Ve a la pestaña Registros y valida los que correspondan.</p></div>`
-        : ''}
-    </div>
-  `;
-}
-
-// ── Tab 4: Inasistencias ───────────────────────────────────────────────────────
-function renderChecadorInasistencias() {
-  const noMappings = checadorState.mappings.length === 0;
-  const abs = checadorState.absences;
-
-  const byDate = {};
-  for (const a of abs) {
-    if (!byDate[a.date]) byDate[a.date] = [];
-    byDate[a.date].push(a);
-  }
-  const dates = Object.keys(byDate).sort();
-
-  return `
-    <div class="card section">
-      <h3>Detección automática de inasistencias</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
-        El sistema cruza los días laborables de cada turno con los registros importados del checador.
-        Los días sin checada = inasistencia candidata. Solo aparecen empleados con vinculación activa.
-      </p>
-
-      ${noMappings ? `
-        <div class="notice warning" style="margin-bottom:16px;">
-          ⚠️ No hay trabajadores vinculados al checador. Ve a <strong>Mapear trabajadores</strong> y guarda las vinculaciones primero.
-          <button class="btn btn-secondary" style="margin-left:8px;font-size:12px;" onclick="checadorSetTab(1)">Ir a Mapear →</button>
-        </div>` : ''}
-
-      <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:16px;">
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Desde</label>
-          <input type="date" value="${checadorState.absenceFrom}"
-            onchange="checadorState.absenceFrom=this.value"
-            style="font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" />
-        </div>
-        <div>
-          <label style="font-size:12px;color:var(--muted);display:block;margin-bottom:2px;">Hasta</label>
-          <input type="date" value="${checadorState.absenceTo}"
-            onchange="checadorState.absenceTo=this.value"
-            style="font-size:13px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" />
-        </div>
-        <button class="btn" onclick="checadorDetectarInasistencias()" ${checadorState.absenceLoading ? 'disabled' : ''}>
-          ${checadorState.absenceLoading ? '⏳ Detectando...' : '🔍 Detectar inasistencias'}
-        </button>
-      </div>
-
-      ${abs.length > 0 ? `
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:12px;">
-          <div style="font-size:14px;font-weight:600;color:#dc2626;">
-            ${abs.length} inasistencia(s) detectada(s) en ${dates.length} día(s)
-          </div>
-          <button class="btn" style="background:#dc2626;font-size:12px;" onclick="checadorCrearTodasFaltas()">
-            ⚠️ Crear todas las faltas
-          </button>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Fecha</th><th>Día</th><th>Trabajador</th><th>Turno esperado</th><th>Acción</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${dates.map(date => {
-                const dayName = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][new Date(date + 'T12:00:00Z').getUTCDay()];
-                return byDate[date].map((a, i) => `
-                  <tr style="background:#fef2f2;">
-                    ${i === 0 ? `<td rowspan="${byDate[date].length}" style="font-weight:600;vertical-align:top;padding-top:10px;">${date}</td>
-                                 <td rowspan="${byDate[date].length}" style="color:var(--muted);vertical-align:top;padding-top:10px;">${dayName}</td>` : ''}
-                    <td>${a.employee_name}</td>
-                    <td>${turnoChip(a.shift_name)}</td>
-                    <td>
-                      <button class="btn btn-secondary" style="font-size:11px;padding:2px 8px;color:#dc2626;border-color:#dc2626;"
-                        onclick="checadorCrearFaltaAbsence(${a.employee_id},'${a.date}','${(a.shift_name||'').replace(/'/g,"\\'")}')">
-                        + Falta
-                      </button>
-                    </td>
-                  </tr>`).join('');
-              }).join('')}
-            </tbody>
-          </table>
-        </div>` : abs.length === 0 && checadorState.absenceFrom && checadorState.absenceTo && !checadorState.absenceLoading
-          ? '<div class="empty-state"><div class="empty-icon">✅</div><p>Sin inasistencias detectadas en el rango seleccionado.</p></div>'
-          : '<div class="empty-state"><div class="empty-icon">🚫</div><p>Selecciona un rango de fechas y presiona Detectar.</p></div>'
-      }
-    </div>
-  `;
-}
-
-// ── Tab 6: Limpieza de datos ──────────────────────────────────────────────────
-const CLEANUP_COLLECTIONS = [
-  { key: 'rhh_incidences',          label: 'Incidencias',              desc: 'Retardos, faltas, permisos, incapacidades, etc.' },
-  { key: 'rhh_weekly_rol',          label: 'ROL semanal (plantillas)',  desc: 'Cabeceras de semana del módulo ROL' },
-  { key: 'rhh_rol_slots',           label: 'ROL — slots',              desc: 'Slots de turno asignados' },
-  { key: 'rhh_rol_assignments',     label: 'ROL — asignaciones',       desc: 'Asignaciones de empleado a slot' },
-  { key: 'rhh_checador_records',    label: 'Registros del checador',   desc: 'Sesiones importadas del reloj' },
-  { key: 'rhh_overtime',            label: 'Tiempo extra',             desc: 'Registros de horas extra aprobadas' },
-  { key: 'rhh_attendance',          label: 'Asistencia',               desc: 'Registros de asistencia manual' },
-  { key: 'rhh_attendance_log',      label: 'Log de asistencia',        desc: 'Historial de cambios de asistencia' },
-  { key: 'rhh_vacation_requests',   label: 'Solicitudes de vacaciones', desc: 'Requests de vacaciones pendientes y aprobados' },
-  { key: 'rhh_te_applications',     label: 'Solicitudes de T.E.',      desc: 'Solicitudes de tiempo extra' },
-  { key: 'rhh_te_authorizations',   label: 'Autorizaciones de T.E.',   desc: 'Autorizaciones de tiempo extra' },
-  { key: 'rhh_notifications',       label: 'Notificaciones',           desc: 'Notificaciones del sistema RHH' },
-  { key: 'rhh_payroll_clarifications', label: 'Aclaraciones de nómina', desc: 'Tickets de aclaración de nómina' },
-];
-
-function renderChecadorLimpieza() {
-  const sel = checadorState._cleanupSel || {};
-  return `
-    <div class="card section" style="border:2px solid #fecaca;">
-      <h3 style="color:#dc2626;margin-bottom:4px;">🗑 Limpieza de registros</h3>
-      <p style="color:var(--muted);font-size:13px;margin-bottom:16px;">
-        Borra colecciones de registros de la plataforma. <strong>Los datos de empleados, usuarios y contraseñas NO se ven afectados.</strong><br>
-        Esta acción es <strong>irreversible</strong>. Selecciona solo lo que quieras eliminar.
-      </p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:8px;margin-bottom:20px;">
-        ${CLEANUP_COLLECTIONS.map(c => `
-          <label style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border:1px solid ${sel[c.key]?'#dc2626':'var(--line)'};border-radius:8px;cursor:pointer;background:${sel[c.key]?'#fef2f2':'#fff'};">
-            <input type="checkbox" ${sel[c.key]?'checked':''} style="margin-top:2px;accent-color:#dc2626;"
-              onchange="checadorCleanupToggle('${c.key}',this.checked)" />
-            <div>
-              <div style="font-weight:600;font-size:13px;">${c.label}</div>
-              <div style="font-size:11px;color:var(--muted);">${c.desc}</div>
-            </div>
-          </label>`).join('')}
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <button class="btn" style="background:#dc2626;" onclick="checadorEjecutarLimpieza()">
-          🗑 Eliminar seleccionados
-        </button>
-        <button class="btn btn-secondary" onclick="checadorCleanupSelAll(true)">Seleccionar todo</button>
-        <button class="btn btn-secondary" onclick="checadorCleanupSelAll(false)">Ninguno</button>
-        <span style="color:var(--muted);font-size:12px;">${Object.values(sel).filter(Boolean).length} colección(es) seleccionada(s)</span>
-      </div>
-    </div>`;
-}
-
-// ── Tab 5: Calendario semanal del checador ────────────────────────────────────
-function renderChecadorCalendario() {
-  const allRecs = checadorState.records;
-  if (allRecs.length === 0) {
-    return `<div class="card section"><div class="empty-state"><div class="empty-icon">📅</div>
-      <p>Importa y guarda registros del checador para ver el calendario.</p>
-      <button class="btn" onclick="checadorSetTab(0)">← Ir a Importar</button></div></div>`;
-  }
-
-  // Semana activa
-  const base = getWeekStart();
-  base.setDate(base.getDate() + checadorState.calWeekOff * 7);
-  const weekDates = getWeekDates(base); // 7 días Lun–Dom
-  const weekIsos  = weekDates.map(d => fmtDate(d));
-  const rangeLbl  = `${weekIsos[0]} – ${weekIsos[6]}`;
-
-  // Índice: employee_key → { name, shift_name, byDate: {date: record} }
-  const byEmp = {};
-  for (const r of allRecs) {
-    const key  = r.employee_id != null ? `e${r.employee_id}` : `c${r.checador_id}`;
-    const name = r.employee_name || r.checador_name;
-    if (!byEmp[key]) byEmp[key] = { name, shift_name: r.shift_name, byDate: {} };
-    // Si hay múltiples registros el mismo día, queda el más reciente (no normal)
-    byEmp[key].byDate[r.date] = r;
-  }
-  // Agregar ausencias detectadas como "falta" si no hay registro ese día
-  for (const a of checadorState.absences) {
-    if (!weekIsos.includes(a.date)) continue;
-    const key = `e${a.employee_id}`;
-    if (!byEmp[key]) byEmp[key] = { name: a.employee_name, shift_name: a.shift_name, byDate: {} };
-    if (!byEmp[key].byDate[a.date]) byEmp[key].byDate[a.date] = { _absence: true, shift_name: a.shift_name };
-  }
-
-  const empKeys = Object.keys(byEmp).sort((a, b) => byEmp[a].name.localeCompare(byEmp[b].name));
-
-  function cellFor(emp, dateIso) {
-    const r = emp.byDate[dateIso];
-    if (!r) return '<td style="text-align:center;"><span style="color:#d1d5db;">—</span></td>';
-    if (r._absence) return '<td style="text-align:center;"><span class="cell-chip cell-falta" style="font-size:11px;">Falta</span></td>';
-
-    let cls = 'cell-asignado', lbl = '✓';
-    if (!r.exit_time)           { cls = 'cell-permiso';     lbl = '?sal'; }
-    if (r.retardo_minutes > 0)  { cls = 'cell-vacacion';    lbl = '⏱Ret'; }
-    if (r.overtime_minutes > 0) { cls = 'cell-tiempo_extra'; lbl = `+${fmtWorked(r.overtime_minutes)}`; }
-    if (r.retardo_minutes > 0 && r.overtime_minutes > 0) { cls = 'cell-incapacidad'; lbl = '⏱+TE'; }
-
-    const tip = `${r.entry_time || '?'}–${r.exit_time || '?'} | Ret:${r.retardo_minutes||0}m | TE:${r.overtime_minutes||0}m`;
-    return `<td style="text-align:center;" title="${tip}">
-      <span class="cell-chip ${cls}" style="font-size:11px;cursor:default;">${lbl}</span></td>`;
-  }
-
-  const headerCells = weekDates.map(d => {
-    const iso = fmtDate(d);
-    const isToday = iso === fmtDate(new Date());
-    const dow = DAYS_SHORT[d.getDay()];
-    return `<th style="${isToday ? 'background:#d1fae5;' : ''}text-align:center;">${dow}<br><span style="font-size:11px;font-weight:400;">${d.getDate()}/${d.getMonth()+1}</span></th>`;
-  }).join('');
-
-  const rows = empKeys.map(key => {
-    const emp = byEmp[key];
-    const cells = weekIsos.map(iso => cellFor(emp, iso)).join('');
-    return `<tr>
-      <td style="white-space:nowrap;padding:6px 8px;">
-        <strong style="font-size:13px;">${emp.name}</strong><br>
-        <span style="font-size:11px;color:var(--muted);">${turnoChip(emp.shift_name)}</span>
-      </td>${cells}</tr>`;
-  }).join('');
-
-  return `
-    <div class="card section">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-        <h3 style="margin:0;">Calendario semanal — Checador</h3>
-        <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn btn-secondary" style="font-size:13px;padding:4px 12px;"
-            onclick="checadorState.calWeekOff--;renderChecador()">‹ Anterior</button>
-          <span style="font-size:13px;font-weight:600;padding:0 8px;">📅 ${rangeLbl}</span>
-          <button class="btn btn-secondary" style="font-size:13px;padding:4px 12px;"
-            onclick="checadorState.calWeekOff++;renderChecador()">Siguiente ›</button>
-          <button class="btn btn-secondary" style="font-size:12px;padding:4px 10px;"
-            onclick="checadorState.calWeekOff=0;renderChecador()">Hoy</button>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table class="cal-week-table">
-          <thead><tr>
-            <th style="text-align:left;min-width:150px;">Empleado</th>${headerCells}
-          </tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <strong style="font-size:12px;">Leyenda:</strong>
-        <span class="cell-chip cell-asignado" style="font-size:11px;">✓ Asistencia</span>
-        <span class="cell-chip cell-vacacion" style="font-size:11px;">⏱ Retardo</span>
-        <span class="cell-chip cell-tiempo_extra" style="font-size:11px;">+ T. Extra</span>
-        <span class="cell-chip cell-incapacidad" style="font-size:11px;">⏱+ Ret+TE</span>
-        <span class="cell-chip cell-permiso" style="font-size:11px;">?sal Sin salida</span>
-        <span class="cell-chip cell-falta" style="font-size:11px;">Falta</span>
-      </div>
-    </div>`;
-}
-
-// ── Handlers ──────────────────────────────────────────────────────────────────
-
-async function checadorLoadFile(input) {
-  const file = input.files[0];
-  if (!file) return;
-  checadorState.csvText = await file.text();
-  renderChecador();
-}
-
-async function checadorParsear() {
-  const text = checadorState.csvText || document.getElementById('ch-csv-text')?.value || '';
-  if (!text.trim()) { toast('Pega o carga el CSV primero', 'warning'); return; }
-  checadorState.csvText = text;
-  try {
-    const data = await api('/api/rhh/checador/parse', {
-      method: 'POST',
-      body: JSON.stringify({ csv_text: text, date_from: checadorState.parseFrom || undefined, date_to: checadorState.parseTo || undefined }),
-    });
-    checadorState.preview  = data;
-    checadorState.mappings = data.workers.filter(w => w.mapped).map(w => ({
-      checador_id: w.checador_id, checador_name: w.checador_name,
-      employee_id: w.employee_id, employee_name: w.employee_name,
-    }));
-    toast(`Análisis completo: ${data.total_sessions} sesiones detectadas`);
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorProcesar(replace) {
-  const text = checadorState.csvText || '';
-  if (!text.trim()) { toast('CSV no disponible', 'warning'); return; }
-  if (replace && !confirm('¿Seguro que deseas reemplazar TODOS los registros almacenados?')) return;
-  try {
-    await api('/api/rhh/checador/process', {
-      method: 'POST',
-      body: JSON.stringify({ csv_text: text, replace, date_from: checadorState.parseFrom || undefined, date_to: checadorState.parseTo || undefined }),
-    });
-    checadorState.records = await api('/api/rhh/checador/records');
-    toast(`Registros guardados: ${checadorState.records.length}`);
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-function checadorSelectEmpByText(checadorId, checadorName, text) {
-  const emp = state.employees.find(e => e.status === 'active' && e.full_name === text);
-  const employeeId = emp ? emp.id : null;
-  checadorUpdateMapLocal(checadorId, checadorName, employeeId);
-}
-
-function checadorNuevoEmpleado() {
-  if (!confirm('Se abrirá el formulario de nuevo empleado. Al regresar al Checador, el nuevo empleado aparecerá en la búsqueda.')) return;
-  empTab = 'nuevo';
-  empEditId = null;
-  location.hash = '#empleados';
-}
-
-const _pendingMaps = {};
-function checadorUpdateMapLocal(checadorId, checadorName, employeeId) {
-  _pendingMaps[checadorId] = { checador_id: checadorId, checador_name: checadorName, employee_id: employeeId ? Number(employeeId) : null };
-  const st = document.getElementById(`chmap-st-${checadorId}`);
-  if (st) st.innerHTML = employeeId
-    ? '<span style="color:#b45309;font-weight:600;">🔄 Cambio pendiente</span>'
-    : '<span style="color:#dc2626;font-weight:600;">⚠️ Sin mapear</span>';
-}
-
-async function checadorGuardarMapeos() {
-  const maps = Object.values(_pendingMaps);
-  if (maps.length === 0) { toast('No hay cambios de vinculación pendientes', 'warning'); return; }
-  try {
-    await api('/api/rhh/checador/mappings', {
-      method: 'POST',
-      body: JSON.stringify({ mappings: maps }),
-    });
-    if (checadorState.preview) {
-      for (const m of maps) {
-        const w = checadorState.preview.workers.find(x => x.checador_id === m.checador_id);
-        if (w) {
-          w.employee_id   = m.employee_id;
-          w.employee_name = (state.employees.find(e => e.id === m.employee_id) || {}).full_name || null;
-          w.mapped        = !!m.employee_id;
-        }
-      }
-    }
-    Object.keys(_pendingMaps).forEach(k => delete _pendingMaps[k]);
-    checadorState.mappings = await api('/api/rhh/checador/mappings');
-    toast('Vinculaciones guardadas');
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorSetStatus(id, status) {
-  try {
-    const updated = await api(`/api/rhh/checador/records/${id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status }),
-    });
-    const idx = checadorState.records.findIndex(r => r.id === id);
-    if (idx !== -1) checadorState.records[idx] = { ...checadorState.records[idx], ...updated };
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorLimpiarRegistros() {
-  if (!confirm('¿Eliminar TODOS los registros del checador? Esta acción no se puede deshacer.')) return;
-  try {
-    await api('/api/rhh/checador/records', { method: 'DELETE' });
-    checadorState.records = [];
-    toast('Registros eliminados');
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorCrearRetardo(recId, empId, date, minutes, shiftName) {
-  if (!confirm(`¿Crear incidencia de retardo para el ${date} (${fmtWorked(minutes)} — ${shiftName})?`)) return;
-  try {
-    await api('/api/rhh/incidences', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: empId,
-        type:     'retardo',
-        date,
-        date_end: date,
-        hours:    Math.round(minutes / 60 * 10) / 10,
-        notes:    `Retardo detectado por checador. Turno: ${shiftName}. Tiempo de retardo: ${fmtWorked(minutes)}.`,
-      }),
-    });
-    await checadorSetStatus(recId, 'validado');
-    toast('Incidencia de retardo creada');
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorCrearFalta(recId, empId, date) {
-  if (!confirm(`¿Registrar falta para el ${date}? Solo se registró 1 checada (sin salida).`)) return;
-  try {
-    await api('/api/rhh/incidences', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: empId,
-        type:     'falta',
-        date,
-        date_end: date,
-        notes:    'Inasistencia detectada por checador: solo 1 checada registrada, sin registro de salida.',
-      }),
-    });
-    await checadorSetStatus(recId, 'validado');
-    toast('Falta registrada');
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-// ── Context menu para tiempo extra ────────────────────────────────────────────
-(function() {
-  const menu = document.createElement('div');
-  menu.id = 'ch-ctx-menu';
-  menu.style.cssText = 'position:fixed;display:none;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,.15);z-index:9999;min-width:180px;padding:4px 0;font-size:13px;';
-  document.body.appendChild(menu);
-  document.addEventListener('click', () => { menu.style.display = 'none'; });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') menu.style.display = 'none'; });
-})();
-
-function checadorOvertimeMenu(event, recId) {
-  const menu = document.getElementById('ch-ctx-menu');
-  menu.innerHTML = `
-    <div style="padding:6px 14px;color:#64748b;font-size:11px;border-bottom:1px solid #f1f5f9;">T. Extra — Opciones</div>
-    <div onclick="checadorBorrarOvertime(${recId})"
-      style="padding:8px 14px;cursor:pointer;color:#dc2626;display:flex;align-items:center;gap:6px;"
-      onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background=''">
-      🗑 Borrar tiempo extra
-    </div>`;
-  menu.style.display = 'block';
-  const x = Math.min(event.clientX, window.innerWidth - 200);
-  const y = Math.min(event.clientY, window.innerHeight - 80);
-  menu.style.left = x + 'px';
-  menu.style.top  = y + 'px';
-}
-
-function checadorCleanupToggle(key, val) {
-  if (!checadorState._cleanupSel) checadorState._cleanupSel = {};
-  checadorState._cleanupSel[key] = val;
-  renderChecador();
-}
-
-function checadorCleanupSelAll(val) {
-  checadorState._cleanupSel = {};
-  if (val) CLEANUP_COLLECTIONS.forEach(c => { checadorState._cleanupSel[c.key] = true; });
-  renderChecador();
-}
-
-async function checadorEjecutarLimpieza() {
-  const sel = checadorState._cleanupSel || {};
-  const cols = Object.entries(sel).filter(([,v])=>v).map(([k])=>k);
-  if (cols.length === 0) { toast('Selecciona al menos una colección', 'warning'); return; }
-  const labels = cols.map(k => CLEANUP_COLLECTIONS.find(c=>c.key===k)?.label || k).join('\n  • ');
-  if (!confirm(`⚠️ ¿Confirmas borrar permanentemente estos registros?\n\n  • ${labels}\n\nEsta acción NO se puede deshacer.`)) return;
-  if (!confirm(`Segunda confirmación: ¿ESTÁS SEGURO? Se borrarán ${cols.length} colección(es).`)) return;
-  try {
-    const res = await api('/api/rhh/checador/admin/cleanup', {
-      method: 'POST',
-      body: JSON.stringify({ collections: cols }),
-    });
-    const detalles = Object.entries(res.cleared).map(([k,n])=>`${k}: ${n} registros`).join('\n');
-    toast(`Limpieza completada. ${cols.length} colecciones borradas.`);
-    alert(`Registros eliminados:\n${detalles}`);
-    checadorState._cleanupSel = {};
-    checadorState.records = [];
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorBorrarOvertime(recId) {
-  document.getElementById('ch-ctx-menu').style.display = 'none';
-  if (!confirm('¿Borrar el tiempo extra de este registro?')) return;
-  try {
-    await api(`/api/rhh/checador/records/${recId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ overtime_minutes: 0 }),
-    });
-    const idx = checadorState.records.findIndex(r => r.id === recId);
-    if (idx !== -1) { checadorState.records[idx].overtime_minutes = 0; checadorState.records[idx].overtime_type = null; }
-    toast('Tiempo extra eliminado');
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorCrearOvertime(recId, empId, date, minutes, shiftName, overtimeType) {
-  const tipoMsg = overtimeType === 'llegada_anticipada'
-    ? `\n⚠️ NOTA: Este tiempo extra es por llegada anticipada (más de 1h20 antes del turno).\nVerifica que corresponda realmente a tiempo extra autorizado.`
-    : overtimeType === 'ambos'
-    ? `\n⚠️ NOTA: Incluye tiempo de llegada anticipada y salida tardía.`
-    : '';
-  if (!confirm(`¿Registrar tiempo extra para el ${date}?\nTurno: ${shiftName}\nTiempo extra: ${fmtWorked(minutes)}${tipoMsg}`)) return;
-  try {
-    await api('/api/rhh/overtime', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: empId,
-        date,
-        date_end: date,
-        hours: Math.round(minutes / 60 * 100) / 100,
-        notes: `Tiempo extra detectado por checador. Turno: ${shiftName}. Tipo: ${overtimeType || 'salida'}. Tiempo: ${fmtWorked(minutes)}.`,
-        status: 'pendiente',
-      }),
-    });
-    await checadorSetStatus(recId, 'validado');
-    toast('Tiempo extra registrado');
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorDetectarInasistencias() {
-  if (!checadorState.absenceFrom || !checadorState.absenceTo) {
-    toast('Selecciona el rango de fechas', 'warning'); return;
-  }
-  if (checadorState.absenceFrom > checadorState.absenceTo) {
-    toast('La fecha inicial debe ser menor o igual a la final', 'warning'); return;
-  }
-  checadorState.absenceLoading = true;
-  renderChecador();
-  try {
-    const data = await api('/api/rhh/checador/detect-absences', {
-      method: 'POST',
-      body: JSON.stringify({ date_from: checadorState.absenceFrom, date_to: checadorState.absenceTo }),
-    });
-    checadorState.absences = data.absences || [];
-    if (data.sin_turno && data.sin_turno.length > 0) {
-      toast(`${data.count} inasistencia(s). ${data.sin_turno.length} empleado(s) sin turno definido (no incluidos).`, 'warning');
-    } else {
-      toast(`${data.count} inasistencia(s) detectada(s)`);
-    }
-  } catch (err) { toast(err.message, 'error'); checadorState.absences = []; }
-  checadorState.absenceLoading = false;
-  renderChecador();
-}
-
-async function checadorCrearFaltaAbsence(empId, date, shiftName) {
-  if (!confirm(`¿Crear falta para el ${date} (${shiftName})?`)) return;
-  try {
-    await api('/api/rhh/incidences', {
-      method: 'POST',
-      body: JSON.stringify({
-        employee_id: empId,
-        type:     'falta',
-        date,
-        date_end: date,
-        notes:    `Inasistencia detectada por checador. Turno: ${shiftName}. Sin checada registrada ese día.`,
-      }),
-    });
-    // Remover del listado local
-    checadorState.absences = checadorState.absences.filter(a => !(a.employee_id === empId && a.date === date));
-    toast('Falta registrada');
-    renderChecador();
-  } catch (err) { toast(err.message, 'error'); }
-}
-
-async function checadorCrearTodasFaltas() {
-  const n = checadorState.absences.length;
-  if (n === 0) return;
-  if (!confirm(`¿Crear ${n} incidencia(s) de falta? Esta acción no se puede deshacer.`)) return;
-  let ok = 0, fail = 0;
-  for (const a of checadorState.absences) {
-    try {
-      await api('/api/rhh/incidences', {
-        method: 'POST',
-        body: JSON.stringify({
-          employee_id: a.employee_id,
-          type:     'falta',
-          date:     a.date,
-          date_end: a.date,
-          notes:    `Inasistencia detectada por checador. Turno: ${a.shift_name}. Sin checada registrada ese día.`,
-        }),
-      });
-      ok++;
-    } catch (_) { fail++; }
-  }
-  checadorState.absences = [];
-  toast(fail > 0 ? `${ok} faltas creadas, ${fail} errores` : `${ok} faltas creadas`, fail > 0 ? 'warning' : 'success');
-  renderChecador();
-}
 
 // ══════════════════════════════════════════════════════════════════════════════
 // KPI RHH — Costos RHH, Costos por Proyecto, Incidencias por Área
