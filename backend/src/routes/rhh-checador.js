@@ -24,6 +24,20 @@ function minToHHMM(total) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
+/** Para turnos nocturnos: entry=primer PM (>=12:00), exit=último AM (<12:00) */
+function resolveEntryExit(sortedTimes, isNocturno) {
+  if (!sortedTimes || sortedTimes.length === 0) return { entry: null, exit: null };
+  if (!isNocturno || sortedTimes.length <= 1) {
+    return { entry: sortedTimes[0], exit: sortedTimes.length > 1 ? sortedTimes[sortedTimes.length - 1] : null };
+  }
+  const pm = sortedTimes.filter(t => timeToMin(t) >= 720);
+  const am = sortedTimes.filter(t => timeToMin(t) < 720);
+  return {
+    entry: pm.length > 0 ? pm[0] : null,
+    exit:  am.length > 0 ? am[am.length - 1] : null,
+  };
+}
+
 /**
  * Parsea archivo .dat de ZKTeco.
  * Formato: emp_id\tYYYY-MM-DD HH:MM:SS\t...  (tab-separated)
@@ -777,10 +791,29 @@ function buildWeekReport(db, week_start) {
                        || attStatus === 'cumpleanos_trabajado';
       const key = `${emp.id}_${dateStr}`;
       const checada = checadaMap[key];
-      const entry       = checada ? checada.entry : null;
-      const exit        = checada ? checada.exit : null;
-      const comedorIn   = checada ? checada.comedor : null;
-      const comedorOut  = checada ? checada.comedor_exit : null;
+      let entry       = checada ? checada.entry : null;
+      let exit        = checada ? checada.exit : null;
+      let comedorIn   = checada ? checada.comedor : null;
+      let comedorOut  = checada ? checada.comedor_exit : null;
+
+      // Nocturno: si no hay salida, buscar en el registro del día siguiente
+      const isNocturno = shift && timeToMin(shift.end_time) < timeToMin(shift.start_time);
+      if (isNocturno && entry && !exit) {
+        const nextDate = new Date(dateStr + 'T12:00:00');
+        nextDate.setDate(nextDate.getDate() + 1);
+        const nextKey = `${emp.id}_${nextDate.toISOString().slice(0, 10)}`;
+        const nextChecada = checadaMap[nextKey];
+        if (nextChecada) {
+          // Buscar la checada más temprana del día siguiente como salida
+          const nextTimes = (nextChecada.asist_times || []).filter(t => timeToMin(t) <= timeToMin(shift.end_time) + 120);
+          if (nextTimes.length > 0) {
+            exit = nextTimes[nextTimes.length - 1];
+          }
+          if (!comedorIn && nextChecada.comedor) comedorIn = nextChecada.comedor;
+          if (!comedorOut && nextChecada.comedor_exit) comedorOut = nextChecada.comedor_exit;
+        }
+      }
+
       const hasAsist = !!entry;
 
       // Calcular tiempos
@@ -966,10 +999,6 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
   const asistRows   = asistencia_text ? parseChecadorAuto(asistencia_text) : [];
   const comedorRows = comedor_text ? parseChecadorAuto(comedor_text) : [];
 
-  const inWeek = r => r.dateIso >= week_start && r.dateIso <= weekEnd;
-  const asistWeek   = asistRows.filter(inWeek);
-  const comedorWeek = comedorRows.filter(inWeek);
-
   // Resolver checadorId → employeeId
   const resolvedMap = {};
   const unmapped = [];
@@ -993,6 +1022,53 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
                  || comedorRows.find(r => r.checadorId === cid)?.checadorName || '';
     unmapped.push({ checador_id: cid, checador_name: datName });
   }
+
+  // ── Reasignar checadas nocturnas al día de inicio del turno ──
+  // Si turno nocturno (end < start) y la checada es de madrugada, mover al día anterior
+  const shifts = db.rhh_shifts || [];
+  const allRols = db.rhh_weekly_rol || [];
+  const allAsigs = db.rhh_rol_assignments || [];
+  const attCtrlRol = allRols.find(r => r.week_start === week_start && r.shift_id == null);
+  const attCtrlAsigs = attCtrlRol ? allAsigs.filter(a => a.rol_id === attCtrlRol.id) : [];
+  const attCtrlShiftMap = {};
+  for (const a of attCtrlAsigs) { if (a.shift_id != null) attCtrlShiftMap[a.employee_id] = a.shift_id; }
+  const schedRols = allRols.filter(r => r.week_start === week_start && r.shift_id != null);
+  const schedShiftMap = {};
+  for (const rol of schedRols) {
+    for (const a of allAsigs.filter(x => x.rol_id === rol.id)) schedShiftMap[a.employee_id] = rol.shift_id;
+  }
+  function getEmpShiftId(empId) {
+    const emp = employees.find(e => e.id === empId);
+    return attCtrlShiftMap[empId] || schedShiftMap[empId] || (emp && emp.shift_id) || null;
+  }
+  function isNocturnoShift(shiftId) {
+    const s = shiftId ? shifts.find(x => x.id === shiftId) : null;
+    return s ? timeToMin(s.end_time) < timeToMin(s.start_time) : false;
+  }
+
+  function reassignNocturno(rows) {
+    for (const r of rows) {
+      const resolved = resolvedMap[r.checadorId];
+      if (!resolved) continue;
+      const shId = getEmpShiftId(resolved.employee_id);
+      if (!isNocturnoShift(shId)) continue;
+      const shift = shifts.find(s => s.id === shId);
+      const endMin = timeToMin(shift.end_time);
+      // Checada de madrugada (00:00 a end_time + 2h) → asignar a día anterior
+      if (r.timeMin <= endMin + 120) {
+        const prev = new Date(r.dateIso + 'T12:00:00');
+        prev.setDate(prev.getDate() - 1);
+        r.dateIso = prev.toISOString().slice(0, 10);
+      }
+    }
+  }
+  reassignNocturno(asistRows);
+  reassignNocturno(comedorRows);
+
+  // Filtrar por semana (después de reasignación nocturna)
+  const inWeek = r => r.dateIso >= week_start && r.dateIso <= weekEnd;
+  const asistWeek = asistRows.filter(inWeek);
+  const comedorWeek = comedorRows.filter(inWeek);
 
   // Agrupar checadas por employeeId + fecha
   const asistByEmpDate = {};
@@ -1024,6 +1100,7 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
   for (const key of allKeys) {
     const [empIdStr, dateStr] = key.split('_');
     const empId = Number(empIdStr);
+    const nocturno = isNocturnoShift(getEmpShiftId(empId));
     const asistChecks = (asistByEmpDate[key] || []).sort((a, b) => a.timeMin - b.timeMin);
     const comedorChecks = (comedorByEmpDate[key] || []).sort((a, b) => a.timeMin - b.timeMin);
 
@@ -1039,8 +1116,9 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       const mergedComedor = [...new Set([...(rec.comedor_times || []), ...newComedorTimes])].sort();
       rec.asist_times = mergedAsist;
       rec.comedor_times = mergedComedor;
-      rec.entry = mergedAsist.length > 0 ? mergedAsist[0] : null;
-      rec.exit  = mergedAsist.length > 1 ? mergedAsist[mergedAsist.length - 1] : null;
+      const ee = resolveEntryExit(mergedAsist, nocturno);
+      rec.entry = ee.entry;
+      rec.exit  = ee.exit;
       rec.comedor = mergedComedor.length > 0 ? mergedComedor[0] : null;
       rec.comedor_exit = mergedComedor.length > 1 ? mergedComedor[mergedComedor.length - 1] : null;
       rec.updated_at = now;
@@ -1048,14 +1126,15 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       updatedCount++;
     } else {
       // Nuevo registro
+      const ee = resolveEntryExit(newAsistTimes, nocturno);
       existing.push({
         id: nextId(existing),
         employee_id: empId,
         date: dateStr,
         asist_times: newAsistTimes,
         comedor_times: newComedorTimes,
-        entry: newAsistTimes.length > 0 ? newAsistTimes[0] : null,
-        exit:  newAsistTimes.length > 1 ? newAsistTimes[newAsistTimes.length - 1] : null,
+        entry: ee.entry,
+        exit:  ee.exit,
         comedor: newComedorTimes.length > 0 ? newComedorTimes[0] : null,
         comedor_exit: newComedorTimes.length > 1 ? newComedorTimes[newComedorTimes.length - 1] : null,
         uploaded_at: now,
