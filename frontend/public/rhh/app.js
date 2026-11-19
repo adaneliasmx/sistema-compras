@@ -12410,21 +12410,28 @@ function renderChecador() {
           let cellBg, cellContent;
           const STATUS_STYLES = {
             ok:            { bg: '#dcfce7', color: '#166534', label: 'OK' },
-            retardo:       { bg: '#fef9c3', color: '#854d0e', label: 'Retardo' },
+            retardo_checador: { bg: '#fef9c3', color: '#854d0e', label: 'Retardo' },
             sin_checada:   { bg: '#fee2e2', color: '#991b1b', label: 'Sin checada' },
             parcial:       { bg: '#ffedd5', color: '#9a3412', label: '1 checada' },
             festivo:       { bg: '#e0e7ff', color: '#3730a3', label: 'Festivo' },
             descanso:      { bg: '#f3f4f6', color: '#9ca3af', label: 'Descanso' },
+            labora:        { bg: '#f3f4f6', color: '#6b7280', label: 'Labora' },
+            vacio:         { bg: '#f9fafb', color: '#d1d5db', label: '' },
             vacaciones:    { bg: '#dbeafe', color: '#1e40af', label: 'Vacaciones' },
+            vacaciones_pendiente: { bg: '#dbeafe', color: '#93c5fd', label: 'Vac. pend.' },
             permiso:       { bg: '#fae8ff', color: '#7e22ce', label: 'Permiso' },
+            permiso_pendiente: { bg: '#fae8ff', color: '#c084fc', label: 'Perm. pend.' },
             permiso_sin_goce: { bg: '#fae8ff', color: '#7e22ce', label: 'Permiso s/g' },
             incapacidad:   { bg: '#fef3c7', color: '#92400e', label: 'Incapacidad' },
             cumpleanos:    { bg: '#fce7f3', color: '#be185d', label: 'Cumplea\u00f1os' },
             cumpleanos_descanso: { bg: '#fce7f3', color: '#be185d', label: 'Cumpl. desc.' },
             cumpleanos_trabajado: { bg: '#fce7f3', color: '#be185d', label: 'Cumpl. trab.' },
             falta:         { bg: '#fee2e2', color: '#991b1b', label: 'Falta' },
+            falta_pendiente: { bg: '#fee2e2', color: '#fca5a5', label: 'Falta pend.' },
+            retardo:       { bg: '#fef9c3', color: '#854d0e', label: 'Retardo (inc)' },
             paro_tecnico:  { bg: '#f3f4f6', color: '#6b7280', label: 'Paro t\u00e9cn.' },
             baja:          { bg: '#f3f4f6', color: '#6b7280', label: 'Baja' },
+            turno_incompleto: { bg: '#ffedd5', color: '#9a3412', label: 'T. incompl.' },
           };
           const st = STATUS_STYLES[day.status] || STATUS_STYLES.descanso;
           cellBg = st.bg;
@@ -12434,20 +12441,21 @@ function renderChecador() {
           if (day.exit)  cellContent += '<div style="font-size:10px;color:#374151;">S ' + day.exit + '</div>';
           if (day.comedor) cellContent += '<div style="font-size:10px;color:#374151;">C ' + day.comedor + '</div>';
           else if (day.should_work && day.entry) cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
-          if (day.shift_override) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:700;">' + day.shift_override + '</div>';
-          if (day.alerta_sin_registro) cellContent += '<div style="font-size:9px;color:#dc2626;font-weight:700;">&#9888; Labora sin reg.</div>';
+          if (day.te_hours > 0) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:700;">T.E. ' + day.te_hours + 'h</div>';
+          if (day.alerta_sin_registro) cellContent += '<div style="font-size:9px;color:#dc2626;font-weight:700;">&#9888; Sin registro</div>';
 
           dayCells += '<td style="padding:3px 4px;background:' + cellBg + ';vertical-align:top;border:1px solid #e5e7eb;">' + cellContent + '</td>';
         }
 
         const pct = emp.scheduled > 0 ? Math.round(emp.checked / emp.scheduled * 100) : 0;
         const pctColor = pct >= 90 ? '#166534' : pct >= 70 ? '#854d0e' : '#991b1b';
+        const teCell = emp.te_total > 0 ? '<span style="color:#7c3aed;margin-left:4px;" title="Tiempo extra">' + emp.te_total + 'h</span>' : '';
 
         rowsHtml += '<tr>'
           + '<td style="padding:6px 8px;font-size:12px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:#fff;z-index:1;border:1px solid #e5e7eb;">' + (emp.employee_number || '') + '</td>'
           + '<td style="padding:6px 8px;font-size:12px;white-space:nowrap;position:sticky;left:50px;background:#fff;z-index:1;border:1px solid #e5e7eb;" title="' + emp.full_name + '">' + emp.full_name + '</td>'
           + dayCells
-          + '<td style="padding:6px 8px;text-align:center;font-weight:700;font-size:12px;color:' + pctColor + ';border:1px solid #e5e7eb;">' + emp.checked + '/' + emp.scheduled + '</td>'
+          + '<td style="padding:6px 8px;text-align:center;font-weight:700;font-size:12px;color:' + pctColor + ';border:1px solid #e5e7eb;">' + emp.checked + '/' + emp.scheduled + teCell + '</td>'
           + '</tr>';
       }
     }
@@ -12492,7 +12500,8 @@ function renderChecador() {
       + '<div style="color:#dc2626;">Sin comedor: <strong>' + s.no_comedor + '</strong></div>'
       + '<div style="color:#854d0e;">Retardos (>15 min): <strong>' + s.retardos + '</strong></div>'
       + '<div style="color:#1e40af;">Justificadas: <strong>' + (s.justified || 0) + '</strong></div>'
-      + (s.alerts > 0 ? '<div style="color:#dc2626;font-weight:700;">&#9888; Alertas (labora sin registro): <strong>' + s.alerts + '</strong></div>' : '')
+      + (s.te_total > 0 ? '<div style="color:#7c3aed;">T.E. registrado: <strong>' + s.te_total + 'h</strong></div>' : '')
+      + (s.alerts > 0 ? '<div style="color:#dc2626;font-weight:700;">&#9888; Labora sin registro checador: <strong>' + s.alerts + '</strong></div>' : '')
       + '</div>'
       + '<div style="margin-top:10px;background:#e5e7eb;border-radius:6px;height:16px;overflow:hidden;">'
       + '<div style="height:100%;background:#22c55e;width:' + barW + '%;transition:width .3s;border-radius:6px;"></div></div>'

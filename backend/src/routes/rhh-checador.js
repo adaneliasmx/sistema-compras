@@ -576,7 +576,7 @@ router.delete('/records', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (req, 
   res.json({ ok: true });
 });
 
-// ── Helpers compartidos: semana + turnos + incidencias ────────────────────────
+// ── Helpers compartidos ───────────────────────────────────────────────────────
 
 function buildWeekDates(week_start, holidays) {
   if (!holidays) holidays = (read().rhh_holidays || []);
@@ -599,105 +599,54 @@ function buildWeekDates(week_start, holidays) {
   return weekDates;
 }
 
-/** Construye mapa employee_id → shift_id desde ROL Semanal */
-function buildRolShiftMap(db, week_start) {
-  const weeklyRols = db.rhh_weekly_rol || [];
-  const rolAssignments = db.rhh_rol_assignments || [];
-  const map = {};
-  const rolsForWeek = weeklyRols.filter(r => r.week_start === week_start && r.shift_id != null);
-  for (const rol of rolsForWeek) {
-    for (const a of rolAssignments.filter(a => a.rol_id === rol.id)) {
-      map[a.employee_id] = rol.shift_id;
-    }
-  }
-  return map;
-}
-
-/**
- * Resuelve incidencia/status de asistencia para un empleado en una fecha.
- * Misma lógica que GET weekly-attendance en rhh-schedule.js.
- * Retorna { incidence: string|null, incidence_label: string|null }
- */
-function resolveIncidence(db, empId, dateStr, empBirthDate) {
-  const attendanceRecords = db.rhh_attendance || [];
-  const incidences = db.rhh_incidences || [];
-
-  // 1. Registro explícito en rhh_attendance
-  const attRecord = attendanceRecords.find(a =>
-    a.employee_id === empId && (a.date === dateStr || a.fecha === dateStr)
-  );
-  if (attRecord) {
-    const st = attRecord.status || attRecord.incidencia_type || null;
-    if (st && st !== 'labora' && st !== 'vacio') {
-      return { incidence: st, incidence_label: INCIDENCE_LABELS[st] || st };
-    }
-  }
-
-  // 2. Incidencias APROBADAS que cubren esta fecha
-  const coveringApproved = incidences.filter(i =>
-    i.employee_id === empId &&
-    i.status === 'aprobada' &&
-    i.date <= dateStr &&
-    (i.date_end || i.date) >= dateStr
-  );
-  if (coveringApproved.length > 0) {
-    const inc = coveringApproved[coveringApproved.length - 1];
-    let st = null;
-    if (inc.type === 'vacacion') st = 'vacaciones';
-    else if (inc.type === 'incapacidad') st = 'incapacidad';
-    else if (inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce' || inc.type === 'permiso') st = 'permiso';
-    else if (inc.type === 'falta') st = 'falta';
-    else if (inc.type === 'retardo') st = 'retardo';
-    if (st) return { incidence: st, incidence_label: INCIDENCE_LABELS[st] || st };
-  }
-
-  // 3. Cumpleaños
-  if (empBirthDate) {
-    const bMD = empBirthDate.slice(5);
-    if (bMD === dateStr.slice(5)) {
-      return { incidence: 'cumpleanos', incidence_label: 'Cumpleaños' };
-    }
-  }
-
-  return { incidence: null, incidence_label: null };
-}
-
 const INCIDENCE_LABELS = {
   festivo: 'Festivo', vacaciones: 'Vacaciones', permiso: 'Permiso',
   permiso_sin_goce: 'Permiso s/g', incapacidad: 'Incapacidad',
   falta: 'Falta', cumpleanos: 'Cumpleaños', cumpleanos_trabajado: 'Cumpl. trabajado',
   cumpleanos_descanso: 'Cumpl. descanso', descanso: 'Descanso',
-  retardo: 'Retardo', baja: 'Baja', paro_tecnico: 'Paro técnico',
+  retardo: 'Retardo (inc)', baja: 'Baja', paro_tecnico: 'Paro técnico',
+  labora: 'Labora', vacio: '', turno_incompleto: 'T. incompleto',
+  vacaciones_pendiente: 'Vac. pend.', permiso_pendiente: 'Permiso pend.',
+  falta_pendiente: 'Falta pend.',
 };
 
 // Status que justifican la ausencia de checada (no generan alerta)
-const JUSTIFIED_INCIDENCES = new Set([
+const JUSTIFIED_STATUSES = new Set([
   'festivo', 'vacaciones', 'permiso', 'permiso_sin_goce', 'incapacidad',
   'cumpleanos', 'cumpleanos_descanso', 'baja', 'paro_tecnico', 'descanso',
+  'vacaciones_pendiente', 'permiso_pendiente', 'falta',
 ]);
 
 /**
- * Construye reporte semanal cruzando checadas guardadas con turnos e incidencias.
- * Se usa tanto al subir .dat como al consultar semanas ya guardadas.
+ * Construye reporte semanal cruzando checadas con la MISMA lógica de
+ * GET /api/rhh/schedule/weekly-attendance (turno, incidencias, T.E.).
+ * Sobre esa base evalúa checadas, retardos y alertas.
  */
 function buildWeekReport(db, week_start) {
   const shifts    = db.rhh_shifts || [];
-  const schedule  = db.rhh_schedule || [];
-  const weekDates = buildWeekDates(week_start, db.rhh_holidays || []);
+  const holidays  = db.rhh_holidays || [];
+  const weekDates = buildWeekDates(week_start, holidays);
   const weekEnd   = weekDates[6].date;
 
-  // Empleados de la plantilla semanal
-  const template = buildAttendanceEmployeesForWeek(db, week_start);
-  const templateEmps = template.employees || [];
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-  // Mapa de turnos desde ROL Semanal
-  const rolShiftMap = buildRolShiftMap(db, week_start);
+  // ── Misma plantilla que weekly-attendance (ROL + catálogo + snapshot) ──
+  const weekRols = (db.rhh_weekly_rol || []).filter(r => r.week_start === week_start && r.shift_id != null);
+  const weekRolIds = new Set(weekRols.map(r => r.id));
+  const assignedForWeek = (db.rhh_rol_assignments || [])
+    .filter(a => weekRolIds.has(a.rol_id))
+    .map(a => a.employee_id);
+  const template = buildAttendanceEmployeesForWeek(db, week_start, assignedForWeek);
+  const employees = template.employees || [];
+
+  const attendanceRecords = db.rhh_attendance || [];
+  const incidences = db.rhh_incidences || [];
 
   // Checadas guardadas para esta semana
   const savedChecadas = (db.rhh_checador_weekly || []).filter(
     c => c.date >= week_start && c.date <= weekEnd
   );
-  const checadaMap = {}; // `${empId}_${date}` → record
+  const checadaMap = {};
   for (const c of savedChecadas) {
     checadaMap[`${c.employee_id}_${c.date}`] = c;
   }
@@ -709,86 +658,140 @@ function buildWeekReport(db, week_start) {
   }
   reportByShift['none'] = { shift: { id: null, name: 'Sin turno', code: '--', color: '#94a3b8', start_time: null, end_time: null }, employees: [] };
 
-  let totalComplete = 0, totalMissing = 0, totalPartial = 0, totalNoComedor = 0, totalRetardos = 0;
-  let totalScheduledDays = 0, totalJustified = 0, totalAlerts = 0;
+  let totalComplete = 0, totalMissing = 0, totalPartial = 0, totalNoComedor = 0;
+  let totalRetardos = 0, totalScheduledDays = 0, totalJustified = 0, totalAlerts = 0;
+  let totalTE = 0;
 
-  for (const emp of templateEmps) {
+  for (const emp of employees) {
     if (emp.template_status === 'baja') continue;
 
-    // Turno: 1) ROL Semanal, 2) catálogo empleado
-    const resolvedShiftId = rolShiftMap[emp.id] || emp.shift_id || null;
-    const shift = resolvedShiftId ? (shifts.find(s => s.id === resolvedShiftId) || null) : null;
-
-    const getShiftForDate = (dateStr) => {
-      const override = schedule.find(s => s.employee_id === emp.id && s.date === dateStr);
-      if (override) return shifts.find(s => s.id === override.shift_id) || shift;
-      return shift;
-    };
+    // Turno: exactamente igual que weekly-attendance (emp.shift_id del template)
+    const shift = shifts.find(s => s.id === emp.shift_id) || null;
 
     const days = [];
-    let empScheduled = 0, empChecked = 0;
+    let empScheduled = 0, empChecked = 0, empTE = 0;
 
     for (const day of weekDates) {
-      const dayShift = getShiftForDate(day.date);
-      const dayWorkDays = dayShift ? (dayShift.work_days || []) : [];
-      const shouldWork = dayWorkDays.includes(day.day_num) && !day.is_holiday;
+      const dateStr = day.date;
+      const dayOfWeek = day.day_num;
 
-      const key = `${emp.id}_${day.date}`;
+      // ══ PASO 1: Status base idéntico a weekly-attendance ══
+      let attStatus = 'vacio';
+      const isFutureDate = dateStr > todayStr;
+
+      if (shift && !isFutureDate) {
+        const workDays = Array.isArray(shift.work_days) ? shift.work_days : [];
+        if (day.is_holiday) {
+          attStatus = 'festivo';
+        } else if (workDays.includes(dayOfWeek)) {
+          attStatus = 'labora';
+        } else {
+          attStatus = 'descanso';
+        }
+      }
+
+      // ══ PASO 2: Registro explícito en rhh_attendance ══
+      const attRecord = attendanceRecords.find(a =>
+        a.employee_id === emp.id && (a.date === dateStr || a.fecha === dateStr)
+      );
+      let teHours = 0;
+      let notes = null;
+      if (attRecord) {
+        attStatus = attRecord.status || attRecord.incidencia_type || attStatus;
+        teHours = attRecord.te_hours || 0;
+        notes = attRecord.notes || attRecord.notas || null;
+      }
+
+      // ══ PASO 3: Incidencias APROBADAS ══
+      const coveringApproved = incidences.filter(i =>
+        i.employee_id === emp.id &&
+        i.status === 'aprobada' &&
+        i.date <= dateStr &&
+        (i.date_end || i.date) >= dateStr
+      );
+      if (coveringApproved.length > 0) {
+        const inc = coveringApproved[coveringApproved.length - 1];
+        if (inc.type === 'vacacion') attStatus = 'vacaciones';
+        else if (inc.type === 'incapacidad') attStatus = 'incapacidad';
+        else if (inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce' || inc.type === 'permiso') attStatus = 'permiso';
+        else if (inc.type === 'falta') attStatus = 'falta';
+        else if (inc.type === 'retardo') attStatus = 'retardo';
+      }
+
+      // ══ PASO 3b: Incidencias PENDIENTES ══
+      if (coveringApproved.length === 0 && !attRecord) {
+        const coveringPending = incidences.filter(i =>
+          i.employee_id === emp.id &&
+          i.status === 'pendiente' &&
+          i.date <= dateStr &&
+          (i.date_end || i.date) >= dateStr
+        );
+        if (coveringPending.length > 0) {
+          const inc = coveringPending[coveringPending.length - 1];
+          if (inc.type === 'vacacion') attStatus = 'vacaciones_pendiente';
+          else if (inc.type === 'permiso' || inc.type === 'permiso_con_goce' || inc.type === 'permiso_sin_goce') attStatus = 'permiso_pendiente';
+          else if (inc.type === 'falta') attStatus = 'falta_pendiente';
+        }
+      }
+
+      // ══ PASO 4: Cumpleaños ══
+      let birthday = false;
+      if (emp.birth_date) {
+        const bMD = emp.birth_date.slice(5);
+        if (bMD === dateStr.slice(5)) {
+          birthday = true;
+          if (!attRecord && attStatus !== 'baja') attStatus = 'cumpleanos';
+        }
+      }
+
+      // attStatus ahora es IDÉNTICO al de Lista de Asistencia
+
+      // ══ PASO 5: Superponer checadas del checador ══
+      const shouldWork = attStatus === 'labora' || attStatus === 'retardo'
+                       || attStatus === 'cumpleanos_trabajado';
+      const key = `${emp.id}_${dateStr}`;
       const checada = checadaMap[key];
       const entry   = checada ? checada.entry : null;
       const exit    = checada ? checada.exit : null;
       const comedor = checada ? checada.comedor : null;
       const hasAsist = !!entry;
 
-      // Incidencia del sistema de asistencia
-      const { incidence, incidence_label } = day.is_holiday
-        ? { incidence: 'festivo', incidence_label: 'Festivo' }
-        : resolveIncidence(db, emp.id, day.date, emp.birth_date);
-
-      // Detectar retardo
+      // Detectar retardo por checada
       let retardo = false;
-      if (hasAsist && dayShift) {
-        const shiftStart = timeToMin(dayShift.start_time);
+      if (hasAsist && shift) {
+        const shiftStart = timeToMin(shift.start_time);
         const entryMin = timeToMin(entry);
         if (entryMin - shiftStart > 15) retardo = true;
       }
 
-      // Determinar status combinando checada + incidencia
-      let status;
-      if (day.is_holiday) {
-        status = 'festivo';
-      } else if (!shouldWork) {
-        status = incidence || 'descanso';
-      } else if (incidence && JUSTIFIED_INCIDENCES.has(incidence) && !hasAsist) {
-        // Incidencia justifica la ausencia de checada
-        status = incidence;
-        totalJustified++;
-      } else if (!hasAsist) {
-        // Debería trabajar, sin incidencia, sin checada → alerta
-        status = 'sin_checada';
+      // ══ PASO 6: Status final combinando asistencia + checada ══
+      let checadorStatus;
+      if (JUSTIFIED_STATUSES.has(attStatus)) {
+        // La incidencia/asistencia justifica — mostrar el status del sistema
+        checadorStatus = attStatus;
+        if (shouldWork) totalJustified++;
+      } else if (shouldWork && !hasAsist) {
+        // Debería trabajar, sin checada
+        checadorStatus = 'sin_checada';
         totalMissing++;
-      } else if (!exit) {
-        status = 'parcial';
+      } else if (shouldWork && hasAsist && !exit) {
+        checadorStatus = 'parcial';
         totalPartial++;
-      } else if (retardo) {
-        status = 'retardo';
+      } else if (shouldWork && retardo) {
+        checadorStatus = 'retardo_checador';
         totalRetardos++;
-      } else {
-        status = 'ok';
+      } else if (shouldWork && hasAsist) {
+        checadorStatus = 'ok';
         totalComplete++;
+      } else {
+        checadorStatus = attStatus; // descanso, vacio, etc.
       }
 
-      // Alerta especial: hay asistencia marcada en sistema pero sin registro en checador
+      // Alerta: asistencia marcada "labora" pero sin registro en checador
       let alerta_sin_registro = false;
-      if (shouldWork && !hasAsist && !incidence && !day.is_holiday) {
-        // Revisar si en rhh_attendance tiene "labora" (marcado como que asistió)
-        const attRec = (db.rhh_attendance || []).find(a =>
-          a.employee_id === emp.id && (a.date === day.date || a.fecha === day.date)
-        );
-        if (attRec && (attRec.status === 'labora' || attRec.incidencia_type === 'labora')) {
-          alerta_sin_registro = true;
-          totalAlerts++;
-        }
+      if (attStatus === 'labora' && !hasAsist && savedChecadas.length > 0) {
+        alerta_sin_registro = true;
+        totalAlerts++;
       }
 
       if (shouldWork) {
@@ -797,46 +800,60 @@ function buildWeekReport(db, week_start) {
         if (hasAsist) empChecked++;
         if (hasAsist && !comedor) totalNoComedor++;
       }
+      empTE += teHours;
 
       days.push({
-        date: day.date,
+        date: dateStr,
         label: day.label,
-        day_num: day.day_num,
+        day_num: dayOfWeek,
         is_holiday: day.is_holiday,
         holiday_name: day.holiday_name,
         should_work: shouldWork,
-        status,
-        incidence, incidence_label,
+        att_status: attStatus,
+        att_label: INCIDENCE_LABELS[attStatus] || attStatus,
+        status: checadorStatus,
         entry, exit, comedor, retardo,
+        te_hours: teHours,
+        notes,
+        birthday,
         alerta_sin_registro,
         checada_count: checada ? (checada.asist_times || []).length : 0,
-        shift_override: dayShift && shift && dayShift.id !== shift.id ? dayShift.code : null,
       });
     }
+
+    totalTE += empTE;
 
     const empData = {
       id: emp.id,
       employee_number: emp.employee_number || '',
       full_name: emp.full_name,
-      shift_id: shift ? shift.id : null,
+      shift_id: emp.shift_id || null,
       shift_code: shift ? shift.code : '--',
       shift_name: shift ? shift.name : 'Sin turno',
       days,
       scheduled: empScheduled,
       checked: empChecked,
+      te_total: empTE,
     };
 
-    const groupKey = shift ? shift.id : 'none';
+    // Agrupar por shift_id — idéntico a weekly-attendance (línea 760)
+    const groupKey = emp.shift_id || 'none';
     if (!reportByShift[groupKey]) {
-      reportByShift[groupKey] = { shift: reportByShift['none'].shift, employees: [] };
+      reportByShift[groupKey] = { shift: shift || reportByShift['none'].shift, employees: [] };
     }
     reportByShift[groupKey].employees.push(empData);
   }
 
-  const shiftGroups = Object.values(reportByShift)
-    .filter(g => g.employees.length > 0)
-    .map(g => { g.employees.sort((a, b) => a.full_name.localeCompare(b.full_name)); return g; })
-    .sort((a, b) => (a.shift.id || 999) - (b.shift.id || 999));
+  // Ordenar por turno, luego por nombre
+  const sortedShiftIds = [...shifts.map(s => s.id), 'none'];
+  const shiftGroups = [];
+  for (const sid of sortedShiftIds) {
+    const g = reportByShift[sid];
+    if (g && g.employees.length > 0) {
+      g.employees.sort((a, b) => a.full_name.localeCompare(b.full_name));
+      shiftGroups.push(g);
+    }
+  }
 
   const hasSavedData = savedChecadas.length > 0;
 
@@ -847,7 +864,7 @@ function buildWeekReport(db, week_start) {
     shift_groups: shiftGroups,
     has_data: hasSavedData,
     summary: {
-      total_employees: templateEmps.filter(e => e.template_status !== 'baja').length,
+      total_employees: employees.filter(e => e.template_status !== 'baja').length,
       total_scheduled_days: totalScheduledDays,
       complete: totalComplete,
       missing: totalMissing,
@@ -856,6 +873,7 @@ function buildWeekReport(db, week_start) {
       retardos: totalRetardos,
       justified: totalJustified,
       alerts: totalAlerts,
+      te_total: totalTE,
     },
     checadas_count: savedChecadas.length,
   };
