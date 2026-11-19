@@ -1092,12 +1092,12 @@ function _vacUpdateSummary() {
     <div style="background:linear-gradient(135deg,#1e40af,#2563eb);padding:14px 18px;color:#fff">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <div>
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Salida</div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Primer día</div>
           <div style="font-size:18px;font-weight:700">${_vacCal.selStart}</div>
         </div>
         <div style="font-size:22px;opacity:.5">→</div>
         <div style="text-align:right">
-          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Regreso</div>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.7">Último día</div>
           <div style="font-size:18px;font-weight:700">${_vacCal.selEnd}</div>
         </div>
       </div>
