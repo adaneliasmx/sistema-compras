@@ -12404,6 +12404,8 @@ function renderChecador() {
         + '<td colspan="' + totalCols + '" style="padding:8px 12px;font-weight:800;font-size:12px;letter-spacing:.5px;">'
         + sg.shift.name + timeRange + ' &middot; ' + emps.length + ' empleado' + (emps.length !== 1 ? 's' : '') + '</td></tr>';
 
+      function fmtMin(m) { if (m == null) return '--'; const h = Math.floor(Math.abs(m)/60); const mm = Math.abs(m)%60; return (m<0?'-':'') + h + ':' + String(mm).padStart(2,'0'); }
+
       for (const emp of emps) {
         let dayCells = '';
         for (const day of emp.days) {
@@ -12437,14 +12439,36 @@ function renderChecador() {
           cellBg = st.bg;
           cellContent = '<div style="font-weight:700;color:' + st.color + ';font-size:11px;">' + st.label + '</div>';
 
-          if (day.entry) cellContent += '<div style="font-size:10px;color:#374151;">E ' + day.entry + '</div>';
-          if (day.exit)  cellContent += '<div style="font-size:10px;color:#374151;">S ' + day.exit + '</div>';
-          if (day.comedor) cellContent += '<div style="font-size:10px;color:#374151;">C ' + day.comedor + '</div>';
-          else if (day.should_work && day.entry) cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
-          if (day.te_hours > 0) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:700;">T.E. ' + day.te_hours + 'h</div>';
+          // Checadas de asistencia
+          if (day.entry) {
+            cellContent += '<div style="font-size:10px;color:#374151;">E ' + day.entry + (day.exit ? ' &rarr; S ' + day.exit : '') + '</div>';
+            if (day.worked_min != null) cellContent += '<div style="font-size:10px;color:#1e40af;font-weight:600;">Lab: ' + fmtMin(day.worked_min) + '</div>';
+          }
+
+          // Checadas de comedor
+          if (day.comedor_in) {
+            cellContent += '<div style="font-size:10px;color:#059669;">C ' + day.comedor_in + (day.comedor_out ? ' &rarr; ' + day.comedor_out : '') + '</div>';
+            if (day.comedor_min != null) cellContent += '<div style="font-size:10px;color:#059669;">Com: ' + fmtMin(day.comedor_min) + '</div>';
+          } else if (day.should_work && day.entry) {
+            cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
+          }
+
+          // Tiempo extra comparativo
+          if (day.te_comparison) {
+            const tc = day.te_comparison;
+            let teLabel = '';
+            if (tc.registered > 0) teLabel += 'Reg: ' + tc.registered + 'h';
+            if (tc.checador != null && tc.checador > 0) teLabel += (teLabel ? ' | ' : '') + 'Real: ' + tc.checador + 'h';
+            if (tc.diff != null && tc.registered > 0 && tc.checador != null) {
+              const diffColor = Math.abs(tc.diff) < 0.5 ? '#059669' : '#dc2626';
+              teLabel += ' <span style="color:' + diffColor + ';">(' + (tc.diff > 0 ? '+' : '') + tc.diff + ')</span>';
+            }
+            if (teLabel) cellContent += '<div style="font-size:9px;color:#7c3aed;font-weight:600;">' + teLabel + '</div>';
+          }
+
           if (day.alerta_sin_registro) cellContent += '<div style="font-size:9px;color:#dc2626;font-weight:700;">&#9888; Sin registro</div>';
 
-          dayCells += '<td style="padding:3px 4px;background:' + cellBg + ';vertical-align:top;border:1px solid #e5e7eb;">' + cellContent + '</td>';
+          dayCells += '<td style="padding:3px 4px;background:' + cellBg + ';vertical-align:top;border:1px solid #e5e7eb;min-width:130px;">' + cellContent + '</td>';
         }
 
         const pct = emp.scheduled > 0 ? Math.round(emp.checked / emp.scheduled * 100) : 0;

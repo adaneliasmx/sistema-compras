@@ -777,27 +777,46 @@ function buildWeekReport(db, week_start) {
                        || attStatus === 'cumpleanos_trabajado';
       const key = `${emp.id}_${dateStr}`;
       const checada = checadaMap[key];
-      const entry   = checada ? checada.entry : null;
-      const exit    = checada ? checada.exit : null;
-      const comedor = checada ? checada.comedor : null;
+      const entry       = checada ? checada.entry : null;
+      const exit        = checada ? checada.exit : null;
+      const comedorIn   = checada ? checada.comedor : null;
+      const comedorOut  = checada ? checada.comedor_exit : null;
       const hasAsist = !!entry;
+
+      // Calcular tiempos
+      let workedMin = null, comedorMin = null, extraChecadorMin = null;
+      if (entry && exit) {
+        workedMin = timeToMin(exit) - timeToMin(entry);
+        if (workedMin < 0) workedMin += 1440; // nocturno
+      }
+      if (comedorIn && comedorOut) {
+        comedorMin = timeToMin(comedorOut) - timeToMin(comedorIn);
+        if (comedorMin < 0) comedorMin = 0;
+      }
+      // Tiempo extra real: tiempo trabajado - duración del turno
+      if (workedMin != null && shift && shift.start_time && shift.end_time) {
+        let shiftDuration = timeToMin(shift.end_time) - timeToMin(shift.start_time);
+        if (shiftDuration < 0) shiftDuration += 1440; // nocturno
+        extraChecadorMin = Math.max(0, workedMin - shiftDuration);
+      }
 
       // Detectar retardo por checada
       let retardo = false;
       if (hasAsist && shift) {
         const shiftStart = timeToMin(shift.start_time);
         const entryMin = timeToMin(entry);
-        if (entryMin - shiftStart > 15) retardo = true;
+        let diff = entryMin - shiftStart;
+        if (diff > 720) diff -= 1440; // nocturno wrap
+        if (diff < -720) diff += 1440;
+        if (diff > 15) retardo = true;
       }
 
       // ══ PASO 6: Status final combinando asistencia + checada ══
       let checadorStatus;
       if (JUSTIFIED_STATUSES.has(attStatus)) {
-        // La incidencia/asistencia justifica — mostrar el status del sistema
         checadorStatus = attStatus;
         if (shouldWork) totalJustified++;
       } else if (shouldWork && !hasAsist) {
-        // Debería trabajar, sin checada
         checadorStatus = 'sin_checada';
         totalMissing++;
       } else if (shouldWork && hasAsist && !exit) {
@@ -810,7 +829,7 @@ function buildWeekReport(db, week_start) {
         checadorStatus = 'ok';
         totalComplete++;
       } else {
-        checadorStatus = attStatus; // descanso, vacio, etc.
+        checadorStatus = attStatus;
       }
 
       // Alerta: asistencia marcada "labora" pero sin registro en checador
@@ -824,9 +843,19 @@ function buildWeekReport(db, week_start) {
         totalScheduledDays++;
         empScheduled++;
         if (hasAsist) empChecked++;
-        if (hasAsist && !comedor) totalNoComedor++;
+        if (hasAsist && !comedorIn) totalNoComedor++;
       }
       empTE += teHours;
+
+      // T.E. comparativo: registrado vs checador
+      let teComparison = null;
+      if (teHours > 0 || (extraChecadorMin != null && extraChecadorMin > 0)) {
+        teComparison = {
+          registered: teHours,
+          checador: extraChecadorMin != null ? Math.round(extraChecadorMin / 6) / 10 : null, // en horas, 1 decimal
+          diff: extraChecadorMin != null ? Math.round((extraChecadorMin / 60 - teHours) * 10) / 10 : null,
+        };
+      }
 
       days.push({
         date: dateStr,
@@ -838,8 +867,12 @@ function buildWeekReport(db, week_start) {
         att_status: attStatus,
         att_label: INCIDENCE_LABELS[attStatus] || attStatus,
         status: checadorStatus,
-        entry, exit, comedor, retardo,
+        entry, exit,
+        comedor_in: comedorIn, comedor_out: comedorOut,
+        worked_min: workedMin, comedor_min: comedorMin,
+        retardo,
         te_hours: teHours,
+        te_comparison: teComparison,
         notes,
         birthday,
         alerta_sin_registro,
@@ -1009,6 +1042,7 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
       rec.entry = mergedAsist.length > 0 ? mergedAsist[0] : null;
       rec.exit  = mergedAsist.length > 1 ? mergedAsist[mergedAsist.length - 1] : null;
       rec.comedor = mergedComedor.length > 0 ? mergedComedor[0] : null;
+      rec.comedor_exit = mergedComedor.length > 1 ? mergedComedor[mergedComedor.length - 1] : null;
       rec.updated_at = now;
       rec.updated_by = req.rhhUser.id;
       updatedCount++;
@@ -1023,6 +1057,7 @@ router.post('/analyze-week', rhhAuthRequired, rhhRequireRole('rh', 'admin'), (re
         entry: newAsistTimes.length > 0 ? newAsistTimes[0] : null,
         exit:  newAsistTimes.length > 1 ? newAsistTimes[newAsistTimes.length - 1] : null,
         comedor: newComedorTimes.length > 0 ? newComedorTimes[0] : null,
+        comedor_exit: newComedorTimes.length > 1 ? newComedorTimes[newComedorTimes.length - 1] : null,
         uploaded_at: now,
         uploaded_by: req.rhhUser.id,
       });
