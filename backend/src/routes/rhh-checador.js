@@ -639,6 +639,14 @@ function buildWeekReport(db, week_start) {
   const template = buildAttendanceEmployeesForWeek(db, week_start, assignedForWeek);
   const employees = template.employees || [];
 
+  // DEBUG: diagnóstico de turnos
+  const shiftStats = {};
+  for (const e of employees) {
+    const k = e.shift_id == null ? 'null' : String(e.shift_id);
+    shiftStats[k] = (shiftStats[k] || 0) + 1;
+  }
+  console.log(`[checador] buildWeekReport week=${week_start} emps=${employees.length} rols=${weekRols.length} assigned=${assignedForWeek.length} shifts:`, shiftStats);
+
   const attendanceRecords = db.rhh_attendance || [];
   const incidences = db.rhh_incidences || [];
 
