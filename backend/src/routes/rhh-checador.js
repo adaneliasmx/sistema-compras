@@ -636,9 +636,13 @@ const JUSTIFIED_STATUSES = new Set([
  * GET /api/rhh/schedule/weekly-attendance (turno, incidencias, T.E.).
  * Sobre esa base evalúa checadas, retardos y alertas.
  */
+// position_ids de STAFF (Administrador SGC, Gerente Ops, Ing. Procesos/Calidad/Mto, etc.)
+const STAFF_POSITION_IDS = new Set([15, 16]);
+
 function buildWeekReport(db, week_start) {
   const shifts    = db.rhh_shifts || [];
   const holidays  = db.rhh_holidays || [];
+  const positions = db.rhh_positions || [];
   const weekDates = buildWeekDates(week_start, holidays);
   const weekEnd   = weekDates[6].date;
 
@@ -707,6 +711,7 @@ function buildWeekReport(db, week_start) {
     // Turno: 1) assignment Control Asistencias, 2) ROL puestos, 3) catálogo
     const resolvedShiftId = attControlShiftMap[emp.id] || scheduleShiftMap[emp.id] || emp.shift_id || null;
     const shift = resolvedShiftId ? (shifts.find(s => s.id === resolvedShiftId) || null) : null;
+    const isStaff = STAFF_POSITION_IDS.has(emp.position_id);
 
     const days = [];
     let empScheduled = 0, empChecked = 0, empTE = 0;
@@ -791,24 +796,30 @@ function buildWeekReport(db, week_start) {
                        || attStatus === 'cumpleanos_trabajado';
       const key = `${emp.id}_${dateStr}`;
       const checada = checadaMap[key];
-      let entry       = checada ? checada.entry : null;
-      let exit        = checada ? checada.exit : null;
-      let comedorIn   = checada ? checada.comedor : null;
-      let comedorOut  = checada ? checada.comedor_exit : null;
-
-      // Nocturno: si no hay salida, buscar en el registro del día siguiente
       const isNocturno = shift && timeToMin(shift.end_time) < timeToMin(shift.start_time);
+
+      let entry, exit, comedorIn, comedorOut;
+      if (isNocturno && checada && checada.asist_times && checada.asist_times.length > 0) {
+        // Nocturno: recalcular entry/exit desde asist_times (PM=entry, AM=exit)
+        const ee = resolveEntryExit([...checada.asist_times].sort(), true);
+        entry = ee.entry;
+        exit  = ee.exit;
+      } else {
+        entry = checada ? checada.entry : null;
+        exit  = checada ? checada.exit : null;
+      }
+      comedorIn  = checada ? checada.comedor : null;
+      comedorOut = checada ? checada.comedor_exit : null;
+
+      // Nocturno: si no hay salida, buscar AM del día siguiente
       if (isNocturno && entry && !exit) {
         const nextDate = new Date(dateStr + 'T12:00:00');
         nextDate.setDate(nextDate.getDate() + 1);
         const nextKey = `${emp.id}_${nextDate.toISOString().slice(0, 10)}`;
         const nextChecada = checadaMap[nextKey];
         if (nextChecada) {
-          // Buscar la checada más temprana del día siguiente como salida
-          const nextTimes = (nextChecada.asist_times || []).filter(t => timeToMin(t) <= timeToMin(shift.end_time) + 120);
-          if (nextTimes.length > 0) {
-            exit = nextTimes[nextTimes.length - 1];
-          }
+          const nextAM = (nextChecada.asist_times || []).filter(t => timeToMin(t) <= timeToMin(shift.end_time) + 120);
+          if (nextAM.length > 0) exit = nextAM[nextAM.length - 1];
           if (!comedorIn && nextChecada.comedor) comedorIn = nextChecada.comedor;
           if (!comedorOut && nextChecada.comedor_exit) comedorOut = nextChecada.comedor_exit;
         }
@@ -826,16 +837,17 @@ function buildWeekReport(db, week_start) {
         comedorMin = timeToMin(comedorOut) - timeToMin(comedorIn);
         if (comedorMin < 0) comedorMin = 0;
       }
-      // Tiempo extra real: tiempo trabajado - duración del turno
-      if (workedMin != null && shift && shift.start_time && shift.end_time) {
+      // Tiempo extra real (solo operativos, en horas completas después de hora de salida)
+      if (!isStaff && workedMin != null && shift && shift.start_time && shift.end_time) {
         let shiftDuration = timeToMin(shift.end_time) - timeToMin(shift.start_time);
         if (shiftDuration < 0) shiftDuration += 1440; // nocturno
-        extraChecadorMin = Math.max(0, workedMin - shiftDuration);
+        const rawExtra = Math.max(0, workedMin - shiftDuration);
+        extraChecadorMin = Math.floor(rawExtra / 60) * 60; // solo horas completas
       }
 
-      // Detectar retardo por checada
+      // Detectar retardo por checada (solo operativos, >15 min después de hora de entrada)
       let retardo = false;
-      if (hasAsist && shift) {
+      if (!isStaff && hasAsist && shift) {
         const shiftStart = timeToMin(shift.start_time);
         const entryMin = timeToMin(entry);
         let diff = entryMin - shiftStart;
@@ -845,6 +857,7 @@ function buildWeekReport(db, week_start) {
       }
 
       // ══ PASO 6: Status final combinando asistencia + checada ══
+      // Status: ok/sin_checada/parcial (retardo es solo indicador, no status)
       let checadorStatus;
       if (JUSTIFIED_STATUSES.has(attStatus)) {
         checadorStatus = attStatus;
@@ -855,12 +868,10 @@ function buildWeekReport(db, week_start) {
       } else if (shouldWork && hasAsist && !exit) {
         checadorStatus = 'parcial';
         totalPartial++;
-      } else if (shouldWork && retardo) {
-        checadorStatus = 'retardo_checador';
-        totalRetardos++;
       } else if (shouldWork && hasAsist) {
         checadorStatus = 'ok';
         totalComplete++;
+        if (retardo) totalRetardos++;
       } else {
         checadorStatus = attStatus;
       }
@@ -904,6 +915,7 @@ function buildWeekReport(db, week_start) {
         comedor_in: comedorIn, comedor_out: comedorOut,
         worked_min: workedMin, comedor_min: comedorMin,
         retardo,
+        is_staff: isStaff,
         te_hours: teHours,
         te_comparison: teComparison,
         notes,

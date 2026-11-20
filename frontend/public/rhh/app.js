@@ -12412,7 +12412,6 @@ function renderChecador() {
           let cellBg, cellContent;
           const STATUS_STYLES = {
             ok:            { bg: '#dcfce7', color: '#166534', label: 'OK' },
-            retardo_checador: { bg: '#fef9c3', color: '#854d0e', label: 'Retardo' },
             sin_checada:   { bg: '#fee2e2', color: '#991b1b', label: 'Sin checada' },
             parcial:       { bg: '#ffedd5', color: '#9a3412', label: '1 checada' },
             festivo:       { bg: '#e0e7ff', color: '#3730a3', label: 'Festivo' },
@@ -12437,12 +12436,23 @@ function renderChecador() {
           };
           const st = STATUS_STYLES[day.status] || STATUS_STYLES.descanso;
           cellBg = st.bg;
-          cellContent = '<div style="font-weight:700;color:' + st.color + ';font-size:11px;">' + st.label + '</div>';
+
+          // Encabezado: incidencia de plataforma (para comparar con checador)
+          const platLabel = day.att_label || '';
+          cellContent = '<div style="font-size:10px;color:#6b7280;font-style:italic;border-bottom:1px dotted #d1d5db;padding-bottom:2px;margin-bottom:2px;">' + (platLabel || '--') + '</div>';
+
+          // Status del checador
+          cellContent += '<div style="font-weight:700;color:' + st.color + ';font-size:11px;">' + st.label + '</div>';
 
           // Checadas de asistencia
           if (day.entry) {
             cellContent += '<div style="font-size:10px;color:#374151;">E ' + day.entry + (day.exit ? ' &rarr; S ' + day.exit : '') + '</div>';
             if (day.worked_min != null) cellContent += '<div style="font-size:10px;color:#1e40af;font-weight:600;">Lab: ' + fmtMin(day.worked_min) + '</div>';
+          }
+
+          // Indicador de retardo (solo operativos, >15 min)
+          if (day.retardo && !day.is_staff) {
+            cellContent += '<div style="font-size:9px;color:#dc2626;font-weight:700;">&#9201; Retardo</div>';
           }
 
           // Checadas de comedor
@@ -12453,8 +12463,8 @@ function renderChecador() {
             cellContent += '<div style="font-size:10px;color:#dc2626;">C --</div>';
           }
 
-          // Tiempo extra comparativo
-          if (day.te_comparison) {
+          // Tiempo extra comparativo (solo operativos)
+          if (day.te_comparison && !day.is_staff) {
             const tc = day.te_comparison;
             let teLabel = '';
             if (tc.registered > 0) teLabel += 'Reg: ' + tc.registered + 'h';
