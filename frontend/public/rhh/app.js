@@ -11877,21 +11877,28 @@ window.capUploadQuizExcel = function(quizId) {
   input.click();
 };
 
+let _capPlans = null; // cache de planes para dropdown de cambio de puesto
 async function capSeguimiento(wrap) {
-  const assignments = await api('/api/rhh/training/assignments');
+  const [assignments, plans] = await Promise.all([
+    api('/api/rhh/training/assignments'),
+    _capPlans ? Promise.resolve(_capPlans) : api('/api/rhh/training/plans'),
+  ]);
+  if (plans && !_capPlans) _capPlans = plans;
   if (!assignments || assignments.length === 0) {
     wrap.innerHTML = '<p>No hay asignaciones. Ve al Dashboard y asigna planes a empleados.</p>';
     return;
   }
   // Filtro por nombre
   const filterHtml = `<div style="margin-bottom:10px;"><input id="cap-seg-filter" type="text" placeholder="Buscar empleado..." style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:260px;" oninput="capFilterSeg()"></div>`;
+  const isMuestra = state.user?.role === 'muestra';
   const rows = assignments.map(a => {
     const color = a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
     const statusLabel = a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
+    const editBtn = !isMuestra ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capChangePosition(${a.id},'${(a.position_name||'').replace(/'/g,'')}')" title="Cambiar puesto">&#9998;</span>` : '';
     return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})">
       <td>${a.employee_number || ''}</td>
       <td><span class="cap-arrow">&#9654;</span> <strong>${a.employee_name}</strong></td>
-      <td>${a.position_name}</td>
+      <td>${a.position_name}${editBtn}</td>
       <td><span style="color:${color};font-weight:600;">${statusLabel}</span></td>
       <td>${a.docs_aprobados}/${a.total_docs}</td>
       <td>
@@ -11913,6 +11920,42 @@ async function capSeguimiento(wrap) {
     </div>
   `;
 }
+
+window.capChangePosition = function(assignId, currentPos) {
+  const plans = _capPlans || [];
+  const opts = plans.map(p => `<option value="${p.id}"${p.puesto_sgc === currentPos ? ' selected' : ''}>${p.puesto_sgc}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;padding:24px;border-radius:8px;max-width:420px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 12px;">Cambiar puesto de capacitacion</h3>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px;">Puesto actual: <strong>${currentPos}</strong></p>
+      <label style="font-size:13px;font-weight:600;">Nuevo puesto SGC:</label>
+      <select id="cap-new-plan" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-top:4px;">${opts}</select>
+      <p style="font-size:11px;color:#f59e0b;margin-top:8px;">Los documentos en comun conservan calificaciones y firmas.</p>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-secondary" id="cap-pos-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="cap-pos-ok">Cambiar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cap-pos-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#cap-pos-ok').onclick = async () => {
+    const planId = document.getElementById('cap-new-plan').value;
+    try {
+      const r = await api('/api/rhh/training/assignments/' + assignId + '/change-position', {
+        method: 'PATCH', body: JSON.stringify({ plan_id: Number(planId) }),
+      });
+      if (r && r.ok) {
+        toast('Puesto cambiado a: ' + r.position_name, 'success');
+        overlay.remove();
+        renderCapacitacion();
+      } else {
+        toast((r && r.error) || 'Error', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+};
 
 window.capFilterSeg = function() {
   const q = (document.getElementById('cap-seg-filter')?.value || '').toLowerCase();

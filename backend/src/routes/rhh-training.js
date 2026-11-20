@@ -1178,6 +1178,46 @@ router.patch('/assignments/:id/responsables', rhhRequireRole('admin', 'rh'), asy
   res.json({ ok: true });
 });
 
+// PATCH /assignments/:id/change-position — cambiar puesto del trabajador (reasigna plan)
+router.patch('/assignments/:id/change-position', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const { plan_id } = req.body;
+  if (!plan_id) return res.status(400).json({ error: 'plan_id es requerido' });
+  const db = await read();
+  const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  const plan = (db.rhh_training_plans || []).find(p => p.id === Number(plan_id));
+  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+  const quizzes = db.rhh_training_quizzes || [];
+
+  // Preservar progreso de docs que existen en ambos planes
+  const oldDocsMap = {};
+  for (const d of (a.documentos || [])) oldDocsMap[d.doc_codigo] = d;
+
+  const allDocs = [...(plan.docs_generales || DOCS_GENERALES), ...plan.documentos];
+  const newDocs = allDocs.map(d => {
+    const prev = oldDocsMap[d.codigo];
+    if (prev) return prev; // mantener calificaciones, firmas, intentos
+    const quiz = findQuizByCode(quizzes, d.codigo);
+    return {
+      doc_codigo: d.codigo, doc_nombre: d.nombre, doc_tipo: d.tipo,
+      quiz_id: quiz ? quiz.id : null, responsables: [], status: 'pendiente',
+      mejor_calificacion: null, intentos: 0, ultimo_intento: null,
+      firma_empleado: { fecha: null, hora: null, firmado: false },
+      firma_instructor: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false },
+      firma_rh: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false }
+    };
+  });
+
+  a.plan_id = plan.id;
+  a.position_name = plan.puesto_sgc;
+  a.eval_group = plan.eval_group;
+  a.documentos = newDocs;
+  a.progreso_pct = newDocs.length > 0 ? Math.round(newDocs.filter(d => d.status === 'aprobado').length / newDocs.length * 100) : 0;
+  a.status = a.progreso_pct >= 100 ? 'completado' : newDocs.some(d => d.status !== 'pendiente') ? 'en_progreso' : 'pendiente';
+  await write(db);
+  res.json({ ok: true, position_name: a.position_name, total_docs: newDocs.length });
+});
+
 // POST /assignments/bulk-responsables — asignar responsables masivo por doc_codigo
 router.post('/assignments/bulk-responsables', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = await read();

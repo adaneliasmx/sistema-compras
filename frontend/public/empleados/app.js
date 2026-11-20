@@ -1613,6 +1613,17 @@ function queja(el) {
 let _capExamState = null; // { doc_codigo, preguntas, respuestas, enviado, resultado }
 
 async function capacitacion(el) {
+  // Bloqueo temporal — disponible a partir del 23 de noviembre
+  const unlockDate = new Date('2026-11-23T14:30:00-06:00');
+  if (new Date() < unlockDate) {
+    el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p>'
+      + '<div class="emp-empty"><div class="empty-icon">🔒</div>'
+      + '<p style="font-size:16px;font-weight:600;color:#1e40af;">Disponible a partir del 23 de noviembre 14:30 hrs</p>'
+      + '<p style="font-size:13px;color:#6b7280;margin-top:8px;">El modulo de capacitacion estara habilitado en esa fecha.</p>'
+      + '</div>';
+    return;
+  }
+
   el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
 
   // Si hay examen en curso, mostrar examen

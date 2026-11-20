@@ -408,7 +408,21 @@ if (process.env.OPAQUE_ROUTES) {
   app.get('/mantenimiento',              redir('/m/b6t2v9/mantenimiento'));
   app.get('/mantenimiento/*',            redir('/m/b6t2v9/mantenimiento'));
 
-  // Empleados
+  // Empleados — PWA: servir assets estáticos + manifest dinámico en ruta opaca
+  app.get('/apps/e6v3m8/empleados/manifest.json', (req, res) => {
+    res.json({
+      name: 'Portal del Empleado — Cuesto', short_name: 'Mi Portal',
+      description: 'Consulta tu nómina, incidencias, vacaciones y evaluaciones',
+      start_url: '/apps/e6v3m8/empleados/', scope: '/apps/e6v3m8/empleados/',
+      display: 'standalone', orientation: 'portrait-primary',
+      background_color: '#1e40af', theme_color: '#2563eb', lang: 'es-MX',
+      icons: [
+        { src: '/img/logo.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: '/img/logo.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    });
+  });
+  app.use('/apps/e6v3m8/empleados', express.static(path.resolve(process.cwd(), 'frontend/public/empleados'), { index: false }));
   app.get('/apps/e6v3m8/empleados',      sf('frontend/public/empleados/index.html'));
   app.get('/apps/e6v3m8/empleados/*',    sf('frontend/public/empleados/index.html'));
   app.get('/empleados',                  redir('/apps/e6v3m8/empleados'));

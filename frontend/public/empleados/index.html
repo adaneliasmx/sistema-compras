@@ -6,7 +6,7 @@
   <title>Portal del Empleado</title>
 
   <!-- PWA -->
-  <link rel="manifest" href="/empleados/manifest.json" />
+  <link rel="manifest" id="pwa-manifest" href="/empleados/manifest.json" />
   <meta name="theme-color" content="#2563eb" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -20,12 +20,19 @@
   <div id="app"></div>
   <script src="/empleados/app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/empleados/sw.js', { scope: '/empleados/' })
-          .catch(err => console.warn('SW registration failed:', err));
-      });
-    }
+    // Detectar base path (opaco o normal) para PWA
+    (function() {
+      var base = '/empleados';
+      if (location.pathname.indexOf('/apps/e6v3m8/empleados') === 0) base = '/apps/e6v3m8/empleados';
+      var ml = document.getElementById('pwa-manifest');
+      if (ml) ml.href = base + '/manifest.json';
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register(base + '/sw.js', { scope: base + '/' })
+            .catch(function(err) { console.warn('SW registration failed:', err); });
+        });
+      }
+    })();
   </script>
   <script src="/demo-sandbox.js"></script>
 </body>

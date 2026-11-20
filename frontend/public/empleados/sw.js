@@ -1,11 +1,9 @@
 /* Portal del Empleado — Service Worker */
-const CACHE = 'portal-empleado-v8';
+const CACHE = 'portal-empleado-v9';
 const SHELL = [
-  '/empleados/',
-  '/empleados/index.html',
-  '/empleados/app.js',
-  '/empleados/styles.css',
-  '/empleados/manifest.json',
+  './',
+  './app.js',
+  './styles.css',
   '/img/logo.png',
 ];
 
