@@ -11949,7 +11949,7 @@ window.capChangePosition = function(assignId, currentPos) {
       if (r && r.ok) {
         toast('Puesto cambiado a: ' + r.position_name, 'success');
         overlay.remove();
-        renderCapacitacion();
+        capacitacionView();
       } else {
         toast((r && r.error) || 'Error', 'error');
       }
