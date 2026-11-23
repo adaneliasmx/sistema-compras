@@ -703,6 +703,7 @@ router.get('/quizzes', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res
     doc_nombre: q.doc_nombre,
     doc_tipo: q.doc_tipo,
     total_preguntas: (q.preguntas || []).length,
+    pendiente_revision: !!q.pendiente_revision,
     created_at: q.created_at
   }));
   res.json(quizzes);

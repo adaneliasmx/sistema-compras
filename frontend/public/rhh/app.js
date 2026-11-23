@@ -11764,25 +11764,49 @@ async function capCuestionarios(wrap) {
     wrap.innerHTML = '<p>No hay cuestionarios cargados aun. Ve al Dashboard e importa los cuestionarios semilla.</p>';
     return;
   }
-  const rows = quizzes.map(q =>
-    `<tr>
+  const pendingCount = quizzes.filter(q => q.pendiente_revision).length;
+  const readyCount = quizzes.length - pendingCount;
+  const rows = quizzes.map(q => {
+    const statusBadge = q.pendiente_revision
+      ? '<span style="background:#fffbeb;color:#92400e;padding:2px 8px;border-radius:4px;font-size:11px;">En revision</span>'
+      : '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Listo</span>';
+    return `<tr data-quiz-status="${q.pendiente_revision ? 'pending' : 'ready'}">
       <td style="cursor:pointer;" onclick="capToggleQuiz(this,${q.id})"><span class="cap-arrow">&#9654;</span> <strong>${q.doc_codigo}</strong></td>
-      <td>${q.doc_nombre}</td><td>${q.doc_tipo || ''}</td><td>${q.total_preguntas}</td>
+      <td>${q.doc_nombre}</td><td>${q.doc_tipo || ''}</td><td>${q.total_preguntas}</td><td>${statusBadge}</td>
     </tr>
-    <tr class="cap-quiz-expand" id="cap-quiz-row-${q.id}" style="display:none;">
-      <td colspan="4" style="padding:0;"><div id="cap-quiz-inner-${q.id}" style="padding:8px 16px;background:#f8fafc;max-height:400px;overflow-y:auto;"></div></td>
-    </tr>`
-  ).join('');
+    <tr class="cap-quiz-expand" id="cap-quiz-row-${q.id}" style="display:none;" data-quiz-status="${q.pendiente_revision ? 'pending' : 'ready'}">
+      <td colspan="5" style="padding:0;"><div id="cap-quiz-inner-${q.id}" style="padding:8px 16px;background:#f8fafc;max-height:400px;overflow-y:auto;"></div></td>
+    </tr>`;
+  }).join('');
   const isMuestra = state.user?.role === 'muestra';
   const zipBtn = !isMuestra ? `<div style="margin-bottom:10px;"><button class="btn btn-primary" onclick="capDownloadAllZip()" style="font-size:13px;">Descargar todos los cuestionarios (.zip)</button></div>` : '';
   wrap.innerHTML = `
     ${zipBtn}
+    <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+      <button class="btn btn-sm ${!wrap._quizFilter || wrap._quizFilter === 'all' ? 'btn-primary' : 'btn-secondary'}" onclick="capFilterQuizzes('all',this)" style="font-size:12px;">Todos (${quizzes.length})</button>
+      <button class="btn btn-sm ${wrap._quizFilter === 'ready' ? 'btn-primary' : 'btn-secondary'}" onclick="capFilterQuizzes('ready',this)" style="font-size:12px;">Listos (${readyCount})</button>
+      <button class="btn btn-sm ${wrap._quizFilter === 'pending' ? 'btn-primary' : 'btn-secondary'}" onclick="capFilterQuizzes('pending',this)" style="font-size:12px;">En revision (${pendingCount})</button>
+    </div>
     <div style="overflow-x:auto;">
-      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th></tr></thead>
+      <table class="table"><thead><tr><th>Codigo</th><th>Documento</th><th>Tipo</th><th>Preguntas</th><th>Estado</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
   `;
 }
+
+window.capFilterQuizzes = function(filter) {
+  const rows = document.querySelectorAll('tr[data-quiz-status]');
+  rows.forEach(r => {
+    if (filter === 'all') r.style.display = '';
+    else r.style.display = r.dataset.quizStatus === filter ? '' : 'none';
+  });
+  // Update button styles
+  const btns = document.querySelectorAll('[onclick^="capFilterQuizzes"]');
+  btns.forEach(b => {
+    const f = b.getAttribute('onclick').match(/'(\w+)'/)?.[1];
+    b.className = f === filter ? 'btn btn-sm btn-primary' : 'btn btn-sm btn-secondary';
+  });
+};
 
 window.capDownloadAllZip = async function() {
   toast('Generando ZIP...', 'info');
