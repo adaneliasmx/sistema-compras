@@ -1613,17 +1613,6 @@ function queja(el) {
 let _capExamState = null; // { doc_codigo, preguntas, respuestas, enviado, resultado }
 
 async function capacitacion(el) {
-  // Bloqueo temporal — disponible a partir del 23 de noviembre
-  const unlockDate = new Date('2026-11-23T14:30:00-06:00');
-  if (new Date() < unlockDate) {
-    el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p>'
-      + '<div class="emp-empty"><div class="empty-icon">🔒</div>'
-      + '<p style="font-size:16px;font-weight:600;color:#1e40af;">Disponible a partir del 23 de noviembre 14:30 hrs</p>'
-      + '<p style="font-size:13px;color:#6b7280;margin-top:8px;">El modulo de capacitacion estara habilitado en esa fecha.</p>'
-      + '</div>';
-    return;
-  }
-
   el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
 
   // Si hay examen en curso, mostrar examen
@@ -1665,9 +1654,9 @@ async function capacitacion(el) {
   const docs = data.documentos || [];
   html += '<div style="display:flex;flex-direction:column;gap:8px;">';
   for (const d of docs) {
-    const icon = d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
+    const icon = d.bloqueado ? '🔒' : d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
     const calTxt = d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--';
-    const canExam = d.tiene_quiz && d.status !== 'aprobado';
+    const canExam = d.tiene_quiz && d.status !== 'aprobado' && !d.bloqueado;
     const canSign = d.status === 'aprobado' && d.firma_empleado && !d.firma_empleado.firmado;
     const fmtFirma = (f, emoji) => {
       if (!f || !f.firmado) return emoji + '✗';
@@ -1695,7 +1684,8 @@ async function capacitacion(el) {
           <div style="display:flex;flex-direction:column;gap:4px;min-width:100px;align-items:flex-end;">
             ${canExam ? `<button class="emp-btn-primary" style="font-size:12px;padding:4px 10px;" onclick="_capIniciarExamen('${esc(d.doc_codigo)}')">Presentar</button>` : ''}
             ${canSign ? `<button class="emp-btn-outline" style="font-size:12px;padding:4px 10px;" onclick="_capFirmar('${esc(d.doc_codigo)}')">Firmar</button>` : ''}
-            ${!d.tiene_quiz ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
+            ${d.bloqueado ? '<span style="font-size:11px;color:#dc2626;">Bloqueado - Contacta a RH</span>' : ''}
+            ${!d.tiene_quiz && !d.bloqueado ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
           </div>
         </div>
       </div>

@@ -11993,9 +11993,10 @@ async function capRenderHoja(inner, empId) {
     const tip = `${f.nombre || ''}${f.fecha ? ' ' + f.fecha : ''}${f.hora ? ' ' + f.hora : ''}${f.comentarios ? '\\n' + f.comentarios : ''}`;
     return `<span style="color:#22c55e;font-weight:700;cursor:help;" title="${tip}">&#10003;</span>`;
   };
-  const statusBadge = (s) => {
-    if (s === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
-    if (s === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
+  const statusBadge = (d) => {
+    if (d.bloqueado) return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Bloqueado</span>';
+    if (d.status === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
+    if (d.status === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
     return '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Pendiente</span>';
   };
   const isMuestra = state.user?.role === 'muestra';
@@ -12009,10 +12010,10 @@ async function capRenderHoja(inner, empId) {
     return `<tr>
       <td style="padding:4px 8px;">${d.doc_codigo}</td><td style="padding:4px 8px;">${d.doc_nombre}</td><td style="padding:4px 8px;">${d.doc_tipo}</td>
       <td style="padding:4px 8px;">${resp}${respEdit}</td>
-      <td style="padding:4px 8px;">${statusBadge(d.status)}</td><td style="padding:4px 8px;">${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
+      <td style="padding:4px 8px;">${statusBadge(d)}</td><td style="padding:4px 8px;">${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
       <td style="padding:4px 8px;">${d.intentos || 0}</td>
       <td style="padding:4px 8px;">${sigCell(d.firma_empleado)}</td><td style="padding:4px 8px;">${sigCell(d.firma_instructor)}</td><td style="padding:4px 8px;">${sigCell(d.firma_rh)}</td>
-      <td style="padding:4px 8px;">${firmaInst}${firmaRh}</td>
+      <td style="padding:4px 8px;">${firmaInst}${firmaRh}${d.bloqueado && !isMuestra ? `<button class="btn btn-sm" onclick="event.stopPropagation();capUnblockExam(${a.id},'${d.doc_codigo}',${empId})" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border:none;border-radius:4px;margin-left:4px;">Desbloquear</button>` : ''}</td>
     </tr>`;
   }).join('');
   inner.innerHTML = `
@@ -12055,6 +12056,20 @@ window.capFirmarConComentario = function(assignId, docCodigo, tipoFirma, empId) 
       if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
     }
   };
+};
+
+window.capUnblockExam = async function(assignId, docCodigo, empId) {
+  if (!confirm('Desbloquear examen de ' + docCodigo + '? El empleado podra volver a presentarlo.')) return;
+  const r = await api('/api/rhh/training/assignments/' + assignId + '/unblock-exam', {
+    method: 'PATCH', body: JSON.stringify({ doc_codigo: docCodigo })
+  });
+  if (r && r.ok) {
+    toast('Examen desbloqueado', 'success');
+    const inner = document.getElementById('cap-hoja-inner-' + empId);
+    if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+  } else {
+    toast((r && r.error) || 'Error', 'error');
+  }
 };
 
 window.capEditResp = function(assignId, docCodigo, empId) {

@@ -1075,6 +1075,8 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
     status: d.status,
     mejor_calificacion: d.mejor_calificacion,
     intentos: d.intentos,
+    intentos_fallidos: d.intentos_fallidos || 0,
+    bloqueado: !!d.bloqueado,
     tiene_quiz: !!d.quiz_id,
     responsables: d.responsables || [],
     firma_empleado: d.firma_empleado,
@@ -1103,6 +1105,11 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
   if (!assignment) return res.status(404).json({ error: 'Sin asignacion' });
   const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
   if (!docEntry) return res.status(404).json({ error: 'Documento no asignado' });
+
+  // Bloqueo: si tiene 3+ intentos fallidos consecutivos, bloquear hasta que RHH lo habilite
+  if (docEntry.bloqueado) {
+    return res.status(403).json({ error: 'Examen bloqueado. Contacta a Recursos Humanos para habilitarlo.' });
+  }
 
   // Buscar quiz: primero por quiz_id, luego por codigo flexible
   const quizzes = db.rhh_training_quizzes || [];
@@ -1190,7 +1197,7 @@ router.post('/capacitacion/examen/:docCodigo', empAuthRequired, demoGuard, (req,
 
   const total = respuestas.length;
   const calificacion = total > 0 ? Math.round((correctas / total) * 100) : 0;
-  const aprobado = calificacion >= 70;
+  const aprobado = calificacion >= 60;
 
   // Guardar resultado
   if (!db.rhh_training_results) db.rhh_training_results = [];
@@ -1220,11 +1227,18 @@ router.post('/capacitacion/examen/:docCodigo', empAuthRequired, demoGuard, (req,
   docEntry.ultimo_intento = nowMxDate();
   if (aprobado) {
     docEntry.status = 'aprobado';
+    docEntry.intentos_fallidos = 0; // reset on pass
+    delete docEntry.bloqueado;
     if (!docEntry.mejor_calificacion || calificacion > docEntry.mejor_calificacion) {
       docEntry.mejor_calificacion = calificacion;
     }
   } else {
     if (docEntry.status !== 'aprobado') docEntry.status = 'reprobado';
+    docEntry.intentos_fallidos = (docEntry.intentos_fallidos || 0) + 1;
+    // Bloquear al tercer intento fallido consecutivo
+    if (docEntry.intentos_fallidos >= 3) {
+      docEntry.bloqueado = true;
+    }
     if (!docEntry.mejor_calificacion || calificacion > docEntry.mejor_calificacion) {
       docEntry.mejor_calificacion = calificacion;
     }

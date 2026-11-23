@@ -96,10 +96,10 @@ const DOC_INSTRUCTOR_MAP = {
   "2-GC-07": "Adm. SGC", "2-SE-10": "Adm. SYMA", "2-SE-11": "Adm. SYMA",
   "4-SE-06": "Adm. SYMA", "2-SE-01": "Adm. SYMA", "2-SE-05": "Ing. Mantenimiento",
   "2-RH-04": "Adm. RH", "2-RH-18": "Adm. SGC",
-  "LSA 52/53": "Adm. SYMA", "LSA 72": "Adm. SYMA",
-  "LSA 11": "Ing. Mantenimiento", "LSA 76": "Ing. Mantenimiento",
+  "LSA 72": "Adm. SYMA",
+  "LSA 11": "Ing. Mantenimiento",
   "LSA 79": "Ing. Mantenimiento", "LSA 94": "Ing. Mantenimiento",
-  "LSA 86": "Ing. Procesos", "LSA 42": "Gte. Operaciones",
+  "LSA 42": "Gte. Operaciones",
   "LSA 44": "Gte. Operaciones", "LSA 47": "Gte. Operaciones",
   "LSA 61": "Gte. Operaciones", "LSA 64": "Gte. Operaciones",
   "LSA 18": "Gte. Operaciones", "LSA 22": "Gte. Operaciones",
@@ -121,7 +121,6 @@ const DOCS_GENERALES = [
   { codigo: '2-SE-08 Rev. 0', nombre: 'Procedimiento de Ingreso para Visitantes y Contratistas', tipo: 'Procedimiento' },
   { codigo: '2-SE-10 Rev. 0', nombre: 'Protocolo de Atencion de Accidentes Laborales', tipo: 'Procedimiento' },
   { codigo: '2-SE-11 Rev. 0', nombre: 'Plan Atencion a Emergencias Electricas', tipo: 'Procedimiento' },
-  { codigo: 'LSA 52/53', nombre: 'Ubicacion, Activacion Alarmas y Paros de Emergencia', tipo: 'LSA' },
   { codigo: 'LSA 72', nombre: 'Uso de Tapones Auditivos', tipo: 'LSA' },
   { codigo: '4-SE-06 Rev. 0', nombre: 'Curso de Induccion Seguridad en el Trabajo', tipo: 'Formato' }
 ];
@@ -185,7 +184,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '4-MA-49 Rev. 0', nombre: 'POE Registro Ordenes Mtto. en Modulo', tipo: 'POE' },
       { codigo: '4-MA-50 Rev. 0', nombre: 'POE Flujo Paros Produccion-Mantenimiento', tipo: 'POE' },
       { codigo: 'LSA 11', nombre: 'Falla de Energia Electrica', tipo: 'LSA' },
-      { codigo: 'LSA 76', nombre: 'Deshabilitado de Fusibles', tipo: 'LSA' },
       { codigo: 'LSA 79', nombre: 'Uso de Compresores', tipo: 'LSA' },
       { codigo: 'LSA 94', nombre: 'Encendido de Resistencias', tipo: 'LSA' }
     ]
@@ -209,8 +207,7 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-GC-10 Rev. 2', nombre: 'Procedimiento para la planificacion de los cambios', tipo: 'Procedimiento' },
       { codigo: '1-CA-01 Rev. 3', nombre: 'Manual de Fallas Visuales', tipo: 'Manual' },
       { codigo: '1-CA-03 Rev. 2', nombre: 'Manual de Fallas Visuales Fosfato de Manganeso', tipo: 'Manual' },
-      { codigo: '1-CA-04 Rev. 1', nombre: 'Manual de Fallas Visuales Amsted', tipo: 'Manual' },
-      { codigo: 'LSA 86', nombre: 'Soluciones de Problemas de Fosfatado', tipo: 'LSA' }
+      { codigo: '1-CA-04 Rev. 1', nombre: 'Manual de Fallas Visuales Amsted', tipo: 'Manual' }
     ]
   },
   {
@@ -363,7 +360,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '4-PR-28 Rev. 2', nombre: 'POE Recepcion y Registro Mat. SKF en LOLA', tipo: 'POE' },
       { codigo: '4-PR-29 Rev. 0', nombre: 'POE Flujo de Materiales TENNECO', tipo: 'POE' },
       { codigo: '4-PR-32 Rev. 0', nombre: 'POE Registro de Material Proceso AMSTED', tipo: 'POE' },
-      { codigo: '4-PR-43 Rev. 0', nombre: 'POE Consolidacion y Envio Embarques SKF', tipo: 'POE' },
       { codigo: 'LSA 18', nombre: 'Ubicacion Material Sleeve en Almacen', tipo: 'LSA' },
       { codigo: 'LSA 22', nombre: 'Uso de Montacargas', tipo: 'LSA' },
       { codigo: 'LSA 48', nombre: 'Identificacion de FIFO Etiquetas', tipo: 'LSA' },
@@ -425,7 +421,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '3-PR-35 Rev. 0', nombre: 'IT Llenado de Solicitud de Mtto', tipo: 'IT' },
       { codigo: 'LSA 11', nombre: 'Falla de Energia Electrica', tipo: 'LSA' },
       { codigo: 'LSA 65', nombre: 'Llenado Correcto de Solicitud de Mantenimiento', tipo: 'LSA' },
-      { codigo: 'LSA 76', nombre: 'Deshabilitado de Fusibles', tipo: 'LSA' },
       { codigo: 'LSA 79', nombre: 'Uso de Compresores', tipo: 'LSA' },
       { codigo: 'LSA 94', nombre: 'Encendido de Resistencias', tipo: 'LSA' }
     ]
@@ -467,7 +462,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: 'LSA 58', nombre: 'Operacion Linea 1 y Manejo de Gruas', tipo: 'LSA' },
       { codigo: 'LSA 62', nombre: 'Llenado de Porrones para Adicion', tipo: 'LSA' },
       { codigo: 'LSA 73', nombre: 'Cambio de Canastas Linea Baker', tipo: 'LSA' },
-      { codigo: 'LSA 86', nombre: 'Soluciones de Problemas de Fosfatado', tipo: 'LSA' },
       { codigo: 'LSA 94', nombre: 'Encendido de Resistencias', tipo: 'LSA' },
       { codigo: 'LSA 96', nombre: 'Operacion Secadores Automaticos', tipo: 'LSA' },
       { codigo: '3-PR-32 Rev. 0', nombre: 'Programacion de Canastas en Linea Baker', tipo: 'IT' }
@@ -497,7 +491,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: 'LSA 17', nombre: 'Revision de Material Sandblasteado', tipo: 'LSA' },
       { codigo: 'LSA 23', nombre: 'Revision de Plan de Control', tipo: 'LSA' },
       { codigo: 'LSA 39', nombre: 'Termobalanza', tipo: 'LSA' },
-      { codigo: 'LSA 57', nombre: 'Empaque e Inspeccion Amsted', tipo: 'LSA' },
       { codigo: 'LSA 92', nombre: 'Criterios Inspeccion Pitting Material AMSTED', tipo: 'LSA' },
       { codigo: 'LSA 97', nombre: 'Validacion de Material Terminado AMSTED', tipo: 'LSA' }
     ]
@@ -514,12 +507,9 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-CA-19 Rev. 2', nombre: 'Procedimiento de Entrega al Cliente', tipo: 'Procedimiento' },
       { codigo: '1-CA-01 Rev. 3', nombre: 'Manual de Fallas Visuales', tipo: 'Manual' },
       { codigo: '1-CA-04 Rev. 1', nombre: 'Manual de Fallas Visuales Amsted', tipo: 'Manual' },
-      { codigo: 'LSA 08', nombre: 'Identificaciones de Material en Proceso', tipo: 'LSA' },
       { codigo: 'LSA 46', nombre: 'Restricciones Control Cajas de Carton', tipo: 'LSA' },
-      { codigo: 'LSA 57', nombre: 'Empaque e Inspeccion Amsted', tipo: 'LSA' },
       { codigo: 'LSA 67', nombre: 'Flujo de Material Terminado AMSTED', tipo: 'LSA' },
       { codigo: 'LSA 70', nombre: 'Acomodo de Piezas en Cajas y Camas', tipo: 'LSA' },
-      { codigo: 'LSA 85', nombre: 'Empaque Provisional ASM Caja', tipo: 'LSA' },
       { codigo: 'LSA 91', nombre: 'Sujecion en Transporte', tipo: 'LSA' }
     ]
   },
@@ -542,7 +532,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '3-PR-48 Rev. 0', nombre: 'IT Recibo y Validacion Materiales AMSTED', tipo: 'IT' },
       { codigo: '4-PR-28 Rev. 2', nombre: 'POE Recepcion y Registro Mat. SKF en LOLA', tipo: 'POE' },
       { codigo: '4-PR-29 Rev. 0', nombre: 'POE Flujo de Materiales TENNECO', tipo: 'POE' },
-      { codigo: '4-PR-43 Rev. 0', nombre: 'POE Consolidacion y Envio Embarques SKF', tipo: 'POE' },
       { codigo: 'LSA 18', nombre: 'Ubicacion Material Sleeve en Almacen', tipo: 'LSA' },
       { codigo: 'LSA 22', nombre: 'Uso de Montacargas', tipo: 'LSA' },
       { codigo: 'LSA 48', nombre: 'Identificacion de FIFO Etiquetas', tipo: 'LSA' },
@@ -567,10 +556,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '3-CA-08 Rev. 1', nombre: 'IT Retirar Etiquetas y Limpieza de Cunetes', tipo: 'IT' },
       { codigo: '3-CA-09 Rev. 0', nombre: 'IT Limpieza de Cajas Kan Ban', tipo: 'IT' },
       { codigo: '3-CA-10 Rev. 0', nombre: 'IT Limpieza de Tinas Azules', tipo: 'IT' },
-      { codigo: '3-CA-15 Rev. 0', nombre: 'IT Limpieza Carros de Cabina', tipo: 'IT' },
-      { codigo: 'LSA 00', nombre: 'Limpieza de Tinas Azules', tipo: 'LSA' },
-      { codigo: 'LSA 21', nombre: 'Modelos de Tinas', tipo: 'LSA' },
-      { codigo: 'LSA 59', nombre: 'Etiquetado Area de Limpieza y Equipo Vacio', tipo: 'LSA' }
     ]
   },
   {
@@ -623,7 +608,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: '2-RH-22 Rev. 4', nombre: 'D.P. Auxiliar de Intendencia', tipo: 'DP' },
       { codigo: '2-SE-02 Rev. 0', nombre: 'Procedimiento de Residuos de Manejo Especial y Peligrosos', tipo: 'Procedimiento' },
       { codigo: 'LSA 42', nombre: 'Tarimas de Quimicos', tipo: 'LSA' },
-      { codigo: 'LSA 59', nombre: 'Etiquetado Area de Limpieza y Equipo Vacio', tipo: 'LSA' },
       { codigo: 'LSA 77', nombre: 'Apagado de Luces en Produccion y Almacen', tipo: 'LSA' }
     ]
   }
@@ -1176,6 +1160,22 @@ router.patch('/assignments/:id/responsables', rhhRequireRole('admin', 'rh'), asy
   doc.responsables = Array.isArray(responsables) ? responsables : [];
   await write(db);
   res.json({ ok: true });
+});
+
+// PATCH /assignments/:id/unblock-exam — desbloquear examen bloqueado por 3 intentos fallidos
+router.patch('/assignments/:id/unblock-exam', rhhRequireRole('admin', 'rh'), (req, res) => {
+  const { doc_codigo } = req.body;
+  if (!doc_codigo) return res.status(400).json({ error: 'doc_codigo requerido' });
+  const db = read();
+  const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  const doc = (a.documentos || []).find(d => d.doc_codigo === doc_codigo);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado en asignacion' });
+  delete doc.bloqueado;
+  doc.intentos_fallidos = 0;
+  doc.status = 'pendiente';
+  write(db);
+  res.json({ ok: true, message: 'Examen desbloqueado' });
 });
 
 // PATCH /assignments/:id/change-position — cambiar puesto del trabajador (reasigna plan)
