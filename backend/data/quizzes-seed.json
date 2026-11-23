@@ -4737,7 +4737,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-PR-02 Rev. 1",
@@ -5092,7 +5093,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-PR-04 Rev. 1",
@@ -5447,7 +5449,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-PR-07 Rev. 0",
@@ -5744,7 +5747,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-DG-01 Rev. 4",
@@ -6099,7 +6103,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-GC-07 Rev. 1",
@@ -7077,7 +7082,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-CA-33 Rev. 0",
@@ -8026,7 +8032,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-SE-01 Rev. 0",
@@ -9040,7 +9047,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-RH-18 Rev. 4",
@@ -9931,7 +9939,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-CA-07 Rev. 3",
@@ -10974,7 +10983,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-GC-01 Rev. 5",
@@ -12445,7 +12455,8 @@
             }
           ]
         }
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-GC-08 Rev. 1",
@@ -14949,7 +14960,8 @@
       "revisiones_anteriores_sha256": [
         "2b3236450a017815fd9591a3743b08118497d0103072abfa6de1be4d6600a3c9",
         "e44ad9caf9a5a998b7c20d018f63c238a624cdcb970f9dde136ce4668f088596"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "1-CA-01 Rev. 3",
@@ -25089,7 +25101,8 @@
       "revisiones_anteriores_sha256": [
         "892a8511e79252c73e27ed8bcf857d5b5ba1ff2752adab91b67f9d825c5ae51a",
         "b8edc0c1d9dc26f34b9ee071c6c2fc34799f82e0670e6f961d61f77e8de5797f"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-PR-06 Rev. 2",
@@ -26108,7 +26121,8 @@
       "revisiones_anteriores_sha256": [
         "d630af5385062053b4eea717946a2626b38d7126ad4c1eba3463b5cba15a8d59",
         "d6a162d3c1576876d41bda5f148d61bb18c5ec2f9c2f01e153eb15d0a04fac5f"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "2-RH-02 Rev. 3",
@@ -28795,7 +28809,8 @@
       "revisiones_anteriores_sha256": [
         "763a4a4d802ec5d836cfa0ddebc4dca016a00117226f4860d819b69425c4c75f",
         "c5a6cce00bc3f9d37c1b74bd6bda769974b716a7d51071b97d009d50af3a1c69"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "4-PR-28 Rev. 2",
@@ -29096,7 +29111,8 @@
       "revisiones_anteriores_sha256": [
         "3d5728fe32e13ff4be6209ee55321fa1c5790b365538022d4840c190fbd3f69a",
         "e442ad541c21a07e66bb4341d239e02a7de84fd1ac99184f87c554b2e1d7c152"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "4-PR-29 Rev. 0",
@@ -29669,7 +29685,8 @@
       "revisiones_anteriores_sha256": [
         "b3e8d4a5acbe660645f3c630b1b1d7771f62636431438b825f745320d981875b",
         "eef15ea9cfd180995652a70b275958cedb767b2662d1b4db2d58cdc574e24259"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-PR-35 Rev. 0",
@@ -30213,7 +30230,8 @@
       "revisiones_anteriores_sha256": [
         "9f1a44a2d1b68a4ab43249ddbd846c6028e8f306ba6d25c137d887a8236e3c7a",
         "991e7eda0c1a938ab00d558d70a7ec46b89d897c18d92232502682a9ec07b7b4"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-PR-04 Rev. 2",
@@ -30485,7 +30503,8 @@
       "revisiones_anteriores_sha256": [
         "19731046c525e587b3aa9aac2e71d551c158d7514ca6e1abfcada3d206740b2e",
         "d4c4976436d993626bf87edd91e6b2d600a5cea538bdd554168c30c522ab6ad5"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-PR-44 Rev. 0",
@@ -31029,7 +31048,8 @@
       "revisiones_anteriores_sha256": [
         "aee59be0aa1b4439194fb6102cd6a6b371333fbe76b7e45948c654bdfc25e225",
         "9f9435bd55e9fe72af358d28b19a3bdfeb1679c2932bcd9ae0f802a01f9ce77b"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "4-CA-163 Rev. 0",
@@ -34018,7 +34038,8 @@
       "revisiones_anteriores_sha256": [
         "4e724f99b21c22aab7571d91aaab697e16d1ee31c716ed4f95f25beacf1c2c69",
         "2dd8e888857684d762d83d39fcab8ea4b9d62b2c3821d99e64eaecaf0c202097"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-CA-09 Rev. 0",
@@ -34290,7 +34311,8 @@
       "revisiones_anteriores_sha256": [
         "4d4c52dd86e32176c93290c6799b6298f01e4324cd0d227d55dfed4fedef9d18",
         "d6f3596b64bfb1a74ccf866af2f414a99921affef5a218cd9fd156b52566e036"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-CA-10 Rev. 0",
@@ -34591,7 +34613,8 @@
       "revisiones_anteriores_sha256": [
         "00ca7d57cc89d158a6665378a07ad6d1c67fb4793a52753fe857a88e5feda1fd",
         "f80eedce1c366bd50655afc6d82ca2332d9dc2afac070deba1d88f984181b98f"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "3-PR-01 Rev. 3",
@@ -36651,7 +36674,8 @@
       "revisiones_anteriores_sha256": [
         "020875ae40e13b103b9d76f58c28eab002fdf078f1863da4ea6be90d8eba7873",
         "1ff9ddd4cc42582c7c5cc1ffec42a7531a16fc240cf8209e719e8a8641317710"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 44",
@@ -36894,7 +36918,8 @@
       "revisiones_anteriores_sha256": [
         "9336f6897223d01507d402914b181e620a0c2779ee4c3d8af72d12080cdb6b5e",
         "79779c07598301483419c0b702a5a7ab9d06772d04838aa792c0fd971ac4a8e2"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 47",
@@ -37137,7 +37162,8 @@
       "revisiones_anteriores_sha256": [
         "57040ab51f69cc475bda200aede53b45520830676332facec2317da3c6bd9723",
         "6b48238f5984a9702e19ee98b7b01ef386d0de4b58e5b39b964add65ecfc7849"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 61",
@@ -37351,7 +37377,8 @@
       "revisiones_anteriores_sha256": [
         "7d7860df58aeeba844fc6d913257c92159f238cbd0eaf147e55141e0ae581cf8",
         "2243a0504a91a262f378724df6b7a5dce25ce5685dd064f30d1ba09e4fe075cc"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 64",
@@ -37591,7 +37618,8 @@
           ]
         }
       ],
-      "revision_anterior_sha256": "d4cced294c25196ebc8f11bc3671af918863382fcf977ca77a5f48bfa242a51b"
+      "revision_anterior_sha256": "d4cced294c25196ebc8f11bc3671af918863382fcf977ca77a5f48bfa242a51b",
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 18",
@@ -37834,7 +37862,8 @@
       "revisiones_anteriores_sha256": [
         "1f0d6b6684942078c2a5507b979ede8499b7eff5f2bc14e630dd0f09343fcb22",
         "0c35830490e7b95b704fdc82a6630991b83ee7003b90d0e4c29e752d072afc06"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 22",
@@ -38077,7 +38106,8 @@
       "revisiones_anteriores_sha256": [
         "6377689c647f42cc473becfe1f123ea160d1f655f39bfc7fbcfafc10958d2919",
         "2ac6c6e8d3899c656ea22338c54cdb6ae5fffbb62f8531357142374be8b0deae"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 48",
@@ -38320,7 +38350,8 @@
       "revisiones_anteriores_sha256": [
         "2cdc7d810c15689326d9fbb2d38a98443e99800d28fd6d703b125e0abc43c584",
         "dbd03790906f7c834cebba819d3369a1e92ebe3509c62e76d5afc7f419d97951"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 50",
@@ -38563,250 +38594,8 @@
       "revisiones_anteriores_sha256": [
         "35ac32125994cb298de529c506c1a3b58ac55e701acf3999cdf557e0a91de439",
         "4da1d22cf1d36e21722e29e169f2245ba555fb3f7eca8d081fc6f4bcf629f7c5"
-      ]
-    },
-    {
-      "doc_codigo": "LSA 51",
-      "doc_nombre": "Impresion Query Almacen",
-      "doc_tipo": "LSA",
-      "preguntas": [
-        {
-          "texto": "Antes de comenzar a escanear, que se hace en el archivo generador Query?",
-          "opciones": [
-            {
-              "texto": "Enviar el correo antes de escanear",
-              "correcta": false
-            },
-            {
-              "texto": "Dar clic en la barra del archivo",
-              "correcta": true
-            },
-            {
-              "texto": "Abrir una etiqueta de un lote anterior",
-              "correcta": false
-            },
-            {
-              "texto": "Cerrar el archivo generador",
-              "correcta": false
-            },
-            {
-              "texto": "Pegar un codigo de otro archivo",
-              "correcta": false
-            },
-            {
-              "texto": "Borrar la cantidad que aparece en el archivo",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Que codigo se escanea en el paso 2 de la leccion?",
-          "opciones": [
-            {
-              "texto": "El codigo de otro proveedor sin revisarlo",
-              "correcta": false
-            },
-            {
-              "texto": "La fecha escrita en el archivo",
-              "correcta": false
-            },
-            {
-              "texto": "La etiqueta del montacargas",
-              "correcta": false
-            },
-            {
-              "texto": "El codigo de un embarque anterior",
-              "correcta": false
-            },
-            {
-              "texto": "El codigo QR de Cuesto",
-              "correcta": true
-            },
-            {
-              "texto": "El codigo de una caja distinta sin identificar",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Al terminar de escanear, que cantidades se comparan?",
-          "opciones": [
-            {
-              "texto": "La cantidad de turnos y la cantidad de empleados",
-              "correcta": false
-            },
-            {
-              "texto": "La cantidad de cunetes escaneados y la cantidad del archivo",
-              "correcta": true
-            },
-            {
-              "texto": "La cantidad de etiquetas vacias y de tarimas rotas",
-              "correcta": false
-            },
-            {
-              "texto": "El numero de correos enviados el mes anterior",
-              "correcta": false
-            },
-            {
-              "texto": "La cantidad de tanques y la cantidad de valvulas",
-              "correcta": false
-            },
-            {
-              "texto": "El peso del montacargas y el peso de una tina",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Despues de comprobar la cantidad escaneada, que boton se presiona?",
-          "opciones": [
-            {
-              "texto": "IMPRIMIR SIN REVISAR",
-              "correcta": false
-            },
-            {
-              "texto": "CANCELAR TODO",
-              "correcta": false
-            },
-            {
-              "texto": "ENVIAR CORREO",
-              "correcta": true
-            },
-            {
-              "texto": "CERRAR ARCHIVO",
-              "correcta": false
-            },
-            {
-              "texto": "BORRAR ESCANEO",
-              "correcta": false
-            },
-            {
-              "texto": "ELIMINAR REGISTROS",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Cuando se abre la ventana para colocar el codigo, como indica la leccion pegarlo?",
-          "opciones": [
-            {
-              "texto": "Escribir otro codigo sin revisarlo",
-              "correcta": false
-            },
-            {
-              "texto": "Cambiar la cantidad del archivo sin comprobar",
-              "correcta": false
-            },
-            {
-              "texto": "Borrar el codigo escaneado y enviar",
-              "correcta": false
-            },
-            {
-              "texto": "Dar clic derecho en la barra y seleccionar pegar",
-              "correcta": true
-            },
-            {
-              "texto": "Pegar el codigo en otro correo de un envio anterior",
-              "correcta": false
-            },
-            {
-              "texto": "Cerrar la ventana sin pegar",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Una vez pegado el codigo, que se selecciona en la ventana indicada?",
-          "opciones": [
-            {
-              "texto": "Eliminar",
-              "correcta": false
-            },
-            {
-              "texto": "Cerrar sin guardar",
-              "correcta": false
-            },
-            {
-              "texto": "Aceptar",
-              "correcta": true
-            },
-            {
-              "texto": "Cancelar",
-              "correcta": false
-            },
-            {
-              "texto": "Cambiar la cantidad escaneada",
-              "correcta": false
-            },
-            {
-              "texto": "Enviar otro archivo",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Si aparece la ventana de confirmacion mostrada porque la accion se hizo antes, que boton indica la leccion seleccionar?",
-          "opciones": [
-            {
-              "texto": "CAMBIAR ARCHIVO",
-              "correcta": false
-            },
-            {
-              "texto": "CERRAR SIN SELECCIONAR",
-              "correcta": false
-            },
-            {
-              "texto": "CANCELAR",
-              "correcta": false
-            },
-            {
-              "texto": "NO",
-              "correcta": false
-            },
-            {
-              "texto": "BORRAR",
-              "correcta": false
-            },
-            {
-              "texto": "SI",
-              "correcta": true
-            }
-          ]
-        },
-        {
-          "texto": "Cuando se abre la pestana de correo en el ultimo paso, que secuencia muestra la leccion?",
-          "opciones": [
-            {
-              "texto": "Cambiar el destinatario por uno de otro proceso",
-              "correcta": false
-            },
-            {
-              "texto": "Enviar sin seleccionar materiales cuesto",
-              "correcta": false
-            },
-            {
-              "texto": "Borrar el archivo y enviar el correo vacio",
-              "correcta": false
-            },
-            {
-              "texto": "Cerrar Outlook y repetir el escaneo sin revisar",
-              "correcta": false
-            },
-            {
-              "texto": "Cerrar el correo antes de seleccionar el archivo",
-              "correcta": false
-            },
-            {
-              "texto": "Seleccionar materiales cuesto y dar clic en enviar",
-              "correcta": true
-            }
-          ]
-        }
       ],
-      "revisiones_anteriores_sha256": [
-        "6e229eb1e6611551a0ab6a18c1d55609d0449da22835ad19021adec7c323a608",
-        "493531b37f3de850a61ce32b048bf50dfc7f852826644702e592a95149fa0800"
-      ]
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 60",
@@ -39020,7 +38809,8 @@
       "revisiones_anteriores_sha256": [
         "f4effed3ed4220aafd298a14fdcfc9430da9170575dc41516d8abdf8478c276b",
         "1d94b389cba47cb2fd3f49ffce3cd3af3ebaa561840b2f95f1c94d8dda52f197"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 75",
@@ -39263,7 +39053,8 @@
       "revisiones_anteriores_sha256": [
         "04e9220e495e761d1d19e54a309d1009011e01a24a840173938cf1a195307f8e",
         "80e21b8ce008b08d086a8eb3514c30bf89af47ea85702fdd4afcbea4235b61c5"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 65",
@@ -39506,7 +39297,8 @@
       "revisiones_anteriores_sha256": [
         "d6d0e582eb2a4adbfd56c53dd3446e1b53d2ec306ea0ca0430ccf8f614d55fda",
         "cc98e3219e82244a25f45f99f185fe05f928b21fcc66058eac3c116a67d47221"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 04",
@@ -41102,7 +40894,8 @@
       "revisiones_anteriores_sha256": [
         "1d20cff070a32d3120c7104cf09290f93f2990e8f55ffd2399b2f1b7bc0652e7",
         "acfa86465c3b47f11aa5c278a862b13e154836a2a0056a8936d5548de073db1b"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 73",
@@ -43416,7 +43209,8 @@
       "revisiones_anteriores_sha256": [
         "fb0d50d5609cfd33b7ffd2641dde9b1876df0631368c58e491f2e7c399781e0d",
         "c5e6f7b11fab234672b98eaa57a601c40f4f047ceb157b8c60775bd83c8bca41"
-      ]
+      ],
+      "pendiente_revision": true
     },
     {
       "doc_codigo": "LSA 67",

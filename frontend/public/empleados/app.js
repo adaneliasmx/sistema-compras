@@ -1652,11 +1652,17 @@ async function capacitacion(el) {
 
   // Lista de documentos
   const docs = data.documentos || [];
+  const pendingCount = docs.filter(d => d.pendiente_revision).length;
+  if (pendingCount > 0) {
+    html += `<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:10px 14px;margin-bottom:8px;font-size:13px;color:#92400e;">
+      Algunos cuestionarios (${pendingCount}) estan en revision y se iran habilitando conforme se actualicen.
+    </div>`;
+  }
   html += '<div style="display:flex;flex-direction:column;gap:8px;">';
   for (const d of docs) {
-    const icon = d.bloqueado ? '🔒' : d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
+    const icon = d.bloqueado ? '🔒' : d.pendiente_revision ? '🔄' : d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
     const calTxt = d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--';
-    const canExam = d.tiene_quiz && d.status !== 'aprobado' && !d.bloqueado;
+    const canExam = d.tiene_quiz && d.status !== 'aprobado' && !d.bloqueado && !d.pendiente_revision;
     const canSign = d.status === 'aprobado' && d.firma_empleado && !d.firma_empleado.firmado;
     const fmtFirma = (f, emoji) => {
       if (!f || !f.firmado) return emoji + '✗';
@@ -1685,7 +1691,8 @@ async function capacitacion(el) {
             ${canExam ? `<button class="emp-btn-primary" style="font-size:12px;padding:4px 10px;" onclick="_capIniciarExamen('${esc(d.doc_codigo)}')">Presentar</button>` : ''}
             ${canSign ? `<button class="emp-btn-outline" style="font-size:12px;padding:4px 10px;" onclick="_capFirmar('${esc(d.doc_codigo)}')">Firmar</button>` : ''}
             ${d.bloqueado ? '<span style="font-size:11px;color:#dc2626;">Bloqueado - Contacta a RH</span>' : ''}
-            ${!d.tiene_quiz && !d.bloqueado ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
+            ${d.pendiente_revision ? '<span style="font-size:11px;color:#d97706;">No disponible, intente despues</span>' : ''}
+            ${!d.tiene_quiz && !d.bloqueado && !d.pendiente_revision ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
           </div>
         </div>
       </div>

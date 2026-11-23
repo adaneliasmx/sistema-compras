@@ -104,7 +104,7 @@ const DOC_INSTRUCTOR_MAP = {
   "LSA 61": "Gte. Operaciones", "LSA 64": "Gte. Operaciones",
   "LSA 18": "Gte. Operaciones", "LSA 22": "Gte. Operaciones",
   "LSA 48": "Gte. Operaciones", "LSA 50": "Gte. Operaciones",
-  "LSA 51": "Gte. Operaciones", "LSA 60": "Gte. Operaciones",
+  "LSA 60": "Gte. Operaciones",
   "LSA 75": "Gte. Operaciones", "LSA 65": "Gte. Operaciones",
   "Adm. Compras": "Adm. Compras", "2-DG-01": "Adm. SGC",
   "2-DG-09": "Adm. SGC", "2-DG-05": "Adm. SGC", "2-DG-08": "Adm. SGC",
@@ -364,7 +364,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: 'LSA 22', nombre: 'Uso de Montacargas', tipo: 'LSA' },
       { codigo: 'LSA 48', nombre: 'Identificacion de FIFO Etiquetas', tipo: 'LSA' },
       { codigo: 'LSA 50', nombre: 'Recibo de Materiales Amsted', tipo: 'LSA' },
-      { codigo: 'LSA 51', nombre: 'Impresion Query Almacen', tipo: 'LSA' },
       { codigo: 'LSA 60', nombre: 'Flujo de Materiales Amsted', tipo: 'LSA' },
       { codigo: 'LSA 75', nombre: 'Estibado de Material Terminado Almacen', tipo: 'LSA' }
     ]
@@ -536,7 +535,6 @@ const TRAINING_PLANS_SEED = [
       { codigo: 'LSA 22', nombre: 'Uso de Montacargas', tipo: 'LSA' },
       { codigo: 'LSA 48', nombre: 'Identificacion de FIFO Etiquetas', tipo: 'LSA' },
       { codigo: 'LSA 50', nombre: 'Recibo de Materiales Amsted', tipo: 'LSA' },
-      { codigo: 'LSA 51', nombre: 'Impresion Query Almacen', tipo: 'LSA' },
       { codigo: 'LSA 75', nombre: 'Estibado de Material Terminado Almacen', tipo: 'LSA' },
       { codigo: 'LSA 77', nombre: 'Apagado de Luces', tipo: 'LSA' },
       { codigo: 'LSA 80', nombre: 'Ingreso y Registro de Gondola', tipo: 'LSA' },
@@ -862,6 +860,8 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
         if (replacesPreviousText) exists.doc_codigo = q.doc_codigo;
         exists.doc_nombre = q.doc_nombre || exists.doc_nombre;
         exists.doc_tipo = q.doc_tipo || exists.doc_tipo;
+        if (q.pendiente_revision) exists.pendiente_revision = true;
+        else delete exists.pendiente_revision;
         updated++;
       }
       continue;
@@ -873,6 +873,7 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
       doc_nombre: q.doc_nombre || q.doc_codigo,
       doc_tipo: q.doc_tipo || 'Procedimiento',
       preguntas: numbered,
+      pendiente_revision: q.pendiente_revision || false,
       created_at: nowMxDate()
     });
     added++;
@@ -1045,6 +1046,7 @@ router.post('/assign', rhhRequireRole('admin', 'rh'), async (req, res) => {
         doc_nombre: d.nombre,
         doc_tipo: d.tipo,
         quiz_id: quiz ? quiz.id : null,
+        pendiente_revision: quiz ? !!quiz.pendiente_revision : false,
         responsables: [],
         status: 'pendiente',
         mejor_calificacion: null,
@@ -1138,9 +1140,10 @@ router.post('/assignments/refresh-quizzes', rhhRequireRole('admin', 'rh'), async
   for (const a of assignments) {
     for (const d of (a.documentos || [])) {
       const quiz = findQuizByCode(quizzes, d.doc_codigo);
-      if (quiz && d.quiz_id !== quiz.id) {
-        d.quiz_id = quiz.id;
-        updated++;
+      if (quiz) {
+        if (d.quiz_id !== quiz.id) { d.quiz_id = quiz.id; updated++; }
+        const pr = !!quiz.pendiente_revision;
+        if (d.pendiente_revision !== pr) { d.pendiente_revision = pr; updated++; }
       }
     }
   }

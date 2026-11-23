@@ -1078,6 +1078,7 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
     intentos_fallidos: d.intentos_fallidos || 0,
     bloqueado: !!d.bloqueado,
     tiene_quiz: !!d.quiz_id,
+    pendiente_revision: !!d.pendiente_revision,
     responsables: d.responsables || [],
     firma_empleado: d.firma_empleado,
     firma_instructor: d.firma_instructor,
@@ -1109,6 +1110,10 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
   // Bloqueo: si tiene 3+ intentos fallidos consecutivos, bloquear hasta que RHH lo habilite
   if (docEntry.bloqueado) {
     return res.status(403).json({ error: 'Examen bloqueado. Contacta a Recursos Humanos para habilitarlo.' });
+  }
+  // Pendiente de revision: cuestionario aun no validado por el area responsable
+  if (docEntry.pendiente_revision) {
+    return res.status(403).json({ error: 'Este cuestionario esta en revision. Intenta mas tarde.' });
   }
 
   // Buscar quiz: primero por quiz_id, luego por codigo flexible
