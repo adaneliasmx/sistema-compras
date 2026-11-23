@@ -434,7 +434,20 @@ if (process.env.OPAQUE_ROUTES) {
   app.get('/planner-staff',              redir('/m/p4s6j8/planner-staff'));
   app.get('/planner-staff/*',            redir('/m/p4s6j8/planner-staff'));
 
-  // Escaneo inventarios
+  // Escaneo inventarios — PWA: manifest dinámico + assets estáticos
+  app.get('/apps/s9q5r2/escaneo-inventarios/manifest.json', (req, res) => {
+    res.json({
+      name: 'Inventario con App - Cuesto/SKF', short_name: 'Inventario',
+      start_url: '/apps/s9q5r2/escaneo-inventarios/', scope: '/apps/s9q5r2/escaneo-inventarios/',
+      display: 'standalone', orientation: 'portrait',
+      background_color: '#0f0f1a', theme_color: '#1a1a2e',
+      icons: [
+        { src: '/img/logo.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+        { src: '/img/logo.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }
+      ]
+    });
+  });
+  app.use('/apps/s9q5r2/escaneo-inventarios', express.static(path.resolve(process.cwd(), 'frontend/public/home/inventarioconapp'), { index: false }));
   app.get('/apps/s9q5r2/escaneo-inventarios',   sf('frontend/public/home/inventarioconapp/index.html'));
   app.get('/apps/s9q5r2/escaneo-inventarios/*', sf('frontend/public/home/inventarioconapp/index.html'));
   app.get('/home/inventarioconapp',             redir('/apps/s9q5r2/escaneo-inventarios'));
