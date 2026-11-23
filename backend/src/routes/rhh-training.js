@@ -1102,6 +1102,12 @@ router.get('/assignments/:empId', rhhRequireRole('admin', 'rh', 'muestra'), asyn
   const db = await read();
   const a = (db.rhh_training_assignments || []).find(x => x.employee_id === Number(req.params.empId));
   if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  // Enriquecer pendiente_revision en tiempo real desde quizzes
+  const quizzes = db.rhh_training_quizzes || [];
+  for (const d of (a.documentos || [])) {
+    const quiz = findQuizByCode(quizzes, d.doc_codigo);
+    d.pendiente_revision = quiz ? !!quiz.pendiente_revision : false;
+  }
   res.json(a);
 });
 

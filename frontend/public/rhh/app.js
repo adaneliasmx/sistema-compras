@@ -12019,6 +12019,7 @@ async function capRenderHoja(inner, empId) {
   };
   const statusBadge = (d) => {
     if (d.bloqueado) return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Bloqueado</span>';
+    if (d.pendiente_revision) return '<span style="background:#fffbeb;color:#92400e;padding:2px 8px;border-radius:4px;font-size:11px;">En revision</span>';
     if (d.status === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
     if (d.status === 'reprobado') return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Reprobado</span>';
     return '<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;">Pendiente</span>';

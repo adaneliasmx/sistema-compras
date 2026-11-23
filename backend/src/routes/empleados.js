@@ -1067,6 +1067,14 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
   const empId = req.empPayload.sub;
   const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
   if (!assignment) return res.json({ asignado: false });
+  // Enriquecer pendiente_revision en tiempo real desde quizzes
+  const quizzes = db.rhh_training_quizzes || [];
+  const baseCode = (c) => (c || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+  for (const d of (assignment.documentos || [])) {
+    const quiz = quizzes.find(q => q.doc_codigo === d.doc_codigo)
+      || quizzes.find(q => baseCode(q.doc_codigo) === baseCode(d.doc_codigo));
+    d.pendiente_revision = quiz ? !!quiz.pendiente_revision : false;
+  }
   // No enviar quiz_id detallado, solo resumen
   const docs = (assignment.documentos || []).map(d => ({
     doc_codigo: d.doc_codigo,
