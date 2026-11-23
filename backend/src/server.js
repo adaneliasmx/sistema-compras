@@ -296,6 +296,128 @@ app.post('/api/invapp/ubicaciones', invappAuth, (req, res) => {
   res.json({ ok: true, ubicaciones: data.ubicaciones });
 });
 
+// ── Shared Inventory Sessions (real-time, in-memory) ─────────────────────────
+if (!global._invappSessions) global._invappSessions = {};
+
+function invappCleanSessions() {
+  const MAX_AGE = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  for (const [id, s] of Object.entries(global._invappSessions)) {
+    if (now - s.createdAt > MAX_AGE) delete global._invappSessions[id];
+  }
+}
+
+function invappActiveUsers(session) {
+  const now = Date.now();
+  let count = 0;
+  const names = [];
+  for (const [user, data] of Object.entries(session.users || {})) {
+    if (now - data.lastPing < 15000) { count++; names.push(user); }
+  }
+  return { count, names };
+}
+
+// Create session
+app.post('/api/invapp/sessions', invappAuth, (req, res) => {
+  invappCleanSessions();
+  const { tipo, nombre, ubicacion } = req.body || {};
+  if (!tipo || !nombre) return res.status(400).json({ ok: false, error: 'tipo y nombre requeridos' });
+  const id = crypto.randomBytes(6).toString('hex');
+  global._invappSessions[id] = {
+    id, tipo, nombre, ubicacion: ubicacion || '',
+    createdBy: req.invappUser, createdAt: Date.now(), active: true,
+    users: { [req.invappUser]: { lastPing: Date.now() } },
+    escaneos: [], codigos: new Set()
+  };
+  res.json({ ok: true, id, tipo, nombre });
+});
+
+// List active sessions
+app.get('/api/invapp/sessions', invappAuth, (req, res) => {
+  invappCleanSessions();
+  const tipo = req.query.tipo;
+  const list = Object.values(global._invappSessions)
+    .filter(s => s.active && (!tipo || s.tipo === tipo))
+    .map(s => {
+      const u = invappActiveUsers(s);
+      return {
+        id: s.id, tipo: s.tipo, nombre: s.nombre, ubicacion: s.ubicacion,
+        createdBy: s.createdBy, users: u.count, userNames: u.names,
+        totalEscaneos: s.escaneos.length,
+        totalPiezas: s.escaneos.reduce((sum, e) => sum + (e.cantidad || 0), 0)
+      };
+    });
+  res.json({ ok: true, sessions: list });
+});
+
+// Join session
+app.post('/api/invapp/sessions/:id/join', invappAuth, (req, res) => {
+  const s = global._invappSessions[req.params.id];
+  if (!s || !s.active) return res.status(404).json({ ok: false, error: 'Sesion no encontrada' });
+  s.users[req.invappUser] = { lastPing: Date.now() };
+  res.json({ ok: true, id: s.id, tipo: s.tipo, nombre: s.nombre, ubicacion: s.ubicacion });
+});
+
+// Leave session
+app.post('/api/invapp/sessions/:id/leave', invappAuth, (req, res) => {
+  const s = global._invappSessions[req.params.id];
+  if (s) delete s.users[req.invappUser];
+  res.json({ ok: true });
+});
+
+// Submit scan
+app.post('/api/invapp/sessions/:id/scan', invappAuth, (req, res) => {
+  const s = global._invappSessions[req.params.id];
+  if (!s || !s.active) return res.status(404).json({ ok: false, error: 'Sesion no encontrada' });
+  const { clave, campos, ubicacion, cantidad } = req.body || {};
+  if (!clave || !campos) return res.status(400).json({ ok: false, error: 'Datos incompletos' });
+  if (s.codigos.has(clave)) return res.json({ ok: false, duplicate: true });
+  s.codigos.add(clave);
+  const ahora = new Date();
+  s.escaneos.push({
+    clave, campos, ubicacion: ubicacion || s.ubicacion, user: req.invappUser,
+    cantidad: parseInt(cantidad) || 0,
+    fechaEscaneo: ahora.toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City', day: '2-digit', month: '2-digit', year: 'numeric' }),
+    horaEscaneo: ahora.toLocaleTimeString('es-MX', { timeZone: 'America/Mexico_City', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  });
+  s.users[req.invappUser] = { lastPing: Date.now() };
+  res.json({
+    ok: true, index: s.escaneos.length,
+    totalEscaneos: s.escaneos.length,
+    totalPiezas: s.escaneos.reduce((sum, e) => sum + (e.cantidad || 0), 0)
+  });
+});
+
+// Poll session state
+app.get('/api/invapp/sessions/:id/state', invappAuth, (req, res) => {
+  const s = global._invappSessions[req.params.id];
+  if (!s) return res.status(404).json({ ok: false });
+  s.users[req.invappUser] = { lastPing: Date.now() };
+  const after = parseInt(req.query.after) || 0;
+  const u = invappActiveUsers(s);
+  res.json({
+    ok: true, active: s.active,
+    users: u.count, userNames: u.names,
+    totalEscaneos: s.escaneos.length,
+    totalPiezas: s.escaneos.reduce((sum, e) => sum + (e.cantidad || 0), 0),
+    newEscaneos: s.escaneos.slice(after)
+  });
+});
+
+// Finish session
+app.post('/api/invapp/sessions/:id/finish', invappAuth, (req, res) => {
+  const s = global._invappSessions[req.params.id];
+  if (!s) return res.status(404).json({ ok: false });
+  s.active = false;
+  res.json({
+    ok: true, tipo: s.tipo, nombre: s.nombre,
+    escaneos: s.escaneos,
+    totalEscaneos: s.escaneos.length,
+    totalPiezas: s.escaneos.reduce((sum, e) => sum + (e.cantidad || 0), 0),
+    ubicaciones: [...new Set(s.escaneos.map(e => e.ubicacion))]
+  });
+});
+
 // ── API Pública (sin auth) ────────────────────────────────────────────────────
 app.use('/api/public/po', publicPoRoutes);
 
