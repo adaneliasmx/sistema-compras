@@ -1744,11 +1744,24 @@ function _capExamEnableGuard() {
   document.body.classList.add('exam-active');
   window.addEventListener('beforeunload', _capExamBeforeUnload);
   document.addEventListener('visibilitychange', _capExamVisChange);
+  // Marca de agua con nombre del empleado (disuasión + trazabilidad)
+  let wm = document.getElementById('exam-watermark');
+  if (!wm) {
+    wm = document.createElement('div');
+    wm.id = 'exam-watermark';
+    document.body.appendChild(wm);
+  }
+  const name = state.user?.full_name || '';
+  const num = state.user?.employee_number || '';
+  wm.textContent = (name + ' #' + num + '  ').repeat(40);
+  wm.style.cssText = 'position:fixed;top:0;left:0;width:200vw;height:200vh;pointer-events:none;z-index:9998;font-size:14px;color:rgba(0,0,0,0.04);transform:rotate(-30deg);transform-origin:center;white-space:nowrap;line-height:2.5;overflow:hidden;user-select:none;';
 }
 function _capExamDisableGuard() {
   document.body.classList.remove('exam-active', 'exam-hidden');
   window.removeEventListener('beforeunload', _capExamBeforeUnload);
   document.removeEventListener('visibilitychange', _capExamVisChange);
+  const wm = document.getElementById('exam-watermark');
+  if (wm) wm.remove();
 }
 
 function _capRenderExamen(el) {
@@ -1756,7 +1769,10 @@ function _capRenderExamen(el) {
   if (!s) return;
 
   let html = `
-    <p class="emp-page-title">Examen: ${esc(s.doc_nombre)}</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <p class="emp-page-title" style="margin-bottom:0;">Examen: ${esc(s.doc_nombre)}</p>
+      <button type="button" onclick="_capCancelExam()" style="background:#fee2e2;color:#dc2626;border:none;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">Salir del examen</button>
+    </div>
     <p style="color:#64748b;margin-bottom:16px;">${s.preguntas.length} preguntas - Selecciona una opcion por pregunta</p>
     <form id="cap-exam-form">
   `;

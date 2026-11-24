@@ -1,9 +1,30 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const { read, write, writeAsync } = require('../db-rhh');
 const { empAuthRequired } = require('../middleware/empleados-auth');
 const { calcVacInfo } = require('../utils/rhh-vac-calc');
 
 const router = express.Router();
+
+// ── Pending quiz codes (leído del seed, source of truth) ─────────────────────
+let _pendingQuizCodes = new Set();
+function _loadPendingCodes() {
+  try {
+    const seedPath = path.join(__dirname, '../../data/quizzes-seed.json');
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const quizzes = seed.quizzes || seed;
+    _pendingQuizCodes = new Set(
+      quizzes.filter(q => q.pendiente_revision)
+        .map(q => q.doc_codigo.replace(/\s*Rev\.\s*\d+/i, '').trim())
+    );
+  } catch (e) { /* seed not found, leave empty */ }
+}
+_loadPendingCodes();
+function _isPendingQuiz(docCodigo) {
+  const base = (docCodigo || '').replace(/\s*Rev\.\s*\d+/i, '').trim();
+  return _pendingQuizCodes.has(base);
+}
 
 // ── Guard: cuenta demo no escribe en DB ──────────────────────────────────────
 function demoGuard(req, res, next) {
@@ -1067,13 +1088,9 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
   const empId = req.empPayload.sub;
   const assignment = (db.rhh_training_assignments || []).find(a => a.employee_id === empId);
   if (!assignment) return res.json({ asignado: false });
-  // Enriquecer pendiente_revision en tiempo real desde quizzes
-  const quizzes = db.rhh_training_quizzes || [];
-  const baseCode = (c) => (c || '').replace(/\s+Rev\.\s*\d+/i, '').trim();
+  // Enriquecer pendiente_revision desde seed (source of truth)
   for (const d of (assignment.documentos || [])) {
-    const quiz = quizzes.find(q => q.doc_codigo === d.doc_codigo)
-      || quizzes.find(q => baseCode(q.doc_codigo) === baseCode(d.doc_codigo));
-    d.pendiente_revision = quiz ? !!quiz.pendiente_revision : false;
+    d.pendiente_revision = _isPendingQuiz(d.doc_codigo);
   }
   // No enviar quiz_id detallado, solo resumen
   const docs = (assignment.documentos || []).map(d => ({
@@ -1120,7 +1137,7 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
     return res.status(403).json({ error: 'Examen bloqueado. Contacta a Recursos Humanos para habilitarlo.' });
   }
   // Pendiente de revision: cuestionario aun no validado por el area responsable
-  if (docEntry.pendiente_revision) {
+  if (_isPendingQuiz(docCodigo)) {
     return res.status(403).json({ error: 'Este cuestionario esta en revision. Intenta mas tarde.' });
   }
 

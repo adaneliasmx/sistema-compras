@@ -1,8 +1,29 @@
 const express = require('express');
 const { createHash } = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const { read, write, nextId } = require('../db-rhh');
 const { rhhAuthRequired, rhhRequireRole } = require('../middleware/rhh-auth');
 const router = express.Router();
+
+// ── Pending quiz codes (source of truth: seed file) ──────────────────────────
+let _pendingQuizCodes = new Set();
+function _reloadPendingCodes() {
+  try {
+    const seedPath = path.join(__dirname, '../../data/quizzes-seed.json');
+    const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+    const quizzes = seed.quizzes || seed;
+    _pendingQuizCodes = new Set(
+      quizzes.filter(q => q.pendiente_revision)
+        .map(q => q.doc_codigo.replace(/\s*Rev\.\s*\d+/i, '').trim())
+    );
+  } catch (e) { /* seed not found */ }
+}
+_reloadPendingCodes();
+function _isPendingQuiz(docCodigo) {
+  const base = (docCodigo || '').replace(/\s*Rev\.\s*\d+/i, '').trim();
+  return _pendingQuizCodes.has(base);
+}
 
 function nowMxDate() {
   return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
@@ -703,7 +724,7 @@ router.get('/quizzes', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res
     doc_nombre: q.doc_nombre,
     doc_tipo: q.doc_tipo,
     total_preguntas: (q.preguntas || []).length,
-    pendiente_revision: !!q.pendiente_revision,
+    pendiente_revision: _isPendingQuiz(q.doc_codigo),
     created_at: q.created_at
   }));
   res.json(quizzes);
@@ -1102,11 +1123,9 @@ router.get('/assignments/:empId', rhhRequireRole('admin', 'rh', 'muestra'), asyn
   const db = await read();
   const a = (db.rhh_training_assignments || []).find(x => x.employee_id === Number(req.params.empId));
   if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
-  // Enriquecer pendiente_revision en tiempo real desde quizzes
-  const quizzes = db.rhh_training_quizzes || [];
+  // Enriquecer pendiente_revision desde seed (source of truth)
   for (const d of (a.documentos || [])) {
-    const quiz = findQuizByCode(quizzes, d.doc_codigo);
-    d.pendiente_revision = quiz ? !!quiz.pendiente_revision : false;
+    d.pendiente_revision = _isPendingQuiz(d.doc_codigo);
   }
   res.json(a);
 });
