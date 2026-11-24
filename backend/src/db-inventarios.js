@@ -25,7 +25,8 @@ const EMPTY_DB = {
   inv_recepciones: [],
   inv_salidas: [],
   inv_vales_epp: [],
-  inv_vales_epp_items: []
+  inv_vales_epp_items: [],
+  inv_audit_log: []
 };
 
 async function initDb() {

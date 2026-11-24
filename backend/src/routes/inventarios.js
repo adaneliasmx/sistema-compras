@@ -567,9 +567,29 @@ router.post('/conteos', invAuthRequired, invAllowRoles('inventarios', 'admin'), 
   const year = isoYear(d);
   const week = isoWeek(d);
 
+  db.inv_audit_log = db.inv_audit_log || [];
+
   // Solo un conteo por tipo/semana
   const existing = db.inv_conteos.find(c => c.inv_type === inv_type && c.year === year && c.week === week);
   if (existing) {
+    // ── Guardar snapshot anterior en audit log ──
+    const prevItems = db.inv_conteo_items
+      .filter(i => i.conteo_id === existing.id)
+      .map(i => ({ item_key: i.item_key, tambos: i.tambos, porrones: i.porrones, cantidad: i.cantidad, kg: i.kg, unidad: i.unidad }));
+    db.inv_audit_log.push({
+      id: nextId(db.inv_audit_log),
+      action: 'update',
+      conteo_id: existing.id,
+      inv_type, year, week,
+      prev_fecha: existing.fecha,
+      prev_usuario_id: existing.usuario_id,
+      prev_usuario_nombre: existing.usuario_nombre,
+      prev_items: prevItems,
+      new_usuario_id: req.invUser.id,
+      new_usuario_nombre: req.invUser.nombre,
+      timestamp: new Date().toISOString()
+    });
+
     // Actualizar items del conteo existente
     db.inv_conteo_items = db.inv_conteo_items.filter(i => i.conteo_id !== existing.id);
     existing.fecha    = fecha;
@@ -596,6 +616,18 @@ router.post('/conteos', invAuthRequired, invAllowRoles('inventarios', 'admin'), 
   };
   db.inv_conteos.push(conteo);
 
+  // ── Log de creación ──
+  db.inv_audit_log.push({
+    id: nextId(db.inv_audit_log),
+    action: 'create',
+    conteo_id: conteo.id,
+    inv_type, year, week,
+    prev_items: null,
+    new_usuario_id: req.invUser.id,
+    new_usuario_nombre: req.invUser.nombre,
+    timestamp: new Date().toISOString()
+  });
+
   const newItems = items.map(it => ({
     id: nextId(db.inv_conteo_items),
     conteo_id: conteo.id,
@@ -606,6 +638,64 @@ router.post('/conteos', invAuthRequired, invAllowRoles('inventarios', 'admin'), 
   db.inv_conteo_items.push(...newItems);
   writeInv(db);
   res.json({ id: conteo.id, items: newItems });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AUDIT LOG — historial de cambios en conteos
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// Consulta de audit log con filtros
+router.get('/audit-log', invAuthRequired, invAllowRoles('admin', 'comprador'), (req, res) => {
+  const { inv_type, item_key, conteo_id, year, week, desde, hasta } = req.query;
+  const db = readInv();
+  let rows = db.inv_audit_log || [];
+  if (inv_type)  rows = rows.filter(r => r.inv_type === inv_type);
+  if (conteo_id) rows = rows.filter(r => r.conteo_id === Number(conteo_id));
+  if (year)      rows = rows.filter(r => r.year === Number(year));
+  if (week)      rows = rows.filter(r => r.week === Number(week));
+  if (desde)     rows = rows.filter(r => r.timestamp >= desde);
+  if (hasta)     rows = rows.filter(r => r.timestamp <= hasta + 'T23:59:59');
+  // Filtro por item_key dentro de prev_items
+  if (item_key) {
+    rows = rows.filter(r =>
+      (r.prev_items || []).some(i => i.item_key === item_key)
+    );
+  }
+  res.json(rows.sort((a, b) => b.timestamp.localeCompare(a.timestamp)));
+});
+
+// Historial completo de conteos: quién hizo qué, con items, filtrable por item_key
+router.get('/conteos/historial', invAuthRequired, (req, res) => {
+  const { inv_type, item_key, year } = req.query;
+  const db = readInv();
+  let conteos = db.inv_conteos || [];
+  if (inv_type) conteos = conteos.filter(c => c.inv_type === inv_type);
+  if (year)     conteos = conteos.filter(c => c.year === Number(year));
+
+  const allItems   = db.inv_conteo_items || [];
+  const allConfigs = db.inv_items_config || [];
+
+  const result = conteos.map(c => {
+    let items = allItems.filter(i => i.conteo_id === c.id);
+    if (item_key) items = items.filter(i => i.item_key === item_key);
+    // Enriquecer con nombre del item
+    items = items.map(i => {
+      const cfg = allConfigs.find(x => x.item_key === i.item_key && x.inv_type === c.inv_type);
+      return { ...i, item_label: cfg?.item_label || i.item_key };
+    });
+    return {
+      conteo_id: c.id,
+      inv_type: c.inv_type,
+      year: c.year, week: c.week, fecha: c.fecha,
+      usuario_id: c.usuario_id, usuario_nombre: c.usuario_nombre,
+      created_at: c.created_at, updated_at: c.updated_at || null,
+      items
+    };
+  });
+
+  // Si filtramos por item_key, solo devolver conteos que tengan ese item
+  const filtered = item_key ? result.filter(r => r.items.length > 0) : result;
+  res.json(filtered.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')));
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
