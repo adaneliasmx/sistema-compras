@@ -123,6 +123,9 @@ body {
   min-height: 100vh;
 }
 
+/* Sidebar: oculto en móvil (solo visible ≥640px) */
+.emp-sidebar { display: none; }
+
 /* Top bar */
 .emp-topbar {
   background: #fff;
@@ -168,6 +171,15 @@ body {
 .emp-content {
   flex: 1;
   padding: 16px 16px 80px; /* 80px para el bottom nav */
+  max-width: 600px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* Main content (móvil: espacio inferior para bottom nav) */
+.emp-main {
+  flex: 1;
+  padding: 16px 16px 90px;
   max-width: 600px;
   width: 100%;
   margin: 0 auto;
@@ -527,6 +539,17 @@ body {
   line-height: 1;
 }
 
+/* ── Anti-screenshot durante examen ──────────────────────────────────────── */
+body.exam-active {
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.exam-active.exam-hidden #emp-main-content {
+  filter: blur(20px);
+  pointer-events: none;
+  transition: filter .1s;
+}
+
 /* ── Tablet / desktop ─────────────────────────────────────────────────────── */
 @media (min-width: 640px) {
   .emp-content { padding: 24px 24px 24px; }
@@ -584,6 +607,7 @@ body {
     border-top: 1px solid #f1f5f9;
   }
   .emp-sidebar-footer .user-name { font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .emp-sidebar { display: flex; }
   .emp-main { flex: 1; padding: 24px; max-width: 660px; }
   .emp-topbar { display: none; }
 }

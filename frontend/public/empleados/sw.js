@@ -1,5 +1,5 @@
 /* Portal del Empleado — Service Worker */
-const CACHE = 'portal-empleado-v11';
+const CACHE = 'portal-empleado-v12';
 const SHELL = [
   './',
   './app.js',

@@ -11,6 +11,7 @@ const state = {
   section: 'perfil',
   _inactTimer: null,
 };
+var _capExamState = null; // { doc_codigo, preguntas, respuestas, enviado, resultado }
 
 // ── PWA Install ───────────────────────────────────────────────────────────────
 let _installPrompt = null;
@@ -119,6 +120,12 @@ function _rolStopRefresh() { if (_rolTimer) { clearInterval(_rolTimer); _rolTime
 
 // ── Navigate ──────────────────────────────────────────────────────────────────
 function navigate(section) {
+  // Guard: si hay examen en curso, pedir confirmación
+  if (_capExamState && !_capExamState.enviado && section !== 'capacitacion_exam') {
+    if (!confirm('Si sales del examen, este quedara anulado y deberas iniciarlo de nuevo. ¿Deseas salir?')) return;
+    _capExamState = null;
+    _capExamDisableGuard();
+  }
   _rolStopRefresh();
   state.section = section;
   renderMain();
@@ -1610,7 +1617,7 @@ function queja(el) {
 // ══════════════════════════════════════════════════════════════════════════════
 // VISTA: CAPACITACION
 // ══════════════════════════════════════════════════════════════════════════════
-let _capExamState = null; // { doc_codigo, preguntas, respuestas, enviado, resultado }
+// _capExamState declared at top of file via var
 
 async function capacitacion(el) {
   el.innerHTML = '<p class="emp-page-title">Mi Capacitacion</p><div class="emp-empty"><div class="empty-icon">...</div><p>Cargando...</p></div>';
@@ -1709,7 +1716,7 @@ window._capIniciarExamen = async function(docCodigo) {
 
   const r = await api('GET', `/capacitacion/examen/${encodeURIComponent(docCodigo)}`);
   if (!r || !r.ok || !r.data.preguntas) {
-    el.innerHTML = '<p>Error al cargar examen.</p><button class="emp-btn-primary" onclick="_capExamState=null;navigate(\'capacitacion\')">Volver</button>';
+    el.innerHTML = '<p>Error al cargar examen.</p><button class="emp-btn-primary" onclick="_capExamState=null;_capExamDisableGuard();navigate(\'capacitacion\')">Volver</button>';
     return;
   }
   _capExamState = {
@@ -1720,8 +1727,29 @@ window._capIniciarExamen = async function(docCodigo) {
     enviado: false,
     resultado: null
   };
+  _capExamEnableGuard();
   _capRenderExamen(el);
 };
+
+// ── Exam guard: confirmación al salir + anti-screenshot ──────────────────
+function _capExamBeforeUnload(e) {
+  e.preventDefault();
+  e.returnValue = '';
+}
+function _capExamVisChange() {
+  if (document.hidden) document.body.classList.add('exam-hidden');
+  else document.body.classList.remove('exam-hidden');
+}
+function _capExamEnableGuard() {
+  document.body.classList.add('exam-active');
+  window.addEventListener('beforeunload', _capExamBeforeUnload);
+  document.addEventListener('visibilitychange', _capExamVisChange);
+}
+function _capExamDisableGuard() {
+  document.body.classList.remove('exam-active', 'exam-hidden');
+  window.removeEventListener('beforeunload', _capExamBeforeUnload);
+  document.removeEventListener('visibilitychange', _capExamVisChange);
+}
 
 function _capRenderExamen(el) {
   const s = _capExamState;
@@ -1745,9 +1773,9 @@ function _capRenderExamen(el) {
     html += '</div>';
   });
   html += `
-    <div style="display:flex;gap:10px;margin-top:16px;">
+    <div style="display:flex;gap:10px;margin-top:16px;padding-bottom:20px;">
       <button type="submit" class="emp-btn-primary" style="flex:1;">Enviar respuestas</button>
-      <button type="button" class="emp-btn-outline" onclick="_capExamState=null;navigate('capacitacion')">Cancelar</button>
+      <button type="button" class="emp-btn-outline" onclick="_capCancelExam()">Cancelar</button>
     </div></form>
   `;
   el.innerHTML = html;
@@ -1770,6 +1798,7 @@ function _capRenderExamen(el) {
     if (r && r.ok) {
       s.enviado = true;
       s.resultado = r.data;
+      _capExamDisableGuard();
       _capRenderResultado(el);
     } else {
       btn.disabled = false; btn.textContent = 'Enviar respuestas';
@@ -1777,6 +1806,13 @@ function _capRenderExamen(el) {
     }
   };
 }
+
+window._capCancelExam = function() {
+  if (!confirm('Si sales del examen, este quedara anulado y deberas iniciarlo de nuevo. ¿Deseas salir?')) return;
+  _capExamState = null;
+  _capExamDisableGuard();
+  navigate('capacitacion');
+};
 
 function _capRenderResultado(el) {
   const s = _capExamState;
@@ -1807,7 +1843,7 @@ function _capRenderResultado(el) {
   });
   html += '</div>';
 
-  html += `<button class="emp-btn-primary" style="margin-top:16px;width:100%;" onclick="_capExamState=null;navigate('capacitacion')">Volver a mi capacitacion</button>`;
+  html += `<button class="emp-btn-primary" style="margin-top:16px;width:100%;margin-bottom:20px;" onclick="_capExamState=null;_capExamDisableGuard();navigate('capacitacion')">Volver a mi capacitacion</button>`;
   el.innerHTML = html;
 }
 
