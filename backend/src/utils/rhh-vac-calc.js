@@ -85,8 +85,16 @@ function calcVacInfo(emp, db, today) {
     .filter(r => r.estado === 'pendiente')
     .reduce((s, r) => s + (r.dias || 0), 0);
   // Aprobadas futuras (aún no pagadas por CONTPAQ → no están en incidencias)
+  // Excluir solicitudes cuya semana ya tiene incidencia futura (evitar doble conteo)
+  const futureIncWeeks = new Set();
+  for (const inc of incidencias) {
+    if (!inc.vacaciones_dias || !Number(inc.vacaciones_dias)) continue;
+    const w = validWeek(inc.no_periodo);
+    if (w && w > currentWeek) futureIncWeeks.add(w);
+  }
   const diasAprobFuturo = solicitudes
-    .filter(r => r.estado === 'aprobada' && r.fecha_fin >= today && !r.conciliada_contpaq)
+    .filter(r => r.estado === 'aprobada' && r.fecha_fin >= today && !r.conciliada_contpaq
+      && !futureIncWeeks.has(validWeek(r.no_periodo)))
     .reduce((s, r) => s + (r.dias || 0), 0);
 
   // programados = tomados + futuras (en incidencias) + aprobadas futuras (no en incidencias) + pendientes
