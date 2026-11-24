@@ -807,6 +807,10 @@ router.patch('/vacaciones/:vid', rhhAuthRequired, rhhRequireRole('admin', 'rh'),
       });
     }
     db.rhh_incidencias_semanales = incLista;
+
+    // Marcar solicitud como conciliada: la incidencia se creó en este mismo acto,
+    // así calcVacInfo no suma solicitud + incidencia (doble conteo)
+    lista[idx].conciliada_contpaq = true;
   }
 
   write(db);
@@ -1960,11 +1964,33 @@ router.post('/vac-reconciliar', rhhAuthRequired, rhhRequireRole('admin', 'rh'), 
   const fixes = [];
   let changed = false;
 
-  // 1) Para cada solicitud aprobada, verificar si la incidencia de la semana del portal
+  // 0) Solicitudes aprobadas con incidencia en la MISMA semana (creada por aprobación)
+  //    que nunca fueron marcadas conciliada_contpaq → marcar ahora
+  for (const sol of solicitudes) {
+    if (sol.conciliada_contpaq) continue;
+    const wp = isoWeekPeriod(sol.fecha_inicio);
+    if (!wp) continue;
+    const inc = incidencias.find(i =>
+      i.employee_id === sol.employee_id && samePeriod(i, wp.no_periodo, wp.year)
+      && i._vac_fuente === 'solicitud_aprobada'
+    );
+    if (inc && Number(inc.vacaciones_dias) > 0) {
+      sol.conciliada_contpaq = true;
+      changed = true;
+      const emp = (db.rhh_employees || []).find(e => e.id === sol.employee_id);
+      fixes.push({
+        employee: emp?.full_name, employee_number: emp?.employee_number,
+        weekPortal: wp.no_periodo, oldDias: sol.dias, action: 'conciliada_misma_semana'
+      });
+    }
+  }
+
+  // 1) Para cada solicitud aprobada no conciliada, verificar si la incidencia de la semana del portal
   //    tiene vacaciones_dias escritas por el portal (sin _vac_fuente o con 'solicitud_aprobada')
   //    y si CONTPAQ ya pagó en la semana siguiente
+  const pendientes = solicitudes.filter(s => !s.conciliada_contpaq && !s.conciliacion_pendiente);
   const groups = new Map();
-  for (const sol of solicitudes) {
+  for (const sol of pendientes) {
     const wp = isoWeekPeriod(sol.fecha_inicio);
     if (!wp) continue;
     const key = `${sol.employee_id}:${wp.year}:${wp.no_periodo}`;
