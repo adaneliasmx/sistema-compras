@@ -629,6 +629,63 @@ const TRAINING_PLANS_SEED = [
       { codigo: 'LSA 42', nombre: 'Tarimas de Quimicos', tipo: 'LSA' },
       { codigo: 'LSA 77', nombre: 'Apagado de Luces en Produccion y Almacen', tipo: 'LSA' }
     ]
+  },
+  {
+    puesto_sgc: 'Auxiliar de Recursos Humanos',
+    position_names: ['Auxiliar de Recursos Humanos', 'Auxiliar de RH', 'Aux. de RH', 'Aux. RH'],
+    position_ids: [],
+    eval_group: 'STAFF',
+    documentos: [
+      { codigo: '2-SE-02 Rev. 0', nombre: 'Procedimiento de Residuos de Manejo Especial y Peligrosos', tipo: 'Procedimiento' },
+      { codigo: '2-SE-03 Rev. 0', nombre: 'Procedimiento de Manejo y Control de Scrap', tipo: 'Procedimiento' },
+      { codigo: '2-SE-06 Rev. 0', nombre: 'Plan de Atencion a Emergencias de Incendio', tipo: 'Procedimiento' },
+      { codigo: '2-RH-01 Rev. 5', nombre: 'Procedimiento de Comunicacion Organizacional', tipo: 'Procedimiento' },
+      { codigo: '2-RH-03 Rev. 2', nombre: 'Procedimiento de Evaluacion del Desempeno', tipo: 'Procedimiento' },
+      { codigo: '2-RH-05 Rev. 2', nombre: 'Procedimiento de Reclutamiento, Seleccion y Contratacion', tipo: 'Procedimiento' },
+      { codigo: '2-RH-42 Rev. 1', nombre: 'Procedimiento de Onboarding y Entrenamiento Inicial', tipo: 'Procedimiento' },
+      { codigo: '2-RH-43 Rev. 0', nombre: 'Procedimiento de Renuncias y Bajas de Personal', tipo: 'Procedimiento' },
+      { codigo: '2-DG-02 Rev. 6', nombre: 'Mapa General de Procesos', tipo: 'Mapa' },
+      { codigo: '2-DG-03 Rev. 6', nombre: 'Mapa del Proceso de Recursos Humanos', tipo: 'Mapa' },
+      { codigo: '2-CO-01 Rev. 7', nombre: 'Procedimiento de Compras', tipo: 'Procedimiento' },
+      { codigo: '1-CA-02 Rev. 1', nombre: 'Cero Defectos', tipo: 'Manual' },
+      { codigo: '2-GC-09 Rev. 2', nombre: 'Procedimiento para la Mejora Continua', tipo: 'Procedimiento' }
+    ]
+  },
+  {
+    puesto_sgc: 'Operador Lider',
+    position_names: ['Operador Lider', 'Operador Líder', 'Op. Lider', 'Op. Líder'],
+    position_ids: [],
+    eval_group: 'Operador Lider',
+    documentos: [
+      { codigo: '2-SE-02 Rev. 0', nombre: 'Procedimiento de Residuos de Manejo Especial y Peligrosos', tipo: 'Procedimiento' },
+      { codigo: '2-SE-03 Rev. 0', nombre: 'Procedimiento de Manejo y Control de Scrap', tipo: 'Procedimiento' },
+      { codigo: '1-CA-01 Rev. 3', nombre: 'Manual de Fallas Visuales', tipo: 'Manual' },
+      { codigo: '1-CA-02 Rev. 1', nombre: 'Cero Defectos', tipo: 'Manual' },
+      { codigo: '1-CA-03 Rev. 2', nombre: 'Manual de Fallas Visuales Fosfato de Manganeso', tipo: 'Manual' },
+      { codigo: '1-CA-04 Rev. 1', nombre: 'Manual de Fallas Visuales Amsted', tipo: 'Manual' },
+      { codigo: '2-CA-05 Rev. 5', nombre: 'Procedimiento de Retrabajos y Rechazos', tipo: 'Procedimiento' },
+      { codigo: '2-CA-06 Rev. 9', nombre: 'Procedimiento de Recibo de Materiales', tipo: 'Procedimiento' },
+      { codigo: '2-CA-19 Rev. 2', nombre: 'Procedimiento de Entrega al Cliente', tipo: 'Procedimiento' },
+      { codigo: '2-CA-25 Rev. 7', nombre: 'Procedimiento de Producto No Conforme', tipo: 'Procedimiento' },
+      { codigo: '2-CA-36 Rev. 4', nombre: 'Procedimiento de Ajuste y Concentracion de Soluciones', tipo: 'Procedimiento' },
+      { codigo: '2-CA-40 Rev. 0', nombre: 'Procedimiento de Liberacion e Inspeccion de Materiales', tipo: 'Procedimiento' },
+      { codigo: '2-CA-41 Rev. 0', nombre: 'Procedimiento para el Manejo de Sustancias Quimicas', tipo: 'Procedimiento' },
+      { codigo: '2-PR-01 Rev. 1', nombre: 'Procedimiento de Flujo de Materiales', tipo: 'Procedimiento' },
+      { codigo: '2-PR-02 Rev. 1', nombre: 'Procedimiento de Preservacion de Producto', tipo: 'Procedimiento' },
+      { codigo: '2-PR-03 Rev. 7', nombre: 'Procedimiento del Proceso de Fosfatado', tipo: 'Procedimiento' },
+      { codigo: '2-PR-04 Rev. 1', nombre: 'Procedimiento de Equipo Vacio', tipo: 'Procedimiento' },
+      { codigo: '2-PR-07 Rev. 0', nombre: 'Procedimiento de Entrega de Material a Biblioteca', tipo: 'Procedimiento' },
+      { codigo: '2-PR-08 Rev. 2', nombre: 'Procedimiento de Preparacion y Recuperacion de Soluciones', tipo: 'Procedimiento' },
+      { codigo: '2-PR-09 Rev. 1', nombre: 'Procedimiento de Empaque', tipo: 'Procedimiento' },
+      { codigo: '3-PR-02 Rev. 1', nombre: 'Instructivo de Operacion Linea Baker', tipo: 'Instructivo' },
+      { codigo: '3-PR-04 Rev. 2', nombre: 'Instructivo de Operacion Linea 1', tipo: 'Instructivo' },
+      { codigo: '3-PR-45 Rev. 0', nombre: 'Instructivo de Operacion Linea 3', tipo: 'Instructivo' },
+      { codigo: '4-CA-162 Rev. 0', nombre: 'POE Inspeccion Piezas Amsted', tipo: 'POE' },
+      { codigo: '4-CA-163 Rev. 0', nombre: 'POE Arranque Linea 4', tipo: 'POE' },
+      { codigo: '4-CA-165 Rev. 0', nombre: 'POE Encendido de Linea 4', tipo: 'POE' },
+      { codigo: '4-CA-166 Rev. 0', nombre: 'POE Operacion Linea 3', tipo: 'POE' },
+      { codigo: '4-PR-29 Rev. 0', nombre: 'POE Flujo de Materiales TENNECO', tipo: 'POE' }
+    ]
   }
 ];
 
@@ -1112,7 +1169,7 @@ router.get('/assignments', rhhRequireRole('admin', 'rh', 'muestra'), async (req,
     status: a.status,
     progreso_pct: a.progreso_pct,
     total_docs: (a.documentos || []).length,
-    docs_aprobados: (a.documentos || []).filter(d => d.status === 'aprobado').length,
+    docs_aprobados: (a.documentos || []).filter(d => d.status === 'aprobado' || d.status === 'exento').length,
     created_at: a.created_at
   }));
   res.json(assignments);
@@ -1263,6 +1320,73 @@ router.post('/assignments/bulk-responsables', rhhRequireRole('admin', 'rh'), asy
   }
   if (updated > 0) await write(db);
   res.json({ ok: true, updated });
+});
+
+// GET /seguimiento — todos los empleados activos con status de asignacion
+router.get('/seguimiento', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res) => {
+  const db = await read();
+  const emps = (db.rhh_employees || []).filter(e => e.status === 'active');
+  const positions = db.rhh_positions || [];
+  const assignments = db.rhh_training_assignments || [];
+  const assignMap = {};
+  for (const a of assignments) assignMap[a.employee_id] = a;
+
+  const result = emps.map(e => {
+    const a = assignMap[e.id];
+    const pos = positions.find(p => p.id === e.position_id);
+    return {
+      employee_id: e.id,
+      employee_number: e.employee_number,
+      employee_name: e.full_name,
+      position_name: pos ? pos.name : '',
+      assigned: !!a,
+      assignment_id: a ? a.id : null,
+      plan_position: a ? a.position_name : null,
+      status: a ? a.status : 'sin_asignar',
+      progreso_pct: a ? (a.progreso_pct || 0) : 0,
+      total_docs: a ? (a.documentos || []).length : 0,
+      docs_aprobados: a ? (a.documentos || []).filter(d => d.status === 'aprobado' || d.status === 'exento').length : 0,
+    };
+  });
+  result.sort((a, b) => {
+    if (a.assigned !== b.assigned) return a.assigned ? -1 : 1;
+    return (a.employee_name || '').localeCompare(b.employee_name || '');
+  });
+  res.json(result);
+});
+
+// PATCH /assignments/:id/exempt-doc — exentar documento de un empleado
+router.patch('/assignments/:id/exempt-doc', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const { doc_codigo, exento, motivo } = req.body;
+  if (!doc_codigo) return res.status(400).json({ error: 'doc_codigo requerido' });
+  const db = await read();
+  const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  const doc = (a.documentos || []).find(d => d.doc_codigo === doc_codigo);
+  if (!doc) return res.status(404).json({ error: 'Documento no encontrado en asignacion' });
+
+  if (exento === false) {
+    delete doc.exento;
+    delete doc.exento_por;
+    if (doc.status === 'exento') doc.status = 'pendiente';
+  } else {
+    doc.exento = true;
+    doc.exento_por = {
+      nombre: req.user.name,
+      fecha: nowMxDate(),
+      hora: nowMxTime(),
+      motivo: motivo || null
+    };
+    doc.status = 'exento';
+  }
+
+  // Recalcular progreso
+  const doneDocs = (a.documentos || []).filter(d => d.status === 'aprobado' || d.status === 'exento').length;
+  const totalDocs = (a.documentos || []).length;
+  a.progreso_pct = totalDocs > 0 ? Math.round(doneDocs / totalDocs * 100) : 0;
+  a.status = a.progreso_pct >= 100 ? 'completado' : (a.documentos || []).some(d => d.status !== 'pendiente' && d.status !== 'exento') ? 'en_progreso' : 'pendiente';
+  await write(db);
+  res.json({ ok: true });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

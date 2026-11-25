@@ -1104,6 +1104,8 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
     bloqueado: !!d.bloqueado,
     tiene_quiz: !!d.quiz_id,
     pendiente_revision: !!d.pendiente_revision,
+    exento: !!d.exento,
+    exento_por: d.exento_por || null,
     responsables: d.responsables || [],
     firma_empleado: d.firma_empleado,
     firma_instructor: d.firma_instructor,
@@ -1115,7 +1117,7 @@ router.get('/capacitacion', empAuthRequired, (req, res) => {
     status: assignment.status,
     progreso_pct: assignment.progreso_pct,
     total_docs: docs.length,
-    docs_aprobados: docs.filter(d => d.status === 'aprobado').length,
+    docs_aprobados: docs.filter(d => d.status === 'aprobado' || d.status === 'exento').length,
     documentos: docs
   });
 });
@@ -1132,6 +1134,10 @@ router.get('/capacitacion/examen/:docCodigo', empAuthRequired, (req, res) => {
   const docEntry = (assignment.documentos || []).find(d => d.doc_codigo === docCodigo);
   if (!docEntry) return res.status(404).json({ error: 'Documento no asignado' });
 
+  // Exento: no requiere examen
+  if (docEntry.exento || docEntry.status === 'exento') {
+    return res.status(403).json({ error: 'Este documento esta exento de evaluacion.' });
+  }
   // Bloqueo: si tiene 3+ intentos fallidos consecutivos, bloquear hasta que RHH lo habilite
   if (docEntry.bloqueado) {
     return res.status(403).json({ error: 'Examen bloqueado. Contacta a Recursos Humanos para habilitarlo.' });
@@ -1274,11 +1280,11 @@ router.post('/capacitacion/examen/:docCodigo', empAuthRequired, demoGuard, (req,
     }
   }
 
-  // Recalcular progreso
+  // Recalcular progreso (exento cuenta como completado)
   const totalDocs = assignment.documentos.length;
-  const aprobados = assignment.documentos.filter(d => d.status === 'aprobado').length;
-  assignment.progreso_pct = totalDocs > 0 ? Math.round((aprobados / totalDocs) * 100) : 0;
-  assignment.status = aprobados === totalDocs ? 'completado' : aprobados > 0 ? 'en_progreso' : 'pendiente';
+  const done = assignment.documentos.filter(d => d.status === 'aprobado' || d.status === 'exento').length;
+  assignment.progreso_pct = totalDocs > 0 ? Math.round((done / totalDocs) * 100) : 0;
+  assignment.status = done === totalDocs ? 'completado' : done > 0 ? 'en_progreso' : 'pendiente';
 
   write(db);
   res.json({ ok: true, calificacion, aprobado, correctas, total, detalle });

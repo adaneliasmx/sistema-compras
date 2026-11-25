@@ -11903,40 +11903,46 @@ window.capUploadQuizExcel = function(quizId) {
 
 let _capPlans = null; // cache de planes para dropdown de cambio de puesto
 async function capSeguimiento(wrap) {
-  const [assignments, plans] = await Promise.all([
-    api('/api/rhh/training/assignments'),
+  const [seguimiento, plans] = await Promise.all([
+    api('/api/rhh/training/seguimiento'),
     _capPlans ? Promise.resolve(_capPlans) : api('/api/rhh/training/plans'),
   ]);
   if (plans && !_capPlans) _capPlans = plans;
-  if (!assignments || assignments.length === 0) {
-    wrap.innerHTML = '<p>No hay asignaciones. Ve al Dashboard y asigna planes a empleados.</p>';
+  if (!seguimiento || seguimiento.length === 0) {
+    wrap.innerHTML = '<p>No hay empleados activos.</p>';
     return;
   }
-  // Filtro por nombre
-  const filterHtml = `<div style="margin-bottom:10px;"><input id="cap-seg-filter" type="text" placeholder="Buscar empleado..." style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:260px;" oninput="capFilterSeg()"></div>`;
+  const filterHtml = `<div style="margin-bottom:10px;display:flex;gap:10px;align-items:center;"><input id="cap-seg-filter" type="text" placeholder="Buscar empleado..." style="padding:6px 12px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;width:260px;" oninput="capFilterSeg()"><label style="font-size:12px;color:#6b7280;"><input type="checkbox" id="cap-seg-only-unassigned" onchange="capFilterSeg()"> Solo sin asignar</label></div>`;
   const isMuestra = state.user?.role === 'muestra';
-  const rows = assignments.map(a => {
-    const color = a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
-    const statusLabel = a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
-    const editBtn = !isMuestra ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capChangePosition(${a.id},'${(a.position_name||'').replace(/'/g,'')}')" title="Cambiar puesto">&#9998;</span>` : '';
-    return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})">
+  const rows = seguimiento.map(a => {
+    const isUnassigned = !a.assigned;
+    const color = isUnassigned ? '#dc2626' : a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
+    const statusLabel = isUnassigned ? 'Sin asignar' : a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
+    const editBtn = !isMuestra && a.assigned ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capChangePosition(${a.assignment_id},'${(a.plan_position||'').replace(/'/g,'')}')" title="Cambiar puesto">&#9998;</span>` : '';
+    const puestoCol = a.assigned ? `${a.plan_position}${editBtn}` : `<span style="color:#94a3b8;">${a.position_name || 'N/A'}</span>`;
+    const clickAttr = a.assigned ? `style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})"` : `style="opacity:0.7;"`;
+    return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" data-unassigned="${isUnassigned ? '1' : '0'}" ${clickAttr}>
       <td>${a.employee_number || ''}</td>
-      <td><span class="cap-arrow">&#9654;</span> <strong>${a.employee_name}</strong></td>
-      <td>${a.position_name}${editBtn}</td>
+      <td>${a.assigned ? '<span class="cap-arrow">&#9654;</span> ' : ''}<strong>${a.employee_name}</strong></td>
+      <td>${puestoCol}</td>
       <td><span style="color:${color};font-weight:600;">${statusLabel}</span></td>
-      <td>${a.docs_aprobados}/${a.total_docs}</td>
+      <td>${a.assigned ? a.docs_aprobados + '/' + a.total_docs : '--'}</td>
       <td>
-        <div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;min-width:120px;">
+        ${a.assigned ? `<div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;min-width:120px;">
           <div style="background:#3b82f6;height:100%;border-radius:4px;width:${a.progreso_pct}%;"></div>
           <span style="position:absolute;left:50%;top:0;transform:translateX(-50%);font-size:11px;font-weight:600;">${a.progreso_pct}%</span>
-        </div>
+        </div>` : '<span style="color:#94a3b8;font-size:12px;">--</span>'}
       </td>
     </tr>
-    <tr class="cap-hoja-expand" id="cap-hoja-row-${a.employee_id}" style="display:none;">
+    ${a.assigned ? `<tr class="cap-hoja-expand" id="cap-hoja-row-${a.employee_id}" style="display:none;">
       <td colspan="6" style="padding:0;"><div id="cap-hoja-inner-${a.employee_id}" style="padding:8px 16px;background:#f8fafc;"></div></td>
-    </tr>`;
+    </tr>` : ''}`;
   }).join('');
+  const totalAct = seguimiento.length;
+  const totalAsig = seguimiento.filter(s => s.assigned).length;
+  const totalSin = totalAct - totalAsig;
   wrap.innerHTML = `
+    <div style="margin-bottom:8px;font-size:13px;color:#6b7280;">Empleados activos: <strong>${totalAct}</strong> | Asignados: <strong>${totalAsig}</strong> | Sin asignar: <strong style="color:#dc2626;">${totalSin}</strong></div>
     ${filterHtml}
     <div style="overflow-x:auto;">
       <table class="table"><thead><tr><th>#</th><th>Empleado</th><th>Puesto</th><th>Status</th><th>Aprobados</th><th style="min-width:140px;">Progreso</th></tr></thead>
@@ -11983,11 +11989,14 @@ window.capChangePosition = function(assignId, currentPos) {
 
 window.capFilterSeg = function() {
   const q = (document.getElementById('cap-seg-filter')?.value || '').toLowerCase();
+  const onlyUnassigned = document.getElementById('cap-seg-only-unassigned')?.checked;
   document.querySelectorAll('.cap-seg-row').forEach(r => {
-    const match = !q || (r.dataset.name || '').includes(q);
-    r.style.display = match ? '' : 'none';
+    const nameMatch = !q || (r.dataset.name || '').includes(q);
+    const unassignedMatch = !onlyUnassigned || r.dataset.unassigned === '1';
+    const show = nameMatch && unassignedMatch;
+    r.style.display = show ? '' : 'none';
     const next = r.nextElementSibling;
-    if (next && next.classList.contains('cap-hoja-expand') && !match) next.style.display = 'none';
+    if (next && next.classList.contains('cap-hoja-expand') && !show) next.style.display = 'none';
   });
 };
 
@@ -12018,6 +12027,10 @@ async function capRenderHoja(inner, empId) {
     return `<span style="color:#22c55e;font-weight:700;cursor:help;" title="${tip}">&#10003;</span>`;
   };
   const statusBadge = (d) => {
+    if (d.exento || d.status === 'exento') {
+      const tip = d.exento_por ? `${d.exento_por.nombre} - ${d.exento_por.fecha}${d.exento_por.motivo ? '\\n' + d.exento_por.motivo : ''}` : '';
+      return `<span style="background:#ede9fe;color:#5b21b6;padding:2px 8px;border-radius:4px;font-size:11px;cursor:help;" title="${tip}">Exento</span>`;
+    }
     if (d.bloqueado) return '<span style="background:#fef2f2;color:#991b1b;padding:2px 8px;border-radius:4px;font-size:11px;">Bloqueado</span>';
     if (d.pendiente_revision) return '<span style="background:#fffbeb;color:#92400e;padding:2px 8px;border-radius:4px;font-size:11px;">En revision</span>';
     if (d.status === 'aprobado') return '<span style="background:#dcfce7;color:#166534;padding:2px 8px;border-radius:4px;font-size:11px;">Aprobado</span>';
@@ -12038,7 +12051,7 @@ async function capRenderHoja(inner, empId) {
       <td style="padding:4px 8px;">${statusBadge(d)}</td><td style="padding:4px 8px;">${d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--'}</td>
       <td style="padding:4px 8px;">${d.intentos || 0}</td>
       <td style="padding:4px 8px;">${sigCell(d.firma_empleado)}</td><td style="padding:4px 8px;">${sigCell(d.firma_instructor)}</td><td style="padding:4px 8px;">${sigCell(d.firma_rh)}</td>
-      <td style="padding:4px 8px;">${firmaInst}${firmaRh}${d.bloqueado && !isMuestra ? `<button class="btn btn-sm" onclick="event.stopPropagation();capUnblockExam(${a.id},'${d.doc_codigo}',${empId})" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border:none;border-radius:4px;margin-left:4px;">Desbloquear</button>` : ''}</td>
+      <td style="padding:4px 8px;">${firmaInst}${firmaRh}${d.bloqueado && !isMuestra ? `<button class="btn btn-sm" onclick="event.stopPropagation();capUnblockExam(${a.id},'${d.doc_codigo}',${empId})" style="font-size:11px;padding:2px 8px;background:#f59e0b;color:#fff;border:none;border-radius:4px;margin-left:4px;">Desbloquear</button>` : ''}${!isMuestra && d.status !== 'aprobado' ? (d.exento || d.status === 'exento' ? `<button class="btn btn-sm" onclick="event.stopPropagation();capExemptDoc(${a.id},'${d.doc_codigo}',${empId},false)" style="font-size:11px;padding:2px 8px;background:#94a3b8;color:#fff;border:none;border-radius:4px;margin-left:4px;">Quitar exencion</button>` : `<button class="btn btn-sm" onclick="event.stopPropagation();capExemptDoc(${a.id},'${d.doc_codigo}',${empId},true)" style="font-size:11px;padding:2px 8px;background:#7c3aed;color:#fff;border:none;border-radius:4px;margin-left:4px;">Exentar</button>`) : ''}</td>
     </tr>`;
   }).join('');
   inner.innerHTML = `
@@ -12081,6 +12094,31 @@ window.capFirmarConComentario = function(assignId, docCodigo, tipoFirma, empId) 
       if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
     }
   };
+};
+
+window.capExemptDoc = async function(assignId, docCodigo, empId, exempt) {
+  if (exempt) {
+    const motivo = prompt('Motivo de exencion para ' + docCodigo + ' (opcional):');
+    if (motivo === null) return; // cancelled
+    const r = await api('/api/rhh/training/assignments/' + assignId + '/exempt-doc', {
+      method: 'PATCH', body: JSON.stringify({ doc_codigo: docCodigo, exento: true, motivo: motivo || null })
+    });
+    if (r && r.ok) {
+      toast('Documento exentado', 'success');
+      const inner = document.getElementById('cap-hoja-inner-' + empId);
+      if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+    } else { toast((r && r.error) || 'Error', 'error'); }
+  } else {
+    if (!confirm('Quitar exencion de ' + docCodigo + '?')) return;
+    const r = await api('/api/rhh/training/assignments/' + assignId + '/exempt-doc', {
+      method: 'PATCH', body: JSON.stringify({ doc_codigo: docCodigo, exento: false })
+    });
+    if (r && r.ok) {
+      toast('Exencion retirada', 'success');
+      const inner = document.getElementById('cap-hoja-inner-' + empId);
+      if (inner) { inner.dataset.loaded = ''; await capRenderHoja(inner, empId); }
+    } else { toast((r && r.error) || 'Error', 'error'); }
+  }
 };
 
 window.capUnblockExam = async function(assignId, docCodigo, empId) {

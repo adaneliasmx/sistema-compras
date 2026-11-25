@@ -1667,9 +1667,10 @@ async function capacitacion(el) {
   }
   html += '<div style="display:flex;flex-direction:column;gap:8px;">';
   for (const d of docs) {
-    const icon = d.bloqueado ? '🔒' : d.pendiente_revision ? '🔄' : d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
+    const icon = d.exento || d.status === 'exento' ? '🛡️' : d.bloqueado ? '🔒' : d.pendiente_revision ? '🔄' : d.status === 'aprobado' ? '✅' : d.status === 'reprobado' ? '❌' : '⏳';
     const calTxt = d.mejor_calificacion != null ? d.mejor_calificacion + '%' : '--';
-    const canExam = d.tiene_quiz && d.status !== 'aprobado' && !d.bloqueado && !d.pendiente_revision;
+    const isExento = d.exento || d.status === 'exento';
+    const canExam = d.tiene_quiz && d.status !== 'aprobado' && !d.bloqueado && !d.pendiente_revision && !isExento;
     const canSign = d.status === 'aprobado' && d.firma_empleado && !d.firma_empleado.firmado;
     const fmtFirma = (f, emoji) => {
       if (!f || !f.firmado) return emoji + '✗';
@@ -1697,9 +1698,10 @@ async function capacitacion(el) {
           <div style="display:flex;flex-direction:column;gap:4px;min-width:100px;align-items:flex-end;">
             ${canExam ? `<button class="emp-btn-primary" style="font-size:12px;padding:4px 10px;" onclick="_capIniciarExamen('${esc(d.doc_codigo)}')">Presentar</button>` : ''}
             ${canSign ? `<button class="emp-btn-outline" style="font-size:12px;padding:4px 10px;" onclick="_capFirmar('${esc(d.doc_codigo)}')">Firmar</button>` : ''}
-            ${d.bloqueado ? '<span style="font-size:11px;color:#dc2626;">Bloqueado - Contacta a RH</span>' : ''}
-            ${d.pendiente_revision ? '<span style="font-size:11px;color:#d97706;">No disponible, intente despues</span>' : ''}
-            ${!d.tiene_quiz && !d.bloqueado && !d.pendiente_revision ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
+            ${isExento ? `<span style="font-size:11px;color:#7c3aed;font-weight:600;">Exento${d.exento_por ? ' por ' + esc(d.exento_por.nombre) : ''}</span>` : ''}
+            ${!isExento && d.bloqueado ? '<span style="font-size:11px;color:#dc2626;">Bloqueado - Contacta a RH</span>' : ''}
+            ${!isExento && d.pendiente_revision ? '<span style="font-size:11px;color:#d97706;">No disponible, intente despues</span>' : ''}
+            ${!isExento && !d.tiene_quiz && !d.bloqueado && !d.pendiente_revision ? '<span style="font-size:11px;color:#94a3b8;">Sin examen</span>' : ''}
           </div>
         </div>
       </div>
