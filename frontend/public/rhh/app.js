@@ -11625,7 +11625,7 @@ async function capDashboard(wrap) {
 
   const plansLoaded = (plans || []).length > 0;
   const quizzesLoaded = (quizzes || []).length > 0;
-  const seedBtn = plansLoaded ? '' : `<button class="btn btn-primary" id="btn-cap-seed" style="margin-bottom:12px;">Cargar planes semilla (22 puestos)</button>`;
+  const seedBtn = `<button class="btn ${plansLoaded ? 'btn-secondary' : 'btn-primary'}" id="btn-cap-seed" style="margin-bottom:12px;">${plansLoaded ? 'Actualizar planes semilla' : 'Cargar planes semilla (24 puestos)'}</button>`;
   const quizSeedBtn = `<button class="btn btn-primary" id="btn-cap-quiz-seed" style="margin-bottom:12px;margin-left:8px;">Importar/actualizar cuestionarios</button>`
     + `<button class="btn btn-secondary" id="btn-cap-quiz-force" style="margin-bottom:12px;margin-left:8px;" title="Reescribe TODOS los cuestionarios del seed aunque el conteo no cambie">Forzar sync cuestionarios</button>`;
   const refreshBtn = `<button class="btn btn-secondary" id="btn-cap-refresh" style="margin-bottom:12px;margin-left:8px;">Revincular examenes</button>`;
