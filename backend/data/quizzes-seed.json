@@ -4422,16 +4422,16 @@
           "texto": "En que se basa el flujo de materiales de las lineas hacia el cliente?",
           "opciones": [
             {
+              "texto": "En los planes de control y las necesidades de produccion diaria",
+              "correcta": true
+            },
+            {
               "texto": "La solicitud de mantenimiento de una maquina",
               "correcta": false
             },
             {
               "texto": "Solo la cantidad de cajas vacias del turno anterior",
               "correcta": false
-            },
-            {
-              "texto": "En los planes de control y las necesidades de produccion diaria",
-              "correcta": true
             },
             {
               "texto": "Solo el nombre del operador sin identificar las piezas",
@@ -4451,6 +4451,10 @@
           "texto": "Que distingue a los componentes Kanban segun el procedimiento?",
           "opciones": [
             {
+              "texto": "Son componentes de alto flujo que requieren inventario en Cuesto",
+              "correcta": true
+            },
+            {
               "texto": "Son unicamente muestras de laboratorio",
               "correcta": false
             },
@@ -4467,10 +4471,6 @@
               "correcta": false
             },
             {
-              "texto": "Son componentes de alto flujo que requieren inventario en Cuesto",
-              "correcta": true
-            },
-            {
               "texto": "Son piezas de bajo flujo sin necesidad de inventario",
               "correcta": false
             }
@@ -4479,6 +4479,10 @@
         {
           "texto": "Que caracteriza a los componentes de requerimiento diario?",
           "opciones": [
+            {
+              "texto": "No son de alto flujo y se solicitan mediante un formato cada 24 horas",
+              "correcta": true
+            },
             {
               "texto": "Son unicamente equipos vacios para limpieza",
               "correcta": false
@@ -4498,10 +4502,6 @@
             {
               "texto": "Se entregan sin que el cliente los solicite",
               "correcta": false
-            },
-            {
-              "texto": "No son de alto flujo y se solicitan mediante un formato cada 24 horas",
-              "correcta": true
             }
           ]
         },
@@ -4509,16 +4509,16 @@
           "texto": "Para que sirve la tarjeta viajera de identificacion?",
           "opciones": [
             {
+              "texto": "Acompana al componente durante el proceso y permite su trazabilidad",
+              "correcta": true
+            },
+            {
               "texto": "Confirma por si sola que la pieza ya fue aceptada",
               "correcta": false
             },
             {
               "texto": "Autoriza el mantenimiento de la linea",
               "correcta": false
-            },
-            {
-              "texto": "Acompana al componente durante el proceso y permite su trazabilidad",
-              "correcta": true
             },
             {
               "texto": "Registra la entrada de visitantes",
@@ -4538,12 +4538,12 @@
           "texto": "Quien asegura que el material recibido tenga la informacion necesaria para procesarse?",
           "opciones": [
             {
-              "texto": "El visitante que firma el registro de entrada",
-              "correcta": false
-            },
-            {
               "texto": "El coordinador de Produccion",
               "correcta": true
+            },
+            {
+              "texto": "El visitante que firma el registro de entrada",
+              "correcta": false
             },
             {
               "texto": "El operador de una linea de otra planta",
@@ -4567,6 +4567,10 @@
           "texto": "Quien es responsable de asegurar el seguimiento del flujo de materiales?",
           "opciones": [
             {
+              "texto": "El supervisor de Produccion",
+              "correcta": true
+            },
+            {
               "texto": "El proveedor de etiquetas de oficina",
               "correcta": false
             },
@@ -4583,10 +4587,6 @@
               "correcta": false
             },
             {
-              "texto": "El supervisor de Produccion",
-              "correcta": true
-            },
-            {
               "texto": "El responsable de preparar polimeros",
               "correcta": false
             }
@@ -4595,6 +4595,10 @@
         {
           "texto": "En cuantos turnos disponibles se reciben las entregas del requerimiento diario y Kanban?",
           "opciones": [
+            {
+              "texto": "En tres turnos",
+              "correcta": true
+            },
             {
               "texto": "Solo en el turno de dia",
               "correcta": false
@@ -4612,10 +4616,6 @@
               "correcta": false
             },
             {
-              "texto": "En tres turnos",
-              "correcta": true
-            },
-            {
               "texto": "Solo cuando termina toda la produccion de la semana",
               "correcta": false
             }
@@ -4624,6 +4624,10 @@
         {
           "texto": "Segun el procedimiento, como deben espaciarse las entregas de material?",
           "opciones": [
+            {
+              "texto": "Cada cuatro horas",
+              "correcta": true
+            },
             {
               "texto": "Cada vez que se imprime una etiqueta de empaque",
               "correcta": false
@@ -4643,10 +4647,6 @@
             {
               "texto": "Unicamente al cierre de semana",
               "correcta": false
-            },
-            {
-              "texto": "Cada cuatro horas",
-              "correcta": true
             }
           ]
         },
@@ -4654,16 +4654,16 @@
           "texto": "Que informacion debe incluir cada contenedor recibido en su tarjeta viajera?",
           "opciones": [
             {
+              "texto": "Peso, piezas del contenedor y datos necesarios para el proceso",
+              "correcta": true
+            },
+            {
               "texto": "Unicamente la fecha de la ultima titulacion",
               "correcta": false
             },
             {
               "texto": "El numero de visitantes del dia",
               "correcta": false
-            },
-            {
-              "texto": "Peso, piezas del contenedor y datos necesarios para el proceso",
-              "correcta": true
             },
             {
               "texto": "La referencia de otra caja sin cantidad",
@@ -4683,6 +4683,10 @@
           "texto": "Un contenedor llega sin la informacion necesaria para procesarse. Que indica el procedimiento?",
           "opciones": [
             {
+              "texto": "Rechazarlo con la tarjeta 4-CA-55 y controlarlo como producto no conforme",
+              "correcta": true
+            },
+            {
               "texto": "Asignarle la informacion del lote anterior",
               "correcta": false
             },
@@ -4693,10 +4697,6 @@
             {
               "texto": "Procesarlo con el plan de una pieza parecida",
               "correcta": false
-            },
-            {
-              "texto": "Rechazarlo con la tarjeta 4-CA-55 y controlarlo como producto no conforme",
-              "correcta": true
             },
             {
               "texto": "Mezclarlo con otra referencia para completar la carga",
@@ -4712,16 +4712,16 @@
           "texto": "Como se identifica el material Kanban despues de fosfatarlo o empacarlo?",
           "opciones": [
             {
+              "texto": "Mediante tarjeta o software Kanban electronico, tras revisar el listado o pantalla",
+              "correcta": true
+            },
+            {
               "texto": "Con la tarjeta de rechazo de otro lote",
               "correcta": false
             },
             {
               "texto": "Con la etiqueta de un material de requerimiento diferente",
               "correcta": false
-            },
-            {
-              "texto": "Mediante tarjeta o software Kanban electronico, tras revisar el listado o pantalla",
-              "correcta": true
             },
             {
               "texto": "Quitando su identificacion para volver a capturarla despues",
@@ -4741,6 +4741,10 @@
           "texto": "Como se realiza el empaque y pesaje del material Kanban?",
           "opciones": [
             {
+              "texto": "Mediante el software de empaque y colocando la identificacion correspondiente",
+              "correcta": true
+            },
+            {
               "texto": "Pesando dos referencias juntas sin identificarlas",
               "correcta": false
             },
@@ -4759,10 +4763,6 @@
             {
               "texto": "Empacando sin indicar la referencia del contenedor",
               "correcta": false
-            },
-            {
-              "texto": "Mediante el software de empaque y colocando la identificacion correspondiente",
-              "correcta": true
             }
           ]
         },
@@ -4770,16 +4770,16 @@
           "texto": "Donde se entrega al cliente el material Kanban ya procesado y empacado?",
           "opciones": [
             {
+              "texto": "En el area o lugar asignado de acuerdo con el cliente",
+              "correcta": true
+            },
+            {
               "texto": "En la zona de rechazo sin avisar al cliente",
               "correcta": false
             },
             {
               "texto": "En el punto de reunion de visitantes",
               "correcta": false
-            },
-            {
-              "texto": "En el area o lugar asignado de acuerdo con el cliente",
-              "correcta": true
             },
             {
               "texto": "En cualquier pasillo sin identificacion",
@@ -4799,6 +4799,10 @@
           "texto": "Si SKF encuentra diferencias durante el monitoreo de material entregado, que hace?",
           "opciones": [
             {
+              "texto": "Las reporta electronicamente a Cuesto para investigarlas y aclararlas",
+              "correcta": true
+            },
+            {
               "texto": "Elimina la identificacion antes de avisar",
               "correcta": false
             },
@@ -4817,10 +4821,6 @@
             {
               "texto": "Mezcla el material con otro lote para completar la cantidad",
               "correcta": false
-            },
-            {
-              "texto": "Las reporta electronicamente a Cuesto para investigarlas y aclararlas",
-              "correcta": true
             }
           ]
         },
@@ -4828,16 +4828,16 @@
           "texto": "Como se empaca y pesa el material de requerimiento diario?",
           "opciones": [
             {
+              "texto": "Con el software de empaque y su identificacion en el contenedor",
+              "correcta": true
+            },
+            {
               "texto": "Con la tarjeta de una pieza de otro cliente",
               "correcta": false
             },
             {
               "texto": "Usando el peso de un contenedor anterior sin medir",
               "correcta": false
-            },
-            {
-              "texto": "Con el software de empaque y su identificacion en el contenedor",
-              "correcta": true
             },
             {
               "texto": "Junto con referencias distintas sin identificacion",
@@ -4853,8 +4853,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-PR-02 Rev. 1",
@@ -4894,6 +4893,10 @@
           "texto": "Que debe verificar Almacen al recibir un contenedor con material?",
           "opciones": [
             {
+              "texto": "Que no tenga danos y este correctamente sellado",
+              "correcta": true
+            },
+            {
               "texto": "Solo que el transporte haya llegado a tiempo",
               "correcta": false
             },
@@ -4910,10 +4913,6 @@
               "correcta": false
             },
             {
-              "texto": "Que no tenga danos y este correctamente sellado",
-              "correcta": true
-            },
-            {
               "texto": "Que pueda abrirse facilmente aunque este danado",
               "correcta": false
             }
@@ -4922,6 +4921,10 @@
         {
           "texto": "Un contenedor recibido tiene un dano. A quien avisa el auxiliar de Almacen?",
           "opciones": [
+            {
+              "texto": "Al inspector de Calidad",
+              "correcta": true
+            },
             {
               "texto": "Solo al conductor del siguiente viaje",
               "correcta": false
@@ -4939,10 +4942,6 @@
               "correcta": false
             },
             {
-              "texto": "Al inspector de Calidad",
-              "correcta": true
-            },
-            {
               "texto": "Al responsable de la termobalanza",
               "correcta": false
             }
@@ -4951,6 +4950,10 @@
         {
           "texto": "Como identifica Calidad el material no conforme recibido?",
           "opciones": [
+            {
+              "texto": "Con la tarjeta de rechazo 4-CA-55",
+              "correcta": true
+            },
             {
               "texto": "Con la etiqueta de un lote aceptado",
               "correcta": false
@@ -4970,16 +4973,16 @@
             {
               "texto": "Con el gafete de una visita",
               "correcta": false
-            },
-            {
-              "texto": "Con la tarjeta de rechazo 4-CA-55",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Donde se coloca el material identificado como no conforme al recibo?",
           "opciones": [
+            {
+              "texto": "En el area de material rechazado",
+              "correcta": true
+            },
             {
               "texto": "En la zona de empaque como producto terminado",
               "correcta": false
@@ -4991,10 +4994,6 @@
             {
               "texto": "Dentro de una canasta lista para proceso",
               "correcta": false
-            },
-            {
-              "texto": "En el area de material rechazado",
-              "correcta": true
             },
             {
               "texto": "En el rack de material aceptado sin identificarlo",
@@ -5010,6 +5009,10 @@
           "texto": "Donde registra Calidad el material no conforme recibido?",
           "opciones": [
             {
+              "texto": "En 4-CA-99 Control Devoluciones",
+              "correcta": true
+            },
+            {
               "texto": "En el vale de adicion de quimicos",
               "correcta": false
             },
@@ -5020,10 +5023,6 @@
             {
               "texto": "En una etiqueta de otro lote",
               "correcta": false
-            },
-            {
-              "texto": "En 4-CA-99 Control Devoluciones",
-              "correcta": true
             },
             {
               "texto": "Solo en el registro de visitantes",
@@ -5038,6 +5037,10 @@
         {
           "texto": "Que herramientas se mencionan para descargar y manipular material adecuadamente?",
           "opciones": [
+            {
+              "texto": "Montacargas, transpaleta o diablito transportador",
+              "correcta": true
+            },
             {
               "texto": "La impresora de etiquetas SKF",
               "correcta": false
@@ -5057,16 +5060,16 @@
             {
               "texto": "El palpador del rugosimetro",
               "correcta": false
-            },
-            {
-              "texto": "Montacargas, transpaleta o diablito transportador",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Como debe resguardarse el material Kanban en el rack de almacen temporal?",
           "opciones": [
+            {
+              "texto": "Sellado, tapado, en tarima y correctamente identificado",
+              "correcta": true
+            },
             {
               "texto": "Mezclado con otra referencia en el piso",
               "correcta": false
@@ -5086,10 +5089,6 @@
             {
               "texto": "Con etiquetas anteriores que no correspondan al contenido",
               "correcta": false
-            },
-            {
-              "texto": "Sellado, tapado, en tarima y correctamente identificado",
-              "correcta": true
             }
           ]
         },
@@ -5126,6 +5125,10 @@
           "texto": "Si el plan de control requiere trasvasar material, que empaque se usa?",
           "opciones": [
             {
+              "texto": "Los empaques estandar de produccion aplicables",
+              "correcta": true
+            },
+            {
               "texto": "Cualquier caja danada que este disponible",
               "correcta": false
             },
@@ -5144,10 +5147,6 @@
             {
               "texto": "Una tarima sin identificacion ni contenedor",
               "correcta": false
-            },
-            {
-              "texto": "Los empaques estandar de produccion aplicables",
-              "correcta": true
             }
           ]
         },
@@ -5155,12 +5154,12 @@
           "texto": "Como entrega el fosfatador el material procesado hacia Empaque?",
           "opciones": [
             {
-              "texto": "En cualquier recipiente aunque tenga residuos",
-              "correcta": false
-            },
-            {
               "texto": "En contenedores estandar y con su identificacion de proceso",
               "correcta": true
+            },
+            {
+              "texto": "En cualquier recipiente aunque tenga residuos",
+              "correcta": false
             },
             {
               "texto": "Con la tarjeta de una canasta distinta",
@@ -5209,8 +5208,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-PR-04 Rev. 1",
@@ -5220,6 +5218,10 @@
         {
           "texto": "Que se considera equipo vacio en este procedimiento?",
           "opciones": [
+            {
+              "texto": "Los contenedores plasticos estandar usados por el cliente para entregar sus productos",
+              "correcta": true
+            },
             {
               "texto": "Las tarjetas de rechazo del cliente",
               "correcta": false
@@ -5237,10 +5239,6 @@
               "correcta": false
             },
             {
-              "texto": "Los contenedores plasticos estandar usados por el cliente para entregar sus productos",
-              "correcta": true
-            },
-            {
               "texto": "Unicamente las cajas de producto terminado llenas",
               "correcta": false
             }
@@ -5249,6 +5247,10 @@
         {
           "texto": "Quien envia el equipo vacio para su limpieza en Cuesto?",
           "opciones": [
+            {
+              "texto": "El cliente",
+              "correcta": true
+            },
             {
               "texto": "El operador de PTAR desde los tanques",
               "correcta": false
@@ -5268,10 +5270,6 @@
             {
               "texto": "El proveedor de instrumentos de medicion",
               "correcta": false
-            },
-            {
-              "texto": "El cliente",
-              "correcta": true
             }
           ]
         },
@@ -5279,12 +5277,12 @@
           "texto": "Que datos comunica el supervisor o lider de Almacen SLS al pedir equipo vacio limpio?",
           "opciones": [
             {
-              "texto": "Solo el numero de un tanque de fosfato",
-              "correcta": false
-            },
-            {
               "texto": "El modelo y la cantidad que necesita",
               "correcta": true
+            },
+            {
+              "texto": "Solo el numero de un tanque de fosfato",
+              "correcta": false
             },
             {
               "texto": "El resultado de rugosidad de una pieza",
@@ -5308,6 +5306,10 @@
           "texto": "Como solicita Almacen SLS el equipo vacio al coordinador de Produccion de Cuesto?",
           "opciones": [
             {
+              "texto": "Por correo o mensaje electronico",
+              "correcta": true
+            },
+            {
               "texto": "Solo cuando llegue el transporte sin informar",
               "correcta": false
             },
@@ -5326,16 +5328,16 @@
             {
               "texto": "Unicamente en el reporte de titulacion",
               "correcta": false
-            },
-            {
-              "texto": "Por correo o mensaje electronico",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Quien pide al auxiliar de Equipo Vacio en Cuesto que limpie el equipo solicitado?",
           "opciones": [
+            {
+              "texto": "El coordinador de Produccion",
+              "correcta": true
+            },
             {
               "texto": "El visitante que firma el registro de entrada",
               "correcta": false
@@ -5347,10 +5349,6 @@
             {
               "texto": "El conductor de un transporte de otra empresa",
               "correcta": false
-            },
-            {
-              "texto": "El coordinador de Produccion",
-              "correcta": true
             },
             {
               "texto": "El proveedor de reactivos de titulacion",
@@ -5366,16 +5364,16 @@
           "texto": "Que hace el auxiliar de Equipo Vacio cuando termina de limpiar el pedido?",
           "opciones": [
             {
+              "texto": "Notifica al coordinador de Produccion",
+              "correcta": true
+            },
+            {
               "texto": "Lo coloca dentro del tanque de fosfato",
               "correcta": false
             },
             {
               "texto": "Lo identifica como material rechazado",
               "correcta": false
-            },
-            {
-              "texto": "Notifica al coordinador de Produccion",
-              "correcta": true
             },
             {
               "texto": "Borra la solicitud antes de avisar",
@@ -5395,16 +5393,16 @@
           "texto": "Al recibir equipo vacio por limpiar, como debe acomodarse?",
           "opciones": [
             {
+              "texto": "En sus lugares asignados, separado del equipo limpio",
+              "correcta": true
+            },
+            {
               "texto": "Debajo de la tolva durante la carga",
               "correcta": false
             },
             {
               "texto": "En el rack de producto terminado sin identificar",
               "correcta": false
-            },
-            {
-              "texto": "En sus lugares asignados, separado del equipo limpio",
-              "correcta": true
             },
             {
               "texto": "En la zona de quimicos de titulacion",
@@ -5424,16 +5422,16 @@
           "texto": "A quien avisa Almacen de Cuesto cuando llega equipo vacio?",
           "opciones": [
             {
+              "texto": "Al coordinador de Produccion",
+              "correcta": true
+            },
+            {
               "texto": "Unicamente al cliente de otra referencia",
               "correcta": false
             },
             {
               "texto": "Solo al operador del turno anterior",
               "correcta": false
-            },
-            {
-              "texto": "Al coordinador de Produccion",
-              "correcta": true
             },
             {
               "texto": "Al proveedor de la termobalanza",
@@ -5453,6 +5451,10 @@
           "texto": "Que debe mantener disponible el auxiliar de Equipo Vacio en el rack de equipo limpio?",
           "opciones": [
             {
+              "texto": "El buffer de tarimas, tapas y cajas limpias",
+              "correcta": true
+            },
+            {
               "texto": "Cajas con etiquetas y residuos del lote anterior",
               "correcta": false
             },
@@ -5469,10 +5471,6 @@
               "correcta": false
             },
             {
-              "texto": "El buffer de tarimas, tapas y cajas limpias",
-              "correcta": true
-            },
-            {
               "texto": "Solo el equipo que aun esta por limpiar",
               "correcta": false
             }
@@ -5482,12 +5480,12 @@
           "texto": "Un pedido urgente de equipo vacio limpio depende de que condicion?",
           "opciones": [
             {
-              "texto": "Solo de que haya equipo sucio pendiente",
-              "correcta": false
-            },
-            {
               "texto": "De la disponibilidad de equipo limpio en el rack",
               "correcta": true
+            },
+            {
+              "texto": "Solo de que haya equipo sucio pendiente",
+              "correcta": false
             },
             {
               "texto": "De omitir la solicitud al coordinador",
@@ -5511,16 +5509,16 @@
           "texto": "Que vale debe realizar Almacen para la salida de material y equipo vacio?",
           "opciones": [
             {
+              "texto": "4-PR-18 Vale de Salida de Material y Equipo Vacio",
+              "correcta": true
+            },
+            {
               "texto": "4-CA-55 Tarjeta de Rechazo",
               "correcta": false
             },
             {
               "texto": "4-PR-15 Vale de Adicion de Quimicos",
               "correcta": false
-            },
-            {
-              "texto": "4-PR-18 Vale de Salida de Material y Equipo Vacio",
-              "correcta": true
             },
             {
               "texto": "4-MA-42 Solicitud de Mantenimiento",
@@ -5540,12 +5538,12 @@
           "texto": "Que debe hacer el coordinador con el vale 4-PR-18 firmado durante la entrega?",
           "opciones": [
             {
-              "texto": "Entregarlo a una visita sin registrar la salida",
-              "correcta": false
-            },
-            {
               "texto": "Resguardarlo y entregarlo al administrador del SGC como evidencia",
               "correcta": true
+            },
+            {
+              "texto": "Entregarlo a una visita sin registrar la salida",
+              "correcta": false
             },
             {
               "texto": "Dejarlo sin firma en el rack de equipo sucio",
@@ -5565,8 +5563,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-PR-07 Rev. 0",
@@ -6881,12 +6878,12 @@
           "texto": "Como recibe el coordinador la indicacion de material Kanban que debe enviarse?",
           "opciones": [
             {
-              "texto": "En el vale de mantenimiento de una grua",
-              "correcta": false
-            },
-            {
               "texto": "A traves del Kanban electronico",
               "correcta": true
+            },
+            {
+              "texto": "En el vale de mantenimiento de una grua",
+              "correcta": false
             },
             {
               "texto": "Solo cuando el conductor elige las cajas",
@@ -6910,6 +6907,10 @@
           "texto": "Que formato registra la cantidad de producto terminado entregado?",
           "opciones": [
             {
+              "texto": "4-PR-18 Vale de Salida de Material",
+              "correcta": true
+            },
+            {
               "texto": "El gafete de una visita",
               "correcta": false
             },
@@ -6920,10 +6921,6 @@
             {
               "texto": "4-CA-55 Tarjeta de Rechazo como unico registro de salida",
               "correcta": false
-            },
-            {
-              "texto": "4-PR-18 Vale de Salida de Material",
-              "correcta": true
             },
             {
               "texto": "4-SE-20 Solicitud de Atencion Medica",
@@ -6939,12 +6936,12 @@
           "texto": "Que nombres deben registrarse en el vale de salida de material?",
           "opciones": [
             {
-              "texto": "Solo el de quien imprime la etiqueta del lote",
-              "correcta": false
-            },
-            {
               "texto": "El del auxiliar que realiza la entrega y el del chofer que traslada",
               "correcta": true
+            },
+            {
+              "texto": "Solo el de quien imprime la etiqueta del lote",
+              "correcta": false
             },
             {
               "texto": "Solo el del proveedor de cajas",
@@ -6968,6 +6965,10 @@
           "texto": "Como se prepara el material en tarimas para evitar danos durante el traslado?",
           "opciones": [
             {
+              "texto": "Correctamente identificado y emplayado",
+              "correcta": true
+            },
+            {
               "texto": "Sin emplayar para facilitar que se muevan las cajas",
               "correcta": false
             },
@@ -6984,10 +6985,6 @@
               "correcta": false
             },
             {
-              "texto": "Correctamente identificado y emplayado",
-              "correcta": true
-            },
-            {
               "texto": "Solo con una fecha escrita en la tarima sin datos del material",
               "correcta": false
             }
@@ -6996,6 +6993,10 @@
         {
           "texto": "Como se acomoda una estiba de dos tarimas para evitar la caida de la superior?",
           "opciones": [
+            {
+              "texto": "La segunda se asegura y emplaya con la primera",
+              "correcta": true
+            },
             {
               "texto": "La segunda se deja suelta para facilitar la descarga",
               "correcta": false
@@ -7015,10 +7016,6 @@
             {
               "texto": "Se coloca una etiqueta de otro lote entre las tarimas",
               "correcta": false
-            },
-            {
-              "texto": "La segunda se asegura y emplaya con la primera",
-              "correcta": true
             }
           ]
         },
@@ -7084,6 +7081,10 @@
           "texto": "Como debe identificarse el material devuelto que esta en cuarentena y fue validado para devolucion?",
           "opciones": [
             {
+              "texto": "Con la tarjeta de rechazo 4-CA-55",
+              "correcta": true
+            },
+            {
               "texto": "Solo con el nombre del chofer",
               "correcta": false
             },
@@ -7100,10 +7101,6 @@
               "correcta": false
             },
             {
-              "texto": "Con la tarjeta de rechazo 4-CA-55",
-              "correcta": true
-            },
-            {
               "texto": "Sin identificacion porque no se procesara",
               "correcta": false
             }
@@ -7112,6 +7109,10 @@
         {
           "texto": "Que debe registrarse en el vale de salida al devolver material rechazado?",
           "opciones": [
+            {
+              "texto": "Los datos del componente rechazado y las firmas correspondientes",
+              "correcta": true
+            },
             {
               "texto": "Unicamente la fecha de la ultima titulacion",
               "correcta": false
@@ -7129,17 +7130,12 @@
               "correcta": false
             },
             {
-              "texto": "Los datos del componente rechazado y las firmas correspondientes",
-              "correcta": true
-            },
-            {
               "texto": "Solo el nombre del visitante que observo la carga",
               "correcta": false
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-CA-33 Rev. 0",
@@ -8845,6 +8841,10 @@
           "texto": "Si detectas una situacion que afecta la calidad o la produccion diaria, que responsabilidad indica el procedimiento?",
           "opciones": [
             {
+              "texto": "Comunicarla para ayudar a evitar problemas",
+              "correcta": true
+            },
+            {
               "texto": "Esperar a que el cliente encuentre el problema",
               "correcta": false
             },
@@ -8863,10 +8863,6 @@
             {
               "texto": "Comentarlo solo al transportista",
               "correcta": false
-            },
-            {
-              "texto": "Comunicarla para ayudar a evitar problemas",
-              "correcta": true
             }
           ]
         },
@@ -8874,16 +8870,16 @@
           "texto": "Donde se ubican tableros de comunicacion segun el procedimiento?",
           "opciones": [
             {
+              "texto": "En areas de produccion y en el ingreso principal",
+              "correcta": true
+            },
+            {
               "texto": "Solo dentro del almacen de quimicos",
               "correcta": false
             },
             {
               "texto": "Unicamente en los vehiculos de reparto",
               "correcta": false
-            },
-            {
-              "texto": "En areas de produccion y en el ingreso principal",
-              "correcta": true
             },
             {
               "texto": "Dentro de cada tanque de fosfatado",
@@ -8961,12 +8957,12 @@
           "texto": "Que se comenta en las reuniones de cambio de turno?",
           "opciones": [
             {
-              "texto": "Solo los temas personales ajenos al trabajo",
-              "correcta": false
-            },
-            {
               "texto": "Lo ocurrido en el turno anterior, la produccion y los temas que afectan la operacion",
               "correcta": true
+            },
+            {
+              "texto": "Solo los temas personales ajenos al trabajo",
+              "correcta": false
             },
             {
               "texto": "Solo la fecha de la proxima visita del cliente",
@@ -9019,6 +9015,10 @@
           "texto": "Cuando se comunica la politica de calidad a una persona de nuevo ingreso?",
           "opciones": [
             {
+              "texto": "Durante su ingreso, conforme al procedimiento de capacitacion",
+              "correcta": true
+            },
+            {
               "texto": "Solo cuando visite la direccion general",
               "correcta": false
             },
@@ -9037,16 +9037,16 @@
             {
               "texto": "Unicamente al cambiar de turno por primera vez",
               "correcta": false
-            },
-            {
-              "texto": "Durante su ingreso, conforme al procedimiento de capacitacion",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Como debe tratarse la informacion que se maneja con los clientes?",
           "opciones": [
+            {
+              "texto": "Como informacion confidencial, solicitando apoyo a los responsables del proceso cuando corresponda",
+              "correcta": true
+            },
             {
               "texto": "Como informacion publica que se comparte con cualquier visitante",
               "correcta": false
@@ -9060,10 +9060,6 @@
               "correcta": false
             },
             {
-              "texto": "Como informacion confidencial, solicitando apoyo a los responsables del proceso cuando corresponda",
-              "correcta": true
-            },
-            {
               "texto": "Publicandola completa en cualquier tablero",
               "correcta": false
             },
@@ -9073,8 +9069,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-RH-18 Rev. 4",
@@ -10780,12 +10775,12 @@
           "texto": "Por donde se realiza oficialmente una solicitud de compra de materiales?",
           "opciones": [
             {
-              "texto": "En la remision de otro proveedor",
-              "correcta": false
-            },
-            {
               "texto": "Por el modulo o plataforma de compras",
               "correcta": true
+            },
+            {
+              "texto": "En la remision de otro proveedor",
+              "correcta": false
             },
             {
               "texto": "En la bitacora de titulacion de la linea",
@@ -10809,16 +10804,16 @@
           "texto": "Quien genera la solicitud de compra de los materiales que necesita un area?",
           "opciones": [
             {
+              "texto": "El lider responsable del area",
+              "correcta": true
+            },
+            {
               "texto": "El cliente de un producto diferente",
               "correcta": false
             },
             {
               "texto": "El auxiliar de otra area sin informar al responsable",
               "correcta": false
-            },
-            {
-              "texto": "El lider responsable del area",
-              "correcta": true
             },
             {
               "texto": "El proveedor que ofrece el material",
@@ -10838,6 +10833,10 @@
           "texto": "Como debe describirse el material solicitado en la plataforma de compras?",
           "opciones": [
             {
+              "texto": "Con informacion clara para que compras pueda atender la solicitud",
+              "correcta": true
+            },
+            {
               "texto": "Solo con el color del empaque sin indicar el material",
               "correcta": false
             },
@@ -10856,10 +10855,6 @@
             {
               "texto": "Sin datos para que el proveedor elija",
               "correcta": false
-            },
-            {
-              "texto": "Con informacion clara para que compras pueda atender la solicitud",
-              "correcta": true
             }
           ]
         },
@@ -10896,12 +10891,12 @@
           "texto": "Al recibir un producto comprado, que debe comparar y revisar quien lo recibe?",
           "opciones": [
             {
-              "texto": "La hora de llegada, sin comprobar danos",
-              "correcta": false
-            },
-            {
               "texto": "El producto contra la factura o nota y su estado fisico",
               "correcta": true
+            },
+            {
+              "texto": "La hora de llegada, sin comprobar danos",
+              "correcta": false
             },
             {
               "texto": "El producto contra una factura de otro pedido",
@@ -10925,6 +10920,10 @@
           "texto": "Si el producto entregado presenta danos, a quien se avisa para reclamar al proveedor?",
           "opciones": [
             {
+              "texto": "Al administrador de compras",
+              "correcta": true
+            },
+            {
               "texto": "Solo al transportista de otro pedido",
               "correcta": false
             },
@@ -10939,10 +10938,6 @@
             {
               "texto": "A la persona que limpio el area de empaque",
               "correcta": false
-            },
-            {
-              "texto": "Al administrador de compras",
-              "correcta": true
             },
             {
               "texto": "Al siguiente turno sin avisar a compras",
@@ -10983,16 +10978,16 @@
           "texto": "Al terminar un servicio externo, que debe hacer el lider o encargado del area involucrada?",
           "opciones": [
             {
+              "texto": "Revisar que cumpla lo solicitado e informar a compras que termino",
+              "correcta": true
+            },
+            {
               "texto": "Cerrar el pedido aunque el proveedor no haya asistido",
               "correcta": false
             },
             {
               "texto": "Informar solo al transportista",
               "correcta": false
-            },
-            {
-              "texto": "Revisar que cumpla lo solicitado e informar a compras que termino",
-              "correcta": true
             },
             {
               "texto": "Aceptar el servicio sin revisarlo",
@@ -11008,8 +11003,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-GC-01 Rev. 5",
@@ -11904,6 +11898,10 @@
           "texto": "Para que se opera la planta de tratamiento de agua residual, segun el procedimiento?",
           "opciones": [
             {
+              "texto": "Para disminuir la contaminacion del agua descargada del proceso",
+              "correcta": true
+            },
+            {
               "texto": "Para aplicar adhesivo a las piezas",
               "correcta": false
             },
@@ -11922,16 +11920,16 @@
             {
               "texto": "Para aumentar la cantidad de piezas por canasta",
               "correcta": false
-            },
-            {
-              "texto": "Para disminuir la contaminacion del agua descargada del proceso",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Quien debe avisar al auxiliar de PTAR cuando se realizan descargas de soluciones de fosfatado?",
           "opciones": [
+            {
+              "texto": "El coordinador de produccion",
+              "correcta": true
+            },
             {
               "texto": "El tecnico de mantenimiento",
               "correcta": false
@@ -11943,10 +11941,6 @@
             {
               "texto": "El auxiliar de calidad",
               "correcta": false
-            },
-            {
-              "texto": "El coordinador de produccion",
-              "correcta": true
             },
             {
               "texto": "El operador del turno anterior sin avisar al coordinador",
@@ -11991,12 +11985,12 @@
           "texto": "Que debe revisar el operador de PTAR antes de iniciar operaciones?",
           "opciones": [
             {
-              "texto": "Solo el numero de piezas del siguiente cliente",
-              "correcta": false
-            },
-            {
               "texto": "Que haya suficiente sosa liquida, acido sulfurico y polimeros para el tratamiento",
               "correcta": true
+            },
+            {
+              "texto": "Solo el numero de piezas del siguiente cliente",
+              "correcta": false
             },
             {
               "texto": "Unicamente la hora del turno anterior",
@@ -12020,6 +12014,10 @@
           "texto": "Que equipos o condiciones se validan antes de iniciar la planta de tratamiento?",
           "opciones": [
             {
+              "texto": "Equipos de alimentacion, tablero, control de pH, Lamella, valvulas y flujos",
+              "correcta": true
+            },
+            {
               "texto": "Unicamente las valvulas, sin comprobar los flujos",
               "correcta": false
             },
@@ -12038,10 +12036,6 @@
             {
               "texto": "Unicamente la Lamella, sin revisar el control de pH",
               "correcta": false
-            },
-            {
-              "texto": "Equipos de alimentacion, tablero, control de pH, Lamella, valvulas y flujos",
-              "correcta": true
             }
           ]
         },
@@ -12107,12 +12101,12 @@
           "texto": "Que rango de pH muestra el diagrama antes de agregar coagulante y floculante?",
           "opciones": [
             {
-              "texto": "De 2 a 2.2",
-              "correcta": false
-            },
-            {
               "texto": "De 6 a 6.2",
               "correcta": true
+            },
+            {
+              "texto": "De 2 a 2.2",
+              "correcta": false
             },
             {
               "texto": "De 4 a 4.2",
@@ -12136,6 +12130,10 @@
           "texto": "Si el pH del agua no esta entre 6 y 6.2, que paso muestra el diagrama?",
           "opciones": [
             {
+              "texto": "Ajustarlo mediante las bombas dosificadoras del control automatico",
+              "correcta": true
+            },
+            {
               "texto": "Enviar el agua directamente a producto terminado",
               "correcta": false
             },
@@ -12146,10 +12144,6 @@
             {
               "texto": "Detener el registro y no ajustar el agua",
               "correcta": false
-            },
-            {
-              "texto": "Ajustarlo mediante las bombas dosificadoras del control automatico",
-              "correcta": true
             },
             {
               "texto": "Registrar el pH esperado sin medir",
@@ -12164,6 +12158,10 @@
         {
           "texto": "Despues de obtener el pH indicado, a donde se sube el agua para agregar coagulante y floculante?",
           "opciones": [
+            {
+              "texto": "A la Lamella",
+              "correcta": true
+            },
             {
               "texto": "A la estacion de empaque",
               "correcta": false
@@ -12183,10 +12181,6 @@
             {
               "texto": "Al tanque de desengrase de produccion",
               "correcta": false
-            },
-            {
-              "texto": "A la Lamella",
-              "correcta": true
             }
           ]
         },
@@ -12281,12 +12275,12 @@
           "texto": "Con que frecuencia indica el procedimiento realizar el retrolavado de filtros?",
           "opciones": [
             {
-              "texto": "Una vez por mes",
-              "correcta": false
-            },
-            {
               "texto": "Una vez al dia",
               "correcta": true
+            },
+            {
+              "texto": "Una vez por mes",
+              "correcta": false
             },
             {
               "texto": "Una vez por turno",
@@ -12310,16 +12304,16 @@
           "texto": "Con que frecuencia indica el procedimiento limpiar el sedimentador Lamella?",
           "opciones": [
             {
+              "texto": "Una vez al dia",
+              "correcta": true
+            },
+            {
               "texto": "Solo cuando se cambia de operador",
               "correcta": false
             },
             {
               "texto": "Una vez por turno",
               "correcta": false
-            },
-            {
-              "texto": "Una vez al dia",
-              "correcta": true
             },
             {
               "texto": "Una vez por semestre",
@@ -12339,12 +12333,12 @@
           "texto": "Que formato se llena para el mantenimiento autonomo de la PTAR?",
           "opciones": [
             {
-              "texto": "La etiqueta de una muestra de fosfato",
-              "correcta": false
-            },
-            {
               "texto": "4-MA-57 Mantenimiento Autonomo PTAR",
               "correcta": true
+            },
+            {
+              "texto": "La etiqueta de una muestra de fosfato",
+              "correcta": false
             },
             {
               "texto": "La lista de asistencia de visitantes",
@@ -12397,6 +12391,10 @@
           "texto": "Que debe tener el coordinador de seguridad y medio ambiente para conocer las caracteristicas de los lodos de PTAR?",
           "opciones": [
             {
+              "texto": "Como minimo un analisis de lodos conforme a la norma mencionada en el procedimiento",
+              "correcta": true
+            },
+            {
               "texto": "Unicamente la fecha del siguiente embarque",
               "correcta": false
             },
@@ -12407,10 +12405,6 @@
             {
               "texto": "Una etiqueta de producto terminado",
               "correcta": false
-            },
-            {
-              "texto": "Como minimo un analisis de lodos conforme a la norma mencionada en el procedimiento",
-              "correcta": true
             },
             {
               "texto": "Solo el peso de una tarima vacia",
@@ -12425,6 +12419,10 @@
         {
           "texto": "Si se modifican los productos quimicos del proceso de fosfatado, que indica la nota del procedimiento?",
           "opciones": [
+            {
+              "texto": "Realizar un estudio con base en la normatividad aplicable",
+              "correcta": true
+            },
             {
               "texto": "Cambiar solo la etiqueta del tanque",
               "correcta": false
@@ -12444,10 +12442,6 @@
             {
               "texto": "Dar por aprobado el cambio sin estudio",
               "correcta": false
-            },
-            {
-              "texto": "Realizar un estudio con base en la normatividad aplicable",
-              "correcta": true
             }
           ]
         },
@@ -12455,16 +12449,16 @@
           "texto": "Que equipo de proteccion debe usar el personal involucrado en la PTAR?",
           "opciones": [
             {
+              "texto": "El equipo correspondiente a las actividades que realiza",
+              "correcta": true
+            },
+            {
               "texto": "Solo el equipo disponible mas cercano sin revisar su uso",
               "correcta": false
             },
             {
               "texto": "Solo el uniforme, sin importar la actividad",
               "correcta": false
-            },
-            {
-              "texto": "El equipo correspondiente a las actividades que realiza",
-              "correcta": true
             },
             {
               "texto": "Ninguno si la operacion es corta",
@@ -12480,8 +12474,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-GC-08 Rev. 1",
@@ -28852,6 +28845,10 @@
           "texto": "En que modulo se registra la recepcion de quimicos e insumos inventariados?",
           "opciones": [
             {
+              "texto": "En Inventarios, mediante Registrar Recepcion",
+              "correcta": true
+            },
+            {
               "texto": "En la pantalla de programacion de canastas Baker",
               "correcta": false
             },
@@ -28870,16 +28867,16 @@
             {
               "texto": "En el registro de visitantes",
               "correcta": false
-            },
-            {
-              "texto": "En Inventarios, mediante Registrar Recepcion",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Un usuario con rol inventarios recibe un material de otra categoria distinta a Quimicos Proceso. Que indica el POE?",
           "opciones": [
+            {
+              "texto": "Coordinar el registro con un usuario administrador o comprador",
+              "correcta": true
+            },
             {
               "texto": "Capturarlo como una recepcion anterior de quimicos",
               "correcta": false
@@ -28899,10 +28896,6 @@
             {
               "texto": "Usar el usuario de otro trabajador sin avisar",
               "correcta": false
-            },
-            {
-              "texto": "Coordinar el registro con un usuario administrador o comprador",
-              "correcta": true
             }
           ]
         },
@@ -28939,6 +28932,10 @@
           "texto": "Un contenedor recibido presenta golpes o derrame. Que se selecciona en Material Golpeado?",
           "opciones": [
             {
+              "texto": "Si",
+              "correcta": true
+            },
+            {
               "texto": "No, porque el contenedor llego cerrado",
               "correcta": false
             },
@@ -28949,10 +28946,6 @@
             {
               "texto": "No, si otros contenedores estan intactos",
               "correcta": false
-            },
-            {
-              "texto": "Si",
-              "correcta": true
             },
             {
               "texto": "Si, solo cuando el transportista confirme el dano",
@@ -28968,16 +28961,16 @@
           "texto": "Que debe comprobarse al revisar los sellos de seguridad?",
           "opciones": [
             {
+              "texto": "Que esten intactos y sin senales de apertura o manipulacion",
+              "correcta": true
+            },
+            {
               "texto": "Solo que el proveedor haya enviado una factura",
               "correcta": false
             },
             {
               "texto": "Que el sello sea igual al de otro proveedor",
               "correcta": false
-            },
-            {
-              "texto": "Que esten intactos y sin senales de apertura o manipulacion",
-              "correcta": true
             },
             {
               "texto": "Solo que la etiqueta tenga el nombre del quimico",
@@ -28997,6 +28990,10 @@
           "texto": "Si al menos uno de los criterios de calidad falla, que estado calcula el sistema?",
           "opciones": [
             {
+              "texto": "En cuarentena",
+              "correcta": true
+            },
+            {
               "texto": "Enviado al cliente",
               "correcta": false
             },
@@ -29015,10 +29012,6 @@
             {
               "texto": "Procesado en la linea",
               "correcta": false
-            },
-            {
-              "texto": "En cuarentena",
-              "correcta": true
             }
           ]
         },
@@ -29026,12 +29019,12 @@
           "texto": "Cuando puede utilizarse un material que fue enviado a cuarentena?",
           "opciones": [
             {
-              "texto": "Al iniciar el siguiente turno sin revision",
-              "correcta": false
-            },
-            {
               "texto": "Cuando el administrador o comprador lo revise y libere",
               "correcta": true
+            },
+            {
+              "texto": "Al iniciar el siguiente turno sin revision",
+              "correcta": false
             },
             {
               "texto": "En cuanto se imprima su etiqueta de recepcion",
@@ -29055,16 +29048,16 @@
           "texto": "Que se revisa antes de decidir si se libera un material en cuarentena?",
           "opciones": [
             {
+              "texto": "El material fisico y la documentacion del proveedor",
+              "correcta": true
+            },
+            {
               "texto": "La condicion de otro producto ya liberado",
               "correcta": false
             },
             {
               "texto": "Solo el nombre de quien recibio la factura",
               "correcta": false
-            },
-            {
-              "texto": "El material fisico y la documentacion del proveedor",
-              "correcta": true
             },
             {
               "texto": "El reporte de produccion de la linea",
@@ -29084,6 +29077,10 @@
           "texto": "Como se realiza el conteo semanal de inventario?",
           "opciones": [
             {
+              "texto": "Contando las existencias fisicas reales de cada producto en su unidad de medida",
+              "correcta": true
+            },
+            {
               "texto": "Usando el saldo anterior sin recorrer el almacen",
               "correcta": false
             },
@@ -29102,16 +29099,16 @@
             {
               "texto": "Registrando solo los productos que estan por agotarse",
               "correcta": false
-            },
-            {
-              "texto": "Contando las existencias fisicas reales de cada producto en su unidad de medida",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Que datos obligatorios menciona el POE antes de guardar la recepcion?",
           "opciones": [
+            {
+              "texto": "Fecha, proveedor, al menos un item y criterios de Control de Calidad",
+              "correcta": true
+            },
             {
               "texto": "La temperatura de cada tanque de fosfatado",
               "correcta": false
@@ -29129,10 +29126,6 @@
               "correcta": false
             },
             {
-              "texto": "Fecha, proveedor, al menos un item y criterios de Control de Calidad",
-              "correcta": true
-            },
-            {
               "texto": "Solo la cantidad total sin identificar productos",
               "correcta": false
             }
@@ -29142,8 +29135,7 @@
       "revisiones_anteriores_sha256": [
         "763a4a4d802ec5d836cfa0ddebc4dca016a00117226f4860d819b69425c4c75f",
         "c5a6cce00bc3f9d37c1b74bd6bda769974b716a7d51071b97d009d50af3a1c69"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "4-PR-28 Rev. 2",
@@ -29154,16 +29146,16 @@
           "texto": "En LOLA, a que apartado se entra para registrar material recibido?",
           "opciones": [
             {
+              "texto": "Procesos y despues Recibo de materiales",
+              "correcta": true
+            },
+            {
               "texto": "Seguridad y despues Atencion medica",
               "correcta": false
             },
             {
               "texto": "Embarques y despues Visitas",
               "correcta": false
-            },
-            {
-              "texto": "Procesos y despues Recibo de materiales",
-              "correcta": true
             },
             {
               "texto": "Produccion y despues Reporte de titulacion",
@@ -29212,6 +29204,10 @@
           "texto": "Que etiqueta SKF se escanea primero en el proceso descrito?",
           "opciones": [
             {
+              "texto": "El codigo QR de la etiqueta chica SKF",
+              "correcta": true
+            },
+            {
               "texto": "La etiqueta interna de un material que aun no se recibe",
               "correcta": false
             },
@@ -29230,16 +29226,16 @@
             {
               "texto": "El codigo de una tarjeta de rechazo de otro lote",
               "correcta": false
-            },
-            {
-              "texto": "El codigo QR de la etiqueta chica SKF",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Despues del QR SKF, que otro codigo se escanea?",
           "opciones": [
+            {
+              "texto": "El codigo de barras de la etiqueta Dispatch larga",
+              "correcta": true
+            },
             {
               "texto": "El codigo de la solicitud de mantenimiento",
               "correcta": false
@@ -29259,10 +29255,6 @@
             {
               "texto": "El codigo de la tarjeta de acceso del operador",
               "correcta": false
-            },
-            {
-              "texto": "El codigo de barras de la etiqueta Dispatch larga",
-              "correcta": true
             }
           ]
         },
@@ -29299,16 +29291,16 @@
           "texto": "Que sucede despues de registrar correctamente el material en LOLA?",
           "opciones": [
             {
+              "texto": "Se imprime una etiqueta con el codigo unico de identificacion del material",
+              "correcta": true
+            },
+            {
               "texto": "Se elimina la identificacion SKF de la caja",
               "correcta": false
             },
             {
               "texto": "Se registra el material como procesado y empacado",
               "correcta": false
-            },
-            {
-              "texto": "Se imprime una etiqueta con el codigo unico de identificacion del material",
-              "correcta": true
             },
             {
               "texto": "Se genera automaticamente una tarjeta de rechazo para cada caja",
@@ -29328,6 +29320,10 @@
           "texto": "Donde coloca Almacen la etiqueta LOLA segun el POE?",
           "opciones": [
             {
+              "texto": "En la esquina inferior izquierda de la etiqueta SKF",
+              "correcta": true
+            },
+            {
               "texto": "En el tablero de la linea sin identificar la caja",
               "correcta": false
             },
@@ -29346,16 +29342,16 @@
             {
               "texto": "Encima del QR SKF cubriendolo",
               "correcta": false
-            },
-            {
-              "texto": "En la esquina inferior izquierda de la etiqueta SKF",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Se escaneo por error una etiqueta SKF repetida. Que opcion permite quitar ese registro?",
           "opciones": [
+            {
+              "texto": "Eliminar escaneo",
+              "correcta": true
+            },
             {
               "texto": "Abrir segundo monitor",
               "correcta": false
@@ -29375,16 +29371,16 @@
             {
               "texto": "Cerrar sesion sin revisar",
               "correcta": false
-            },
-            {
-              "texto": "Eliminar escaneo",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Que boton se presiona al terminar el registro de todo el material recibido?",
           "opciones": [
+            {
+              "texto": "Finalizar y Generar un PDF",
+              "correcta": true
+            },
             {
               "texto": "Conectar impresora",
               "correcta": false
@@ -29396,10 +29392,6 @@
             {
               "texto": "Eliminar escaneo de todos los materiales",
               "correcta": false
-            },
-            {
-              "texto": "Finalizar y Generar un PDF",
-              "correcta": true
             },
             {
               "texto": "Cancelar la recepcion completa",
@@ -29444,8 +29436,7 @@
       "revisiones_anteriores_sha256": [
         "3d5728fe32e13ff4be6209ee55321fa1c5790b365538022d4840c190fbd3f69a",
         "e442ad541c21a07e66bb4341d239e02a7de84fd1ac99184f87c554b2e1d7c152"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "4-PR-29 Rev. 0",
@@ -29728,6 +29719,10 @@
           "texto": "Quien envia el reporte de submaquila del material AMSTED que llegara a Cuesto?",
           "opciones": [
             {
+              "texto": "El personal de Logistica del cliente AMSTED",
+              "correcta": true
+            },
+            {
               "texto": "El conductor del embarque anterior",
               "correcta": false
             },
@@ -29738,10 +29733,6 @@
             {
               "texto": "El operador de la termobalanza",
               "correcta": false
-            },
-            {
-              "texto": "El personal de Logistica del cliente AMSTED",
-              "correcta": true
             },
             {
               "texto": "El brigadista de primeros auxilios",
@@ -29756,6 +29747,10 @@
         {
           "texto": "Con cuanta anticipacion indica el POE que se envia el reporte de submaquila?",
           "opciones": [
+            {
+              "texto": "36 horas antes de la llegada",
+              "correcta": true
+            },
             {
               "texto": "Despues de terminar la descarga",
               "correcta": false
@@ -29775,10 +29770,6 @@
             {
               "texto": "En el momento de embarcar el producto terminado",
               "correcta": false
-            },
-            {
-              "texto": "36 horas antes de la llegada",
-              "correcta": true
             }
           ]
         },
@@ -29786,16 +29777,16 @@
           "texto": "Para que se usa el aviso previo del material AMSTED?",
           "opciones": [
             {
+              "texto": "Para programar la fecha y hora de descarga",
+              "correcta": true
+            },
+            {
               "texto": "Para dar por aceptado el material sin revisarlo",
               "correcta": false
             },
             {
               "texto": "Para cerrar el reporte de produccion anterior",
               "correcta": false
-            },
-            {
-              "texto": "Para programar la fecha y hora de descarga",
-              "correcta": true
             },
             {
               "texto": "Para imprimir etiquetas de otro cliente",
@@ -29815,6 +29806,10 @@
           "texto": "Que condicion de una caja indica rechazo en la descarga?",
           "opciones": [
             {
+              "texto": "Que este rasgada o rota",
+              "correcta": true
+            },
+            {
               "texto": "Que tenga una identificacion visible",
               "correcta": false
             },
@@ -29833,10 +29828,6 @@
             {
               "texto": "Que este en el almacen destinado",
               "correcta": false
-            },
-            {
-              "texto": "Que este rasgada o rota",
-              "correcta": true
             }
           ]
         },
@@ -29844,16 +29835,16 @@
           "texto": "Que compara el supervisor antes de agregar el material a la base de datos?",
           "opciones": [
             {
+              "texto": "El material fisico contra el reporte de submaquila",
+              "correcta": true
+            },
+            {
               "texto": "El peso de una caja vacia con el de otro cliente",
               "correcta": false
             },
             {
               "texto": "La etiqueta de un producto que ya fue embarcado",
               "correcta": false
-            },
-            {
-              "texto": "El material fisico contra el reporte de submaquila",
-              "correcta": true
             },
             {
               "texto": "El reporte de otro embarque con la caja actual",
@@ -29873,6 +29864,10 @@
           "texto": "En que registro se anota el material recibido segun este POE?",
           "opciones": [
             {
+              "texto": "En 4-PR-34 Formato Registro de Recepcion",
+              "correcta": true
+            },
+            {
               "texto": "En 4-MA-42 Solicitud de Mantenimiento",
               "correcta": false
             },
@@ -29883,10 +29878,6 @@
             {
               "texto": "En la lista de asistencia de la brigada",
               "correcta": false
-            },
-            {
-              "texto": "En 4-PR-34 Formato Registro de Recepcion",
-              "correcta": true
             },
             {
               "texto": "En 4-PR-15 Vale de Adicion de Quimicos",
@@ -29902,12 +29893,12 @@
           "texto": "Que asigna el supervisor al material recibido para identificarlo?",
           "opciones": [
             {
-              "texto": "Una identificacion temporal de otro cliente",
-              "correcta": false
-            },
-            {
               "texto": "Un codigo unico correspondiente a la fecha de recibo",
               "correcta": true
+            },
+            {
+              "texto": "Una identificacion temporal de otro cliente",
+              "correcta": false
             },
             {
               "texto": "Solo el nombre del turno sin fecha ni caja",
@@ -29960,16 +29951,16 @@
           "texto": "Una caja no tiene etiqueta de color ni identificacion. Que indica el POE?",
           "opciones": [
             {
+              "texto": "No debe envarillarse hasta contar con la identificacion",
+              "correcta": true
+            },
+            {
               "texto": "Debe procesarse primero para liberar espacio",
               "correcta": false
             },
             {
               "texto": "Se identifica solo al terminar el fosfatado",
               "correcta": false
-            },
-            {
-              "texto": "No debe envarillarse hasta contar con la identificacion",
-              "correcta": true
             },
             {
               "texto": "Puede usarse la etiqueta de una caja vecina",
@@ -29989,16 +29980,16 @@
           "texto": "Quien pega las etiquetas en cada caja y almacena el material en su lugar?",
           "opciones": [
             {
+              "texto": "El auxiliar de Almacen",
+              "correcta": true
+            },
+            {
               "texto": "El visitante que esta en recepcion",
               "correcta": false
             },
             {
               "texto": "El conductor una vez que regresa al cliente",
               "correcta": false
-            },
-            {
-              "texto": "El auxiliar de Almacen",
-              "correcta": true
             },
             {
               "texto": "El responsable del botiquin de primeros auxilios",
@@ -30018,8 +30009,7 @@
       "revisiones_anteriores_sha256": [
         "b3e8d4a5acbe660645f3c630b1b1d7771f62636431438b825f745320d981875b",
         "eef15ea9cfd180995652a70b275958cedb767b2662d1b4db2d58cdc574e24259"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "3-PR-35 Rev. 0",
@@ -36801,6 +36791,10 @@
           "texto": "Que debe hacer el auxiliar de PTAR con las tarimas de quimicos?",
           "opciones": [
             {
+              "texto": "Identificarlas y colocarlas en el almacen de residuos de manejo especial",
+              "correcta": true
+            },
+            {
               "texto": "Usarlas para almacenar piezas limpias",
               "correcta": false
             },
@@ -36819,10 +36813,6 @@
             {
               "texto": "Colocarlas junto al producto terminado",
               "correcta": false
-            },
-            {
-              "texto": "Identificarlas y colocarlas en el almacen de residuos de manejo especial",
-              "correcta": true
             }
           ]
         },
@@ -36830,12 +36820,12 @@
           "texto": "Donde se colocan las tarimas de quimicos identificadas?",
           "opciones": [
             {
-              "texto": "En el area de empaque de piezas limpias",
-              "correcta": false
-            },
-            {
               "texto": "En el almacen de residuos de manejo especial",
               "correcta": true
+            },
+            {
+              "texto": "En el area de empaque de piezas limpias",
+              "correcta": false
             },
             {
               "texto": "En la zona de embarque de producto al cliente",
@@ -36859,6 +36849,10 @@
           "texto": "Con que color se marca la tarima de quimicos?",
           "opciones": [
             {
+              "texto": "Rosa",
+              "correcta": true
+            },
+            {
               "texto": "Negro",
               "correcta": false
             },
@@ -36877,10 +36871,6 @@
             {
               "texto": "Verde",
               "correcta": false
-            },
-            {
-              "texto": "Rosa",
-              "correcta": true
             }
           ]
         },
@@ -36917,6 +36907,10 @@
           "texto": "Que se usa para hacer visible la marca de la tarima?",
           "opciones": [
             {
+              "texto": "Pintura en aerosol rosa",
+              "correcta": true
+            },
+            {
               "texto": "Agua con jabon rosa",
               "correcta": false
             },
@@ -36927,10 +36921,6 @@
             {
               "texto": "Pintura en aerosol azul",
               "correcta": false
-            },
-            {
-              "texto": "Pintura en aerosol rosa",
-              "correcta": true
             },
             {
               "texto": "Una tarjeta de produccion amarilla",
@@ -36946,6 +36936,10 @@
           "texto": "Que sucede con las tarimas marcadas y registradas?",
           "opciones": [
             {
+              "texto": "Se las lleva la recolectora de residuos de manejo especial",
+              "correcta": true
+            },
+            {
               "texto": "Se dejan en produccion sin registro",
               "correcta": false
             },
@@ -36956,10 +36950,6 @@
             {
               "texto": "Se usan para transportar material al cliente",
               "correcta": false
-            },
-            {
-              "texto": "Se las lleva la recolectora de residuos de manejo especial",
-              "correcta": true
             },
             {
               "texto": "Se envian como producto terminado",
@@ -36974,6 +36964,10 @@
         {
           "texto": "Antes de que la recolectora retire las tarimas, como deben estar?",
           "opciones": [
+            {
+              "texto": "Marcadas y registradas",
+              "correcta": true
+            },
             {
               "texto": "Enviadas a empaque para contar piezas",
               "correcta": false
@@ -36993,10 +36987,6 @@
             {
               "texto": "Sin marca para poder reutilizarlas",
               "correcta": false
-            },
-            {
-              "texto": "Marcadas y registradas",
-              "correcta": true
             }
           ]
         },
@@ -37004,16 +36994,16 @@
           "texto": "Quien tiene a cargo identificar y ubicar estas tarimas, segun la leccion?",
           "opciones": [
             {
+              "texto": "El auxiliar de PTAR",
+              "correcta": true
+            },
+            {
               "texto": "El transportista del cliente",
               "correcta": false
             },
             {
               "texto": "El operador del montacargas del cliente",
               "correcta": false
-            },
-            {
-              "texto": "El auxiliar de PTAR",
-              "correcta": true
             },
             {
               "texto": "El proveedor de tinas",
@@ -37033,8 +37023,7 @@
       "revisiones_anteriores_sha256": [
         "020875ae40e13b103b9d76f58c28eab002fdf078f1863da4ea6be90d8eba7873",
         "1ff9ddd4cc42582c7c5cc1ffec42a7531a16fc240cf8209e719e8a8641317710"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 44",
@@ -37044,6 +37033,10 @@
         {
           "texto": "Que productos se preparan en esta leccion de PTAR?",
           "opciones": [
+            {
+              "texto": "Coagulante liquido y floculante solido",
+              "correcta": true
+            },
             {
               "texto": "Coagulante solido y floculante liquido",
               "correcta": false
@@ -37061,10 +37054,6 @@
               "correcta": false
             },
             {
-              "texto": "Coagulante liquido y floculante solido",
-              "correcta": true
-            },
-            {
               "texto": "Adhesivo liquido y fosfato solido",
               "correcta": false
             }
@@ -37074,12 +37063,12 @@
           "texto": "Cuanto coagulante liquido se agrega al tinaco de 1,100 litros?",
           "opciones": [
             {
-              "texto": "10 ml",
-              "correcta": false
-            },
-            {
               "texto": "110 ml",
               "correcta": true
+            },
+            {
+              "texto": "10 ml",
+              "correcta": false
             },
             {
               "texto": "45 ml",
@@ -37103,16 +37092,16 @@
           "texto": "Cuanto floculante solido se agrega al tinaco de 450 litros?",
           "opciones": [
             {
+              "texto": "450 gramos",
+              "correcta": true
+            },
+            {
               "texto": "1,100 gramos",
               "correcta": false
             },
             {
               "texto": "110 gramos",
               "correcta": false
-            },
-            {
-              "texto": "450 gramos",
-              "correcta": true
             },
             {
               "texto": "100 gramos",
@@ -37161,6 +37150,10 @@
           "texto": "En que presentacion se muestra el coagulante liquido?",
           "opciones": [
             {
+              "texto": "En galones de 20 litros",
+              "correcta": true
+            },
+            {
               "texto": "En costales de 50 kilos",
               "correcta": false
             },
@@ -37177,10 +37170,6 @@
               "correcta": false
             },
             {
-              "texto": "En galones de 20 litros",
-              "correcta": true
-            },
-            {
               "texto": "En latas de un litro",
               "correcta": false
             }
@@ -37189,6 +37178,10 @@
         {
           "texto": "En que presentacion se muestra el floculante solido?",
           "opciones": [
+            {
+              "texto": "En costal de 25 kilos",
+              "correcta": true
+            },
             {
               "texto": "En galon de 20 litros",
               "correcta": false
@@ -37208,10 +37201,6 @@
             {
               "texto": "En cubetas de adhesivo",
               "correcta": false
-            },
-            {
-              "texto": "En costal de 25 kilos",
-              "correcta": true
             }
           ]
         },
@@ -37219,12 +37208,12 @@
           "texto": "Que capacidad tiene el tinaco de coagulante indicado?",
           "opciones": [
             {
-              "texto": "550 litros",
-              "correcta": false
-            },
-            {
               "texto": "1,100 litros",
               "correcta": true
+            },
+            {
+              "texto": "550 litros",
+              "correcta": false
             },
             {
               "texto": "250 litros",
@@ -37248,16 +37237,16 @@
           "texto": "Que capacidad tiene el tinaco de floculante indicado?",
           "opciones": [
             {
+              "texto": "450 litros",
+              "correcta": true
+            },
+            {
               "texto": "550 litros",
               "correcta": false
             },
             {
               "texto": "100 litros",
               "correcta": false
-            },
-            {
-              "texto": "450 litros",
-              "correcta": true
             },
             {
               "texto": "1,100 litros",
@@ -37277,8 +37266,7 @@
       "revisiones_anteriores_sha256": [
         "9336f6897223d01507d402914b181e620a0c2779ee4c3d8af72d12080cdb6b5e",
         "79779c07598301483419c0b702a5a7ab9d06772d04838aa792c0fd971ac4a8e2"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 47",
@@ -37289,16 +37277,16 @@
           "texto": "Al limpiar un tanque, que tambo debe tomar el operador para los lodos?",
           "opciones": [
             {
+              "texto": "Uno que ya tenga la marca de llenado del area destinada a limpiezas",
+              "correcta": true
+            },
+            {
               "texto": "Cualquier tambo sin revisar si esta marcado",
               "correcta": false
             },
             {
               "texto": "Un contenedor de carton para etiquetas",
               "correcta": false
-            },
-            {
-              "texto": "Uno que ya tenga la marca de llenado del area destinada a limpiezas",
-              "correcta": true
             },
             {
               "texto": "Una tina limpia para piezas conformes",
@@ -37318,6 +37306,10 @@
           "texto": "Quien realiza la marca de llenado en los tambos destinados a estas limpiezas?",
           "opciones": [
             {
+              "texto": "El operador de PTAR",
+              "correcta": true
+            },
+            {
               "texto": "El visitante de la planta",
               "correcta": false
             },
@@ -37328,10 +37320,6 @@
             {
               "texto": "El transportista de producto terminado",
               "correcta": false
-            },
-            {
-              "texto": "El operador de PTAR",
-              "correcta": true
             },
             {
               "texto": "El proveedor de contenedores",
@@ -37347,6 +37335,10 @@
           "texto": "Que indica la leccion sobre utilizar un tambo sin marca de llenado?",
           "opciones": [
             {
+              "texto": "Esta prohibido utilizarlo",
+              "correcta": true
+            },
+            {
               "texto": "Se puede llenar hasta la mitad sin revisarlo",
               "correcta": false
             },
@@ -37357,10 +37349,6 @@
             {
               "texto": "Se puede usar si se marca despues de llenarlo",
               "correcta": false
-            },
-            {
-              "texto": "Esta prohibido utilizarlo",
-              "correcta": true
             },
             {
               "texto": "Se puede usar si es del mismo color",
@@ -37376,12 +37364,12 @@
           "texto": "Que color tiene la marca de llenado de los tambos vacios mostrados en la leccion?",
           "opciones": [
             {
-              "texto": "Azul",
-              "correcta": false
-            },
-            {
               "texto": "Rojo",
               "correcta": true
+            },
+            {
+              "texto": "Azul",
+              "correcta": false
             },
             {
               "texto": "Blanco",
@@ -37434,16 +37422,16 @@
           "texto": "Cuando un tambo llega al 80 por ciento, como debe quedar antes de colocarlo en el almacen indicado?",
           "opciones": [
             {
+              "texto": "Cerrado",
+              "correcta": true
+            },
+            {
               "texto": "Mezclado con cajas de producto terminado",
               "correcta": false
             },
             {
               "texto": "Abierto para revisar su contenido despues",
               "correcta": false
-            },
-            {
-              "texto": "Cerrado",
-              "correcta": true
             },
             {
               "texto": "Con la tapa suelta para seguirlo llenando",
@@ -37463,6 +37451,10 @@
           "texto": "Donde se colocan los tambos de lodos cerrados y llenos al 80 por ciento?",
           "opciones": [
             {
+              "texto": "En el almacen de residuos peligrosos",
+              "correcta": true
+            },
+            {
               "texto": "En cualquier pasillo de produccion",
               "correcta": false
             },
@@ -37473,10 +37465,6 @@
             {
               "texto": "En el comedor del personal",
               "correcta": false
-            },
-            {
-              "texto": "En el almacen de residuos peligrosos",
-              "correcta": true
             },
             {
               "texto": "En el area de empaque de piezas conformes",
@@ -37491,6 +37479,10 @@
         {
           "texto": "Si el nivel de un tambo esta por llegar a la marca roja, que limite debe respetarse?",
           "opciones": [
+            {
+              "texto": "No pasar del 80 por ciento",
+              "correcta": true
+            },
             {
               "texto": "Retirar la marca para continuar",
               "correcta": false
@@ -37508,10 +37500,6 @@
               "correcta": false
             },
             {
-              "texto": "No pasar del 80 por ciento",
-              "correcta": true
-            },
-            {
               "texto": "Dejar la tapa abierta y seguir llenando",
               "correcta": false
             }
@@ -37521,8 +37509,7 @@
       "revisiones_anteriores_sha256": [
         "57040ab51f69cc475bda200aede53b45520830676332facec2317da3c6bd9723",
         "6b48238f5984a9702e19ee98b7b01ef386d0de4b58e5b39b964add65ecfc7849"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 61",
@@ -37532,6 +37519,10 @@
         {
           "texto": "Al finalizar el turno, que hace el operador con el scrap de su area?",
           "opciones": [
+            {
+              "texto": "Limpia el area y registra el scrap en la base de datos indicada",
+              "correcta": true
+            },
             {
               "texto": "Retira las etiquetas y deja el material sin identificar",
               "correcta": false
@@ -37549,10 +37540,6 @@
               "correcta": false
             },
             {
-              "texto": "Limpia el area y registra el scrap en la base de datos indicada",
-              "correcta": true
-            },
-            {
               "texto": "Lo envia al cliente como producto terminado",
               "correcta": false
             }
@@ -37561,6 +37548,10 @@
         {
           "texto": "En que archivo se registra el scrap segun la LSA?",
           "opciones": [
+            {
+              "texto": "4-SE-09 Control y salida SCRAP",
+              "correcta": true
+            },
             {
               "texto": "4-PR-15 Vale de Adicion de Quimicos",
               "correcta": false
@@ -37578,10 +37569,6 @@
               "correcta": false
             },
             {
-              "texto": "4-SE-09 Control y salida SCRAP",
-              "correcta": true
-            },
-            {
               "texto": "4-SE-20 Solicitud de Atencion Medica",
               "correcta": false
             }
@@ -37590,6 +37577,10 @@
         {
           "texto": "Que pestana debe llenar la mayoria de los operadores para registrar el scrap?",
           "opciones": [
+            {
+              "texto": "1. Control SCRAP, en color rojo",
+              "correcta": true
+            },
             {
               "texto": "2. Salida SCRAP, en color azul, para todos los operadores",
               "correcta": false
@@ -37607,10 +37598,6 @@
               "correcta": false
             },
             {
-              "texto": "1. Control SCRAP, en color rojo",
-              "correcta": true
-            },
-            {
               "texto": "Una pestana de producto terminado de otro archivo",
               "correcta": false
             }
@@ -37619,6 +37606,10 @@
         {
           "texto": "Que pestana indica la LSA para el operador de PTAR?",
           "opciones": [
+            {
+              "texto": "2. Salida SCRAP, en color azul",
+              "correcta": true
+            },
             {
               "texto": "Una pestana sin nombre de otro archivo",
               "correcta": false
@@ -37630,10 +37621,6 @@
             {
               "texto": "La solicitud de atencion medica",
               "correcta": false
-            },
-            {
-              "texto": "2. Salida SCRAP, en color azul",
-              "correcta": true
             },
             {
               "texto": "1. Control SCRAP, en color rojo, como unica opcion",
@@ -37649,6 +37636,10 @@
           "texto": "Que apartados deben llenarse en la fila de registro indicada?",
           "opciones": [
             {
+              "texto": "Todos los apartados de la fila en color rojo",
+              "correcta": true
+            },
+            {
               "texto": "Solo el numero de turno sin indicar el componente",
               "correcta": false
             },
@@ -37659,10 +37650,6 @@
             {
               "texto": "La fila de un lote diferente sin revisarla",
               "correcta": false
-            },
-            {
-              "texto": "Todos los apartados de la fila en color rojo",
-              "correcta": true
             },
             {
               "texto": "Unicamente el nombre del operador",
@@ -37677,6 +37664,10 @@
         {
           "texto": "Si un operador tiene duda al llenar el registro de scrap, a quien indica la LSA que consulte?",
           "opciones": [
+            {
+              "texto": "Al coordinador en turno o al coordinador de Seguridad y Medio Ambiente",
+              "correcta": true
+            },
             {
               "texto": "Al cliente de otro lote como unica consulta",
               "correcta": false
@@ -37696,10 +37687,6 @@
             {
               "texto": "Al proveedor de empaques de otra empresa",
               "correcta": false
-            },
-            {
-              "texto": "Al coordinador en turno o al coordinador de Seguridad y Medio Ambiente",
-              "correcta": true
             }
           ]
         },
@@ -37707,16 +37694,16 @@
           "texto": "En que carpeta de Cuesto Dropbox se encuentra el registro segun la ruta mostrada?",
           "opciones": [
             {
+              "texto": "Informacion Cuesto, Produccion, Registros de Fosfatado y Registro de SCRAP",
+              "correcta": true
+            },
+            {
               "texto": "Compras, Requisiciones y Facturas Pagadas",
               "correcta": false
             },
             {
               "texto": "Recursos Humanos, Vacaciones y Asistencia",
               "correcta": false
-            },
-            {
-              "texto": "Informacion Cuesto, Produccion, Registros de Fosfatado y Registro de SCRAP",
-              "correcta": true
             },
             {
               "texto": "Embarques, Etiquetas y Transportes",
@@ -37736,8 +37723,7 @@
       "revisiones_anteriores_sha256": [
         "7d7860df58aeeba844fc6d913257c92159f238cbd0eaf147e55141e0ae581cf8",
         "2243a0504a91a262f378724df6b7a5dce25ce5685dd064f30d1ba09e4fe075cc"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 64",
@@ -37747,6 +37733,10 @@
         {
           "texto": "El agua de salida de PTAR se ve clara despues del tratamiento. Que debes comprobar?",
           "opciones": [
+            {
+              "texto": "Los resultados de control de la etapa comparados con sus criterios",
+              "correcta": true
+            },
             {
               "texto": "Solo la transparencia",
               "correcta": false
@@ -37766,16 +37756,16 @@
             {
               "texto": "Solo las horas de operacion",
               "correcta": false
-            },
-            {
-              "texto": "Los resultados de control de la etapa comparados con sus criterios",
-              "correcta": true
             }
           ]
         },
         {
           "texto": "Que paso te corresponde al revisar la vigilancia del tratamiento de agua residual?",
           "opciones": [
+            {
+              "texto": "Comparar las mediciones con los criterios de la etapa",
+              "correcta": true
+            },
             {
               "texto": "Tomar como prueba suficiente el olor",
               "correcta": false
@@ -37787,10 +37777,6 @@
             {
               "texto": "Basar la decision en la transparencia",
               "correcta": false
-            },
-            {
-              "texto": "Comparar las mediciones con los criterios de la etapa",
-              "correcta": true
             },
             {
               "texto": "Usar como unica referencia el nivel del tanque",
@@ -37835,16 +37821,16 @@
           "texto": "Estas revisando la vigilancia del tratamiento de agua residual. Que situacion tendrias que reportar?",
           "opciones": [
             {
+              "texto": "Aceptar una descarga solo por su apariencia clara",
+              "correcta": true
+            },
+            {
               "texto": "Se aclaro una diferencia antes de dar por terminado el trabajo",
               "correcta": false
             },
             {
               "texto": "El responsable confirmo el resultado y coincide con el criterio vigente",
               "correcta": false
-            },
-            {
-              "texto": "Aceptar una descarga solo por su apariencia clara",
-              "correcta": true
             },
             {
               "texto": "El relevo recibio el estado correcto del trabajo",
@@ -37893,6 +37879,10 @@
           "texto": "Un resultado parece correcto pero se perdio la identificacion de la muestra. Se puede aplicar al lote?",
           "opciones": [
             {
+              "texto": "Solo despues de establecer con certeza de donde viene o de repetir la toma identificada",
+              "correcta": true
+            },
+            {
               "texto": "Si, cuando es la ultima muestra del turno",
               "correcta": false
             },
@@ -37911,10 +37901,6 @@
             {
               "texto": "Si, cuando el recipiente es del mismo tipo",
               "correcta": false
-            },
-            {
-              "texto": "Solo despues de establecer con certeza de donde viene o de repetir la toma identificada",
-              "correcta": true
             }
           ]
         },
@@ -37922,12 +37908,12 @@
           "texto": "En la hoja aparece un valor sin unidad. Que necesitas para compararlo con el limite?",
           "opciones": [
             {
-              "texto": "Elegir la unidad del ultimo lote",
-              "correcta": false
-            },
-            {
               "texto": "Confirmar la magnitud y la unidad usadas en la medicion",
               "correcta": true
+            },
+            {
+              "texto": "Elegir la unidad del ultimo lote",
+              "correcta": false
             },
             {
               "texto": "Tomar la unidad de la columna vecina",
@@ -37951,16 +37937,16 @@
           "texto": "Al revisar la vigilancia del tratamiento de agua residual, tu companero te muestra un registro del turno anterior. Que necesitas para saber como esta el trabajo ahora?",
           "opciones": [
             {
+              "texto": "Comprobar el dato actual: etapa en servicio y resultados de control del agua",
+              "correcta": true
+            },
+            {
               "texto": "Cambiar solo la fecha del registro anterior",
               "correcta": false
             },
             {
               "texto": "Suponer que sigue igual si nadie dejo un mensaje",
               "correcta": false
-            },
-            {
-              "texto": "Comprobar el dato actual: etapa en servicio y resultados de control del agua",
-              "correcta": true
             },
             {
               "texto": "Usar el dato anterior si el turno duro lo mismo",
@@ -37977,8 +37963,7 @@
           ]
         }
       ],
-      "revision_anterior_sha256": "d4cced294c25196ebc8f11bc3671af918863382fcf977ca77a5f48bfa242a51b",
-      "pendiente_revision": true
+      "revision_anterior_sha256": "d4cced294c25196ebc8f11bc3671af918863382fcf977ca77a5f48bfa242a51b"
     },
     {
       "doc_codigo": "LSA 18",
@@ -38232,6 +38217,10 @@
           "texto": "Para iniciar la carga del montacargas, que terminales se acoplan?",
           "opciones": [
             {
+              "texto": "La del cargador y la del montacargas",
+              "correcta": true
+            },
+            {
               "texto": "La del montacargas con una celda abierta",
               "correcta": false
             },
@@ -38248,10 +38237,6 @@
               "correcta": false
             },
             {
-              "texto": "La del cargador y la del montacargas",
-              "correcta": true
-            },
-            {
               "texto": "Dos terminales del cargador entre si",
               "correcta": false
             }
@@ -38260,6 +38245,10 @@
         {
           "texto": "Despues de conectar las terminales, que se verifica en el cargador?",
           "opciones": [
+            {
+              "texto": "Que encienda el indicador rojo",
+              "correcta": true
+            },
             {
               "texto": "Que todos los indicadores esten apagados",
               "correcta": false
@@ -38271,10 +38260,6 @@
             {
               "texto": "Que las celdas esten sin tapones",
               "correcta": false
-            },
-            {
-              "texto": "Que encienda el indicador rojo",
-              "correcta": true
             },
             {
               "texto": "Que la terminal siga desconectada",
@@ -38290,6 +38275,10 @@
           "texto": "Donde se registran los datos de carga?",
           "opciones": [
             {
+              "texto": "En la bitacora de carga del montacargas",
+              "correcta": true
+            },
+            {
               "texto": "En la tarjeta de rechazo de piezas",
               "correcta": false
             },
@@ -38300,10 +38289,6 @@
             {
               "texto": "En la hoja de trabajo de fosfatado",
               "correcta": false
-            },
-            {
-              "texto": "En la bitacora de carga del montacargas",
-              "correcta": true
             },
             {
               "texto": "En el registro de limpieza de tinas",
@@ -38348,6 +38333,10 @@
           "texto": "Antes de revisar las celdas, que se hace con la terminal y el asiento?",
           "opciones": [
             {
+              "texto": "Desconectar la terminal y levantar el asiento y la tapa de la pila",
+              "correcta": true
+            },
+            {
               "texto": "Dejar conectada la terminal y cerrar la tapa",
               "correcta": false
             },
@@ -38364,10 +38353,6 @@
               "correcta": false
             },
             {
-              "texto": "Desconectar la terminal y levantar el asiento y la tapa de la pila",
-              "correcta": true
-            },
-            {
               "texto": "Levantar el asiento sin desconectar la terminal",
               "correcta": false
             }
@@ -38377,12 +38362,12 @@
           "texto": "Que agua indica la leccion para rellenar las celdas?",
           "opciones": [
             {
-              "texto": "Solucion de fosfato",
-              "correcta": false
-            },
-            {
               "texto": "Agua de osmosis",
               "correcta": true
+            },
+            {
+              "texto": "Solucion de fosfato",
+              "correcta": false
             },
             {
               "texto": "Agua con detergente",
@@ -38406,6 +38391,10 @@
           "texto": "Hasta donde se llena cada celda segun la imagen de la leccion?",
           "opciones": [
             {
+              "texto": "Al nivel de trabajo, al ras del cuello plastico sin rebasarlo",
+              "correcta": true
+            },
+            {
               "texto": "Hasta derramar agua por el costado",
               "correcta": false
             },
@@ -38422,10 +38411,6 @@
               "correcta": false
             },
             {
-              "texto": "Al nivel de trabajo, al ras del cuello plastico sin rebasarlo",
-              "correcta": true
-            },
-            {
               "texto": "Hasta cubrir por completo el cuello plastico",
               "correcta": false
             }
@@ -38434,6 +38419,10 @@
         {
           "texto": "Que proteccion exige la leccion al agregar agua a las celdas?",
           "opciones": [
+            {
+              "texto": "Lentes de seguridad",
+              "correcta": true
+            },
             {
               "texto": "Solo chaleco",
               "correcta": false
@@ -38445,10 +38434,6 @@
             {
               "texto": "Solo botas sin lentes",
               "correcta": false
-            },
-            {
-              "texto": "Lentes de seguridad",
-              "correcta": true
             },
             {
               "texto": "Solo gorra",
@@ -38464,8 +38449,7 @@
       "revisiones_anteriores_sha256": [
         "6377689c647f42cc473becfe1f123ea160d1f655f39bfc7fbcfafc10958d2919",
         "2ac6c6e8d3899c656ea22338c54cdb6ae5fffbb62f8531357142374be8b0deae"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 48",
@@ -39449,6 +39433,10 @@
           "texto": "A quien debe informar el personal operativo de la falla detectada?",
           "opciones": [
             {
+              "texto": "Al coordinador en turno",
+              "correcta": true
+            },
+            {
               "texto": "Solo al conductor que espera el embarque",
               "correcta": false
             },
@@ -39465,10 +39453,6 @@
               "correcta": false
             },
             {
-              "texto": "Al coordinador en turno",
-              "correcta": true
-            },
-            {
               "texto": "Solo al proveedor de empaques",
               "correcta": false
             }
@@ -39478,12 +39462,12 @@
           "texto": "Como se escribe el nombre de la maquina o equipo con falla?",
           "opciones": [
             {
-              "texto": "Solo con el color del equipo",
-              "correcta": false
-            },
-            {
               "texto": "Con el nombre completo, sin abreviarlo",
               "correcta": true
+            },
+            {
+              "texto": "Solo con el color del equipo",
+              "correcta": false
             },
             {
               "texto": "Dejando el campo en blanco para que lo adivine el tecnico",
@@ -39507,12 +39491,12 @@
           "texto": "Que debe marcarse en el campo Maquina parada?",
           "opciones": [
             {
-              "texto": "La fecha de la ultima limpieza",
-              "correcta": false
-            },
-            {
               "texto": "Si o no, segun el estado real del equipo",
               "correcta": true
+            },
+            {
+              "texto": "La fecha de la ultima limpieza",
+              "correcta": false
             },
             {
               "texto": "La cantidad de piezas pendientes",
@@ -39565,16 +39549,16 @@
           "texto": "Que informacion ayuda al tecnico a entender la falla?",
           "opciones": [
             {
+              "texto": "Una descripcion clara y precisa de lo que se observo",
+              "correcta": true
+            },
+            {
               "texto": "Dejar vacio el campo de descripcion",
               "correcta": false
             },
             {
               "texto": "Solo escribir falla sin indicar que ocurre",
               "correcta": false
-            },
-            {
-              "texto": "Una descripcion clara y precisa de lo que se observo",
-              "correcta": true
             },
             {
               "texto": "Anotar el nombre de una maquina distinta",
@@ -39594,6 +39578,10 @@
           "texto": "Que hace el tecnico si los apartados requeridos estan llenados incorrectamente?",
           "opciones": [
             {
+              "texto": "Regresa la solicitud para que se llene correctamente",
+              "correcta": true
+            },
+            {
               "texto": "Cierra la solicitud como reparada",
               "correcta": false
             },
@@ -39610,10 +39598,6 @@
               "correcta": false
             },
             {
-              "texto": "Regresa la solicitud para que se llene correctamente",
-              "correcta": true
-            },
-            {
               "texto": "Cambia el nombre del equipo sin consultar",
               "correcta": false
             }
@@ -39623,12 +39607,12 @@
           "texto": "Que niveles de prioridad se indican en la LSA?",
           "opciones": [
             {
-              "texto": "Urgente y cancelada solamente",
-              "correcta": false
-            },
-            {
               "texto": "Alta, media y baja",
               "correcta": true
+            },
+            {
+              "texto": "Urgente y cancelada solamente",
+              "correcta": false
             },
             {
               "texto": "Dia, tarde y noche",
@@ -39652,8 +39636,7 @@
       "revisiones_anteriores_sha256": [
         "d6d0e582eb2a4adbfd56c53dd3446e1b53d2ec306ea0ca0430ccf8f614d55fda",
         "cc98e3219e82244a25f45f99f185fe05f928b21fcc66058eac3c116a67d47221"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 04",
@@ -40988,6 +40971,10 @@
           "texto": "Que se identifica antes de iniciar el vaciado para llenar porrones?",
           "opciones": [
             {
+              "texto": "El tipo de sustancia del porron quimico",
+              "correcta": true
+            },
+            {
               "texto": "El numero de piezas de una canasta",
               "correcta": false
             },
@@ -41004,10 +40991,6 @@
               "correcta": false
             },
             {
-              "texto": "El tipo de sustancia del porron quimico",
-              "correcta": true
-            },
-            {
               "texto": "Solo el color de la tapa",
               "correcta": false
             }
@@ -41017,16 +41000,16 @@
           "texto": "Que bomba se utiliza para llenar un porron con una sustancia?",
           "opciones": [
             {
+              "texto": "La bomba propia de esa sustancia",
+              "correcta": true
+            },
+            {
               "texto": "La primera bomba libre sin revisar",
               "correcta": false
             },
             {
               "texto": "La bomba utilizada para otra sustancia",
               "correcta": false
-            },
-            {
-              "texto": "La bomba propia de esa sustancia",
-              "correcta": true
             },
             {
               "texto": "Una bomba sin identificar",
@@ -41046,6 +41029,10 @@
           "texto": "Que se hace al terminar de llenar un porron?",
           "opciones": [
             {
+              "texto": "Se identifica con su etiqueta y se coloca en el lugar asignado",
+              "correcta": true
+            },
+            {
               "texto": "Se deja sin etiqueta junto a cualquier sustancia",
               "correcta": false
             },
@@ -41062,10 +41049,6 @@
               "correcta": false
             },
             {
-              "texto": "Se identifica con su etiqueta y se coloca en el lugar asignado",
-              "correcta": true
-            },
-            {
               "texto": "Se coloca en el pasillo sin identificar",
               "correcta": false
             }
@@ -41075,12 +41058,12 @@
           "texto": "Que anomalia requiere actuar segun la leccion?",
           "opciones": [
             {
-              "texto": "Un porron identificado en su lugar asignado",
-              "correcta": false
-            },
-            {
               "texto": "Un porron sin etiqueta",
               "correcta": true
+            },
+            {
+              "texto": "Un porron identificado en su lugar asignado",
+              "correcta": false
             },
             {
               "texto": "Un porron identificado despues del llenado",
@@ -41104,6 +41087,10 @@
           "texto": "Donde se coloca un porron con anomalia, segun la leccion?",
           "opciones": [
             {
+              "texto": "En el carcamo de la PTAR",
+              "correcta": true
+            },
+            {
               "texto": "En el area de empaque",
               "correcta": false
             },
@@ -41120,10 +41107,6 @@
               "correcta": false
             },
             {
-              "texto": "En el carcamo de la PTAR",
-              "correcta": true
-            },
-            {
               "texto": "Junto al producto terminado",
               "correcta": false
             }
@@ -41132,6 +41115,10 @@
         {
           "texto": "Que pasa con el material del almacen de quimicos al encontrar un porron con una anomalia de las descritas?",
           "opciones": [
+            {
+              "texto": "Se considera de dudosa procedencia y queda en cuarentena hasta su revision y liberacion",
+              "correcta": true
+            },
             {
               "texto": "Se libera todo sin revision",
               "correcta": false
@@ -41149,10 +41136,6 @@
               "correcta": false
             },
             {
-              "texto": "Se considera de dudosa procedencia y queda en cuarentena hasta su revision y liberacion",
-              "correcta": true
-            },
-            {
               "texto": "Se mezcla el contenido para igualar el color",
               "correcta": false
             }
@@ -41161,6 +41144,10 @@
         {
           "texto": "Que indica la nota si un porron esta danado?",
           "opciones": [
+            {
+              "texto": "Reemplazarlo",
+              "correcta": true
+            },
             {
               "texto": "Mezclar su contenido con otro porron",
               "correcta": false
@@ -41180,10 +41167,6 @@
             {
               "texto": "Colocarlo en su lugar sin revisar",
               "correcta": false
-            },
-            {
-              "texto": "Reemplazarlo",
-              "correcta": true
             }
           ]
         }
@@ -41191,8 +41174,7 @@
       "revisiones_anteriores_sha256": [
         "1d20cff070a32d3120c7104cf09290f93f2990e8f55ffd2399b2f1b7bc0652e7",
         "acfa86465c3b47f11aa5c278a862b13e154836a2a0056a8936d5548de073db1b"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 73",
