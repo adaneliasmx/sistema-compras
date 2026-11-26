@@ -1171,8 +1171,8 @@ router.post('/assign-manual', rhhRequireRole('admin', 'rh'), async (req, res) =>
   const plans = db.rhh_training_plans || [];
   const plan = plans.find(p => p.id === plan_id);
   if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
-  const emp = (db.rhh_employees || []).find(e => e.id === employee_id);
-  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const emp = (db.rhh_employees || []).find(e => e.id === employee_id && e.status === 'active');
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado o no esta activo' });
   const quizzes = db.rhh_training_quizzes || [];
   const allDocs = [...(plan.docs_generales || DOCS_GENERALES), ...plan.documentos];
   const documentos = allDocs.map(d => {
@@ -1210,22 +1210,25 @@ router.post('/assign-manual', rhhRequireRole('admin', 'rh'), async (req, res) =>
   res.json({ ok: true, position_name: plan.puesto_sgc });
 });
 
-// GET /assignments — listar asignaciones (resumen)
+// GET /assignments — listar asignaciones (resumen, solo empleados activos)
 router.get('/assignments', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res) => {
   const db = await read();
-  const assignments = (db.rhh_training_assignments || []).map(a => ({
-    id: a.id,
-    employee_id: a.employee_id,
-    employee_name: a.employee_name,
-    employee_number: a.employee_number,
-    position_name: a.position_name,
-    eval_group: a.eval_group,
-    status: a.status,
-    progreso_pct: a.progreso_pct,
-    total_docs: (a.documentos || []).length,
-    docs_aprobados: (a.documentos || []).filter(d => d.status === 'aprobado' || d.status === 'exento').length,
-    created_at: a.created_at
-  }));
+  const activeIds = new Set((db.rhh_employees || []).filter(e => e.status === 'active').map(e => e.id));
+  const assignments = (db.rhh_training_assignments || [])
+    .filter(a => activeIds.has(a.employee_id))
+    .map(a => ({
+      id: a.id,
+      employee_id: a.employee_id,
+      employee_name: a.employee_name,
+      employee_number: a.employee_number,
+      position_name: a.position_name,
+      eval_group: a.eval_group,
+      status: a.status,
+      progreso_pct: a.progreso_pct,
+      total_docs: (a.documentos || []).length,
+      docs_aprobados: (a.documentos || []).filter(d => d.status === 'aprobado' || d.status === 'exento').length,
+      created_at: a.created_at
+    }));
   res.json(assignments);
 });
 
@@ -1476,9 +1479,13 @@ router.get('/results/:empId', rhhRequireRole('admin', 'rh', 'muestra'), async (r
 
 router.get('/dashboard', rhhRequireRole('admin', 'rh', 'muestra'), async (req, res) => {
   const db = await read();
-  const assignments = db.rhh_training_assignments || [];
+  const allAssignments = db.rhh_training_assignments || [];
   const quizzes = db.rhh_training_quizzes || [];
   const plans = db.rhh_training_plans || [];
+
+  // Solo contar asignaciones de empleados activos
+  const activeIds = new Set((db.rhh_employees || []).filter(e => e.status === 'active').map(e => e.id));
+  const assignments = allAssignments.filter(a => activeIds.has(a.employee_id));
 
   const totalEmps = assignments.length;
   const completados = assignments.filter(a => a.status === 'completado').length;
