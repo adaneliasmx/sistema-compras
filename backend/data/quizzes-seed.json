@@ -5516,35 +5516,6 @@
           ]
         },
         {
-          "texto": "Que hace el personal de Biblioteca al recibir el material?",
-          "opciones": [
-            {
-              "texto": "Dejarlo en el pasillo hasta el siguiente turno",
-              "correcta": false
-            },
-            {
-              "texto": "Darlo por rechazado sin revisar ninguna anomalia",
-              "correcta": false
-            },
-            {
-              "texto": "Recibirlo y acomodarlo para su registro y validacion",
-              "correcta": true
-            },
-            {
-              "texto": "Retirar su identificacion antes de acomodarlo",
-              "correcta": false
-            },
-            {
-              "texto": "Mezclarlo con materia prima de otra referencia",
-              "correcta": false
-            },
-            {
-              "texto": "Enviarlo de inmediato al cliente sin registrarlo",
-              "correcta": false
-            }
-          ]
-        },
-        {
           "texto": "Biblioteca encuentra una anomalia en el material entregado. A donde lo traslada?",
           "opciones": [
             {
@@ -5688,38 +5659,8 @@
               "correcta": false
             }
           ]
-        },
-        {
-          "texto": "Con que frecuencia entrega Biblioteca al coordinador los numeros que deben surtirse de Kanban como producto terminado?",
-          "opciones": [
-            {
-              "texto": "Solo al cerrar el ano",
-              "correcta": false
-            },
-            {
-              "texto": "Dos veces por turno",
-              "correcta": true
-            },
-            {
-              "texto": "Unicamente despues de cada mantenimiento",
-              "correcta": false
-            },
-            {
-              "texto": "Solo cuando no hay material en Biblioteca",
-              "correcta": false
-            },
-            {
-              "texto": "Una vez al mes",
-              "correcta": false
-            },
-            {
-              "texto": "Cada vez que se limpia una canasta",
-              "correcta": false
-            }
-          ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-DG-01 Rev. 4",
@@ -9879,8 +9820,7 @@
             }
           ]
         }
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-CA-07 Rev. 3",
@@ -14900,8 +14840,7 @@
       "revisiones_anteriores_sha256": [
         "2b3236450a017815fd9591a3743b08118497d0103072abfa6de1be4d6600a3c9",
         "e44ad9caf9a5a998b7c20d018f63c238a624cdcb970f9dde136ce4668f088596"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "1-CA-01 Rev. 3",
@@ -24504,35 +24443,6 @@
           ]
         },
         {
-          "texto": "Donde registra el operador los componentes procesados?",
-          "opciones": [
-            {
-              "texto": "En la solicitud de atencion medica 4-SE-20",
-              "correcta": false
-            },
-            {
-              "texto": "En el reporte diario de produccion 4-PR-05",
-              "correcta": true
-            },
-            {
-              "texto": "Solo en la tarjeta de rechazo 4-CA-55",
-              "correcta": false
-            },
-            {
-              "texto": "En el vale de adicion 4-PR-15 como unico registro",
-              "correcta": false
-            },
-            {
-              "texto": "Solo en el registro de visitantes",
-              "correcta": false
-            },
-            {
-              "texto": "En la solicitud de mantenimiento 4-MA-42",
-              "correcta": false
-            }
-          ]
-        },
-        {
           "texto": "Que inspeccion realiza el operador antes de descargar el material?",
           "opciones": [
             {
@@ -24681,8 +24591,7 @@
       "revisiones_anteriores_sha256": [
         "892a8511e79252c73e27ed8bcf857d5b5ba1ff2752adab91b67f9d825c5ae51a",
         "b8edc0c1d9dc26f34b9ee071c6c2fc34799f82e0670e6f961d61f77e8de5797f"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-PR-06 Rev. 2",
@@ -25701,8 +25610,7 @@
       "revisiones_anteriores_sha256": [
         "d630af5385062053b4eea717946a2626b38d7126ad4c1eba3463b5cba15a8d59",
         "d6a162d3c1576876d41bda5f148d61bb18c5ec2f9c2f01e153eb15d0a04fac5f"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "2-RH-02 Rev. 3",
@@ -29810,8 +29718,7 @@
       "revisiones_anteriores_sha256": [
         "9f1a44a2d1b68a4ab43249ddbd846c6028e8f306ba6d25c137d887a8236e3c7a",
         "991e7eda0c1a938ab00d558d70a7ec46b89d897c18d92232502682a9ec07b7b4"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "3-PR-04 Rev. 2",
@@ -30083,8 +29990,7 @@
       "revisiones_anteriores_sha256": [
         "19731046c525e587b3aa9aac2e71d551c158d7514ca6e1abfcada3d206740b2e",
         "d4c4976436d993626bf87edd91e6b2d600a5cea538bdd554168c30c522ab6ad5"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "3-PR-44 Rev. 0",
@@ -33618,8 +33524,7 @@
       "revisiones_anteriores_sha256": [
         "4e724f99b21c22aab7571d91aaab697e16d1ee31c716ed4f95f25beacf1c2c69",
         "2dd8e888857684d762d83d39fcab8ea4b9d62b2c3821d99e64eaecaf0c202097"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "3-CA-09 Rev. 0",
@@ -37442,8 +37347,7 @@
       "revisiones_anteriores_sha256": [
         "1f0d6b6684942078c2a5507b979ede8499b7eff5f2bc14e630dd0f09343fcb22",
         "0c35830490e7b95b704fdc82a6630991b83ee7003b90d0e4c29e752d072afc06"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 22",
@@ -38174,8 +38078,7 @@
       "revisiones_anteriores_sha256": [
         "35ac32125994cb298de529c506c1a3b58ac55e701acf3999cdf557e0a91de439",
         "4da1d22cf1d36e21722e29e169f2245ba555fb3f7eca8d081fc6f4bcf629f7c5"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 60",
@@ -38389,8 +38292,7 @@
       "revisiones_anteriores_sha256": [
         "f4effed3ed4220aafd298a14fdcfc9430da9170575dc41516d8abdf8478c276b",
         "1d94b389cba47cb2fd3f49ffce3cd3af3ebaa561840b2f95f1c94d8dda52f197"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 75",
@@ -38633,8 +38535,7 @@
       "revisiones_anteriores_sha256": [
         "04e9220e495e761d1d19e54a309d1009011e01a24a840173938cf1a195307f8e",
         "80e21b8ce008b08d086a8eb3514c30bf89af47ea85702fdd4afcbea4235b61c5"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 65",
@@ -42731,8 +42632,7 @@
       "revisiones_anteriores_sha256": [
         "fb0d50d5609cfd33b7ffd2641dde9b1876df0631368c58e491f2e7c399781e0d",
         "c5e6f7b11fab234672b98eaa57a601c40f4f047ceb157b8c60775bd83c8bca41"
-      ],
-      "pendiente_revision": true
+      ]
     },
     {
       "doc_codigo": "LSA 67",
