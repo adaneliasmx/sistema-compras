@@ -7264,35 +7264,6 @@
           ]
         },
         {
-          "texto": "Donde registra el fosfatador el trabajo realizado e indica que es un nuevo modelo?",
-          "opciones": [
-            {
-              "texto": "En 4-PR-05 Reporte de Produccion",
-              "correcta": true
-            },
-            {
-              "texto": "Solo en la etiqueta de otro lote",
-              "correcta": false
-            },
-            {
-              "texto": "En la solicitud de atencion medica",
-              "correcta": false
-            },
-            {
-              "texto": "En el registro de visitas a planta",
-              "correcta": false
-            },
-            {
-              "texto": "En el vale de mantenimiento de la grua",
-              "correcta": false
-            },
-            {
-              "texto": "Solo en la remision de una entrega anterior",
-              "correcta": false
-            }
-          ]
-        },
-        {
           "texto": "El empacador tiene dudas sobre el tipo de empaque de un nuevo modelo. A quien debe consultar?",
           "opciones": [
             {
@@ -39055,64 +39026,6 @@
             },
             {
               "texto": "Adhesivo para piezas",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Cuanta sosa en escamas indica la leccion para la linea Baker?",
-          "opciones": [
-            {
-              "texto": "Tres costales, 75 kg",
-              "correcta": false
-            },
-            {
-              "texto": "Medio costal, 12.5 kg",
-              "correcta": false
-            },
-            {
-              "texto": "Cuatro costales, 100 kg",
-              "correcta": false
-            },
-            {
-              "texto": "Cinco costales, 125 kg",
-              "correcta": false
-            },
-            {
-              "texto": "Dos costales, 50 kg",
-              "correcta": true
-            },
-            {
-              "texto": "Un costal, 25 kg",
-              "correcta": false
-            }
-          ]
-        },
-        {
-          "texto": "Al final de la recuperacion, a que temperatura se fija el control del desengrase?",
-          "opciones": [
-            {
-              "texto": "A 30 grados C",
-              "correcta": false
-            },
-            {
-              "texto": "A 80 grados C",
-              "correcta": true
-            },
-            {
-              "texto": "A 60 grados C",
-              "correcta": false
-            },
-            {
-              "texto": "A 20 grados C",
-              "correcta": false
-            },
-            {
-              "texto": "A 50 grados C",
-              "correcta": false
-            },
-            {
-              "texto": "A 40 grados C",
               "correcta": false
             }
           ]
