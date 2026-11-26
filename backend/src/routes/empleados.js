@@ -18,8 +18,11 @@ function _loadPendingCodes() {
       quizzes.filter(q => q.pendiente_revision)
         .map(q => q.doc_codigo.replace(/\s*Rev\.\s*\d+/i, '').trim())
     );
-  } catch (e) { /* seed not found, leave empty */ }
+    console.log('[empleados] pendingQuizCodes loaded:', _pendingQuizCodes.size, 'codes');
+  } catch (e) { console.error('[empleados] ERROR loading pending codes:', e.message); }
 }
+// Exportar para que rhh-training pueda recargar ambos sets después de seed
+function reloadPendingCodes() { _loadPendingCodes(); }
 _loadPendingCodes();
 function _isPendingQuiz(docCodigo) {
   const base = (docCodigo || '').replace(/\s*Rev\.\s*\d+/i, '').trim();
@@ -1310,3 +1313,4 @@ router.post('/capacitacion/firma', empAuthRequired, demoGuard, (req, res) => {
 
 module.exports = router;
 module.exports.ensureDemoEmployee = ensureDemoEmployee;
+module.exports.reloadPendingCodes = reloadPendingCodes;

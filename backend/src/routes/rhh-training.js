@@ -17,7 +17,8 @@ function _reloadPendingCodes() {
       quizzes.filter(q => q.pendiente_revision)
         .map(q => q.doc_codigo.replace(/\s*Rev\.\s*\d+/i, '').trim())
     );
-  } catch (e) { /* seed not found */ }
+    console.log('[training] pendingQuizCodes loaded:', _pendingQuizCodes.size, 'codes');
+  } catch (e) { console.error('[training] ERROR loading pending codes:', e.message); }
 }
 _reloadPendingCodes();
 function _isPendingQuiz(docCodigo) {
@@ -958,6 +959,9 @@ router.post('/quizzes/seed', rhhRequireRole('admin', 'rh'), async (req, res) => 
     added++;
   }
   if (added > 0 || updated > 0) await write(db);
+  // Recargar pending codes en ambos módulos después de importar
+  _reloadPendingCodes();
+  try { require('./empleados').reloadPendingCodes(); } catch (_) {}
   res.json({ ok: true, added, updated, total: db.rhh_training_quizzes.length });
 });
 
@@ -1154,6 +1158,56 @@ router.post('/assign', rhhRequireRole('admin', 'rh'), async (req, res) => {
   }
   if (assigned > 0) await write(db);
   res.json({ ok: true, assigned, total: db.rhh_training_assignments.length });
+});
+
+// POST /assign-manual — asignar plan especifico a un empleado
+router.post('/assign-manual', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const { employee_id, plan_id } = req.body;
+  if (!employee_id || !plan_id) return res.status(400).json({ error: 'employee_id y plan_id requeridos' });
+  const db = await read();
+  if (!db.rhh_training_assignments) db.rhh_training_assignments = [];
+  const existing = db.rhh_training_assignments.find(a => a.employee_id === employee_id);
+  if (existing) return res.status(400).json({ error: 'Este empleado ya tiene asignacion. Usa cambiar puesto.' });
+  const plans = db.rhh_training_plans || [];
+  const plan = plans.find(p => p.id === plan_id);
+  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+  const emp = (db.rhh_employees || []).find(e => e.id === employee_id);
+  if (!emp) return res.status(404).json({ error: 'Empleado no encontrado' });
+  const quizzes = db.rhh_training_quizzes || [];
+  const allDocs = [...(plan.docs_generales || DOCS_GENERALES), ...plan.documentos];
+  const documentos = allDocs.map(d => {
+    const quiz = findQuizByCode(quizzes, d.codigo);
+    return {
+      doc_codigo: d.codigo,
+      doc_nombre: d.nombre,
+      doc_tipo: d.tipo,
+      quiz_id: quiz ? quiz.id : null,
+      pendiente_revision: quiz ? !!quiz.pendiente_revision : false,
+      responsables: [],
+      status: 'pendiente',
+      mejor_calificacion: null,
+      intentos: 0,
+      ultimo_intento: null,
+      firma_empleado: { fecha: null, hora: null, firmado: false },
+      firma_instructor: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false },
+      firma_rh: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false }
+    };
+  });
+  db.rhh_training_assignments.push({
+    id: nextId(db.rhh_training_assignments),
+    employee_id: emp.id,
+    employee_name: emp.full_name,
+    employee_number: emp.employee_number,
+    plan_id: plan.id,
+    position_name: plan.puesto_sgc,
+    eval_group: plan.eval_group,
+    status: 'pendiente',
+    documentos,
+    progreso_pct: 0,
+    created_at: nowMxDate()
+  });
+  await write(db);
+  res.json({ ok: true, position_name: plan.puesto_sgc });
 });
 
 // GET /assignments — listar asignaciones (resumen)

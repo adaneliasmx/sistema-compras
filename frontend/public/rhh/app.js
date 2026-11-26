@@ -11920,12 +11920,13 @@ async function capSeguimiento(wrap) {
     const statusLabel = isUnassigned ? 'Sin asignar' : a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
     const editBtn = !isMuestra && a.assigned ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capChangePosition(${a.assignment_id},'${(a.plan_position||'').replace(/'/g,'')}')" title="Cambiar puesto">&#9998;</span>` : '';
     const puestoCol = a.assigned ? `${a.plan_position}${editBtn}` : `<span style="color:#94a3b8;">${a.position_name || 'N/A'}</span>`;
-    const clickAttr = a.assigned ? `style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})"` : `style="opacity:0.7;"`;
+    const clickAttr = a.assigned ? `style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})"` : '';
+    const assignBtn = !isMuestra && isUnassigned ? `<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 10px;" onclick="event.stopPropagation();capAssignEmployee(${a.employee_id},'${(a.employee_name||'').replace(/'/g,'')}')">Asignar</button>` : '';
     return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" data-unassigned="${isUnassigned ? '1' : '0'}" ${clickAttr}>
       <td>${a.employee_number || ''}</td>
       <td>${a.assigned ? '<span class="cap-arrow">&#9654;</span> ' : ''}<strong>${a.employee_name}</strong></td>
       <td>${puestoCol}</td>
-      <td><span style="color:${color};font-weight:600;">${statusLabel}</span></td>
+      <td><span style="color:${color};font-weight:600;">${statusLabel}</span>${isUnassigned ? ' ' + assignBtn : ''}</td>
       <td>${a.assigned ? a.docs_aprobados + '/' + a.total_docs : '--'}</td>
       <td>
         ${a.assigned ? `<div style="background:#e5e7eb;border-radius:4px;height:18px;position:relative;min-width:120px;">
@@ -11942,7 +11943,10 @@ async function capSeguimiento(wrap) {
   const totalAsig = seguimiento.filter(s => s.assigned).length;
   const totalSin = totalAct - totalAsig;
   wrap.innerHTML = `
-    <div style="margin-bottom:8px;font-size:13px;color:#6b7280;">Empleados activos: <strong>${totalAct}</strong> | Asignados: <strong>${totalAsig}</strong> | Sin asignar: <strong style="color:#dc2626;">${totalSin}</strong></div>
+    <div style="margin-bottom:8px;font-size:13px;color:#6b7280;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <span>Empleados activos: <strong>${totalAct}</strong> | Asignados: <strong>${totalAsig}</strong> | Sin asignar: <strong style="color:#dc2626;">${totalSin}</strong></span>
+      ${!isMuestra && totalSin > 0 ? `<button class="btn btn-sm btn-primary" style="font-size:11px;padding:3px 10px;" onclick="capAssignAllUnassigned()">Asignar todos (auto)</button>` : ''}
+    </div>
     ${filterHtml}
     <div style="overflow-x:auto;">
       <table class="table"><thead><tr><th>#</th><th>Empleado</th><th>Puesto</th><th>Status</th><th>Aprobados</th><th style="min-width:140px;">Progreso</th></tr></thead>
@@ -11978,6 +11982,73 @@ window.capChangePosition = function(assignId, currentPos) {
       });
       if (r && r.ok) {
         toast('Puesto cambiado a: ' + r.position_name, 'success');
+        overlay.remove();
+        capacitacionView();
+      } else {
+        toast((r && r.error) || 'Error', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+};
+
+window.capAssignAllUnassigned = async function() {
+  if (!confirm('Se asignara plan automaticamente (segun puesto) a todos los empleados sin asignar. Continuar?')) return;
+  try {
+    const r = await api('/api/rhh/training/assign', { method: 'POST', body: JSON.stringify({}) });
+    if (r && r.ok) {
+      toast(`${r.assigned} empleados asignados`, 'success');
+      capacitacionView();
+    } else {
+      toast((r && r.error) || 'Error', 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.capAssignEmployee = async function(empId, empName) {
+  const plans = _capPlans || [];
+  if (!plans.length) { toast('Primero carga los planes semilla desde el Dashboard', 'error'); return; }
+  const opts = plans.map(p => `<option value="${p.id}">${p.puesto_sgc}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;padding:24px;border-radius:8px;max-width:420px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 12px;">Asignar plan de capacitacion</h3>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px;">Empleado: <strong>${empName}</strong></p>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:13px;font-weight:600;">Asignar automaticamente (segun puesto):</label>
+        <button class="btn btn-primary" id="cap-assign-auto" style="margin-top:6px;width:100%;">Asignar auto</button>
+      </div>
+      <div style="border-top:1px solid #e5e7eb;padding-top:12px;">
+        <label style="font-size:13px;font-weight:600;">O elegir puesto manualmente:</label>
+        <select id="cap-assign-plan" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-top:4px;">${opts}</select>
+        <button class="btn btn-secondary" id="cap-assign-manual" style="margin-top:8px;width:100%;">Asignar con este puesto</button>
+      </div>
+      <div style="text-align:right;margin-top:12px;">
+        <button class="btn btn-secondary" id="cap-assign-cancel">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cap-assign-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#cap-assign-auto').onclick = async () => {
+    try {
+      const r = await api('/api/rhh/training/assign', { method: 'POST', body: JSON.stringify({ employee_ids: [empId] }) });
+      if (r && r.ok && r.assigned > 0) {
+        toast('Plan asignado automaticamente', 'success');
+        overlay.remove();
+        capacitacionView();
+      } else if (r && r.assigned === 0) {
+        toast('No se encontro plan para el puesto de este empleado. Usa la opcion manual.', 'warning');
+      } else {
+        toast((r && r.error) || 'Error', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+  overlay.querySelector('#cap-assign-manual').onclick = async () => {
+    const planId = Number(document.getElementById('cap-assign-plan').value);
+    try {
+      const r = await api('/api/rhh/training/assign-manual', { method: 'POST', body: JSON.stringify({ employee_id: empId, plan_id: planId }) });
+      if (r && r.ok) {
+        toast('Plan asignado: ' + (r.position_name || ''), 'success');
         overlay.remove();
         capacitacionView();
       } else {
