@@ -1361,6 +1361,52 @@ router.patch('/assignments/:id/change-position', rhhRequireRole('admin', 'rh'), 
   res.json({ ok: true, position_name: a.position_name, total_docs: newDocs.length });
 });
 
+// PATCH /assignments/:id/add-plan — agregar documentos de un plan adicional (multi-puesto)
+router.patch('/assignments/:id/add-plan', rhhRequireRole('admin', 'rh'), async (req, res) => {
+  const { plan_id } = req.body;
+  if (!plan_id) return res.status(400).json({ error: 'plan_id es requerido' });
+  const db = await read();
+  const a = (db.rhh_training_assignments || []).find(x => x.id === Number(req.params.id));
+  if (!a) return res.status(404).json({ error: 'Asignacion no encontrada' });
+  const plan = (db.rhh_training_plans || []).find(p => p.id === Number(plan_id));
+  if (!plan) return res.status(404).json({ error: 'Plan no encontrado' });
+  const quizzes = db.rhh_training_quizzes || [];
+
+  // Docs existentes por codigo base para evitar duplicados
+  const existingCodes = new Set((a.documentos || []).map(d => baseCode(d.doc_codigo)));
+  const allDocs = [...(plan.docs_generales || DOCS_GENERALES), ...plan.documentos];
+  let added = 0;
+  for (const d of allDocs) {
+    if (existingCodes.has(baseCode(d.codigo))) continue;
+    const quiz = findQuizByCode(quizzes, d.codigo);
+    a.documentos.push({
+      doc_codigo: d.codigo, doc_nombre: d.nombre, doc_tipo: d.tipo,
+      quiz_id: quiz ? quiz.id : null,
+      pendiente_revision: quiz ? !!quiz.pendiente_revision : false,
+      responsables: [], status: 'pendiente',
+      mejor_calificacion: null, intentos: 0, ultimo_intento: null,
+      firma_empleado: { fecha: null, hora: null, firmado: false },
+      firma_instructor: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false },
+      firma_rh: { nombre: null, fecha: null, hora: null, comentarios: null, firmado: false }
+    });
+    existingCodes.add(baseCode(d.codigo));
+    added++;
+  }
+
+  // Registrar plan adicional
+  if (!a.planes_adicionales) a.planes_adicionales = [];
+  a.planes_adicionales.push({ plan_id: plan.id, puesto_sgc: plan.puesto_sgc, added_at: nowMxDate() });
+  a.position_name = a.position_name + ' + ' + plan.puesto_sgc;
+
+  // Recalcular progreso
+  const done = a.documentos.filter(d => d.status === 'aprobado' || d.status === 'exento').length;
+  a.progreso_pct = a.documentos.length > 0 ? Math.round(done / a.documentos.length * 100) : 0;
+  a.status = a.progreso_pct >= 100 ? 'completado' : a.documentos.some(d => d.status !== 'pendiente' && d.status !== 'exento') ? 'en_progreso' : 'pendiente';
+
+  await write(db);
+  res.json({ ok: true, added, total_docs: a.documentos.length, position_name: a.position_name });
+});
+
 // POST /assignments/bulk-responsables — asignar responsables masivo por doc_codigo
 router.post('/assignments/bulk-responsables', rhhRequireRole('admin', 'rh'), async (req, res) => {
   const db = await read();

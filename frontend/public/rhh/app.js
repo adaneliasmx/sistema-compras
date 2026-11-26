@@ -11919,7 +11919,8 @@ async function capSeguimiento(wrap) {
     const color = isUnassigned ? '#dc2626' : a.status === 'completado' ? '#22c55e' : a.status === 'en_progreso' ? '#f59e0b' : '#94a3b8';
     const statusLabel = isUnassigned ? 'Sin asignar' : a.status === 'completado' ? 'Completado' : a.status === 'en_progreso' ? 'En progreso' : 'Pendiente';
     const editBtn = !isMuestra && a.assigned ? `<span style="cursor:pointer;color:#3b82f6;font-size:11px;margin-left:4px;" onclick="event.stopPropagation();capChangePosition(${a.assignment_id},'${(a.plan_position||'').replace(/'/g,'')}')" title="Cambiar puesto">&#9998;</span>` : '';
-    const puestoCol = a.assigned ? `${a.plan_position}${editBtn}` : `<span style="color:#94a3b8;">${a.position_name || 'N/A'}</span>`;
+    const addPlanBtn = !isMuestra && a.assigned ? `<span style="cursor:pointer;color:#22c55e;font-size:13px;margin-left:4px;font-weight:700;" onclick="event.stopPropagation();capAddPlan(${a.assignment_id},'${(a.employee_name||'').replace(/'/g,'')}')" title="Agregar plan adicional">+</span>` : '';
+    const puestoCol = a.assigned ? `${a.plan_position}${editBtn}${addPlanBtn}` : `<span style="color:#94a3b8;">${a.position_name || 'N/A'}</span>`;
     const clickAttr = a.assigned ? `style="cursor:pointer;" onclick="capToggleHoja(this,${a.employee_id})"` : '';
     const assignBtn = !isMuestra && isUnassigned ? `<button class="btn btn-sm btn-primary" style="font-size:11px;padding:2px 10px;" onclick="event.stopPropagation();capAssignEmployee(${a.employee_id},'${(a.employee_name||'').replace(/'/g,'')}')">Asignar</button>` : '';
     return `<tr class="cap-seg-row" data-name="${(a.employee_name || '').toLowerCase()}" data-unassigned="${isUnassigned ? '1' : '0'}" ${clickAttr}>
@@ -11954,6 +11955,43 @@ async function capSeguimiento(wrap) {
     </div>
   `;
 }
+
+window.capAddPlan = function(assignId, empName) {
+  const plans = _capPlans || [];
+  if (!plans.length) { toast('Primero carga los planes semilla desde el Dashboard', 'error'); return; }
+  const opts = plans.map(p => `<option value="${p.id}">${p.puesto_sgc}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.4);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  overlay.innerHTML = `
+    <div style="background:#fff;padding:24px;border-radius:8px;max-width:420px;width:90%;box-shadow:0 4px 20px rgba(0,0,0,0.2);">
+      <h3 style="margin:0 0 12px;">Agregar plan adicional</h3>
+      <p style="font-size:13px;color:#6b7280;margin-bottom:12px;">Empleado: <strong>${empName}</strong></p>
+      <p style="font-size:12px;color:#f59e0b;margin-bottom:12px;">Se agregaran los documentos del nuevo plan sin duplicar los que ya tiene. Las calificaciones existentes se conservan.</p>
+      <label style="font-size:13px;font-weight:600;">Plan adicional:</label>
+      <select id="cap-add-plan-sel" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;margin-top:4px;">${opts}</select>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+        <button class="btn btn-secondary" id="cap-add-cancel">Cancelar</button>
+        <button class="btn btn-primary" id="cap-add-ok">Agregar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  overlay.querySelector('#cap-add-cancel').onclick = () => overlay.remove();
+  overlay.querySelector('#cap-add-ok').onclick = async () => {
+    const planId = Number(document.getElementById('cap-add-plan-sel').value);
+    try {
+      const r = await api('/api/rhh/training/assignments/' + assignId + '/add-plan', {
+        method: 'PATCH', body: JSON.stringify({ plan_id: planId }),
+      });
+      if (r && r.ok) {
+        toast(r.added + ' documentos agregados. Total: ' + r.total_docs, 'success');
+        overlay.remove();
+        capacitacionView();
+      } else {
+        toast((r && r.error) || 'Error', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  };
+};
 
 window.capChangePosition = function(assignId, currentPos) {
   const plans = _capPlans || [];
