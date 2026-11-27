@@ -12275,7 +12275,7 @@
           "texto": "Con que frecuencia indica el procedimiento realizar el retrolavado de filtros?",
           "opciones": [
             {
-              "texto": "Una vez al dia",
+              "texto": "DOS VECES POR SEMANA",
               "correcta": true
             },
             {
@@ -15012,7 +15012,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img001.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15041,7 +15042,8 @@
               "texto": "Material danado en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img002.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15070,7 +15072,8 @@
               "texto": "Contaminacion en desengrase",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img003.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15099,7 +15102,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p05_img004.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15128,7 +15132,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p05_img005.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15157,7 +15162,8 @@
               "texto": "Mal desengrase",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p06_img006.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15186,7 +15192,8 @@
               "texto": "Estampa con marcas de roce (tallada)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p06_img007.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15215,7 +15222,8 @@
               "texto": "Estampa con marcas de roce (tallada)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img008.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15244,7 +15252,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img009.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15273,7 +15282,8 @@
               "texto": "Estampa humeda",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img010.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15302,7 +15312,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p07_img011.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15331,7 +15342,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p08_img012.png"
         },
         {
           "texto": "Segun el manual, que ejemplo de fosfato muestra la foto?",
@@ -15360,7 +15372,8 @@
               "texto": "Pieza con humedad visible",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p08_img013.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15389,7 +15402,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img014.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15418,7 +15432,8 @@
               "texto": "Capa escasa de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img015.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15447,7 +15462,8 @@
               "texto": "Adhesivo disparejo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p10_img016.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15476,7 +15492,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p11_img017.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15505,7 +15522,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p11_img018.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15534,7 +15552,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p12_img019.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15563,7 +15582,8 @@
               "texto": "Capa escasa de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p12_img020.png"
         },
         {
           "texto": "La sustancia se seco y quedo dispareja sobre esta pieza. Que condicion presenta?",
@@ -15592,7 +15612,8 @@
               "texto": "Estampa humeda",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img021.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15621,7 +15642,8 @@
               "texto": "Capa excesiva de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img022.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15650,7 +15672,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p13_img023.png"
         },
         {
           "texto": "Al bajar la canasta se observa liquido en esta pieza. Que condicion presenta?",
@@ -15679,7 +15702,8 @@
               "texto": "Escasez de sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img024.png"
         },
         {
           "texto": "Al bajar la canasta se observa liquido en esta pieza. Que condicion presenta?",
@@ -15708,7 +15732,8 @@
               "texto": "Material danado en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img025.png"
         },
         {
           "texto": "Al bajar la canasta se observa liquido en esta pieza. Que condicion presenta?",
@@ -15737,7 +15762,8 @@
               "texto": "Estampas de distintas referencias mezcladas",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p14_img026.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15766,7 +15792,8 @@
               "texto": "Estampa polvosa",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img027.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15795,7 +15822,8 @@
               "texto": "Contaminacion en sandblasteo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img028.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15824,7 +15852,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img029.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15853,7 +15882,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p15_img030.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15882,7 +15912,8 @@
               "texto": "Capa excesiva de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p16_img031.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -15911,7 +15942,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p16_img032.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -15940,7 +15972,8 @@
               "texto": "Estampa deforme",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img033.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -15969,7 +16002,8 @@
               "texto": "Estampa humeda",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img034.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -15998,7 +16032,8 @@
               "texto": "Puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p17_img035.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -16027,7 +16062,8 @@
               "texto": "Adhesivo disparejo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p18_img036.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -16056,7 +16092,8 @@
               "texto": "Adhesivo disparejo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img037.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -16085,7 +16122,8 @@
               "texto": "Puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img038.png"
         },
         {
           "texto": "Despues del sandblasteo, que falla se observa?",
@@ -16114,7 +16152,8 @@
               "texto": "Puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p19_img039.png"
         },
         {
           "texto": "Despues del desengrase, que falla se observa?",
@@ -16143,7 +16182,8 @@
               "texto": "Adhesivo disparejo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p20_img040.png"
         },
         {
           "texto": "Despues del desengrase, que falla se observa?",
@@ -16172,7 +16212,8 @@
               "texto": "Capa excesiva de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img041.png"
         },
         {
           "texto": "Despues del desengrase, que falla se observa?",
@@ -16201,7 +16242,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img042.png"
         },
         {
           "texto": "Despues del desengrase, que falla se observa?",
@@ -16230,7 +16272,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p21_img043.png"
         },
         {
           "texto": "Que disposicion indica el manual para este lote de estampas con oxido?",
@@ -16259,7 +16302,8 @@
               "texto": "Retirar solo la muestra y liberar el resto",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_p04_img001.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: oxido?",
@@ -16288,7 +16332,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_01.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa polvosa?",
@@ -16317,7 +16362,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_02.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa deforme?",
@@ -16346,7 +16392,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_03.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampas de distintas referencias mezcladas?",
@@ -16375,7 +16422,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_04.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: puntos sin fosfato?",
@@ -16404,7 +16452,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_05.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa con marcas de roce (tallada)?",
@@ -16433,7 +16482,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_06.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa humeda?",
@@ -16462,7 +16512,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-01_panel_07.png"
         }
       ],
       "revisiones_anteriores_sha256": [
@@ -16502,7 +16553,8 @@
               "texto": "Piezas con el borde biselado (chaflan) en sentidos distintos",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img001.png"
         },
         {
           "texto": "Al recibir esta pieza sin procesar, que observas en la foto?",
@@ -16531,7 +16583,8 @@
               "texto": "Desprendimiento de recubrimiento",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img002.png"
         },
         {
           "texto": "Al recibir esta pieza sin procesar, que observas en la foto?",
@@ -16560,7 +16613,8 @@
               "texto": "Material polvoso",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p03_img003.png"
         },
         {
           "texto": "Al recibir esta pieza sin procesar, que observas en la foto?",
@@ -16589,7 +16643,8 @@
               "texto": "Material polvoso",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p03_img004.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16618,7 +16673,8 @@
               "texto": "Materiales mezclados",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p04_img005.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16647,7 +16703,8 @@
               "texto": "Piezas con el borde biselado (chaflan) en sentidos distintos",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p04_img006.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16676,7 +16733,8 @@
               "texto": "Grasa o residuos no usuales",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p05_img007.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16705,7 +16763,8 @@
               "texto": "Material deforme o roto",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p05_img008.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16734,7 +16793,8 @@
               "texto": "Materiales mezclados",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p06_img009.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16763,7 +16823,8 @@
               "texto": "Capa escasa de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p06_img010.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16792,7 +16853,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img011.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16821,7 +16883,8 @@
               "texto": "Manchas en fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img012.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16850,7 +16913,8 @@
               "texto": "Material deforme o roto",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p07_img013.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16879,7 +16943,8 @@
               "texto": "Capa escasa de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p09_img015.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16908,7 +16973,8 @@
               "texto": "Grasa o residuos no usuales",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img016.png"
         },
         {
           "texto": "Que situacion muestra la foto en la orilla de la canasta?",
@@ -16937,7 +17003,8 @@
               "texto": "Una pieza colocada en una caja de empaque",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img017.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -16966,7 +17033,8 @@
               "texto": "Manchas en fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img018.png"
         },
         {
           "texto": "Que condicion se observa entre las piezas al empacarlas?",
@@ -16995,7 +17063,8 @@
               "texto": "Piezas empacadas en bolsas individuales",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p10_img019.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17024,7 +17093,8 @@
               "texto": "Grasa o residuos no usuales",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p11_img020.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17053,7 +17123,8 @@
               "texto": "Material deforme o roto",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p12_img021.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17082,7 +17153,8 @@
               "texto": "Material deforme o roto",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p13_img022.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17111,7 +17183,8 @@
               "texto": "Grasa o residuos no usuales",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p13_img023.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17140,7 +17213,8 @@
               "texto": "Piezas con el borde biselado (chaflan) en sentidos distintos",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p14_img024.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17169,7 +17243,8 @@
               "texto": "Material humedo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p15_img025.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17198,7 +17273,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p15_img026.png"
         },
         {
           "texto": "Al recibir material virgen con oxido, que indica el manual?",
@@ -17227,7 +17303,8 @@
               "texto": "Mezclarlo con material sin oxido para procesarlo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_p02_img001.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: oxido?",
@@ -17256,7 +17333,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_01.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: material polvoso?",
@@ -17285,7 +17363,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_02.png"
         },
         {
           "texto": "Se atora una pieza en la orilla de un herramental: que le pasaria a la pieza?",
@@ -17314,7 +17393,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_03.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: materiales mezclados?",
@@ -17343,7 +17423,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_04.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: puntos sin fosfato?",
@@ -17372,7 +17453,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_05.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: material humedo?",
@@ -17401,7 +17483,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-03_panel_06.png"
         }
       ],
       "revisiones_anteriores_sha256": [
@@ -17442,7 +17525,8 @@
               "texto": "Etiqueta rota",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img001.png"
         },
         {
           "texto": "Observa la identificacion del carro o de la pieza. Que ves en la foto?",
@@ -17471,7 +17555,8 @@
               "texto": "Grabado ilegible",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img002.png"
         },
         {
           "texto": "Observa la identificacion del carro o de la pieza. Que ves en la foto?",
@@ -17500,7 +17585,8 @@
               "texto": "Etiqueta rota",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img003.png"
         },
         {
           "texto": "Observa la identificacion del carro o de la pieza. Que ves en la foto?",
@@ -17529,7 +17615,8 @@
               "texto": "Dos etiquetas distintas en el mismo carro",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p03_img004.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17558,7 +17645,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img005.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17587,7 +17675,8 @@
               "texto": "Marca de rodillo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img006.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17616,7 +17705,8 @@
               "texto": "Marca de rodillo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img007.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17645,7 +17735,8 @@
               "texto": "Picaduras (pitting)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p04_img008.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17674,7 +17765,8 @@
               "texto": "Marca mecanica",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img009.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17703,7 +17795,8 @@
               "texto": "Puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img010.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17732,7 +17825,8 @@
               "texto": "Picaduras (pitting)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p05_img011.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17761,7 +17855,8 @@
               "texto": "Marca de rodillo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p06_img012.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17790,7 +17885,8 @@
               "texto": "Picaduras (pitting)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p06_img013.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17819,7 +17915,8 @@
               "texto": "Zona clara en pieza reprocesada",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p07_img014.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17848,7 +17945,8 @@
               "texto": "Cambio de tono",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p07_img015.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17877,7 +17975,8 @@
               "texto": "Manchas en fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img016.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17906,7 +18005,8 @@
               "texto": "Estampa deforme",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img017.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17935,7 +18035,8 @@
               "texto": "Estampa deforme",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p08_img018.png"
         },
         {
           "texto": "Segun el manual, que ejemplo de fosfato muestra la foto?",
@@ -17964,7 +18065,8 @@
               "texto": "Pieza con puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p09_img019.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -17993,7 +18095,8 @@
               "texto": "Estampa deforme",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p09_img020.png"
         },
         {
           "texto": "El plan de esta pieza Rail pide otro acabado. Que falla muestra la foto?",
@@ -18022,7 +18125,8 @@
               "texto": "Manchas en fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p10_img022.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18051,7 +18155,8 @@
               "texto": "Estampas de distintas referencias mezcladas",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img023.png"
         },
         {
           "texto": "Que condicion se observa en la superficie de la pieza?",
@@ -18080,7 +18185,8 @@
               "texto": "Una pieza con puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img024.png"
         },
         {
           "texto": "Que condicion muestra este ejemplo del manual?",
@@ -18109,7 +18215,8 @@
               "texto": "Una pieza con puntos de oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p11_img025.png"
         },
         {
           "texto": "Estas piezas estan en el mismo empaque y tienen grabados diferentes. Que condicion representa?",
@@ -18138,7 +18245,8 @@
               "texto": "Piezas del mismo grabado separadas",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img026.png"
         },
         {
           "texto": "Que grabado muestra esta pieza?",
@@ -18167,7 +18275,8 @@
               "texto": "1107ST",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img027.png"
         },
         {
           "texto": "Que grabado muestra esta pieza?",
@@ -18196,7 +18305,8 @@
               "texto": "1107B",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p12_img028.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18225,7 +18335,8 @@
               "texto": "Marca de rodillo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img029.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18254,7 +18365,8 @@
               "texto": "Marca de rodillo",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img030.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18283,7 +18395,8 @@
               "texto": "Capa excesiva de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img031.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18312,7 +18425,8 @@
               "texto": "Marca mecanica",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img032.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18341,7 +18455,8 @@
               "texto": "Contaminacion externa sobre el fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img033.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18370,7 +18485,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p13_img034.png"
         },
         {
           "texto": "Al descargar la canasta esta pieza no termino de secarse. Que condicion presenta?",
@@ -18399,7 +18515,8 @@
               "texto": "Puntos sin fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p14_img035.png"
         },
         {
           "texto": "Al descargar la canasta esta pieza no termino de secarse. Que condicion presenta?",
@@ -18428,7 +18545,8 @@
               "texto": "Estampa deforme",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p14_img036.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18457,7 +18575,8 @@
               "texto": "Cambio de tono",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p15_img037.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18486,7 +18605,8 @@
               "texto": "Estampa humeda",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p15_img038.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18515,7 +18635,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img039.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18544,7 +18665,8 @@
               "texto": "Oxido",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img040.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18573,7 +18695,8 @@
               "texto": "Cambio de tono",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p16_img041.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18602,7 +18725,8 @@
               "texto": "Manchas negras con escasez de fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img042.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18631,7 +18755,8 @@
               "texto": "Manchas en fosfato",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img043.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18660,7 +18785,8 @@
               "texto": "Picaduras (pitting)",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img044.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18689,7 +18815,8 @@
               "texto": "Cambio de tono",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p18_img045.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18718,7 +18845,8 @@
               "texto": "Contaminacion del fosfatado",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p18_img046.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18747,7 +18875,8 @@
               "texto": "Cambio de tono",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img047.png"
         },
         {
           "texto": "Esta pieza ya fue reprocesada. Que condicion se observa en la foto?",
@@ -18776,7 +18905,8 @@
               "texto": "Estampas de distintas referencias mezcladas",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img048.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18805,7 +18935,8 @@
               "texto": "Estampa polvosa",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p19_img049.png"
         },
         {
           "texto": "Al revisar esta pieza, que condicion ves en la foto?",
@@ -18834,7 +18965,8 @@
               "texto": "Estampa humeda",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p20_img050.png"
         },
         {
           "texto": "Ante este cambio de tono, que debe verificarse para aceptar la pieza?",
@@ -18863,7 +18995,8 @@
               "texto": "Comprobar solo el color bajo otra luz",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_p17_img042.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: oxido?",
@@ -18892,7 +19025,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_01.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa polvosa?",
@@ -18921,7 +19055,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_02.png"
         },
         {
           "texto": "En cual de las cuatro fotos se observa una raya en la superficie de la pieza?",
@@ -18950,7 +19085,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_03.png"
         },
         {
           "texto": "En cual de las cuatro fotos la pieza tiene el grabado 1107ST?",
@@ -18979,7 +19115,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_04.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: puntos sin fosfato?",
@@ -19008,7 +19145,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_05.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa con marcas de roce (tallada)?",
@@ -19037,7 +19175,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_06.png"
         },
         {
           "texto": "De las cuatro fotos, en cual se observa lo siguiente: estampa humeda?",
@@ -19066,7 +19205,8 @@
               "texto": "Mas de una imagen",
               "correcta": false
             }
-          ]
+          ],
+          "imagen_url": "/uploads/fallas/1-CA-04_panel_07.png"
         }
       ],
       "revisiones_anteriores_sha256": [
@@ -21565,8 +21705,7 @@
               "texto": "Mantenimiento de vehiculos particulares",
               "correcta": false
             }
-          ],
-          "imagen_url": "CAPTURA MAPA DE PROCESOS .png"
+          ]
         },
         {
           "texto": "Cual de los siguientes aparece como proceso de soporte?",
@@ -28929,7 +29068,7 @@
           ]
         },
         {
-          "texto": "Un contenedor recibido presenta golpes o derrame. Que se selecciona en Material Golpeado?",
+          "texto": "Un contenedor recibido presenta golpes o derrame. Se selecciona en Material Golpeado?",
           "opciones": [
             {
               "texto": "Si",
